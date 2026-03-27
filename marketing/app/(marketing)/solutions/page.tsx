@@ -1,120 +1,175 @@
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
-import { Wrench, Zap, Wind, Home, Lock } from "lucide-react";
+import {
+  Wrench,
+  Zap,
+  Flower2,
+  Home,
+  Hammer,
+  WashingMachine,
+  Paintbrush,
+  ShieldCheck,
+} from "lucide-react";
 import { buildMetadata } from "@/lib/metadata";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Solutions",
+  title: "Services",
   description:
-    "Plug-A-Pro supports home maintenance, plumbing, electrical, HVAC, locksmith, and any field service business that dispatches technicians to customer locations.",
+    "Plug-A-Pro matches you to nearby workers for plumbing, painting, garden work, handyman jobs, appliance repairs, electrical, and DIY assistance.",
 });
 
-const SOLUTIONS: { icon: LucideIcon; name: string; headline: string; points: string[] }[] = [
+const SERVICES: {
+  icon: LucideIcon;
+  name: string;
+  headline: string;
+  examples: string[];
+}[] = [
   {
     icon: Home,
-    name: "General Home Maintenance",
-    headline: "Practical home support — repairs, upkeep, and DIY project completion",
-    points: [
-      "Multiple service types in one catalogue — painting, tiling, carpentry, plumbing repairs",
-      "Customers book the specific service they need, including half-finished DIY jobs",
-      "Fast dispatch: assign from available technicians in one tap",
-      "Lightweight technician PWA works on any budget Android device",
-      "Payment collected before dispatch — no cash handling required",
-      "Started a home repair yourself? Book a project completion job from the same flow.",
+    name: "Handyman & General Repairs",
+    headline: "Everyday home maintenance done properly",
+    examples: [
+      "Shelf fitting, door adjustments, hinge replacements",
+      "Grouting, tiling repairs, and minor plastering",
+      "Furniture assembly and mounting",
+      "Drywall patching and finishing",
+      "General household upkeep and odd jobs",
+    ],
+  },
+  {
+    icon: Paintbrush,
+    name: "Painting",
+    headline: "Interior and exterior painting — rooms or touch-ups",
+    examples: [
+      "Full room repaints",
+      "Feature wall or accent painting",
+      "Touch-up and repair painting",
+      "Exterior wall and fence painting",
+      "Prep work, filling, and sanding included",
+    ],
+  },
+  {
+    icon: Flower2,
+    name: "Garden & Lawn",
+    headline: "Outdoor spaces cleared, cut, and cared for",
+    examples: [
+      "Lawn mowing and edging",
+      "Clearing overgrown garden areas",
+      "Tree trimming and hedge cutting",
+      "Weeding and general garden upkeep",
+      "Planting and basic landscaping",
     ],
   },
   {
     icon: Wrench,
-    name: "Plumbing & Drainage",
-    headline: "From WhatsApp booking to invoiced completion",
-    points: [
-      "Customers book emergency callouts or scheduled repairs via WhatsApp",
-      "Admin assigns the nearest available plumber instantly",
-      "Technician gets full job details on their phone — no phone calls",
-      "Extra work (e.g. pipe replacement) approved by customer via WhatsApp before proceeding",
-      "Before/after photos uploaded on job completion",
-      "Invoice auto-generated and sent to customer immediately",
+    name: "Plumbing (small jobs)",
+    headline: "Leaks, drips, blockages, and fittings",
+    examples: [
+      "Tap and mixer repairs or replacements",
+      "Toilet cistern and flush mechanism repairs",
+      "Blocked drain clearing",
+      "Shower head and fitting replacements",
+      "Geyser blanket and overflow pipe checks",
+    ],
+  },
+  {
+    icon: WashingMachine,
+    name: "Appliances",
+    headline: "Fault-finding and repair for household appliances",
+    examples: [
+      "Washing machine not draining or spinning",
+      "Dishwasher door, pump, or seal issues",
+      "Fridge and freezer fault assessment",
+      "Oven and stove element replacements",
+      "Tumble dryer belt and motor faults",
     ],
   },
   {
     icon: Zap,
-    name: "Electrical Contractors",
-    headline: "Compliance, fault-finding, and installations — all tracked",
-    points: [
-      "Customers request fault-finding or installation quotes via WhatsApp",
-      "Admin reviews QUOTE_REQUIRED jobs and prices them before customer sees cost",
-      "Technician executes with full status trail from ASSIGNED to COMPLETED",
-      "Certificate of Compliance or job report attached to the completed job record",
-      "Rating request sent automatically 24 hours after completion",
+    name: "Electrical (minor)",
+    headline: "Light fittings, plugs, and small installations",
+    examples: [
+      "Light fitting installation or replacement",
+      "Plug and socket faults",
+      "DB board trip investigation",
+      "Outdoor light and sensor fitting",
+      "Extending a power point or adding a switch",
     ],
   },
   {
-    icon: Wind,
-    name: "HVAC & Refrigeration",
-    headline: "Compliance-sensitive jobs with a full audit trail",
-    points: [
-      "Complex jobs with extra work approval flow built in",
-      "Immutable job status trail: every transition logged with timestamp",
-      "Before and after photos required on job completion",
-      "Extra work descriptions and amounts captured formally — no verbal disputes",
-      "Full job history visible in admin console for every unit serviced",
+    icon: Hammer,
+    name: "DIY Assistance",
+    headline: "Started a job yourself? Get it finished properly",
+    examples: [
+      "Project assessment and honest advice",
+      "Continuing a half-finished repair",
+      "Correcting DIY work that didn't go to plan",
+      "Providing the tools or materials knowledge you're missing",
+      "Any home repair that got out of hand",
     ],
   },
   {
-    icon: Lock,
-    name: "Locksmith & Security",
-    headline: "Emergency response with a clear customer communication trail",
-    points: [
-      "Emergency bookings prioritised in the dispatch queue",
-      "Customer gets 'technician on the way' notification immediately",
-      "Location-based job details sent to technician instantly",
-      "Extra security work (e.g. lock upgrade) approved by customer before proceeding",
-      "Invoice and job record available as evidence if needed",
+    icon: ShieldCheck,
+    name: "Roofing (minor)",
+    headline: "Leaks, loose tiles, and gutter repairs",
+    examples: [
+      "Locating and sealing roof leaks",
+      "Broken or slipped tile replacement",
+      "Gutter clearing and reattachment",
+      "Fascia board repairs",
+      "Flashing and valley repairs",
     ],
   },
 ];
 
-export default function SolutionsPage() {
+export default function ServicesPage() {
   return (
     <>
       <div className="py-16 md:py-20 px-4 border-b border-border/40 text-center">
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
-          Industry solutions
+          Services
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          Built for field service — any trade, any size
+          Small jobs done right
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          If your business dispatches skilled workers to customer locations, Plug-A-Pro manages the entire job lifecycle.
+          Plug-A-Pro matches you to nearby workers for a wide range of small home jobs. Describe what you need — we&apos;ll find the right person.
         </p>
       </div>
 
       <div className="py-16 px-4">
-        <div className="max-w-5xl mx-auto space-y-10">
-          {SOLUTIONS.map((solution) => {
-            const Icon = solution.icon;
+        <div className="max-w-5xl mx-auto space-y-8">
+          {SERVICES.map((service) => {
+            const Icon = service.icon;
             return (
               <div
-                key={solution.name}
+                key={service.name}
                 className="rounded-2xl border border-border/40 p-8 grid md:grid-cols-3 gap-8"
               >
                 <div>
-                  {(() => {
-                    return <Icon className="size-10 mb-3" style={{ color: "var(--accent-brand)" }} aria-hidden="true" />;
-                  })()}
-                  <h2 className="font-bold text-xl mb-1">{solution.name}</h2>
-                  <p className="text-sm text-muted-foreground">{solution.headline}</p>
+                  <Icon
+                    className="size-10 mb-3"
+                    style={{ color: "var(--accent-brand)" }}
+                    aria-hidden="true"
+                  />
+                  <h2 className="font-bold text-xl mb-1">{service.name}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {service.headline}
+                  </p>
                 </div>
                 <ul className="md:col-span-2 space-y-3">
-                  {solution.points.map((point) => (
-                    <li key={point} className="flex items-start gap-3 text-sm text-muted-foreground">
+                  {service.examples.map((example) => (
+                    <li
+                      key={example}
+                      className="flex items-start gap-3 text-sm text-muted-foreground"
+                    >
                       <span
                         className="mt-1.5 size-1.5 rounded-full flex-shrink-0"
                         style={{ background: "var(--accent-brand)" }}
                         aria-hidden="true"
                       />
-                      {point}
+                      {example}
                     </li>
                   ))}
                 </ul>
@@ -126,16 +181,18 @@ export default function SolutionsPage() {
 
       <div className="py-8 px-4">
         <div className="max-w-2xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30 text-center">
-          <p className="font-semibold text-foreground mb-2">Started a DIY job that needs finishing?</p>
+          <p className="font-semibold text-foreground mb-2">
+            Don&apos;t see what you need?
+          </p>
           <p className="text-sm text-muted-foreground mb-4">
-            Plug-A-Pro connects customers with skilled technicians for any home job — including rescuing a repair that didn&apos;t go to plan. Book a project completion job from the same WhatsApp flow.
+            If it&apos;s a small home job, there&apos;s probably a worker near you who can do it. Describe your job and we&apos;ll try to match you.
           </p>
           <a
-            href="/contact"
+            href="/waitlist"
             className="text-sm font-medium underline-offset-4 hover:underline"
             style={{ color: "var(--accent-brand)" }}
           >
-            Talk to us about your project →
+            Request help →
           </a>
         </div>
       </div>
