@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
 const navLinks = [
-  { href: "/solutions", label: "Solutions" },
   { href: "/how-it-works", label: "How it works" },
-  { href: "/pricing", label: "Pricing" },
+  { href: "/for-workers", label: "For workers" },
+  { href: "/faq", label: "FAQ" },
 ];
 
 export function Nav() {
@@ -29,8 +29,12 @@ export function Nav() {
         </nav>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Button nativeButton={false} render={<Link href={siteConfig.links.app} />} size="sm">
-            Get started
+          <Button
+            nativeButton={false}
+            render={<Link href="/waitlist" />}
+            size="sm"
+          >
+            Request help
           </Button>
         </div>
       </div>
