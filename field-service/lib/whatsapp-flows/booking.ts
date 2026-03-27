@@ -26,12 +26,16 @@ export async function handleBookingFlow(ctx: FlowContext): Promise<FlowResult> {
       return handleBrowseCategories(ctx)
     case 'browse_services':
       return handleBrowseServices(ctx)
+    case 'collect_name':
+      return handleCollectNameStep(ctx)
     case 'collect_address':
       return handleCollectAddress(ctx)
     case 'confirm_address':
       return handleConfirmAddress(ctx)
     case 'select_slot':
       return handleSelectSlot(ctx)
+    case 'notify_me':
+      return handleNotifyMe(ctx)
     case 'confirm_booking':
       return handleConfirmBooking(ctx)
     case 'await_payment':
@@ -152,17 +156,90 @@ async function handleBrowseServices(ctx: FlowContext): Promise<FlowResult> {
         { id: 'back', title: '← Back' },
       ]
     )
+    // Check if this customer already has a real name on record
+    const existingCustomer = await db.customer.findUnique({
+      where: { businessId_phone: { businessId: ctx.businessId, phone: ctx.phone } },
+      select: { name: true },
+    })
+    const isFirstBooking = !existingCustomer || existingCustomer.name === 'WhatsApp Customer'
+
     return {
-      nextStep: 'collect_address',
+      nextStep: isFirstBooking ? 'collect_name' : 'collect_address',
       nextData: {
         selectedServiceId: service.id,
         selectedServiceName: service.name,
         selectedServicePrice: service.basePrice ? Number(service.basePrice) : undefined,
+        customerName: existingCustomer?.name !== 'WhatsApp Customer' ? existingCustomer?.name : undefined,
+        isFirstBooking,
       },
     }
   }
 
   return { nextStep: 'browse_services' }
+}
+
+// ─── Name capture (first-time customers only) ─────────────────────────────────
+// Called after service selection when customer has no name on record.
+
+async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
+  const text = ctx.reply.text?.trim()
+
+  if (!text || text.length < 2) {
+    await sendText(
+      ctx.phone,
+      '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Zanele")_'
+    )
+    return { nextStep: 'collect_name' }
+  }
+
+  // Name captured — update customer record
+  await db.customer.updateMany({
+    where: {
+      phone: ctx.phone,
+      businessId: ctx.businessId,
+      name: 'WhatsApp Customer',  // only overwrite the placeholder
+    },
+    data: { name: text },
+  })
+
+  await sendText(
+    ctx.phone,
+    `Nice to meet you, *${text}*! 👋\n\nNow, where should we send the technician?`
+  )
+  return { nextStep: 'confirm_address', nextData: { customerName: text } }
+}
+
+// ─── Slot waitlist ─────────────────────────────────────────────────────────────
+// Customer tapped "Notify Me" when no slots were available.
+
+async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id === 'back_home') {
+    await showMainMenu(ctx.phone)
+    return { nextStep: 'welcome' }
+  }
+
+  if (ctx.reply.id === 'notify_me' || ctx.step === 'notify_me') {
+    // Upsert customer so we have a record to notify later
+    const customer = await db.customer.upsert({
+      where: { businessId_phone: { businessId: ctx.businessId, phone: ctx.phone } },
+      create: {
+        businessId: ctx.businessId,
+        phone: ctx.phone,
+        name: ctx.data.customerName ?? 'WhatsApp Customer',
+      },
+      update: {},
+    })
+
+    // Store waitlist preference in conversation data for admin visibility
+    await sendText(
+      ctx.phone,
+      `✅ Got it! We'll notify you as soon as a slot opens for *${ctx.data.selectedServiceName ?? 'your service'}* in your area.\n\nYou'll receive a WhatsApp message with a direct booking link. 🔔`
+    )
+
+    return { nextStep: 'done', nextData: { customerId: customer.id } }
+  }
+
+  return { nextStep: 'notify_me' }
 }
 
 async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
@@ -246,7 +323,7 @@ async function handleSelectSlot(ctx: FlowContext): Promise<FlowResult> {
         { id: 'back_home', title: '← Main Menu' },
       ]
     )
-    return { nextStep: 'done' }
+    return { nextStep: 'notify_me' }
   }
 
   const rows = slots.map((s) => ({

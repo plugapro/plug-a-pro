@@ -388,6 +388,246 @@ export async function sendBookingCancelled(params: {
   })
 }
 
+export async function sendPaymentReminder(params: {
+  businessId: string
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  serviceName: string
+  amount: string       // formatted: "R 350.00"
+  paymentUrl: string
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'payment_reminder',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.amount },
+          { type: 'text', text: params.paymentUrl },
+        ],
+      },
+    ],
+  })
+  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'payment_reminder', externalId })
+}
+
+export async function sendPaymentReceived(params: {
+  businessId: string
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  amount: string
+  serviceName: string
+  bookingRef: string   // last 8 chars of booking ID, uppercased
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'payment_received',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.amount },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.bookingRef },
+        ],
+      },
+    ],
+  })
+  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'payment_received', externalId })
+}
+
+export async function sendTechnicianAssigned(params: {
+  businessId: string
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  technicianFirstName: string
+  serviceName: string
+  scheduledWindow: string
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'technician_assigned',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.scheduledWindow },
+        ],
+      },
+    ],
+  })
+  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'technician_assigned', externalId })
+}
+
+export async function sendBookingRescheduled(params: {
+  businessId: string
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  serviceName: string
+  oldSlot: string
+  newSlot: string
+  bookingUrl: string
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'booking_rescheduled',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.oldSlot },
+          { type: 'text', text: params.newSlot },
+          { type: 'text', text: params.bookingUrl },
+        ],
+      },
+    ],
+  })
+  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'booking_rescheduled', externalId })
+}
+
+export async function sendSlotAvailable(params: {
+  businessId: string
+  customerPhone: string
+  customerName: string
+  serviceName: string
+  slotLabel: string
+  bookingUrl: string
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'slot_available',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.slotLabel },
+          { type: 'text', text: params.bookingUrl },
+        ],
+      },
+    ],
+  })
+  await logMessage({ businessId: params.businessId, bookingId: '', to: params.customerPhone, template: 'slot_available', externalId })
+}
+
+export async function sendNoTechnicianAvailable(params: {
+  businessId: string
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  serviceName: string
+  originalDate: string
+  bookingUrl: string
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'no_technician_available',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.originalDate },
+          { type: 'text', text: params.bookingUrl },
+        ],
+      },
+    ],
+  })
+  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'no_technician_available', externalId })
+}
+
+export async function sendJobOffer(params: {
+  technicianPhone: string
+  technicianFirstName: string
+  serviceName: string
+  area: string         // "Sandton, Johannesburg"
+  scheduledWindow: string
+  jobUrl: string
+}): Promise<void> {
+  await sendTemplate({
+    to: params.technicianPhone,
+    template: 'job_offer',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.area },
+          { type: 'text', text: params.scheduledWindow },
+          { type: 'text', text: params.jobUrl },
+        ],
+      },
+    ],
+  })
+  // No DB log needed — no bookingId in context
+}
+
+export async function sendTechnicianJobReminder(params: {
+  technicianPhone: string
+  technicianFirstName: string
+  serviceName: string
+  address: string
+  scheduledWindow: string
+  jobUrl: string
+}): Promise<void> {
+  await sendTemplate({
+    to: params.technicianPhone,
+    template: 'technician_job_reminder',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.address },
+          { type: 'text', text: params.scheduledWindow },
+          { type: 'text', text: params.jobUrl },
+        ],
+      },
+    ],
+  })
+}
+
+export async function sendTechnicianPaymentReleased(params: {
+  technicianPhone: string
+  technicianFirstName: string
+  amount: string          // "R 280.00"
+  serviceName: string
+  arrivalEstimate: string // "1–2 business days"
+}): Promise<void> {
+  await sendTemplate({
+    to: params.technicianPhone,
+    template: 'technician_payment_released',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.amount },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.arrivalEstimate },
+        ],
+      },
+    ],
+  })
+}
+
 /** Notify admin when a new technician application is submitted via WhatsApp.
  *  Admin phone is set via ADMIN_WHATSAPP_NUMBER env var.
  *  Falls back silently if not configured — non-critical. */

@@ -23,6 +23,10 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectSkills(ctx)
     case 'reg_collect_area':
       return handleCollectArea(ctx)
+    case 'reg_collect_experience':
+      return handleCollectExperience(ctx)
+    case 'reg_collect_availability':
+      return handleCollectAvailability(ctx)
     case 'reg_confirm':
       return handleConfirm(ctx)
     case 'reg_pending':
@@ -146,30 +150,112 @@ async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
     [{ title: 'Areas', rows }],
     { buttonLabel: 'Choose Area' }
   )
-  return { nextStep: 'reg_confirm', nextData: { skills } }
+  return { nextStep: 'reg_collect_experience', nextData: { skills } }
 }
 
-async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
+// ─── New steps: experience and availability ────────────────────────────────────
+
+async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
   if (!ctx.reply.id?.startsWith('area_')) {
-    await sendText(ctx.phone, 'Please choose your area from the list above.')
-    return { nextStep: 'reg_confirm' }
+    // Coming from area selection — save area and ask experience
+    await sendList(
+      ctx.phone,
+      '💼 How many years of experience do you have in your trade?',
+      [{
+        title: 'Experience',
+        rows: [
+          { id: 'exp_lt1', title: 'Less than 1 year', description: 'Just starting out' },
+          { id: 'exp_1_3', title: '1–3 years', description: 'Some experience' },
+          { id: 'exp_3_5', title: '3–5 years', description: 'Experienced' },
+          { id: 'exp_5plus', title: '5+ years', description: 'Highly experienced' },
+        ],
+      }],
+      { buttonLabel: 'Choose Experience' }
+    )
+    // If they just came from area selection, save the area
+    if (ctx.reply.id?.startsWith('area_')) {
+      return { nextStep: 'reg_collect_experience', nextData: { serviceAreas: [ctx.reply.title ?? ''] } }
+    }
+    return { nextStep: 'reg_collect_experience' }
   }
 
+  // They selected area — save and ask experience
   const areaLabel = ctx.reply.title ?? ''
-  const serviceAreas = [areaLabel]
 
-  const { name, skills } = ctx.data
-  const skillList = (skills ?? []).join(', ')
+  await sendList(
+    ctx.phone,
+    '💼 How many years of experience do you have in your trade?',
+    [{
+      title: 'Experience',
+      rows: [
+        { id: 'exp_lt1', title: 'Less than 1 year', description: 'Just starting out' },
+        { id: 'exp_1_3', title: '1–3 years', description: 'Some experience' },
+        { id: 'exp_3_5', title: '3–5 years', description: 'Experienced' },
+        { id: 'exp_5plus', title: '5+ years', description: 'Highly experienced' },
+      ],
+    }],
+    { buttonLabel: 'Choose Experience' }
+  )
+  return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+}
+
+async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> {
+  if (!ctx.reply.id?.startsWith('exp_')) {
+    await sendText(ctx.phone, 'Please choose your experience level from the list above.')
+    return { nextStep: 'reg_collect_availability' }
+  }
+
+  const expLabels: Record<string, string> = {
+    exp_lt1: 'Less than 1 year',
+    exp_1_3: '1–3 years',
+    exp_3_5: '3–5 years',
+    exp_5plus: '5+ years',
+  }
+  const experience = expLabels[ctx.reply.id] ?? ctx.reply.title ?? ''
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaLabel}*\n\nShall I submit your application?`,
+    '📅 Are you available on weekends?\n\nWe get many weekend bookings — technicians who work Saturdays earn significantly more.',
+    [
+      { id: 'avail_weekdays_only', title: '📋 Weekdays only' },
+      { id: 'avail_incl_sat', title: '📅 Mon–Sat' },
+      { id: 'avail_any_day', title: '✅ Any day' },
+    ]
+  )
+  return { nextStep: 'reg_confirm', nextData: { experience } }
+}
+
+async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
+  // Accept availability button or area reply (fallback)
+  const availMap: Record<string, string[]> = {
+    avail_weekdays_only: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+    avail_incl_sat: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    avail_any_day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  }
+
+  if (!ctx.reply.id?.startsWith('avail_') && !ctx.reply.id?.startsWith('area_')) {
+    await sendText(ctx.phone, 'Please choose your availability from the options above.')
+    return { nextStep: 'reg_confirm' }
+  }
+
+  const availability = ctx.reply.id?.startsWith('avail_')
+    ? availMap[ctx.reply.id] ?? []
+    : ctx.data.availability ?? []
+
+  const { name, skills, serviceAreas, experience } = ctx.data
+  const skillList = (skills ?? []).join(', ')
+  const areaList = (serviceAreas ?? []).join(', ')
+  const availLabel = availability.length === 7 ? 'Any day' : availability.join(', ')
+
+  await sendButtons(
+    ctx.phone,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n\nShall I submit your application?`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'submit_no', title: '❌ Cancel' },
     ]
   )
-  return { nextStep: 'reg_pending', nextData: { serviceAreas } }
+  return { nextStep: 'reg_pending', nextData: { availability } }
 }
 
 async function handlePending(ctx: FlowContext): Promise<FlowResult> {
@@ -191,13 +277,27 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         skills: ctx.data.skills ?? [],
         serviceAreas: ctx.data.serviceAreas ?? [],
         status: 'PENDING',
+        // Store experience and availability as JSON in the notes field if schema supports it,
+        // otherwise they are available in the conversation data for admin review
       },
     })
 
+    const ref = application.id.slice(-8).toUpperCase()
+
     await sendText(
       ctx.phone,
-      `🎉 *Application submitted!*\n\nThank you, *${ctx.data.name}*! We'll review your application and get back to you within *24 hours*.\n\nRef: *${application.id.slice(-8).toUpperCase()}*\n\nQuestions? Reply anytime. 👋`
+      `🎉 *Application submitted!*\n\nThank you, *${ctx.data.name}*! We'll review your application and get back to you within *24 hours*.\n\nRef: *${ref}*\n\n_You'll receive a WhatsApp message here with the outcome. Keep an eye out!_ 👀`
     )
+
+    // Send template confirmation (covers the case where >24h passes before we reply)
+    const { sendTemplate } = await import('../whatsapp')
+    sendTemplate({
+      to: ctx.phone,
+      template: 'technician_application_received',
+      components: [
+        { type: 'body', parameters: [{ type: 'text', text: ctx.data.name ?? 'Applicant' }, { type: 'text', text: ref }] },
+      ],
+    }).catch(() => {}) // non-blocking — in-flow message above is the primary
 
     // Notify admin of new application (non-blocking — ADMIN_WHATSAPP_NUMBER env var)
     const { sendAdminNewApplication } = await import('../whatsapp')
