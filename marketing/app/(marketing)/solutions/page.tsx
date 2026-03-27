@@ -5,7 +5,7 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "Solutions",
   description:
-    "Plug-A-Pro supports plumbing, electrical, cleaning, HVAC, and any field service business that dispatches technicians to customer locations.",
+    "Plug-A-Pro supports home maintenance, plumbing, electrical, HVAC, locksmith, and any field service business that dispatches technicians to customer locations.",
 });
 
 const SOLUTIONS = [
@@ -32,18 +32,6 @@ const SOLUTIONS = [
       "Technician executes with full status trail from ASSIGNED to COMPLETED",
       "Certificate of Compliance or job report attached to the completed job record",
       "Rating request sent automatically 24 hours after completion",
-    ],
-  },
-  {
-    icon: "🧹",
-    name: "Cleaning Services",
-    headline: "Recurring and once-off jobs, dispatched with zero friction",
-    points: [
-      "Customers choose residential, commercial, or post-construction cleaning",
-      "Time slots configured by you — customers pick from available windows",
-      "Technician team dispatched via the admin console in one step",
-      "Arrival and completion confirmed via PWA — customer notified via WhatsApp",
-      "Invoices in ZAR sent automatically on completion",
     ],
   },
   {

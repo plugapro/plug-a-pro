@@ -1,10 +1,10 @@
 const INDUSTRIES = [
   { icon: "🔧", name: "Plumbing & Drainage", description: "Emergency callouts, pipe repairs, drain clearance" },
   { icon: "⚡", name: "Electrical", description: "Installations, fault-finding, compliance certificates" },
-  { icon: "🧹", name: "Cleaning Services", description: "Residential, commercial, post-construction" },
   { icon: "❄️", name: "HVAC & Refrigeration", description: "Installation, servicing, gas compliance" },
-  { icon: "🏠", name: "General Home Maintenance", description: "Handyman, painting, tiling, carpentry" },
+  { icon: "🏠", name: "General Home Maintenance", description: "Handyman, painting, tiling, carpentry, and everyday repairs" },
   { icon: "🔑", name: "Locksmith & Security", description: "Lockouts, installations, access control" },
+  { icon: "🔨", name: "DIY Project Help", description: "Started a repair yourself? Get a pro to assess, continue, or finish it." },
 ];
 
 export function WhoItsFor() {
