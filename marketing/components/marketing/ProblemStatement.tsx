@@ -1,3 +1,5 @@
+import { ClipboardList, Phone, FileSpreadsheet, MapPin } from "lucide-react";
+
 export function ProblemStatement() {
   return (
     <section className="py-20 md:py-24 px-4 border-t border-border/40">
@@ -19,22 +21,27 @@ export function ProblemStatement() {
           </div>
           <div className="space-y-4">
             {[
-              { icon: "📋", label: "Jobs logged in WhatsApp groups", problem: "No structure, no visibility" },
-              { icon: "📞", label: "Dispatch done over the phone", problem: "Slow, error-prone, undocumented" },
-              { icon: "🗂️", label: "Invoicing done manually in Excel", problem: "Delayed, inconsistent, hard to track" },
-              { icon: "📍", label: "No live technician location or status", problem: "Customers call to ask — repeatedly" },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="flex items-start gap-4 rounded-xl border border-border/40 p-4"
-              >
-                <span className="text-2xl" aria-hidden="true">{item.icon}</span>
-                <div>
-                  <p className="font-medium text-sm">{item.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{item.problem}</p>
+              { icon: ClipboardList, label: "Jobs logged in WhatsApp groups", problem: "No structure, no visibility" },
+              { icon: Phone, label: "Dispatch done over the phone", problem: "Slow, error-prone, undocumented" },
+              { icon: FileSpreadsheet, label: "Invoicing done manually in Excel", problem: "Delayed, inconsistent, hard to track" },
+              { icon: MapPin, label: "No live technician location or status", problem: "Customers call to ask — repeatedly" },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.label}
+                  className="flex items-start gap-4 rounded-xl border border-border/40 p-4"
+                >
+                  <div className="size-10 rounded-lg flex items-center justify-center bg-muted flex-shrink-0">
+                    <Icon className="size-5 text-muted-foreground" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{item.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{item.problem}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

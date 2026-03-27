@@ -1,10 +1,13 @@
-const INDUSTRIES = [
-  { icon: "🔧", name: "Plumbing & Drainage", description: "Emergency callouts, pipe repairs, drain clearance" },
-  { icon: "⚡", name: "Electrical", description: "Installations, fault-finding, compliance certificates" },
-  { icon: "❄️", name: "HVAC & Refrigeration", description: "Installation, servicing, gas compliance" },
-  { icon: "🏠", name: "General Home Maintenance", description: "Handyman, painting, tiling, carpentry, and everyday repairs" },
-  { icon: "🔑", name: "Locksmith & Security", description: "Lockouts, installations, access control" },
-  { icon: "🔨", name: "DIY Project Help", description: "Started a repair yourself? Get a pro to assess, continue, or finish it." },
+import type { LucideIcon } from "lucide-react";
+import { Wrench, Zap, Wind, Home, Lock, Hammer } from "lucide-react";
+
+const INDUSTRIES: { icon: LucideIcon; name: string; description: string }[] = [
+  { icon: Wrench, name: "Plumbing & Drainage", description: "Emergency callouts, pipe repairs, drain clearance" },
+  { icon: Zap, name: "Electrical", description: "Installations, fault-finding, compliance certificates" },
+  { icon: Wind, name: "HVAC & Refrigeration", description: "Installation, servicing, gas compliance" },
+  { icon: Home, name: "General Home Maintenance", description: "Handyman, painting, tiling, carpentry, and everyday repairs" },
+  { icon: Lock, name: "Locksmith & Security", description: "Lockouts, installations, access control" },
+  { icon: Hammer, name: "DIY Project Help", description: "Started a repair yourself? Get a pro to assess, continue, or finish it." },
 ];
 
 export function WhoItsFor() {
@@ -23,27 +26,36 @@ export function WhoItsFor() {
           </p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {INDUSTRIES.map((industry) => (
-            <div
-              key={industry.name}
-              className="rounded-2xl border border-border/40 p-5 space-y-2 hover:shadow-sm transition-shadow"
-            >
-              <span className="text-2xl" aria-hidden="true">{industry.icon}</span>
-              <h3 className="font-semibold text-sm">{industry.name}</h3>
-              <p className="text-xs text-muted-foreground">{industry.description}</p>
-            </div>
-          ))}
+          {INDUSTRIES.map((industry) => {
+            const Icon = industry.icon;
+            return (
+              <div
+                key={industry.name}
+                className="rounded-2xl border border-border/40 p-5 space-y-3 hover:shadow-sm transition-shadow"
+              >
+                <div className="size-10 rounded-xl flex items-center justify-center bg-muted">
+                  <Icon
+                    className="size-5"
+                    style={{ color: "var(--accent-brand)" }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <h3 className="font-semibold text-sm">{industry.name}</h3>
+                <p className="text-xs text-muted-foreground">{industry.description}</p>
+              </div>
+            );
+          })}
         </div>
         <p className="text-center text-sm text-muted-foreground mt-8">
-          Don&apos;t see your industry? If you dispatch technicians to customer locations,{" "}
+          Don&apos;t see your trade?{" "}
           <a
             href="/contact"
             className="underline-offset-2 hover:underline"
             style={{ color: "var(--accent-brand)" }}
           >
-            get in touch
-          </a>
-          .
+            Get in touch
+          </a>{" "}
+          — if you dispatch technicians to customer locations, Plug-A-Pro can run it.
         </p>
       </div>
     </section>

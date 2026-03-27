@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import type { LucideIcon } from "lucide-react";
+import { Wrench, Zap, Wind, Home, Lock } from "lucide-react";
 import { buildMetadata } from "@/lib/metadata";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 
@@ -8,9 +10,9 @@ export const metadata: Metadata = buildMetadata({
     "Plug-A-Pro supports home maintenance, plumbing, electrical, HVAC, locksmith, and any field service business that dispatches technicians to customer locations.",
 });
 
-const SOLUTIONS = [
+const SOLUTIONS: { icon: LucideIcon; name: string; headline: string; points: string[] }[] = [
   {
-    icon: "🔧",
+    icon: Wrench,
     name: "Plumbing & Drainage",
     headline: "From WhatsApp booking to invoiced completion",
     points: [
@@ -23,7 +25,7 @@ const SOLUTIONS = [
     ],
   },
   {
-    icon: "⚡",
+    icon: Zap,
     name: "Electrical Contractors",
     headline: "Compliance, fault-finding, and installations — all tracked",
     points: [
@@ -35,7 +37,7 @@ const SOLUTIONS = [
     ],
   },
   {
-    icon: "❄️",
+    icon: Wind,
     name: "HVAC & Refrigeration",
     headline: "Compliance-sensitive jobs with a full audit trail",
     points: [
@@ -47,7 +49,7 @@ const SOLUTIONS = [
     ],
   },
   {
-    icon: "🏠",
+    icon: Home,
     name: "General Home Maintenance",
     headline: "High volume, low friction — exactly what handyman businesses need",
     points: [
@@ -59,7 +61,7 @@ const SOLUTIONS = [
     ],
   },
   {
-    icon: "🔑",
+    icon: Lock,
     name: "Locksmith & Security",
     headline: "Emergency response with a clear customer communication trail",
     points: [
@@ -89,30 +91,35 @@ export default function SolutionsPage() {
 
       <div className="py-16 px-4">
         <div className="max-w-5xl mx-auto space-y-10">
-          {SOLUTIONS.map((solution) => (
-            <div
-              key={solution.name}
-              className="rounded-2xl border border-border/40 p-8 grid md:grid-cols-3 gap-8"
-            >
-              <div>
-                <span className="text-4xl mb-3 block" aria-hidden="true">{solution.icon}</span>
-                <h2 className="font-bold text-xl mb-1">{solution.name}</h2>
-                <p className="text-sm text-muted-foreground">{solution.headline}</p>
+          {SOLUTIONS.map((solution) => {
+            const Icon = solution.icon;
+            return (
+              <div
+                key={solution.name}
+                className="rounded-2xl border border-border/40 p-8 grid md:grid-cols-3 gap-8"
+              >
+                <div>
+                  {(() => {
+                    return <Icon className="size-10 mb-3" style={{ color: "var(--accent-brand)" }} aria-hidden="true" />;
+                  })()}
+                  <h2 className="font-bold text-xl mb-1">{solution.name}</h2>
+                  <p className="text-sm text-muted-foreground">{solution.headline}</p>
+                </div>
+                <ul className="md:col-span-2 space-y-3">
+                  {solution.points.map((point) => (
+                    <li key={point} className="flex items-start gap-3 text-sm text-muted-foreground">
+                      <span
+                        className="mt-1.5 size-1.5 rounded-full flex-shrink-0"
+                        style={{ background: "var(--accent-brand)" }}
+                        aria-hidden="true"
+                      />
+                      {point}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="md:col-span-2 space-y-3">
-                {solution.points.map((point) => (
-                  <li key={point} className="flex items-start gap-3 text-sm text-muted-foreground">
-                    <span
-                      className="mt-1.5 size-1.5 rounded-full flex-shrink-0"
-                      style={{ background: "var(--accent-brand)" }}
-                      aria-hidden="true"
-                    />
-                    {point}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
