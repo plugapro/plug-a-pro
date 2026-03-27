@@ -5,57 +5,45 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "How It Works",
   description:
-    "How Plug-A-Pro matches customers to nearby independent workers for small home jobs — from WhatsApp request to completed job.",
+    "See how Plug-A-Pro connects customers to nearby home-job workers — from describing the job to getting it done safely.",
 });
 
 const CUSTOMER_STEPS = [
   {
     step: "1",
-    title: "Describe your job on WhatsApp",
+    title: "Describe your job",
     detail:
-      "Message Plug-A-Pro on WhatsApp. A guided flow helps you describe what needs doing, where you are, and when you need it. Add photos if it helps. Takes under 3 minutes.",
+      "Send a message to the Plug-A-Pro WhatsApp number or use the web form. Tell us what needs doing, where you are, and your preferred timing. Attach a photo if it helps — especially useful for repairs and DIY rescues.",
   },
   {
     step: "2",
-    title: "Choose your service category",
+    title: "Get matched to a nearby worker",
     detail:
-      "Select the type of job — plumbing, painting, electrical, gardening, general handyman, and more. We use this to match you with the right skills.",
+      "The platform finds available workers near you who have the right skills. A lead is sent to up to four matching workers simultaneously. You're notified when one accepts.",
   },
   {
     step: "3",
-    title: "Confirm your address and timing",
+    title: "Inspect (if needed) and get a quote",
     detail:
-      "Tell us your suburb and preferred time. We find workers who are nearby and available when you need them.",
+      "For jobs that are hard to price remotely, the worker can visit to inspect first — no cost until you accept a quote. For simpler jobs, a quote is sent directly. You see the price and description before committing.",
   },
   {
     step: "4",
-    title: "Get matched to a nearby worker",
+    title: "Approve the quote",
     detail:
-      "Your job request goes to available workers in your area with the right skills. The first suitable worker to accept gets the lead.",
+      "You approve in writing through the platform before any work starts. If the scope changes on-site, the worker must request your approval before proceeding with extra work.",
   },
   {
     step: "5",
-    title: "Review the worker's profile",
+    title: "Track the job live",
     detail:
-      "See the worker's verified skills, reviews from previous jobs, and how long they've been on the platform. Decide whether to proceed.",
+      "You receive WhatsApp updates at every milestone: worker on the way, arrived, job started, completed. No more chasing for ETAs.",
   },
   {
     step: "6",
-    title: "Receive and approve a quote",
+    title: "Pay and leave a review",
     detail:
-      "For fixed-price jobs, you see the rate upfront. For custom jobs, the worker submits a quote — you approve before any work begins.",
-  },
-  {
-    step: "7",
-    title: "Worker arrives and does the job",
-    detail:
-      "You receive WhatsApp updates when the worker is on their way and when they've arrived. Job status tracked throughout.",
-  },
-  {
-    step: "8",
-    title: "Rate the job when it's done",
-    detail:
-      "After the job is marked complete, you receive a follow-up to leave a rating. Your feedback builds the worker's verified reputation.",
+      "Pay after the job is done. Leave a rating and comment to help build the worker's reputation — and help the next customer make a confident choice.",
   },
 ];
 
@@ -64,49 +52,37 @@ const WORKER_STEPS = [
     step: "1",
     title: "Register via WhatsApp or the web",
     detail:
-      "Message Plug-A-Pro on WhatsApp or sign up on the website. A guided flow captures your name, skills, service area, and availability.",
+      "Tell us your name, what jobs you do, which areas you cover, and your typical availability. No formal business registration required — just your skills and a smartphone.",
   },
   {
     step: "2",
-    title: "Define your skills and coverage area",
+    title: "Platform review and activation",
     detail:
-      "Tell us what types of jobs you do and which areas you work in. The platform uses this to match you with relevant local job leads.",
+      "Your application is reviewed before you receive leads. Once activated, your profile is live and you're eligible for matched jobs in your area.",
   },
   {
     step: "3",
-    title: "Wait for your application to be reviewed",
+    title: "Receive matched leads",
     detail:
-      "We review applications within 24 hours. Once approved, you can start receiving job leads immediately.",
+      "When a customer job matches your skills and area, you receive a lead notification on WhatsApp. The lead shows the job category, suburb, and urgency — not the customer's personal number yet.",
   },
   {
     step: "4",
-    title: "Receive job leads on WhatsApp",
+    title: "Accept or decline",
     detail:
-      "When a customer posts a job that matches your skills and area, you receive a lead on WhatsApp. You choose to accept or pass — no obligation.",
+      "Tap to accept if you can do the job. Once accepted, you get the full address and can open the platform message thread to communicate with the customer.",
   },
   {
     step: "5",
-    title: "Accept the lead and contact the customer",
+    title: "Inspect, quote, and execute",
     detail:
-      "Once you accept, you communicate with the customer through the platform. Customer details are shared once you're matched — both sides stay protected.",
+      "Visit to inspect if needed, or send a written quote directly from the app with a description and price. Once accepted, update your job status as you work — en route, arrived, started, completed.",
   },
   {
     step: "6",
-    title: "Arrange an inspection if needed",
+    title: "Get paid and build your rating",
     detail:
-      "For jobs that need a site visit before quoting, you can schedule an inspection. The customer approves the time through the platform.",
-  },
-  {
-    step: "7",
-    title: "Submit your quote",
-    detail:
-      "Once you've assessed the job, submit your quote through the platform. Customer approves before you start. No verbal agreements.",
-  },
-  {
-    step: "8",
-    title: "Do the job and build your reputation",
-    detail:
-      "Update job status as you work. Before and after photos create a record. Customer leaves a rating. Good ratings earn you more leads over time.",
+      "Payment is arranged through the platform. After each job you receive a rating — reviews accumulate on your profile and help you win more work over time.",
   },
 ];
 
@@ -144,7 +120,9 @@ function FlowSection({
             </div>
             <div className="pb-8">
               <h3 className="font-semibold mb-1">{s.title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{s.detail}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {s.detail}
+              </p>
             </div>
           </div>
         ))}
@@ -160,9 +138,11 @@ export default function HowItWorksPage() {
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
           The full picture
         </p>
-        <h1 className="text-4xl md:text-5xl font-bold mb-4">How Plug-A-Pro works</h1>
+        <h1 className="text-4xl md:text-5xl font-bold mb-4">
+          How Plug-A-Pro works
+        </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          A marketplace that connects homeowners to independent local workers for small home jobs. Here&apos;s how both sides experience it.
+          Two flows. One platform. From a WhatsApp message to a completed job — safely and simply.
         </p>
       </div>
 
@@ -170,19 +150,21 @@ export default function HowItWorksPage() {
         <div className="max-w-3xl mx-auto">
           <FlowSection
             label="Customer flow"
-            title="From WhatsApp message to job done"
+            title="Request help — from job description to done"
             steps={CUSTOMER_STEPS}
           />
           <FlowSection
             label="Worker flow"
-            title="From registration to a full pipeline of leads"
+            title="Register, receive leads, build your reputation"
             steps={WORKER_STEPS}
           />
 
           <div className="rounded-2xl border border-border/40 p-6 bg-muted/30 text-sm text-muted-foreground">
-            <p className="font-semibold text-foreground mb-2">Privacy and trust</p>
+            <p className="font-semibold text-foreground mb-2">
+              Your number stays private
+            </p>
             <p>
-              Customer and worker communicate through the platform. Personal phone numbers are not shared by default. Both sides can interact safely and structure the job clearly before meeting in person.
+              Neither party&apos;s personal WhatsApp number is shared by default. All communication goes through the Plug-A-Pro platform — the customer&apos;s address is only revealed to the worker in stages, as the job progresses through acceptance and confirmation.
             </p>
           </div>
         </div>
