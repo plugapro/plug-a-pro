@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { siteConfig } from "@/lib/metadata";
 
 export function Hero() {
   return (
@@ -17,30 +16,41 @@ export function Hero() {
       />
       <div className="relative max-w-4xl mx-auto">
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
-          Field service, simplified
+          Local help. Real quotes. Any small job.
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-          Book a technician in minutes — via WhatsApp
+          Get home help in minutes — not weeks
         </h1>
-        <p className="text-xl text-muted-foreground mb-3 max-w-xl mx-auto">
-          {siteConfig.description}
+        <p className="text-xl text-muted-foreground mb-3 max-w-2xl mx-auto">
+          Plug-A-Pro connects you to nearby handymen and home-job workers for
+          small repairs, odd jobs, garden work, painting, and more. Message on
+          WhatsApp. Get matched. Get it done.
         </p>
         <p className="text-sm text-muted-foreground mb-10 max-w-lg mx-auto">
-          Started a DIY job and need a pro to finish it?{" "}
+          Started a DIY project and got stuck?{" "}
           <Link
-            href="/solutions"
+            href="/how-it-works"
             className="underline-offset-4 hover:underline"
             style={{ color: "var(--accent-brand)" }}
           >
-            We handle that too.
+            Our workers can assess, continue, or finish it.
           </Link>
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
-          <Button nativeButton={false} render={<Link href="/waitlist" />} size="lg">
-            Get early access
+          <Button
+            nativeButton={false}
+            render={<Link href="/waitlist" />}
+            size="lg"
+          >
+            Request help
           </Button>
-          <Button nativeButton={false} render={<Link href="/how-it-works" />} variant="outline" size="lg">
-            See how it works
+          <Button
+            nativeButton={false}
+            render={<Link href="/for-workers" />}
+            variant="outline"
+            size="lg"
+          >
+            I want work →
           </Button>
         </div>
       </div>
