@@ -24,9 +24,9 @@ export default function HomePage() {
       <SocialProof />
       <section className="py-16 px-4 border-t border-border/40">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-4">Simple, transparent pricing</h2>
+          <h2 className="text-3xl font-bold text-center mb-4">How it works for each side</h2>
           <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-            Plans that scale with your business — from solo operators to multi-branch operations.
+            Simple and fair for customers and workers alike.
           </p>
           <PricingCards />
         </div>
