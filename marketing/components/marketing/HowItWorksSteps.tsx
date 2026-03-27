@@ -3,24 +3,24 @@ import Link from "next/link";
 const STEPS = [
   {
     number: "01",
-    title: "Customer books via WhatsApp",
+    title: "Describe your job",
     description:
-      "Your customer sends \u201cHi\u201d to your Plug-A-Pro number. A guided menu walks them through service, address, and time slot \u2014 under 3 minutes. No app. No email.",
-    detail: "Works on any Android with WhatsApp. No account needed.",
+      "Send a message on WhatsApp or use the app. Tell us what needs doing, where you are, and share a photo if helpful. Takes under 3 minutes.",
+    detail: "Works on any phone with WhatsApp. No app download needed.",
   },
   {
     number: "02",
-    title: "You dispatch the right technician",
+    title: "Get matched to a nearby worker",
     description:
-      "New bookings appear in your admin console. Assign a technician in one tap. They receive a WhatsApp notification instantly with all job details.",
-    detail: "Real-time status updates from assignment through completion.",
+      "We find available, rated workers near you who do that type of job. A lead is sent to matching workers — the first to accept, or the one you choose, takes the job.",
+    detail: "Your personal number is not shared at this stage.",
   },
   {
     number: "03",
-    title: "Technician completes the job on-site",
+    title: "Agree on price, book, done",
     description:
-      "Your technician updates job status from the lightweight PWA on their phone \u2014 arrived, started, completed. Before and after photos uploaded automatically.",
-    detail: "Invoice auto-generated on completion. Sent to customer via WhatsApp.",
+      "The worker visits to inspect if needed, or sends a quote directly. You approve before any work starts. Pay after it's done — safely and with a record.",
+    detail: "Extra work requires your explicit approval before it begins.",
   },
 ];
 
@@ -33,7 +33,7 @@ export function HowItWorksSteps() {
             How it works
           </p>
           <h2 className="text-3xl md:text-4xl font-bold">
-            End-to-end in three steps
+            From job to done — in a few taps
           </h2>
         </div>
         <div className="grid md:grid-cols-3 gap-8">
