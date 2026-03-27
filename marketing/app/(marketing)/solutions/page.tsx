@@ -12,6 +12,19 @@ export const metadata: Metadata = buildMetadata({
 
 const SOLUTIONS: { icon: LucideIcon; name: string; headline: string; points: string[] }[] = [
   {
+    icon: Home,
+    name: "General Home Maintenance",
+    headline: "Practical home support — repairs, upkeep, and DIY project completion",
+    points: [
+      "Multiple service types in one catalogue — painting, tiling, carpentry, plumbing repairs",
+      "Customers book the specific service they need, including half-finished DIY jobs",
+      "Fast dispatch: assign from available technicians in one tap",
+      "Lightweight technician PWA works on any budget Android device",
+      "Payment collected before dispatch — no cash handling required",
+      "Started a home repair yourself? Book a project completion job from the same flow.",
+    ],
+  },
+  {
     icon: Wrench,
     name: "Plumbing & Drainage",
     headline: "From WhatsApp booking to invoiced completion",
@@ -49,24 +62,12 @@ const SOLUTIONS: { icon: LucideIcon; name: string; headline: string; points: str
     ],
   },
   {
-    icon: Home,
-    name: "General Home Maintenance",
-    headline: "High volume, low friction — exactly what handyman businesses need",
-    points: [
-      "Multiple service types in one catalogue — painting, tiling, carpentry, etc.",
-      "Customers browse and book the specific service they need",
-      "Fast dispatch: assign from available technicians in one tap",
-      "Lightweight technician PWA works on any budget Android device",
-      "Payment collected before dispatch — no cash handling required",
-    ],
-  },
-  {
     icon: Lock,
     name: "Locksmith & Security",
     headline: "Emergency response with a clear customer communication trail",
     points: [
       "Emergency bookings prioritised in the dispatch queue",
-      "Customer gets \u2018technician on the way\u2019 notification immediately",
+      "Customer gets 'technician on the way' notification immediately",
       "Location-based job details sent to technician instantly",
       "Extra security work (e.g. lock upgrade) approved by customer before proceeding",
       "Invoice and job record available as evidence if needed",
@@ -120,6 +121,22 @@ export default function SolutionsPage() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <div className="py-8 px-4">
+        <div className="max-w-2xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30 text-center">
+          <p className="font-semibold text-foreground mb-2">Started a DIY job that needs finishing?</p>
+          <p className="text-sm text-muted-foreground mb-4">
+            Plug-A-Pro connects customers with skilled technicians for any home job — including rescuing a repair that didn&apos;t go to plan. Book a project completion job from the same WhatsApp flow.
+          </p>
+          <a
+            href="/contact"
+            className="text-sm font-medium underline-offset-4 hover:underline"
+            style={{ color: "var(--accent-brand)" }}
+          >
+            Talk to us about your project →
+          </a>
         </div>
       </div>
 
