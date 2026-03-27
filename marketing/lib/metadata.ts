@@ -4,7 +4,7 @@ export const siteConfig = {
   venture: "plug-a-pro",
   name: "Plug-A-Pro",
   description:
-    "WhatsApp booking, smart dispatch, and automatic invoicing — for any business that sends skilled workers to customer homes.",
+    "Find nearby handymen and home-job workers via WhatsApp. Get quotes, book help, and get the job done — safely and simply.",
   url: "https://plugapro.co.za", // TODO: update with production URL
   accent: "oklch(0.55 0.2 250)",
   ogImage: "/og.png",
