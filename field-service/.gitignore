@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+out/
+
+# Vercel
+.vercel/
+
+# Environment variables
+.env
+.env.*
+!.env.local.example
+
+# TypeScript
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma generated client
+node_modules/.prisma/

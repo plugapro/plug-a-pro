@@ -1,0 +1,125 @@
+// ─── Vercel Blob — file storage helpers ──────────────────────────────────────
+// Used for: job proof photos, quote attachments, invoice PDFs, avatars
+
+import { put, del, head, type PutBlobResult } from '@vercel/blob'
+import { db } from './db'
+
+const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'application/pdf',
+]
+
+// ─── Upload ───────────────────────────────────────────────────────────────────
+
+export async function uploadJobPhoto(params: {
+  jobId: string
+  file: File
+  label?: 'before' | 'after' | 'evidence' | string
+  uploadedBy: string
+}): Promise<string> {
+  validateFile(params.file)
+
+  const ext = params.file.name.split('.').pop() ?? 'jpg'
+  const key = `jobs/${params.jobId}/${Date.now()}-${params.label ?? 'photo'}.${ext}`
+
+  const blob = await put(key, params.file, {
+    access: 'public',
+    contentType: params.file.type,
+  })
+
+  await db.attachment.create({
+    data: {
+      jobId: params.jobId,
+      url: blob.url,
+      blobKey: blob.pathname,
+      mimeType: params.file.type,
+      sizeBytes: params.file.size,
+      label: params.label,
+      uploadedBy: params.uploadedBy,
+    },
+  })
+
+  return blob.url
+}
+
+export async function uploadQuoteAttachment(params: {
+  quoteId: string
+  file: File
+  uploadedBy: string
+}): Promise<string> {
+  validateFile(params.file)
+
+  const ext = params.file.name.split('.').pop() ?? 'jpg'
+  const key = `quotes/${params.quoteId}/${Date.now()}.${ext}`
+
+  const blob = await put(key, params.file, {
+    access: 'public',
+    contentType: params.file.type,
+  })
+
+  await db.attachment.create({
+    data: {
+      quoteId: params.quoteId,
+      url: blob.url,
+      blobKey: blob.pathname,
+      mimeType: params.file.type,
+      sizeBytes: params.file.size,
+      uploadedBy: params.uploadedBy,
+    },
+  })
+
+  return blob.url
+}
+
+// ─── Delete ───────────────────────────────────────────────────────────────────
+
+export async function deleteAttachment(attachmentId: string): Promise<void> {
+  const attachment = await db.attachment.findUnique({
+    where: { id: attachmentId },
+  })
+
+  if (!attachment) return
+
+  await del(attachment.blobKey)
+  await db.attachment.delete({ where: { id: attachmentId } })
+}
+
+// ─── Client upload URL (for direct browser → Blob uploads) ───────────────────
+// Use this in Server Actions to generate a signed upload URL.
+// The client uploads directly to Blob without going through your server.
+
+export async function getUploadUrl(params: {
+  filename: string
+  contentType: string
+  path: string // e.g. 'jobs/job_123'
+}): Promise<{ url: string; pathname: string }> {
+  if (!ALLOWED_MIME_TYPES.includes(params.contentType)) {
+    throw new Error(`File type not allowed: ${params.contentType}`)
+  }
+
+  const ext = params.filename.split('.').pop() ?? 'bin'
+  const key = `${params.path}/${Date.now()}.${ext}`
+
+  // For client uploads, use Vercel Blob client upload
+  // See: https://vercel.com/docs/storage/vercel-blob/client-upload
+  return { url: key, pathname: key }
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+function validateFile(file: File): void {
+  if (file.size > MAX_PHOTO_SIZE) {
+    throw new Error(
+      `File too large. Maximum size is ${MAX_PHOTO_SIZE / 1024 / 1024}MB.`
+    )
+  }
+  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    throw new Error(
+      `File type not allowed. Accepted: ${ALLOWED_MIME_TYPES.join(', ')}`
+    )
+  }
+}
