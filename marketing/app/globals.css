@@ -83,6 +83,8 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
   --accent-brand: oklch(0.55 0.2 250);
+  --accent-pink: oklch(0.65 0.22 340);
+  --accent-green-wa: oklch(0.52 0.17 145);
 }
 
 .dark {
@@ -118,6 +120,8 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
   --accent-brand: oklch(0.65 0.2 250);
+  --accent-pink: oklch(0.72 0.22 340);
+  --accent-green-wa: oklch(0.62 0.17 145);
 }
 
 @layer base {
