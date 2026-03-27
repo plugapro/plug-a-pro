@@ -23,3 +23,8 @@ Thumbs.db
 
 # Prisma generated client
 node_modules/.prisma/
+.vercel
+.env*.local
+
+# Supabase local config (project ref, pooler url — per-machine)
+supabase/.temp/

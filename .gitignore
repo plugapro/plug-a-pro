@@ -9,3 +9,9 @@ Thumbs.db
 *.swo
 
 # Per-app ignores are in each app's own .gitignore
+
+# MCP tooling
+.playwright-mcp/
+
+# Media source files (raw assets — processed outputs go into app public/ dirs)
+media assets/
