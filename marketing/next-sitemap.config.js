@@ -20,7 +20,7 @@ function bareSlug(veliteSlug) {
 
 /** @type {import('next-sitemap').IConfig} */
 module.exports = {
-  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://plugapro.co.za",
+  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://myproduct.com",
   generateRobotsTxt: true,
   robotsTxtOptions: {
     policies: [

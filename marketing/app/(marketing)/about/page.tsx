@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { buildMetadata, siteConfig } from "@/lib/metadata";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 
-export const metadata: Metadata = buildMetadata({ title: "About", noIndex: true });
+export const metadata: Metadata = buildMetadata({ title: "About" });
 
 export default function AboutPage() {
   return (

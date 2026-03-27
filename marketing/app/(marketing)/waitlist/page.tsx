@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
 import { WaitlistForm } from "@/components/marketing/WaitlistForm";
 
-export const metadata: Metadata = buildMetadata({ title: "Join the Waitlist", noIndex: true });
+export const metadata: Metadata = buildMetadata({ title: "Join the Waitlist" });
 
 export default function WaitlistPage() {
   return (

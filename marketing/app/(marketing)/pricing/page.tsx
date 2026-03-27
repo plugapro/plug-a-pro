@@ -3,7 +3,7 @@ import { buildMetadata } from "@/lib/metadata";
 import { PricingCards } from "@/components/marketing/PricingCards";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 
-export const metadata: Metadata = buildMetadata({ title: "Pricing", noIndex: true });
+export const metadata: Metadata = buildMetadata({ title: "Pricing" });
 
 export default function PricingPage() {
   return (

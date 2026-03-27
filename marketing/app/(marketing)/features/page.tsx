@@ -3,7 +3,7 @@ import { buildMetadata } from "@/lib/metadata";
 import { Features } from "@/components/marketing/Features";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 
-export const metadata: Metadata = buildMetadata({ title: "Features", noIndex: true });
+export const metadata: Metadata = buildMetadata({ title: "Features" });
 
 export default function FeaturesPage() {
   return (

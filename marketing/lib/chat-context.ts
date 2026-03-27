@@ -10,7 +10,10 @@ Q: What is ${siteConfig.name}?
 A: ${siteConfig.description}
 
 Q: How does pricing work?
-A: Plug-A-Pro is currently free during our pilot phase. Pricing will be announced after the pilot. No credit card required.
+A: Free, Pro ($29/mo), and Enterprise (custom) plans. See /pricing.
+
+Q: Is there a free trial?
+A: Yes — no credit card required.
 
 Q: How do I get support?
 A: Use the chat widget or visit /contact.

@@ -43,4 +43,7 @@ next-env.d.ts
 
 # velite generated content
 .velite/
-.env*.local
+
+# Generated sitemaps and robots (next-sitemap generates these on build)
+public/robots.txt
+public/sitemap*.xml
