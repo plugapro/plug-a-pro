@@ -1,6 +1,6 @@
-// Field Service SaaS — Prisma Schema
-// Full data model covering the complete job lifecycle:
-// Business → Service → Customer → Quote → Booking → Job → Payment → Invoice
+// Plug-A-Pro — Marketplace Schema
+// Domain model: homeowners post job requests → platform matches to independent providers
+// → providers accept leads → quote → book → execute → pay → review
 
 generator client {
   provider = "prisma-client-js"
@@ -12,125 +12,34 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ─── Tenant ───────────────────────────────────────────────────────────────────
-
-model Business {
-  id          String   @id @default(cuid())
-  slug        String   @unique
-  name        String
-  phone       String?
-  email       String?
-  address     String?
-  logoUrl     String?
-  timezone    String   @default("Africa/Johannesburg")
-  currency    String   @default("ZAR")
-  active      Boolean  @default(true)
-  settings    Json     @default("{}")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  services    Service[]
-  technicians Technician[]
-  customers   Customer[]
-  bookings    Booking[]
-  quotes      Quote[]
-  slots       Slot[]
-  messages    MessageEvent[]
-  auditLogs   AuditLog[]
-
-  @@map("businesses")
-}
-
-// ─── Service catalogue ────────────────────────────────────────────────────────
-
-model Service {
-  id           String      @id @default(cuid())
-  businessId   String
-  name         String
-  slug         String
-  description  String?
-  category     String
-  pricingType  PricingType @default(FIXED)
-  basePrice    Decimal?    @db.Decimal(10, 2)
-  callOutFee   Decimal?    @db.Decimal(10, 2)
-  duration     Int         // minutes
-  bufferTime   Int         @default(30) // minutes between jobs
-  imageUrl     String?
-  active       Boolean     @default(true)
-  sortOrder    Int         @default(0)
-  metadata     Json        @default("{}")
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  business     Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  pricingRules PricingRule[]
-  serviceAreas ServiceArea[]
-  bookings     Booking[]
-  quotes       Quote[]
-
-  @@unique([businessId, slug])
-  @@map("services")
-}
-
-model PricingRule {
-  id          String   @id @default(cuid())
-  serviceId   String
-  name        String
-  description String?
-  priceAdjust Decimal  @db.Decimal(10, 2) // positive = add-on, negative = discount
-  required    Boolean  @default(false)
-  active      Boolean  @default(true)
-
-  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  @@map("pricing_rules")
-}
-
-model ServiceArea {
-  id         String  @id @default(cuid())
-  serviceId  String
-  suburb     String
-  city       String
-  province   String
-  postalCode String?
-
-  service    Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  @@map("service_areas")
-}
-
 // ─── Customers ────────────────────────────────────────────────────────────────
 
 model Customer {
-  id         String    @id @default(cuid())
-  businessId String
+  id        String   @id @default(cuid())
   // userId is nullable — WhatsApp-only customers start without a Supabase account.
-  // When the same customer authenticates on the PWA (phone OTP), linkCustomerAccount()
-  // fills this in. After that, both channels resolve to the same record.
-  userId     String?   @unique
-  phone      String
-  email      String?
-  name       String
-  notes      String?
-  active     Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  // When the customer authenticates on the PWA (phone OTP), linkCustomerAccount()
+  // fills this in. Both channels resolve to the same record.
+  userId    String?  @unique
+  phone     String   @unique
+  email     String?
+  name      String
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  addresses  Address[]
-  bookings   Booking[]
-  quotes     Quote[]
-  ratings    Rating[]
-  messages   MessageEvent[]
+  addresses   Address[]
+  jobRequests JobRequest[]
+  ratings     Review[]
+  messages    MessageEvent[]
 
-  @@unique([businessId, phone])
   @@map("customers")
 }
 
 model Address {
   id         String   @id @default(cuid())
   customerId String
-  label      String?  // "Home", "Office", etc.
+  label      String?  // "Home", "Office"
   street     String
   suburb     String
   city       String
@@ -141,191 +50,255 @@ model Address {
   isDefault  Boolean  @default(false)
   createdAt  DateTime @default(now())
 
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  bookings   Booking[]
-  quotes     Quote[]
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  jobRequests JobRequest[]
 
   @@map("addresses")
 }
 
-// ─── Quotes ───────────────────────────────────────────────────────────────────
+// ─── Providers (independent workers) ─────────────────────────────────────────
 
-model Quote {
-  id           String      @id @default(cuid())
-  businessId   String
-  customerId   String
-  serviceId    String
-  addressId    String?
-  status       QuoteStatus @default(NEW)
-  description  String?
-  quotedPrice  Decimal?    @db.Decimal(10, 2)
-  notes        String?
-  expiresAt    DateTime?
-  reviewedAt   DateTime?
-  reviewedById String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  business     Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer     Customer    @relation(fields: [customerId], references: [id])
-  service      Service     @relation(fields: [serviceId], references: [id])
-  address      Address?    @relation(fields: [addressId], references: [id])
-  attachments  Attachment[]
-  booking      Booking?
-
-  @@map("quotes")
-}
-
-// ─── Slots and availability ───────────────────────────────────────────────────
-
-model Slot {
-  id           String    @id @default(cuid())
-  businessId   String
-  technicianId String?
-  date         DateTime  @db.Date
-  windowStart  String    // "09:00"
-  windowEnd    String    // "12:00"
-  capacity     Int       @default(1)
-  booked       Int       @default(0)
-  blocked      Boolean   @default(false)
-  blockedNote  String?
-  createdAt    DateTime  @default(now())
-
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  technician   Technician? @relation(fields: [technicianId], references: [id])
-  bookings     Booking[]
-
-  @@map("slots")
-}
-
-// ─── Bookings ─────────────────────────────────────────────────────────────────
-
-model Booking {
-  id             String        @id @default(cuid())
-  businessId     String
-  customerId     String
-  serviceId      String
-  addressId      String
-  quoteId        String?       @unique
-  slotId         String?
-  technicianId   String?
-  status         BookingStatus @default(PENDING_PAYMENT)
-  totalAmount    Decimal       @db.Decimal(10, 2)
-  depositAmount  Decimal?      @db.Decimal(10, 2)
-  scheduledDate  DateTime?
-  scheduledWindow String?      // "09:00-12:00"
-  notes          String?
-  internalNotes  String?
-  cancelReason   String?
-  rescheduleCount Int          @default(0)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer       Customer      @relation(fields: [customerId], references: [id])
-  service        Service       @relation(fields: [serviceId], references: [id])
-  address        Address       @relation(fields: [addressId], references: [id])
-  quote          Quote?        @relation(fields: [quoteId], references: [id])
-  slot           Slot?         @relation(fields: [slotId], references: [id])
-  technician     Technician?   @relation(fields: [technicianId], references: [id])
-  job            Job?
-  payment        Payment?
-  invoice        Invoice?
-  messages       MessageEvent[]
-
-  @@map("bookings")
-}
-
-// ─── Technicians ──────────────────────────────────────────────────────────────
-
-model Technician {
-  id           String     @id @default(cuid())
-  businessId   String
-  userId       String?    @unique // Supabase auth user ID
-  name         String
-  phone        String
+model Provider {
+  id           String   @id @default(cuid())
+  userId       String?  @unique // Supabase auth user ID
+  phone        String   @unique
   email        String?
-  skills       String[]   @default([])
-  serviceAreas String[]   @default([])
-  active       Boolean    @default(true)
+  name         String
+  bio          String?
+  skills       String[] @default([]) // category slugs: "plumbing", "painting", etc.
+  serviceAreas String[] @default([]) // suburb/city names they cover
+  active       Boolean  @default(true)
+  verified     Boolean  @default(false)
   avatarUrl    String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  business          Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  schedule          ProviderSchedule[]
+  leads             Lead[]
   jobs              Job[]
-  bookings          Booking[]
-  availability      Availability[]
-  slots             Slot[]
+  reviews           Review[]
   pushSubscriptions PushSubscription[]
+  applications      ProviderApplication[]
 
-  @@unique([businessId, phone])
-  @@map("technicians")
+  @@map("providers")
+}
+
+model ProviderSchedule {
+  id         String   @id @default(cuid())
+  providerId String
+  dayOfWeek  Int      // 0=Sun, 1=Mon, ..., 6=Sat
+  startTime  String   // "08:00"
+  endTime    String   // "17:00"
+  active     Boolean  @default(true)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, dayOfWeek])
+  @@map("provider_schedule")
 }
 
 model PushSubscription {
-  id           String     @id @default(cuid())
-  technicianId String
-  endpoint     String     @unique
-  p256dh       String
-  auth         String
-  createdAt    DateTime   @default(now())
+  id         String   @id @default(cuid())
+  providerId String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  createdAt  DateTime @default(now())
 
-  technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@map("push_subscriptions")
 }
 
-model Availability {
+// ─── Provider applications ────────────────────────────────────────────────────
+
+model ProviderApplication {
+  id           String            @id @default(cuid())
+  providerId   String?           // set after account is created on approval
+  phone        String
+  name         String
+  skills       String[]          @default([])
+  serviceAreas String[]          @default([])
+  idNumber     String?
+  status       ApplicationStatus @default(PENDING)
+  notes        String?           // admin review notes
+  reviewedAt   DateTime?
+  reviewedById String?
+  submittedAt  DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  provider Provider? @relation(fields: [providerId], references: [id])
+
+  @@map("provider_applications")
+}
+
+// ─── Job Requests ─────────────────────────────────────────────────────────────
+// A customer's initial request. Platform validates and opens it for matching.
+
+model JobRequest {
+  id          String           @id @default(cuid())
+  customerId  String
+  addressId   String?
+  category    String           // "plumbing" | "painting" | "garden" | etc.
+  title       String           // short description: "Leaking tap in bathroom"
+  description String           // full details provided by customer
+  status      JobRequestStatus @default(PENDING_VALIDATION)
+  expiresAt   DateTime?        // if no match within window, mark EXPIRED
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  customer    Customer     @relation(fields: [customerId], references: [id])
+  address     Address?     @relation(fields: [addressId], references: [id])
+  attachments Attachment[]
+  leads       Lead[]
+  match       Match?
+
+  @@map("job_requests")
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+// Platform broadcasts a job request to matched providers.
+// First provider to accept the lead gets the match.
+
+model Lead {
   id           String     @id @default(cuid())
-  technicianId String
-  dayOfWeek    Int        // 0=Sun, 1=Mon, ..., 6=Sat
-  startTime    String     // "08:00"
-  endTime      String     // "17:00"
-  active       Boolean    @default(true)
+  jobRequestId String
+  providerId   String
+  status       LeadStatus @default(SENT)
+  sentAt       DateTime   @default(now())
+  respondedAt  DateTime?
+  expiresAt    DateTime?  // provider must respond within this window
 
-  technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  provider   Provider   @relation(fields: [providerId], references: [id])
 
-  @@unique([technicianId, dayOfWeek])
-  @@map("technician_availability")
+  @@unique([jobRequestId, providerId])
+  @@map("leads")
+}
+
+// ─── Match ────────────────────────────────────────────────────────────────────
+// Once a provider accepts a lead, a Match is created linking customer to provider.
+
+model Match {
+  id              String      @id @default(cuid())
+  jobRequestId    String      @unique
+  providerId      String
+  status          MatchStatus @default(MATCHED)
+  inspectionNeeded Boolean    @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  jobRequest        JobRequest        @relation(fields: [jobRequestId], references: [id])
+  inspectionSlots   InspectionSlot[]
+  quotes            Quote[]
+  booking           Booking?
+
+  @@map("matches")
+}
+
+// ─── Inspection ───────────────────────────────────────────────────────────────
+// Optional pre-quote site visit to assess scope before quoting.
+
+model InspectionSlot {
+  id          String           @id @default(cuid())
+  matchId     String
+  proposedAt  DateTime         // provider proposes a time
+  confirmedAt DateTime?        // customer confirms
+  completedAt DateTime?
+  status      InspectionStatus @default(PROPOSED)
+  notes       String?
+
+  match       Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+
+  @@map("inspection_slots")
+}
+
+// ─── Quotes ───────────────────────────────────────────────────────────────────
+// Provider's formal quote for the job. Customer approves before booking is created.
+
+model Quote {
+  id          String      @id @default(cuid())
+  matchId     String
+  amount      Decimal     @db.Decimal(10, 2)
+  description String      // what is included in the quoted price
+  validUntil  DateTime?
+  status      QuoteStatus @default(PENDING)
+  approvedAt  DateTime?
+  declinedAt  DateTime?
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  booking     Booking?
+
+  @@map("quotes")
+}
+
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+// Created once a quote is approved. Represents a confirmed, scheduled job.
+
+model Booking {
+  id              String        @id @default(cuid())
+  matchId         String        @unique
+  quoteId         String        @unique
+  status          BookingStatus @default(SCHEDULED)
+  scheduledDate   DateTime
+  scheduledWindow String?       // "09:00-12:00"
+  notes           String?
+  cancelReason    String?
+  rescheduleCount Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  match    Match    @relation(fields: [matchId], references: [id])
+  quote    Quote    @relation(fields: [quoteId], references: [id])
+  job      Job?
+  payment  Payment?
+  invoice  Invoice?
+  messages MessageEvent[]
+
+  @@map("bookings")
 }
 
 // ─── Jobs (execution) ─────────────────────────────────────────────────────────
 
 model Job {
-  id             String       @id @default(cuid())
-  bookingId      String       @unique
-  technicianId   String
-  status         JobStatus    @default(ASSIGNED)
+  id             String    @id @default(cuid())
+  bookingId      String    @unique
+  providerId     String
+  status         JobStatus @default(SCHEDULED)
   notes          String?
   completionNote String?
   arrivedAt      DateTime?
   startedAt      DateTime?
   completedAt    DateTime?
   failureReason  String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  booking        Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  technician     Technician   @relation(fields: [technicianId], references: [id])
-  photos         Attachment[]
-  extras         ExtraWork[]
-  statusHistory  JobStatusEvent[]
+  booking       Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  provider      Provider         @relation(fields: [providerId], references: [id])
+  photos        Attachment[]
+  extras        ExtraWork[]
+  statusHistory JobStatusEvent[]
+  payout        ProviderPayout?
 
   @@map("jobs")
 }
 
 model JobStatusEvent {
-  id         String    @id @default(cuid())
+  id         String     @id @default(cuid())
   jobId      String
   fromStatus JobStatus?
   toStatus   JobStatus
-  actorId    String    // user ID of who triggered the change
-  actorRole  String    // 'technician' | 'admin' | 'system'
+  actorId    String     // user ID of who triggered the change
+  actorRole  String     // 'provider' | 'customer' | 'admin' | 'system'
   notes      String?
-  timestamp  DateTime  @default(now())
+  timestamp  DateTime   @default(now())
 
-  job        Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@map("job_status_events")
 }
@@ -342,7 +315,7 @@ model ExtraWork {
   approvedByName String?
   createdAt      DateTime       @default(now())
 
-  job            Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@map("extra_work")
 }
@@ -350,46 +323,66 @@ model ExtraWork {
 // ─── Attachments ──────────────────────────────────────────────────────────────
 
 model Attachment {
-  id         String   @id @default(cuid())
-  jobId      String?
-  quoteId    String?
-  url        String
-  blobKey    String   // Vercel Blob key for deletion
-  mimeType   String
-  sizeBytes  Int
-  label      String?  // "before", "after", "receipt"
-  uploadedBy String   // user ID
-  createdAt  DateTime @default(now())
+  id               String   @id @default(cuid())
+  jobId            String?
+  inspectionSlotId String?
+  jobRequestId     String?
+  url              String
+  blobKey          String   // Vercel Blob key for deletion
+  mimeType         String
+  sizeBytes        Int
+  label            String?  // "before", "after", "inspection", "receipt"
+  uploadedBy       String   // user ID
+  createdAt        DateTime @default(now())
 
-  job        Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  quote      Quote?   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  job            Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  inspectionSlot InspectionSlot? @relation(fields: [inspectionSlotId], references: [id], onDelete: Cascade)
+  jobRequest     JobRequest?     @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
 
   @@map("attachments")
 }
 
-// ─── Payments ─────────────────────────────────────────────────────────────────
+// ─── Payments & Payouts ───────────────────────────────────────────────────────
 
 model Payment {
-  id              String        @id @default(cuid())
-  bookingId       String        @unique
-  status          PaymentStatus @default(PENDING)
-  amount          Decimal       @db.Decimal(10, 2)
-  currency        String        @default("ZAR")
-  pspProvider     String?       // "peach" | "yoco" | "payfast"
-  pspReference    String?       // PSP transaction ID
-  pspCheckoutId   String?       // PSP checkout session ID
-  checkoutUrl     String?
-  paidAt          DateTime?
-  failureReason   String?
-  refundedAmount  Decimal?      @db.Decimal(10, 2)
-  refundedAt      DateTime?
-  metadata        Json          @default("{}")
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  bookingId      String        @unique
+  status         PaymentStatus @default(PENDING)
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("ZAR")
+  pspProvider    String?       // "peach" | "yoco" | "payfast"
+  pspReference   String?
+  pspCheckoutId  String?
+  checkoutUrl    String?
+  paidAt         DateTime?
+  failureReason  String?
+  refundedAmount Decimal?      @db.Decimal(10, 2)
+  refundedAt     DateTime?
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@map("payments")
+}
+
+model ProviderPayout {
+  id             String       @id @default(cuid())
+  jobId          String       @unique
+  providerId     String
+  grossAmount    Decimal      @db.Decimal(10, 2) // customer paid amount
+  commissionRate Decimal      @db.Decimal(5, 4)  // e.g. 0.1500 = 15%
+  commissionAmt  Decimal      @db.Decimal(10, 2)
+  netAmount      Decimal      @db.Decimal(10, 2) // gross - commission
+  status         PayoutStatus @default(PENDING)
+  processedAt    DateTime?
+  reference      String?      // bank transfer reference
+  createdAt      DateTime     @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("provider_payouts")
 }
 
 model Invoice {
@@ -402,43 +395,91 @@ model Invoice {
   taxAmount   Decimal?  @db.Decimal(10, 2)
   createdAt   DateTime  @default(now())
 
-  booking     Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@map("invoices")
+}
+
+// ─── Reviews ──────────────────────────────────────────────────────────────────
+
+model Review {
+  id           String     @id @default(cuid())
+  jobId        String
+  reviewerType ReviewerType
+  customerId   String?    // set when customer reviews provider
+  providerId   String?    // set when provider rates customer
+  score        Int        // 1-5
+  comment      String?
+  createdAt    DateTime   @default(now())
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+  provider Provider? @relation(fields: [providerId], references: [id])
+
+  @@unique([jobId, reviewerType])
+  @@map("reviews")
+}
+
+// ─── Disputes ─────────────────────────────────────────────────────────────────
+
+model Dispute {
+  id          String        @id @default(cuid())
+  jobId       String
+  raisedById  String        // user ID of who raised it
+  raisedByRole String       // 'customer' | 'provider'
+  reason      String
+  status      DisputeStatus @default(OPEN)
+  resolution  String?
+  resolvedAt  DateTime?
+  resolvedById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("disputes")
 }
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
 
 model MessageEvent {
-  id           String         @id @default(cuid())
-  businessId   String
-  customerId   String?
-  bookingId    String?
-  channel      MessageChannel
-  templateName String?
-  body         String?        // for non-template messages
-  to           String         // phone number or email
-  externalId   String?        // WhatsApp message ID, email ID
-  status       MessageStatus  @default(QUEUED)
-  sentAt       DateTime?
-  deliveredAt  DateTime?
-  readAt       DateTime?
+  id            String         @id @default(cuid())
+  customerId    String?
+  bookingId     String?
+  channel       MessageChannel
+  templateName  String?
+  body          String?
+  to            String         // phone number or email
+  externalId    String?        // WhatsApp message ID
+  status        MessageStatus  @default(QUEUED)
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
   failureReason String?
-  metadata     Json           @default("{}")
-  createdAt    DateTime       @default(now())
+  metadata      Json           @default("{}")
+  createdAt     DateTime       @default(now())
 
-  business     Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer     Customer?      @relation(fields: [customerId], references: [id])
-  booking      Booking?       @relation(fields: [bookingId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  booking  Booking?  @relation(fields: [bookingId], references: [id])
 
   @@map("message_events")
 }
 
-// ─── Audit and quality ────────────────────────────────────────────────────────
+// Per-phone conversation session — drives the WhatsApp bot state machine
+model Conversation {
+  id        String   @id @default(cuid())
+  phone     String   @unique // E.164 WhatsApp number — one session per number
+  flow      String   // 'idle' | 'job_request' | 'registration' | 'status' | 'help'
+  step      String   // current step within the flow
+  data      Json     @default("{}") // accumulated session data
+  expiresAt DateTime // TTL: reset to welcome after 30min inactivity
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("conversations")
+}
+
+// ─── Audit ────────────────────────────────────────────────────────────────────
 
 model AuditLog {
   id         String   @id @default(cuid())
-  businessId String
   actorId    String
   actorRole  String
   action     String   // e.g. "booking.cancel", "job.reassign", "refund.issue"
@@ -450,96 +491,71 @@ model AuditLog {
   userAgent  String?
   timestamp  DateTime @default(now())
 
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
   @@map("audit_logs")
-}
-
-model Rating {
-  id         String   @id @default(cuid())
-  customerId String
-  bookingId  String   @unique
-  score      Int      // 1-5
-  comment    String?
-  createdAt  DateTime @default(now())
-
-  customer   Customer @relation(fields: [customerId], references: [id])
-
-  @@map("ratings")
-}
-
-// ─── WhatsApp engagement layer ────────────────────────────────────────────────
-
-// Per-phone conversation session — drives the WhatsApp bot state machine
-model Conversation {
-  id          String   @id @default(cuid())
-  phone       String   // E.164 WhatsApp number
-  businessId  String
-  flow        String   // 'idle' | 'booking' | 'registration' | 'status' | 'help'
-  step        String   // current step within the flow
-  data        Json     @default("{}") // accumulated form data (address, serviceId, etc.)
-  expiresAt   DateTime // TTL: reset to welcome after 30min inactivity
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([phone, businessId])
-  @@map("conversations")
-}
-
-// Technician/service provider registration submitted via WhatsApp
-model TechnicianApplication {
-  id           String            @id @default(cuid())
-  businessId   String
-  phone        String
-  name         String
-  skills       String[]          @default([])
-  serviceAreas String[]          @default([])
-  idNumber     String?
-  status       ApplicationStatus @default(PENDING)
-  notes        String?           // admin review notes
-  reviewedAt   DateTime?
-  reviewedById String?
-  submittedAt  DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-
-  @@map("technician_applications")
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-enum PricingType {
-  FIXED
-  QUOTE_REQUIRED
+enum JobRequestStatus {
+  PENDING_VALIDATION // just submitted, platform reviewing
+  OPEN               // validated, broadcasting leads to providers
+  MATCHING           // at least one lead sent, awaiting acceptance
+  MATCHED            // a provider accepted — Match created
+  EXPIRED            // no provider accepted within the window
+  CANCELLED          // customer cancelled before match
+}
+
+enum LeadStatus {
+  SENT      // sent to provider, awaiting response
+  VIEWED    // provider opened the lead
+  ACCEPTED  // provider accepted — triggers Match creation
+  DECLINED  // provider passed on this job
+  EXPIRED   // provider didn't respond in time
+}
+
+enum MatchStatus {
+  MATCHED                   // provider accepted lead
+  INSPECTION_SCHEDULED      // inspection visit arranged
+  INSPECTION_COMPLETE       // inspection done, awaiting quote
+  QUOTED                    // provider submitted a quote
+  QUOTE_APPROVED            // customer approved quote — Booking created
+  QUOTE_DECLINED            // customer declined quote
+  CANCELLED                 // cancelled at match stage
+}
+
+enum InspectionStatus {
+  PROPOSED   // provider proposed a time
+  CONFIRMED  // customer confirmed the slot
+  COMPLETED  // inspection done
+  CANCELLED  // cancelled before completion
 }
 
 enum QuoteStatus {
-  NEW
-  UNDER_REVIEW
-  QUOTED
-  APPROVED
-  DECLINED
-  EXPIRED
+  PENDING   // submitted by provider, awaiting customer decision
+  APPROVED  // customer approved — Booking created
+  DECLINED  // customer declined
+  EXPIRED   // customer didn't respond in time
+  REVISED   // provider submitted a new version
 }
 
 enum BookingStatus {
-  PENDING_PAYMENT
-  CONFIRMED
-  SCHEDULED
-  RESCHEDULED
-  CANCELLED
-  COMPLETED
+  SCHEDULED   // confirmed, date set
+  RESCHEDULED // moved to a new date
+  CANCELLED   // cancelled after booking
+  COMPLETED   // job finished
 }
 
 enum JobStatus {
-  ASSIGNED
-  EN_ROUTE
-  ARRIVED
-  STARTED
-  PAUSED
-  AWAITING_APPROVAL
-  COMPLETED
-  FAILED
-  CALLBACK_REQUIRED
+  SCHEDULED         // booking confirmed, job not started
+  EN_ROUTE          // provider travelling to site
+  ARRIVED           // provider on site
+  STARTED           // work in progress
+  PAUSED            // paused (waiting for materials, etc.)
+  AWAITING_APPROVAL // extra work submitted, waiting for customer
+  PENDING_COMPLETION_CONFIRMATION // work done, customer needs to confirm
+  COMPLETED         // customer confirmed complete
+  FAILED            // job could not be completed
+  CALLBACK_REQUIRED // provider flagged need for follow-up
 }
 
 enum PaymentStatus {
@@ -551,10 +567,24 @@ enum PaymentStatus {
   PARTIALLY_REFUNDED
 }
 
+enum PayoutStatus {
+  PENDING    // payment received, payout not yet processed
+  PROCESSING // transfer initiated
+  PAID       // funds transferred to provider
+  FAILED     // transfer failed
+  ON_HOLD    // held due to dispute
+}
+
 enum ApprovalStatus {
   PENDING
   APPROVED
   DECLINED
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum MessageChannel {
@@ -571,8 +601,16 @@ enum MessageStatus {
   FAILED
 }
 
-enum ApplicationStatus {
-  PENDING
-  APPROVED
-  REJECTED
+enum ReviewerType {
+  CUSTOMER // customer reviewing the provider
+  PROVIDER // provider rating the customer
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_CUSTOMER // resolved in customer's favour
+  RESOLVED_PROVIDER // resolved in provider's favour
+  RESOLVED_SPLIT    // partial refund / split resolution
+  CLOSED
 }
