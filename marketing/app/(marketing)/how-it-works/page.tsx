@@ -149,7 +149,7 @@ export default function HowItWorksPage() {
       <div className="py-16 px-4">
         <div className="max-w-3xl mx-auto">
           <FlowSection
-            label="Customer flow"
+            label="Your customer journey"
             title="From job description to done"
             steps={CUSTOMER_STEPS}
           />
