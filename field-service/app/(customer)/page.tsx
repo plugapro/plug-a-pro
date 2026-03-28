@@ -7,7 +7,11 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
-import { Wrench, Calendar, Star, ChevronRight } from 'lucide-react'
+import {
+  Star, ChevronRight,
+  Wrench, Calendar,
+  Droplets, Paintbrush, Leaf, Hammer, Plug, Zap, House,
+} from 'lucide-react'
 
 export const metadata = buildMetadata({
   title: 'Request trusted home services',
@@ -15,14 +19,14 @@ export const metadata = buildMetadata({
 })
 
 const CATEGORIES = [
-  { slug: 'plumbing',    name: 'Plumbing',     description: 'Leaks, installations, drain clearing and more.' },
-  { slug: 'painting',    name: 'Painting',     description: 'Interior and exterior painting services.' },
-  { slug: 'garden',      name: 'Garden',       description: 'Lawn care, landscaping, and tree trimming.' },
-  { slug: 'handyman',    name: 'Handyman',     description: 'General repairs and odd jobs around the home.' },
-  { slug: 'appliances',  name: 'Appliances',   description: 'Repairs and installation of home appliances.' },
-  { slug: 'electrical',  name: 'Electrical',   description: 'Wiring, fault-finding, and compliance certificates.' },
-  { slug: 'diy',         name: 'DIY & Assembly', description: 'Flat-pack assembly, shelving, and mounting.' },
-  { slug: 'roofing',     name: 'Roofing',      description: 'Roof repairs, waterproofing, and inspections.' },
+  { slug: 'plumbing',   name: 'Plumbing',      description: 'Leaks, installations, drain clearing and more.',  icon: Droplets    },
+  { slug: 'painting',   name: 'Painting',      description: 'Interior and exterior painting services.',         icon: Paintbrush  },
+  { slug: 'garden',     name: 'Garden',        description: 'Lawn care, landscaping, and tree trimming.',       icon: Leaf        },
+  { slug: 'handyman',   name: 'Handyman',      description: 'General repairs and odd jobs around the home.',    icon: Hammer      },
+  { slug: 'appliances', name: 'Appliances',    description: 'Repairs and installation of home appliances.',     icon: Plug        },
+  { slug: 'electrical', name: 'Electrical',    description: 'Wiring, fault-finding, and compliance certificates.', icon: Zap      },
+  { slug: 'diy',        name: 'DIY & Assembly', description: 'Flat-pack assembly, shelving, and mounting.',     icon: Wrench      },
+  { slug: 'roofing',    name: 'Roofing',       description: 'Roof repairs, waterproofing, and inspections.',   icon: House       },
 ]
 
 export default async function CustomerHomePage() {
@@ -56,7 +60,7 @@ export default async function CustomerHomePage() {
       </section>
 
       {/* How it works */}
-      <section className="border-b bg-zinc-50 px-4 py-14 dark:bg-zinc-900/50">
+      <section className="border-b border-zinc-800 bg-zinc-900/50 px-4 py-14">
         <div className="mx-auto max-w-3xl">
           <h2 className="mb-10 text-center text-sm font-semibold uppercase tracking-widest text-muted-foreground">
             How it works
@@ -96,33 +100,37 @@ export default async function CustomerHomePage() {
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            {CATEGORIES.map((cat) => (
-              <Link
-                key={cat.slug}
-                href={`/book/${cat.slug}`}
-                className="group flex items-start justify-between rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold leading-snug group-hover:text-primary">
-                    {cat.name}
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {cat.description}
-                  </p>
-                </div>
-                <div className="ml-4 shrink-0">
-                  <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                </div>
-              </Link>
-            ))}
+            {CATEGORIES.map((cat) => {
+              const Icon = cat.icon
+              return (
+                <Link
+                  key={cat.slug}
+                  href={`/book/${cat.slug}`}
+                  className="group flex items-center rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50"
+                >
+                  <div className="mr-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold leading-snug group-hover:text-primary">
+                      {cat.name}
+                    </p>
+                    <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                      {cat.description}
+                    </p>
+                  </div>
+                  <ChevronRight className="ml-3 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                </Link>
+              )
+            })}
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t px-4 py-8 text-center">
+      <footer className="border-t border-zinc-800 px-4 py-8 text-center">
         <p className="text-xs text-muted-foreground">
-          Powered by Field Service Platform
+          © 2026 Plug-A-Pro. All rights reserved.
         </p>
       </footer>
     </div>
