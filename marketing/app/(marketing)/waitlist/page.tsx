@@ -16,7 +16,7 @@ export default function WaitlistPage() {
       </p>
       <p className="text-muted-foreground mb-8">
         Join the list and we&apos;ll reach out on WhatsApp when you can book your
-        first job — or start receiving leads as a worker.
+        first job, or start getting work as a worker.
       </p>
       <WaitlistForm />
       <p className="text-xs text-muted-foreground mt-6">

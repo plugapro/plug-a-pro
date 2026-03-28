@@ -20,11 +20,11 @@ const BENEFITS = [
   {
     icon: Smartphone,
     title: "Works on your WhatsApp",
-    body: "Get job notifications, say yes or no, and talk to customers — all through the WhatsApp you already use. Nothing to download.",
+    body: "Get job notifications, say yes or no, and talk to customers. All through the WhatsApp you already use. Nothing to download.",
   },
   {
     icon: ShieldCheck,
-    title: "Your price in writing — no arguments",
+    title: "Your price in writing. No arguments.",
     body: "Your quote and any extra work are always written down and approved before you start. No more arguments about what was agreed.",
   },
   {

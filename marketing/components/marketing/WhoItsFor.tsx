@@ -86,7 +86,7 @@ export function WhoItsFor() {
               Get steady local work, on your terms
             </h2>
             <p className="text-muted-foreground mb-6">
-              If you have skills and need more paying customers, Plug-A-Pro brings the work to you. No registered business needed — just your skills and a phone.
+              If you have skills and need more paying customers, Plug-A-Pro brings the work to you. No registered business needed. Just your skills and a phone.
             </p>
             <ul className="space-y-2">
               {WORKER_TYPES.map((type) => (
@@ -105,7 +105,7 @@ export function WhoItsFor() {
             <p className="font-semibold text-lg">What you get as a worker</p>
             {[
               "Only jobs that match your skills and area",
-              "Your price in writing — no more verbal confusion",
+              "Your price in writing. No verbal confusion.",
               "Job photos protect you if there's a dispute",
               "Customer ratings build your name over time",
               "No chasing for cash. Payment goes through the platform.",

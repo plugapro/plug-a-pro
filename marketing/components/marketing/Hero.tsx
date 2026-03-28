@@ -38,12 +38,12 @@ export function Hero() {
           Local help. Real quotes. On WhatsApp.
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-          Get home help done right — nearby workers, quoted in writing, on WhatsApp
+          Get home help done right. Nearby workers, quoted in writing, on WhatsApp.
         </h1>
         <p className="text-xl text-muted-foreground mb-3 max-w-2xl mx-auto">
           Describe your job. We find a vetted local worker near you. You approve
           the price before anything starts. No app downloads, no strangers
-          cold-calling — just WhatsApp.
+          cold-calling. Just WhatsApp.
         </p>
         <p className="text-sm text-muted-foreground mb-10 max-w-lg mx-auto">
           Started a DIY project and got stuck?{" "}

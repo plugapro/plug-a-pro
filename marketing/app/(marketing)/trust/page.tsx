@@ -17,7 +17,7 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "Trust & Safety",
   description:
-    "How Plug-A-Pro protects customers and workers — anonymous communication, worker screening, documented quotes, photo evidence, and dispute mediation.",
+    "How Plug-A-Pro protects customers and workers: anonymous communication, worker screening, written quotes, photo evidence, and dispute mediation.",
 });
 
 const CUSTOMER_PROTECTIONS = [
@@ -34,7 +34,7 @@ const CUSTOMER_PROTECTIONS = [
   {
     icon: FileText,
     title: "Written quotes before any work",
-    body: "No job starts without a written, approved quote. The price and scope are confirmed through the platform. If extra work is needed on-site, it must be quoted and approved separately — in writing — before it proceeds.",
+    body: "No job starts without a written, approved quote. The price and scope are confirmed before work begins. If extra work comes up on-site, it must be quoted and approved in writing before anything happens.",
   },
   {
     icon: Camera,
@@ -52,7 +52,7 @@ const WORKER_PROTECTIONS = [
   {
     icon: Star,
     title: "Reviews build your reputation",
-    body: "Every job you complete adds to your public rating. Customers who book you can see your track record. Good work compounds over time — your reputation is yours to keep.",
+    body: "Every job you complete adds to your public rating. Customers who book you can see your track record. Good work builds over time. Your reputation is yours to keep.",
   },
   {
     icon: Eye,
@@ -102,7 +102,7 @@ export default function TrustPage() {
           Trust &amp; Safety
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          Built on accountability — for both sides
+          Built on accountability. For both sides.
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
           Plug-A-Pro protects customers by documenting everything and screening workers. It protects workers by documenting agreements and holding payments. Everyone benefits from a system that keeps both sides accountable.
@@ -123,11 +123,11 @@ export default function TrustPage() {
             <h2 className="text-2xl font-bold">Anonymous communication</h2>
           </div>
           <p className="text-muted-foreground mb-8 max-w-2xl">
-            By default, customers and workers never exchange personal phone numbers. The platform relays all messages — both parties see platform-generated contact details, not each other&apos;s personal numbers.
+            By default, customers and workers never exchange personal phone numbers. All messages go through Plug-A-Pro. Both parties see Plug-A-Pro contact details, not each other&apos;s personal numbers.
           </p>
           <div className="rounded-2xl border border-border/40 p-6 bg-muted/20">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">How it works:</strong> Messages sent through the platform arrive via the Plug-A-Pro WhatsApp number with context identifying the job. Neither party needs to store the other&apos;s contact details to communicate about the job. Once both parties have met on-site and choose to share contact details directly, they can — but it&apos;s never required.
+              <strong className="text-foreground">How it works:</strong> Messages arrive via the Plug-A-Pro WhatsApp number with details about the job. Neither party needs to store the other&apos;s contact details. Once both parties have met on-site, they can choose to share contact details directly. It&apos;s never required.
             </p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function TrustPage() {
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-3">How we protect workers</h2>
           <p className="text-muted-foreground mb-10 max-w-xl">
-            Independent workers take on real risk with every job. The platform documents agreements so workers aren&apos;t left exposed.
+            Independent workers take on real risk with every job. We document agreements so workers aren&apos;t left exposed.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {WORKER_PROTECTIONS.map((p) => {
@@ -213,7 +213,7 @@ export default function TrustPage() {
             <h2 className="text-2xl font-bold">Dispute resolution</h2>
           </div>
           <p className="text-muted-foreground mb-10 max-w-2xl">
-            When something goes wrong, there is a process. Payment is held while the dispute is reviewed — neither side can walk away with money that hasn&apos;t been earned or refunded.
+            When something goes wrong, there is a process. Payment is held while we review the dispute. Neither side can walk away with money that hasn&apos;t been earned or refunded.
           </p>
           <div className="space-y-0">
             {DISPUTE_STEPS.map((s, i) => (
@@ -247,11 +247,11 @@ export default function TrustPage() {
       {/* What we don't cover */}
       <section className="py-16 px-4">
         <div className="max-w-3xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30">
-          <h2 className="text-xl font-bold mb-4">What this platform isn&apos;t</h2>
+          <h2 className="text-xl font-bold mb-4">What Plug-A-Pro isn&apos;t</h2>
           <ul className="space-y-3 text-sm text-muted-foreground">
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              Workers on Plug-A-Pro are independent contractors, not Plug-A-Pro employees. We facilitate the match and provide accountability infrastructure — we are not the employer.
+              Workers on Plug-A-Pro are independent contractors, not Plug-A-Pro employees. We facilitate the match and provide a fair system for both sides. We are not the employer.
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
@@ -259,7 +259,7 @@ export default function TrustPage() {
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              Workers are responsible for the quality of their own work. Plug-A-Pro provides the accountability framework — reviews, photos, and written quotes — but does not warrant the outcome of any job.
+              Workers are responsible for the quality of their own work. Plug-A-Pro provides the framework: reviews, photos, and written quotes. We do not warrant the outcome of any job.
             </li>
           </ul>
           <div className="mt-6 pt-6 border-t border-border/40">

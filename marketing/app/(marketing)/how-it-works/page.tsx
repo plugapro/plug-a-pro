@@ -5,7 +5,7 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "How It Works",
   description:
-    "See how Plug-A-Pro connects customers to nearby home-job workers — from describing the job to getting it done safely.",
+    "See how Plug-A-Pro connects customers to nearby home-job workers. From describing the job to getting it done.",
 });
 
 const CUSTOMER_STEPS = [
@@ -13,7 +13,7 @@ const CUSTOMER_STEPS = [
     step: "1",
     title: "Describe your job",
     detail:
-      "Send a message to the Plug-A-Pro WhatsApp number or use the web form. Tell us what needs doing, where you are, and your preferred timing. Attach a photo if it helps — especially useful for repairs and DIY rescues.",
+      "Send a message to the Plug-A-Pro WhatsApp number or use the web form. Tell us what needs doing, where you are, and your preferred timing. Attach a photo if it helps. Especially useful for repairs and DIY rescues.",
   },
   {
     step: "2",
@@ -25,7 +25,7 @@ const CUSTOMER_STEPS = [
     step: "3",
     title: "Inspect (if needed) and get a quote",
     detail:
-      "For jobs that are hard to price remotely, the worker can visit to inspect first — no cost until you accept a quote. For simpler jobs, a quote is sent directly. You see the price and description before committing.",
+      "For jobs that are hard to price remotely, the worker can visit to inspect first. No cost until you accept a quote. For simpler jobs, a quote is sent directly. You see the price and description before committing.",
   },
   {
     step: "4",
@@ -43,7 +43,7 @@ const CUSTOMER_STEPS = [
     step: "6",
     title: "Pay and leave a review",
     detail:
-      "Pay after the job is done. Leave a rating and comment to help build the worker's reputation — and help the next customer make a confident choice.",
+      "Pay after the job is done. Leave a rating and comment to help the next customer make a confident choice.",
   },
 ];
 
@@ -64,7 +64,7 @@ const WORKER_STEPS = [
     step: "3",
     title: "Get a job notification on WhatsApp",
     detail:
-      "When a nearby customer needs your kind of work, you'll get a WhatsApp message. It shows the type of job, the area, and how soon they need it — but not the customer's personal number yet.",
+      "When a nearby customer needs your kind of work, you'll get a WhatsApp message. It shows the type of job, the area, and how soon they need it. You won't get the customer's personal number yet.",
   },
   {
     step: "4",
@@ -76,7 +76,7 @@ const WORKER_STEPS = [
     step: "5",
     title: "Do the job and update as you go",
     detail:
-      "Go check the job if you need to, then send the customer your price. Once they say yes, do the work and tap to mark each step — on the way, arrived, started, done.",
+      "Go check the job if you need to, then send the customer your price. Once they say yes, do the work and tap to mark each step: on the way, arrived, started, done.",
   },
   {
     step: "6",
@@ -142,7 +142,7 @@ export default function HowItWorksPage() {
           How Plug-A-Pro works
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          Two flows. One platform. From a WhatsApp message to a completed job — safely and simply.
+          Two flows. One platform. From a WhatsApp message to a completed job.
         </p>
       </div>
 
@@ -150,7 +150,7 @@ export default function HowItWorksPage() {
         <div className="max-w-3xl mx-auto">
           <FlowSection
             label="Customer flow"
-            title="Request help — from job description to done"
+            title="From job description to done"
             steps={CUSTOMER_STEPS}
           />
           <FlowSection
@@ -164,7 +164,7 @@ export default function HowItWorksPage() {
               Your number stays private
             </p>
             <p>
-              Neither party&apos;s personal WhatsApp number is shared by default. All communication goes through the Plug-A-Pro platform — the customer&apos;s address is only revealed to the worker in stages, as the job progresses through acceptance and confirmation.
+              Neither party&apos;s personal WhatsApp number is shared by default. All communication goes through Plug-A-Pro. The customer&apos;s address is shared with the worker in stages as the job moves forward.
             </p>
           </div>
         </div>

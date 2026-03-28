@@ -17,7 +17,7 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "For Customers",
   description:
-    "Get help with any small home job — plumbing, painting, gardening, handyman work, and more. Message us on WhatsApp and we'll match you to a nearby worker.",
+    "Get help with any small home job. Plumbing, painting, gardening, handyman work, and more. Message us on WhatsApp and we'll match you to a nearby worker.",
 });
 
 const HOW_IT_WORKS = [
@@ -26,7 +26,7 @@ const HOW_IT_WORKS = [
     step: "01",
     title: "Describe your job on WhatsApp",
     detail:
-      "Message the Plug-A-Pro WhatsApp number. Tell us what you need — plumbing leak, garden overgrown, wall needs painting. We'll ask a few short questions to understand the job.",
+      "Message the Plug-A-Pro WhatsApp number. Tell us what you need. Plumbing leak, garden overgrown, wall needs painting. We'll ask a few short questions to understand the job.",
   },
   {
     icon: MapPin,
@@ -47,7 +47,7 @@ const HOW_IT_WORKS = [
     step: "04",
     title: "Approve the quote in writing",
     detail:
-      "All quotes come through the platform. You review the price and scope, then approve in writing. No verbal agreements — everything is documented.",
+      "All quotes come through the app. You review the price and scope, then approve in writing. No verbal agreements. Everything is written down.",
   },
   {
     icon: Camera,
@@ -89,7 +89,7 @@ const PROTECTIONS = [
   {
     icon: Clock,
     title: "Platform mediation for disputes",
-    body: "If something goes wrong, you can raise a dispute through us. The platform holds payment until the issue is resolved — we don't just release funds and disappear.",
+    body: "If something goes wrong, raise a dispute through us. We hold payment until the issue is sorted. We don't just release funds and disappear.",
   },
   {
     icon: Star,
@@ -107,7 +107,7 @@ export default function ForCustomersPage() {
           For customers
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          Home jobs sorted — on WhatsApp
+          Home jobs sorted. On WhatsApp.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
           Describe what you need. We&apos;ll match you to a nearby, reviewed worker. See their profile, approve a quote, and get the job done.
@@ -134,7 +134,7 @@ export default function ForCustomersPage() {
             How it works
           </h2>
           <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-            From your first WhatsApp message to a completed job — here&apos;s what to expect.
+            Here&apos;s what to expect, from your first WhatsApp message to a completed job.
           </p>
           <div className="space-y-0">
             {HOW_IT_WORKS.map((s, i) => {

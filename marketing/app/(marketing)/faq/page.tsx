@@ -10,21 +10,21 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "FAQ",
   description:
-    "Frequently asked questions about Plug-A-Pro — for customers looking for home-job help and workers looking for local jobs.",
+    "Frequently asked questions about Plug-A-Pro. For customers looking for home-job help and workers looking for local jobs.",
 });
 
 const CUSTOMER_FAQS = [
   {
     q: "What is Plug-A-Pro?",
-    a: "Plug-A-Pro is a marketplace that connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and the whole process — quoting, booking, tracking, and payment — happens through the platform.",
+    a: "Plug-A-Pro connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and the whole process happens through the app: quoting, booking, tracking, and payment.",
   },
   {
     q: "What types of jobs can I get help with?",
-    a: "Plumbing, painting, garden and lawn care, handyman and odd jobs, appliance repairs, minor electrical, DIY assistance, roofing (minor), and general home repairs. If it's a small home job, describe it — we'll try to match you.",
+    a: "Plumbing, painting, garden and lawn care, handyman and odd jobs, appliance repairs, minor electrical, DIY assistance, roofing (minor), and general home repairs. If it's a small home job, describe it and we'll try to match you.",
   },
   {
     q: "Do I need to download an app?",
-    a: "No. You can describe your job and get updates entirely through WhatsApp — no app, no account needed to start. There's also a web app available for a richer view of quotes and history.",
+    a: "No. You can describe your job and get updates entirely through WhatsApp. No app, no account needed to start. There's also a web app if you want a fuller view of quotes and history.",
   },
   {
     q: "Will the worker see my phone number?",
@@ -32,15 +32,15 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "How do quotes work?",
-    a: "After accepting a lead, the worker sends a written quote through the platform — description, price, and timeline. You approve before any work starts. If extra work is needed on-site, the worker must send an additional request before proceeding.",
+    a: "After accepting a job, the worker sends a written quote with the description, price, and timeline. You approve before any work starts. If extra work comes up on-site, the worker must send a new request before they can proceed.",
   },
   {
     q: "What happens if something goes wrong?",
-    a: "Raise a dispute through the platform. We have the full job record — status history, photos, quotes, and messages. Disputes are reviewed and resolved by the Plug-A-Pro team.",
+    a: "Raise a dispute through the app. We have the full job record: status history, photos, quotes, and messages. Our team reviews and resolves every dispute.",
   },
   {
     q: "Started a DIY project and got stuck?",
-    a: "Yes — our workers can assess, continue, or finish a job you started yourself. Describe where you are and what you need, and we'll match you to someone who can help.",
+    a: "Yes, our workers can assess, continue, or finish a job you started yourself. Describe where you are and what you need and we'll match you to someone who can help.",
   },
   {
     q: "How do I pay?",
@@ -51,7 +51,7 @@ const CUSTOMER_FAQS = [
 const WORKER_FAQS = [
   {
     q: "Who can register as a worker?",
-    a: "Any individual with practical home-job skills — handymen, painters, plumbers (small jobs), gardeners, appliance repairers, electricians (minor work), and general DIY workers. You don't need a registered company to join.",
+    a: "Anyone with practical home-job skills: handymen, painters, plumbers (small jobs), gardeners, appliance repairers, electricians (minor work), and general DIY workers. You don't need a registered company to join.",
   },
   {
     q: "How do I register?",
@@ -67,11 +67,11 @@ const WORKER_FAQS = [
   },
   {
     q: "How does quoting work?",
-    a: "After accepting a lead, send a written quote through the app or WhatsApp — description, price, and timeline. The customer approves before any work starts. If the scope changes, log the extra work request and wait for approval before proceeding.",
+    a: "After accepting a job, send a written quote with the description, price, and timeline. The customer approves before any work starts. If the scope changes, send an extra work request and wait for approval before proceeding.",
   },
   {
-    q: "How do I build my reputation?",
-    a: "Every completed job adds a rating and optional comment from the customer. These appear on your profile and are visible to future customers when they're considering your quote.",
+    q: "How do I get more customers?",
+    a: "Every completed job adds a rating and optional comment from the customer. These show on your profile. The better your ratings, the more likely customers are to pick you.",
   },
   {
     q: "Is there a cost to join?",
