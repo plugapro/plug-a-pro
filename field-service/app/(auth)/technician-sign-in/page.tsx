@@ -60,11 +60,11 @@ export default function ProviderSignInPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
+        <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
           Worker Portal
         </p>
-        <h1 className="text-2xl font-semibold text-white">Sign in</h1>
-        <p className="text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
+        <p className="text-sm text-muted-foreground">
           Enter the mobile number linked to your provider account
         </p>
       </div>
@@ -72,7 +72,7 @@ export default function ProviderSignInPage() {
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="phone" className="text-zinc-300">Mobile number</Label>
+          <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
           <Input
             id="phone"
             type="tel"
@@ -82,7 +82,7 @@ export default function ProviderSignInPage() {
             onChange={(e) => setPhone(e.target.value)}
             required
             disabled={loading}
-            className="h-11 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+            className="h-11 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/20"
           />
         </div>
 
@@ -93,7 +93,7 @@ export default function ProviderSignInPage() {
         </Button>
       </form>
 
-      <p className="text-center text-xs text-zinc-600">
+      <p className="text-center text-xs text-muted-foreground">
         Not registered yet? Apply via WhatsApp — send &quot;Register&quot; to our business number.
       </p>
     </div>

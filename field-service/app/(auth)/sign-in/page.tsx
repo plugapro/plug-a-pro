@@ -60,14 +60,14 @@ export default function SignInPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-semibold text-white">Welcome back</h1>
-        <p className="text-sm text-zinc-400">Enter your number to receive a one-time code</p>
+        <h1 className="text-2xl font-semibold text-foreground">Welcome back</h1>
+        <p className="text-sm text-muted-foreground">Enter your number to receive a one-time code</p>
       </div>
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="phone" className="text-zinc-300">Mobile number</Label>
+          <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
           <Input
             id="phone"
             type="tel"
@@ -77,7 +77,7 @@ export default function SignInPage() {
             onChange={(e) => setPhone(e.target.value)}
             required
             disabled={loading}
-            className="h-11 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+            className="h-11 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/20"
           />
         </div>
 
@@ -88,7 +88,7 @@ export default function SignInPage() {
         </Button>
       </form>
 
-      <p className="text-center text-xs text-zinc-600">
+      <p className="text-center text-xs text-muted-foreground">
         Your number is never shared. By continuing you agree to our terms.
       </p>
     </div>

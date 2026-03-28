@@ -86,10 +86,10 @@ function VerifyForm() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-semibold text-white">Enter your code</h1>
-        <p className="text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
+        <p className="text-sm text-muted-foreground">
           We sent a 6-digit code to{' '}
-          <span className="font-medium text-white">{phone}</span>
+          <span className="font-medium text-foreground">{phone}</span>
         </p>
       </div>
 
@@ -106,7 +106,7 @@ function VerifyForm() {
           required
           autoFocus
           disabled={loading}
-          className="h-16 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 text-3xl tracking-widest text-center focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+          className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
@@ -121,14 +121,14 @@ function VerifyForm() {
         <button
           onClick={handleResend}
           disabled={resendCooldown > 0}
-          className="text-sm text-zinc-400 hover:text-white disabled:text-zinc-600 disabled:cursor-not-allowed transition-colors"
+          className="text-sm text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 disabled:cursor-not-allowed transition-colors"
         >
           {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
         </button>
         <div>
           <button
             onClick={() => router.replace('/sign-in')}
-            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             ← Use a different number
           </button>

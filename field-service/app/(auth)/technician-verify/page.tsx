@@ -85,12 +85,12 @@ function ProviderVerifyForm() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
+        <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
           Worker Portal
         </p>
-        <h1 className="text-2xl font-semibold text-white">Enter your code</h1>
-        <p className="text-sm text-zinc-400">
-          Sent to <span className="font-medium text-white">{phone}</span>
+        <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
+        <p className="text-sm text-muted-foreground">
+          Sent to <span className="font-medium text-foreground">{phone}</span>
         </p>
       </div>
 
@@ -107,7 +107,7 @@ function ProviderVerifyForm() {
           required
           autoFocus
           disabled={loading}
-          className="h-16 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 text-3xl tracking-widest text-center focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+          className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
@@ -122,7 +122,7 @@ function ProviderVerifyForm() {
         <button
           onClick={handleResend}
           disabled={resendCooldown > 0}
-          className="text-sm text-zinc-400 hover:text-white disabled:text-zinc-600 disabled:cursor-not-allowed transition-colors"
+          className="text-sm text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 disabled:cursor-not-allowed transition-colors"
         >
           {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
         </button>
