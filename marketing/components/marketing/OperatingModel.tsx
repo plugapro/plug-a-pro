@@ -1,3 +1,5 @@
+import { Home, Wrench } from "lucide-react";
+
 export function OperatingModel() {
   return (
     <section
@@ -20,7 +22,9 @@ export function OperatingModel() {
           {/* Customers */}
           <div className="rounded-2xl border border-border/40 p-8 space-y-5">
             <div className="flex items-center gap-3">
-              <span className="text-3xl" aria-hidden="true">🏠</span>
+              <div className="flex items-center justify-center size-10 rounded-lg bg-muted text-foreground">
+                <Home className="size-5" aria-hidden="true" />
+              </div>
               <div>
                 <h3 className="font-bold text-lg">For customers</h3>
                 <p className="text-xs text-muted-foreground">Request, approve, and track</p>
@@ -50,7 +54,9 @@ export function OperatingModel() {
           {/* Workers */}
           <div className="rounded-2xl border border-border/40 p-8 space-y-5">
             <div className="flex items-center gap-3">
-              <span className="text-3xl" aria-hidden="true">🔧</span>
+              <div className="flex items-center justify-center size-10 rounded-lg bg-muted text-foreground">
+                <Wrench className="size-5" aria-hidden="true" />
+              </div>
               <div>
                 <h3 className="font-bold text-lg">For workers</h3>
                 <p className="text-xs text-muted-foreground">Accept leads, quote, earn</p>

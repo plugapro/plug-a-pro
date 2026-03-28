@@ -35,15 +35,15 @@ export function Hero() {
       />
       <div className="relative max-w-4xl mx-auto" style={{ color: "oklch(0.985 0 0)" }}>
         <p className="text-xs font-medium uppercase tracking-widest mb-4 brand-gradient-text">
-          Local help. Real quotes. Any small job.
+          Local help. Real quotes. On WhatsApp.
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-          Get home help in minutes, not weeks
+          Get home help done right — nearby workers, quoted in writing, on WhatsApp
         </h1>
         <p className="text-xl text-muted-foreground mb-3 max-w-2xl mx-auto">
-          Plug-A-Pro connects you to nearby handymen and home-job workers for
-          small repairs, odd jobs, garden work, painting, and more. Message on
-          WhatsApp. Get matched. Get it done.
+          Describe your job. We find a vetted local worker near you. You approve
+          the price before anything starts. No app downloads, no strangers
+          cold-calling — just WhatsApp.
         </p>
         <p className="text-sm text-muted-foreground mb-10 max-w-lg mx-auto">
           Started a DIY project and got stuck?{" "}
@@ -61,9 +61,9 @@ export function Hero() {
             nativeButton={false}
             render={<Link href="/waitlist" />}
             size="lg"
-            onClick={() => analytics.ctaClick("Request help", "hero", "customer")}
+            onClick={() => analytics.ctaClick("Get early access", "hero", "customer")}
           >
-            Request help
+            Get early access
           </Button>
           <Button
             nativeButton={false}
@@ -75,6 +75,12 @@ export function Hero() {
           >
             I want work →
           </Button>
+        </div>
+        {/* Trust bullets */}
+        <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm" style={{ color: "oklch(0.985 0 0 / 0.7)" }}>
+          <span>✓ Free for customers</span>
+          <span>✓ No app download needed</span>
+          <span>✓ Launching in Johannesburg &amp; Pretoria</span>
         </div>
       </div>
     </section>

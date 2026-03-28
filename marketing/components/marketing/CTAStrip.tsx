@@ -20,7 +20,7 @@ export function CTAStrip() {
     >
       <div className="max-w-2xl mx-auto text-center space-y-6">
         <h2 className="text-3xl font-bold text-white">
-          Need home help? Or want steady work?
+          Your next job sorted. Your next customer waiting.
         </h2>
         <p style={{ color: "oklch(0.985 0 0 / 0.8)" }}>
           Plug-A-Pro is built for both sides. Customers get trustworthy local help. Workers get structured access to paying jobs.
@@ -30,9 +30,9 @@ export function CTAStrip() {
             nativeButton={false}
             render={<Link href="/waitlist" />}
             size="lg"
-            onClick={() => analytics.ctaClick("Request help", "cta_strip", "customer")}
+            onClick={() => analytics.ctaClick("Get early access", "cta_strip", "customer")}
           >
-            Request help
+            Get early access
           </Button>
           <Button
             nativeButton={false}

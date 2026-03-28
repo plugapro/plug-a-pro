@@ -20,8 +20,8 @@ export default function HomePage() {
       <SectionTracker />
       <ScrollDepthTracker />
       <div id="section-hero"><Hero /></div>
-      <div id="section-how-it-works"><HowItWorksSteps /></div>
       <div id="section-problem"><ProblemStatement /></div>
+      <div id="section-how-it-works"><HowItWorksSteps /></div>
       <div id="section-who-its-for"><WhoItsFor /></div>
       <div id="section-trust"><TrustSafety /></div>
       <div id="section-operating-model"><OperatingModel /></div>

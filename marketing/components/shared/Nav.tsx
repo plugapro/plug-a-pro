@@ -1,7 +1,14 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/shared/ThemeToggle";
+import { Menu } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetClose,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 const navLinks = [
   { href: "/how-it-works", label: "How it works" },
@@ -25,6 +32,8 @@ export function Nav() {
             priority
           />
         </Link>
+
+        {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-6 text-sm">
           {navLinks.map((link) => (
             <Link
@@ -36,15 +45,49 @@ export function Nav() {
             </Link>
           ))}
         </nav>
+
         <div className="flex items-center gap-2">
-          <ThemeToggle />
+          {/* Desktop CTA */}
           <Button
             nativeButton={false}
             render={<Link href="/waitlist" />}
             size="sm"
+            className="hidden md:inline-flex"
           >
-            Request help
+            Get early access
           </Button>
+
+          {/* Mobile hamburger */}
+          <Sheet>
+            <SheetTrigger
+              className="md:hidden inline-flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              aria-label="Open navigation menu"
+            >
+              <Menu className="h-5 w-5" />
+            </SheetTrigger>
+            <SheetContent side="right" className="p-6 pt-14">
+              <SheetTitle className="sr-only">Navigation menu</SheetTitle>
+              <nav className="flex flex-col gap-1">
+                {navLinks.map((link) => (
+                  <SheetClose
+                    key={link.href}
+                    render={<Link href={link.href} />}
+                    className="px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-left"
+                  >
+                    {link.label}
+                  </SheetClose>
+                ))}
+              </nav>
+              <div className="mt-6">
+                <SheetClose
+                  render={<Link href="/waitlist" />}
+                  className="w-full inline-flex items-center justify-center rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Get early access
+                </SheetClose>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </header>
