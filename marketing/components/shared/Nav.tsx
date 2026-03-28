@@ -21,7 +21,7 @@ export function Nav() {
             alt="Plug-A-Pro"
             width={318}
             height={43}
-            className="h-8 w-auto dark:hidden"
+            className="h-6 w-auto dark:hidden"
             priority
           />
           <span className="hidden dark:inline font-bold text-base brand-gradient-text">
