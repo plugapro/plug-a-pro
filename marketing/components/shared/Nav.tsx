@@ -21,12 +21,9 @@ export function Nav() {
             alt="Plug-A-Pro"
             width={318}
             height={43}
-            className="h-6 w-auto dark:hidden"
+            className="h-6 w-auto"
             priority
           />
-          <span className="hidden dark:inline font-bold text-base brand-gradient-text">
-            Plug-A-Pro
-          </span>
         </Link>
         <nav className="hidden md:flex items-center gap-6 text-sm">
           {navLinks.map((link) => (
