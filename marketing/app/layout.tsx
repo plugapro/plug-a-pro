@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { ThemeProvider } from "next-themes";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import { buildMetadata } from "@/lib/metadata";
 import { ChatWidget } from "@/components/marketing/ChatWidget";
 import "./globals.css";
@@ -26,6 +27,7 @@ export default function RootLayout({
           <ChatWidget />
         </ThemeProvider>
       </body>
+      <GoogleAnalytics gaId="G-R3RH07RQ3G" />
     </html>
   );
 }
