@@ -75,6 +75,7 @@ model Provider {
 
   schedule          ProviderSchedule[]
   leads             Lead[]
+  matches           Match[]
   jobs              Job[]
   reviews           Review[]
   pushSubscriptions PushSubscription[]
@@ -189,6 +190,7 @@ model Match {
   updatedAt       DateTime    @updatedAt
 
   jobRequest        JobRequest        @relation(fields: [jobRequestId], references: [id])
+  provider          Provider          @relation(fields: [providerId], references: [id])
   inspectionSlots   InspectionSlot[]
   quotes            Quote[]
   booking           Booking?

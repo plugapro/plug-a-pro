@@ -63,11 +63,11 @@ export async function uploadQuoteAttachment(params: {
 
   await db.attachment.create({
     data: {
-      quoteId: params.quoteId,
       url: blob.url,
       blobKey: blob.pathname,
       mimeType: params.file.type,
       sizeBytes: params.file.size,
+      label: `quote:${params.quoteId}`,
       uploadedBy: params.uploadedBy,
     },
   })

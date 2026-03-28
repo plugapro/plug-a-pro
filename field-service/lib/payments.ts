@@ -241,7 +241,7 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
 
     await tx.booking.update({
       where: { id: event.bookingId },
-      data: { status: 'CONFIRMED' },
+      data: { status: 'SCHEDULED' },
     })
   })
 }

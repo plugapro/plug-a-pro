@@ -1,11 +1,11 @@
-// ─── Technician: Profile ─────────────────────────────────────────────────────
+// ─── Provider: Profile ────────────────────────────────────────────────────────
 // Editable name/email + per-day availability schedule + sign out.
 
 export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { requireTechnician } from '@/lib/auth'
+import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { SignOutButton } from '@/components/technician/SignOutButton'
 import { PushSubscribeButton } from '@/components/technician/PushSubscribeButton'
@@ -28,22 +28,22 @@ const DAYS = [
 
 async function updateProfile(formData: FormData) {
   'use server'
-  const { requireTechnician: getSession } = await import('@/lib/auth')
+  const { requireProvider: getSession } = await import('@/lib/auth')
   const session = await getSession()
 
   const { db: dbServer } = await import('@/lib/db')
-  const technician = await dbServer.technician.findUnique({
+  const provider = await dbServer.provider.findUnique({
     where: { userId: session.id },
   })
-  if (!technician) return
+  if (!provider) return
 
   const name  = (formData.get('name')  as string | null)?.trim()
   const email = (formData.get('email') as string | null)?.trim()
 
   // Update profile fields
   if (name || email !== undefined) {
-    await dbServer.technician.update({
-      where: { id: technician.id },
+    await dbServer.provider.update({
+      where: { id: provider.id },
       data: {
         ...(name  ? { name }  : {}),
         ...(email !== null && email !== undefined ? { email: email || null } : {}),
@@ -51,15 +51,15 @@ async function updateProfile(formData: FormData) {
     })
   }
 
-  // Upsert availability for each day
+  // Upsert schedule for each day
   for (const day of [0, 1, 2, 3, 4, 5, 6]) {
     const active    = formData.get(`day_${day}_active`) === 'on'
     const startTime = (formData.get(`day_${day}_start`) as string | null) ?? '08:00'
     const endTime   = (formData.get(`day_${day}_end`)   as string | null) ?? '17:00'
 
-    await dbServer.availability.upsert({
-      where: { technicianId_dayOfWeek: { technicianId: technician.id, dayOfWeek: day } },
-      create: { technicianId: technician.id, dayOfWeek: day, startTime, endTime, active },
+    await dbServer.providerSchedule.upsert({
+      where: { providerId_dayOfWeek: { providerId: provider.id, dayOfWeek: day } },
+      create: { providerId: provider.id, dayOfWeek: day, startTime, endTime, active },
       update: { startTime, endTime, active },
     })
   }
@@ -67,25 +67,25 @@ async function updateProfile(formData: FormData) {
   redirect('/technician/profile')
 }
 
-export default async function TechnicianProfilePage() {
-  const session = await requireTechnician()
+export default async function ProviderProfilePage() {
+  const session = await requireProvider()
 
-  const technician = await db.technician.findUnique({
+  const provider = await db.provider.findUnique({
     where: { userId: session.id },
-    include: { availability: { orderBy: { dayOfWeek: 'asc' } } },
+    include: { schedule: { orderBy: { dayOfWeek: 'asc' } } },
   })
 
-  if (!technician) {
+  if (!provider) {
     return (
       <div className="px-4 py-8 text-center text-muted-foreground">
-        <p>Technician account not found.</p>
+        <p>Provider account not found.</p>
       </div>
     )
   }
 
-  // Build a quick lookup: dayOfWeek → availability row
-  const availMap = Object.fromEntries(
-    technician.availability.map((a) => [a.dayOfWeek, a])
+  // Build a quick lookup: dayOfWeek → schedule row
+  const scheduleMap = Object.fromEntries(
+    provider.schedule.map((s) => [s.dayOfWeek, s])
   )
 
   return (
@@ -106,7 +106,7 @@ export default async function TechnicianProfilePage() {
               <Input
                 id="name"
                 name="name"
-                defaultValue={technician.name ?? ''}
+                defaultValue={provider.name ?? ''}
                 placeholder="Your name"
                 className="h-9"
               />
@@ -117,14 +117,14 @@ export default async function TechnicianProfilePage() {
                 id="email"
                 name="email"
                 type="email"
-                defaultValue={technician.email ?? ''}
+                defaultValue={provider.email ?? ''}
                 placeholder="your@email.com"
                 className="h-9"
               />
             </div>
             <div className="space-y-1 text-sm">
               <span className="text-muted-foreground text-sm">Phone</span>
-              <p className="text-sm pt-1">{technician.phone ?? '—'}</p>
+              <p className="text-sm pt-1">{provider.phone ?? '—'}</p>
             </div>
           </CardContent>
         </Card>
@@ -138,10 +138,10 @@ export default async function TechnicianProfilePage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {DAYS.map(({ value: day, label }) => {
-              const avail = availMap[day]
-              const isActive  = avail?.active  ?? (day >= 1 && day <= 5)
-              const startTime = avail?.startTime ?? '08:00'
-              const endTime   = avail?.endTime   ?? '17:00'
+              const entry     = scheduleMap[day]
+              const isActive  = entry?.active  ?? (day >= 1 && day <= 5)
+              const startTime = entry?.startTime ?? '08:00'
+              const endTime   = entry?.endTime   ?? '17:00'
 
               return (
                 <div key={day} className="flex items-center gap-3">

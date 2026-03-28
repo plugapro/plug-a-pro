@@ -1,8 +1,8 @@
 'use client'
 
-// ─── Technician OTP verification ──────────────────────────────────────────────
-// After OTP verification, checks that the Supabase user has role=technician.
-// Technicians are provisioned by admin (not self-serve) — if no technician role,
+// ─── Provider OTP verification ────────────────────────────────────────────────
+// After OTP verification, checks that the Supabase user has role=provider.
+// Providers are provisioned by admin (not self-serve) — if no provider role,
 // the session is rejected and the user is directed to apply via WhatsApp.
 
 import { useState, useEffect, Suspense } from 'react'
@@ -18,7 +18,7 @@ function getSupabaseClient() {
   )
 }
 
-function TechnicianVerifyForm() {
+function ProviderVerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const phone = searchParams.get('phone') ?? ''
@@ -53,7 +53,7 @@ function TechnicianVerifyForm() {
       }
 
       const role = data.user.user_metadata?.role
-      if (role !== 'technician') {
+      if (role !== 'provider') {
         // Not yet approved — sign out and guide to WhatsApp registration
         await supabase.auth.signOut()
         setError(
@@ -87,7 +87,7 @@ function TechnicianVerifyForm() {
       {/* Header */}
       <div className="text-center space-y-2">
         <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
-          Technician Portal
+          Worker Portal
         </p>
         <h1 className="text-2xl font-semibold text-white">Enter your code</h1>
         <p className="text-sm text-zinc-400">
@@ -137,10 +137,10 @@ function TechnicianVerifyForm() {
   )
 }
 
-export default function TechnicianVerifyPage() {
+export default function ProviderVerifyPage() {
   return (
     <Suspense fallback={null}>
-      <TechnicianVerifyForm />
+      <ProviderVerifyForm />
     </Suspense>
   )
 }

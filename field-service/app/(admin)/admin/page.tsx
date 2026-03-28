@@ -11,13 +11,7 @@ import { buildMetadata } from '@/lib/metadata'
 export const metadata = buildMetadata({ title: 'Dashboard', noIndex: true })
 
 export default async function AdminDashboardPage() {
-  const user = await requireAdmin()
-  // Resolve businessId — use session value or fall back to env slug (single-tenant)
-  let businessId = user.businessId
-  if (!businessId) {
-    const { resolveBusinessId } = await import('@/lib/auth')
-    businessId = await resolveBusinessId()
-  }
+  await requireAdmin()
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -34,47 +28,47 @@ export default async function AdminDashboardPage() {
     weekRevenue,
     pendingPayments,
     pendingApplications,
-    awaitingDispatch,
+    openJobRequests,
+    totalProviders,
   ] = await Promise.all([
     db.booking.count({
       where: {
-        businessId,
         createdAt: { gte: today, lt: tomorrow },
         status: { not: 'CANCELLED' },
       },
     }),
     db.job.count({
       where: {
-        technician: { businessId },
         status: { notIn: ['COMPLETED', 'FAILED'] },
         booking: { scheduledDate: { gte: today, lt: tomorrow } },
       },
     }),
     db.quote.count({
-      where: { businessId, status: { in: ['NEW', 'UNDER_REVIEW'] } },
+      where: { status: 'PENDING' },
     }),
     db.job.count({
       where: {
-        technician: { businessId },
         status: { in: ['EN_ROUTE', 'ARRIVED', 'STARTED', 'AWAITING_APPROVAL'] },
       },
     }),
     db.payment.aggregate({
       where: {
-        booking: { businessId },
         status: 'PAID',
         paidAt: { gte: weekAgo },
       },
       _sum: { amount: true },
     }),
     db.booking.count({
-      where: { businessId, status: 'PENDING_PAYMENT' },
+      where: { status: 'SCHEDULED' },
     }),
-    db.technicianApplication.count({
-      where: { businessId, status: 'PENDING' },
+    db.providerApplication.count({
+      where: { status: 'PENDING' },
     }),
-    db.booking.count({
-      where: { businessId, status: 'CONFIRMED', job: null },
+    db.jobRequest.count({
+      where: { status: { notIn: ['CANCELLED', 'EXPIRED'] } },
+    }),
+    db.provider.count({
+      where: { active: true },
     }),
   ])
 
@@ -89,13 +83,13 @@ export default async function AdminDashboardPage() {
       label: "Today's Jobs",
       value: todayJobs,
       description: 'Jobs scheduled for today',
-      href: '/admin/dispatch',
+      href: '/admin/matches',
     },
     {
       label: 'Active in Field',
       value: activeJobs,
-      description: 'Technicians currently on a job',
-      href: '/admin/dispatch',
+      description: 'Providers currently on a job',
+      href: '/admin/matches',
       highlight: activeJobs > 0,
     },
     {
@@ -106,10 +100,10 @@ export default async function AdminDashboardPage() {
       highlight: pendingQuotes > 0,
     },
     {
-      label: 'Pending Payment',
+      label: 'Scheduled Bookings',
       value: pendingPayments,
-      description: 'Bookings awaiting payment',
-      href: '/admin/payments',
+      description: 'Bookings in scheduled state',
+      href: '/admin/bookings',
     },
     {
       label: '7-Day Revenue',
@@ -120,16 +114,22 @@ export default async function AdminDashboardPage() {
     {
       label: 'Applications',
       value: pendingApplications,
-      description: 'Technician applications pending review',
+      description: 'Provider applications pending review',
       href: '/admin/applications',
       highlight: pendingApplications > 0,
     },
     {
-      label: 'Awaiting Dispatch',
-      value: awaitingDispatch,
-      description: 'Confirmed bookings without a technician',
-      href: '/admin/dispatch',
-      highlight: awaitingDispatch > 0,
+      label: 'Open Job Requests',
+      value: openJobRequests,
+      description: 'Active job requests from customers',
+      href: '/admin/matches',
+      highlight: openJobRequests > 0,
+    },
+    {
+      label: 'Active Providers',
+      value: totalProviders,
+      description: 'Providers currently active on platform',
+      href: '/admin/providers',
     },
   ]
 

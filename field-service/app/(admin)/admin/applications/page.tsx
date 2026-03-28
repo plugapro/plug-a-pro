@@ -1,6 +1,6 @@
-// ─── Admin: Technician application review ─────────────────────────────────────
-// Lists all TechnicianApplications submitted via WhatsApp.
-// Approve: creates Technician + Supabase user invite + WhatsApp notification.
+// ─── Admin: Provider application review ───────────────────────────────────────
+// Lists all ProviderApplications submitted via WhatsApp.
+// Approve: creates Provider + Supabase user invite + WhatsApp notification.
 // Reject: sends rejection WhatsApp + updates status.
 
 export const dynamic = 'force-dynamic'
@@ -33,7 +33,7 @@ async function approveApplication(formData: FormData) {
   const id = formData.get('id') as string
   const session = await requireAdmin()
 
-  const app = await db.technicianApplication.findUnique({ where: { id } })
+  const app = await db.providerApplication.findUnique({ where: { id } })
   if (!app || app.status !== 'PENDING') return
 
   // Create Supabase user (phone OTP — no email/password)
@@ -41,8 +41,7 @@ async function approveApplication(formData: FormData) {
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     phone: app.phone,
     user_metadata: {
-      role: 'technician',
-      businessId: app.businessId,
+      role: 'provider',
       name: app.name,
     },
     phone_confirm: true,
@@ -50,13 +49,12 @@ async function approveApplication(formData: FormData) {
 
   if (authError || !authData.user) {
     console.error('[applications] Supabase user create failed:', authError)
-    // Still create Technician record — user can be linked later
+    // Still create Provider record — user can be linked later
   }
 
-  // Create Technician record
-  await db.technician.create({
+  // Create Provider record
+  await db.provider.create({
     data: {
-      businessId: app.businessId,
       userId: authData?.user?.id ?? null,
       name: app.name,
       phone: app.phone,
@@ -67,7 +65,7 @@ async function approveApplication(formData: FormData) {
   })
 
   // Update application status
-  await db.technicianApplication.update({
+  await db.providerApplication.update({
     where: { id },
     data: {
       status: 'APPROVED',
@@ -93,10 +91,10 @@ async function rejectApplication(formData: FormData) {
   const reason = (formData.get('reason') as string) || undefined
   const session = await requireAdmin()
 
-  const app = await db.technicianApplication.findUnique({ where: { id } })
+  const app = await db.providerApplication.findUnique({ where: { id } })
   if (!app || app.status !== 'PENDING') return
 
-  await db.technicianApplication.update({
+  await db.providerApplication.update({
     where: { id },
     data: {
       status: 'REJECTED',
@@ -128,7 +126,7 @@ function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 
 export default async function ApplicationsPage() {
   await requireAdmin()
 
-  const applications = await db.technicianApplication.findMany({
+  const applications = await db.providerApplication.findMany({
     orderBy: { submittedAt: 'desc' },
     take: 100,
   })
@@ -139,9 +137,9 @@ export default async function ApplicationsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Technician Applications</h1>
+        <h1 className="text-xl font-semibold">Provider Applications</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Applications submitted via WhatsApp — review and approve to onboard new technicians
+          Applications submitted via WhatsApp — review and approve to onboard new providers
         </p>
       </div>
 

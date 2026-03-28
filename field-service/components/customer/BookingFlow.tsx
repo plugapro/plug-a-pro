@@ -1,12 +1,13 @@
 'use client'
 
-// ─── Multi-step booking flow ──────────────────────────────────────────────────
-// Steps: address → slot → confirm → payment
+// ─── Multi-step job request flow ──────────────────────────────────────────────
+// Steps: address → description → confirm → submitted
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectTrigger,
@@ -18,26 +19,10 @@ import { Card, CardContent } from '@/components/ui/card'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Service {
-  id: string
+interface CategoryData {
+  slug: string
   name: string
   description: string | null
-  category: string
-  pricingType: string
-  basePrice: number | null
-  callOutFee: number | null
-  duration: number
-  active: boolean
-  businessId: string
-}
-
-interface Slot {
-  id: string
-  date: string        // ISO date "2026-04-01"
-  windowStart: string // "09:00"
-  windowEnd: string   // "12:00"
-  capacity: number
-  booked: number
 }
 
 interface Address {
@@ -48,7 +33,7 @@ interface Address {
   postalCode: string
 }
 
-type Step = 'address' | 'slot' | 'confirm' | 'payment'
+type Step = 'address' | 'description' | 'confirm' | 'submitted'
 
 const SA_PROVINCES = [
   'Gauteng',
@@ -62,34 +47,12 @@ const SA_PROVINCES = [
   'Northern Cape',
 ]
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + 'T00:00:00')
-  return date.toLocaleDateString('en-ZA', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-}
-
-function groupSlotsByDate(slots: Slot[]): Record<string, Slot[]> {
-  return slots.reduce<Record<string, Slot[]>>((acc, slot) => {
-    if (!acc[slot.date]) acc[slot.date] = []
-    acc[slot.date].push(slot)
-    return acc
-  }, {})
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function BookingFlow({
-  service,
-  businessId,
+  category,
 }: {
-  service: Service
-  businessId: string
+  category: CategoryData
 }) {
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
@@ -99,49 +62,31 @@ export function BookingFlow({
     province: 'Gauteng',
     postalCode: '',
   })
-  const [slots, setSlots] = useState<Slot[]>([])
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [jobRequestId, setJobRequestId] = useState<string | null>(null)
 
-  // Payment step
-  const [bookingId, setBookingId] = useState<string | null>(null)
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null)
+  // ── Step 1: Address submit ──────────────────────────────────────────────────
 
-  const totalAmount =
-    (service.basePrice ?? 0) + (service.callOutFee ?? 0)
-
-  const priceLabel =
-    service.pricingType === 'QUOTE_REQUIRED' || !service.basePrice
-      ? 'Quote required'
-      : `R ${totalAmount.toFixed(0)}`
-
-  // ── Step 1: Address submit — fetch slots ────────────────────────────────────
-
-  async function handleAddressSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleAddressSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
-    setLoading(true)
-
-    try {
-      const res = await fetch(
-        `/api/customer/slots?businessId=${encodeURIComponent(businessId)}`
-      )
-      if (!res.ok) throw new Error('Could not load available slots')
-      const data: Slot[] = await res.json()
-      setSlots(data)
-      setStep('slot')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setLoading(false)
-    }
+    setStep('description')
   }
 
-  // ── Step 3: Confirm — create booking ───────────────────────────────────────
+  // ── Step 2: Description submit ─────────────────────────────────────────────
+
+  function handleDescriptionSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+    setStep('confirm')
+  }
+
+  // ── Step 3: Confirm — create job request ───────────────────────────────────
 
   async function handleConfirm() {
-    if (!selectedSlot) return
     setError(null)
     setLoading(true)
 
@@ -150,9 +95,9 @@ export function BookingFlow({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serviceId: service.id,
-          businessId,
-          slotId: selectedSlot.id,
+          category: category.slug,
+          title,
+          description,
           street: address.street,
           suburb: address.suburb,
           city: address.city,
@@ -163,13 +108,12 @@ export function BookingFlow({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error ?? 'Booking failed — please try again')
+        throw new Error(data.error ?? 'Request failed — please try again')
       }
 
       const data = await res.json()
-      setBookingId(data.bookingId)
-      setCheckoutUrl(data.checkoutUrl)
-      setStep('payment')
+      setJobRequestId(data.jobRequestId)
+      setStep('submitted')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -181,28 +125,24 @@ export function BookingFlow({
 
   return (
     <div className="px-4 py-6 max-w-lg mx-auto space-y-6">
-      {/* Service header */}
+      {/* Category header */}
       <div>
-        <p className="text-xs text-muted-foreground uppercase tracking-wide">{service.category}</p>
-        <h1 className="text-xl font-semibold mt-0.5">{service.name}</h1>
-        {service.description && (
-          <p className="text-sm text-muted-foreground mt-1">{service.description}</p>
+        <p className="text-xs text-muted-foreground uppercase tracking-wide">{category.slug}</p>
+        <h1 className="text-xl font-semibold mt-0.5">{category.name}</h1>
+        {category.description && (
+          <p className="text-sm text-muted-foreground mt-1">{category.description}</p>
         )}
-        <div className="flex gap-4 mt-2 text-sm text-muted-foreground">
-          <span>{service.duration} min</span>
-          <span className="font-medium text-foreground">{priceLabel}</span>
-        </div>
       </div>
 
       {/* Step indicator */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {(['address', 'slot', 'confirm', 'payment'] as Step[]).map((s, i) => (
+        {(['address', 'description', 'confirm', 'submitted'] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
             <span
               className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-medium ${
                 step === s
                   ? 'bg-foreground text-background'
-                  : ['address', 'slot', 'confirm', 'payment'].indexOf(step) > i
+                  : ['address', 'description', 'confirm', 'submitted'].indexOf(step) > i
                   ? 'bg-green-500 text-white'
                   : 'bg-muted text-muted-foreground'
               }`}
@@ -268,7 +208,6 @@ export function BookingFlow({
               <div className="space-y-1">
                 <Label htmlFor="province" className="text-muted-foreground">Province</Label>
                 <Select
-                  required
                   value={address.province}
                   onValueChange={(val) => setAddress({ ...address, province: val })}
                 >
@@ -295,23 +234,19 @@ export function BookingFlow({
             </div>
           </div>
 
-          <Button
-            type="submit"
-            disabled={loading}
-            className="w-full"
-            size="lg"
-          >
-            {loading ? 'Loading slots…' : 'Find available slots →'}
+          <Button type="submit" className="w-full" size="lg">
+            Next: Describe your job →
           </Button>
         </form>
       )}
 
-      {/* ── Step 2: Slot ─────────────────────────────────────────────────── */}
-      {step === 'slot' && (
-        <div className="space-y-4">
+      {/* ── Step 2: Description ──────────────────────────────────────────── */}
+      {step === 'description' && (
+        <form onSubmit={handleDescriptionSubmit} className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-medium">Choose a time slot</h2>
+            <h2 className="font-medium">Describe your job</h2>
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               onClick={() => setStep('address')}
@@ -321,68 +256,62 @@ export function BookingFlow({
             </Button>
           </div>
 
-          {slots.length === 0 ? (
-            <div className="rounded-xl border bg-card p-6 text-center text-sm text-muted-foreground">
-              No slots available right now. Please check back soon.
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="title" className="text-muted-foreground">Job title</Label>
+              <Input
+                id="title"
+                required
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={`e.g. Fix leaking kitchen tap`}
+              />
             </div>
-          ) : (
-            Object.entries(groupSlotsByDate(slots)).map(([date, dateSlots]) => (
-              <div key={date} className="space-y-2">
-                <p className="text-sm font-medium">{formatDate(date)}</p>
-                {dateSlots.map((slot) => {
-                  const remaining = slot.capacity - slot.booked
-                  return (
-                    <Button
-                      key={slot.id}
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedSlot(slot)
-                        setStep('confirm')
-                      }}
-                      className="w-full justify-between px-4 py-3 h-auto rounded-xl"
-                    >
-                      <span className="text-sm font-medium">
-                        {slot.windowStart}–{slot.windowEnd}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {remaining} slot{remaining !== 1 ? 's' : ''} left
-                      </span>
-                    </Button>
-                  )
-                })}
-              </div>
-            ))
-          )}
-        </div>
+            <div className="space-y-1">
+              <Label htmlFor="description" className="text-muted-foreground">
+                Details <span className="text-muted-foreground/60">(optional)</span>
+              </Label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe the problem, any access notes, or urgency…"
+                rows={4}
+              />
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Scheduling is arranged directly with your provider after matching.
+          </p>
+
+          <Button type="submit" className="w-full" size="lg">
+            Review request →
+          </Button>
+        </form>
       )}
 
       {/* ── Step 3: Confirm ──────────────────────────────────────────────── */}
-      {step === 'confirm' && selectedSlot && (
+      {step === 'confirm' && (
         <div className="space-y-4">
-          <h2 className="font-medium">Confirm your booking</h2>
+          <h2 className="font-medium">Confirm your request</h2>
 
           <Card>
             <CardContent className="px-4 py-4 space-y-3 text-sm">
-              <Row label="Service">{service.name}</Row>
-              <Row label="Price">{priceLabel}</Row>
+              <Row label="Category">{category.name}</Row>
+              <Row label="Job">{title}</Row>
+              {description && <Row label="Details">{description}</Row>}
               <Row label="Address">
                 {address.street}, {address.suburb}, {address.city}
               </Row>
-              <Row label="Date">{formatDate(selectedSlot.date)}</Row>
-              <Row label="Window">{selectedSlot.windowStart}–{selectedSlot.windowEnd}</Row>
-              {service.pricingType !== 'QUOTE_REQUIRED' && (
-                <div className="border-t pt-3 flex justify-between font-medium">
-                  <span>Total</span>
-                  <span>R {totalAmount.toFixed(2)}</span>
-                </div>
-              )}
             </CardContent>
           </Card>
 
           <div className="flex gap-3">
             <Button
               variant="outline"
-              onClick={() => setStep('slot')}
+              onClick={() => setStep('description')}
               className="flex-1"
               size="lg"
             >
@@ -394,42 +323,32 @@ export function BookingFlow({
               className="flex-1"
               size="lg"
             >
-              {loading ? 'Processing…' : 'Confirm & Pay'}
+              {loading ? 'Submitting…' : 'Submit request'}
             </Button>
           </div>
         </div>
       )}
 
-      {/* ── Step 4: Payment ──────────────────────────────────────────────── */}
-      {step === 'payment' && bookingId && (
+      {/* ── Step 4: Submitted ────────────────────────────────────────────── */}
+      {step === 'submitted' && jobRequestId && (
         <div className="space-y-4">
           <Card>
             <CardContent className="px-4 py-4 space-y-3">
-              <p className="font-medium text-sm">Booking confirmed</p>
+              <p className="font-medium text-sm">Request submitted</p>
               <p className="text-xs text-muted-foreground font-mono">
-                Ref: {bookingId.slice(-8).toUpperCase()}
+                Ref: {jobRequestId.slice(-8).toUpperCase()}
               </p>
               <p className="text-sm text-muted-foreground">
-                Complete your payment to secure the booking.
+                We&apos;re matching you with a provider. You&apos;ll receive a WhatsApp message when a provider accepts your job.
               </p>
             </CardContent>
           </Card>
 
-          {checkoutUrl ? (
-            <Button asChild className="w-full" size="lg">
-              <a href={checkoutUrl}>Pay now →</a>
-            </Button>
-          ) : (
-            <p className="text-sm text-muted-foreground text-center">
-              Payment link unavailable — please contact support with ref {bookingId.slice(-8).toUpperCase()}.
-            </p>
-          )}
-
           <a
-            href={`/bookings/${bookingId}`}
+            href="/bookings"
             className="block text-center text-xs text-muted-foreground hover:text-foreground"
           >
-            View booking details
+            View my bookings
           </a>
         </div>
       )}

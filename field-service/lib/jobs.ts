@@ -2,7 +2,7 @@
 // Enforces valid status transitions for jobs.
 // All status changes go through this module to ensure:
 // - Immutable audit trail (JobStatusEvent)
-// - Side effects (messaging, invoice, slot release)
+// - Side effects (messaging, invoice)
 
 import { db } from './db'
 import type { JobStatus } from '@prisma/client'
@@ -10,15 +10,16 @@ import type { JobStatus } from '@prisma/client'
 // ─── Valid transitions ────────────────────────────────────────────────────────
 
 const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
-  ASSIGNED: ['EN_ROUTE', 'CALLBACK_REQUIRED'],
+  SCHEDULED: ['EN_ROUTE', 'CALLBACK_REQUIRED'],
   EN_ROUTE: ['ARRIVED', 'CALLBACK_REQUIRED'],
   ARRIVED: ['STARTED', 'CALLBACK_REQUIRED'],
-  STARTED: ['PAUSED', 'AWAITING_APPROVAL', 'COMPLETED', 'FAILED'],
+  STARTED: ['PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION', 'COMPLETED', 'FAILED'],
   PAUSED: ['STARTED', 'AWAITING_APPROVAL', 'FAILED'],
-  AWAITING_APPROVAL: ['STARTED', 'COMPLETED', 'FAILED'],
+  AWAITING_APPROVAL: ['STARTED', 'PENDING_COMPLETION_CONFIRMATION', 'COMPLETED', 'FAILED'],
+  PENDING_COMPLETION_CONFIRMATION: ['COMPLETED', 'STARTED'],
   COMPLETED: [], // terminal
   FAILED: ['CALLBACK_REQUIRED'],
-  CALLBACK_REQUIRED: ['ASSIGNED'], // admin can reassign
+  CALLBACK_REQUIRED: ['SCHEDULED'], // admin can reassign
 }
 
 // ─── State machine ────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ export async function transitionJob(params: {
   jobId: string
   toStatus: JobStatus
   actorId: string
-  actorRole: 'technician' | 'admin' | 'system'
+  actorRole: 'provider' | 'customer' | 'admin' | 'system'
   notes?: string
 }): Promise<void> {
   const { jobId, toStatus, actorId, actorRole, notes } = params
@@ -36,9 +37,11 @@ export async function transitionJob(params: {
     where: { id: jobId },
     include: {
       booking: {
-        include: { customer: true, service: true, address: true },
+        include: {
+          match: { include: { jobRequest: { include: { customer: true, address: true } } } },
+        },
       },
-      technician: { select: { name: true } },
+      provider: { select: { name: true } },
     },
   })
 
@@ -82,41 +85,43 @@ export async function transitionJob(params: {
 
 async function triggerSideEffects(params: {
   job: Awaited<ReturnType<typeof db.job.findUnique>> & {
-    booking: { businessId: string; customer: { phone: string; name: string }; service: { name: string } } | null
-    technician: { name: string } | null
+    booking: {
+      match: {
+        jobRequest: { customer: { phone: string; name: string }; category: string }
+      }
+    } | null
+    provider: { name: string } | null
   }
   toStatus: JobStatus
 }): Promise<void> {
   const { job, toStatus } = params
   if (!job?.booking) return
 
-  const technicianName = job.technician?.name ?? 'Your technician'
+  const providerName = job.provider?.name ?? 'Your provider'
 
-  const { customer, service } = job.booking
+  const customer = job.booking.match.jobRequest.customer
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   try {
-    const { sendTechnicianOnTheWay, sendJobCompleted } = await import('./whatsapp')
+    const { sendProviderOnTheWay, sendJobCompleted } = await import('./whatsapp')
 
     if (toStatus === 'EN_ROUTE') {
-      await sendTechnicianOnTheWay({
-        businessId: job.booking.businessId,
+      await sendProviderOnTheWay({
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
-        technicianName,
+        providerName,
         eta: 'approximately 20 minutes',
       })
     }
 
     if (toStatus === 'ARRIVED') {
-      const { sendTechnicianArrived } = await import('./whatsapp')
-      await sendTechnicianArrived({
-        businessId: job.booking.businessId,
+      const { sendProviderArrived } = await import('./whatsapp')
+      await sendProviderArrived({
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
-        technicianName,
+        providerName,
       })
     }
 
@@ -129,7 +134,6 @@ async function triggerSideEffects(params: {
 
       const invoiceUrl = `${appUrl}/bookings/${job.bookingId}/invoice`
       await sendJobCompleted({
-        businessId: job.booking.businessId,
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
@@ -140,13 +144,13 @@ async function triggerSideEffects(params: {
       try {
         const bookingRecord = await db.booking.findUnique({
           where: { id: job.bookingId },
-          select: { totalAmount: true },
+          include: { quote: { select: { amount: true } } },
         })
         await db.invoice.create({
           data: {
             bookingId:   job.bookingId,
             number:      `INV-${Date.now()}`,
-            totalAmount: bookingRecord?.totalAmount ?? 0,
+            totalAmount: bookingRecord?.quote?.amount ?? 0,
             pdfUrl:      null,
             createdAt:   new Date(),
           },
@@ -163,7 +167,7 @@ async function triggerSideEffects(params: {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function getTodaysJobs(technicianId: string) {
+export async function getProviderJobs(providerId: string) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today)
@@ -171,7 +175,7 @@ export async function getTodaysJobs(technicianId: string) {
 
   return db.job.findMany({
     where: {
-      technicianId,
+      providerId,
       status: { notIn: ['COMPLETED', 'FAILED'] },
       booking: {
         scheduledDate: { gte: today, lt: tomorrow },
@@ -179,7 +183,9 @@ export async function getTodaysJobs(technicianId: string) {
     },
     include: {
       booking: {
-        include: { customer: true, service: true, address: true },
+        include: {
+          match: { include: { jobRequest: { include: { customer: true, address: true } } } },
+        },
       },
     },
     orderBy: { booking: { scheduledDate: 'asc' } },
@@ -192,13 +198,11 @@ export async function getJobWithFullContext(jobId: string) {
     include: {
       booking: {
         include: {
-          customer: true,
-          service: true,
-          address: true,
+          match: { include: { jobRequest: { include: { customer: true, address: true } } } },
           payment: true,
         },
       },
-      technician: true,
+      provider: true,
       photos: true,
       extras: true,
       statusHistory: { orderBy: { timestamp: 'asc' } },
@@ -212,7 +216,6 @@ export async function createExtraWork(params: {
   jobId: string
   description: string
   amountRand: number
-  businessId: string
   customerPhone: string
   customerName: string
   bookingId: string
@@ -240,7 +243,6 @@ export async function createExtraWork(params: {
   const approvalUrl = `${process.env.NEXT_PUBLIC_APP_URL}/approve/${extra.approvalToken}`
 
   await sendExtraWorkApproval({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     customerName: params.customerName,
     customerPhone: params.customerPhone,

@@ -8,7 +8,6 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { linkCustomerAccount } from '@/lib/auth'
-import { db } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,18 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Valid E.164 phone required' }, { status: 400 })
     }
 
-    // Resolve business context (single-tenant: from env; multi-tenant: from subdomain)
-    const slug = process.env.BUSINESS_SLUG ?? ''
-    const business = await db.business.findUnique({ where: { slug } })
-    if (!business) {
-      return NextResponse.json({ error: 'Business not found' }, { status: 500 })
-    }
-
-    const result = await linkCustomerAccount({
-      userId,
-      phone,
-      businessId: business.id,
-    })
+    const result = await linkCustomerAccount({ userId, phone })
 
     return NextResponse.json({ customerId: result.id, isNew: result.isNew })
   } catch (err) {

@@ -21,31 +21,25 @@ export async function GET(request: Request) {
   const bookings = await db.booking.findMany({
     where: {
       scheduledDate: { gte: windowStart, lte: windowEnd },
-      status: { in: ['SCHEDULED', 'CONFIRMED'] },
+      status: { in: ['SCHEDULED', 'RESCHEDULED'] },
     },
     include: {
-      customer: { select: { name: true, phone: true } },
-      service:  { select: { name: true } },
-      slot:     { select: { windowStart: true, windowEnd: true } },
+      match: { include: { jobRequest: { include: { customer: { select: { name: true, phone: true } } } } } },
     },
   })
 
   let sent = 0
 
   for (const booking of bookings) {
+    const customer = booking.match.jobRequest.customer
     try {
-      const scheduledWindow =
-        booking.scheduledWindow ??
-        (booking.slot
-          ? `${booking.slot.windowStart}–${booking.slot.windowEnd}`
-          : 'Time to be confirmed')
+      const scheduledWindow = booking.scheduledWindow ?? 'Time to be confirmed'
 
       await sendBookingReminder({
-        businessId:      booking.businessId,
         bookingId:       booking.id,
-        customerName:    booking.customer.name,
-        customerPhone:   booking.customer.phone,
-        serviceName:     booking.service.name,
+        customerName:    customer.name,
+        customerPhone:   customer.phone,
+        serviceName:     booking.match.jobRequest.category,
         scheduledWindow,
       })
 

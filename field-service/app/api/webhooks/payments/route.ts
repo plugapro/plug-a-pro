@@ -41,10 +41,14 @@ export async function POST(request: NextRequest) {
       // Send WhatsApp booking confirmation
       const booking = await db.booking.findUnique({
         where: { id: event.bookingId },
-        include: { customer: true, service: true },
+        include: {
+          match: { include: { jobRequest: { include: { customer: true } } } },
+        },
       })
 
-      if (booking?.customer && booking.scheduledDate) {
+
+      const customer = booking?.match?.jobRequest?.customer
+      if (customer && booking?.scheduledDate) {
         const window = booking.scheduledWindow ?? 'TBC'
         const dateLabel = booking.scheduledDate.toLocaleDateString('en-ZA', {
           weekday: 'long',
@@ -53,11 +57,10 @@ export async function POST(request: NextRequest) {
         })
 
         await sendBookingConfirmation({
-          businessId: booking.businessId,
           bookingId: booking.id,
-          customerName: booking.customer.name,
-          customerPhone: booking.customer.phone,
-          serviceName: booking.service.name,
+          customerName: customer.name,
+          customerPhone: customer.phone,
+          serviceName: booking.match.jobRequest.category,
           scheduledWindow: `${dateLabel}, ${window}`,
           bookingUrl: `${process.env.NEXT_PUBLIC_APP_URL}/bookings/${booking.id}`,
         })

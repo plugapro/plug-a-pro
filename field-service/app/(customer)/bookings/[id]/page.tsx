@@ -1,5 +1,5 @@
 // ─── Customer: Booking detail ─────────────────────────────────────────────────
-// Shows tracking timeline, technician status, invoice link, and rating prompt.
+// Shows tracking timeline, provider status, invoice link, and rating prompt.
 
 export const dynamic = 'force-dynamic'
 
@@ -7,7 +7,6 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { releaseSlot } from '@/lib/slotting'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
@@ -16,12 +15,12 @@ import { Card, CardContent } from '@/components/ui/card'
 export const metadata = buildMetadata({ title: 'Booking Details' })
 
 const JOB_TIMELINE: Array<{ status: string; label: string; description: string }> = [
-  { status: 'ASSIGNED',          label: 'Technician assigned',   description: 'A technician has been assigned to your job' },
-  { status: 'EN_ROUTE',          label: 'On the way',             description: 'Your technician is travelling to you' },
-  { status: 'ARRIVED',           label: 'Arrived',                description: 'Your technician is on site' },
-  { status: 'STARTED',           label: 'Work started',           description: 'Work is in progress' },
-  { status: 'AWAITING_APPROVAL', label: 'Your approval needed',   description: 'Review additional work request' },
-  { status: 'COMPLETED',         label: 'Completed',              description: 'Your job is complete' },
+  { status: 'SCHEDULED',         label: 'Provider assigned',    description: 'A provider has been assigned to your job' },
+  { status: 'EN_ROUTE',          label: 'On the way',            description: 'Your provider is travelling to you' },
+  { status: 'ARRIVED',           label: 'Arrived',               description: 'Your provider is on site' },
+  { status: 'STARTED',           label: 'Work started',          description: 'Work is in progress' },
+  { status: 'AWAITING_APPROVAL', label: 'Your approval needed',  description: 'Review additional work request' },
+  { status: 'COMPLETED',         label: 'Completed',             description: 'Your job is complete' },
 ]
 
 export default async function BookingDetailPage({
@@ -37,16 +36,25 @@ export default async function BookingDetailPage({
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
-      customer: true,
-      service:  true,
-      address:  true,
-      payment:  true,
-      invoice:  true,
+      match: {
+        include: {
+          jobRequest: {
+            include: {
+              customer: true,
+              address: true,
+            },
+          },
+          provider: { select: { name: true } },
+        },
+      },
+      quote: true,
+      payment: true,
+      invoice: true,
       job: {
         include: {
-          technician: { select: { name: true } },
           statusHistory: { orderBy: { timestamp: 'asc' } },
           extras: { where: { status: 'PENDING' } },
+          photos: true,
         },
       },
     },
@@ -54,42 +62,51 @@ export default async function BookingDetailPage({
 
   if (!booking) notFound()
 
+  const customer = booking.match.jobRequest.customer
+  const address = booking.match.jobRequest.address
+
   // Verify ownership
-  if (booking.customer.userId !== session.id) {
+  if (customer.userId !== session.id) {
     redirect('/bookings')
   }
 
   // Check for existing rating
-  const existingRating = await db.rating.findUnique({ where: { bookingId: id } })
+  const existingRating = await db.review.findFirst({
+    where: { jobId: booking.job?.id ?? '', reviewerType: 'CUSTOMER' },
+  })
 
   const currentJobStatus = booking.job?.status
   const currentStatusIndex = JOB_TIMELINE.findIndex((s) => s.status === currentJobStatus)
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   const canCancel =
-    booking.status === 'PENDING_PAYMENT' || booking.status === 'CONFIRMED'
+    booking.status === 'SCHEDULED' || booking.status === 'RESCHEDULED'
 
   async function cancelBooking() {
     'use server'
-    const sess = await getSession()
+    const { getSession: getsess } = await import('@/lib/auth')
+    const sess = await getsess()
     if (!sess) redirect('/sign-in')
 
     const b = await db.booking.findUnique({
       where: { id },
-      select: { customerId: true, status: true, slotId: true, customer: { select: { userId: true } } },
+      select: {
+        status: true,
+        match: {
+          select: {
+            jobRequest: { select: { customer: { select: { userId: true } } } },
+          },
+        },
+      },
     })
     if (!b) notFound()
-    if (b.customer.userId !== sess.id) redirect('/bookings')
-    if (b.status !== 'PENDING_PAYMENT' && b.status !== 'CONFIRMED') redirect(`/bookings/${id}`)
+    if (b.match.jobRequest.customer?.userId !== sess.id) redirect('/bookings')
+    if (b.status !== 'SCHEDULED' && b.status !== 'RESCHEDULED') redirect(`/bookings/${id}`)
 
     await db.booking.update({
       where: { id },
       data: { status: 'CANCELLED' },
     })
-
-    if (b.slotId) {
-      await releaseSlot(b.slotId)
-    }
 
     redirect('/bookings')
   }
@@ -102,7 +119,9 @@ export default async function BookingDetailPage({
           <Link href="/bookings" className="text-xs text-muted-foreground hover:text-foreground">
             ← My Bookings
           </Link>
-          <h1 className="text-xl font-semibold mt-1">{booking.service.name}</h1>
+          <h1 className="text-xl font-semibold mt-1">
+            {booking.job?.id ? `Job #${booking.id.slice(-8).toUpperCase()}` : `Booking #${booking.id.slice(-8).toUpperCase()}`}
+          </h1>
           <p className="text-sm text-muted-foreground font-mono">
             {booking.id.slice(-8).toUpperCase()}
           </p>
@@ -120,13 +139,15 @@ export default async function BookingDetailPage({
             : 'TBC'}
           {booking.scheduledWindow ? ` · ${booking.scheduledWindow}` : ''}
         </Row>
-        <Row label="Address">
-          {booking.address.street}, {booking.address.suburb}, {booking.address.city}
-        </Row>
-        {booking.job?.technician && (
-          <Row label="Technician">{booking.job.technician.name}</Row>
+        {address && (
+          <Row label="Address">
+            {address.street}, {address.suburb}, {address.city}
+          </Row>
         )}
-        <Row label="Total">R {Number(booking.totalAmount).toFixed(2)}</Row>
+        {booking.match.provider && (
+          <Row label="Provider">{booking.match.provider.name}</Row>
+        )}
+        <Row label="Total">R {Number(booking.quote.amount).toFixed(2)}</Row>
       </div>
 
       {/* Pending approval */}
@@ -210,7 +231,7 @@ export default async function BookingDetailPage({
       )}
 
       {/* Rating prompt */}
-      {booking.status === 'COMPLETED' && !existingRating && (
+      {booking.status === 'COMPLETED' && !existingRating && booking.job && (
         <Link
           href={`/bookings/${booking.id}/rate`}
           className="block w-full rounded-xl border-2 border-dashed p-4 text-center text-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"

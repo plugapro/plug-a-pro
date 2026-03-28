@@ -1,17 +1,27 @@
-// ─── Customer: Booking flow entry point ──────────────────────────────────────
-// Server Component: fetches service + businessId, renders client BookingFlow.
+// ─── Customer: Job request entry point ────────────────────────────────────────
+// Server Component: resolves category from slug, renders client BookingFlow.
 
 export const dynamic = 'force-dynamic'
 
 import { notFound, redirect } from 'next/navigation'
-import { db } from '@/lib/db'
-import { getSession, resolveBusinessId } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { BookingFlow } from '@/components/customer/BookingFlow'
 
-export const metadata = buildMetadata({ title: 'Book' })
+export const metadata = buildMetadata({ title: 'Request a Job' })
 
-export default async function BookServicePage({
+const CATEGORIES: Record<string, { name: string; description: string }> = {
+  plumbing:   { name: 'Plumbing',       description: 'Leaks, installations, drain clearing and more.' },
+  painting:   { name: 'Painting',       description: 'Interior and exterior painting services.' },
+  garden:     { name: 'Garden',         description: 'Lawn care, landscaping, and tree trimming.' },
+  handyman:   { name: 'Handyman',       description: 'General repairs and odd jobs around the home.' },
+  appliances: { name: 'Appliances',     description: 'Repairs and installation of home appliances.' },
+  electrical: { name: 'Electrical',     description: 'Wiring, fault-finding, and compliance certificates.' },
+  diy:        { name: 'DIY & Assembly', description: 'Flat-pack assembly, shelving, and mounting.' },
+  roofing:    { name: 'Roofing',        description: 'Roof repairs, waterproofing, and inspections.' },
+}
+
+export default async function RequestJobPage({
   params,
 }: {
   params: Promise<{ serviceId: string }>
@@ -19,34 +29,16 @@ export default async function BookServicePage({
   const session = await getSession()
   if (!session) redirect('/sign-in')
 
-  const { serviceId } = await params
+  const { serviceId: category } = await params
 
-  const service = await db.service.findUnique({
-    where: { id: serviceId },
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      category: true,
-      pricingType: true,
-      basePrice: true,
-      callOutFee: true,
-      duration: true,
-      active: true,
-      businessId: true,
-    },
-  })
+  const categoryInfo = CATEGORIES[category]
+  if (!categoryInfo) notFound()
 
-  if (!service || !service.active) notFound()
-
-  const businessId = await resolveBusinessId()
-
-  // Serialise Decimal fields to plain numbers for client component
-  const serialised = {
-    ...service,
-    basePrice: service.basePrice ? Number(service.basePrice) : null,
-    callOutFee: service.callOutFee ? Number(service.callOutFee) : null,
+  const categoryData = {
+    slug: category,
+    name: categoryInfo.name,
+    description: categoryInfo.description,
   }
 
-  return <BookingFlow service={serialised} businessId={businessId} />
+  return <BookingFlow category={categoryData} />
 }

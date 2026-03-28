@@ -7,16 +7,16 @@
 //     → processInboundMessage()
 //     → loadConversation()
 //     → dispatchToFlow()
-//       → booking.ts | registration.ts | status.ts
+//       → job-request.ts | registration.ts | status.ts
 //     → saveConversation()
 
 import { db } from './db'
 import type { Prisma } from '@prisma/client'
 import { parseInbound, sendText, type InboundMessage } from './whatsapp-interactive'
 import {
-  handleBookingFlow,
+  handleJobRequestFlow,
   showMainMenu,
-} from './whatsapp-flows/booking'
+} from './whatsapp-flows/job-request'
 import {
   handleRegistrationFlow,
   REGISTRATION_TRIGGERS,
@@ -43,15 +43,14 @@ const CANCEL_KEYWORDS = ['cancel', 'cancellation', 'kanselleer', 'stop booking']
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
-  message: InboundMessage,
-  businessId: string
+  message: InboundMessage
 ): Promise<void> {
   const phone = message.from
   const reply = parseInbound(message)
 
   try {
     // Load or create conversation session
-    const conversation = await loadConversation(phone, businessId)
+    const conversation = await loadConversation(phone)
     const isExpired = conversation.expiresAt < new Date()
 
     // Override: reset keywords always restart
@@ -90,15 +89,15 @@ export async function processInboundMessage(
       flow = 'help'
       step = 'help_menu'
     } else if (reply.id === 'book' || reply.id === 'browse_categories') {
-      flow = 'booking'
+      flow = 'job_request'
       step = 'browse_categories'
     } else if (reply.id === 'status' || reply.id === 'my_booking') {
       flow = 'status'
       step = 'status_show'
     } else if (reply.id?.startsWith('view_job_') || reply.id?.startsWith('accept_job_') || reply.id?.startsWith('decline_job_')) {
-      // Technician job management
+      // Provider job management
       const jobId = reply.id.replace(/^(view_job_|accept_job_|decline_job_)/, '')
-      flow = 'technician_job'
+      flow = 'provider_job'
       step = reply.id.startsWith('accept_job_') ? 'tech_job_confirm_accept'
            : reply.id.startsWith('decline_job_') ? 'tech_job_confirm_decline'
            : 'tech_job_view'
@@ -106,11 +105,11 @@ export async function processInboundMessage(
     }
 
     // Dispatch to flow handler
-    const ctx = { phone, businessId, step, data, reply, flow }
+    const ctx = { phone, step, data, reply, flow }
     let result: { nextStep: FlowStep; nextData?: Partial<ConversationData> } = { nextStep: step, nextData: data }
 
-    if (flow === 'booking' || step === 'browse_categories') {
-      result = await handleBookingFlow({ ...ctx, step: step === 'welcome' && flow === 'booking' ? 'browse_categories' : step })
+    if (flow === 'job_request' || step === 'browse_categories') {
+      result = await handleJobRequestFlow({ ...ctx, step: step === 'welcome' && flow === 'job_request' ? 'browse_categories' : step })
     } else if (flow === 'registration') {
       result = await handleRegistrationFlow(ctx)
     } else if (flow === 'status') {
@@ -121,8 +120,8 @@ export async function processInboundMessage(
       result = await handleRescheduleFlow(ctx)
     } else if (flow === 'cancel') {
       result = await handleCancelFlow(ctx)
-    } else if (flow === 'technician_job') {
-      result = await handleTechnicianJobFlow(ctx)
+    } else if (flow === 'provider_job') {
+      result = await handleProviderJobFlow(ctx)
     } else {
       // Idle / unknown — show main menu
       await showMainMenu(phone)
@@ -136,7 +135,6 @@ export async function processInboundMessage(
 
     await saveConversation({
       phone,
-      businessId,
       flow: isTerminal ? 'idle' : flow,
       step: isTerminal ? 'welcome' : result.nextStep,
       data: { ...data, ...(result.nextData ?? {}) },
@@ -157,9 +155,9 @@ export async function processInboundMessage(
 
 // ─── Conversation state ───────────────────────────────────────────────────────
 
-async function loadConversation(phone: string, businessId: string) {
+async function loadConversation(phone: string) {
   const existing = await db.conversation.findUnique({
-    where: { phone_businessId: { phone, businessId } },
+    where: { phone },
   })
 
   if (existing) return existing
@@ -168,7 +166,6 @@ async function loadConversation(phone: string, businessId: string) {
   return db.conversation.create({
     data: {
       phone,
-      businessId,
       flow: 'idle',
       step: 'welcome',
       data: {},
@@ -179,16 +176,14 @@ async function loadConversation(phone: string, businessId: string) {
 
 async function saveConversation(params: {
   phone: string
-  businessId: string
   flow: FlowName
   step: FlowStep
   data: ConversationData
 }): Promise<void> {
   await db.conversation.upsert({
-    where: { phone_businessId: { phone: params.phone, businessId: params.businessId } },
+    where: { phone: params.phone },
     create: {
       phone: params.phone,
-      businessId: params.businessId,
       flow: params.flow,
       step: params.step,
       data: params.data as Prisma.InputJsonValue,
@@ -203,33 +198,33 @@ async function saveConversation(params: {
   })
 }
 
-// ─── Job notification to technician via WhatsApp ─────────────────────────────
-// Replaces direct customer ↔ technician contact — all mediated through the platform
+// ─── Job notification to provider via WhatsApp ───────────────────────────────
+// Replaces direct customer ↔ provider contact — all mediated through the platform
 
-export async function notifyTechnicianNewJob(params: {
-  technicianPhone: string
+export async function notifyProviderNewJob(params: {
+  providerPhone: string
   jobId: string
-  serviceName: string
+  category: string
   address: string
   scheduledWindow: string
   customerInitial: string  // First name only — never share full customer contact
-  bookingId: string
+  jobRequestId: string
 }): Promise<void> {
   const { sendButtons } = await import('./whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   await sendButtons(
-    params.technicianPhone,
-    `🔔 *New Job Assigned*\n\n🔧 ${params.serviceName}\n📍 ${params.address}\n🗓 ${params.scheduledWindow}\n👤 Customer: ${params.customerInitial}\n\nOpen the job for full details:`,
+    params.providerPhone,
+    `🔔 *New Job Assigned*\n\n🔧 ${params.category}\n📍 ${params.address}\n🗓 ${params.scheduledWindow}\n👤 Customer: ${params.customerInitial}\n\nOpen the job for full details:`,
     [
       { id: `view_job_${params.jobId}`, title: '📋 View Job' },
       { id: `accept_job_${params.jobId}`, title: '✅ Accept' },
     ],
-    { footer: `Booking ref: ${params.bookingId.slice(-8).toUpperCase()}` }
+    { footer: `Job ref: ${params.jobRequestId.slice(-8).toUpperCase()}` }
   )
 }
 
-export async function notifyTechnicianApplicationResult(params: {
+export async function notifyProviderApplicationResult(params: {
   phone: string
   name: string
   approved: boolean
@@ -241,13 +236,13 @@ export async function notifyTechnicianApplicationResult(params: {
   if (params.approved) {
     await sendTemplate({
       to: params.phone,
-      template: 'technician_welcome',
+      template: 'technician_application_received',
       components: [
         {
           type: 'body',
           parameters: [
             { type: 'text', text: params.name },
-            { type: 'text', text: `${appUrl}/technician` },
+            { type: 'text', text: `${appUrl}/provider` },
           ],
         },
       ],
@@ -272,55 +267,47 @@ export async function notifyTechnicianApplicationResult(params: {
 // ─── Reschedule flow ──────────────────────────────────────────────────────────
 
 async function handleRescheduleFlow(
-  ctx: Parameters<typeof handleBookingFlow>[0]
+  ctx: Parameters<typeof handleJobRequestFlow>[0]
 ): Promise<{ nextStep: FlowStep; nextData?: Partial<ConversationData> }> {
-  const { sendButtons, sendList, sendText } = await import('./whatsapp-interactive')
-  const { getAvailableSlots } = await import('./slotting')
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const { sendButtons, sendText } = await import('./whatsapp-interactive')
 
   if (ctx.step === 'reschedule_reason') {
-    // Find latest active booking
+    // Find latest active job request
     const customer = await db.customer.findUnique({
-      where: { businessId_phone: { businessId: ctx.businessId, phone: ctx.phone } },
+      where: { phone: ctx.phone },
     })
     if (!customer) {
-      await sendText(ctx.phone, "📋 No bookings found for your number. Send 'Hi' to start a new booking.")
+      await sendText(ctx.phone, "📋 No job requests found for your number. Send 'Hi' to submit a new request.")
       return { nextStep: 'done' }
     }
 
-    const booking = await db.booking.findFirst({
+    const jobRequest = await db.jobRequest.findFirst({
       where: {
         customerId: customer.id,
-        status: { in: ['CONFIRMED', 'SCHEDULED'] },
+        status: { in: ['OPEN', 'MATCHING', 'MATCHED'] },
       },
-      include: { service: true },
-      orderBy: { scheduledDate: 'asc' },
+      orderBy: { createdAt: 'desc' },
     })
 
-    if (!booking) {
-      await sendText(ctx.phone, "You don't have any upcoming bookings to reschedule. Send 'Hi' to book a new service.")
+    if (!jobRequest) {
+      await sendText(ctx.phone, "You don't have any active job requests to reschedule. Send 'Hi' to submit a new request.")
       return { nextStep: 'done' }
     }
-
-    const dateLabel = booking.scheduledDate?.toLocaleDateString('en-ZA', {
-      weekday: 'long', day: 'numeric', month: 'long',
-    }) ?? 'TBC'
 
     await sendButtons(
       ctx.phone,
-      `🔄 *Reschedule Booking*\n\n🔧 ${booking.service.name}\n🗓 Currently: ${dateLabel}${booking.scheduledWindow ? ` · ${booking.scheduledWindow}` : ''}\n\nWhy do you need to reschedule?`,
+      `🔄 *Reschedule Request*\n\n🔧 ${jobRequest.category}\n\nWhy do you need to reschedule?`,
       [
         { id: 'rs_personal', title: '👤 Personal reason' },
         { id: 'rs_work', title: '💼 Work conflict' },
         { id: 'rs_other', title: '✏️ Other' },
       ]
     )
-    return { nextStep: 'reschedule_select_slot', nextData: { rescheduleBookingId: booking.id, selectedServiceId: booking.serviceId } }
+    return { nextStep: 'reschedule_confirm', nextData: { rescheduleBookingId: jobRequest.id } }
   }
 
-  if (ctx.step === 'reschedule_select_slot') {
+  if (ctx.step === 'reschedule_confirm') {
     if (ctx.reply.id?.startsWith('rs_')) {
-      // Save reason label, show new slots
       const reasons: Record<string, string> = {
         rs_personal: 'Personal reason',
         rs_work: 'Work conflict',
@@ -328,76 +315,27 @@ async function handleRescheduleFlow(
       }
       const reason = reasons[ctx.reply.id] ?? 'Not specified'
 
-      // Show available slots for the same service
-      const slots = await getAvailableSlots({
-        businessId: ctx.businessId,
-        serviceId: ctx.data.selectedServiceId!,
-        suburb: '',
-        city: '',
-        limit: 6,
-      })
-
-      if (slots.length === 0) {
-        await sendText(ctx.phone, "😔 No available slots right now. We'll contact you as soon as a slot opens.")
-        return { nextStep: 'done', nextData: { rescheduleReason: reason } }
-      }
-
-      const rows = slots.map((s) => ({
-        id: `rslot_${s.id ?? s.windowStart}`,
-        title: new Date(s.date).toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' }),
-        description: `${s.windowStart}–${s.windowEnd}`,
-      }))
-
-      await sendList(
+      await sendButtons(
         ctx.phone,
-        '🗓 Choose your new time:',
-        [{ title: 'Available Slots', rows }],
-        { buttonLabel: 'Choose New Time' }
+        `🗓 Please reply with your preferred new availability (e.g. "Next week, mornings" or "Saturday afternoon").\n\nReason noted: _${reason}_`,
+        [
+          { id: 'rs_confirm_yes', title: '✅ Send Availability' },
+          { id: 'rs_confirm_no', title: '❌ Keep Original' },
+        ]
       )
       return { nextStep: 'reschedule_confirm', nextData: { rescheduleReason: reason } }
     }
 
-    if (ctx.reply.id?.startsWith('rslot_')) {
-      // Move to confirm
-      return { nextStep: 'reschedule_confirm', nextData: { selectedSlotId: ctx.reply.id.replace('rslot_', ''), selectedSlotLabel: ctx.reply.title ?? '' } }
-    }
-
-    await sendText(ctx.phone, 'Please choose a new time from the list above.')
-    return { nextStep: 'reschedule_select_slot' }
-  }
-
-  if (ctx.step === 'reschedule_confirm') {
-    if (ctx.reply.id?.startsWith('rslot_')) {
-      const slotId = ctx.reply.id.replace('rslot_', '')
-      await sendButtons(
-        ctx.phone,
-        `🗓 Reschedule to *${ctx.reply.title}*?\n\nTap Confirm to update your booking.`,
-        [
-          { id: 'rs_confirm_yes', title: '✅ Confirm' },
-          { id: 'rs_confirm_no', title: '❌ Keep Original' },
-        ]
-      )
-      return { nextStep: 'reschedule_confirm', nextData: { selectedSlotId: slotId, selectedSlotLabel: ctx.reply.title ?? '' } }
-    }
-
     if (ctx.reply.id === 'rs_confirm_yes') {
-      await db.booking.update({
-        where: { id: ctx.data.rescheduleBookingId! },
-        data: {
-          slotId: ctx.data.selectedSlotId,
-          scheduledWindow: ctx.data.selectedSlotLabel,
-          status: 'RESCHEDULED',
-        },
-      })
       await sendText(
         ctx.phone,
-        `✅ Booking rescheduled to *${ctx.data.selectedSlotLabel}*.\n\nYou'll receive a reminder the day before. Send 'Hi' to return to the menu.`
+        `✅ Got it! Please type your preferred new availability and we'll update your request.\n\nSend 'Hi' to return to the menu.`
       )
       return { nextStep: 'done' }
     }
 
     if (ctx.reply.id === 'rs_confirm_no') {
-      await sendText(ctx.phone, 'No problem! Your original booking time has been kept. 👍')
+      await sendText(ctx.phone, 'No problem! Your original availability has been kept. 👍')
       return { nextStep: 'done' }
     }
 
@@ -410,72 +348,67 @@ async function handleRescheduleFlow(
 // ─── Cancel flow ──────────────────────────────────────────────────────────────
 
 async function handleCancelFlow(
-  ctx: Parameters<typeof handleBookingFlow>[0]
+  ctx: Parameters<typeof handleJobRequestFlow>[0]
 ): Promise<{ nextStep: FlowStep; nextData?: Partial<ConversationData> }> {
   const { sendButtons, sendText } = await import('./whatsapp-interactive')
 
   const customer = await db.customer.findUnique({
-    where: { businessId_phone: { businessId: ctx.businessId, phone: ctx.phone } },
+    where: { phone: ctx.phone },
   })
   if (!customer) {
-    await sendText(ctx.phone, "No bookings found. Send 'Hi' to make a new booking.")
+    await sendText(ctx.phone, "No job requests found. Send 'Hi' to submit a new request.")
     return { nextStep: 'done' }
   }
 
-  const booking = await db.booking.findFirst({
+  const jobRequest = await db.jobRequest.findFirst({
     where: {
       customerId: customer.id,
-      status: { in: ['PENDING_PAYMENT', 'CONFIRMED', 'SCHEDULED'] },
+      status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING', 'MATCHED'] },
     },
-    include: { service: true },
-    orderBy: { scheduledDate: 'asc' },
+    orderBy: { createdAt: 'desc' },
   })
 
-  if (!booking) {
-    await sendText(ctx.phone, "You don't have any active bookings to cancel. Send 'Hi' for the main menu.")
+  if (!jobRequest) {
+    await sendText(ctx.phone, "You don't have any active job requests to cancel. Send 'Hi' for the main menu.")
     return { nextStep: 'done' }
   }
 
   if (ctx.step === 'cancel_confirm') {
-    const dateLabel = booking.scheduledDate?.toLocaleDateString('en-ZA', {
-      weekday: 'long', day: 'numeric', month: 'long',
-    }) ?? 'TBC'
-
     await sendButtons(
       ctx.phone,
-      `❌ *Cancel Booking*\n\n🔧 ${booking.service.name}\n🗓 ${dateLabel}\n\nAre you sure you want to cancel? Cancellation fees may apply.`,
+      `❌ *Cancel Job Request*\n\n🔧 ${jobRequest.category}\n\nAre you sure you want to cancel this request?`,
       [
         { id: 'cancel_yes', title: '❌ Yes, Cancel' },
-        { id: 'cancel_no', title: '← Keep Booking' },
+        { id: 'cancel_no', title: '← Keep Request' },
       ]
     )
-    return { nextStep: 'cancel_confirm', nextData: { rescheduleBookingId: booking.id } }
+    return { nextStep: 'cancel_confirm', nextData: { rescheduleBookingId: jobRequest.id } }
   }
 
   if (ctx.reply.id === 'cancel_yes') {
-    await db.booking.update({
-      where: { id: booking.id },
+    await db.jobRequest.update({
+      where: { id: jobRequest.id },
       data: { status: 'CANCELLED' },
     })
     await sendText(
       ctx.phone,
-      `✅ Your ${booking.service.name} booking has been cancelled.\n\nA refund (if applicable) will be processed within 3–5 business days.\n\nSend 'Hi' to make a new booking anytime. 👋`
+      `✅ Your ${jobRequest.category} job request has been cancelled.\n\nSend 'Hi' to submit a new request anytime. 👋`
     )
     return { nextStep: 'done' }
   }
 
   if (ctx.reply.id === 'cancel_no') {
-    await sendText(ctx.phone, "Great! Your booking has been kept. Send 'Hi' to return to the menu. 👍")
+    await sendText(ctx.phone, "Great! Your job request has been kept. Send 'Hi' to return to the menu. 👍")
     return { nextStep: 'done' }
   }
 
   return { nextStep: 'cancel_confirm' }
 }
 
-// ─── Technician job management flow ───────────────────────────────────────────
+// ─── Provider job management flow ────────────────────────────────────────────
 
-async function handleTechnicianJobFlow(
-  ctx: Parameters<typeof handleBookingFlow>[0]
+async function handleProviderJobFlow(
+  ctx: Parameters<typeof handleJobRequestFlow>[0]
 ): Promise<{ nextStep: FlowStep; nextData?: Partial<ConversationData> }> {
   const { sendButtons, sendCtaUrl, sendText } = await import('./whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -491,9 +424,11 @@ async function handleTechnicianJobFlow(
     include: {
       booking: {
         include: {
-          service: true,
-          address: true,
-          slot: true,
+          match: {
+            include: {
+              jobRequest: { include: { address: true } },
+            },
+          },
         },
       },
     },
@@ -505,13 +440,13 @@ async function handleTechnicianJobFlow(
   }
 
   if (ctx.step === 'tech_job_view') {
-    const addr = job.booking.address
+    const addr = job.booking.match.jobRequest.address
     const addrLabel = addr ? `${addr.street}, ${addr.suburb}` : 'Address in app'
-    const slotLabel = job.booking.scheduledWindow ?? 'Time in app'
+    const categoryLabel = job.booking.match.jobRequest.category
 
     await sendButtons(
       ctx.phone,
-      `📋 *Job Details*\n\n🔧 ${job.booking.service.name}\n📍 ${addrLabel}\n🗓 ${slotLabel}\n\nAccept this job?`,
+      `📋 *Job Details*\n\n🔧 ${categoryLabel}\n📍 ${addrLabel}\n\nAccept this job?`,
       [
         { id: `accept_job_${jobId}`, title: '✅ Accept' },
         { id: `decline_job_${jobId}`, title: '❌ Decline' },
@@ -523,9 +458,9 @@ async function handleTechnicianJobFlow(
   if (ctx.step === 'tech_job_confirm_accept' && (ctx.reply.id === `accept_job_${jobId}` || ctx.reply.id?.startsWith('accept_job_'))) {
     await db.job.update({
       where: { id: jobId },
-      data: { status: 'ASSIGNED' },
+      data: { status: 'SCHEDULED' },
     })
-    const jobUrl = `${appUrl}/technician/jobs/${jobId}`
+    const jobUrl = `${appUrl}/provider/jobs/${jobId}`
     await sendCtaUrl(
       ctx.phone,
       `✅ Job accepted! See full customer notes and directions in the app:`,
@@ -550,10 +485,10 @@ async function handleTechnicianJobFlow(
   }
 
   if (ctx.reply.id?.startsWith('dc_')) {
-    // Technician declined — mark job for reassignment
+    // Provider declined — mark job for reassignment
     await db.job.update({
       where: { id: jobId },
-      data: { status: 'ASSIGNED', notes: `Declined by ${ctx.phone}` } as never,
+      data: { notes: `Declined by ${ctx.phone}` } as never,
     }).catch(() => {}) // best-effort; admin handles reassignment
 
     await sendText(
@@ -565,3 +500,7 @@ async function handleTechnicianJobFlow(
 
   return { nextStep: 'tech_job_view' }
 }
+
+// ─── Backwards-compat alias ───────────────────────────────────────────────────
+/** @deprecated use notifyProviderApplicationResult */
+export const notifyTechnicianApplicationResult = notifyProviderApplicationResult

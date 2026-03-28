@@ -23,7 +23,7 @@ function getConfig() {
 
 // ─── Core send functions ──────────────────────────────────────────────────────
 
-/** Send a template message. All business-initiated messages must use approved templates. */
+/** Send a template message. All platform-initiated messages must use approved templates. */
 export async function sendTemplate(params: {
   to: string // E.164 format: +27600000000
   template: TemplateName
@@ -106,7 +106,6 @@ export async function sendText(params: {
 // These are called from booking/job lifecycle hooks.
 
 export async function sendBookingConfirmation(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -131,7 +130,6 @@ export async function sendBookingConfirmation(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'booking_confirmation',
@@ -139,12 +137,11 @@ export async function sendBookingConfirmation(params: {
   })
 }
 
-export async function sendTechnicianOnTheWay(params: {
-  businessId: string
+export async function sendProviderOnTheWay(params: {
   bookingId: string
   customerName: string
   customerPhone: string
-  technicianName: string
+  providerName: string
   eta: string // "approximately 20 minutes"
 }): Promise<void> {
   const externalId = await sendTemplate({
@@ -155,7 +152,7 @@ export async function sendTechnicianOnTheWay(params: {
         type: 'body',
         parameters: [
           { type: 'text', text: params.customerName },
-          { type: 'text', text: params.technicianName },
+          { type: 'text', text: params.providerName },
           { type: 'text', text: params.eta },
         ],
       },
@@ -163,7 +160,6 @@ export async function sendTechnicianOnTheWay(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'technician_on_the_way',
@@ -172,7 +168,6 @@ export async function sendTechnicianOnTheWay(params: {
 }
 
 export async function sendExtraWorkApproval(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -197,7 +192,6 @@ export async function sendExtraWorkApproval(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'extra_work_approval',
@@ -206,7 +200,6 @@ export async function sendExtraWorkApproval(params: {
 }
 
 export async function sendJobCompleted(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -227,7 +220,6 @@ export async function sendJobCompleted(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'job_completed',
@@ -235,12 +227,11 @@ export async function sendJobCompleted(params: {
   })
 }
 
-export async function sendTechnicianArrived(params: {
-  businessId: string
+export async function sendProviderArrived(params: {
   bookingId: string
   customerName: string
   customerPhone: string
-  technicianName: string
+  providerName: string
 }): Promise<void> {
   const externalId = await sendTemplate({
     to: params.customerPhone,
@@ -250,13 +241,12 @@ export async function sendTechnicianArrived(params: {
         type: 'body',
         parameters: [
           { type: 'text', text: params.customerName },
-          { type: 'text', text: params.technicianName },
+          { type: 'text', text: params.providerName },
         ],
       },
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'technician_arrived',
@@ -265,7 +255,6 @@ export async function sendTechnicianArrived(params: {
 }
 
 export async function sendBookingReminder(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -287,7 +276,6 @@ export async function sendBookingReminder(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'booking_reminder',
@@ -296,7 +284,6 @@ export async function sendBookingReminder(params: {
 }
 
 export async function sendFollowUp(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -316,7 +303,6 @@ export async function sendFollowUp(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'follow_up',
@@ -325,7 +311,6 @@ export async function sendFollowUp(params: {
 }
 
 export async function sendQuoteReady(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -349,7 +334,6 @@ export async function sendQuoteReady(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'quote_ready',
@@ -358,7 +342,6 @@ export async function sendQuoteReady(params: {
 }
 
 export async function sendBookingCancelled(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -380,7 +363,6 @@ export async function sendBookingCancelled(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'booking_cancelled',
@@ -389,7 +371,6 @@ export async function sendBookingCancelled(params: {
 }
 
 export async function sendPaymentReminder(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -412,11 +393,10 @@ export async function sendPaymentReminder(params: {
       },
     ],
   })
-  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'payment_reminder', externalId })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'payment_reminder', externalId })
 }
 
 export async function sendPaymentReceived(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -439,15 +419,14 @@ export async function sendPaymentReceived(params: {
       },
     ],
   })
-  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'payment_received', externalId })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'payment_received', externalId })
 }
 
-export async function sendTechnicianAssigned(params: {
-  businessId: string
+export async function sendProviderAssigned(params: {
   bookingId: string
   customerName: string
   customerPhone: string
-  technicianFirstName: string
+  providerFirstName: string
   serviceName: string
   scheduledWindow: string
 }): Promise<void> {
@@ -459,18 +438,17 @@ export async function sendTechnicianAssigned(params: {
         type: 'body',
         parameters: [
           { type: 'text', text: params.customerName },
-          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.providerFirstName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.scheduledWindow },
         ],
       },
     ],
   })
-  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'technician_assigned', externalId })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'technician_assigned', externalId })
 }
 
 export async function sendBookingRescheduled(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -495,11 +473,10 @@ export async function sendBookingRescheduled(params: {
       },
     ],
   })
-  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'booking_rescheduled', externalId })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'booking_rescheduled', externalId })
 }
 
 export async function sendSlotAvailable(params: {
-  businessId: string
   customerPhone: string
   customerName: string
   serviceName: string
@@ -521,11 +498,10 @@ export async function sendSlotAvailable(params: {
       },
     ],
   })
-  await logMessage({ businessId: params.businessId, bookingId: '', to: params.customerPhone, template: 'slot_available', externalId })
+  await logMessage({ bookingId: '', to: params.customerPhone, template: 'slot_available', externalId })
 }
 
-export async function sendNoTechnicianAvailable(params: {
-  businessId: string
+export async function sendNoProviderAvailable(params: {
   bookingId: string
   customerName: string
   customerPhone: string
@@ -548,25 +524,25 @@ export async function sendNoTechnicianAvailable(params: {
       },
     ],
   })
-  await logMessage({ businessId: params.businessId, bookingId: params.bookingId, to: params.customerPhone, template: 'no_technician_available', externalId })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'no_technician_available', externalId })
 }
 
 export async function sendJobOffer(params: {
-  technicianPhone: string
-  technicianFirstName: string
+  providerPhone: string
+  providerFirstName: string
   serviceName: string
   area: string         // "Sandton, Johannesburg"
   scheduledWindow: string
   jobUrl: string
 }): Promise<void> {
   await sendTemplate({
-    to: params.technicianPhone,
+    to: params.providerPhone,
     template: 'job_offer',
     components: [
       {
         type: 'body',
         parameters: [
-          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.providerFirstName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.area },
           { type: 'text', text: params.scheduledWindow },
@@ -578,22 +554,22 @@ export async function sendJobOffer(params: {
   // No DB log needed — no bookingId in context
 }
 
-export async function sendTechnicianJobReminder(params: {
-  technicianPhone: string
-  technicianFirstName: string
+export async function sendProviderJobReminder(params: {
+  providerPhone: string
+  providerFirstName: string
   serviceName: string
   address: string
   scheduledWindow: string
   jobUrl: string
 }): Promise<void> {
   await sendTemplate({
-    to: params.technicianPhone,
+    to: params.providerPhone,
     template: 'technician_job_reminder',
     components: [
       {
         type: 'body',
         parameters: [
-          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.providerFirstName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.address },
           { type: 'text', text: params.scheduledWindow },
@@ -604,21 +580,21 @@ export async function sendTechnicianJobReminder(params: {
   })
 }
 
-export async function sendTechnicianPaymentReleased(params: {
-  technicianPhone: string
-  technicianFirstName: string
+export async function sendProviderPaymentReleased(params: {
+  providerPhone: string
+  providerFirstName: string
   amount: string          // "R 280.00"
   serviceName: string
   arrivalEstimate: string // "1–2 business days"
 }): Promise<void> {
   await sendTemplate({
-    to: params.technicianPhone,
+    to: params.providerPhone,
     template: 'technician_payment_released',
     components: [
       {
         type: 'body',
         parameters: [
-          { type: 'text', text: params.technicianFirstName },
+          { type: 'text', text: params.providerFirstName },
           { type: 'text', text: params.amount },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.arrivalEstimate },
@@ -628,7 +604,7 @@ export async function sendTechnicianPaymentReleased(params: {
   })
 }
 
-/** Notify admin when a new technician application is submitted via WhatsApp.
+/** Notify admin when a new provider application is submitted via WhatsApp.
  *  Admin phone is set via ADMIN_WHATSAPP_NUMBER env var.
  *  Falls back silently if not configured — non-critical. */
 export async function sendAdminNewApplication(params: {
@@ -650,7 +626,7 @@ export async function sendAdminNewApplication(params: {
     const { sendCtaUrl } = await import('./whatsapp-interactive')
     await sendCtaUrl(
       adminPhone,
-      `📋 *New Technician Application*\n\n👤 ${params.applicantName}\n📞 ${params.applicantPhone}\n🔧 Skills: ${skillList}\n📍 Area: ${areaList}\n\nRef: *${params.applicationId.slice(-8).toUpperCase()}*`,
+      `📋 *New Provider Application*\n\n👤 ${params.applicantName}\n📞 ${params.applicantPhone}\n🔧 Skills: ${skillList}\n📍 Area: ${areaList}\n\nRef: *${params.applicationId.slice(-8).toUpperCase()}*`,
       'Review Application',
       reviewUrl,
       { footer: 'Tap to approve or reject in the admin console' }
@@ -715,7 +691,6 @@ export async function processWebhookEvent(payload: WhatsAppWebhookPayload): Prom
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 async function logMessage(params: {
-  businessId: string
   bookingId: string
   to: string
   template: TemplateName
@@ -723,7 +698,6 @@ async function logMessage(params: {
 }) {
   await db.messageEvent.create({
     data: {
-      businessId: params.businessId,
       bookingId: params.bookingId,
       channel: 'WHATSAPP',
       templateName: params.template,

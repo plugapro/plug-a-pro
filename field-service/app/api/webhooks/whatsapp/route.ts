@@ -38,19 +38,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
-    // Resolve business from env (single-tenant) or WABA ID (multi-tenant)
-    const businessSlug = process.env.BUSINESS_SLUG ?? ''
-    const business = await db.business.findUnique({ where: { slug: businessSlug } })
-    const businessId = business?.id ?? ''
-
     // Process async — acknowledge immediately to avoid Meta timeouts/retries
     for (const entry of payload.entry ?? []) {
       for (const change of entry.changes ?? []) {
         const value = change.value
 
         // Route inbound messages to conversation bot
+        // Conversation is now unique on phone only — no businessId
         for (const message of value.messages ?? []) {
-          processInboundMessage(message, businessId).catch((err) => {
+          processInboundMessage(message).catch((err: unknown) => {
             console.error('[webhook/whatsapp] Bot error:', err)
           })
         }

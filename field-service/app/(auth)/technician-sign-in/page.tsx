@@ -1,8 +1,8 @@
 'use client'
 
-// ─── Technician sign-in — phone OTP ───────────────────────────────────────────
-// Technicians are LSM — phone OTP is the primary auth method.
-// Email is not collected or required. After OTP, the session carries role=technician
+// ─── Provider sign-in — phone OTP ─────────────────────────────────────────────
+// Providers are LSM — phone OTP is the primary auth method.
+// Email is not collected or required. After OTP, the session carries role=provider
 // (set when admin approves the application and creates the Supabase user invite).
 
 import { useState } from 'react'
@@ -19,7 +19,7 @@ function getSupabaseClient() {
   )
 }
 
-export default function TechnicianSignInPage() {
+export default function ProviderSignInPage() {
   const router = useRouter()
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
@@ -66,11 +66,11 @@ export default function TechnicianSignInPage() {
       {/* Header */}
       <div className="text-center space-y-2">
         <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
-          Technician Portal
+          Worker Portal
         </p>
         <h1 className="text-2xl font-semibold text-white">Sign in</h1>
         <p className="text-sm text-zinc-400">
-          Enter the mobile number linked to your technician account
+          Enter the mobile number linked to your provider account
         </p>
       </div>
 

@@ -1,5 +1,5 @@
 // ─── Web Push notification helper ─────────────────────────────────────────────
-// Uses the `web-push` package to deliver push notifications to technicians.
+// Uses the `web-push` package to deliver push notifications to providers.
 // Requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT in env.
 //
 // Generate VAPID keys:
@@ -61,16 +61,16 @@ export async function sendPushNotification(params: {
   }
 }
 
-// ─── Technician-targeted helper ───────────────────────────────────────────────
+// ─── Provider-targeted helper ─────────────────────────────────────────────────
 
-export async function notifyTechnicianPush(params: {
-  technicianId: string
+export async function notifyProviderPush(params: {
+  providerId: string
   title: string
   body: string
   url?: string
 }): Promise<void> {
   const subs = await db.pushSubscription.findMany({
-    where: { technicianId: params.technicianId },
+    where: { providerId: params.providerId },
   })
 
   if (subs.length === 0) return

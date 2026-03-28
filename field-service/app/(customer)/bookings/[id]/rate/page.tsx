@@ -26,18 +26,35 @@ export default async function RatePage({
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
-      customer: { select: { id: true, userId: true } },
-      service:  { select: { name: true } },
+      match: {
+        include: {
+          jobRequest: {
+            include: {
+              customer: { select: { id: true, userId: true } },
+            },
+          },
+        },
+      },
+      job: { select: { id: true } },
     },
   })
 
   if (!booking) notFound()
-  if (booking.customer.userId !== session.id) redirect('/bookings')
+
+  const customer = booking.match.jobRequest.customer
+  if (customer.userId !== session.id) redirect('/bookings')
   if (booking.status !== 'COMPLETED') redirect(`/bookings/${id}`)
+  if (!booking.job) redirect(`/bookings/${id}`)
+
+  const jobId = booking.job.id
 
   // Already rated — redirect back
-  const existing = await db.rating.findUnique({ where: { bookingId: id } })
+  const existing = await db.review.findFirst({
+    where: { jobId, reviewerType: 'CUSTOMER' },
+  })
   if (existing) redirect(`/bookings/${id}`)
+
+  const category = booking.match.jobRequest.category
 
   async function submitRating(formData: FormData) {
     'use server'
@@ -46,10 +63,11 @@ export default async function RatePage({
 
     if (!score || score < 1 || score > 5) return
 
-    await db.rating.create({
+    await db.review.create({
       data: {
-        bookingId:  id,
-        customerId: booking!.customer.id,
+        jobId,
+        reviewerType: 'CUSTOMER',
+        customerId:   customer.id,
         score,
         comment,
       },
@@ -63,7 +81,7 @@ export default async function RatePage({
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <h1 className="text-xl font-semibold">How was your experience?</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{booking.service.name}</p>
+          <p className="mt-1 text-sm text-muted-foreground capitalize">{category}</p>
         </div>
 
         <form action={submitRating} className="space-y-5">

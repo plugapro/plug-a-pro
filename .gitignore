@@ -15,3 +15,4 @@ Thumbs.db
 
 # Media source files (raw assets — processed outputs go into app public/ dirs)
 media assets/
+.vercel
