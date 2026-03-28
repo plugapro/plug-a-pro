@@ -17,14 +17,14 @@ export function Nav() {
       <div className="container mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         <Link href="/" className="flex items-center">
           <Image
-            src="/logo.png"
+            src="/logo-nav.png"
             alt="Plug-A-Pro"
-            width={140}
-            height={48}
+            width={318}
+            height={43}
             className="h-8 w-auto dark:hidden"
             priority
           />
-          <span className="hidden dark:inline font-bold text-sm brand-gradient-text">
+          <span className="hidden dark:inline font-bold text-base brand-gradient-text">
             Plug-A-Pro
           </span>
         </Link>
