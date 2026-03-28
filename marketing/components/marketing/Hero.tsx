@@ -31,7 +31,7 @@ export function Hero() {
         aria-hidden="true"
       />
       <div className="relative max-w-4xl mx-auto" style={{ color: "oklch(0.985 0 0)" }}>
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
+        <p className="text-xs font-medium uppercase tracking-widest mb-4 brand-gradient-text">
           Local help. Real quotes. Any small job.
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">

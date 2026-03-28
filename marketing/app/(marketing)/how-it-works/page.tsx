@@ -109,7 +109,7 @@ function FlowSection({
                 className="size-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
                 style={{
                   background:
-                    "linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-brand) 100%)",
+                    "linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-purple) 50%, var(--accent-brand) 100%)",
                 }}
               >
                 {s.step}

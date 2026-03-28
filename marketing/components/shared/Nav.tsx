@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { siteConfig } from "@/lib/metadata";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
@@ -15,8 +15,18 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-        <Link href="/" className="font-bold text-sm">
-          {siteConfig.name}
+        <Link href="/" className="flex items-center">
+          <Image
+            src="/logo.png"
+            alt="Plug-A-Pro"
+            width={140}
+            height={48}
+            className="h-8 w-auto dark:hidden"
+            priority
+          />
+          <span className="hidden dark:inline font-bold text-sm brand-gradient-text">
+            Plug-A-Pro
+          </span>
         </Link>
         <nav className="hidden md:flex items-center gap-6 text-sm">
           {navLinks.map((link) => (

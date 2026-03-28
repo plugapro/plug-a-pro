@@ -32,7 +32,7 @@ export function HowItWorksSteps() {
     >
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14">
-          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
+          <p className="text-xs font-medium uppercase tracking-widest mb-3 brand-gradient-text">
             How it works
           </p>
           <h2 className="text-3xl md:text-4xl font-bold">
@@ -46,7 +46,7 @@ export function HowItWorksSteps() {
                 className="text-5xl font-bold mb-4 bg-clip-text text-transparent"
                 style={{
                   backgroundImage:
-                    "linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-brand) 100%)",
+                    "linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-purple) 50%, var(--accent-brand) 100%)",
                 }}
                 aria-hidden="true"
               >
