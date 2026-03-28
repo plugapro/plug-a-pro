@@ -1,10 +1,5 @@
 'use client'
 
-// ─── Provider OTP verification ────────────────────────────────────────────────
-// After OTP verification, checks that the Supabase user has role=provider.
-// Providers are provisioned by admin (not self-serve) — if no provider role,
-// the session is rejected and the user is directed to apply via WhatsApp.
-
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
@@ -87,15 +82,15 @@ function ProviderVerifyForm() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="text-center space-y-2">
+      <div className="space-y-1 text-center">
         <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
           Worker Portal
         </p>
         <h1 className="text-2xl font-semibold text-white">Enter your code</h1>
         <p className="text-sm text-zinc-400">
-          Sent to <span className="text-white font-medium">{phone}</span>
+          Sent to <span className="font-medium text-white">{phone}</span>
         </p>
       </div>
 
@@ -112,17 +107,12 @@ function ProviderVerifyForm() {
           required
           autoFocus
           disabled={loading}
-          className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-600 text-3xl tracking-widest text-center h-16 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+          className="h-16 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 text-3xl tracking-widest text-center focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        <Button
-          type="submit"
-          size="lg"
-          disabled={loading || otp.length < 6}
-          className="w-full"
-        >
+        <Button type="submit" size="lg" disabled={loading || otp.length < 6} className="w-full">
           {loading ? 'Verifying…' : 'Confirm'}
         </Button>
       </form>
