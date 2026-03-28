@@ -50,39 +50,39 @@ const CUSTOMER_STEPS = [
 const WORKER_STEPS = [
   {
     step: "1",
-    title: "Register via WhatsApp or the web",
+    title: "Sign up on WhatsApp or online",
     detail:
-      "Tell us your name, what jobs you do, which areas you cover, and your typical availability. No formal business registration required — just your skills and a smartphone.",
+      "Tell us your name, what kind of jobs you do, which areas you work in, and when you're normally free. You don't need a registered business — just your skills and a phone.",
   },
   {
     step: "2",
-    title: "Platform review and activation",
+    title: "We check your application",
     detail:
-      "Your application is reviewed before you receive leads. Once activated, your profile is live and you're eligible for matched jobs in your area.",
+      "We look at what you sent before we start sending you work. Once you're approved, your profile goes live and you're ready to get jobs in your area.",
   },
   {
     step: "3",
-    title: "Receive matched leads",
+    title: "Get a job notification on WhatsApp",
     detail:
-      "When a customer job matches your skills and area, you receive a lead notification on WhatsApp. The lead shows the job category, suburb, and urgency — not the customer's personal number yet.",
+      "When a nearby customer needs your kind of work, you'll get a WhatsApp message. It shows the type of job, the area, and how soon they need it — but not the customer's personal number yet.",
   },
   {
     step: "4",
-    title: "Accept or decline",
+    title: "Say yes or no to the job",
     detail:
-      "Tap to accept if you can do the job. Once accepted, you get the full address and can open the platform message thread to communicate with the customer.",
+      "If you can do it, tap to accept. You'll then see the full address and can message the customer through the app.",
   },
   {
     step: "5",
-    title: "Inspect, quote, and execute",
+    title: "Do the job and update as you go",
     detail:
-      "Visit to inspect if needed, or send a written quote directly from the app with a description and price. Once accepted, update your job status as you work — en route, arrived, started, completed.",
+      "Go check the job if you need to, then send the customer your price. Once they say yes, do the work and tap to mark each step — on the way, arrived, started, done.",
   },
   {
     step: "6",
-    title: "Get paid and build your rating",
+    title: "Get paid and collect your rating",
     detail:
-      "Payment is arranged through the platform. After each job you receive a rating — reviews accumulate on your profile and help you win more work over time.",
+      "You get paid through the platform after the job is finished. The customer leaves you a star rating. The more good ratings you have, the more work comes your way.",
   },
 ];
 
@@ -154,8 +154,8 @@ export default function HowItWorksPage() {
             steps={CUSTOMER_STEPS}
           />
           <FlowSection
-            label="Worker flow"
-            title="Register, receive leads, build your reputation"
+            label="Your worker journey"
+            title="Sign up. Get jobs. Grow your business."
             steps={WORKER_STEPS}
           />
 

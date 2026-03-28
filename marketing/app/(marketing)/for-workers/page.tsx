@@ -14,44 +14,44 @@ export const metadata: Metadata = buildMetadata({
 const BENEFITS = [
   {
     icon: MapPin,
-    title: "Jobs matched to your area",
-    body: "Set your coverage suburbs once. Only receive leads for jobs you can actually reach.",
+    title: "Only jobs near you",
+    body: "Tell us which areas you work in once. You'll only get jobs you can actually reach.",
   },
   {
     icon: Smartphone,
-    title: "Everything runs on WhatsApp",
-    body: "Receive leads, accept jobs, and get notified — all through the WhatsApp you already use. No app store required.",
+    title: "Works on your WhatsApp",
+    body: "Get job notifications, say yes or no, and talk to customers — all through the WhatsApp you already use. Nothing to download.",
   },
   {
     icon: ShieldCheck,
-    title: "Structured quotes protect you",
-    body: "Quotes and extra work requests are documented in writing. No more verbal disputes over what was agreed.",
+    title: "Your price in writing — no arguments",
+    body: "Your quote and any extra work are always written down and approved before you start. No more arguments about what was agreed.",
   },
   {
     icon: Star,
-    title: "Reviews build your business",
-    body: "Every completed job adds a rating to your public profile. Customers see your track record before they choose you.",
+    title: "Good work gets you more work",
+    body: "Every job you finish adds a rating to your name. Customers can see how good you are before they pick you.",
   },
 ];
 
 const HOW_TO_JOIN = [
   {
     step: "1",
-    title: "Register",
+    title: "Sign up",
     detail:
-      "Message the Plug-A-Pro WhatsApp number or fill in the form below. Tell us your name, the types of jobs you do, which suburbs you cover, and your availability.",
+      "Message us on WhatsApp or fill in the form below. Tell us your name, what jobs you do, which areas you cover, and when you're free.",
   },
   {
     step: "2",
-    title: "Get reviewed",
+    title: "We check your details",
     detail:
-      "Your application goes through a quick review. Once approved, your profile is active and you're ready to receive matched leads.",
+      "We look at your application before sending you any work. Once you're approved, your profile is live and customers in your area can find you.",
   },
   {
     step: "3",
-    title: "Start receiving work",
+    title: "Start getting work",
     detail:
-      "When a job matches your skills and area, you'll get a WhatsApp notification. Accept the lead, communicate through the platform, submit your quote, do the job, get paid.",
+      "When a job in your area matches what you do, you'll get a WhatsApp message. Say yes, talk to the customer through the app, send your price, do the job, and get paid.",
   },
 ];
 

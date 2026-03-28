@@ -86,7 +86,7 @@ export function WhoItsFor() {
               Get steady local work, on your terms
             </h2>
             <p className="text-muted-foreground mb-6">
-              If you have practical skills and need access to paying customers, Plug-A-Pro brings the jobs to you. No formal business structure needed. Just your skills and a smartphone.
+              If you have skills and need more paying customers, Plug-A-Pro brings the work to you. No registered business needed — just your skills and a phone.
             </p>
             <ul className="space-y-2">
               {WORKER_TYPES.map((type) => (
@@ -104,12 +104,12 @@ export function WhoItsFor() {
           <div className="rounded-2xl border border-border/40 p-8 space-y-4 bg-muted/30">
             <p className="font-semibold text-lg">What you get as a worker</p>
             {[
-              "Leads matched to your skills and area",
-              "Structured quote and booking flow. No verbal confusion.",
-              "Job photos and audit trail protect you too",
-              "Customer reviews build your reputation over time",
-              "No cold-calling, no cash awkwardness. Payment is structured.",
-              "Works from any smartphone with WhatsApp",
+              "Only jobs that match your skills and area",
+              "Your price in writing — no more verbal confusion",
+              "Job photos protect you if there's a dispute",
+              "Customer ratings build your name over time",
+              "No chasing for cash. Payment goes through the platform.",
+              "Works on any smartphone with WhatsApp",
             ].map((benefit) => (
               <div key={benefit} className="flex items-start gap-3 text-sm text-muted-foreground">
                 <span
