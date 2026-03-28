@@ -31,13 +31,13 @@ const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
     icon: Navigation,
     title: "Live job tracking",
     description:
-      "Customers get WhatsApp updates at every stage — worker on the way, arrived, job started, completed. No more chasing for updates.",
+      "Customers get WhatsApp updates at every stage: worker on the way, arrived, job started, completed. No more chasing for updates.",
   },
   {
     icon: Camera,
     title: "Before & after photos",
     description:
-      "Workers upload photos at the start and end of every job. Immutable proof for both sides — protects against disputes.",
+      "Workers upload photos at the start and end of every job. Proof for both sides, protecting against disputes.",
   },
   {
     icon: Star,
@@ -55,7 +55,7 @@ export function Features() {
           Everything that makes the match work
         </h2>
         <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-          From the moment a job is described to the moment it's done — the platform handles matching, communication, quoting, tracking, and trust.
+          From job description to completion, the platform handles matching, communication, quoting, tracking, and trust.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {FEATURES.map((f) => {

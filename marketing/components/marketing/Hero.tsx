@@ -38,7 +38,7 @@ export function Hero() {
           Local help. Real quotes. Any small job.
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-          Get home help in minutes — not weeks
+          Get home help in minutes, not weeks
         </h1>
         <p className="text-xl text-muted-foreground mb-3 max-w-2xl mx-auto">
           Plug-A-Pro connects you to nearby handymen and home-job workers for
@@ -70,6 +70,7 @@ export function Hero() {
             render={<Link href="/for-workers" />}
             variant="outline"
             size="lg"
+            style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
             onClick={() => analytics.ctaClick("I want work", "hero", "worker")}
           >
             I want work →

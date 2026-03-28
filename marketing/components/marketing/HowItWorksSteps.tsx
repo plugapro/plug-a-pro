@@ -12,14 +12,14 @@ const STEPS = [
     number: "02",
     title: "Get matched to a nearby worker",
     description:
-      "We find available, rated workers near you who do that type of job. A lead is sent to matching workers — the first to accept, or the one you choose, takes the job.",
+      "We find available, rated workers near you who do that type of job. A lead is sent to matching workers. The first to accept, or the one you choose, takes the job.",
     detail: "Your personal number is not shared at this stage.",
   },
   {
     number: "03",
     title: "Agree on price, book, done",
     description:
-      "The worker visits to inspect if needed, or sends a quote directly. You approve before any work starts. Pay after it's done — safely and with a record.",
+      "The worker visits to inspect if needed, or sends a quote directly. You approve before any work starts. Pay after it's done, safely and with a record.",
     detail: "Extra work requires your explicit approval before it begins.",
   },
 ];
@@ -27,8 +27,7 @@ const STEPS = [
 export function HowItWorksSteps() {
   return (
     <section
-      className="py-20 md:py-24 px-4 border-t border-border/40"
-      style={{ background: "oklch(0.97 0.012 250)" }}
+      className="py-20 md:py-24 px-4 border-t border-border/40 bg-muted/50"
     >
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14">
@@ -36,7 +35,7 @@ export function HowItWorksSteps() {
             How it works
           </p>
           <h2 className="text-3xl md:text-4xl font-bold">
-            From job to done — in a few taps
+            From job to done, in a few taps
           </h2>
         </div>
         <div className="grid md:grid-cols-3 gap-8">

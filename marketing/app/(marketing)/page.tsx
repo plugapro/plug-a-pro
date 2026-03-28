@@ -26,7 +26,8 @@ export default function HomePage() {
       <div id="section-trust"><TrustSafety /></div>
       <div id="section-operating-model"><OperatingModel /></div>
       <div id="section-features"><Features /></div>
-      <div id="section-social-proof"><SocialProof /></div>
+      {/* SocialProof hidden until real reviews are collected */}
+      {/* <div id="section-social-proof"><SocialProof /></div> */}
       <div id="section-cta"><CTAStrip /></div>
     </>
   );

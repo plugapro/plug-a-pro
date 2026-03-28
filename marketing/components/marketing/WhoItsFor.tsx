@@ -44,7 +44,7 @@ export function WhoItsFor() {
               For customers
             </p>
             <h2 className="text-3xl md:text-4xl font-bold mb-3">
-              Any small home job — sorted
+              Any small home job, sorted
             </h2>
             <p className="text-muted-foreground max-w-xl">
               Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug-A-Pro matches you with a nearby worker who can do the job.
@@ -83,10 +83,10 @@ export function WhoItsFor() {
               For workers
             </p>
             <h2 className="text-3xl md:text-4xl font-bold mb-3">
-              Get steady local work — on your terms
+              Get steady local work, on your terms
             </h2>
             <p className="text-muted-foreground mb-6">
-              If you have practical skills and need access to paying customers, Plug-A-Pro brings the jobs to you. No formal business structure needed — just your skills and a smartphone.
+              If you have practical skills and need access to paying customers, Plug-A-Pro brings the jobs to you. No formal business structure needed. Just your skills and a smartphone.
             </p>
             <ul className="space-y-2">
               {WORKER_TYPES.map((type) => (
@@ -105,10 +105,10 @@ export function WhoItsFor() {
             <p className="font-semibold text-lg">What you get as a worker</p>
             {[
               "Leads matched to your skills and area",
-              "Structured quote and booking flow — no verbal confusion",
+              "Structured quote and booking flow. No verbal confusion.",
               "Job photos and audit trail protect you too",
               "Customer reviews build your reputation over time",
-              "No cold-calling, no cash awkwardness — payment is structured",
+              "No cold-calling, no cash awkwardness. Payment is structured.",
               "Works from any smartphone with WhatsApp",
             ].map((benefit) => (
               <div key={benefit} className="flex items-start gap-3 text-sm text-muted-foreground">

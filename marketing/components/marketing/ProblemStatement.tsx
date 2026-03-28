@@ -17,7 +17,7 @@ const CUSTOMER_PROBLEMS: { icon: React.ElementType; label: string; problem: stri
   {
     icon: ShieldOff,
     label: "No protection when paying strangers",
-    problem: "Cash upfront with no record — no recourse if something goes wrong",
+    problem: "Cash upfront with no record. No recourse if something goes wrong.",
   },
   {
     icon: FileWarning,
@@ -40,7 +40,7 @@ const PROVIDER_PROBLEMS: { icon: React.ElementType; label: string; problem: stri
   {
     icon: Hourglass,
     label: "Word-of-mouth is slow and unreliable",
-    problem: "Work comes in bursts — famine and feast with no way to control it",
+    problem: "Work comes in bursts. Famine and feast with no way to control it.",
   },
   {
     icon: FileWarning,
@@ -50,7 +50,7 @@ const PROVIDER_PROBLEMS: { icon: React.ElementType; label: string; problem: stri
   {
     icon: ShieldOff,
     label: "Hard to build trust with new customers",
-    problem: "No reputation, no reviews — every new job is a cold start",
+    problem: "No reputation, no reviews. Every new job is a cold start.",
   },
 ];
 
@@ -113,13 +113,13 @@ export function ProblemStatement() {
           <ProblemColumn
             label="For customers"
             headline="Getting home help shouldn't be this hard"
-            body="Finding a trustworthy worker for a small job is harder than it should be — and too risky when you don't know who's coming to your home."
+            body="Finding a trustworthy worker for a small job is harder than it should be, and too risky when you don't know who's coming to your home."
             items={CUSTOMER_PROBLEMS}
           />
           <ProblemColumn
             label="For workers"
             headline="Skills aren't the problem. Access to work is."
-            body="Skilled independent workers across South Africa have the ability — they just lack a safe, structured way to connect with paying customers."
+            body="Skilled independent workers across South Africa have the ability but lack a safe, structured way to connect with paying customers."
             items={PROVIDER_PROBLEMS}
           />
         </div>

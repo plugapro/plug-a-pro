@@ -26,17 +26,17 @@ const TRUST_POINTS: {
   {
     icon: FileText,
     title: "All quotes are documented",
-    body: "Quotes are submitted through the platform, not verbally. You see the price before agreeing — and so does your worker.",
+    body: "Quotes are submitted through the platform, not verbally. You see the price before agreeing, and so does your worker.",
   },
   {
     icon: Camera,
     title: "Before and after photos on every job",
-    body: "Workers upload photos at the start and end of every job. Immutable proof — for your protection and theirs.",
+    body: "Workers upload photos at the start and end of every job. Kept on record for your protection and theirs.",
   },
   {
     icon: MessageCircle,
     title: "Disputes handled on the platform",
-    body: "If something goes wrong, raise it through the platform. We have the full job record — status history, photos, quotes, and messages.",
+    body: "If something goes wrong, raise it through the platform. We have the full job record: status history, photos, quotes, and messages.",
   },
   {
     icon: Star,
