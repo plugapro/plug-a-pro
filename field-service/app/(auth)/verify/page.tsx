@@ -57,6 +57,11 @@ function VerifyForm() {
         return
       }
 
+      if (data.session?.access_token) {
+        const maxAge = data.session.expires_in ?? 3600
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
+      }
+
       // Link WhatsApp Customer record to the authenticated user (server-side)
       const res = await fetch('/api/auth/link', {
         method: 'POST',

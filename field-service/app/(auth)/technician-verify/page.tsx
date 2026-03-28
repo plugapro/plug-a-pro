@@ -54,12 +54,16 @@ function ProviderVerifyForm() {
 
       const role = data.user.user_metadata?.role
       if (role !== 'provider') {
-        // Not yet approved — sign out and guide to WhatsApp registration
         await supabase.auth.signOut()
         setError(
           "Your account isn't active yet. Once your application is approved, you'll receive a WhatsApp notification."
         )
         return
+      }
+
+      if (data.session?.access_token) {
+        const maxAge = data.session.expires_in ?? 3600
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
       }
 
       router.replace('/technician')

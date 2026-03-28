@@ -49,6 +49,13 @@ export default function AdminSignInPage() {
         return
       }
 
+      // Write the access token as a cookie so the proxy can read it server-side.
+      // Supabase JS uses localStorage by default; proxy.ts needs a cookie.
+      if (data.session?.access_token) {
+        const maxAge = data.session.expires_in ?? 3600
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
+      }
+
       router.replace('/admin')
     } catch {
       setError('Something went wrong. Please try again.')

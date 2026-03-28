@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: '/admin/reports',      label: 'Reports' },
   { href: '/admin/messages',     label: 'Messages' },
   { href: '/admin/settings',     label: 'Settings' },
+  { href: '/admin/flows',        label: 'Journey Flows' },
 ] as const
 
 export default async function AdminLayout({
