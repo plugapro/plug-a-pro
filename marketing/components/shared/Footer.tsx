@@ -8,7 +8,7 @@ export function Footer() {
     <footer className="border-t border-border/40 py-12 mt-auto">
       <div className="container mx-auto max-w-5xl px-4 flex flex-col md:flex-row justify-between gap-8 text-sm text-muted-foreground">
         <div>
-          <Image src="/logo-nav.png" alt={siteConfig.name} width={318} height={43} className="h-7 w-auto mb-2" />
+          <Image src="/logo-nav.png" alt={siteConfig.name} width={318} height={110} className="h-12 w-auto mb-2" />
           <p>{siteConfig.description}</p>
           <WhatsAppButton source="footer" />
         </div>

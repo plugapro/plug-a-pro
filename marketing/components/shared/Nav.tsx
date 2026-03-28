@@ -14,14 +14,14 @@ const navLinks = [
 export function Nav() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+      <div className="container mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
         <Link href="/" className="flex items-center">
           <Image
             src="/logo-nav.png"
             alt="Plug-A-Pro"
             width={318}
-            height={43}
-            className="h-6 w-auto"
+            height={110}
+            className="h-10 w-auto"
             priority
           />
         </Link>
