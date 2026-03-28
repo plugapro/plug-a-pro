@@ -1,6 +1,9 @@
 export function OperatingModel() {
   return (
-    <section className="py-20 md:py-24 px-4 border-t border-border/40">
+    <section
+      className="py-20 md:py-24 px-4 border-t border-border/40"
+      style={{ background: "oklch(0.97 0.012 250)" }}
+    >
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">

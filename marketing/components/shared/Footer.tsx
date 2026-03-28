@@ -13,21 +13,20 @@ export function Footer() {
         </div>
         <nav className="flex flex-wrap gap-x-8 gap-y-3">
           <div className="flex flex-col gap-2">
-            <span className="font-medium text-foreground text-xs uppercase tracking-wider">Product</span>
-            <Link href="/features" className="hover:text-foreground transition-colors">Features</Link>
-            <Link href="/pricing" className="hover:text-foreground transition-colors">Pricing</Link>
-            <Link href="/changelog" className="hover:text-foreground transition-colors">Changelog</Link>
+            <span className="font-medium text-foreground text-xs uppercase tracking-wider">Platform</span>
+            <Link href="/how-it-works" className="hover:text-foreground transition-colors">How it works</Link>
+            <Link href="/for-workers" className="hover:text-foreground transition-colors">For workers</Link>
+            <Link href="/solutions" className="hover:text-foreground transition-colors">Services</Link>
           </div>
           <div className="flex flex-col gap-2">
-            <span className="font-medium text-foreground text-xs uppercase tracking-wider">Resources</span>
-            <Link href="/blog" className="hover:text-foreground transition-colors">Blog</Link>
-            <Link href="/docs" className="hover:text-foreground transition-colors">Docs</Link>
+            <span className="font-medium text-foreground text-xs uppercase tracking-wider">Help</span>
             <Link href="/faq" className="hover:text-foreground transition-colors">FAQ</Link>
+            <Link href="/contact" className="hover:text-foreground transition-colors">Contact</Link>
+            <Link href="/trust" className="hover:text-foreground transition-colors">Trust &amp; Safety</Link>
           </div>
           <div className="flex flex-col gap-2">
             <span className="font-medium text-foreground text-xs uppercase tracking-wider">Company</span>
             <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
-            <Link href="/contact" className="hover:text-foreground transition-colors">Contact</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
           </div>

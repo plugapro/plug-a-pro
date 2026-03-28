@@ -3,18 +3,34 @@ import { Button } from "@/components/ui/button";
 
 export function Hero() {
   return (
-    <section className="relative py-24 md:py-32 text-center px-4 overflow-hidden">
+    <section
+      className="relative py-24 md:py-32 text-center px-4 overflow-hidden"
+      style={{
+        background:
+          "linear-gradient(160deg, oklch(0.14 0.07 250) 0%, oklch(0.10 0.02 260) 60%, oklch(0.11 0 0) 100%)",
+        "--foreground": "oklch(0.985 0 0)",
+        "--color-foreground": "oklch(0.985 0 0)",
+        "--muted-foreground": "oklch(0.985 0 0 / 0.62)",
+        "--color-muted-foreground": "oklch(0.985 0 0 / 0.62)",
+        "--primary": "var(--accent-brand)",
+        "--color-primary": "var(--accent-brand)",
+        "--primary-foreground": "oklch(0.985 0 0)",
+        "--color-primary-foreground": "oklch(0.985 0 0)",
+        "--border": "oklch(1 0 0 / 15%)",
+        "--color-border": "oklch(1 0 0 / 15%)",
+      } as React.CSSProperties}
+    >
       {/* subtle dot-grid background */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.04] dark:opacity-[0.07]"
+        className="pointer-events-none absolute inset-0 opacity-[0.06]"
         style={{
           backgroundImage:
-            "radial-gradient(circle, var(--border) 1px, transparent 1px)",
+            "radial-gradient(circle, rgba(255,255,255,0.5) 1px, transparent 1px)",
           backgroundSize: "28px 28px",
         }}
         aria-hidden="true"
       />
-      <div className="relative max-w-4xl mx-auto">
+      <div className="relative max-w-4xl mx-auto" style={{ color: "oklch(0.985 0 0)" }}>
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
           Local help. Real quotes. Any small job.
         </p>
