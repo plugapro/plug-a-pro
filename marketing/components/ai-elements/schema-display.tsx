@@ -107,8 +107,7 @@ export const SchemaDisplayPath = ({
     <span
       className={cn("font-mono text-sm", className)}
       // oxlint-disable-next-line eslint-plugin-react(no-danger)
-      // @ts-expect-error — children is always string when passed; ReactNode type is too broad for __html
-      dangerouslySetInnerHTML={{ __html: children ?? highlightedPath }}
+      dangerouslySetInnerHTML={{ __html: (children ?? highlightedPath) as string }}
       {...props}
     />
   );
