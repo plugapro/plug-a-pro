@@ -9,7 +9,7 @@ export function Footer() {
         <div>
           <p className="font-semibold text-foreground mb-1">{siteConfig.name}</p>
           <p>{siteConfig.description}</p>
-          <WhatsAppButton />
+          <WhatsAppButton source="footer" />
         </div>
         <nav className="flex flex-wrap gap-x-8 gap-y-3">
           <div className="flex flex-col gap-2">

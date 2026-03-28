@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { analytics } from "@/lib/analytics";
 
 export function Hero() {
   return (
@@ -48,6 +51,7 @@ export function Hero() {
             href="/how-it-works"
             className="underline-offset-4 hover:underline"
             style={{ color: "var(--accent-brand)" }}
+            onClick={() => analytics.howItWorksClick("hero_diy_link")}
           >
             Our workers can assess, continue, or finish it.
           </Link>
@@ -57,6 +61,7 @@ export function Hero() {
             nativeButton={false}
             render={<Link href="/waitlist" />}
             size="lg"
+            onClick={() => analytics.ctaClick("Request help", "hero", "customer")}
           >
             Request help
           </Button>
@@ -65,6 +70,7 @@ export function Hero() {
             render={<Link href="/for-workers" />}
             variant="outline"
             size="lg"
+            onClick={() => analytics.ctaClick("I want work", "hero", "worker")}
           >
             I want work →
           </Button>

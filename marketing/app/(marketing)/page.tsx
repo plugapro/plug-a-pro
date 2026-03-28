@@ -9,21 +9,25 @@ import { Features } from "@/components/marketing/Features";
 import { TrustSafety } from "@/components/marketing/TrustSafety";
 import { SocialProof } from "@/components/marketing/SocialProof";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
+import { SectionTracker } from "@/components/analytics/SectionTracker";
+import { ScrollDepthTracker } from "@/components/analytics/ScrollDepthTracker";
 
 export const metadata: Metadata = buildMetadata({});
 
 export default function HomePage() {
   return (
     <>
-      <Hero />
-      <HowItWorksSteps />
-      <ProblemStatement />
-      <WhoItsFor />
-      <TrustSafety />
-      <OperatingModel />
-      <Features />
-      <SocialProof />
-      <CTAStrip />
+      <SectionTracker />
+      <ScrollDepthTracker />
+      <div id="section-hero"><Hero /></div>
+      <div id="section-how-it-works"><HowItWorksSteps /></div>
+      <div id="section-problem"><ProblemStatement /></div>
+      <div id="section-who-its-for"><WhoItsFor /></div>
+      <div id="section-trust"><TrustSafety /></div>
+      <div id="section-operating-model"><OperatingModel /></div>
+      <div id="section-features"><Features /></div>
+      <div id="section-social-proof"><SocialProof /></div>
+      <div id="section-cta"><CTAStrip /></div>
     </>
   );
 }

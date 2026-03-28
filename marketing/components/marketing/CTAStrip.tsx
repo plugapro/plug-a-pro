@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { analytics } from "@/lib/analytics";
 
 export function CTAStrip() {
   return (
@@ -27,6 +30,7 @@ export function CTAStrip() {
             nativeButton={false}
             render={<Link href="/waitlist" />}
             size="lg"
+            onClick={() => analytics.ctaClick("Request help", "cta_strip", "customer")}
           >
             Request help
           </Button>
@@ -35,6 +39,7 @@ export function CTAStrip() {
             render={<Link href="/for-workers" />}
             variant="outline"
             size="lg"
+            onClick={() => analytics.ctaClick("Register as a worker", "cta_strip", "worker")}
           >
             Register as a worker
           </Button>
