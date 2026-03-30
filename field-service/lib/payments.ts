@@ -173,11 +173,165 @@ class PeachPaymentsProvider implements PspProvider {
   }
 }
 
+// ─── Provider: PayFast (South Africa) ────────────────────────────────────────
+// Docs: https://developers.payfast.co.za/docs
+
+class PayFastProvider implements PspProvider {
+  private baseUrl: string
+  private merchantId: string
+  private merchantKey: string
+  private passphrase: string
+
+  constructor() {
+    const sandbox = process.env.PAYFAST_SANDBOX === 'true'
+    this.baseUrl = sandbox
+      ? 'https://sandbox.payfast.co.za/eng/process'
+      : 'https://www.payfast.co.za/eng/process'
+    this.merchantId = process.env.PAYFAST_MERCHANT_ID ?? ''
+    this.merchantKey = process.env.PAYFAST_MERCHANT_KEY ?? ''
+    this.passphrase = process.env.PAYFAST_PASSPHRASE ?? ''
+
+    if (!this.merchantId || !this.merchantKey) {
+      throw new Error('Missing PayFast credentials (PAYFAST_MERCHANT_ID, PAYFAST_MERCHANT_KEY)')
+    }
+  }
+
+  private buildSignature(params: Record<string, string>): string {
+    const crypto = require('crypto')
+    // Sort keys alphabetically, build query string
+    const query = Object.keys(params)
+      .sort()
+      .filter((k) => params[k] !== '')
+      .map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, '+')}`)
+      .join('&')
+
+    const withPassphrase = this.passphrase ? `${query}&passphrase=${encodeURIComponent(this.passphrase).replace(/%20/g, '+')}` : query
+    return crypto.createHash('md5').update(withPassphrase).digest('hex')
+  }
+
+  async createCheckout(params: CheckoutParams): Promise<CheckoutSession> {
+    const amountFormatted = (params.amount / 100).toFixed(2)
+
+    const pfParams: Record<string, string> = {
+      merchant_id: this.merchantId,
+      merchant_key: this.merchantKey,
+      return_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      notify_url: params.notifyUrl,
+      m_payment_id: params.bookingId,
+      amount: amountFormatted,
+      item_name: params.description,
+    }
+
+    if (params.customerEmail) pfParams.email_address = params.customerEmail
+    if (params.customerPhone) pfParams.cell_number = params.customerPhone.replace(/\D/g, '')
+    if (params.metadata) {
+      // PayFast allows custom_str1–5 for metadata
+      Object.entries(params.metadata).slice(0, 5).forEach(([, v], i) => {
+        pfParams[`custom_str${i + 1}`] = v
+      })
+    }
+
+    pfParams.signature = this.buildSignature(pfParams)
+
+    const query = Object.entries(pfParams)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&')
+
+    return {
+      id: params.bookingId,
+      url: `${this.baseUrl}?${query}`,
+    }
+  }
+
+  verifyWebhook(rawBody: string, _signature: string): boolean {
+    // PayFast sends ITN data as a POST body (application/x-www-form-urlencoded)
+    // Signature is included as a field in the body itself, not a header
+    const params = Object.fromEntries(new URLSearchParams(rawBody))
+    const { signature, ...rest } = params
+
+    const computed = this.buildSignature(rest as Record<string, string>)
+    const crypto = require('crypto')
+    try {
+      return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature ?? ''))
+    } catch {
+      return false
+    }
+  }
+
+  parseWebhookEvent(rawBody: string): PaymentEvent {
+    const params = Object.fromEntries(new URLSearchParams(rawBody))
+    const status = params.payment_status ?? ''
+    const amount = Math.round(parseFloat(params.amount_gross ?? '0') * 100)
+
+    return {
+      type:
+        status === 'COMPLETE'
+          ? 'payment.success'
+          : status === 'REFUNDED'
+          ? 'payment.refunded'
+          : 'payment.failed',
+      bookingId: params.m_payment_id,
+      pspReference: params.pf_payment_id,
+      amount,
+      currency: 'ZAR',
+      raw: params,
+    }
+  }
+
+  async createRefund(pspReference: string, amountCents: number): Promise<RefundResult> {
+    // PayFast refunds via their API — requires bearer token auth
+    // Docs: https://developers.payfast.co.za/api#tag/Refunds
+    const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0]
+    const version = 'v1'
+    const merchantId = this.merchantId
+    const isSandbox = process.env.PAYFAST_SANDBOX === 'true'
+    const apiBase = isSandbox ? 'https://api.sandbox.payfast.co.za' : 'https://api.payfast.co.za'
+
+    const headerParams: Record<string, string> = {
+      merchant_id: merchantId,
+      passphrase: this.passphrase,
+      timestamp,
+      version,
+    }
+    const crypto = require('crypto')
+    const headerSig = crypto
+      .createHash('md5')
+      .update(
+        Object.keys(headerParams)
+          .sort()
+          .map((k) => `${k}=${encodeURIComponent(headerParams[k]).replace(/%20/g, '+')}`)
+          .join('&')
+      )
+      .digest('hex')
+
+    const response = await fetch(`${apiBase}/refunds/${pspReference}`, {
+      method: 'POST',
+      headers: {
+        'merchant-id': merchantId,
+        timestamp,
+        version,
+        signature: headerSig,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ amount: (amountCents / 100).toFixed(2) }),
+    })
+
+    const data = await response.json().catch(() => ({}))
+    return {
+      success: response.ok,
+      refundReference: data?.data?.uuid ?? pspReference,
+    }
+  }
+}
+
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
 function getProvider(): PspProvider {
-  const provider = process.env.PSP_PROVIDER ?? 'peach'
+  const provider = process.env.PSP_PROVIDER ?? 'payfast'
   switch (provider) {
+    case 'payfast':
+      return new PayFastProvider()
     case 'peach':
       return new PeachPaymentsProvider()
     default:
