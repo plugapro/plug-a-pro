@@ -745,3 +745,51 @@ interface WhatsAppWebhookPayload {
     }>
   }>
 }
+
+// ─── Admin Operations Alerts ──────────────────────────────────────────────────
+// All functions check ADMIN_WHATSAPP_NUMBER env var — silently skip if unset.
+
+export async function sendAdminNoMatch(params: {
+  jobRequestId: string
+  category: string
+  area: string
+  customerName: string
+}): Promise<void> {
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
+  if (!adminPhone) return
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
+  await sendText({
+    to: adminPhone,
+    text: `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${params.area}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed:\n${appUrl}/admin/dispatch`,
+  })
+}
+
+export async function sendAdminProviderDropped(params: {
+  providerName: string
+  jobId: string
+  category: string
+}): Promise<void> {
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
+  if (!adminPhone) return
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
+  await sendText({
+    to: adminPhone,
+    text: `🚨 *Provider Dropped Job*\n\nProvider: ${params.providerName}\nJob: ${params.category}\nRef: ${params.jobId.slice(-8).toUpperCase()}\n\nReassignment needed:\n${appUrl}/admin/bookings`,
+  })
+}
+
+export async function sendAdminEscalation(params: {
+  reason: string
+  userPhone: string
+  context: string
+}): Promise<void> {
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
+  if (!adminPhone) return
+
+  await sendText({
+    to: adminPhone,
+    text: `📣 *Escalation Alert*\n\nReason: ${params.reason}\nUser: ${params.userPhone}\nContext: ${params.context}\n\nPlease follow up directly.`,
+  })
+}
