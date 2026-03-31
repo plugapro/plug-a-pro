@@ -712,6 +712,22 @@ async function handleProviderJobFlow(
   return { nextStep: 'tech_job_view' }
 }
 
+// Stub — full implementation in Task 7
+export async function sendQuoteToClient(_params: {
+  customerPhone: string
+  providerName: string
+  quoteId: string
+  labourCost: number
+  materialsCost: number
+  totalAmount: number
+  description: string
+  estimatedHours: number | null
+  validUntil: Date
+  approvalToken: string
+}): Promise<void> {
+  // implemented in Task 7
+}
+
 // ─── Backwards-compat alias ───────────────────────────────────────────────────
 /** @deprecated use notifyProviderApplicationResult */
 export const notifyTechnicianApplicationResult = notifyProviderApplicationResult
