@@ -68,6 +68,7 @@ model Provider {
   skills       String[] @default([]) // category slugs: "plumbing", "painting", etc.
   serviceAreas String[] @default([]) // suburb/city names they cover
   active       Boolean  @default(true)
+  availableNow Boolean  @default(true)   // currently online and accepting leads
   verified     Boolean  @default(false)
   avatarUrl    String?
   createdAt    DateTime @default(now())
