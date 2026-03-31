@@ -120,6 +120,8 @@ model ProviderApplication {
   name         String
   skills       String[]          @default([])
   serviceAreas String[]          @default([])
+  experience   String?           // e.g. "3–5 years" — set on application submit
+  availability String?           // e.g. "Any day" or "Mon–Sat" — set on application submit
   idNumber     String?
   status       ApplicationStatus @default(PENDING)
   notes        String?           // admin review notes

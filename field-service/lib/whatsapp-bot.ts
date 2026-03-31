@@ -40,6 +40,9 @@ const RESCHEDULE_KEYWORDS = ['reschedule', 'change time', 'change date', 'move b
 // Keywords that trigger cancellation
 const CANCEL_KEYWORDS = ['cancel', 'cancellation', 'kanselleer', 'stop booking']
 
+// Keywords that show a provider's active jobs list
+const PROVIDER_KEYWORDS = ['myjobs', 'my jobs', 'my work', 'jobs']
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
@@ -68,11 +71,26 @@ export async function processInboundMessage(
     let step: FlowStep = isExpired ? 'welcome' : (conversation.step as FlowStep)
     let data: ConversationData = isExpired ? {} : (conversation.data as ConversationData)
 
+    // Notify provider if their session expired mid-flow (before silently resetting)
+    if (isExpired && conversation.flow !== 'idle' && !isReset) {
+      await sendText(
+        phone,
+        "⏰ Your session timed out after 30 minutes of inactivity. Send 'Hi' to start again."
+      )
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    const isProviderJobList = PROVIDER_KEYWORDS.some((k) => rawText === k)
+
     // Route to appropriate flow (keyword overrides only when idle or expired)
     if (isReset || isExpired) {
       flow = 'idle'
       step = 'welcome'
       data = {}
+    } else if (isProviderJobList && flow === 'idle') {
+      flow = 'provider_job'
+      step = 'tech_job_list'
     } else if (isRegistration && flow === 'idle') {
       flow = 'registration'
       step = 'reg_collect_name'
@@ -230,24 +248,20 @@ export async function notifyProviderApplicationResult(params: {
   approved: boolean
   reason?: string
 }): Promise<void> {
-  const { sendTemplate } = await import('./whatsapp')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   if (params.approved) {
-    await sendTemplate({
-      to: params.phone,
-      template: 'technician_application_received',
-      components: [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: params.name },
-            { type: 'text', text: `${appUrl}/provider` },
-          ],
-        },
-      ],
-    })
+    // Use sendCtaUrl so the provider can tap directly into their portal
+    const { sendCtaUrl } = await import('./whatsapp-interactive')
+    await sendCtaUrl(
+      params.phone,
+      `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug a Pro has been *approved*.\n\nYou can now log in to your provider portal to complete your profile, set your schedule, and start receiving job assignments.`,
+      'Open Provider Portal',
+      `${appUrl}/provider`,
+      { footer: 'Welcome to the Plug a Pro network! 👋' }
+    )
   } else {
+    const { sendTemplate } = await import('./whatsapp')
     await sendTemplate({
       to: params.phone,
       template: 'technician_application_declined',
@@ -410,10 +424,73 @@ async function handleCancelFlow(
 async function handleProviderJobFlow(
   ctx: Parameters<typeof handleJobRequestFlow>[0]
 ): Promise<{ nextStep: FlowStep; nextData?: Partial<ConversationData> }> {
-  const { sendButtons, sendCtaUrl, sendText } = await import('./whatsapp-interactive')
+  const { sendButtons, sendCtaUrl, sendText, sendList } = await import('./whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const jobId = ctx.data.pendingJobId
 
+  // ── "My jobs" list ──────────────────────────────────────────────────────────
+  if (ctx.step === 'tech_job_list') {
+    const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
+    if (!provider) {
+      await sendText(ctx.phone, "You're not registered as a service provider. Reply 'join' to apply.")
+      return { nextStep: 'done' }
+    }
+
+    const activeJobs = await db.job.findMany({
+      where: {
+        providerId: provider.id,
+        status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
+      },
+      include: {
+        booking: {
+          include: { match: { include: { jobRequest: { include: { address: true } } } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    })
+
+    if (activeJobs.length === 0) {
+      await sendText(ctx.phone, "📋 You have no active jobs right now.\n\nNew jobs will be sent to you when available. 👍")
+      return { nextStep: 'done' }
+    }
+
+    const statusEmoji: Record<string, string> = {
+      SCHEDULED: '📅', EN_ROUTE: '🚗', ARRIVED: '📍',
+      STARTED: '🔧', PAUSED: '⏸', AWAITING_APPROVAL: '⌛',
+    }
+
+    if (activeJobs.length === 1) {
+      const j = activeJobs[0]
+      const req = j.booking.match.jobRequest
+      const addr = req.address
+      await sendButtons(
+        ctx.phone,
+        `📋 *Your Active Job*\n\n${statusEmoji[j.status] ?? '📋'} ${req.category}\n📍 ${addr ? `${addr.street}, ${addr.suburb}` : 'See app'}\nStatus: ${j.status.replace(/_/g, ' ')}`,
+        [{ id: `view_job_${j.id}`, title: '📋 View Details' }]
+      )
+    } else {
+      const rows = activeJobs.map((j) => {
+        const req = j.booking.match.jobRequest
+        const suburb = req.address?.suburb ?? 'TBA'
+        return {
+          id: `view_job_${j.id}`,
+          title: req.category.slice(0, 24),
+          description: `${suburb} • ${j.status.replace(/_/g, ' ')}`.slice(0, 72),
+        }
+      })
+      await sendList(
+        ctx.phone,
+        `📋 *Your Active Jobs* (${activeJobs.length})`,
+        [{ title: 'Active Jobs', rows }],
+        { buttonLabel: 'View a Job' }
+      )
+    }
+
+    return { nextStep: 'tech_job_view' }
+  }
+
+  // ── All other steps require a pendingJobId ─────────────────────────────────
+  const jobId = ctx.data.pendingJobId
   if (!jobId) {
     await sendText(ctx.phone, "Couldn't identify the job. Please open your app for details.")
     return { nextStep: 'done' }
@@ -422,6 +499,7 @@ async function handleProviderJobFlow(
   const job = await db.job.findUnique({
     where: { id: jobId },
     include: {
+      provider: true,
       booking: {
         include: {
           match: {
@@ -436,6 +514,12 @@ async function handleProviderJobFlow(
 
   if (!job) {
     await sendText(ctx.phone, 'Job not found. It may have been reassigned. Check the app for your current jobs.')
+    return { nextStep: 'done' }
+  }
+
+  // ── Authorization: verify the inbound phone owns this job ──────────────────
+  if (job.provider.phone !== ctx.phone) {
+    await sendText(ctx.phone, "⚠️ You're not authorised to manage this job.")
     return { nextStep: 'done' }
   }
 
@@ -455,18 +539,54 @@ async function handleProviderJobFlow(
     return { nextStep: 'tech_job_confirm_accept' }
   }
 
-  if (ctx.step === 'tech_job_confirm_accept' && (ctx.reply.id === `accept_job_${jobId}` || ctx.reply.id?.startsWith('accept_job_'))) {
-    await db.job.update({
-      where: { id: jobId },
-      data: { status: 'SCHEDULED' },
-    })
+  if (ctx.step === 'tech_job_confirm_accept' && ctx.reply.id?.startsWith('accept_job_')) {
+    // Idempotent — skip if already scheduled (e.g. duplicate button tap)
+    if (job.status !== 'SCHEDULED') {
+      await sendText(ctx.phone, '✅ Job already accepted. Check the app for details.')
+      return { nextStep: 'done' }
+    }
+
+    // No status change needed (already SCHEDULED); just confirm acceptance
     const jobUrl = `${appUrl}/provider/jobs/${jobId}`
     await sendCtaUrl(
       ctx.phone,
-      `✅ Job accepted! See full customer notes and directions in the app:`,
+      `✅ *Job Confirmed!*\n\nSee full customer notes and directions in the app:`,
       'Open Job',
       jobUrl,
       { footer: 'Navigate and update job status from the app' }
+    )
+    return { nextStep: 'done' }
+  }
+
+  // ── dc_* must be checked BEFORE tech_job_confirm_decline (which returns early) ──
+  if (ctx.reply.id?.startsWith('dc_')) {
+    const reasonMap: Record<string, string> = {
+      [`dc_unavailable_${jobId}`]: 'Not available',
+      [`dc_area_${jobId}`]: 'Too far',
+      [`dc_other_${jobId}`]: 'Other',
+    }
+    const declineReason = reasonMap[ctx.reply.id] ?? 'Declined'
+
+    // Update the Lead record so dispatch knows this provider passed
+    const jobRequestId = job.booking.match.jobRequest.id
+    await db.lead.updateMany({
+      where: {
+        jobRequestId,
+        providerId: job.providerId,
+        status: { in: ['SENT', 'VIEWED'] },
+      },
+      data: { status: 'DECLINED', respondedAt: new Date() },
+    })
+
+    // Log decline reason on the job for admin visibility
+    await db.job.update({
+      where: { id: jobId },
+      data: { notes: `Declined by provider: ${declineReason}` },
+    })
+
+    await sendText(
+      ctx.phone,
+      "Got it. This job has been returned to the queue. Our team will reassign it. 👍"
     )
     return { nextStep: 'done' }
   }
@@ -478,24 +598,10 @@ async function handleProviderJobFlow(
       [
         { id: `dc_unavailable_${jobId}`, title: '📅 Not available' },
         { id: `dc_area_${jobId}`, title: '📍 Too far' },
-        { id: `dc_other_${jobId}`, title: '✏️ Other' },
+        { id: `dc_other_${jobId}`, title: '✏️ Other reason' },
       ]
     )
     return { nextStep: 'tech_job_confirm_decline' }
-  }
-
-  if (ctx.reply.id?.startsWith('dc_')) {
-    // Provider declined — mark job for reassignment
-    await db.job.update({
-      where: { id: jobId },
-      data: { notes: `Declined by ${ctx.phone}` } as never,
-    }).catch(() => {}) // best-effort; admin handles reassignment
-
-    await sendText(
-      ctx.phone,
-      "Got it. This job has been returned to the queue. Our team will reassign it. 👍"
-    )
-    return { nextStep: 'done' }
   }
 
   return { nextStep: 'tech_job_view' }

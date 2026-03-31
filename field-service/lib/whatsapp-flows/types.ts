@@ -29,6 +29,7 @@ export type FlowStep =
   // Registration (provider onboarding)
   | 'reg_collect_name'
   | 'reg_collect_skills'
+  | 'reg_collect_skills_more'
   | 'reg_collect_area'
   | 'reg_collect_experience'
   | 'reg_collect_availability'
@@ -46,6 +47,7 @@ export type FlowStep =
   | 'help_menu'
   | 'help_faq'
   // Provider job management
+  | 'tech_job_list'
   | 'tech_job_view'
   | 'tech_job_confirm_accept'
   | 'tech_job_confirm_decline'
@@ -80,6 +82,7 @@ export interface ConversationData {
 
   // Provider job management
   pendingJobId?: string
+  declineReason?: string
 
   // Shared
   customerId?: string

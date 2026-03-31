@@ -1,5 +1,5 @@
 // ─── Service provider registration flow via WhatsApp ──────────────────────────
-// Journey: trigger → name → skills → area → experience → availability → submit → pending review
+// Journey: trigger → name → skills (multi-select) → area → experience → availability → submit → pending review
 // No direct connection given to customer — all mediated through Plug-a-Pro
 
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
@@ -20,8 +20,8 @@ const SKILL_CATEGORIES = [
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
 export const REGISTRATION_TRIGGERS = [
-  'register', 'join', 'technician', 'provider', 'work', 'apply', 'signup', 'sign up',
-  'ek wil werk', // Afrikaans: "I want to work"
+  'register', 'join', 'technician', 'provider', 'apply', 'signup', 'sign up',
+  'ek wil werk',       // Afrikaans: "I want to work"
   'ngifuna ukusebenza', // Zulu: "I want to work"
 ]
 
@@ -33,6 +33,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectName(ctx)
     case 'reg_collect_skills':
       return handleCollectSkills(ctx)
+    case 'reg_collect_skills_more':
+      return handleCollectSkillsMore(ctx)
     case 'reg_collect_area':
       return handleCollectArea(ctx)
     case 'reg_collect_experience':
@@ -60,7 +62,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   if (existing?.status === 'APPROVED') {
     await sendText(
       ctx.phone,
-      "✅ You're already registered as a Plug a Pro worker! You'll receive job leads through this number."
+      "✅ You're already registered as a Plug a Pro worker! You'll receive job leads through this number.\n\nReply *my jobs* to see your active assignments."
     )
     return { nextStep: 'done' }
   }
@@ -86,7 +88,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'reg_cancel') {
-    await sendText(ctx.phone, "No problem! Send 'Join' anytime when you're ready to apply. 👋")
+    await sendText(ctx.phone, "No problem! Reply *join* anytime when you're ready to apply. 👋")
     return { nextStep: 'done' }
   }
 
@@ -101,36 +103,62 @@ async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
 async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
   const name = ctx.reply.text
   if (!name || name.length < 2) {
-    await sendText(ctx.phone, 'Please type your full name.')
+    await sendText(ctx.phone, 'Please type your full name (at least 2 characters).')
     return { nextStep: 'reg_collect_skills' }
   }
 
-  const rows = SKILL_CATEGORIES.map((cat) => ({
-    id: `skill_${cat.toLowerCase().replace(/[\s&\/]+/g, '_')}`,
-    title: cat,
-  }))
-
-  // Add "Other" option
-  rows.push({ id: 'skill_other', title: 'Other / Multiple' })
-
-  await sendList(
-    ctx.phone,
-    `Nice to meet you, *${name}*! 👋\n\nWhat type of work do you do?`,
-    [{ title: 'Your Skills', rows }],
-    { buttonLabel: 'Choose Skills', footer: 'Select your main skill' }
-  )
-  return { nextStep: 'reg_collect_area', nextData: { name } }
+  await sendSkillList(ctx.phone, `Nice to meet you, *${name}*! 👋\n\nWhat type of work do you do?\n_(You can add multiple skills)_`)
+  return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
 }
 
-async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
-  if (!ctx.reply.id?.startsWith('skill_')) {
-    await sendText(ctx.phone, 'Please choose your skill from the list above.')
-    return { nextStep: 'reg_collect_area' }
+async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
+  // Handle "done selecting skills"
+  if (ctx.reply.id === 'skills_done') {
+    const skills = ctx.data.skills ?? []
+    if (skills.length === 0) {
+      await sendSkillList(ctx.phone, 'Please select at least one skill.')
+      return { nextStep: 'reg_collect_skills_more' }
+    }
+    return promptArea(ctx)
   }
 
-  const skillLabel = ctx.reply.title ?? ''
-  const skills = ctx.data.skills ? [...ctx.data.skills, skillLabel] : [skillLabel]
+  if (!ctx.reply.id?.startsWith('skill_')) {
+    await sendSkillList(ctx.phone, 'Please choose from the list, or tap *Done* to continue.')
+    return { nextStep: 'reg_collect_skills_more' }
+  }
 
+  const newSkill = ctx.reply.title ?? ''
+  const existing = ctx.data.skills ?? []
+
+  // Prevent duplicate selections
+  if (existing.includes(newSkill)) {
+    const skillList = existing.join(', ')
+    await sendButtons(
+      ctx.phone,
+      `✅ *${newSkill}* is already in your list.\n\nSelected: *${skillList}*\n\nAdd another skill or continue?`,
+      [
+        { id: 'skills_more', title: '➕ Add another' },
+        { id: 'skills_done', title: '✅ Done' },
+      ]
+    )
+    return { nextStep: 'reg_collect_skills_more' }
+  }
+
+  const skills = [...existing, newSkill]
+  const skillList = skills.join(', ')
+
+  await sendButtons(
+    ctx.phone,
+    `✅ *${newSkill}* added!\n\nYour skills so far: *${skillList}*\n\nAdd another skill or continue?`,
+    [
+      { id: 'skills_more', title: '➕ Add another' },
+      { id: 'skills_done', title: '✅ Done' },
+    ]
+  )
+  return { nextStep: 'reg_collect_skills_more', nextData: { skills } }
+}
+
+async function promptArea(ctx: FlowContext): Promise<FlowResult> {
   const rows = [
     { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
     { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town & surrounds' },
@@ -141,18 +169,44 @@ async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
 
   await sendList(
     ctx.phone,
-    '📍 Which area do you work in?',
+    '📍 Which area do you mainly work in?',
     [{ title: 'Areas', rows }],
     { buttonLabel: 'Choose Area' }
   )
-  return { nextStep: 'reg_collect_experience', nextData: { skills } }
+  return { nextStep: 'reg_collect_experience' }
+}
+
+async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
+  // This step is no longer reached directly — area is handled after skills_done via promptArea
+  // Kept for backwards compat if a session was in this step before the update
+  return promptArea(ctx)
 }
 
 // ─── Experience and availability ──────────────────────────────────────────────
 
 async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
+  // Handle "add more skills" request (from skills_more button after area prompt)
+  if (ctx.reply.id === 'skills_more') {
+    await sendSkillList(ctx.phone, 'Choose another skill:')
+    return { nextStep: 'reg_collect_skills_more' }
+  }
+
   if (!ctx.reply.id?.startsWith('area_')) {
-    await sendText(ctx.phone, 'Please choose your area from the list above.')
+    await sendList(
+      ctx.phone,
+      '📍 Please choose your area from the list.',
+      [{
+        title: 'Areas',
+        rows: [
+          { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
+          { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town & surrounds' },
+          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: 'Durban & surrounds' },
+          { id: 'area_eastern_cape', title: 'Eastern Cape', description: 'Port Elizabeth & surrounds' },
+          { id: 'area_other', title: 'Other province', description: 'Rest of South Africa' },
+        ],
+      }],
+      { buttonLabel: 'Choose Area' }
+    )
     return { nextStep: 'reg_collect_experience' }
   }
 
@@ -202,10 +256,16 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
 }
 
 async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
-  const availMap: Record<string, string[]> = {
-    avail_weekdays_only: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-    avail_incl_sat: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-    avail_any_day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  const availMap: Record<string, { label: string; days: string[] }> = {
+    avail_weekdays_only: { label: 'Weekdays only', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
+    avail_incl_sat: { label: 'Mon–Sat', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] },
+    avail_any_day: { label: 'Any day', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+  }
+
+  // Handle "Edit" — restart registration from name step
+  if (ctx.reply.id === 'reg_edit') {
+    await sendText(ctx.phone, "No problem! Let's update your details.\n\n👤 What is your *full name*?\n\n_(Type and send your name)_")
+    return { nextStep: 'reg_collect_skills', nextData: { name: undefined, skills: [], serviceAreas: [], experience: undefined, availability: undefined } }
   }
 
   if (!ctx.reply.id?.startsWith('avail_')) {
@@ -213,18 +273,20 @@ async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_confirm' }
   }
 
-  const availability = availMap[ctx.reply.id] ?? []
+  const avail = availMap[ctx.reply.id]
+  const availability = avail?.days ?? []
+  const availLabel = avail?.label ?? availability.join(', ')
 
   const { name, skills, serviceAreas, experience } = ctx.data
   const skillList = (skills ?? []).join(', ')
   const areaList = (serviceAreas ?? []).join(', ')
-  const availLabel = availability.length === 7 ? 'Any day' : availability.join(', ')
 
   await sendButtons(
     ctx.phone,
     `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n\nShall I submit your application?`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
+      { id: 'reg_edit', title: '✏️ Edit' },
       { id: 'submit_no', title: '❌ Cancel' },
     ]
   )
@@ -232,8 +294,14 @@ async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handlePending(ctx: FlowContext): Promise<FlowResult> {
+  // Edit — go back to name step
+  if (ctx.reply.id === 'reg_edit') {
+    await sendText(ctx.phone, "No problem! Let's update your details.\n\n👤 What is your *full name*?\n\n_(Type and send your name)_")
+    return { nextStep: 'reg_collect_skills', nextData: { name: undefined, skills: [], serviceAreas: [], experience: undefined, availability: undefined } }
+  }
+
   if (ctx.reply.id === 'submit_no') {
-    await sendText(ctx.phone, "Application cancelled. Send 'Join' anytime to apply. 👋")
+    await sendText(ctx.phone, "Application cancelled. Reply *join* anytime to apply. 👋")
     return { nextStep: 'done' }
   }
 
@@ -242,12 +310,19 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
   }
 
   try {
+    const availLabel =
+      (ctx.data.availability?.length ?? 0) >= 7 ? 'Any day'
+      : (ctx.data.availability?.length ?? 0) >= 6 ? 'Mon–Sat'
+      : 'Weekdays only'
+
     const application = await db.providerApplication.create({
       data: {
         phone: ctx.phone,
         name: ctx.data.name ?? 'Unknown',
         skills: ctx.data.skills ?? [],
         serviceAreas: ctx.data.serviceAreas ?? [],
+        experience: ctx.data.experience ?? null,
+        availability: availLabel,
         status: 'PENDING',
       },
     })
@@ -267,9 +342,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       components: [
         { type: 'body', parameters: [{ type: 'text', text: ctx.data.name ?? 'Applicant' }, { type: 'text', text: ref }] },
       ],
-    }).catch(() => {}) // non-blocking — in-flow message above is the primary
+    }).catch(() => {}) // non-blocking
 
-    // Notify admin of new application (non-blocking — ADMIN_WHATSAPP_NUMBER env var)
+    // Notify admin of new application (non-blocking)
     const { sendAdminNewApplication } = await import('../whatsapp')
     sendAdminNewApplication({
       applicantName: ctx.data.name ?? 'Unknown',
@@ -277,15 +352,30 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       skills: ctx.data.skills ?? [],
       serviceAreas: ctx.data.serviceAreas ?? [],
       applicationId: application.id,
-    }).catch(() => {}) // fire-and-forget
+    }).catch(() => {})
 
     return { nextStep: 'done' }
   } catch (err) {
     console.error('[registration-flow] Submit error:', err)
     await sendText(
       ctx.phone,
-      '😔 Something went wrong. Please try again or contact us directly.'
+      '😔 Something went wrong submitting your application. Please try again or reply *join* to restart.'
     )
     return { nextStep: 'done' }
   }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function sendSkillList(phone: string, bodyText: string): Promise<void> {
+  const rows = SKILL_CATEGORIES.map((cat) => ({
+    id: `skill_${cat.toLowerCase().replace(/[\s&/]+/g, '_')}`,
+    title: cat,
+  }))
+  await sendList(
+    phone,
+    bodyText,
+    [{ title: 'Skills', rows }],
+    { buttonLabel: 'Choose Skill', footer: 'Select each skill then tap Done' }
+  )
 }
