@@ -288,9 +288,19 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         description: ctx.data.availabilityNote
           ? `Preferred availability: ${ctx.data.availabilityNote}`
           : '',
-        status: 'PENDING_VALIDATION',
+        status: 'OPEN',
       },
     })
+
+    // Trigger matching in background — non-blocking
+    import('../matching-engine')
+      .then(({ dispatchLeads }) => dispatchLeads(jobRequest.id))
+      .then((result) => {
+        if (result.noMatch) {
+          console.log(`[job-request] No providers found for ${jobRequest.id} — cron will retry`)
+        }
+      })
+      .catch((err) => console.error('[job-request] Matching error:', err))
 
     await sendText(
       ctx.phone,
