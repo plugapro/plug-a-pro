@@ -21,7 +21,9 @@ const SKILL_CATEGORIES = [
 // ─── Trigger keywords that start the registration flow ────────────────────────
 export const REGISTRATION_TRIGGERS = [
   'register', 'join', 'technician', 'provider', 'apply', 'signup', 'sign up',
-  'ek wil werk',       // Afrikaans: "I want to work"
+  'i want to work', 'want to work', 'looking for work', 'find work',
+  'i want work', 'need work', 'find a job', 'get work',
+  'ek wil werk',        // Afrikaans: "I want to work"
   'ngifuna ukusebenza', // Zulu: "I want to work"
 ]
 

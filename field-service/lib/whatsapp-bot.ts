@@ -91,7 +91,7 @@ export async function processInboundMessage(
     } else if (isProviderJobList && flow === 'idle') {
       flow = 'provider_job'
       step = 'tech_job_list'
-    } else if (isRegistration && flow === 'idle') {
+    } else if ((isRegistration || reply.id === 'find_work') && flow === 'idle') {
       flow = 'registration'
       step = 'reg_collect_name'
     } else if ((isReschedule || reply.id === 'start_reschedule') && flow === 'idle') {

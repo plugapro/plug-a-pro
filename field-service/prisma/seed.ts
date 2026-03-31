@@ -190,10 +190,13 @@ async function main() {
 
     const quote1 = await prisma.quote.create({
       data: {
-        matchId:     match1.id,
-        amount:      650,
-        description: 'Replace kitchen tap washers and re-seal. Includes call-out.',
-        status:      QuoteStatus.APPROVED,
+        matchId:       match1.id,
+        amount:        650,
+        labourCost:    500,
+        materialsCost: 150,
+        description:   'Replace kitchen tap washers and re-seal. Includes call-out.',
+        status:        QuoteStatus.APPROVED,
+        approvalToken: 'seed-quote-1-token',
       },
     })
 

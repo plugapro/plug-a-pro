@@ -56,15 +56,7 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
 // ─── Step handlers ────────────────────────────────────────────────────────────
 
 async function handleWelcome(ctx: FlowContext): Promise<FlowResult> {
-  await sendButtons(
-    ctx.phone,
-    '👋 Welcome to Plug a Pro!\n\nI can help you find a service provider, check your request, or answer questions.',
-    [
-      { id: 'book', title: '🔧 Request a Service' },
-      { id: 'status', title: '📋 My Request' },
-      { id: 'help', title: '❓ Get Help' },
-    ]
-  )
+  await showMainMenu(ctx.phone)
   return { nextStep: 'welcome' }
 }
 
@@ -348,13 +340,25 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
 // ─── Exported helpers ─────────────────────────────────────────────────────────
 
 export async function showMainMenu(phone: string): Promise<void> {
-  await sendButtons(
+  await sendList(
     phone,
     '👋 Welcome to Plug a Pro!\n\nHow can I help you today?',
     [
-      { id: 'book', title: '🔧 Request a Service' },
-      { id: 'status', title: '📋 My Request' },
-      { id: 'help', title: '❓ Get Help' },
-    ]
+      {
+        title: 'Services',
+        rows: [
+          { id: 'book',      title: '🔧 Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
+          { id: 'status',    title: '📋 My Request',        description: 'Track or manage an existing booking' },
+          { id: 'help',      title: '❓ Get Help',          description: 'FAQs, pricing, support' },
+        ],
+      },
+      {
+        title: 'For Service Providers',
+        rows: [
+          { id: 'find_work', title: '👷 Find Work',         description: 'Apply to join as a service provider' },
+        ],
+      },
+    ],
+    { buttonLabel: 'Choose Option' }
   )
 }
