@@ -112,6 +112,42 @@ export async function processInboundMessage(
     } else if (reply.id === 'status' || reply.id === 'my_booking') {
       flow = 'status'
       step = 'status_show'
+    } else if (reply.id?.startsWith('mdc_')) {
+      // ── Match decline reason responses ──────────────────────────────────────
+      const matchId = reply.id.replace(/^mdc_(unavailable|area|other)_/, '')
+      const reasonMap: Record<string, string> = {
+        [`mdc_unavailable_${matchId}`]: 'Not available',
+        [`mdc_area_${matchId}`]: 'Too far',
+        [`mdc_other_${matchId}`]: 'Other',
+      }
+      const reason = reasonMap[reply.id] ?? 'Declined'
+
+      const provider = await db.provider.findUnique({ where: { phone } })
+      if (provider) {
+        const match = await db.match.findUnique({ where: { id: matchId } })
+        if (match) {
+          await db.lead.updateMany({
+            where: { jobRequestId: match.jobRequestId, providerId: provider.id },
+            data: { status: 'DECLINED', respondedAt: new Date() },
+          })
+          await db.match.update({
+            where: { id: matchId },
+            data: { status: 'CANCELLED' },
+          }).catch(() => {})
+        }
+      }
+
+      const { sendText } = await import('./whatsapp-interactive')
+      await sendText(phone, `Got it — lead declined (${reason}). We'll find another provider. 👍`)
+      return
+    } else if (
+      reply.id?.startsWith('match_accept_') ||
+      reply.id?.startsWith('match_inspect_') ||
+      reply.id?.startsWith('match_decline_')
+    ) {
+      // ── Match-level lead responses (quote flow) ─────────────────────────────
+      await handleMatchLeadResponse(phone, reply.id)
+      return
     } else if (reply.id?.startsWith('view_job_') || reply.id?.startsWith('accept_job_') || reply.id?.startsWith('decline_job_')) {
       // Provider job management
       const jobId = reply.id.replace(/^(view_job_|accept_job_|decline_job_)/, '')
@@ -221,24 +257,24 @@ async function saveConversation(params: {
 
 export async function notifyProviderNewJob(params: {
   providerPhone: string
-  jobId: string
+  matchId: string          // Match.id — used for quote routing
   category: string
-  address: string
-  scheduledWindow: string
-  customerInitial: string  // First name only — never share full customer contact
-  jobRequestId: string
+  area: string             // suburb/city for display
+  description: string      // short job description
+  customerInitial: string  // first name only
 }): Promise<void> {
   const { sendButtons } = await import('./whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   await sendButtons(
     params.providerPhone,
-    `🔔 *New Job Assigned*\n\n🔧 ${params.category}\n📍 ${params.address}\n🗓 ${params.scheduledWindow}\n👤 Customer: ${params.customerInitial}\n\nOpen the job for full details:`,
+    `🔔 *New Job Lead*\n\n🔧 ${params.category}\n📍 ${params.area}\n📋 ${params.description}\n👤 Customer: ${params.customerInitial}\n\nHow would you like to proceed?`,
     [
-      { id: `view_job_${params.jobId}`, title: '📋 View Job' },
-      { id: `accept_job_${params.jobId}`, title: '✅ Accept' },
+      { id: `match_accept_${params.matchId}`, title: '✅ Accept & Quote' },
+      { id: `match_inspect_${params.matchId}`, title: '🔍 Inspect First' },
+      { id: `match_decline_${params.matchId}`, title: '❌ Decline' },
     ],
-    { footer: `Job ref: ${params.jobRequestId.slice(-8).toUpperCase()}` }
+    { footer: `Lead ref: ${params.matchId.slice(-8).toUpperCase()}` }
   )
 }
 
@@ -417,6 +453,75 @@ async function handleCancelFlow(
   }
 
   return { nextStep: 'cancel_confirm' }
+}
+
+// ─── Match-level lead response handler ───────────────────────────────────────
+
+async function handleMatchLeadResponse(phone: string, buttonId: string): Promise<void> {
+  const { sendButtons, sendCtaUrl, sendText } = await import('./whatsapp-interactive')
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
+  const matchId = buttonId
+    .replace('match_accept_', '')
+    .replace('match_inspect_', '')
+    .replace('match_decline_', '')
+
+  const provider = await db.provider.findUnique({ where: { phone } })
+  if (!provider) {
+    await sendText(phone, "You're not registered as a provider.")
+    return
+  }
+
+  const match = await db.match.findUnique({
+    where: { id: matchId },
+    include: { jobRequest: { include: { address: true } } },
+  })
+
+  if (!match || match.providerId !== provider.id) {
+    await sendText(phone, '⚠️ This lead is no longer available.')
+    return
+  }
+
+  const quoteUrl = `${appUrl}/technician/quotes/${matchId}`
+
+  if (buttonId.startsWith('match_accept_')) {
+    await sendCtaUrl(
+      phone,
+      `✅ *Great! Submit your quote here:*\n\nInclude your labour cost, any materials, and estimated time.`,
+      'Submit Quote',
+      quoteUrl,
+      { footer: 'Quote will be sent to the customer for approval' }
+    )
+    return
+  }
+
+  if (buttonId.startsWith('match_inspect_')) {
+    await db.match.update({
+      where: { id: matchId },
+      data: { inspectionNeeded: true, status: 'INSPECTION_SCHEDULED' },
+    })
+    await sendCtaUrl(
+      phone,
+      `🔍 *Inspection noted.*\n\nVisit the customer to assess the job, then submit your quote:`,
+      'Submit Quote After Inspection',
+      quoteUrl,
+      { footer: 'Contact the customer to arrange the inspection time' }
+    )
+    return
+  }
+
+  if (buttonId.startsWith('match_decline_')) {
+    await sendButtons(
+      phone,
+      '❌ *Decline Lead*\n\nWhy are you declining?',
+      [
+        { id: `mdc_unavailable_${matchId}`, title: '📅 Not available' },
+        { id: `mdc_area_${matchId}`, title: '📍 Too far' },
+        { id: `mdc_other_${matchId}`, title: '✏️ Other reason' },
+      ]
+    )
+    return
+  }
 }
 
 // ─── Provider job management flow ────────────────────────────────────────────
