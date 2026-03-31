@@ -148,6 +148,10 @@ export async function processInboundMessage(
       // ── Match-level lead responses (quote flow) ─────────────────────────────
       await handleMatchLeadResponse(phone, reply.id)
       return
+    } else if (reply.id?.startsWith('quote_accept_') || reply.id?.startsWith('quote_decline_')) {
+      // ── Customer quote response buttons ─────────────────────────────────────
+      await handleCustomerQuoteResponse(phone, reply.id)
+      return
     } else if (reply.id?.startsWith('view_job_') || reply.id?.startsWith('accept_job_') || reply.id?.startsWith('decline_job_')) {
       // Provider job management
       const jobId = reply.id.replace(/^(view_job_|accept_job_|decline_job_)/, '')
@@ -712,8 +716,7 @@ async function handleProviderJobFlow(
   return { nextStep: 'tech_job_view' }
 }
 
-// Stub — full implementation in Task 7
-export async function sendQuoteToClient(_params: {
+export async function sendQuoteToClient(params: {
   customerPhone: string
   providerName: string
   quoteId: string
@@ -725,7 +728,131 @@ export async function sendQuoteToClient(_params: {
   validUntil: Date
   approvalToken: string
 }): Promise<void> {
-  // implemented in Task 7
+  const { sendButtons } = await import('./whatsapp-interactive')
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const webLink = `${appUrl}/quotes/${params.approvalToken}`
+
+  const materialsLine = params.materialsCost > 0
+    ? `\nMaterials:  R ${params.materialsCost.toFixed(2)}`
+    : ''
+  const hoursLine = params.estimatedHours ? `\nEst. time:  ${params.estimatedHours}h` : ''
+  const validLine = `\nValid until: ${params.validUntil.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
+
+  await sendButtons(
+    params.customerPhone,
+    `💼 *Quote from ${params.providerName}*\n\nLabour:     R ${params.labourCost.toFixed(2)}${materialsLine}\n──────────────────\nTotal:      R ${params.totalAmount.toFixed(2)}${hoursLine}${validLine}\n\n📋 ${params.description}\n\nOr review online:\n${webLink}`,
+    [
+      { id: `quote_accept_${params.quoteId}`, title: '✅ Accept Quote' },
+      { id: `quote_decline_${params.quoteId}`, title: '❌ Decline' },
+    ]
+  )
+}
+
+// ─── Customer quote response handler ─────────────────────────────────────────
+
+async function handleCustomerQuoteResponse(phone: string, buttonId: string): Promise<void> {
+  const { sendText, sendCtaUrl } = await import('./whatsapp-interactive')
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
+  const quoteId = buttonId.replace('quote_accept_', '').replace('quote_decline_', '')
+  const action = buttonId.startsWith('quote_accept_') ? 'approve' : 'decline'
+
+  try {
+    const result = await db.$transaction(async (tx) => {
+      const quote = await tx.quote.findUnique({
+        where: { id: quoteId },
+        include: {
+          match: {
+            include: {
+              provider: { select: { id: true, phone: true, name: true } },
+              jobRequest: {
+                include: {
+                  customer: { select: { id: true, phone: true, name: true } },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!quote) throw new Error('NOT_FOUND')
+      if (quote.status !== 'PENDING') throw new Error('ALREADY_ACTIONED')
+      if (quote.validUntil && new Date() > quote.validUntil) throw new Error('EXPIRED')
+
+      if (action === 'decline') {
+        await tx.quote.update({ where: { id: quoteId }, data: { status: 'DECLINED', declinedAt: new Date() } })
+        await tx.match.update({ where: { id: quote.matchId }, data: { status: 'QUOTE_DECLINED' } })
+        return {
+          action: 'declined' as const,
+          providerPhone: quote.match.provider.phone,
+          category: quote.match.jobRequest.category,
+        }
+      }
+
+      await tx.quote.update({ where: { id: quoteId }, data: { status: 'APPROVED', approvedAt: new Date() } })
+      await tx.match.update({ where: { id: quote.matchId }, data: { status: 'QUOTE_APPROVED' } })
+
+      const scheduledDate = quote.preferredDate ?? new Date(Date.now() + 48 * 60 * 60 * 1000)
+
+      const booking = await tx.booking.create({
+        data: {
+          matchId: quote.matchId,
+          quoteId: quote.id,
+          status: 'SCHEDULED',
+          scheduledDate,
+        },
+      })
+
+      await tx.job.create({
+        data: {
+          bookingId: booking.id,
+          providerId: quote.match.provider.id,
+          status: 'SCHEDULED',
+        },
+      })
+
+      return {
+        action: 'approved' as const,
+        providerPhone: quote.match.provider.phone,
+        providerName: quote.match.provider.name,
+        category: quote.match.jobRequest.category,
+        scheduledDate,
+      }
+    })
+
+    if (result.action === 'approved') {
+      const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
+        weekday: 'short', day: 'numeric', month: 'short',
+      })
+      await sendCtaUrl(
+        result.providerPhone,
+        `✅ *Quote Approved!*\n\n${result.category} job confirmed for ${dateStr}.`,
+        'View Job',
+        `${appUrl}/technician`
+      ).catch(() => {})
+      await sendText(
+        phone,
+        `✅ *Booking Confirmed!*\n\n${result.providerName} will arrive on ${dateStr}. You'll receive a reminder the day before.`
+      )
+    } else {
+      await sendText(
+        result.providerPhone,
+        `❌ The customer declined your quote for the ${result.category} job.`
+      ).catch(() => {})
+      await sendText(phone, "❌ *Quote declined.* We've notified the provider. We'll find you another option.")
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'UNKNOWN'
+    if (msg === 'ALREADY_ACTIONED') {
+      await sendText(phone, action === 'approve'
+        ? "✅ You've already accepted this quote."
+        : "❌ You've already declined this quote.")
+    } else if (msg === 'EXPIRED') {
+      await sendText(phone, "⏱️ This quote has expired. Please ask the provider to send a new one.")
+    } else {
+      await sendText(phone, "Something went wrong. Please try the link in the original message.")
+    }
+  }
 }
 
 // ─── Backwards-compat alias ───────────────────────────────────────────────────
