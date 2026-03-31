@@ -12,6 +12,7 @@ export type FlowName =
   | 'cancel'
   | 'help'
   | 'provider_job'
+  | 'provider_journey'  // registered provider: availability + job status via WA
 
 // All possible step names (namespaced by flow)
 export type FlowStep =
@@ -52,6 +53,14 @@ export type FlowStep =
   | 'tech_job_view'
   | 'tech_job_confirm_accept'
   | 'tech_job_confirm_decline'
+  // Provider journey (registered provider WhatsApp interactions)
+  | 'pj_menu'
+  | 'pj_toggle_available'
+  | 'pj_job_list'
+  | 'pj_job_detail'
+  | 'pj_status_update'
+  | 'pj_status_confirm'
+  | 'pj_problem_report'
   // Terminal
   | 'done'
   | 'cancelled'
@@ -84,6 +93,11 @@ export interface ConversationData {
   // Provider job management
   pendingJobId?: string
   declineReason?: string
+
+  // Provider journey
+  availableNow?: boolean
+  activeJobId?: string
+  statusUpdate?: string
 
   // Shared
   customerId?: string
