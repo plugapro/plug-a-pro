@@ -23,6 +23,10 @@ import {
 } from './whatsapp-flows/registration'
 import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
+import {
+  handleProviderJourneyFlow,
+  PROVIDER_JOURNEY_TRIGGERS,
+} from './whatsapp-flows/provider-journey'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
 
 // Conversation TTL: 30 minutes of inactivity resets to welcome
@@ -83,6 +87,13 @@ export async function processInboundMessage(
 
     const isProviderJobList = PROVIDER_KEYWORDS.some((k) => rawText === k)
 
+    // Universal back-to-menu — intercept back_home from any flow
+    if (reply.id === 'back_home') {
+      await showMainMenu(phone)
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
     // Route to appropriate flow (keyword overrides only when idle or expired)
     if (isReset || isExpired) {
       flow = 'idle'
@@ -91,6 +102,9 @@ export async function processInboundMessage(
     } else if (isProviderJobList && flow === 'idle') {
       flow = 'provider_job'
       step = 'tech_job_list'
+    } else if (PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) && flow === 'idle') {
+      flow = 'provider_journey'
+      step = 'pj_menu'
     } else if ((isRegistration || reply.id === 'find_work') && flow === 'idle') {
       flow = 'registration'
       step = 'reg_start'
@@ -180,6 +194,8 @@ export async function processInboundMessage(
       result = await handleCancelFlow(ctx)
     } else if (flow === 'provider_job') {
       result = await handleProviderJobFlow(ctx)
+    } else if (flow === 'provider_journey') {
+      result = await handleProviderJourneyFlow(ctx)
     } else {
       // Idle / unknown — show main menu
       await showMainMenu(phone)
