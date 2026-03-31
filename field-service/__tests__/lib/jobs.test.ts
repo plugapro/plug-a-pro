@@ -18,8 +18,13 @@ const { mockJob } = vi.hoisted(() => ({
     booking: {
       matchId: 'match_1',
       bookingId: 'booking_1',
-      customer: { name: 'Alice Smith', phone: '+27821234567' },
-      address: { street: '1 Main St', suburb: 'Sandton', city: 'Johannesburg' },
+      match: {
+        jobRequest: {
+          category: 'Plumbing',
+          customer: { name: 'Alice Smith', phone: '+27821234567' },
+          address: { street: '1 Main St', suburb: 'Sandton', city: 'Johannesburg' },
+        },
+      },
     },
     provider: { name: 'Bob Jones' },
   },
