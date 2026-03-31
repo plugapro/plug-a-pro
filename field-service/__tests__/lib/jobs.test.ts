@@ -10,19 +10,23 @@ const { mockJob } = vi.hoisted(() => ({
   mockJob: {
     id: 'job_1',
     bookingId: 'booking_1',
-    technicianId: 'tech_1',
-    status: 'ASSIGNED' as const,
+    providerId: 'provider_1',
+    status: 'SCHEDULED' as const,
     arrivedAt: null,
     startedAt: null,
     completedAt: null,
     booking: {
-      businessId: 'biz_1',
+      matchId: 'match_1',
       bookingId: 'booking_1',
-      customer: { name: 'Alice Smith', phone: '+27821234567' },
-      service: { name: 'Electrical Inspection' },
-      address: { street: '1 Main St', suburb: 'Sandton', city: 'Johannesburg' },
+      match: {
+        jobRequest: {
+          category: 'Plumbing',
+          customer: { name: 'Alice Smith', phone: '+27821234567' },
+          address: { street: '1 Main St', suburb: 'Sandton', city: 'Johannesburg' },
+        },
+      },
     },
-    technician: { name: 'Bob Jones' },
+    provider: { name: 'Bob Jones' },
   },
 }))
 
@@ -40,16 +44,12 @@ vi.mock('@/lib/db', () => ({
       jobStatusEvent: { create: vi.fn().mockResolvedValue({}) },
     })),
     booking: {
-      findUnique: vi.fn().mockResolvedValue({ totalAmount: 500 }),
+      findUnique: vi.fn().mockResolvedValue({ matchId: 'match_1' }),
       update: vi.fn().mockResolvedValue({}),
     },
     invoice: {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({}),
-    },
-    slot: {
-      findFirst: vi.fn().mockResolvedValue(null),
-      update: vi.fn().mockResolvedValue({}),
     },
     rating: {
       findFirst: vi.fn().mockResolvedValue(null),
@@ -58,8 +58,8 @@ vi.mock('@/lib/db', () => ({
 }))
 
 vi.mock('@/lib/whatsapp', () => ({
-  sendTechnicianOnTheWay: vi.fn().mockResolvedValue(undefined),
-  sendTechnicianArrived: vi.fn().mockResolvedValue(undefined),
+  sendProviderOnTheWay: vi.fn().mockResolvedValue(undefined),
+  sendProviderArrived: vi.fn().mockResolvedValue(undefined),
   sendJobCompleted: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -75,21 +75,21 @@ describe('transitionJob', () => {
     vi.clearAllMocks()
   })
 
-  it('allows ASSIGNED → EN_ROUTE', async () => {
+  it('allows SCHEDULED → EN_ROUTE', async () => {
     ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...mockJob,
-      status: 'ASSIGNED',
+      status: 'SCHEDULED',
     })
 
     await expect(
-      transitionJob({ jobId: 'job_1', toStatus: 'EN_ROUTE', actorId: 'tech_1', actorRole: 'technician' })
+      transitionJob({ jobId: 'job_1', toStatus: 'EN_ROUTE', actorId: 'provider_1', actorRole: 'provider' })
     ).resolves.toBeUndefined()
   })
 
-  it('allows ASSIGNED → CALLBACK_REQUIRED', async () => {
+  it('allows SCHEDULED → CALLBACK_REQUIRED', async () => {
     ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...mockJob,
-      status: 'ASSIGNED',
+      status: 'SCHEDULED',
     })
 
     await expect(
@@ -97,14 +97,14 @@ describe('transitionJob', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('rejects ASSIGNED → COMPLETED (invalid transition)', async () => {
+  it('rejects SCHEDULED → COMPLETED (invalid transition)', async () => {
     ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...mockJob,
-      status: 'ASSIGNED',
+      status: 'SCHEDULED',
     })
 
     await expect(
-      transitionJob({ jobId: 'job_1', toStatus: 'COMPLETED', actorId: 'tech_1', actorRole: 'technician' })
+      transitionJob({ jobId: 'job_1', toStatus: 'COMPLETED', actorId: 'provider_1', actorRole: 'provider' })
     ).rejects.toThrow(/Invalid job transition/)
   })
 
@@ -115,7 +115,7 @@ describe('transitionJob', () => {
     })
 
     await expect(
-      transitionJob({ jobId: 'job_1', toStatus: 'STARTED', actorId: 'tech_1', actorRole: 'technician' })
+      transitionJob({ jobId: 'job_1', toStatus: 'STARTED', actorId: 'provider_1', actorRole: 'provider' })
     ).rejects.toThrow(/Invalid job transition/)
   })
 
@@ -123,7 +123,7 @@ describe('transitionJob', () => {
     ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null)
 
     await expect(
-      transitionJob({ jobId: 'missing', toStatus: 'EN_ROUTE', actorId: 'tech_1', actorRole: 'technician' })
+      transitionJob({ jobId: 'missing', toStatus: 'EN_ROUTE', actorId: 'provider_1', actorRole: 'provider' })
     ).rejects.toThrow(/Job not found/)
   })
 
@@ -142,8 +142,8 @@ describe('transitionJob', () => {
     await transitionJob({
       jobId: 'job_1',
       toStatus: 'ARRIVED',
-      actorId: 'tech_1',
-      actorRole: 'technician',
+      actorId: 'provider_1',
+      actorRole: 'provider',
       notes: 'On site',
     })
 
@@ -152,8 +152,8 @@ describe('transitionJob', () => {
         jobId: 'job_1',
         fromStatus: 'EN_ROUTE',
         toStatus: 'ARRIVED',
-        actorId: 'tech_1',
-        actorRole: 'technician',
+        actorId: 'provider_1',
+        actorRole: 'provider',
         notes: 'On site',
       }),
     })
@@ -173,7 +173,7 @@ describe('VALID_TRANSITIONS coverage', () => {
     ['PAUSED', 'STARTED'],
     ['AWAITING_APPROVAL', 'STARTED'],
     ['AWAITING_APPROVAL', 'COMPLETED'],
-    ['CALLBACK_REQUIRED', 'ASSIGNED'],
+    ['CALLBACK_REQUIRED', 'SCHEDULED'],
   ]
 
   for (const [from, to] of validPaths) {

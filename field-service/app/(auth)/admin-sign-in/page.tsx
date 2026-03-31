@@ -1,9 +1,5 @@
 'use client'
 
-// ─── Admin / Owner sign-in — email + password ─────────────────────────────────
-// Internal team only. Email usage is reserved for admin/owner roles.
-// Customers and technicians authenticate via phone OTP.
-
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
@@ -49,6 +45,11 @@ export default function AdminSignInPage() {
         return
       }
 
+      if (data.session?.access_token) {
+        const maxAge = data.session.expires_in ?? 3600
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
+      }
+
       router.replace('/admin')
     } catch {
       setError('Something went wrong. Please try again.')
@@ -58,9 +59,9 @@ export default function AdminSignInPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="text-center space-y-2">
+      <div className="space-y-1 text-center">
         <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
           Admin Portal
         </p>
@@ -70,27 +71,23 @@ export default function AdminSignInPage() {
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="email" className="text-zinc-300">
-            Email
-          </Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-zinc-300">Email</Label>
           <Input
             id="email"
             type="email"
             autoComplete="email"
-            placeholder="you@company.com"
+            placeholder="you@plugapro.co.za"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             disabled={loading}
-            className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20 h-11"
+            className="h-11 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="password" className="text-zinc-300">
-            Password
-          </Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-zinc-300">Password</Label>
           <Input
             id="password"
             type="password"
@@ -100,7 +97,7 @@ export default function AdminSignInPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             disabled={loading}
-            className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20 h-11"
+            className="h-11 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
           />
         </div>
 

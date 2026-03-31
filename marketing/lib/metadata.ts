@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
 
 export const siteConfig = {
-  venture: "my-product",          // used as leads.venture in Supabase
-  name: "My Product",
-  description: "One-line pitch.",
-  url: "https://myproduct.com",
-  accent: "oklch(0.55 0.2 250)",  // swap per venture — propagates to CSS token
+  venture: "plug-a-pro",
+  name: "Plug-A-Pro",
+  description:
+    "Find nearby handymen and home-job workers via WhatsApp. Get quotes, book help, and get the job done safely and simply.",
+  url: "https://plugapro.co.za", // TODO: update with production URL
+  accent: "oklch(0.55 0.2 250)",
   ogImage: "/og.png",
-  whatsappNumber: "+1234567890",  // single source of truth — no env var
+  whatsappNumber: "+27693552447",
   links: {
-    app: "https://app.myproduct.com",
-    twitter: "https://twitter.com/myproduct",
+    app: "https://app.plugapro.co.za", // TODO: update with production app URL
+    twitter: "https://twitter.com/plugapro", // TODO: update with real handle
   },
 } as const;
 

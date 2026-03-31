@@ -33,30 +33,37 @@ export default async function BookingDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  const session = await requireAdmin()
+  await requireAdmin()
   const { id } = await params
 
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
-      customer: { select: { name: true, phone: true, email: true } },
-      service:  { select: { name: true, basePrice: true, category: true } },
-      address:  true,
-      payment:  true,
-      invoice:  true,
-      slot:     true,
+      match: {
+        include: {
+          jobRequest: {
+            include: {
+              customer: true,
+              address:  true,
+            },
+          },
+          provider: true,
+        },
+      },
+      quote:   true,
+      payment: true,
+      invoice: true,
       job: {
         include: {
-          technician:    { select: { name: true, phone: true } },
-          statusHistory: { orderBy: { timestamp: 'asc' } },
-          extras:        { orderBy: { createdAt: 'asc' } },
           photos:        { orderBy: { createdAt: 'asc' } },
+          extras:        { orderBy: { createdAt: 'asc' } },
+          statusHistory: { orderBy: { timestamp: 'asc' } },
         },
       },
     },
   })
 
-  if (!booking || booking.businessId !== session.businessId) {
+  if (!booking) {
     notFound()
   }
 
@@ -69,30 +76,32 @@ export default async function BookingDetailPage({
   async function cancelBooking() {
     'use server'
     await db.booking.update({ where: { id }, data: { status: 'CANCELLED' } })
-    if (booking!.slotId) {
-      const { releaseSlot } = await import('@/lib/slotting')
-      await releaseSlot(booking!.slotId)
-    }
     redirect('/admin/bookings')
   }
 
   async function markPaid() {
     'use server'
+    const amount = booking!.quote?.amount ?? 0
     await db.payment.upsert({
       where:  { bookingId: id },
       create: {
         bookingId: id,
-        amount:    booking!.totalAmount,
+        amount,
         status:    'PAID',
         paidAt:    new Date(),
       },
       update: { status: 'PAID', paidAt: new Date() },
     })
-    await db.booking.update({ where: { id }, data: { status: 'CONFIRMED' } })
+    await db.booking.update({ where: { id }, data: { status: 'SCHEDULED' } })
     redirect(`/admin/bookings/${id}`)
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  const customer        = booking.match?.jobRequest?.customer
+  const address         = booking.match?.jobRequest?.address
+  const jobRequestTitle = booking.match?.jobRequest?.title ?? '—'
+  const jobRequestCategory = booking.match?.jobRequest?.category ?? '—'
 
   return (
     <div className="space-y-6">
@@ -108,7 +117,7 @@ export default async function BookingDetailPage({
           <span className="font-mono text-sm font-semibold">{ref}</span>
           <StatusBadge status={booking.status} type="booking" />
         </div>
-        <p className="text-sm text-muted-foreground">{booking.service.name}</p>
+        <p className="text-sm text-muted-foreground">{jobRequestTitle}</p>
       </div>
 
       {/* Two-column layout */}
@@ -125,39 +134,56 @@ export default async function BookingDetailPage({
               <div className="grid grid-cols-3 gap-2">
                 <span className="text-muted-foreground font-medium">Customer</span>
                 <div className="col-span-2">
-                  <p className="font-medium">{booking.customer.name}</p>
-                  <p className="text-muted-foreground">{booking.customer.phone}</p>
-                  {booking.customer.email && (
-                    <p className="text-muted-foreground">{booking.customer.email}</p>
+                  <p className="font-medium">{customer?.name ?? '—'}</p>
+                  <p className="text-muted-foreground">{customer?.phone ?? ''}</p>
+                  {customer?.email && (
+                    <p className="text-muted-foreground">{customer.email}</p>
                   )}
                 </div>
               </div>
 
               <Separator />
 
-              {/* Service */}
+              {/* Job Request */}
               <div className="grid grid-cols-3 gap-2">
-                <span className="text-muted-foreground font-medium">Service</span>
+                <span className="text-muted-foreground font-medium">Job Request</span>
                 <div className="col-span-2">
-                  <p className="font-medium">{booking.service.name}</p>
-                  <p className="text-muted-foreground">{booking.service.category}</p>
-                  <p className="font-semibold mt-0.5">R {Number(booking.totalAmount).toFixed(2)}</p>
+                  <p className="font-medium">{jobRequestTitle}</p>
+                  <p className="text-muted-foreground">{jobRequestCategory}</p>
+                  <p className="font-semibold mt-0.5">R {Number(booking.quote?.amount ?? 0).toFixed(2)}</p>
                 </div>
               </div>
 
               <Separator />
+
+              {/* Provider */}
+              {booking.match?.provider && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <span className="text-muted-foreground font-medium">Provider</span>
+                    <div className="col-span-2">
+                      <p className="font-medium">{booking.match.provider.name}</p>
+                      <p className="text-muted-foreground">{booking.match.provider.phone}</p>
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
 
               {/* Address */}
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-muted-foreground font-medium">Address</span>
-                <div className="col-span-2">
-                  <p>{booking.address.street}</p>
-                  <p>{booking.address.suburb}, {booking.address.city}</p>
-                  <p>{booking.address.province}{booking.address.postalCode ? ` ${booking.address.postalCode}` : ''}</p>
-                </div>
-              </div>
-
-              <Separator />
+              {address && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <span className="text-muted-foreground font-medium">Address</span>
+                    <div className="col-span-2">
+                      <p>{address.street}</p>
+                      <p>{address.suburb}, {address.city}</p>
+                      <p>{address.province}{address.postalCode ? ` ${address.postalCode}` : ''}</p>
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
 
               {/* Scheduled */}
               <div className="grid grid-cols-3 gap-2">
@@ -249,12 +275,12 @@ export default async function BookingDetailPage({
                 <CardTitle className="text-base">Job</CardTitle>
               </CardHeader>
               <CardContent className="space-y-5 text-sm">
-                {/* Technician + status */}
+                {/* Provider + status */}
                 <div className="flex flex-wrap items-center gap-4">
                   <div>
-                    <p className="text-muted-foreground text-xs mb-0.5">Technician</p>
-                    <p className="font-medium">{booking.job.technician.name}</p>
-                    <p className="text-muted-foreground text-xs">{booking.job.technician.phone}</p>
+                    <p className="text-muted-foreground text-xs mb-0.5">Provider</p>
+                    <p className="font-medium">{booking.match?.provider?.name}</p>
+                    <p className="text-muted-foreground text-xs">{booking.match?.provider?.phone}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground text-xs mb-0.5">Job status</p>
@@ -275,7 +301,7 @@ export default async function BookingDetailPage({
                     <div>
                       <p className="font-medium mb-3">Status History</p>
                       <ol className="space-y-2">
-                        {booking.job.statusHistory.map((event) => (
+                        {booking.job.statusHistory.map((event: { id: string; fromStatus: string | null; toStatus: string; timestamp: Date; actorRole: string; notes?: string | null }) => (
                           <li key={event.id} className="flex items-start gap-3">
                             <span className="mt-0.5 h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600 shrink-0 translate-y-1" />
                             <div className="flex-1 min-w-0">
@@ -315,7 +341,7 @@ export default async function BookingDetailPage({
                     <div>
                       <p className="font-medium mb-3">Extra Work Requests</p>
                       <ul className="space-y-2">
-                        {booking.job.extras.map((extra) => (
+                        {booking.job.extras.map((extra: { id: string; description: string; amount: number | { toFixed: (n: number) => string }; status: string }) => (
                           <li
                             key={extra.id}
                             className="flex items-start justify-between gap-4 rounded-md border px-3 py-2"
@@ -341,7 +367,7 @@ export default async function BookingDetailPage({
                     <div>
                       <p className="font-medium mb-3">Photos</p>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                        {booking.job.photos.map((photo) => (
+                        {booking.job.photos.map((photo: { id: string; url: string; label?: string | null }) => (
                           <a
                             key={photo.id}
                             href={photo.url}
@@ -378,17 +404,8 @@ export default async function BookingDetailPage({
               <CardTitle className="text-base">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Assign technician */}
-              {booking.status === 'CONFIRMED' && !booking.job && (
-                <Button asChild className="w-full">
-                  <Link href={`/admin/dispatch?bookingId=${booking.id}`}>
-                    Assign Technician
-                  </Link>
-                </Button>
-              )}
-
               {/* Mark as paid */}
-              {booking.status === 'PENDING_PAYMENT' && (
+              {booking.status === 'SCHEDULED' && (
                 <form action={markPaid}>
                   <Button type="submit" className="w-full" variant="default">
                     Mark as Paid
@@ -409,7 +426,7 @@ export default async function BookingDetailPage({
                 </form>
               )}
 
-              {!booking.job && booking.status !== 'CONFIRMED' && !canCancel && (
+              {!booking.job && !canCancel && (
                 <p className="text-xs text-muted-foreground text-center">No actions available</p>
               )}
             </CardContent>
@@ -437,12 +454,6 @@ export default async function BookingDetailPage({
                   <span>{booking.rescheduleCount}×</span>
                 </div>
               )}
-              {booking.depositAmount && (
-                <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Deposit</span>
-                  <span>R {Number(booking.depositAmount).toFixed(2)}</span>
-                </div>
-              )}
               {booking.cancelReason && (
                 <div className="flex flex-col gap-1">
                   <span className="text-muted-foreground">Cancel reason</span>
@@ -453,6 +464,18 @@ export default async function BookingDetailPage({
                 <span className="text-muted-foreground">Booking ID</span>
                 <span className="font-mono text-xs">{ref}</span>
               </div>
+              {booking.matchId && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Match ID</span>
+                  <span className="font-mono text-xs">{booking.matchId.slice(-8).toUpperCase()}</span>
+                </div>
+              )}
+              {booking.quoteId && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Quote ID</span>
+                  <span className="font-mono text-xs">{booking.quoteId.slice(-8).toUpperCase()}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

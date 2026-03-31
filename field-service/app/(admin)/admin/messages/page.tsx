@@ -11,15 +11,9 @@ import { Badge } from '@/components/ui/badge'
 export const metadata = buildMetadata({ title: 'Messages', noIndex: true })
 
 export default async function MessagesPage() {
-  const user = await requireAdmin()
-  let businessId = user.businessId
-  if (!businessId) {
-    const { resolveBusinessId } = await import('@/lib/auth')
-    businessId = await resolveBusinessId()
-  }
+  await requireAdmin()
 
   const messages = await db.messageEvent.findMany({
-    where: { businessId },
     include: {
       booking: { select: { id: true } },
       customer: { select: { name: true } },

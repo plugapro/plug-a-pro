@@ -38,12 +38,25 @@ export default async function CustomerBookingsPage() {
     )
   }
 
+  // Bookings are reached via jobRequests → match → booking
   const bookings = await db.booking.findMany({
-    where: { customerId: customer.id },
+    where: {
+      match: {
+        jobRequest: { customerId: customer.id },
+      },
+    },
     include: {
-      service: { select: { name: true } },
-      address: { select: { suburb: true, city: true } },
-      job:     { select: { status: true } },
+      match: {
+        include: {
+          jobRequest: {
+            include: {
+              address: { select: { suburb: true, city: true } },
+            },
+          },
+        },
+      },
+      quote: { select: { amount: true } },
+      job:   { select: { status: true } },
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -61,38 +74,44 @@ export default async function CustomerBookingsPage() {
         </div>
       )}
 
-      {bookings.map((b) => (
-        <Link
-          key={b.id}
-          href={`/bookings/${b.id}`}
-          className="block rounded-xl border bg-card p-4 space-y-2 hover:bg-accent transition-colors"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <p className="font-medium">{b.service.name}</p>
-            {b.job
-              ? <StatusBadge status={b.job.status} type="job" />
-              : <StatusBadge status={b.status} type="booking" />}
-          </div>
+      {bookings.map((b) => {
+        const jobRequest = b.match.jobRequest
+        const address    = jobRequest.address
+        return (
+          <Link
+            key={b.id}
+            href={`/bookings/${b.id}`}
+            className="block rounded-xl border bg-card p-4 space-y-2 hover:bg-accent transition-colors"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-medium capitalize">{jobRequest.category}</p>
+              {b.job
+                ? <StatusBadge status={b.job.status} type="job" />
+                : <StatusBadge status={b.status} type="booking" />}
+            </div>
 
-          <p className="text-sm text-muted-foreground">
-            {b.address.suburb}, {b.address.city}
-          </p>
+            {address && (
+              <p className="text-sm text-muted-foreground">
+                {address.suburb}, {address.city}
+              </p>
+            )}
 
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              {b.scheduledDate
-                ? b.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
-                : 'Date TBC'}
-              {b.scheduledWindow ? ` · ${b.scheduledWindow}` : ''}
-            </span>
-            <span className="font-medium">R {Number(b.totalAmount).toFixed(0)}</span>
-          </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                {b.scheduledDate
+                  ? b.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : 'Date TBC'}
+                {b.scheduledWindow ? ` · ${b.scheduledWindow}` : ''}
+              </span>
+              <span className="font-medium">R {Number(b.quote.amount).toFixed(0)}</span>
+            </div>
 
-          <p className="text-xs text-muted-foreground">
-            Ref: {b.id.slice(-8).toUpperCase()}
-          </p>
-        </Link>
-      ))}
+            <p className="text-xs text-muted-foreground">
+              Ref: {b.id.slice(-8).toUpperCase()}
+            </p>
+          </Link>
+        )
+      })}
     </div>
   )
 }

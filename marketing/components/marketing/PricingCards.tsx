@@ -1,65 +1,75 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { siteConfig } from "@/lib/metadata";
 
-const TIERS = [
+const SIDES = [
   {
-    name: "Free",
-    price: "$0",
-    description: "Get started for free.",
-    features: ["Feature A", "Feature B", "1 project"],
-    cta: "Get started",
-    href: siteConfig.links.app,
-    highlighted: false,
+    audience: "For customers",
+    emoji: "🏠",
+    headline: "Free to request help",
+    description:
+      "Describe your job, get matched to nearby workers, and receive quotes — at no cost. You only pay the worker for the job itself.",
+    points: [
+      "No platform fee to request a match",
+      "See worker profiles and reviews before deciding",
+      "Approve quotes before any work begins",
+      "Pay directly to the worker on completion",
+    ],
+    cta: "Request help",
+    href: "/waitlist",
+    highlight: false,
   },
   {
-    name: "Pro",
-    price: "$29/mo",
-    description: "For growing teams.",
-    features: ["Everything in Free", "Feature C", "Unlimited projects", "Priority support"],
-    cta: "Start free trial",
-    href: siteConfig.links.app,
-    highlighted: true,
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    description: "For large organizations.",
-    features: ["Everything in Pro", "SLA", "Dedicated support", "Custom integrations"],
-    cta: "Contact us",
-    href: "/contact",
-    highlighted: false,
+    audience: "For workers",
+    emoji: "🔧",
+    headline: "Simple, fair access to work",
+    description:
+      "Register your skills and area, receive matching job leads, and grow your local reputation. No upfront fees to join.",
+    points: [
+      "Free to register and create your profile",
+      "Receive job leads based on your skills and area",
+      "Small commission per completed job (announced at launch)",
+      "Build a verified review history that earns you more leads",
+    ],
+    cta: "Join as a worker",
+    href: "/for-workers",
+    highlight: true,
   },
 ];
 
 export function PricingCards() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {TIERS.map((tier) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+      {SIDES.map((side) => (
         <div
-          key={tier.name}
+          key={side.audience}
           className={`rounded-xl border p-6 flex flex-col gap-6 ${
-            tier.highlighted ? "border-foreground shadow-lg" : "border-border"
+            side.highlight ? "border-foreground shadow-lg" : "border-border"
           }`}
         >
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-bold text-lg">{tier.name}</h3>
-              {tier.highlighted && <Badge>Most popular</Badge>}
+            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+              {side.audience}
+            </p>
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="text-2xl" aria-hidden="true">{side.emoji}</span>
+              <h3 className="font-bold text-xl">{side.headline}</h3>
             </div>
-            <p className="text-3xl font-bold">{tier.price}</p>
-            <p className="text-sm text-muted-foreground mt-1">{tier.description}</p>
+            <p className="text-sm text-muted-foreground mt-1">{side.description}</p>
           </div>
           <ul className="space-y-2 flex-1">
-            {tier.features.map((f) => (
-              <li key={f} className="text-sm flex gap-2 items-start">
-                <span className="text-muted-foreground">✓</span> {f}
+            {side.points.map((p) => (
+              <li key={p} className="text-sm flex gap-2 items-start">
+                <span className="text-muted-foreground">✓</span> {p}
               </li>
             ))}
           </ul>
-          <Button nativeButton={false} render={<Link href={tier.href} />} variant={tier.highlighted ? "default" : "outline"} className="w-full">
-            {tier.cta}
+          <Button
+            nativeButton={false}
+            render={<Link href={side.href} />}
+            variant={side.highlight ? "default" : "outline"}
+            className="w-full"
+          >
+            {side.cta}
           </Button>
         </div>
       ))}

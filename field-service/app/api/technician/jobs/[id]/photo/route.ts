@@ -14,20 +14,20 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession()
-  if (!session || session.role !== 'technician') {
+  if (!session || session.role !== 'provider') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { id: jobId } = await params
 
-  // Verify technician owns this job
-  const technician = await db.technician.findUnique({ where: { userId: session.id } })
-  if (!technician) {
-    return NextResponse.json({ error: 'Technician not found' }, { status: 403 })
+  // Verify provider owns this job
+  const provider = await db.provider.findUnique({ where: { userId: session.id } })
+  if (!provider) {
+    return NextResponse.json({ error: 'Provider not found' }, { status: 403 })
   }
 
   const job = await db.job.findUnique({ where: { id: jobId } })
-  if (!job || job.technicianId !== technician.id) {
+  if (!job || job.providerId !== provider.id) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 

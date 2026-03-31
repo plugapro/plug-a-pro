@@ -1,4 +1,4 @@
-// ─── Technician: Job detail ───────────────────────────────────────────────────
+// ─── Provider: Job detail ──────────────────────────────────────────────────────
 // Full job view: address, customer initial, status timeline, controls, extras form.
 // Status transitions call POST /api/technician/jobs/[id]/status via client component.
 
@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
-import { requireTechnician } from '@/lib/auth'
+import { requireProvider } from '@/lib/auth'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { JobStatusControls } from '@/components/technician/StatusControls'
@@ -23,21 +23,28 @@ export default async function JobDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  const session = await requireTechnician()
+  const session = await requireProvider()
   const { id } = await params
 
-  const technician = await db.technician.findUnique({ where: { userId: session.id } })
-  if (!technician) redirect('/technician')
+  const provider = await db.provider.findUnique({ where: { userId: session.id } })
+  if (!provider) redirect('/technician')
 
   const job = await db.job.findUnique({
     where: { id },
     include: {
       booking: {
         include: {
-          service:  true,
-          address:  true,
-          customer: { select: { name: true, phone: true } },
-          payment:  { select: { status: true } },
+          match: {
+            include: {
+              jobRequest: {
+                include: {
+                  customer: { select: { name: true, phone: true } },
+                  address:  true,
+                },
+              },
+            },
+          },
+          payment: { select: { status: true } },
         },
       },
       statusHistory: { orderBy: { timestamp: 'asc' } },
@@ -46,10 +53,13 @@ export default async function JobDetailPage({
     },
   })
 
-  if (!job || job.technicianId !== technician.id) notFound()
+  if (!job || job.providerId !== provider.id) notFound()
 
-  const b = job.booking
-  const customerFirst = b.customer.name.split(' ')[0]
+  const jobRequest = job.booking.match.jobRequest
+  const customer   = jobRequest.customer
+  const address    = jobRequest.address
+  const b          = job.booking
+  const customerFirst = customer.name.split(' ')[0]
 
   return (
     <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-24">
@@ -59,7 +69,9 @@ export default async function JobDetailPage({
           <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-muted-foreground" asChild>
             <Link href="/technician">← Jobs</Link>
           </Button>
-          <h1 className="text-xl font-semibold mt-1">{b.service.name}</h1>
+          <h1 className="text-xl font-semibold mt-1">
+            Job #{job.id.slice(-8).toUpperCase()}
+          </h1>
         </div>
         <StatusBadge status={job.status} type="job" />
       </div>
@@ -68,18 +80,20 @@ export default async function JobDetailPage({
       <Card>
         <CardContent className="p-4 space-y-2 text-sm">
           <Row label="Customer">{customerFirst}</Row>
-          <Row label="Address">
-            <a
-              href={`https://maps.google.com/?q=${encodeURIComponent(
-                `${b.address.street}, ${b.address.suburb}, ${b.address.city}`
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-500 underline"
-            >
-              {b.address.street}, {b.address.suburb}, {b.address.city}
-            </a>
-          </Row>
+          {address && (
+            <Row label="Address">
+              <a
+                href={`https://maps.google.com/?q=${encodeURIComponent(
+                  `${address.street}, ${address.suburb}, ${address.city}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 underline"
+              >
+                {address.street}, {address.suburb}, {address.city}
+              </a>
+            </Row>
+          )}
           {b.scheduledDate && (
             <Row label="Scheduled">
               {b.scheduledDate.toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' })}

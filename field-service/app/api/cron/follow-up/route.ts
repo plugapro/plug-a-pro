@@ -25,30 +25,31 @@ export async function GET(request: Request) {
       updatedAt: { gte: windowStart, lte: windowEnd },
     },
     include: {
-      customer: { select: { name: true, phone: true } },
+      match: { include: { jobRequest: { include: { customer: { select: { name: true, phone: true } } } } } },
+      job: { select: { id: true } },
     },
   })
 
-  // Filter out bookings that already have a rating
-  const bookingIds = bookings.map((b) => b.id)
-  const existingRatings = await db.rating.findMany({
-    where:  { bookingId: { in: bookingIds } },
-    select: { bookingId: true },
+  // Filter out bookings that already have a review
+  const jobIds = bookings.map((b) => b.job?.id).filter(Boolean) as string[]
+  const existingReviews = await db.review.findMany({
+    where:  { jobId: { in: jobIds }, reviewerType: 'CUSTOMER' },
+    select: { jobId: true },
   })
-  const ratedSet = new Set(existingRatings.map((r) => r.bookingId))
+  const reviewedJobIds = new Set(existingReviews.map((r) => r.jobId))
 
-  const toNotify = bookings.filter((b) => !ratedSet.has(b.id))
+  const toNotify = bookings.filter((b) => b.job && !reviewedJobIds.has(b.job.id))
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   let sent = 0
 
   for (const booking of toNotify) {
+    const customer = booking.match.jobRequest.customer
     try {
       await sendFollowUp({
-        businessId:    booking.businessId,
         bookingId:     booking.id,
-        customerName:  booking.customer.name,
-        customerPhone: booking.customer.phone,
+        customerName:  customer.name,
+        customerPhone: customer.phone,
         ratingUrl:     `${appUrl}/bookings/${booking.id}/rate`,
       })
 

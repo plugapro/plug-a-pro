@@ -1,5 +1,5 @@
 // proxy.ts — Next.js 16 request interceptor (replaces middleware.ts)
-// Handles: role-based route protection, business context injection, auth redirects
+// Handles: role-based route protection, auth redirects
 //
 // Location: same level as app/ (project root, or inside src/ if using --src-dir)
 // Runtime: Node.js (supports full Node.js APIs — no edge-only restrictions)
@@ -9,24 +9,24 @@ import { createClient } from '@supabase/supabase-js'
 
 // Routes that are public (no auth required)
 // Auth model:
-//   Customers       → phone OTP    → /sign-in → /verify
-//   Technicians     → phone OTP    → /technician-sign-in → /technician-verify
-//   Admin / Owner   → email+pass   → /admin-sign-in
-// Email is reserved for admin/owner. LSM users (customers, technicians) use phone only.
+//   Customers   → phone OTP    → /sign-in → /verify
+//   Providers   → phone OTP    → /technician-sign-in → /technician-verify
+//   Admin/Owner → email+pass   → /admin-sign-in
+// Email is reserved for admin/owner. LSM users (customers, providers) use phone only.
 const PUBLIC_PATHS = [
   '/',
   '/sign-in',              // customer phone OTP entry
   '/verify',               // customer OTP verification + identity link
-  '/technician-sign-in',   // technician phone OTP entry
-  '/technician-verify',    // technician OTP verification
+  '/technician-sign-in',   // provider phone OTP entry
+  '/technician-verify',    // provider OTP verification
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
   '/api/webhooks',
   '/api/auth/link',        // called client-side after OTP — no session cookie yet
 ]
 
-// Routes that require technician role
-const TECHNICIAN_PATHS = ['/technician']
+// Routes that require provider role
+const PROVIDER_PATHS = ['/technician']
 
 // Routes that require admin or owner role
 const ADMIN_PATHS = ['/admin']
@@ -64,9 +64,9 @@ export async function proxy(request: NextRequest) {
 
     const role = user.user_metadata?.role ?? 'customer'
 
-    // Enforce technician-only routes
-    if (TECHNICIAN_PATHS.some((p) => pathname.startsWith(p))) {
-      if (role !== 'technician') {
+    // Enforce provider-only routes
+    if (PROVIDER_PATHS.some((p) => pathname.startsWith(p))) {
+      if (role !== 'provider') {
         return NextResponse.redirect(new URL('/technician-sign-in', request.url))
       }
     }
@@ -81,7 +81,6 @@ export async function proxy(request: NextRequest) {
     // Inject user context into headers for downstream use
     response.headers.set('x-user-id', user.id)
     response.headers.set('x-user-role', role)
-    response.headers.set('x-business-id', user.user_metadata?.businessId ?? '')
 
     return response
   } catch {

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
-import { requireAdmin, resolveBusinessId } from '@/lib/auth'
+import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import type { PaymentStatus } from '@prisma/client'
 
@@ -75,7 +75,6 @@ export default async function PaymentsPage({
   searchParams: Promise<{ status?: string }>
 }) {
   await requireAdmin()
-  const businessId = await resolveBusinessId()
   const { status } = await searchParams
 
   const validStatuses: PaymentStatus[] = ['PENDING', 'AUTHORISED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED']
@@ -84,18 +83,20 @@ export default async function PaymentsPage({
     : undefined
 
   const payments = await db.payment.findMany({
-    where: {
-      booking: {
-        businessId,
-        ...(statusFilter ? { payment: { status: statusFilter } } : {}),
-      },
-      ...(statusFilter ? { status: statusFilter } : {}),
-    },
+    where: statusFilter ? { status: statusFilter } : undefined,
     include: {
       booking: {
         include: {
-          customer: { select: { name: true, phone: true } },
-          service:  { select: { name: true } },
+          match: {
+            include: {
+              jobRequest: {
+                select: {
+                  title: true,
+                  customer: { select: { name: true, phone: true } },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -137,7 +138,7 @@ export default async function PaymentsPage({
             <tr>
               <th className="text-left px-4 py-3 font-medium">Ref</th>
               <th className="text-left px-4 py-3 font-medium">Customer</th>
-              <th className="text-left px-4 py-3 font-medium">Service</th>
+              <th className="text-left px-4 py-3 font-medium">Job Request</th>
               <th className="text-left px-4 py-3 font-medium">Amount</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium">PSP Ref</th>
@@ -153,62 +154,66 @@ export default async function PaymentsPage({
                 </td>
               </tr>
             )}
-            {payments.map((p) => (
-              <tr key={p.id} className="hover:bg-muted/30">
-                <td className="px-4 py-3 font-mono text-xs">{p.id.slice(-8).toUpperCase()}</td>
-                <td className="px-4 py-3">
-                  <p>{p.booking.customer.name}</p>
-                  <p className="text-xs text-muted-foreground">{p.booking.customer.phone}</p>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{p.booking.service.name}</td>
-                <td className="px-4 py-3 font-medium">
-                  R {Number(p.amount).toFixed(2)}
-                  {p.refundedAmount && (
-                    <p className="text-xs text-muted-foreground">
-                      Refunded: R {Number(p.refundedAmount).toFixed(2)}
-                    </p>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[p.status]}`}>
-                    {STATUS_LABEL[p.status]}
-                  </span>
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                  {p.pspReference ? p.pspReference.slice(-12) : '—'}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {p.paidAt
-                    ? p.paidAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
-                    : '—'}
-                </td>
-                <td className="px-4 py-3">
-                  {p.status === 'PAID' && (
-                    <form action={issueRefundAction} className="flex items-center gap-1">
-                      <input type="hidden" name="paymentId" value={p.id} />
-                      <input
-                        type="number"
-                        name="amount"
-                        min="0.01"
-                        max={Number(p.amount)}
-                        step="0.01"
-                        defaultValue={Number(p.amount)}
-                        className="w-24 rounded border bg-background px-2 py-1 text-xs"
-                      />
-                      <button
-                        type="submit"
-                        className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200 transition-colors"
-                        onClick={(e) => {
-                          if (!confirm('Issue refund for this payment?')) e.preventDefault()
-                        }}
-                      >
-                        Refund
-                      </button>
-                    </form>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {payments.map((p) => {
+              const customer = p.booking.match?.jobRequest.customer
+              const jobTitle = p.booking.match?.jobRequest.title ?? '—'
+              return (
+                <tr key={p.id} className="hover:bg-muted/30">
+                  <td className="px-4 py-3 font-mono text-xs">{p.id.slice(-8).toUpperCase()}</td>
+                  <td className="px-4 py-3">
+                    <p>{customer?.name ?? '—'}</p>
+                    <p className="text-xs text-muted-foreground">{customer?.phone ?? ''}</p>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{jobTitle}</td>
+                  <td className="px-4 py-3 font-medium">
+                    R {Number(p.amount).toFixed(2)}
+                    {p.refundedAmount && (
+                      <p className="text-xs text-muted-foreground">
+                        Refunded: R {Number(p.refundedAmount).toFixed(2)}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[p.status]}`}>
+                      {STATUS_LABEL[p.status]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {p.pspReference ? p.pspReference.slice(-12) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {p.paidAt
+                      ? p.paidAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {p.status === 'PAID' && (
+                      <form action={issueRefundAction} className="flex items-center gap-1">
+                        <input type="hidden" name="paymentId" value={p.id} />
+                        <input
+                          type="number"
+                          name="amount"
+                          min="0.01"
+                          max={Number(p.amount)}
+                          step="0.01"
+                          defaultValue={Number(p.amount)}
+                          className="w-24 rounded border bg-background px-2 py-1 text-xs"
+                        />
+                        <button
+                          type="submit"
+                          className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200 transition-colors"
+                          onClick={(e) => {
+                            if (!confirm('Issue refund for this payment?')) e.preventDefault()
+                          }}
+                        >
+                          Refund
+                        </button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

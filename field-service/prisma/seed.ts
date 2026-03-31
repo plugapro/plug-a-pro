@@ -1,370 +1,294 @@
-// ─── Seed — field-service framework ───────────────────────────────────────────
+// ─── Seed — field-service marketplace schema ──────────────────────────────────
 // Run: pnpm db:seed
 //
 // Creates a complete, demo-ready dataset for local development:
-//   • 1 business (configured via BUSINESS_SLUG env)
-//   • 4 service categories, 8 services
-//   • 6 service areas (Joburg + Cape Town)
-//   • 2 technicians (pre-approved)
-//   • 2 weeks of time slots (Mon–Fri, 3 windows/day)
-//   • 1 sample customer
-//   • 1 sample booking in CONFIRMED status (ready to dispatch)
+//   • 2 customers with addresses
+//   • 3 providers with schedules (Mon–Fri)
+//   • 2 provider applications (1 PENDING, 1 APPROVED)
+//   • 2 job requests (1 matched through to a completed job, 1 open)
+//   • 1 match → 1 quote → 1 booking → 1 completed job with a review
+//   • 1 conversation record per customer phone
 //
-// Safe to re-run — uses upsert throughout.
+// Safe to re-run — uses upsert / findFirst guards throughout.
 
-import { PrismaClient, PricingType } from '@prisma/client'
+import {
+  PrismaClient,
+  JobRequestStatus,
+  LeadStatus,
+  MatchStatus,
+  QuoteStatus,
+  BookingStatus,
+  JobStatus,
+  ReviewerType,
+  ApplicationStatus,
+} from '@prisma/client'
 
 const prisma = new PrismaClient()
 
 async function main() {
-  const slug = process.env.BUSINESS_SLUG ?? 'plug-a-pro'
-
-  // ── Business ───────────────────────────────────────────────────────────────
-  const business = await prisma.business.upsert({
-    where: { slug },
+  // ── Customers ────────────────────────────────────────────────────────────────
+  const customer1 = await prisma.customer.upsert({
+    where: { phone: '+27831234567' },
     create: {
-      slug,
-      name:     'Plug a Pro',
-      phone:    '+27600000000',
-      email:    'hello@plugapro.co.za',
-      address:  'Johannesburg, Gauteng',
-      timezone: 'Africa/Johannesburg',
-      currency: 'ZAR',
-      active:   true,
-      settings: {},
-    },
-    update: { name: 'Plug a Pro' },
-  })
-  console.log(`✔ Business: ${business.name} (${business.id})`)
-
-  // ── Services ───────────────────────────────────────────────────────────────
-  const serviceData = [
-    {
-      name: 'Plumbing — Leak Repair',
-      slug: 'plumbing-leak-repair',
-      category: 'Plumbing',
-      description: 'Fix dripping taps, burst pipes, and geyser leaks.',
-      pricingType: PricingType.FIXED,
-      basePrice: 650,
-      callOutFee: 150,
-      duration: 120,
-      bufferTime: 30,
-      sortOrder: 1,
-    },
-    {
-      name: 'Plumbing — Drain Unblocking',
-      slug: 'plumbing-drain-unblocking',
-      category: 'Plumbing',
-      description: 'Clear blocked sinks, toilets, and stormwater drains.',
-      pricingType: PricingType.FIXED,
-      basePrice: 550,
-      callOutFee: 150,
-      duration: 90,
-      bufferTime: 30,
-      sortOrder: 2,
-    },
-    {
-      name: 'Electrical — Fault Finding',
-      slug: 'electrical-fault-finding',
-      category: 'Electrical',
-      description: 'Diagnose and fix tripping breakers, dead sockets, and wiring faults.',
-      pricingType: PricingType.FIXED,
-      basePrice: 750,
-      callOutFee: 200,
-      duration: 120,
-      bufferTime: 45,
-      sortOrder: 3,
-    },
-    {
-      name: 'Electrical — DB Board Inspection',
-      slug: 'electrical-db-inspection',
-      category: 'Electrical',
-      description: 'Full distribution board inspection and compliance check.',
-      pricingType: PricingType.QUOTE_REQUIRED,
-      basePrice: null,
-      callOutFee: 200,
-      duration: 90,
-      bufferTime: 45,
-      sortOrder: 4,
-    },
-    {
-      name: 'Cleaning — Deep Clean',
-      slug: 'cleaning-deep-clean',
-      category: 'Cleaning',
-      description: 'Full home deep clean including kitchen, bathrooms, and bedrooms.',
-      pricingType: PricingType.FIXED,
-      basePrice: 900,
-      callOutFee: 0,
-      duration: 240,
-      bufferTime: 30,
-      sortOrder: 5,
-    },
-    {
-      name: 'Cleaning — Regular Weekly',
-      slug: 'cleaning-regular-weekly',
-      category: 'Cleaning',
-      description: 'Weekly home maintenance clean.',
-      pricingType: PricingType.FIXED,
-      basePrice: 450,
-      callOutFee: 0,
-      duration: 180,
-      bufferTime: 30,
-      sortOrder: 6,
-    },
-    {
-      name: 'Painting — Interior Room',
-      slug: 'painting-interior-room',
-      category: 'Painting',
-      description: 'Single room interior painting, walls and ceiling.',
-      pricingType: PricingType.QUOTE_REQUIRED,
-      basePrice: null,
-      callOutFee: 0,
-      duration: 480,
-      bufferTime: 60,
-      sortOrder: 7,
-    },
-    {
-      name: 'Painting — Touch-up & Repairs',
-      slug: 'painting-touchup',
-      category: 'Painting',
-      description: 'Small area touch-ups, crack filling, and repaint.',
-      pricingType: PricingType.FIXED,
-      basePrice: 600,
-      callOutFee: 0,
-      duration: 180,
-      bufferTime: 30,
-      sortOrder: 8,
-    },
-  ]
-
-  const services: Record<string, string> = {}
-  for (const s of serviceData) {
-    const svc = await prisma.service.upsert({
-      where: { businessId_slug: { businessId: business.id, slug: s.slug } },
-      create: { ...s, businessId: business.id, active: true, metadata: {} },
-      update: { name: s.name, basePrice: s.basePrice },
-    })
-    services[s.slug] = svc.id
-  }
-  console.log(`✔ Services: ${serviceData.length} upserted`)
-
-  // ── Service areas ──────────────────────────────────────────────────────────
-  const areas = [
-    { suburb: 'Sandton',       city: 'Johannesburg', province: 'Gauteng',      postalCode: '2196' },
-    { suburb: 'Randburg',      city: 'Johannesburg', province: 'Gauteng',      postalCode: '2194' },
-    { suburb: 'Midrand',       city: 'Johannesburg', province: 'Gauteng',      postalCode: '1685' },
-    { suburb: 'Centurion',     city: 'Pretoria',     province: 'Gauteng',      postalCode: '0157' },
-    { suburb: 'Bellville',     city: 'Cape Town',    province: 'Western Cape', postalCode: '7530' },
-    { suburb: 'Claremont',     city: 'Cape Town',    province: 'Western Cape', postalCode: '7708' },
-  ]
-
-  // Attach all areas to each service
-  for (const serviceSlug of Object.keys(services)) {
-    const serviceId = services[serviceSlug]
-    // Remove old areas first to avoid duplicates on re-seed
-    await prisma.serviceArea.deleteMany({ where: { serviceId } })
-    await prisma.serviceArea.createMany({
-      data: areas.map((a) => ({ ...a, serviceId })),
-    })
-  }
-  console.log(`✔ Service areas: ${areas.length} per service`)
-
-  // ── Technicians ────────────────────────────────────────────────────────────
-  const techData = [
-    {
-      name:         'Sipho Dlamini',
-      phone:        '+27711234567',
-      skills:       ['Plumbing', 'General Maintenance'],
-      serviceAreas: ['Sandton', 'Randburg', 'Midrand'],
-    },
-    {
-      name:         'Thabo Mokoena',
-      phone:        '+27722345678',
-      skills:       ['Electrical', 'Painting'],
-      serviceAreas: ['Sandton', 'Centurion', 'Midrand'],
-    },
-  ]
-
-  for (const t of techData) {
-    await prisma.technician.upsert({
-      where: { businessId_phone: { businessId: business.id, phone: t.phone } } as never,
-      create: { ...t, businessId: business.id, active: true },
-      update: { name: t.name, skills: t.skills, serviceAreas: t.serviceAreas },
-    })
-  }
-  console.log(`✔ Technicians: ${techData.length} upserted`)
-
-  // Wait to get technician IDs
-  const [tech1, tech2] = await Promise.all(
-    techData.map((t) =>
-      prisma.technician.findFirstOrThrow({
-        where: { businessId: business.id, phone: t.phone },
-      })
-    )
-  )
-
-  // ── Availability ───────────────────────────────────────────────────────────
-  // Mon–Fri 08:00–17:00 for both technicians
-  for (const tech of [tech1, tech2]) {
-    await prisma.availability.deleteMany({ where: { technicianId: tech.id } })
-    await prisma.availability.createMany({
-      data: [1, 2, 3, 4, 5].map((day) => ({
-        technicianId: tech.id,
-        dayOfWeek:   day,
-        startTime:   '08:00',
-        endTime:     '17:00',
-        active:      true,
-      })),
-    })
-  }
-  console.log('✔ Availability: Mon–Fri 08:00–17:00 for all technicians')
-
-  // ── Slots — 2 weeks from today ─────────────────────────────────────────────
-  const WINDOWS = [
-    { start: '08:00', end: '10:00' },
-    { start: '10:00', end: '13:00' },
-    { start: '14:00', end: '17:00' },
-  ]
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const slotDates: Date[] = []
-
-  for (let i = 1; i <= 14; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
-    if (d.getDay() !== 0 && d.getDay() !== 6) slotDates.push(d) // Mon–Fri only
-  }
-
-  // Clear old future slots then recreate
-  await prisma.slot.deleteMany({
-    where: { businessId: business.id, date: { gte: today } },
-  })
-
-  const slotRecords = slotDates.flatMap((date) =>
-    WINDOWS.map((w) => ({
-      businessId:  business.id,
-      date,
-      windowStart: w.start,
-      windowEnd:   w.end,
-      capacity:    3,
-      booked:      0,
-      blocked:     false,
-    }))
-  )
-
-  await prisma.slot.createMany({ data: slotRecords })
-  console.log(`✔ Slots: ${slotRecords.length} created (${slotDates.length} days × ${WINDOWS.length} windows)`)
-
-  // ── Sample customer ────────────────────────────────────────────────────────
-  const customer = await prisma.customer.upsert({
-    where: { businessId_phone: { businessId: business.id, phone: '+27831234567' } },
-    create: {
-      businessId: business.id,
-      phone:      '+27831234567',
-      name:       'Zanele Khumalo',
-      active:     true,
+      phone:  '+27831234567',
+      email:  'zanele.khumalo@example.co.za',
+      name:   'Zanele Khumalo',
     },
     update: { name: 'Zanele Khumalo' },
   })
-  console.log(`✔ Customer: ${customer.name}`)
 
-  // ── Sample address ─────────────────────────────────────────────────────────
-  const address = await prisma.address.create({
-    data: {
-      customerId: customer.id,
-      label:      'Home',
-      street:     '12 Acacia Avenue',
-      suburb:     'Sandton',
-      city:       'Johannesburg',
-      province:   'Gauteng',
-      postalCode: '2196',
-      isDefault:  true,
+  const customer2 = await prisma.customer.upsert({
+    where: { phone: '+27839876543' },
+    create: {
+      phone:  '+27839876543',
+      email:  'lerato.molefe@example.co.za',
+      name:   'Lerato Molefe',
     },
-  }).catch(async () =>
-    // If address already exists (re-seed), find the first one
-    prisma.address.findFirstOrThrow({ where: { customerId: customer.id } })
+    update: { name: 'Lerato Molefe' },
+  })
+
+  console.log(`✔ Customers: ${customer1.name}, ${customer2.name}`)
+
+  // ── Addresses ────────────────────────────────────────────────────────────────
+  const address1 = await prisma.address.findFirst({ where: { customerId: customer1.id } })
+    ?? await prisma.address.create({
+      data: {
+        customerId: customer1.id,
+        street:     '12 Acacia Avenue',
+        suburb:     'Sandton',
+        city:       'Johannesburg',
+        province:   'Gauteng',
+      },
+    })
+
+  const address2 = await prisma.address.findFirst({ where: { customerId: customer2.id } })
+    ?? await prisma.address.create({
+      data: {
+        customerId: customer2.id,
+        street:     '7 Protea Road',
+        suburb:     'Claremont',
+        city:       'Cape Town',
+        province:   'Western Cape',
+      },
+    })
+
+  console.log(`✔ Addresses: ${address1.suburb}, ${address2.suburb}`)
+
+  // ── Providers ─────────────────────────────────────────────────────────────────
+  const providerData = [
+    {
+      phone:        '+27711234567',
+      name:         'Sipho Dlamini',
+      skills:       ['Plumbing', 'General Maintenance'],
+      serviceAreas: ['Sandton', 'Randburg', 'Midrand'],
+      active:       true,
+      verified:     true,
+    },
+    {
+      phone:        '+27722345678',
+      name:         'Thabo Mokoena',
+      skills:       ['Electrical', 'Painting'],
+      serviceAreas: ['Sandton', 'Centurion', 'Midrand'],
+      active:       true,
+      verified:     true,
+    },
+    {
+      phone:        '+27733456789',
+      name:         'Nomsa Zulu',
+      skills:       ['Cleaning', 'Gardening'],
+      serviceAreas: ['Claremont', 'Bellville', 'Observatory'],
+      active:       true,
+      verified:     true,
+    },
+  ]
+
+  for (const p of providerData) {
+    await prisma.provider.upsert({
+      where:  { phone: p.phone },
+      create: p,
+      update: { name: p.name, skills: p.skills, serviceAreas: p.serviceAreas },
+    })
+  }
+
+  const [provider1, provider2, provider3] = await Promise.all(
+    providerData.map((p) => prisma.provider.findFirstOrThrow({ where: { phone: p.phone } }))
   )
 
-  // ── Sample booking (CONFIRMED — ready to dispatch) ─────────────────────────
-  const firstSlot = await prisma.slot.findFirst({
-    where: { businessId: business.id, blocked: false, booked: 0 },
-    orderBy: { date: 'asc' },
-  })
+  console.log(`✔ Providers: ${provider1.name}, ${provider2.name}, ${provider3.name}`)
 
-  const firstServiceId = services['plumbing-leak-repair']
-
-  // Only create if no existing CONFIRMED booking for this customer
-  const existingBooking = await prisma.booking.findFirst({
-    where: { customerId: customer.id, status: { in: ['CONFIRMED', 'SCHEDULED'] } },
-  })
-
-  if (!existingBooking && firstSlot) {
-    const booking = await prisma.booking.create({
-      data: {
-        businessId:      business.id,
-        customerId:      customer.id,
-        serviceId:       firstServiceId,
-        addressId:       address.id,
-        slotId:          firstSlot.id,
-        status:          'CONFIRMED',
-        totalAmount:     800,
-        depositAmount:   0,
-        scheduledDate:   firstSlot.date,
-        scheduledWindow: `${firstSlot.windowStart}–${firstSlot.windowEnd}`,
-        notes:           'Seed booking — ready to dispatch via /admin/dispatch',
-      },
+  // ── Provider schedules (Mon–Fri 08:00–17:00) ──────────────────────────────────
+  for (const provider of [provider1, provider2, provider3]) {
+    await prisma.providerSchedule.deleteMany({ where: { providerId: provider.id } })
+    await prisma.providerSchedule.createMany({
+      data: [1, 2, 3, 4, 5].map((day) => ({
+        providerId: provider.id,
+        dayOfWeek:  day,
+        startTime:  '08:00',
+        endTime:    '17:00',
+      })),
     })
-
-    // Mark slot as booked
-    await prisma.slot.update({
-      where: { id: firstSlot.id },
-      data: { booked: { increment: 1 } },
-    })
-
-    // Create a payment record (simulated PAID)
-    await prisma.payment.create({
-      data: {
-        bookingId:    booking.id,
-        status:       'PAID',
-        amount:       800,
-        currency:     'ZAR',
-        pspProvider:  'seed',
-        pspReference: 'SEED-0001',
-        paidAt:       new Date(),
-        metadata:     { note: 'Seeded payment for dev testing' },
-      },
-    })
-
-    console.log(`✔ Booking: ${booking.id.slice(-8).toUpperCase()} (CONFIRMED, ready to dispatch)`)
-  } else {
-    console.log('✔ Booking: skipped (one already exists for this customer)')
   }
+  console.log('✔ Provider schedules: Mon–Fri 08:00–17:00 for all providers')
 
-  // ── TechnicianApplication (PENDING — to test applications page) ────────────
-  const existingApp = await prisma.technicianApplication.findFirst({
-    where: { businessId: business.id, phone: '+27799887766' },
-  })
-
-  if (!existingApp) {
-    await prisma.technicianApplication.create({
+  // ── Provider applications ─────────────────────────────────────────────────────
+  const app1Phone = '+27799887766'
+  const existingApp1 = await prisma.providerApplication.findFirst({ where: { phone: app1Phone } })
+  if (!existingApp1) {
+    await prisma.providerApplication.create({
       data: {
-        businessId:   business.id,
-        phone:        '+27799887766',
+        phone:        app1Phone,
         name:         'Bongani Nkosi',
         skills:       ['Plumbing', 'Tiling'],
-        serviceAreas: ['Randburg'],
-        status:       'PENDING',
+        serviceAreas: ['Randburg', 'Roodepoort'],
+        status:       ApplicationStatus.PENDING,
       },
     })
-    console.log('✔ TechnicianApplication: Bongani Nkosi (PENDING)')
+    console.log('✔ ProviderApplication: Bongani Nkosi (PENDING)')
   }
 
+  const app2Phone = '+27788776655'
+  const existingApp2 = await prisma.providerApplication.findFirst({ where: { phone: app2Phone } })
+  if (!existingApp2) {
+    await prisma.providerApplication.create({
+      data: {
+        phone:        app2Phone,
+        name:         'Fatima Cassim',
+        skills:       ['Electrical'],
+        serviceAreas: ['Centurion', 'Pretoria North'],
+        status:       ApplicationStatus.APPROVED,
+      },
+    })
+    console.log('✔ ProviderApplication: Fatima Cassim (APPROVED)')
+  }
+
+  // ── Job request 1: Matched → completed ───────────────────────────────────────
+  // Skip if we already have a completed job for customer1 to stay idempotent
+  const existingJob = await prisma.job.findFirst({
+    where: { status: JobStatus.COMPLETED, booking: { match: { jobRequest: { customerId: customer1.id } } } },
+  })
+
+  if (!existingJob) {
+    const jobRequest1 = await prisma.jobRequest.create({
+      data: {
+        customerId:  customer1.id,
+        addressId:   address1.id,
+        category:    'Plumbing',
+        title:       'Leaking tap in kitchen',
+        description: 'Kitchen cold-water tap has been dripping for a week. Needs washer replacement or full tap.',
+        status:      JobRequestStatus.MATCHED,
+      },
+    })
+
+    const match1 = await prisma.match.create({
+      data: {
+        jobRequestId:      jobRequest1.id,
+        providerId:        provider1.id,
+        status:            MatchStatus.QUOTE_APPROVED,
+        inspectionNeeded:  false,
+      },
+    })
+
+    const quote1 = await prisma.quote.create({
+      data: {
+        matchId:       match1.id,
+        amount:        650,
+        labourCost:    500,
+        materialsCost: 150,
+        description:   'Replace kitchen tap washers and re-seal. Includes call-out.',
+        status:        QuoteStatus.APPROVED,
+        approvalToken: 'seed-quote-1-token',
+      },
+    })
+
+    const scheduledDate = new Date('2026-03-15T09:00:00.000Z')
+
+    const booking1 = await prisma.booking.create({
+      data: {
+        matchId:       match1.id,
+        quoteId:       quote1.id,
+        status:        BookingStatus.COMPLETED,
+        scheduledDate,
+      },
+    })
+
+    const job1 = await prisma.job.create({
+      data: {
+        bookingId:  booking1.id,
+        providerId: provider1.id,
+        status:     JobStatus.COMPLETED,
+      },
+    })
+
+    await prisma.review.create({
+      data: {
+        jobId:        job1.id,
+        reviewerType: ReviewerType.CUSTOMER,
+        customerId:   customer1.id,
+        score:        5,
+        comment:      'Sipho was professional and fixed the tap quickly. Highly recommend.',
+      },
+    })
+
+    console.log(`✔ JobRequest 1 → Match → Quote → Booking → Job (COMPLETED) + Review`)
+  } else {
+    console.log('✔ JobRequest 1 pipeline: skipped (already exists)')
+  }
+
+  // ── Job request 2: Open (awaiting matching) ───────────────────────────────────
+  const existingOpenRequest = await prisma.jobRequest.findFirst({
+    where: { customerId: customer2.id, status: JobRequestStatus.OPEN },
+  })
+
+  if (!existingOpenRequest) {
+    await prisma.jobRequest.create({
+      data: {
+        customerId:  customer2.id,
+        addressId:   address2.id,
+        category:    'Electrical',
+        title:       'No power to lounge plug points',
+        description: 'Three plug points in the lounge stopped working after load-shedding. Breaker trips when reset.',
+        status:      JobRequestStatus.OPEN,
+      },
+    })
+    console.log('✔ JobRequest 2: Open electrical job for Lerato Molefe')
+  } else {
+    console.log('✔ JobRequest 2: skipped (already exists)')
+  }
+
+  // ── Conversations (one per customer phone) ───────────────────────────────────
+  const convExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 h from now
+
+  await prisma.conversation.upsert({
+    where:  { phone: customer1.phone },
+    create: {
+      phone:     customer1.phone,
+      flow:      'job_request',
+      step:      'complete',
+      data:      { lastJobCategory: 'Plumbing' },
+      expiresAt: convExpiry,
+    },
+    update: { step: 'complete', data: { lastJobCategory: 'Plumbing' } },
+  })
+
+  await prisma.conversation.upsert({
+    where:  { phone: customer2.phone },
+    create: {
+      phone:     customer2.phone,
+      flow:      'job_request',
+      step:      'describe_problem',
+      data:      { category: 'Electrical' },
+      expiresAt: convExpiry,
+    },
+    update: { step: 'describe_problem', data: { category: 'Electrical' } },
+  })
+
+  console.log('✔ Conversations: 2 upserted')
+
   console.log('\n✅ Seed complete.')
-  console.log(`   Business slug: ${slug}`)
-  console.log(`   Admin URL:     /admin`)
-  console.log(`   Dispatch:      /admin/dispatch (1 booking ready)`)
-  console.log(`   Applications:  /admin/applications (1 pending)`)
+  console.log('   Providers:    3 active + verified')
+  console.log('   Customers:    2 with addresses')
+  console.log('   Jobs:         1 completed (with review), 1 open request')
+  console.log('   Applications: 1 pending, 1 approved')
 }
 
 main()

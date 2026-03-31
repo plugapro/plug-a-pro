@@ -82,7 +82,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  --accent-brand: oklch(0.55 0.2 250);
+  --accent-brand: oklch(0.50 0.24 258);
+  --accent-pink: oklch(0.62 0.30 338);
+  --accent-purple: oklch(0.48 0.26 300);
+  --accent-green-wa: oklch(0.52 0.17 145);
 }
 
 .dark {
@@ -117,7 +120,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
-  --accent-brand: oklch(0.65 0.2 250);
+  --accent-brand: oklch(0.65 0.24 258);
+  --accent-pink: oklch(0.72 0.30 338);
+  --accent-purple: oklch(0.62 0.26 300);
+  --accent-green-wa: oklch(0.62 0.17 145);
 }
 
 @layer base {
@@ -129,5 +135,17 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .brand-gradient-text {
+    background: linear-gradient(90deg, var(--accent-pink) 0%, var(--accent-purple) 50%, var(--accent-brand) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .brand-gradient-bg {
+    background: linear-gradient(135deg, var(--accent-pink) 0%, var(--accent-purple) 50%, var(--accent-brand) 100%);
   }
 }

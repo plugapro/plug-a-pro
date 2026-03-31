@@ -12,18 +12,19 @@ import { Button } from '@/components/ui/button'
 type ButtonVariant = 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
 
 const TRANSITIONS: Record<JobStatus, { label: string; next: JobStatus; variant: ButtonVariant }[]> = {
-  ASSIGNED:          [{ label: "I'm on my way",  next: 'EN_ROUTE',   variant: 'default' }],
-  EN_ROUTE:          [{ label: "I've arrived",   next: 'ARRIVED',    variant: 'default' }],
-  ARRIVED:           [{ label: 'Start job',        next: 'STARTED',    variant: 'default' }],
+  SCHEDULED:                        [{ label: "I'm on my way",       next: 'EN_ROUTE',                        variant: 'default' }],
+  EN_ROUTE:                         [{ label: "I've arrived",         next: 'ARRIVED',                         variant: 'default' }],
+  ARRIVED:                          [{ label: 'Start job',             next: 'STARTED',                         variant: 'default' }],
   STARTED: [
-    { label: 'Complete job',  next: 'COMPLETED', variant: 'default' },
-    { label: 'Pause',         next: 'PAUSED',    variant: 'outline' },
+    { label: 'Mark complete',        next: 'PENDING_COMPLETION_CONFIRMATION', variant: 'default' },
+    { label: 'Pause',                next: 'PAUSED',                          variant: 'outline' },
   ],
-  PAUSED:            [{ label: 'Resume',           next: 'STARTED',    variant: 'default' }],
-  AWAITING_APPROVAL: [],
-  COMPLETED:         [],
-  FAILED:            [],
-  CALLBACK_REQUIRED: [],
+  PAUSED:                           [{ label: 'Resume',               next: 'STARTED',                         variant: 'default' }],
+  AWAITING_APPROVAL:                [],
+  PENDING_COMPLETION_CONFIRMATION:  [],
+  COMPLETED:                        [],
+  FAILED:                           [],
+  CALLBACK_REQUIRED:                [],
 }
 
 interface Props {

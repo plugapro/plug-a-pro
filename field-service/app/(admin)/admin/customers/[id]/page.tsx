@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requireAdmin, resolveBusinessId } from '@/lib/auth'
+import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { formatCurrency } from '@/lib/payments'
@@ -30,29 +30,46 @@ export default async function CustomerDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const user = await requireAdmin()
-  let businessId = user.businessId
-  if (!businessId) {
-    businessId = await resolveBusinessId()
-  }
+  await requireAdmin()
 
-  const customer = await db.customer.findFirst({
-    where: { id, businessId },
+  const customer = await db.customer.findUnique({
+    where: { id },
     include: {
-      bookings: {
+      jobRequests: {
         orderBy: { createdAt: 'desc' },
         include: {
-          service: { select: { name: true } },
-          payment: { select: { status: true, amount: true } },
+          match: {
+            include: {
+              booking: {
+                include: {
+                  payment: { select: { status: true, amount: true } },
+                },
+              },
+            },
+          },
         },
       },
-      _count: { select: { bookings: true } },
+      _count: { select: { jobRequests: true } },
     },
   })
 
   if (!customer) notFound()
 
-  const lastBooking = customer.bookings[0]
+  // Flatten to a list of bookings with enough context to render the table
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bookings = customer.jobRequests.flatMap((jr: any) =>
+    jr.match?.booking
+      ? [{
+          id:          jr.match.booking.id,
+          createdAt:   jr.match.booking.createdAt,
+          status:      jr.match.booking.status,
+          payment:     jr.match.booking.payment,
+          jobTitle:    jr.title,
+        }]
+      : []
+  )
+
+  const lastBooking = bookings[0]
   const channel = customer.userId ? 'PWA + WhatsApp' : 'WhatsApp only'
 
   return (
@@ -111,28 +128,34 @@ export default async function CustomerDetailPage({
       {/* Booking history */}
       <div>
         <h2 className="text-sm font-semibold mb-3">
-          Booking history ({customer._count.bookings})
+          Booking history ({customer._count?.jobRequests ?? 0})
         </h2>
         <div className="rounded-xl border overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Ref</TableHead>
-                <TableHead>Service</TableHead>
+                <TableHead>Job Request</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {customer.bookings.length === 0 && (
+              {bookings.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                     No bookings yet.
                   </TableCell>
                 </TableRow>
               )}
-              {customer.bookings.map((b) => (
+              {bookings.map((b: {
+                id: string
+                createdAt: Date
+                status: string
+                payment: { status: string; amount: number | null } | null
+                jobTitle: string
+              }) => (
                 <TableRow key={b.id} className="hover:bg-muted/30">
                   <TableCell>
                     <Link
@@ -142,7 +165,9 @@ export default async function CustomerDetailPage({
                       {b.id.slice(-8).toUpperCase()}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{b.service.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {b.jobTitle ?? '—'}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {b.createdAt.toLocaleDateString('en-ZA', {
                       day: 'numeric',
@@ -151,7 +176,7 @@ export default async function CustomerDetailPage({
                     })}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={b.status} type="booking" />
+                    <StatusBadge status={b.status as import('@prisma/client').BookingStatus} type="booking" />
                   </TableCell>
                   <TableCell className="text-right font-medium">
                     {b.payment?.amount != null

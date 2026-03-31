@@ -1,23 +1,87 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { siteConfig } from "@/lib/metadata";
+import { analytics } from "@/lib/analytics";
 
 export function Hero() {
   return (
-    <section className="py-24 md:py-32 text-center px-4">
-      <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 max-w-3xl mx-auto">
-        {siteConfig.name}
-      </h1>
-      <p className="text-xl text-muted-foreground mb-10 max-w-xl mx-auto">
-        {siteConfig.description}
-      </p>
-      <div className="flex gap-4 justify-center flex-wrap">
-        <Button nativeButton={false} render={<Link href={siteConfig.links.app} />} size="lg">
-          Get started free
-        </Button>
-        <Button nativeButton={false} render={<Link href="/pricing" />} variant="outline" size="lg">
-          See pricing
-        </Button>
+    <section
+      className="relative py-24 md:py-32 text-center px-4 overflow-hidden"
+      style={{
+        background:
+          "linear-gradient(160deg, oklch(0.14 0.07 250) 0%, oklch(0.10 0.02 260) 60%, oklch(0.11 0 0) 100%)",
+        "--foreground": "oklch(0.985 0 0)",
+        "--color-foreground": "oklch(0.985 0 0)",
+        "--muted-foreground": "oklch(0.985 0 0 / 0.62)",
+        "--color-muted-foreground": "oklch(0.985 0 0 / 0.62)",
+        "--primary": "var(--accent-brand)",
+        "--color-primary": "var(--accent-brand)",
+        "--primary-foreground": "oklch(0.985 0 0)",
+        "--color-primary-foreground": "oklch(0.985 0 0)",
+        "--border": "oklch(1 0 0 / 15%)",
+        "--color-border": "oklch(1 0 0 / 15%)",
+      } as React.CSSProperties}
+    >
+      {/* subtle dot-grid background */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.06]"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle, rgba(255,255,255,0.5) 1px, transparent 1px)",
+          backgroundSize: "28px 28px",
+        }}
+        aria-hidden="true"
+      />
+      <div className="relative max-w-4xl mx-auto" style={{ color: "oklch(0.985 0 0)" }}>
+        <p className="text-xs font-medium uppercase tracking-widest mb-4 brand-gradient-text">
+          Local help. Real quotes. On WhatsApp.
+        </p>
+        <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
+          Get home help done right. Nearby workers, quoted in writing, on WhatsApp.
+        </h1>
+        <p className="text-xl text-muted-foreground mb-3 max-w-2xl mx-auto">
+          Describe your job. We find a vetted local worker near you. You approve
+          the price before anything starts. No app downloads, no strangers
+          cold-calling. Just WhatsApp.
+        </p>
+        <p className="text-sm text-muted-foreground mb-10 max-w-lg mx-auto">
+          Started a DIY project and got stuck?{" "}
+          <Link
+            href="/how-it-works"
+            className="underline-offset-4 hover:underline"
+            style={{ color: "var(--accent-brand)" }}
+            onClick={() => analytics.howItWorksClick("hero_diy_link")}
+          >
+            Our workers can assess, continue, or finish it.
+          </Link>
+        </p>
+        <div className="flex gap-4 justify-center flex-wrap">
+          <Button
+            nativeButton={false}
+            render={<Link href="/waitlist" />}
+            size="lg"
+            onClick={() => analytics.ctaClick("Get early access", "hero", "customer")}
+          >
+            Get early access
+          </Button>
+          <Button
+            nativeButton={false}
+            render={<Link href="/for-workers" />}
+            variant="outline"
+            size="lg"
+            style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
+            onClick={() => analytics.ctaClick("I want work", "hero", "worker")}
+          >
+            I want work →
+          </Button>
+        </div>
+        {/* Trust bullets */}
+        <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm" style={{ color: "oklch(0.985 0 0 / 0.7)" }}>
+          <span>✓ Free for customers</span>
+          <span>✓ No app download needed</span>
+          <span>✓ Launching in Johannesburg &amp; Pretoria</span>
+        </div>
       </div>
     </section>
   );

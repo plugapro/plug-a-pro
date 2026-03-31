@@ -8,15 +8,17 @@ import { siteConfig } from '@/lib/metadata'
 const NAV_ITEMS = [
   { href: '/admin',              label: 'Dashboard' },
   { href: '/admin/bookings',     label: 'Bookings' },
-  { href: '/admin/dispatch',     label: 'Dispatch' },
+  { href: '/admin/matches',      label: 'Matches' },
   { href: '/admin/applications', label: 'Applications' },
-  { href: '/admin/technicians',  label: 'Technicians' },
+  { href: '/admin/providers',    label: 'Providers' },
   { href: '/admin/customers',    label: 'Customers' },
-  { href: '/admin/services',     label: 'Services' },
+  { href: '/admin/categories',   label: 'Categories' },
+  { href: '/admin/disputes',     label: 'Disputes' },
   { href: '/admin/payments',     label: 'Payments' },
   { href: '/admin/reports',      label: 'Reports' },
   { href: '/admin/messages',     label: 'Messages' },
   { href: '/admin/settings',     label: 'Settings' },
+  { href: '/admin/flows',        label: 'Journey Flows' },
 ] as const
 
 export default async function AdminLayout({

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plug-A-Pro — Architecture & User Journeys</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f0f13;
+    color: #e2e8f0;
+    font-family: 'Inter', -apple-system, sans-serif;
+    padding: 40px;
+  }
+  .page-title {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .page-title h1 {
+    font-size: 32px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #f97316, #fb923c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+  .page-title p {
+    color: #94a3b8;
+    margin-top: 8px;
+    font-size: 15px;
+  }
+  .section {
+    margin-bottom: 64px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #1e293b;
+  }
+  .section-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .badge-arch { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .badge-client { background: #0c2a1e; color: #34d399; border: 1px solid #064e3b; }
+  .badge-provider { background: #1e1b4b; color: #818cf8; border: 1px solid #312e81; }
+  .badge-admin { background: #2d1b0e; color: #fb923c; border: 1px solid #7c2d12; }
+
+  .section-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+  .section-header .subtitle {
+    font-size: 13px;
+    color: #64748b;
+    margin-left: auto;
+  }
+  .diagram-card {
+    background: #131520;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    padding: 32px;
+    overflow-x: auto;
+  }
+  .diagram-card .mermaid {
+    display: flex;
+    justify-content: center;
+  }
+  /* Mermaid overrides */
+  .mermaid svg {
+    max-width: 100%;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>⚡ Plug-A-Pro Platform</h1>
+  <p>System Architecture · Client Journey · Provider Journey · Admin Operations</p>
+</div>
+
+<!-- SECTION 1: SYSTEM ARCHITECTURE -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-arch">Architecture</span>
+    <h2>System Overview</h2>
+    <span class="subtitle">How the platform components connect</span>
+  </div>
+  <div class="diagram-card">
+    <div class="mermaid">
+graph TB
+    subgraph Users["👥  Three User Types"]
+        C("🙋 Client<br/>Looking for a service")
+        PR("🔧 Service Provider<br/>Skilled labourer")
+        AD("🏢 Platform Owner<br/>Ops & Admin")
+    end
+
+    subgraph Channels["📡  Access Channels"]
+        WA("📱 WhatsApp<br/>+27 693 552 447<br/><i>Primary — zero friction</i>")
+        PWA("🌐 Web App<br/>app.plugapro.co.za<br/><i>Richer experience</i>")
+        ADMIN_UI("🖥️ Admin Console<br/>/admin<br/><i>Full ops access</i>")
+    end
+
+    subgraph Platform["🏗️  Platform — Next.js on Vercel"]
+        BOT["🤖 WhatsApp Bot<br/>Conversation state machine<br/>job_request · registration · status"]
+        CUST_R["Customer Routes<br/>/book · /bookings · /approve"]
+        PROV_R["Provider Routes<br/>/technician · /jobs"]
+        ADM_R["Admin Routes<br/>/admin/*"]
+        API["API Layer<br/>/api/webhooks · /api/cron<br/>/api/customer · /api/technician"]
+        AUTH["Supabase Auth<br/>Phone OTP · Role-based"]
+        CRON["⏰ Vercel Cron<br/>Reminders 08:00 UTC<br/>Follow-up 10:00 UTC"]
+        JOBS["Job State Machine<br/>SCHEDULED → EN_ROUTE → ARRIVED<br/>→ STARTED → COMPLETED"]
+    end
+
+    subgraph Data["🗄️  Data & Storage"]
+        DB[("PostgreSQL<br/>Supabase")]
+        BLOB["Vercel Blob<br/>Photos · Invoices"]
+    end
+
+    subgraph External["🔌  External APIs"]
+        META["Meta Cloud API<br/>WhatsApp Business"]
+        PF["PayFast<br/>Payments &amp; Refunds"]
+    end
+
+    C -->|"WhatsApp messages"| WA
+    C -->|"Browser"| PWA
+    PR -->|"WhatsApp replies"| WA
+    PR -->|"Browser"| PWA
+    AD --> ADMIN_UI
+
+    WA -->|"Webhook POST"| BOT
+    PWA --> CUST_R
+    PWA --> PROV_R
+    ADMIN_UI --> ADM_R
+
+    BOT --> API
+    CUST_R --> API
+    PROV_R --> API
+    ADM_R --> API
+
+    API --> AUTH
+    API --> JOBS
+    API --> DB
+    API --> BLOB
+    API --> META
+    API --> PF
+    CRON --> API
+
+    META -->|"ITN notifications"| API
+    PF -->|"Payment webhook"| API
+
+    classDef userNode fill:#1e293b,stroke:#475569,color:#e2e8f0,rx:8
+    classDef channelNode fill:#0f172a,stroke:#334155,color:#cbd5e1,rx:8
+    classDef platformNode fill:#1e1b4b,stroke:#4338ca,color:#c7d2fe,rx:8
+    classDef dataNode fill:#0c2a1e,stroke:#166534,color:#86efac,rx:8
+    classDef extNode fill:#2d1b0e,stroke:#92400e,color:#fdba74,rx:8
+
+    class C,PR,AD userNode
+    class WA,PWA,ADMIN_UI channelNode
+    class BOT,CUST_R,PROV_R,ADM_R,API,AUTH,CRON,JOBS platformNode
+    class DB,BLOB dataNode
+    class META,PF extNode
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 2: CLIENT JOURNEY -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-client">Client Journey</span>
+    <h2>Someone Looking for a Service</h2>
+    <span class="subtitle">WhatsApp-first · Zero friction entry</span>
+  </div>
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+    START(["📱 Client messages +27 693 552 447"]):::start
+
+    MENU["🤖 Bot sends main menu\nRequest a Service · My Request Status · Help"]:::bot
+
+    CAT["Client picks a category\n🔧 Plumbing · ⚡ Electrical · 🧹 Cleaning\n🎨 Painting · 🪚 Carpentry · 🏗️ Handyman..."]:::action
+
+    NAME["Bot asks for name\n(skipped for returning customers)"]:::bot
+
+    ADDR["Client types their address"]:::action
+
+    AVAIL["Client picks availability\nASAP · This Week · Weekend · Morning / Afternoon"]:::action
+
+    CONFIRM["Bot shows summary + Confirm button"]:::bot
+
+    SUBMITTED["✅ JobRequest created\nReference number sent via WhatsApp"]:::success
+
+    WAIT{"Admin validates &\nbroadcasts to providers"}:::decision
+
+    MATCH["📩 Client notified:\n'Great news! A provider matched your request'"]:::notify
+
+    NOPROV["Client opts in for notifications\nwhen a provider becomes available"]:::waiting
+
+    QUOTE_WA["Provider sends quote via WhatsApp\nR amount + scope of work"]:::notify
+
+    APPROVE{"Client approves\nthe quote?"}:::decision
+
+    BOOK["📅 Booking created\nDate & time window confirmed"]:::success
+
+    DECLINE2["Request stays open\nNext provider can bid"]:::waiting
+
+    PAY["💳 Client redirected to PayFast\nSecure online payment"]:::action
+
+    PAID["✅ Payment confirmed\n'Your booking is locked in!'"]:::success
+
+    REMIND["📅 Day before: reminder sent\nProvider name + scheduled window"]:::notify
+
+    ENROUTE["🚗 Day of: 'Your provider is on the way'"]:::notify
+
+    ARRIVED["📍 'Provider has arrived'"]:::notify
+
+    EXTRAS{"Provider requests\nextra work?"}:::decision
+
+    APPROVE2["Client receives WhatsApp approval link\nApproves or declines extra charges"]:::action
+
+    DONE["🎉 'Job completed!'\nInvoice link sent via WhatsApp"]:::success
+
+    RATE["⭐ Client rates the provider\napp.plugapro.co.za/bookings/id/rate"]:::action
+
+    END(["✅ Done — booking closed"]):::endnode
+
+    START --> MENU --> CAT --> NAME --> ADDR --> AVAIL --> CONFIRM --> SUBMITTED
+    SUBMITTED --> WAIT
+    WAIT -->|"Provider found"| MATCH
+    WAIT -->|"No providers yet"| NOPROV
+    MATCH --> QUOTE_WA --> APPROVE
+    APPROVE -->|"✅ Yes"| BOOK
+    APPROVE -->|"❌ No"| DECLINE2
+    BOOK --> PAY --> PAID --> REMIND --> ENROUTE --> ARRIVED
+    ARRIVED --> EXTRAS
+    EXTRAS -->|"Yes"| APPROVE2 --> EXTRAS
+    EXTRAS -->|"No"| DONE --> RATE --> END
+
+    classDef start fill:#0c2a1e,stroke:#15803d,color:#86efac,rx:20
+    classDef endnode fill:#0c2a1e,stroke:#15803d,color:#86efac,rx:20
+    classDef bot fill:#1e293b,stroke:#475569,color:#94a3b8
+    classDef action fill:#0f2744,stroke:#1d4ed8,color:#93c5fd
+    classDef decision fill:#2d1b0e,stroke:#92400e,color:#fdba74
+    classDef success fill:#0c2a1e,stroke:#15803d,color:#86efac
+    classDef notify fill:#1e1b4b,stroke:#4338ca,color:#a5b4fc
+    classDef waiting fill:#1c1917,stroke:#57534e,color:#a8a29e
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 3: PROVIDER JOURNEY -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-provider">Provider Journey</span>
+    <h2>Skilled Labourer Looking for Work</h2>
+    <span class="subtitle">WhatsApp onboarding · PWA job management</span>
+  </div>
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+    START(["📱 Provider messages +27 693 552 447\n'register' or 'apply' or 'I want work'"]):::start
+
+    subgraph OB["📋  One-Time Onboarding"]
+        REG["🤖 Bot starts registration flow"]:::bot
+        RNAME["Provider types full name"]:::action
+        RSKILL["Pick primary skill\nPlumbing · Electrical · Cleaning · Painting..."]:::action
+        RAREA["Pick service area\nGauteng · Western Cape · KZN · Eastern Cape · Limpopo"]:::action
+        REXP["Years of experience\n&lt;1yr · 1–3yrs · 3–5yrs · 5+yrs"]:::action
+        RAVAIL["Availability\nWeekdays only · Mon–Sat · Any day"]:::action
+        RCONFIRM["✅ Application submitted\n'We'll review and contact you within 48 hours'"]:::success
+    end
+
+    subgraph REVIEW["🔍  Admin Reviews Application"]
+        APPR{"Admin\napproves?"}:::decision
+        APPROVED_MSG["✅ 'You're approved! Here's your login link'"]:::success
+        DECLINED_MSG["❌ Declined with reason\n+ option to reapply"]:::fail
+    end
+
+    LOGIN["🌐 Provider logs in to PWA\napp.plugapro.co.za/technician-sign-in\nPhone OTP"]:::action
+
+    DASH["📊 Provider Dashboard\nToday's jobs · Upcoming schedule · Earnings"]:::portal
+
+    subgraph JOBS["⚙️  Job Lifecycle"]
+        LEAD["📩 Job lead arrives via WhatsApp\nCategory · Area · Brief description\nAccept / View / Decline buttons"]:::notify
+        ACCEPT{"Provider\nresponds"}:::decision
+        MATCHED["🎯 Match created\nFull job details + customer info sent"]:::success
+        NEXT_LEAD["Lead passes to next provider"]:::waiting
+
+        QUOTE_S["💰 Provider submits quote via PWA\nAmount · Scope of work · Timeline"]:::action
+        Q_WAIT{"Customer\napproves?"}:::decision
+
+        J_SCHED["📅 Job scheduled\nPayment received — confirmed"]:::success
+        REMIND_P["🔔 Reminder sent day before"]:::notify
+        ENROUTE_P["Update status → EN_ROUTE\n📍 Customer notified you're coming"]:::action
+        ARRIVED_P["Update status → ARRIVED"]:::action
+        STARTED_P["Update status → STARTED\n⏱️ Work begins"]:::action
+        EXTRA_P{"Need to charge\nfor extra work?"}:::decision
+        POST_EXTRA["POST extra work request\nAmount + description"]:::action
+        WAIT_APP["⏸️ Job pauses — AWAITING_APPROVAL\nCustomer gets approval link via WhatsApp"]:::waiting
+        CUST_RESP{"Customer\ndecision"}:::decision
+        PHOTOS_P["📸 Upload completion photos\nvia PWA camera"]:::action
+        COMPLETE_P["Update status → COMPLETED"]:::success
+        INVOICE_P["Invoice auto-generated\nCustomer receives copy"]:::notify
+        PAYOUT["💰 ProviderPayout created\nGross − 15% platform fee = Net amount"]:::success
+        PAID_P["🏦 Admin processes bank transfer\nWeekly or on-demand"]:::success
+    end
+
+    START --> REG --> RNAME --> RSKILL --> RAREA --> REXP --> RAVAIL --> RCONFIRM
+    RCONFIRM --> APPR
+    APPR -->|"✅ Approved"| APPROVED_MSG
+    APPR -->|"❌ Declined"| DECLINED_MSG
+    APPROVED_MSG --> LOGIN --> DASH --> LEAD
+    LEAD --> ACCEPT
+    ACCEPT -->|"✅ Accept"| MATCHED
+    ACCEPT -->|"❌ Decline"| NEXT_LEAD
+    MATCHED --> QUOTE_S --> Q_WAIT
+    Q_WAIT -->|"✅ Approved"| J_SCHED
+    Q_WAIT -->|"❌ Declined"| LEAD
+    J_SCHED --> REMIND_P --> ENROUTE_P --> ARRIVED_P --> STARTED_P --> EXTRA_P
+    EXTRA_P -->|"Yes"| POST_EXTRA --> WAIT_APP --> CUST_RESP
+    CUST_RESP -->|"✅ Approved"| STARTED_P
+    CUST_RESP -->|"❌ Declined"| STARTED_P
+    EXTRA_P -->|"No"| PHOTOS_P --> COMPLETE_P --> INVOICE_P --> PAYOUT --> PAID_P
+
+    classDef start fill:#1e1b4b,stroke:#4338ca,color:#a5b4fc,rx:20
+    classDef bot fill:#1e293b,stroke:#475569,color:#94a3b8
+    classDef action fill:#0f2744,stroke:#1d4ed8,color:#93c5fd
+    classDef decision fill:#2d1b0e,stroke:#92400e,color:#fdba74
+    classDef success fill:#0c2a1e,stroke:#15803d,color:#86efac
+    classDef fail fill:#2d1515,stroke:#991b1b,color:#fca5a5
+    classDef notify fill:#1e1b4b,stroke:#4338ca,color:#a5b4fc
+    classDef waiting fill:#1c1917,stroke:#57534e,color:#a8a29e
+    classDef portal fill:#0f2744,stroke:#1d4ed8,color:#93c5fd
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 4: ADMIN JOURNEY -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-admin">Admin Journey</span>
+    <h2>Platform Owner — Operations Team</h2>
+    <span class="subtitle">Full visibility · Manual controls · Financial ops</span>
+  </div>
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+    START(["🔑 Admin logs in\napp.plugapro.co.za/admin-sign-in"]):::start
+
+    DASH["📊 Admin Dashboard\nActive jobs · Pending applications\nToday's revenue · Pending payouts"]:::portal
+
+    DASH --> OPS
+
+    OPS{"Daily\nOperations"}:::hub
+
+    OPS --> A1 & A2 & A3 & A4
+
+    subgraph ONBOARD["👤  Provider Onboarding"]
+        A1["📋 /admin/applications\nPending provider applications"]:::section
+        APP_LIST["View each application\nName · Skills · Area · Experience · Availability"]:::action
+        APP_DEC{"Review &\ndecide"}:::decision
+        APP_OK["✅ Approve\nAccount created\nWhatsApp welcome sent"]:::success
+        APP_NO["❌ Decline with reason\nWhatsApp notification sent"]:::fail
+    end
+
+    subgraph DISPATCH["🗺️  Job Management & Dispatch"]
+        A2["🗺️ /admin/bookings + /admin/dispatch"]:::section
+        JOB_LIST["Browse all job requests\nStatus · Category · Area · Age · Match status"]:::action
+        VALIDATE{"Validate\nrequest"}:::decision
+        BROADCAST["Status → OPEN\nLeads sent to matching providers"]:::success
+        CANCEL_J["Cancel + notify customer"]:::fail
+        MONITOR["Monitor match progress\nTime-to-match · Lead acceptance rate"]:::action
+        NO_TAKERS{"No provider\naccepted?"}:::decision
+        MANUAL_D["Manual assign via /admin/dispatch\nPick provider + notify both parties"]:::action
+        ESCALATE["Notify customer of delay\nExtend lead window"]:::action
+    end
+
+    subgraph FINANCE["💰  Payments & Payouts"]
+        A3["💳 /admin/payments"]:::section
+        PAY_LIST["All transactions\nPending · Paid · Failed · Refunds"]:::action
+        RECONCILE["Reconcile with PayFast dashboard\nMatch reference numbers"]:::action
+        PAYOUT_LIST["Pending provider payouts\nProvider · Job · Gross · Fee · Net"]:::action
+        PROCESS["Process bank transfers\nMark payout → PAID"]:::success
+        REPORTS["📈 /admin/reports\nRevenue · Commission · Payout totals\nTop providers · Top categories"]:::action
+    end
+
+    subgraph CONFIG["⚙️  Platform Configuration"]
+        A4["⚙️ /admin/settings"]:::section
+        CATS["Manage service categories\nAdd · Edit · Disable"]:::action
+        FLOWS_A["WhatsApp flow builder\nTest conversation flows live"]:::action
+        MSG_HIST["Message history browser\nFull audit trail per user"]:::action
+        SETTINGS_A["Platform settings\nCommission rate · Working hours · Service areas"]:::action
+    end
+
+    subgraph AUTO["⏰  Automated (runs without action)"]
+        CR1["08:00 UTC daily\nBooking reminders → customers + providers"]:::cron
+        CR2["10:00 UTC daily\nFollow-up on stale job requests"]:::cron
+        CR3["Monday 06:00 UTC\nProvider schedule synchronisation"]:::cron
+    end
+
+    OPS --> A1 & A2 & A3 & A4
+
+    A1 --> APP_LIST --> APP_DEC
+    APP_DEC -->|"✅"| APP_OK
+    APP_DEC -->|"❌"| APP_NO
+
+    A2 --> JOB_LIST --> VALIDATE
+    VALIDATE -->|"✅ Valid"| BROADCAST --> MONITOR
+    VALIDATE -->|"❌ Spam/invalid"| CANCEL_J
+    MONITOR --> NO_TAKERS
+    NO_TAKERS -->|"Manual"| MANUAL_D
+    NO_TAKERS -->|"Escalate"| ESCALATE
+
+    A3 --> PAY_LIST --> RECONCILE --> PAYOUT_LIST --> PROCESS --> REPORTS
+
+    A4 --> CATS & FLOWS_A & MSG_HIST & SETTINGS_A
+
+    classDef start fill:#2d1b0e,stroke:#92400e,color:#fdba74,rx:20
+    classDef portal fill:#2d1b0e,stroke:#92400e,color:#fdba74
+    classDef hub fill:#1e293b,stroke:#475569,color:#e2e8f0
+    classDef section fill:#1c1917,stroke:#57534e,color:#a8a29e
+    classDef action fill:#0f2744,stroke:#1d4ed8,color:#93c5fd
+    classDef decision fill:#2d1b0e,stroke:#92400e,color:#fdba74
+    classDef success fill:#0c2a1e,stroke:#15803d,color:#86efac
+    classDef fail fill:#2d1515,stroke:#991b1b,color:#fca5a5
+    classDef cron fill:#1e1b4b,stroke:#4338ca,color:#a5b4fc
+    </div>
+  </div>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#131520',
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#334155',
+      lineColor: '#475569',
+      secondaryColor: '#0f172a',
+      tertiaryColor: '#1e1b4b',
+      edgeLabelBackground: '#131520',
+      clusterBkg: '#0f172a',
+      clusterBorder: '#1e293b',
+      titleColor: '#f1f5f9',
+      nodeTextColor: '#e2e8f0',
+      fontFamily: 'Inter, -apple-system, sans-serif',
+      fontSize: '14px'
+    },
+    flowchart: {
+      curve: 'basis',
+      padding: 20,
+      nodeSpacing: 40,
+      rankSpacing: 60,
+      htmlLabels: true
+    }
+  });
+</script>
+</body>
+</html>

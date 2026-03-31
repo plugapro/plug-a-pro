@@ -1,6 +1,5 @@
 // ─── Admin: Bookings board ─────────────────────────────────────────────────────
 // Table view of all bookings with status filter.
-// From here admin can navigate to dispatch to assign a technician.
 
 export const dynamic = 'force-dynamic'
 
@@ -25,13 +24,11 @@ import type { BookingStatus } from '@prisma/client'
 export const metadata = buildMetadata({ title: 'Bookings', noIndex: true })
 
 const STATUS_OPTIONS: { value: BookingStatus | 'ALL'; label: string }[] = [
-  { value: 'ALL',             label: 'All' },
-  { value: 'PENDING_PAYMENT', label: 'Pending Payment' },
-  { value: 'CONFIRMED',       label: 'Confirmed' },
-  { value: 'SCHEDULED',       label: 'Scheduled' },
-  { value: 'RESCHEDULED',     label: 'Rescheduled' },
-  { value: 'COMPLETED',       label: 'Completed' },
-  { value: 'CANCELLED',       label: 'Cancelled' },
+  { value: 'ALL',         label: 'All' },
+  { value: 'SCHEDULED',   label: 'Scheduled' },
+  { value: 'RESCHEDULED', label: 'Rescheduled' },
+  { value: 'COMPLETED',   label: 'Completed' },
+  { value: 'CANCELLED',   label: 'Cancelled' },
 ]
 
 export default async function BookingsPage({
@@ -50,11 +47,19 @@ export default async function BookingsPage({
   const bookings = await db.booking.findMany({
     where: isValidStatus ? { status: statusFilter } : undefined,
     include: {
-      customer: { select: { name: true, phone: true } },
-      service:  { select: { name: true, category: true } },
-      address:  { select: { suburb: true, city: true } },
-      technician: { select: { name: true } },
-      job:      { select: { status: true } },
+      match: {
+        include: {
+          jobRequest: {
+            include: {
+              customer: { select: { name: true, phone: true } },
+              address:  { select: { suburb: true, city: true } },
+            },
+          },
+          provider: { select: { name: true } },
+        },
+      },
+      quote: { select: { amount: true } },
+      job:   { select: { status: true } },
     },
     orderBy: { createdAt: 'desc' },
     take: 200,
@@ -68,7 +73,7 @@ export default async function BookingsPage({
           <p className="text-sm text-muted-foreground mt-1">{bookings.length} bookings</p>
         </div>
         <Button asChild>
-          <Link href="/admin/dispatch">Dispatch →</Link>
+          <Link href="/admin/matches">Matches →</Link>
         </Button>
       </div>
 
@@ -103,73 +108,71 @@ export default async function BookingsPage({
             <TableRow>
               <TableHead>Ref</TableHead>
               <TableHead>Customer</TableHead>
-              <TableHead>Service</TableHead>
+              <TableHead>Job Request</TableHead>
               <TableHead>Area</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Booking</TableHead>
               <TableHead>Job</TableHead>
-              <TableHead>Technician</TableHead>
+              <TableHead>Provider</TableHead>
               <TableHead>Total</TableHead>
-              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {bookings.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                   No bookings found
                 </TableCell>
               </TableRow>
             )}
-            {bookings.map((b) => (
-              <TableRow key={b.id}>
-                <TableCell className="font-mono text-xs">{b.id.slice(-8).toUpperCase()}</TableCell>
-                <TableCell>
-                  <p>{b.customer.name}</p>
-                  <p className="text-xs text-muted-foreground">{b.customer.phone}</p>
-                </TableCell>
-                <TableCell>
-                  <p>{b.service.name}</p>
-                  <p className="text-xs text-muted-foreground">{b.service.category}</p>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {b.address.suburb}, {b.address.city}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {b.scheduledDate
-                    ? b.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
-                    : '—'}
-                  {b.scheduledWindow && (
-                    <p className="text-xs">{b.scheduledWindow}</p>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={b.status} type="booking" />
-                </TableCell>
-                <TableCell>
-                  {b.job ? (
-                    <StatusBadge status={b.job.status} type="job" />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">No job</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {b.technician?.name ?? '—'}
-                </TableCell>
-                <TableCell className="font-medium">
-                  R {Number(b.totalAmount).toFixed(2)}
-                </TableCell>
-                <TableCell>
-                  {b.status === 'CONFIRMED' && !b.job && (
-                    <Button asChild size="sm" variant="secondary">
-                      <Link href={`/admin/dispatch?bookingId=${b.id}`}>
-                        Dispatch
-                      </Link>
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+            {bookings.map((b) => {
+              const customer = b.match?.jobRequest?.customer
+              const address  = b.match?.jobRequest?.address
+              return (
+                <TableRow key={b.id}>
+                  <TableCell className="font-mono text-xs">
+                    <Link href={`/admin/bookings/${b.id}`} className="hover:text-primary">
+                      {b.id.slice(-8).toUpperCase()}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <p>{customer?.name ?? '—'}</p>
+                    <p className="text-xs text-muted-foreground">{customer?.phone ?? ''}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p>{b.match?.jobRequest?.title ?? '—'}</p>
+                    <p className="text-xs text-muted-foreground">{b.match?.jobRequest?.category ?? ''}</p>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {address ? `${address.suburb}, ${address.city}` : '—'}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {b.scheduledDate
+                      ? b.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
+                      : '—'}
+                    {b.scheduledWindow && (
+                      <p className="text-xs">{b.scheduledWindow}</p>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={b.status} type="booking" />
+                  </TableCell>
+                  <TableCell>
+                    {b.job ? (
+                      <StatusBadge status={b.job.status} type="job" />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">No job</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {b.match?.provider?.name ?? '—'}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    R {Number(b.quote?.amount ?? 0).toFixed(2)}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </div>

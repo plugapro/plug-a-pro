@@ -43,7 +43,7 @@ export default async function ProfilePage() {
 
   const customer = await db.customer.findUnique({
     where: { userId: session.id },
-    include: { _count: { select: { bookings: true } } },
+    include: { _count: { select: { jobRequests: true } } },
   })
 
   return (
@@ -81,7 +81,7 @@ export default async function ProfilePage() {
             </div>
             <div className="space-y-1 text-sm">
               <span className="text-muted-foreground text-sm">Bookings</span>
-              <p className="text-sm pt-1">{customer?._count.bookings ?? 0}</p>
+              <p className="text-sm pt-1">{customer?._count.jobRequests ?? 0}</p>
             </div>
             <Button type="submit" className="w-full">Save changes</Button>
           </form>

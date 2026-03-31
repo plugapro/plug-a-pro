@@ -1,10 +1,5 @@
 'use client'
 
-// ─── Technician OTP verification ──────────────────────────────────────────────
-// After OTP verification, checks that the Supabase user has role=technician.
-// Technicians are provisioned by admin (not self-serve) — if no technician role,
-// the session is rejected and the user is directed to apply via WhatsApp.
-
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
@@ -18,7 +13,7 @@ function getSupabaseClient() {
   )
 }
 
-function TechnicianVerifyForm() {
+function ProviderVerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const phone = searchParams.get('phone') ?? ''
@@ -53,13 +48,17 @@ function TechnicianVerifyForm() {
       }
 
       const role = data.user.user_metadata?.role
-      if (role !== 'technician') {
-        // Not yet approved — sign out and guide to WhatsApp registration
+      if (role !== 'provider') {
         await supabase.auth.signOut()
         setError(
           "Your account isn't active yet. Once your application is approved, you'll receive a WhatsApp notification."
         )
         return
+      }
+
+      if (data.session?.access_token) {
+        const maxAge = data.session.expires_in ?? 3600
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
       }
 
       router.replace('/technician')
@@ -83,15 +82,15 @@ function TechnicianVerifyForm() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="text-center space-y-2">
-        <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
-          Technician Portal
+      <div className="space-y-1 text-center">
+        <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+          Worker Portal
         </p>
-        <h1 className="text-2xl font-semibold text-white">Enter your code</h1>
-        <p className="text-sm text-zinc-400">
-          Sent to <span className="text-white font-medium">{phone}</span>
+        <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
+        <p className="text-sm text-muted-foreground">
+          Sent to <span className="font-medium text-foreground">{phone}</span>
         </p>
       </div>
 
@@ -108,17 +107,12 @@ function TechnicianVerifyForm() {
           required
           autoFocus
           disabled={loading}
-          className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-600 text-3xl tracking-widest text-center h-16 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+          className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        <Button
-          type="submit"
-          size="lg"
-          disabled={loading || otp.length < 6}
-          className="w-full"
-        >
+        <Button type="submit" size="lg" disabled={loading || otp.length < 6} className="w-full">
           {loading ? 'Verifying…' : 'Confirm'}
         </Button>
       </form>
@@ -128,7 +122,7 @@ function TechnicianVerifyForm() {
         <button
           onClick={handleResend}
           disabled={resendCooldown > 0}
-          className="text-sm text-zinc-400 hover:text-white disabled:text-zinc-600 disabled:cursor-not-allowed transition-colors"
+          className="text-sm text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 disabled:cursor-not-allowed transition-colors"
         >
           {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
         </button>
@@ -137,10 +131,10 @@ function TechnicianVerifyForm() {
   )
 }
 
-export default function TechnicianVerifyPage() {
+export default function ProviderVerifyPage() {
   return (
     <Suspense fallback={null}>
-      <TechnicianVerifyForm />
+      <ProviderVerifyForm />
     </Suspense>
   )
 }

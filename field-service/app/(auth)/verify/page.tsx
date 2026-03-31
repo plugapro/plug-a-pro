@@ -1,14 +1,5 @@
 'use client'
 
-// ─── OTP verification + identity link ────────────────────────────────────────
-// After the customer enters their OTP:
-//   1. Verify with Supabase → get session
-//   2. Call /api/auth/link — server action that runs linkCustomerAccount()
-//   3. Redirect to /bookings (customer home)
-//
-// This is the critical step that stitches a WhatsApp-created Customer record
-// (phone-only, userId=null) to the authenticated Supabase user.
-
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
@@ -32,7 +23,6 @@ function VerifyForm() {
   const [error, setError] = useState<string | null>(null)
   const [resendCooldown, setResendCooldown] = useState(30)
 
-  // Countdown for resend button
   useEffect(() => {
     if (resendCooldown <= 0) return
     const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000)
@@ -57,7 +47,11 @@ function VerifyForm() {
         return
       }
 
-      // Link WhatsApp Customer record to the authenticated user (server-side)
+      if (data.session?.access_token) {
+        const maxAge = data.session.expires_in ?? 3600
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
+      }
+
       const res = await fetch('/api/auth/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,7 +59,6 @@ function VerifyForm() {
       })
 
       if (!res.ok) {
-        // Non-fatal — the user is authenticated, just the link may not have worked
         console.warn('[verify] linkCustomerAccount failed:', await res.text())
       }
 
@@ -90,13 +83,13 @@ function VerifyForm() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="text-center space-y-2">
-        <h1 className="text-2xl font-semibold text-white">Enter your code</h1>
-        <p className="text-sm text-zinc-400">
+      <div className="space-y-1 text-center">
+        <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
+        <p className="text-sm text-muted-foreground">
           We sent a 6-digit code to{' '}
-          <span className="text-white font-medium">{phone}</span>
+          <span className="font-medium text-foreground">{phone}</span>
         </p>
       </div>
 
@@ -113,37 +106,29 @@ function VerifyForm() {
           required
           autoFocus
           disabled={loading}
-          className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-600 text-3xl tracking-widest text-center h-16 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+          className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        <Button
-          type="submit"
-          size="lg"
-          disabled={loading || otp.length < 6}
-          className="w-full"
-        >
+        <Button type="submit" size="lg" disabled={loading || otp.length < 6} className="w-full">
           {loading ? 'Verifying…' : 'Confirm'}
         </Button>
       </form>
 
-      {/* Resend */}
-      <div className="text-center space-y-3">
+      {/* Resend + back */}
+      <div className="space-y-3 text-center">
         <button
           onClick={handleResend}
           disabled={resendCooldown > 0}
-          className="text-sm text-zinc-400 hover:text-white disabled:text-zinc-600 disabled:cursor-not-allowed transition-colors"
+          className="text-sm text-muted-foreground hover:text-foreground disabled:text-muted-foreground/50 disabled:cursor-not-allowed transition-colors"
         >
-          {resendCooldown > 0
-            ? `Resend code in ${resendCooldown}s`
-            : 'Resend code'}
+          {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
         </button>
-
         <div>
           <button
             onClick={() => router.replace('/sign-in')}
-            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             ← Use a different number
           </button>
