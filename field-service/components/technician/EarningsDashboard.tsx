@@ -189,8 +189,8 @@ export function EarningsDashboard({ data }: { data: EarningsData }) {
       )}
 
       <p className="text-xs text-muted-foreground text-center pb-4">
-        Plug a Pro charges 15% commission on gross earnings. This covers platform fees and customer
-        acquisition.
+        Plug a Pro charges 15% commission on gross earnings. This covers platform fees, payment
+        processing, and customer acquisition.
       </p>
     </div>
   )

@@ -125,7 +125,7 @@ export async function processInboundMessage(
       const provider = await db.provider.findUnique({ where: { phone } })
       if (provider) {
         const match = await db.match.findUnique({ where: { id: matchId } })
-        if (match) {
+        if (match && match.providerId === provider.id) {
           await db.lead.updateMany({
             where: { jobRequestId: match.jobRequestId, providerId: provider.id },
             data: { status: 'DECLINED', respondedAt: new Date() },
@@ -776,6 +776,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
       })
 
       if (!quote) throw new Error('NOT_FOUND')
+      if (quote.match.jobRequest.customer.phone !== phone) throw new Error('FORBIDDEN')
       if (quote.status !== 'PENDING') throw new Error('ALREADY_ACTIONED')
       if (quote.validUntil && new Date() > quote.validUntil) throw new Error('EXPIRED')
 

@@ -28,7 +28,8 @@ export default async function QuotePage({
     },
   })
 
-  if (!match || match.providerId !== provider.id) notFound()
+  if (!match) notFound()
+  if (match.providerId !== provider.id) redirect('/technician')
 
   if (match.quotes.length > 0 && match.status === 'QUOTED') {
     redirect('/technician?quote=already-sent')

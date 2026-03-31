@@ -21,13 +21,24 @@ interface Quote {
 export function QuoteApproval({ quote, token }: { quote: Quote; token: string }) {
   const [status, setStatus] = useState<'idle' | 'submitting' | 'done'>('idle')
   const [result, setResult] = useState<'approved' | 'declined' | null>(null)
+  const [scheduledDate, setScheduledDate] = useState<string | null>(
+    quote.status === 'APPROVED' ? (quote.preferredDate ?? null) : null
+  )
   const [error, setError] = useState('')
 
   if (quote.status === 'APPROVED' || result === 'approved') {
+    const dateStr = scheduledDate
+      ? new Date(scheduledDate).toLocaleDateString('en-ZA', {
+          weekday: 'long', day: 'numeric', month: 'long',
+        })
+      : null
     return (
       <div className="rounded-lg border bg-green-50 dark:bg-green-950 p-6 text-center space-y-2">
         <p className="text-2xl">✅</p>
         <p className="font-semibold">Quote Accepted</p>
+        {dateStr && (
+          <p className="text-sm font-medium">{quote.providerName} is scheduled for {dateStr}.</p>
+        )}
         <p className="text-sm text-muted-foreground">
           {quote.providerName} has been notified. You&apos;ll receive a confirmation message on WhatsApp.
         </p>
@@ -73,7 +84,14 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
           setResult(action === 'approve' ? 'approved' : 'declined')
           return
         }
+        if (data.error === 'EXPIRED') {
+          throw new Error('This quote has expired. Please contact the provider to request a new one.')
+        }
         throw new Error(data.error ?? 'Something went wrong')
+      }
+      const data = await res.json().catch(() => ({})) as { status?: string; scheduledDate?: string | null }
+      if (action === 'approve' && data.scheduledDate) {
+        setScheduledDate(data.scheduledDate)
       }
       setResult(action === 'approve' ? 'approved' : 'declined')
     } catch (err) {

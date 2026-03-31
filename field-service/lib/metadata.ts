@@ -20,8 +20,7 @@ export const siteConfig = {
   accent: 'oklch(0.50 0.22 290)',
 
   // WhatsApp number for customer contact (international format, no spaces or dashes)
-  // TODO: replace with real Plug-A-Pro WhatsApp number before go-live
-  whatsappNumber: '+27100000000',
+  whatsappNumber: '+27693552447',
 
   // Default timezone (used in slot display and job scheduling)
   timezone: 'Africa/Johannesburg',

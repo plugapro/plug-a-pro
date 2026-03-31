@@ -44,15 +44,18 @@ export async function GET(request: NextRequest) {
   const net = payouts.reduce((a, p) => a + Number(p.netAmount), 0)
   const monthLabel = start.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
 
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
   const rows = payouts.map((p) => {
     const req = p.job.booking.match.jobRequest
     const date = (p.job.completedAt ?? p.createdAt).toLocaleDateString('en-ZA', {
       day: 'numeric', month: 'short',
     })
     return `<tr>
-      <td>${date}</td>
-      <td>${req.category}</td>
-      <td>${req.address?.suburb ?? '-'}</td>
+      <td>${esc(date)}</td>
+      <td>${esc(req.category)}</td>
+      <td>${esc(req.address?.suburb ?? '-')}</td>
       <td>R ${Number(p.grossAmount).toFixed(2)}</td>
       <td>R ${Number(p.commissionAmt).toFixed(2)}</td>
       <td>R ${Number(p.netAmount).toFixed(2)}</td>
@@ -63,7 +66,7 @@ export async function GET(request: NextRequest) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Earnings Statement — ${monthLabel}</title>
+  <title>Earnings Statement — ${esc(monthLabel)}</title>
   <style>
     body { font-family: sans-serif; font-size: 13px; color: #111; padding: 32px; max-width: 800px; margin: 0 auto; }
     h1 { font-size: 20px; margin-bottom: 4px; }
@@ -82,7 +85,7 @@ export async function GET(request: NextRequest) {
 </head>
 <body>
   <h1>Plug a Pro</h1>
-  <p class="subtitle">Earnings Statement — ${monthLabel} &middot; ${provider.name}</p>
+  <p class="subtitle">Earnings Statement — ${esc(monthLabel)} &middot; ${esc(provider.name)}</p>
   <table>
     <thead>
       <tr>

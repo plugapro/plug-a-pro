@@ -175,19 +175,23 @@ export function QuoteForm({ matchId, postInspection: preChecked = false, categor
           />
         </div>
 
-        {!preChecked && (
-          <div className="flex items-start gap-3">
-            <Checkbox
-              id="inspection"
-              checked={isInspection}
-              onCheckedChange={(v) => setIsInspection(v === true)}
-              className="mt-0.5"
-            />
-            <Label htmlFor="inspection" className="text-sm leading-snug cursor-pointer">
-              I need to inspect the site before finalising this quote
-            </Label>
-          </div>
-        )}
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="inspection"
+            checked={isInspection}
+            onCheckedChange={(v) => !preChecked && setIsInspection(v === true)}
+            disabled={preChecked}
+            className="mt-0.5"
+          />
+          <Label
+            htmlFor="inspection"
+            className={`text-sm leading-snug ${preChecked ? 'text-muted-foreground' : 'cursor-pointer'}`}
+          >
+            {preChecked
+              ? 'This quote is submitted after a site inspection'
+              : 'I need to inspect the site before finalising this quote'}
+          </Label>
+        </div>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}

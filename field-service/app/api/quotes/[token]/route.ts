@@ -131,7 +131,12 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   // Notify both parties asynchronously (fire-and-forget)
   notifyAfterDecision(result).catch(() => {})
 
-  return NextResponse.json({ status: result.action })
+  return NextResponse.json({
+    status: result.action,
+    scheduledDate: 'booking' in result && result.booking
+      ? result.booking.scheduledDate.toISOString()
+      : null,
+  })
 }
 
 async function notifyAfterDecision(result: {

@@ -2,6 +2,7 @@
 // Body: { matchId, labourCost, materialsCost?, description, estimatedHours?, validFor, preferredDate?, postInspection? }
 // Creates a Quote linked to the Match and sends WhatsApp notification to the client.
 
+import { randomBytes } from 'crypto'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -66,18 +67,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Match not found' }, { status: 404 })
   }
 
-  if (!['MATCHED', 'INSPECTION_SCHEDULED', 'INSPECTION_COMPLETE'].includes(match.status)) {
-    return NextResponse.json({ error: 'Quote already submitted for this match' }, { status: 409 })
-  }
-
-  // Idempotent — return existing quote if already submitted
+  // Idempotent — return existing quote before status guard to avoid double-submission window
   const existing = await db.quote.findFirst({ where: { matchId } })
   if (existing) {
     return NextResponse.json({ quoteId: existing.id, alreadySubmitted: true })
   }
 
+  if (!['MATCHED', 'INSPECTION_SCHEDULED', 'INSPECTION_COMPLETE'].includes(match.status)) {
+    return NextResponse.json({ error: 'Quote already submitted for this match' }, { status: 409 })
+  }
+
   const totalAmount = labourCost + materialsCost
-  const approvalToken = `${matchId.slice(-12)}-${Date.now().toString(36)}`
+  const approvalToken = randomBytes(24).toString('hex')
 
   const quote = await db.quote.create({
     data: {

@@ -232,7 +232,7 @@ model Quote {
   validUntil     DateTime?
   preferredDate  DateTime?
   postInspection Boolean     @default(false)
-  approvalToken  String?     @unique
+  approvalToken  String      @unique
   status         QuoteStatus @default(PENDING)
   approvedAt     DateTime?
   declinedAt     DateTime?
