@@ -137,7 +137,11 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         ctx.phone,
         `🚨 *Problem with a Job*\n\nWe take quality seriously. If something went wrong:\n\n1. Reply with a description of the issue\n2. Include a photo if possible\n3. We'll follow up within 2 hours\n\nFor urgent issues, contact us directly:${SUPPORT_PHONE ? `\n📞 ${SUPPORT_PHONE}` : ''}`
       )
-      return { nextStep: 'done' }
+      await sendButtons(ctx.phone, 'Can I help with anything else?', [
+        { id: 'back_to_help', title: '← Back to Help' },
+        { id: 'back_home', title: '🏠 Main Menu' },
+      ])
+      return { nextStep: 'help_faq' }
 
     case 'faq_contact_human':
       if (SUPPORT_PHONE) {
@@ -151,7 +155,11 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
           `📞 *Support*\n\nReply to this message and our team will get back to you within 2 hours.\n\nOperating hours: Mon–Fri 8am–6pm, Sat 8am–2pm`
         )
       }
-      return { nextStep: 'done' }
+      await sendButtons(ctx.phone, 'Is there anything else I can help with?', [
+        { id: 'back_to_help', title: '← More Questions' },
+        { id: 'back_home', title: '🏠 Main Menu' },
+      ])
+      return { nextStep: 'help_faq' }
 
     case 'back_to_help':
       return handleHelpMenu(ctx)

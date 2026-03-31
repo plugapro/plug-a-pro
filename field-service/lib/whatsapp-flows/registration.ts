@@ -64,17 +64,21 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   })
 
   if (existing?.status === 'APPROVED') {
-    await sendText(
+    await sendButtons(
       ctx.phone,
-      "✅ You're already registered as a Plug a Pro worker! You'll receive job leads through this number.\n\nReply *my jobs* to see your active assignments."
+      "✅ You're already registered as a Plug a Pro worker! You'll receive job leads through this number.\n\nWhat would you like to do?",
+      [
+        { id: 'pj_view_jobs', title: '📋 My Jobs' },
+        { id: 'back_home', title: '🏠 Main Menu' },
+      ]
     )
-    return { nextStep: 'done' }
+    return { nextStep: 'pj_toggle_available' }
   }
 
   if (existing?.status === 'PENDING') {
     await sendText(
       ctx.phone,
-      `⏳ Your application is under review. We'll contact you within 24 hours.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*`
+      `⏳ Your application is under review. We'll contact you within 24 hours.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *menu* anytime to return to the main menu.`
     )
     return { nextStep: 'done' }
   }

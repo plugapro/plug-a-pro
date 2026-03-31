@@ -39,7 +39,8 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       [
         { id: 'book', title: '🔧 Request a Service' },
         { id: 'back_home', title: '🏠 Main Menu' },
-      ]
+      ],
+      { footer: 'Reply "menu" for main menu' }
     )
     return { nextStep: 'welcome' }
   }
@@ -66,7 +67,8 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       [
         { id: 'book', title: '🔧 Request a Service' },
         { id: 'back_home', title: '🏠 Main Menu' },
-      ]
+      ],
+      { footer: 'Reply "menu" for main menu' }
     )
     return { nextStep: 'welcome' }
   }
@@ -109,7 +111,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
     `📋 *Your latest request*\n\n🔧 ${latest.category}\n${statusLabel}`,
     'View Request',
     trackingUrl,
-    { footer: 'Tap to view full details' }
+    { footer: 'Reply "menu" to return to main menu' }
   )
 
   return { nextStep: 'done' }
