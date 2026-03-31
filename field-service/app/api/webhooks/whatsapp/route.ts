@@ -6,7 +6,7 @@
 // Security: GET uses verify_token; POST must be validated by checking Meta's IP range
 // or by verifying the payload signature (if using the optional app-level signature).
 
-import { type NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse, after } from 'next/server'
 import { verifyWebhookChallenge } from '@/lib/whatsapp'
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
@@ -46,26 +46,30 @@ export async function POST(request: NextRequest) {
         // Route inbound messages to conversation bot
         // Conversation is now unique on phone only — no businessId
         for (const message of value.messages ?? []) {
-          processInboundMessage(message).catch((err: unknown) => {
-            console.error('[webhook/whatsapp] Bot error:', err)
-          })
+          after(
+            processInboundMessage(message).catch((err: unknown) => {
+              console.error('[webhook/whatsapp] Bot error:', err)
+            })
+          )
         }
 
         // Update delivery receipts on MessageEvent records
         for (const status of value.statuses ?? []) {
-          db.messageEvent.updateMany({
-            where: { externalId: status.id },
-            data: {
-              status:
-                status.status === 'delivered' ? 'DELIVERED'
-                : status.status === 'read' ? 'READ'
-                : status.status === 'failed' ? 'FAILED'
-                : undefined,
-              deliveredAt: status.status === 'delivered' ? new Date() : undefined,
-              readAt: status.status === 'read' ? new Date() : undefined,
-              failureReason: status.errors?.[0]?.message,
-            },
-          }).catch(() => {})
+          after(
+            db.messageEvent.updateMany({
+              where: { externalId: status.id },
+              data: {
+                status:
+                  status.status === 'delivered' ? 'DELIVERED'
+                  : status.status === 'read' ? 'READ'
+                  : status.status === 'failed' ? 'FAILED'
+                  : undefined,
+                deliveredAt: status.status === 'delivered' ? new Date() : undefined,
+                readAt: status.status === 'read' ? new Date() : undefined,
+                failureReason: status.errors?.[0]?.message,
+              },
+            }).catch(() => {})
+          )
         }
       }
     }
