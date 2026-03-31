@@ -109,4 +109,174 @@ describe('handleProviderJourneyFlow', () => {
       expect(result.nextStep).toBe('done')
     })
   })
+
+  describe('pj_job_detail step', () => {
+    it('shows job list when pj_view_jobs tapped from pj_toggle_available step', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: true,
+      })
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: 'jobabcdef123456789ghijklmno',
+          status: 'SCHEDULED',
+          providerId: 'prov_1',
+          createdAt: new Date(),
+          booking: {
+            match: {
+              jobRequest: {
+                category: 'Plumbing',
+                address: { street: '12 Main St', suburb: 'Sandton' },
+              },
+            },
+          },
+        },
+      ])
+      const result = await handleProviderJourneyFlow(mockCtx('pj_toggle_available', 'pj_view_jobs'))
+      expect(db.job.findMany).toHaveBeenCalledWith({
+        where: {
+          providerId: 'prov_1',
+          status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
+        },
+        include: {
+          booking: {
+            include: { match: { include: { jobRequest: true } } },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      })
+      expect(wa.sendList).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Your Active Jobs'),
+        expect.any(Array),
+        expect.any(Object)
+      )
+      expect(result.nextStep).toBe('pj_job_detail')
+    })
+
+    it('returns done when back_home tapped', async () => {
+      const result = await handleProviderJourneyFlow(mockCtx('pj_job_detail', 'back_home'))
+      expect(result.nextStep).toBe('done')
+    })
+
+    it('shows status update buttons for a SCHEDULED job', async () => {
+      ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'jobabcdef123456789ghijklmno',
+        status: 'SCHEDULED',
+        providerId: 'prov_1',
+        booking: {
+          match: {
+            jobRequest: {
+              category: 'Plumbing',
+              address: { street: '12 Main St', suburb: 'Sandton' },
+            },
+          },
+        },
+      })
+      const result = await handleProviderJourneyFlow(mockCtx('pj_job_detail', 'pj_job_jobabcdef123456789ghijklmno'))
+      expect(db.job.findUnique).toHaveBeenCalledWith({
+        where: { id: 'jobabcdef123456789ghijklmno' },
+        include: {
+          booking: {
+            include: {
+              match: {
+                include: {
+                  jobRequest: { include: { address: true } },
+                },
+              },
+            },
+          },
+        },
+      })
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Plumbing'),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'pj_upd_jobabcdef123456789ghijklmno_EN_ROUTE', title: expect.any(String) }),
+        ])
+      )
+      expect(result.nextStep).toBe('pj_status_confirm')
+      expect(result.nextData).toEqual({ activeJobId: 'jobabcdef123456789ghijklmno' })
+    })
+
+    it('shows "no more updates" message for job with no transitions', async () => {
+      ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'jobabcdef123456789ghijklmno',
+        status: 'AWAITING_APPROVAL',
+        providerId: 'prov_1',
+        booking: {
+          match: {
+            jobRequest: {
+              category: 'Plumbing',
+              address: { street: '12 Main St', suburb: 'Sandton' },
+            },
+          },
+        },
+      })
+      const result = await handleProviderJourneyFlow(mockCtx('pj_job_detail', 'pj_job_jobabcdef123456789ghijklmno'))
+      expect(wa.sendText).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('No more status updates')
+      )
+      expect(result.nextStep).toBe('done')
+    })
+  })
+
+  describe('pj_status_confirm step', () => {
+    it('updates job status in DB and creates JobStatusEvent', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: true,
+      })
+      ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'jobabcdef123456789ghijklmno',
+        status: 'STARTED',
+        providerId: 'prov_1',
+        booking: {
+          match: {
+            jobRequest: {
+              category: 'Plumbing',
+              customer: { phone: '+27711111112' },
+            },
+          },
+        },
+      })
+      ;(db.job.update as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'jobabcdef123456789ghijklmno',
+        status: 'COMPLETED',
+      })
+      ;(db.jobStatusEvent.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'event_1',
+        jobId: 'jobabcdef123456789ghijklmno',
+        status: 'COMPLETED',
+      })
+      const result = await handleProviderJourneyFlow(mockCtx('pj_status_confirm', 'pj_upd_jobabcdef123456789ghijklmno_COMPLETED'))
+      expect(db.job.update).toHaveBeenCalledWith({
+        where: { id: 'jobabcdef123456789ghijklmno' },
+        data: { status: 'COMPLETED' },
+      })
+      expect(db.jobStatusEvent.create).toHaveBeenCalledWith({
+        data: {
+          jobId: 'jobabcdef123456789ghijklmno',
+          status: 'COMPLETED',
+          note: 'Updated via WhatsApp by provider',
+        },
+      })
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('complete'),
+        expect.any(Array)
+      )
+      expect(result.nextStep).toBe('pj_toggle_available')
+    })
+
+    it('returns done when back_home tapped', async () => {
+      const result = await handleProviderJourneyFlow(mockCtx('pj_status_confirm', 'back_home'))
+      expect(result.nextStep).toBe('done')
+    })
+
+    it('stays on same step when unrecognised button', async () => {
+      const result = await handleProviderJourneyFlow(mockCtx('pj_status_confirm', 'invalid_button'))
+      expect(result.nextStep).toBe('pj_status_confirm')
+    })
+  })
 })
