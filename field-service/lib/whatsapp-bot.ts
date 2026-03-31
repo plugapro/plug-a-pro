@@ -93,7 +93,7 @@ export async function processInboundMessage(
       step = 'tech_job_list'
     } else if ((isRegistration || reply.id === 'find_work') && flow === 'idle') {
       flow = 'registration'
-      step = 'reg_collect_name'
+      step = 'reg_start'
     } else if ((isReschedule || reply.id === 'start_reschedule') && flow === 'idle') {
       flow = 'reschedule'
       step = 'reschedule_reason'

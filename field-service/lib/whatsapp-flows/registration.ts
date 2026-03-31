@@ -31,6 +31,8 @@ export const REGISTRATION_TRIGGERS = [
 
 export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResult> {
   switch (ctx.step) {
+    case 'reg_start':
+      return startRegistration(ctx)
     case 'reg_collect_name':
       return handleCollectName(ctx)
     case 'reg_collect_skills':

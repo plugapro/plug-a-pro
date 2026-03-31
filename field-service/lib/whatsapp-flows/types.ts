@@ -27,6 +27,7 @@ export type FlowStep =
   | 'job_request_submitted'
   | 'notify_me'                 // no providers in area — join waitlist
   // Registration (provider onboarding)
+  | 'reg_start'           // shows intro + yes/no — entry point
   | 'reg_collect_name'
   | 'reg_collect_skills'
   | 'reg_collect_skills_more'
