@@ -29,6 +29,7 @@ export default async function ProviderLayout({
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 safe-bottom">
         <div className="flex h-16 items-center justify-around px-2">
           <NavLink href="/technician" label="Jobs" />
+          <NavLink href="/technician/earnings" label="Earnings" />
           <NavLink href="/technician/profile" label="Profile" />
         </div>
       </nav>
