@@ -61,7 +61,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         `💰 *Pricing*\n\nPrices depend on the service:\n\n• Plumbing — from R 350\n• Electrical — from R 300\n• Cleaning — from R 450\n• Painting — from R 800\n\nYou will always see the price *before* you confirm your booking. No hidden fees.\n\nFor larger jobs, we will send you a quote first.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
-          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_to_help', title: '← Back to Help' },
         ]
       )
       return { nextStep: 'help_faq' }
@@ -72,7 +72,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         `📍 *Areas We Serve*\n\nWe currently operate in:\n\n• Johannesburg (Sandton, Randburg, Midrand, Soweto, Fourways)\n• Pretoria (Centurion, Hatfield, Sunnyside)\n• Cape Town (City Bowl, Northern Suburbs, Southern Suburbs)\n\nEnter your suburb when booking and we'll confirm availability. We're expanding! 🚀`,
         [
           { id: 'book', title: '🔧 Book Now' },
-          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_to_help', title: '← Back to Help' },
         ]
       )
       return { nextStep: 'help_faq' }
@@ -83,7 +83,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         `⏱ *Job Duration*\n\nThis depends on the service:\n\n• Leak repair — 1–2 hours\n• Electrical fault finding — 1–3 hours\n• Regular clean — 2–4 hours\n• Deep clean — 4–6 hours\n\nYour technician will let you know if the job will take longer and get your approval before continuing.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
-          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_to_help', title: '← Back to Help' },
         ]
       )
       return { nextStep: 'help_faq' }
@@ -94,7 +94,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         `❌ *Cancellation Policy*\n\n• Cancel *24h or more* before your booking — full refund\n• Cancel *less than 24h* before — 50% cancellation fee\n• No-show — no refund\n\nTo cancel, tap the button below or reply "cancel".`,
         [
           { id: 'start_cancel', title: '❌ Cancel My Booking' },
-          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_to_help', title: '← Back to Help' },
         ]
       )
       return { nextStep: 'help_faq' }
@@ -105,7 +105,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         `🔄 *Rescheduling*\n\nYou can reschedule your booking for free up to *6 hours* before your appointment.\n\nTap below to choose a new time.`,
         [
           { id: 'start_reschedule', title: '🔄 Reschedule Booking' },
-          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_to_help', title: '← Back to Help' },
         ]
       )
       return { nextStep: 'help_faq' }
@@ -116,7 +116,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         `💳 *How Payment Works*\n\nWe accept:\n• Credit & debit card (Visa / Mastercard)\n• Instant EFT\n\nYou pay *online when booking*. Your booking is only confirmed once payment is received.\n\nFor quote-based jobs, we send you the quote first — you only pay after you accept it.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
-          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_to_help', title: '← Back to Help' },
         ]
       )
       return { nextStep: 'help_faq' }
@@ -127,7 +127,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
         `👷 *Our Technicians*\n\nAll Plug a Pro technicians are:\n\n✅ ID-verified\n✅ Skill-assessed\n✅ Rated by previous customers\n\nWe never share your contact details directly with technicians. All communication goes through the app for your safety.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
-          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_to_help', title: '← Back to Help' },
         ]
       )
       return { nextStep: 'help_faq' }

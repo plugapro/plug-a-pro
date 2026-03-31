@@ -75,7 +75,7 @@ export async function processInboundMessage(
     if (isExpired && conversation.flow !== 'idle' && !isReset) {
       await sendText(
         phone,
-        "⏰ Your session timed out after 30 minutes of inactivity. Send 'Hi' to start again."
+        "Your session ended after a period of inactivity. Send *Hi* to pick up where you left off."
       )
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
@@ -138,7 +138,7 @@ export async function processInboundMessage(
       }
 
       const { sendText } = await import('./whatsapp-interactive')
-      await sendText(phone, `Got it — lead declined (${reason}). We'll find another provider. 👍`)
+      await sendText(phone, `Understood — lead passed (${reason}). We'll reassign it to another provider.`)
       return
     } else if (
       reply.id?.startsWith('match_accept_') ||
@@ -472,7 +472,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
   const provider = await db.provider.findUnique({ where: { phone } })
   if (!provider) {
-    await sendText(phone, "You're not registered as a provider.")
+    await sendText(phone, "You're not registered as a Plug a Pro provider. Reply *join* to apply, or contact support if you think this is an error.")
     return
   }
 
@@ -491,7 +491,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
   if (buttonId.startsWith('match_accept_')) {
     await sendCtaUrl(
       phone,
-      `✅ *Great! Submit your quote here:*\n\nInclude your labour cost, any materials, and estimated time.`,
+      `✅ *Build your quote*\n\nAdd your labour cost, materials (if any), and estimated time — the customer will receive it for approval.`,
       'Submit Quote',
       quoteUrl,
       { footer: 'Quote will be sent to the customer for approval' }
@@ -506,10 +506,10 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
     })
     await sendCtaUrl(
       phone,
-      `🔍 *Inspection noted.*\n\nVisit the customer to assess the job, then submit your quote:`,
-      'Submit Quote After Inspection',
+      `🔍 *Inspection first — understood.*\n\nContact the customer to arrange a visit. Once you've assessed the job, return here to submit your quote.`,
+      'Submit Quote',
       quoteUrl,
-      { footer: 'Contact the customer to arrange the inspection time' }
+      { footer: 'Come back here after the site visit to complete your quote' }
     )
     return
   }
@@ -559,13 +559,21 @@ async function handleProviderJobFlow(
     })
 
     if (activeJobs.length === 0) {
-      await sendText(ctx.phone, "📋 You have no active jobs right now.\n\nNew jobs will be sent to you when available. 👍")
+      await sendText(ctx.phone, "📋 *No active jobs right now.*\n\nYou'll receive a notification here when a new lead comes in. Make sure your WhatsApp notifications are turned on.")
       return { nextStep: 'done' }
     }
 
     const statusEmoji: Record<string, string> = {
       SCHEDULED: '📅', EN_ROUTE: '🚗', ARRIVED: '📍',
       STARTED: '🔧', PAUSED: '⏸', AWAITING_APPROVAL: '⌛',
+    }
+    const statusLabel: Record<string, string> = {
+      SCHEDULED: 'Scheduled',
+      EN_ROUTE: 'On the way',
+      ARRIVED: 'Arrived on site',
+      STARTED: 'Work in progress',
+      PAUSED: 'Paused',
+      AWAITING_APPROVAL: 'Awaiting approval',
     }
 
     if (activeJobs.length === 1) {
@@ -574,7 +582,7 @@ async function handleProviderJobFlow(
       const addr = req.address
       await sendButtons(
         ctx.phone,
-        `📋 *Your Active Job*\n\n${statusEmoji[j.status] ?? '📋'} ${req.category}\n📍 ${addr ? `${addr.street}, ${addr.suburb}` : 'See app'}\nStatus: ${j.status.replace(/_/g, ' ')}`,
+        `📋 *Your Active Job*\n\n${statusEmoji[j.status] ?? '📋'} ${req.category}\n📍 ${addr ? `${addr.street}, ${addr.suburb}` : 'See app'}\n${statusLabel[j.status] ?? j.status.replace(/_/g, ' ')}`,
         [{ id: `view_job_${j.id}`, title: '📋 View Details' }]
       )
     } else {
@@ -584,7 +592,7 @@ async function handleProviderJobFlow(
         return {
           id: `view_job_${j.id}`,
           title: req.category.slice(0, 24),
-          description: `${suburb} • ${j.status.replace(/_/g, ' ')}`.slice(0, 72),
+          description: `${suburb} • ${statusLabel[j.status] ?? j.status.replace(/_/g, ' ')}`.slice(0, 72),
         }
       })
       await sendList(
@@ -695,7 +703,7 @@ async function handleProviderJobFlow(
 
     await sendText(
       ctx.phone,
-      "Got it. This job has been returned to the queue. Our team will reassign it. 👍"
+      "Understood — we'll reassign this job. Reply *my jobs* to check your remaining active assignments."
     )
     return { nextStep: 'done' }
   }
@@ -733,14 +741,14 @@ export async function sendQuoteToClient(params: {
   const webLink = `${appUrl}/quotes/${params.approvalToken}`
 
   const materialsLine = params.materialsCost > 0
-    ? `\nMaterials:  R ${params.materialsCost.toFixed(2)}`
+    ? `\n• Materials: R ${params.materialsCost.toFixed(2)}`
     : ''
-  const hoursLine = params.estimatedHours ? `\nEst. time:  ${params.estimatedHours}h` : ''
-  const validLine = `\nValid until: ${params.validUntil.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
+  const hoursLine = params.estimatedHours ? `\n• Est. time: ${params.estimatedHours}h` : ''
+  const validLine = `\n• Valid until: ${params.validUntil.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
 
   await sendButtons(
     params.customerPhone,
-    `💼 *Quote from ${params.providerName}*\n\nLabour:     R ${params.labourCost.toFixed(2)}${materialsLine}\n──────────────────\nTotal:      R ${params.totalAmount.toFixed(2)}${hoursLine}${validLine}\n\n📋 ${params.description}\n\nOr review online:\n${webLink}`,
+    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${params.description}_\n\nReview and respond online 👇\n${webLink}`,
     [
       { id: `quote_accept_${params.quoteId}`, title: '✅ Accept Quote' },
       { id: `quote_decline_${params.quoteId}`, title: '❌ Decline' },
@@ -827,31 +835,31 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
       })
       await sendCtaUrl(
         result.providerPhone,
-        `✅ *Quote Approved!*\n\n${result.category} job confirmed for ${dateStr}.`,
+        `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
         'View Job',
         `${appUrl}/technician`
       ).catch(() => {})
       await sendText(
         phone,
-        `✅ *Booking Confirmed!*\n\n${result.providerName} will arrive on ${dateStr}. You'll receive a reminder the day before.`
+        `✅ *Booking confirmed!*\n\n*${result.providerName}* is scheduled for *${dateStr}*. We'll send you a reminder the day before.\n\nQuestions? Reply here anytime.`
       )
     } else {
       await sendText(
         result.providerPhone,
-        `❌ The customer declined your quote for the ${result.category} job.`
+        `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${result.category} quote. Your profile remains active and new leads will come through as they arise.`
       ).catch(() => {})
-      await sendText(phone, "❌ *Quote declined.* We've notified the provider. We'll find you another option.")
+      await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'UNKNOWN'
     if (msg === 'ALREADY_ACTIONED') {
       await sendText(phone, action === 'approve'
-        ? "✅ You've already accepted this quote."
-        : "❌ You've already declined this quote.")
+        ? "✅ You've already accepted this quote. Check your messages for the booking confirmation."
+        : "This quote has already been declined. Reply *Hi* if you'd like to submit a new service request.")
     } else if (msg === 'EXPIRED') {
-      await sendText(phone, "⏱️ This quote has expired. Please ask the provider to send a new one.")
+      await sendText(phone, "⏰ This quote has expired. Reply *Hi* to submit a new request and we'll get a fresh quote to you.")
     } else {
-      await sendText(phone, "Something went wrong. Please try the link in the original message.")
+      await sendText(phone, "😔 Something went wrong on our end. Please use the link in the original quote message, or reply *Hi* to start again.")
     }
   }
 }

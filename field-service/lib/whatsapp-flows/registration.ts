@@ -333,7 +333,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
     await sendText(
       ctx.phone,
-      `🎉 *Application submitted!*\n\nThank you, *${ctx.data.name}*! We'll review your application and get back to you within *24 hours*.\n\nRef: *${ref}*\n\n_You'll receive a WhatsApp message here with the outcome. Keep an eye out!_ 👀`
+      `🎉 *Application submitted!*\n\nThanks, *${ctx.data.name}* — we'll review your details and get back to you within *24 hours*.\n\nRef: *${ref}*\n\n_We'll message you here with the outcome._`
     )
 
     // Send template confirmation (covers the case where >24h passes before we reply)
