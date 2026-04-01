@@ -133,32 +133,27 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'help_faq' }
 
     case 'faq_problem_with_job':
-      await sendText(
+      await sendButtons(
         ctx.phone,
-        `🚨 *Problem with a Job*\n\nWe take quality seriously. If something went wrong:\n\n1. Reply with a description of the issue\n2. Include a photo if possible\n3. We'll follow up within 2 hours\n\nFor urgent issues, contact us directly:${SUPPORT_PHONE ? `\n📞 ${SUPPORT_PHONE}` : ''}`
+        `🚨 *Problem with a Job*\n\nReply with a description of the issue — include a photo if possible. We'll follow up within 2 hours.${SUPPORT_PHONE ? `\n\nUrgent? 📞 ${SUPPORT_PHONE}` : ''}`,
+        [
+          { id: 'back_to_help', title: '← Back to Help' },
+          { id: 'back_home', title: '🏠 Main Menu' },
+        ]
       )
-      await sendButtons(ctx.phone, 'Can I help with anything else?', [
-        { id: 'back_to_help', title: '← Back to Help' },
-        { id: 'back_home', title: '🏠 Main Menu' },
-      ])
       return { nextStep: 'help_faq' }
 
     case 'faq_contact_human':
-      if (SUPPORT_PHONE) {
-        await sendText(
-          ctx.phone,
-          `📞 *Speak to a Person*\n\nYou can reach our support team at:\n${SUPPORT_PHONE}\n\nOperating hours: Mon–Fri 8am–6pm, Sat 8am–2pm`
-        )
-      } else {
-        await sendText(
-          ctx.phone,
-          `📞 *Support*\n\nReply to this message and our team will get back to you within 2 hours.\n\nOperating hours: Mon–Fri 8am–6pm, Sat 8am–2pm`
-        )
-      }
-      await sendButtons(ctx.phone, 'Is there anything else I can help with?', [
-        { id: 'back_to_help', title: '← More Questions' },
-        { id: 'back_home', title: '🏠 Main Menu' },
-      ])
+      await sendButtons(
+        ctx.phone,
+        SUPPORT_PHONE
+          ? `📞 *Speak to a Person*\n\n${SUPPORT_PHONE}\nMon–Fri 8am–6pm, Sat 8am–2pm`
+          : `📞 *Support*\n\nReply to this message — our team gets back within 2 hours.\nMon–Fri 8am–6pm, Sat 8am–2pm`,
+        [
+          { id: 'back_to_help', title: '← More Questions' },
+          { id: 'back_home', title: '🏠 Main Menu' },
+        ]
+      )
       return { nextStep: 'help_faq' }
 
     case 'back_to_help':

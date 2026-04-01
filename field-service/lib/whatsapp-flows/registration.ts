@@ -49,6 +49,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleConfirm(ctx)
     case 'reg_pending':
       return handlePending(ctx)
+    case 'reg_edit_field':
+      return handleEditField(ctx)
     default:
       return startRegistration(ctx)
   }
@@ -270,10 +272,9 @@ async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
     avail_any_day: { label: 'Any day', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
   }
 
-  // Handle "Edit" — restart registration from name step
+  // Handle "Edit" — show field selection, not full restart
   if (ctx.reply.id === 'reg_edit') {
-    await sendText(ctx.phone, "No problem! Let's update your details.\n\n👤 What is your *full name*?\n\n_(Type and send your name)_")
-    return { nextStep: 'reg_collect_skills', nextData: { name: undefined, skills: [], serviceAreas: [], experience: undefined, availability: undefined } }
+    return showEditMenu(ctx)
   }
 
   if (!ctx.reply.id?.startsWith('avail_')) {
@@ -302,10 +303,9 @@ async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handlePending(ctx: FlowContext): Promise<FlowResult> {
-  // Edit — go back to name step
+  // Edit — show field selection, not full restart
   if (ctx.reply.id === 'reg_edit') {
-    await sendText(ctx.phone, "No problem! Let's update your details.\n\n👤 What is your *full name*?\n\n_(Type and send your name)_")
-    return { nextStep: 'reg_collect_skills', nextData: { name: undefined, skills: [], serviceAreas: [], experience: undefined, availability: undefined } }
+    return showEditMenu(ctx)
   }
 
   if (ctx.reply.id === 'submit_no') {
@@ -370,6 +370,81 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       '😔 Something went wrong submitting your application. Please try again or reply *join* to restart.'
     )
     return { nextStep: 'done' }
+  }
+}
+
+// ─── Field-level edit ─────────────────────────────────────────────────────────
+
+async function showEditMenu(ctx: FlowContext): Promise<FlowResult> {
+  const { name, skills, serviceAreas, experience } = ctx.data
+  const summary = [
+    name            ? `👤 ${name}` : null,
+    skills?.length  ? `🔧 ${skills.join(', ')}` : null,
+    serviceAreas?.[0] ? `📍 ${serviceAreas[0]}` : null,
+    experience      ? `💼 ${experience}` : null,
+  ].filter(Boolean).join('\n')
+
+  await sendList(
+    ctx.phone,
+    `✏️ *What would you like to change?*\n\n${summary}\n\nTap a field to update it:`,
+    [{ title: 'Your details', rows: [
+      { id: 'edit_name',         title: '👤 Name' },
+      { id: 'edit_skills',       title: '🔧 Skills' },
+      { id: 'edit_area',         title: '📍 Area' },
+      { id: 'edit_experience',   title: '💼 Experience' },
+      { id: 'edit_availability', title: '📅 Availability' },
+    ]}],
+    { buttonLabel: 'Choose Field' }
+  )
+  return { nextStep: 'reg_edit_field' }
+}
+
+async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
+  switch (ctx.reply.id) {
+    case 'edit_name':
+      await sendText(ctx.phone, '👤 What is your *full name*?\n\n_(Type and send your name)_')
+      return { nextStep: 'reg_collect_skills' }   // handleCollectSkills reads the text as the new name
+
+    case 'edit_skills':
+      await sendSkillList(ctx.phone, 'Choose your skills. Tap *Done* when finished.\n\n_Your previous selection will be replaced._')
+      return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+
+    case 'edit_area':
+      return promptArea(ctx)   // sends area list, nextStep: reg_collect_experience
+
+    case 'edit_experience': {
+      await sendList(
+        ctx.phone,
+        '💼 How many years of experience do you have in your trade?',
+        [{
+          title: 'Experience',
+          rows: [
+            { id: 'exp_lt1',   title: 'Less than 1 year', description: 'Just starting out' },
+            { id: 'exp_1_3',   title: '1–3 years',        description: 'Some experience' },
+            { id: 'exp_3_5',   title: '3–5 years',        description: 'Experienced' },
+            { id: 'exp_5plus', title: '5+ years',          description: 'Highly experienced' },
+          ],
+        }],
+        { buttonLabel: 'Choose Experience' }
+      )
+      return { nextStep: 'reg_collect_availability' }
+    }
+
+    case 'edit_availability':
+      await sendButtons(
+        ctx.phone,
+        '📅 Are you available on weekends?\n\nWe get many weekend requests — workers who work Saturdays earn significantly more.',
+        [
+          { id: 'avail_weekdays_only', title: '📋 Weekdays only' },
+          { id: 'avail_incl_sat',      title: '📅 Mon–Sat' },
+          { id: 'avail_any_day',       title: '✅ Any day' },
+        ]
+      )
+      return { nextStep: 'reg_confirm' }
+
+    default:
+      // Unknown reply — re-show the edit menu
+      return showEditMenu(ctx)
   }
 }
 

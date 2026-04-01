@@ -33,7 +33,11 @@ import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/type
 const CONVERSATION_TTL_MS = 30 * 60 * 1000
 
 // Keywords that restart the main menu from any state
-const RESET_KEYWORDS = ['hi', 'hello', 'hey', 'start', 'menu', 'home', 'restart', 'hola', 'sawubona', 'howzit']
+const RESET_KEYWORDS = [
+  'hi', 'hello', 'hey', 'start', 'menu', 'home', 'restart', 'hola', 'sawubona', 'howzit',
+  '0', 'stop', 'exit',          // universal escape
+  'terug', 'phinda',            // Afrikaans: "back", Zulu: "again/return"
+]
 
 // Keywords that trigger status check
 const STATUS_KEYWORDS = ['status', 'booking', 'my booking', 'track', 'where', 'update']
@@ -288,13 +292,12 @@ export async function notifyProviderNewJob(params: {
 
   await sendButtons(
     params.providerPhone,
-    `🔔 *New Job Lead*\n\n🔧 ${params.category}\n📍 ${params.area}\n📋 ${params.description}\n👤 Customer: ${params.customerInitial}\n\nHow would you like to proceed?`,
+    `🔔 *New Lead — ${params.category}*\n📍 ${params.area}  |  👤 ${params.customerInitial}\n📋 ${params.description}\n\n_Expires in 4 hours. Ref: ${params.matchId.slice(-8).toUpperCase()}_`,
     [
       { id: `match_accept_${params.matchId}`, title: '✅ Accept & Quote' },
-      { id: `match_inspect_${params.matchId}`, title: '🔍 Inspect First' },
+      { id: `match_inspect_${params.matchId}`, title: '🔍 View Details' },
       { id: `match_decline_${params.matchId}`, title: '❌ Decline' },
-    ],
-    { footer: `Lead ref: ${params.matchId.slice(-8).toUpperCase()}` }
+    ]
   )
 }
 

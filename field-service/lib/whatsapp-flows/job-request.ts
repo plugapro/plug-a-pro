@@ -302,14 +302,9 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       })
       .catch((err) => console.error('[job-request] Matching error:', err))
 
-    await sendText(
-      ctx.phone,
-      `🎉 *Job request submitted!*\n\nWe're finding you a qualified worker nearby for *${ctx.data.selectedCategory}*.\n\nYou'll receive a WhatsApp update as soon as we find a match.\n\nRef: *${jobRequest.id.slice(-8).toUpperCase()}*`
-    )
-
     await sendButtons(
       ctx.phone,
-      'What would you like to do next?',
+      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${jobRequest.id.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.`,
       [
         { id: 'status', title: '📋 Track My Request' },
         { id: 'back_home', title: '🏠 Main Menu' },

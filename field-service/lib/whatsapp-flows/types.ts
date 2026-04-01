@@ -37,6 +37,7 @@ export type FlowStep =
   | 'reg_collect_availability'
   | 'reg_confirm'
   | 'reg_pending'
+  | 'reg_edit_field'          // field-level edit selection
   // Status flow
   | 'status_show'
   // Reschedule flow
