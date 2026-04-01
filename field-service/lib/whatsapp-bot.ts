@@ -12,7 +12,7 @@
 
 import { db } from './db'
 import type { Prisma } from '@prisma/client'
-import { parseInbound, sendText, type InboundMessage } from './whatsapp-interactive'
+import { parseInbound, sendText, sendButtons, type InboundMessage } from './whatsapp-interactive'
 import {
   handleJobRequestFlow,
   showMainMenu,
