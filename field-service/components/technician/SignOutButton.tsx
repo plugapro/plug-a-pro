@@ -16,7 +16,7 @@ export function SignOutButton() {
   async function handleSignOut() {
     const supabase = getSupabase()
     await supabase.auth.signOut()
-    router.push('/technician-sign-in')
+    router.push('/provider-sign-in')
   }
 
   return (

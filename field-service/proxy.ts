@@ -10,15 +10,18 @@ import { createClient } from '@supabase/supabase-js'
 // Routes that are public (no auth required)
 // Auth model:
 //   Customers   → phone OTP    → /sign-in → /verify
-//   Providers   → phone OTP    → /technician-sign-in → /technician-verify
+//   Providers   → phone OTP    → /provider-sign-in → /provider-verify
+//                             (legacy: /technician-sign-in → /technician-verify also supported)
 //   Admin/Owner → email+pass   → /admin-sign-in
 // Email is reserved for admin/owner. LSM users (customers, providers) use phone only.
 const PUBLIC_PATHS = [
   '/',
   '/sign-in',              // customer phone OTP entry
   '/verify',               // customer OTP verification + identity link
-  '/technician-sign-in',   // provider phone OTP entry
-  '/technician-verify',    // provider OTP verification
+  '/provider-sign-in',     // provider phone OTP entry
+  '/provider-verify',      // provider OTP verification
+  '/technician-sign-in',   // legacy — kept for backward compat
+  '/technician-verify',    // legacy — kept for backward compat
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
   '/api/webhooks',
@@ -26,7 +29,7 @@ const PUBLIC_PATHS = [
 ]
 
 // Routes that require provider role
-const PROVIDER_PATHS = ['/technician']
+const PROVIDER_PATHS = ['/provider', '/technician']
 
 // Routes that require admin or owner role
 const ADMIN_PATHS = ['/admin']
@@ -67,7 +70,7 @@ export async function proxy(request: NextRequest) {
     // Enforce provider-only routes
     if (PROVIDER_PATHS.some((p) => pathname.startsWith(p))) {
       if (role !== 'provider') {
-        return NextResponse.redirect(new URL('/technician-sign-in', request.url))
+        return NextResponse.redirect(new URL('/provider-sign-in', request.url))
       }
     }
 
@@ -92,7 +95,7 @@ function redirectToSignIn(request: NextRequest): NextResponse {
   // Route unauthenticated requests to the correct sign-in page based on path prefix
   const { pathname } = request.nextUrl
   let destination = '/sign-in' // default: customer
-  if (pathname.startsWith('/technician')) destination = '/technician-sign-in'
+  if (pathname.startsWith('/provider') || pathname.startsWith('/technician')) destination = '/provider-sign-in'
   if (pathname.startsWith('/admin')) destination = '/admin-sign-in'
 
   const url = new URL(destination, request.url)
