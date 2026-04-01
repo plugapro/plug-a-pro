@@ -79,20 +79,52 @@ export async function processInboundMessage(
     let step: FlowStep = isExpired ? 'welcome' : (conversation.step as FlowStep)
     let data: ConversationData = isExpired ? {} : (conversation.data as ConversationData)
 
-    // Notify provider if their session expired mid-flow (before silently resetting)
+    // Session expired mid-flow — offer contextual resume instead of silently resetting
     if (isExpired && conversation.flow !== 'idle' && !isReset) {
-      await sendText(
-        phone,
-        "Your session ended after a period of inactivity. Send *Hi* to pick up where you left off."
-      )
+      const oldFlow = conversation.flow as FlowName
+      const oldData = conversation.data as ConversationData
+
+      if (oldFlow === 'job_request' && oldData.selectedCategory) {
+        await sendButtons(
+          phone,
+          `👋 Your session timed out. You were booking *${oldData.selectedCategory}*.\n\nPick up where you left off?`,
+          [
+            { id: 'book', title: '🔧 Continue booking' },
+            { id: 'session_restart', title: '🏠 Main Menu' },
+          ]
+        )
+        // Preserve category + name so returning customer flow can pre-fill
+        await saveConversation({
+          phone, flow: 'idle', step: 'welcome',
+          data: { selectedCategory: oldData.selectedCategory, category: oldData.category, customerName: oldData.customerName },
+        })
+        return
+      }
+
+      if (oldFlow === 'registration') {
+        await sendButtons(
+          phone,
+          `👋 Your session timed out during your provider application.\n\nContinue where you left off?`,
+          [
+            { id: 'reg_start', title: '▶️ Continue application' },
+            { id: 'session_restart', title: '🏠 Main Menu' },
+          ]
+        )
+        // Keep accumulated registration data so they don't restart from scratch
+        await saveConversation({ phone, flow: 'registration', step: 'reg_start', data: oldData })
+        return
+      }
+
+      // Other flows — just return to main menu
+      await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
     }
 
     const isProviderJobList = PROVIDER_KEYWORDS.some((k) => rawText === k)
 
-    // Universal back-to-menu — intercept back_home from any flow
-    if (reply.id === 'back_home') {
+    // Universal intercepts — handle before flow routing
+    if (reply.id === 'back_home' || reply.id === 'session_restart') {
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return

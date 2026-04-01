@@ -21,8 +21,10 @@ export type FlowStep =
   // Job request flow
   | 'browse_categories'
   | 'collect_name'              // captures name on first job request
-  | 'collect_address'
-  | 'confirm_address'
+  | 'collect_address'           // addr_same / addr_new decision for returning customers
+  | 'collect_address_street'    // structured: street / unit
+  | 'collect_address_suburb'    // structured: suburb → then prompts city
+  | 'confirm_address'           // receives city text, assembles + confirms full address
   | 'collect_availability'
   | 'confirm_job_request'
   | 'job_request_submitted'
@@ -74,7 +76,11 @@ export interface ConversationData {
 
   // Job request
   selectedCategory?: string
-  address?: string
+  address?: string              // assembled display string (set after all 3 parts entered)
+  addressStreet?: string        // structured part 1
+  addressSuburb?: string        // structured part 2
+  addressCity?: string          // structured part 3
+  hasSavedAddress?: boolean     // true = a previous address was offered to reuse
   availabilityNote?: string     // free-text preferred availability from customer
   jobRequestId?: string
   matchId?: string

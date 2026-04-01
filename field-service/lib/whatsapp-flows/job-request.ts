@@ -37,6 +37,10 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleCollectNameStep(ctx)
     case 'collect_address':
       return handleCollectAddress(ctx)
+    case 'collect_address_street':
+      return handleCollectStreet(ctx)
+    case 'collect_address_suburb':
+      return handleCollectSuburb(ctx)
     case 'confirm_address':
       return handleConfirmAddress(ctx)
     case 'collect_availability':
@@ -95,20 +99,40 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     const isFirstBooking = !existingCustomer || existingCustomer.name === 'WhatsApp Customer'
 
     if (!isFirstBooking) {
-      // Skip name capture — go straight to address
-      await sendText(
-        ctx.phone,
-        `📍 Where should we send the worker for *${category}*?\n\nPlease type your full address:\n\nExample:\n_14 Main Street, Soweto, Johannesburg_`
-      )
-      return {
-        nextStep: 'confirm_address',
-        nextData: {
-          selectedCategory: category,
-          category,
-          customerName: existingCustomer?.name,
-          isFirstBooking: false,
-        },
+      // Returning customer — offer last-used address to save re-entry
+      const lastAddress = await db.address.findFirst({
+        where: { customerId: existingCustomer!.id },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      const baseData = { selectedCategory: category, category, customerName: existingCustomer?.name, isFirstBooking: false }
+
+      if (lastAddress) {
+        const display = [lastAddress.street, lastAddress.suburb, lastAddress.city].filter(Boolean).join(', ')
+        await sendButtons(
+          ctx.phone,
+          `📍 *Where should we send the worker for ${category}?*\n\nLast used:\n_${display}_`,
+          [
+            { id: 'addr_same', title: '📍 Same address' },
+            { id: 'addr_new',  title: '✏️ Different address' },
+          ]
+        )
+        return {
+          nextStep: 'collect_address',
+          nextData: {
+            ...baseData,
+            addressStreet: lastAddress.street,
+            addressSuburb: lastAddress.suburb,
+            addressCity: lastAddress.city,
+            address: display,
+            hasSavedAddress: true,
+          },
+        }
       }
+
+      // No saved address — go straight to street prompt
+      await sendText(ctx.phone, `📍 *Where should we send the worker for ${category}?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`)
+      return { nextStep: 'collect_address_street', nextData: baseData }
     }
 
     await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Zanele")_')
@@ -127,44 +151,63 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
 
   // Name captured — update customer record
   await db.customer.updateMany({
-    where: {
-      phone: ctx.phone,
-      name: 'WhatsApp Customer',  // only overwrite the placeholder
-    },
+    where: { phone: ctx.phone, name: 'WhatsApp Customer' },
     data: { name: text },
   })
 
-  await sendText(
-    ctx.phone,
-    `Nice to meet you, *${text}*! 👋\n\nNow, where should we send the worker?`
-  )
-  return { nextStep: 'confirm_address', nextData: { customerName: text } }
+  await sendText(ctx.phone, `Nice to meet you, *${text}*! 👋\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`)
+  return { nextStep: 'collect_address_street', nextData: { customerName: text } }
 }
 
 // ─── Address collection ───────────────────────────────────────────────────────
 
 async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
-  if (ctx.reply.id === 'back') {
-    return handleBrowseCategories(ctx)
+  if (ctx.reply.id === 'addr_same') {
+    // Reuse last address — jump straight to availability
+    return handleCollectAvailability(ctx)
   }
 
+  // addr_new or any other reply — start structured address entry
+  const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
   await sendText(
     ctx.phone,
-    '📍 Please type your *full address*:\n\nExample:\n_14 Main Street, Soweto, Johannesburg_\n\nInclude your street, suburb, and city.'
+    `📍 *Where should we send the worker for ${category}?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
   )
-  return { nextStep: 'confirm_address' }
+  return { nextStep: 'collect_address_street' }
+}
+
+async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
+  const street = ctx.reply.text?.trim()
+  if (!street || street.length < 3) {
+    await sendText(ctx.phone, '❗ Please type your *street address*.\n\n_Example: 14 Main Street, Flat 3_')
+    return { nextStep: 'collect_address_street' }
+  }
+
+  await sendText(ctx.phone, `✅ *${street}*\n\n*Suburb:* Now type your suburb:\n\n_Example: Sandton_`)
+  return { nextStep: 'collect_address_suburb', nextData: { addressStreet: street } }
+}
+
+async function handleCollectSuburb(ctx: FlowContext): Promise<FlowResult> {
+  const suburb = ctx.reply.text?.trim()
+  if (!suburb || suburb.length < 2) {
+    await sendText(ctx.phone, '❗ Please type your *suburb*.\n\n_Example: Sandton_')
+    return { nextStep: 'collect_address_suburb' }
+  }
+
+  await sendText(ctx.phone, `✅ *${suburb}*\n\n*City:* Now type your city:\n\n_Example: Johannesburg_`)
+  return { nextStep: 'confirm_address', nextData: { addressSuburb: suburb } }
 }
 
 async function handleConfirmAddress(ctx: FlowContext): Promise<FlowResult> {
-  const address = ctx.reply.text
-
-  if (!address || address.length < 10) {
-    await sendText(
-      ctx.phone,
-      '❗ Please type your full address including street, suburb, and city.'
-    )
+  const city = ctx.reply.text?.trim()
+  if (!city || city.length < 2) {
+    await sendText(ctx.phone, '❗ Please type your *city*.\n\n_Example: Johannesburg_')
     return { nextStep: 'confirm_address' }
   }
+
+  const street = ctx.data.addressStreet ?? ''
+  const suburb = ctx.data.addressSuburb ?? ''
+  const address = [street, suburb, city].filter(Boolean).join(', ')
 
   await sendButtons(
     ctx.phone,
@@ -174,18 +217,19 @@ async function handleConfirmAddress(ctx: FlowContext): Promise<FlowResult> {
       { id: 'addr_no', title: '✏️ Re-enter' },
     ]
   )
-  return { nextStep: 'collect_availability', nextData: { address } }
+  return { nextStep: 'collect_availability', nextData: { addressCity: city, address } }
 }
 
 // ─── Availability ─────────────────────────────────────────────────────────────
 
 async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'addr_no') {
+    const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
     await sendText(
       ctx.phone,
-      '📍 Please type your *full address* again:\n\nExample:\n_14 Main Street, Soweto, Johannesburg_'
+      `📍 *Where should we send the worker for ${category}?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
     )
-    return { nextStep: 'confirm_address' }
+    return { nextStep: 'collect_address_street' }
   }
 
   // addr_yes — ask for availability preference
@@ -266,14 +310,14 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       update: {},
     })
 
-    // Find or create address
+    // Find or create address — prefer structured fields, fall back to split for legacy data
     const addrParts = (ctx.data.address ?? '').split(',').map((p) => p.trim())
     const address = await db.address.create({
       data: {
         customerId: customer.id,
-        street: addrParts[0] ?? ctx.data.address ?? '',
-        suburb: addrParts[1] ?? '',
-        city: addrParts[2] ?? addrParts[1] ?? '',
+        street: ctx.data.addressStreet ?? addrParts[0] ?? '',
+        suburb: ctx.data.addressSuburb ?? addrParts[1] ?? '',
+        city:   ctx.data.addressCity   ?? addrParts[2] ?? addrParts[1] ?? '',
         province: addrParts[3] ?? '',
       },
     })
