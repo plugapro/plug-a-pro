@@ -66,6 +66,7 @@ export default async function CustomerDetailPage({
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: {
+          id: true,
           field: true,
           oldValue: true,
           newValue: true,
@@ -158,10 +159,14 @@ export default async function CustomerDetailPage({
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <Row label="Service messages">
-            {customer.whatsappServiceOptIn ? '✅ Opted in' : '❌ Opted out'}
+            {customer.whatsappServiceOptIn
+              ? <Badge variant="secondary">Opted in</Badge>
+              : <Badge variant="outline">Opted out</Badge>}
           </Row>
           <Row label="Marketing messages">
-            {customer.whatsappMarketingOptIn ? '✅ Opted in' : '❌ Opted out'}
+            {customer.whatsappMarketingOptIn
+              ? <Badge variant="secondary">Opted in</Badge>
+              : <Badge variant="outline">Opted out</Badge>}
           </Row>
           {customer.whatsappMarketingOptInAt && (
             <Row label="Opted in at">
@@ -180,15 +185,7 @@ export default async function CustomerDetailPage({
           {/* Admin override form */}
           <div className="pt-2 border-t">
             <form
-              action={async () => {
-                'use server'
-                await adminToggleMarketing(
-                  customer.id,
-                  customer.phone,
-                  !customer.whatsappMarketingOptIn,
-                  admin.id
-                )
-              }}
+              action={adminToggleMarketing.bind(null, customer.id, customer.phone, !customer.whatsappMarketingOptIn, admin.id)}
             >
               <button
                 type="submit"
@@ -204,8 +201,8 @@ export default async function CustomerDetailPage({
             <div className="pt-2 border-t">
               <p className="text-xs font-medium text-muted-foreground mb-2">Recent changes</p>
               <div className="space-y-1">
-                {customer.whatsappPreferenceLogs.map((log, i) => (
-                  <div key={i} className="text-xs text-muted-foreground flex gap-2">
+                {customer.whatsappPreferenceLogs.map((log) => (
+                  <div key={log.id} className="text-xs text-muted-foreground flex gap-2">
                     <span className="w-24 flex-shrink-0">
                       {log.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
                     </span>
