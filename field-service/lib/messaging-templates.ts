@@ -50,7 +50,7 @@ export const TEMPLATES = {
   booking_cancelled: {
     name: 'booking_cancelled',
     language: 'en_ZA',
-    category: 'MARKETING',
+    category: 'UTILITY',
     description: 'Sent when a booking is cancelled (by admin or customer)',
     // {{1}} customer name, {{2}} service, {{3}} refund note (or empty string)
     example:
@@ -145,7 +145,7 @@ export const TEMPLATES = {
   quote_ready: {
     name: 'quote_ready',
     language: 'en_ZA',
-    category: 'MARKETING',
+    category: 'UTILITY',
     description: 'Sent when admin completes a quote review',
     // {{1}} customer name, {{2}} service, {{3}} quoted price, {{4}} quote URL
     example:

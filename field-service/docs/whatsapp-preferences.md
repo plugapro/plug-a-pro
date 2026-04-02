@@ -21,14 +21,12 @@ Defined in `lib/messaging-templates.ts`. Each template has `category: 'UTILITY' 
 **MARKETING templates** (require explicit opt-in, default blocked):
 | Template | Description |
 |----------|-------------|
-| `booking_cancelled` | Booking cancellation notification |
-| `quote_ready` | Quote ready for review |
 | `slot_available` | Slot opened in customer's area (Notify Me) |
 | `job_offer` | New job offer sent to a provider |
 | `technician_welcome` | Provider approval + app link |
 
 **UTILITY templates** (sent by default, blocked only if `whatsappServiceOptIn = false`):
-All other templates — booking confirmations, reminders, job status updates, payment notifications, etc.
+All other templates — booking confirmations, cancellations, quotes, reminders, job status updates, payment notifications, etc.
 
 ---
 

@@ -385,6 +385,9 @@ export async function notifyProviderApplicationResult(params: {
       { footer: 'Welcome to the Plug a Pro network! 👋' }
     )
   } else {
+    // Intentional direct sendTemplate bypass: provider applicants have no Customer record,
+    // so canSend() would return 'customer_not_found'. This is a provider-facing transactional
+    // message (application outcome) — opt-in policy does not apply.
     const { sendTemplate } = await import('./whatsapp')
     await sendTemplate({
       to: params.phone,

@@ -343,6 +343,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     )
 
     // Send template confirmation (covers the case where >24h passes before we reply)
+    // Intentional direct sendTemplate bypass: provider applicants have no Customer record yet,
+    // so canSend() would return 'customer_not_found'. This is a provider-facing transactional
+    // message (application acknowledgement) — opt-in policy does not apply.
     const { sendTemplate } = await import('../whatsapp')
     sendTemplate({
       to: ctx.phone,
