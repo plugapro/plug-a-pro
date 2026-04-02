@@ -52,6 +52,12 @@ const CANCEL_KEYWORDS = ['cancel', 'cancellation', 'kanselleer', 'stop booking']
 // Keywords that show a provider's active jobs list
 const PROVIDER_KEYWORDS = ['myjobs', 'my jobs', 'my work', 'jobs']
 
+// Keywords that trigger marketing opt-out
+const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no marketing', 'opt out', 'optout']
+
+// Keywords that trigger marketing opt-in
+const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in', 'optin']
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
@@ -68,20 +74,23 @@ export async function processInboundMessage(
     // Override: reset keywords always restart
     const rawText = reply.text?.toLowerCase() ?? ''
 
-    // ── Marketing opt-out ─────────────────────────────────────────────────────
-    const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no marketing', 'opt out', 'optout']
+    // ── Marketing opt-out/in — must precede RESET_KEYWORDS and CANCEL_KEYWORDS checks
+    // Ordering: marketing consent > cancel booking > reset to menu
+    // 'stop offers' / 'unsubscribe' → opt-out (not the same as 'stop' → menu reset)
     if (STOP_PHRASES.some((p) => rawText === p || rawText.startsWith(p + ' '))) {
       await applyOptOut(phone, 'bot', { note: `keyword: "${reply.text?.trim()}"` })
       await sendText(
         phone,
-        "✅ You've been unsubscribed from promotional messages.\n\nYou'll still receive important updates about your bookings.\n\nReply *START OFFERS* any time to re-subscribe. 🔔"
+        "✅ You've been unsubscribed from promotional messages.\n\nYou'll still receive important updates about your bookings. 📋\n\nTo re-subscribe, reply: *START OFFERS*"
       )
       return
     }
 
     // ── Marketing opt-in ──────────────────────────────────────────────────────
-    const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in', 'optin']
-    if (START_PHRASES.some((p) => rawText === p || rawText.startsWith(p + ' '))) {
+    if (START_PHRASES.some((p) => {
+      if (p === 'subscribe') return rawText === p   // exact match only
+      return rawText === p || rawText.startsWith(p + ' ')
+    })) {
       await applyOptIn(phone, 'bot', { note: `keyword: "${reply.text?.trim()}"` })
       await sendText(
         phone,
