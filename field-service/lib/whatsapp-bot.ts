@@ -28,6 +28,7 @@ import {
   PROVIDER_JOURNEY_TRIGGERS,
 } from './whatsapp-flows/provider-journey'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
+import { applyOptIn, applyOptOut } from './whatsapp-policy'
 
 // Conversation TTL: 30 minutes of inactivity resets to welcome
 const CONVERSATION_TTL_MS = 30 * 60 * 1000
@@ -66,6 +67,29 @@ export async function processInboundMessage(
 
     // Override: reset keywords always restart
     const rawText = reply.text?.toLowerCase() ?? ''
+
+    // ── Marketing opt-out ─────────────────────────────────────────────────────
+    const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no marketing', 'opt out', 'optout']
+    if (STOP_PHRASES.some((p) => rawText === p || rawText.startsWith(p + ' '))) {
+      await applyOptOut(phone, 'bot', { note: `keyword: "${reply.text?.trim()}"` })
+      await sendText(
+        phone,
+        "✅ You've been unsubscribed from promotional messages.\n\nYou'll still receive important updates about your bookings.\n\nReply *START OFFERS* any time to re-subscribe. 🔔"
+      )
+      return
+    }
+
+    // ── Marketing opt-in ──────────────────────────────────────────────────────
+    const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in', 'optin']
+    if (START_PHRASES.some((p) => rawText === p || rawText.startsWith(p + ' '))) {
+      await applyOptIn(phone, 'bot', { note: `keyword: "${reply.text?.trim()}"` })
+      await sendText(
+        phone,
+        "✅ You're now subscribed to special offers and promotions! 🎉\n\nReply *STOP OFFERS* at any time to unsubscribe."
+      )
+      return
+    }
+
     const isReset = RESET_KEYWORDS.some((k) => rawText === k || rawText.startsWith(k + ' '))
     const isStatus = STATUS_KEYWORDS.some((k) => rawText.includes(k))
     const isRegistration = REGISTRATION_TRIGGERS.some(
