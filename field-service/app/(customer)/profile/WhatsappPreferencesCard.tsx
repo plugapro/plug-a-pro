@@ -23,15 +23,18 @@ export function WhatsappPreferencesCard() {
 
   async function toggle() {
     if (!prefs || saving) return
-    setSaving(true)
     const next = !prefs.whatsappMarketingOptIn
+    setSaving(true)
+    setPrefs((p) => p ? { ...p, whatsappMarketingOptIn: next } : p)  // optimistic update
     try {
-      await fetch('/api/customer/preferences', {
+      const res = await fetch('/api/customer/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ whatsappMarketingOptIn: next }),
       })
-      setPrefs((p) => p ? { ...p, whatsappMarketingOptIn: next } : p)
+      if (!res.ok) throw new Error('PATCH failed')
+    } catch {
+      setPrefs((p) => p ? { ...p, whatsappMarketingOptIn: !next } : p)  // rollback on error
     } finally {
       setSaving(false)
     }
