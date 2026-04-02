@@ -4,6 +4,7 @@
 
 import { db } from './db'
 import { TEMPLATES, type TemplateName } from './messaging-templates'
+import { canSend } from './whatsapp-policy'
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
@@ -113,6 +114,11 @@ export async function sendBookingConfirmation(params: {
   scheduledWindow: string // "Tuesday 8 April, 09:00–12:00"
   bookingUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_confirmation')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_confirmation)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'booking_confirmation',
@@ -144,6 +150,11 @@ export async function sendProviderOnTheWay(params: {
   providerName: string
   eta: string // "approximately 20 minutes"
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'technician_on_the_way')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: technician_on_the_way)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'technician_on_the_way',
@@ -175,6 +186,11 @@ export async function sendExtraWorkApproval(params: {
   amount: string // formatted: "R 450.00"
   approvalUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'extra_work_approval')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: extra_work_approval)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'extra_work_approval',
@@ -205,6 +221,11 @@ export async function sendJobCompleted(params: {
   customerPhone: string
   invoiceUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'job_completed')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: job_completed)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'job_completed',
@@ -233,6 +254,11 @@ export async function sendProviderArrived(params: {
   customerPhone: string
   providerName: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'technician_arrived')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: technician_arrived)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'technician_arrived',
@@ -261,6 +287,11 @@ export async function sendBookingReminder(params: {
   serviceName: string
   scheduledWindow: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_reminder')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_reminder)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'booking_reminder',
@@ -289,6 +320,11 @@ export async function sendFollowUp(params: {
   customerPhone: string
   ratingUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'follow_up')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: follow_up)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'follow_up',
@@ -318,6 +354,11 @@ export async function sendQuoteReady(params: {
   quotedPrice: string
   quoteUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'quote_ready')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: quote_ready)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'quote_ready',
@@ -348,6 +389,11 @@ export async function sendBookingCancelled(params: {
   serviceName: string
   refundNote?: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_cancelled')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_cancelled)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'booking_cancelled',
@@ -378,6 +424,11 @@ export async function sendPaymentReminder(params: {
   amount: string       // formatted: "R 350.00"
   paymentUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'payment_reminder')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: payment_reminder)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'payment_reminder',
@@ -404,6 +455,11 @@ export async function sendPaymentReceived(params: {
   serviceName: string
   bookingRef: string   // last 8 chars of booking ID, uppercased
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'payment_received')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: payment_received)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'payment_received',
@@ -430,6 +486,11 @@ export async function sendProviderAssigned(params: {
   serviceName: string
   scheduledWindow: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'technician_assigned')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: technician_assigned)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'technician_assigned',
@@ -457,6 +518,11 @@ export async function sendBookingRescheduled(params: {
   newSlot: string
   bookingUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_rescheduled')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_rescheduled)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'booking_rescheduled',
@@ -483,6 +549,11 @@ export async function sendSlotAvailable(params: {
   slotLabel: string
   bookingUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'slot_available')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: slot_available)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'slot_available',
@@ -509,6 +580,11 @@ export async function sendNoProviderAvailable(params: {
   originalDate: string
   bookingUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'no_technician_available')
+  if (!check.allowed) {
+    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: no_technician_available)`)
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'no_technician_available',
