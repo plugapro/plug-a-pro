@@ -1,15 +1,28 @@
+// lib/whatsapp-policy.ts
+// Central enforcement gate for all outbound WhatsApp messages.
+//
+// Usage:
+//   const check = await canSend(phone, 'booking_confirmation')
+//   if (!check.allowed) { console.log(check.reason); return }
+//
+//   await applyOptOut(phone, 'bot')   // STOP keyword in bot
+//   await applyOptIn(phone, 'pwa')    // customer enabled toggle
+//
+// Phone numbers must be in E.164 format (e.g. +27821234567).
+// Callers are responsible for normalising phone numbers before calling.
+
 import { db } from './db'
-import { TEMPLATES } from './messaging-templates'
+import { TEMPLATES, TemplateName } from './messaging-templates'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type PolicyResult =
   | { allowed: true }
-  | { allowed: false; reason: 'service_opted_out' | 'marketing_opted_out' | 'customer_not_found' | 'unknown_template' }
+  | { allowed: false; reason: 'service_opted_out' | 'marketing_opted_out' | 'customer_not_found' | 'unknown_template' | 'db_error' }
 
 // ─── canSend ──────────────────────────────────────────────────────────────────
 
-export async function canSend(phone: string, templateName: string): Promise<PolicyResult> {
+export async function canSend(phone: string, templateName: TemplateName): Promise<PolicyResult> {
   const tpl =
     templateName in TEMPLATES
       ? TEMPLATES[templateName as keyof typeof TEMPLATES]
@@ -19,19 +32,23 @@ export async function canSend(phone: string, templateName: string): Promise<Poli
     return { allowed: false, reason: 'unknown_template' }
   }
 
-  const customer = await db.customer.findUnique({ where: { phone } })
+  try {
+    const customer = await db.customer.findUnique({ where: { phone } })
 
-  if (tpl.category === 'UTILITY') {
-    if (!customer) return { allowed: false, reason: 'customer_not_found' }
-    if (!customer.whatsappServiceOptIn) return { allowed: false, reason: 'service_opted_out' }
+    if (tpl.category === 'UTILITY') {
+      if (!customer) return { allowed: false, reason: 'customer_not_found' }
+      if (!customer.whatsappServiceOptIn) return { allowed: false, reason: 'service_opted_out' }
+      return { allowed: true }
+    }
+
+    // MARKETING
+    if (!customer || !customer.whatsappMarketingOptIn) {
+      return { allowed: false, reason: customer ? 'marketing_opted_out' : 'customer_not_found' }
+    }
     return { allowed: true }
+  } catch {
+    return { allowed: false, reason: 'db_error' }
   }
-
-  // MARKETING
-  if (!customer || !customer.whatsappMarketingOptIn) {
-    return { allowed: false, reason: customer ? 'marketing_opted_out' : 'customer_not_found' }
-  }
-  return { allowed: true }
 }
 
 // ─── applyOptOut ──────────────────────────────────────────────────────────────
@@ -42,18 +59,31 @@ export async function applyOptOut(
   opts?: { actorId?: string; note?: string; serviceOptOut?: boolean },
 ): Promise<void> {
   const customer = await db.customer.findUnique({ where: { phone } })
-  if (!customer) return
+  if (!customer) {
+    console.warn(`[whatsapp-policy] applyOptOut: customer not found for phone ${phone}`)
+    return
+  }
 
   const now = new Date()
 
   if (opts?.serviceOptOut) {
-    const oldValue = customer.whatsappServiceOptIn
-    await db.$transaction([
-      db.customer.update({
+    await db.$transaction(async (tx) => {
+      const current = await tx.customer.findUnique({
         where: { id: customer.id },
-        data: { whatsappServiceOptIn: false },
-      }),
-      db.whatsappPreferenceLog.create({
+        select: { whatsappMarketingOptIn: true, whatsappServiceOptIn: true },
+      })
+      if (!current) return
+
+      const oldValue = current.whatsappServiceOptIn
+
+      await tx.customer.update({
+        where: { id: customer.id },
+        data: {
+          whatsappServiceOptIn: false,
+          lastWhatsappPrefSyncAt: now,
+        },
+      })
+      await tx.whatsappPreferenceLog.create({
         data: {
           customerId: customer.id,
           field: 'whatsappServiceOptIn',
@@ -63,12 +93,19 @@ export async function applyOptOut(
           actorId: opts?.actorId,
           note: opts?.note,
         },
-      }),
-    ])
+      })
+    })
   } else {
-    const oldValue = customer.whatsappMarketingOptIn
-    await db.$transaction([
-      db.customer.update({
+    await db.$transaction(async (tx) => {
+      const current = await tx.customer.findUnique({
+        where: { id: customer.id },
+        select: { whatsappMarketingOptIn: true, whatsappServiceOptIn: true },
+      })
+      if (!current) return
+
+      const oldValue = current.whatsappMarketingOptIn
+
+      await tx.customer.update({
         where: { id: customer.id },
         data: {
           whatsappMarketingOptIn: false,
@@ -76,8 +113,8 @@ export async function applyOptOut(
           whatsappMarketingSource: source,
           lastWhatsappPrefSyncAt: now,
         },
-      }),
-      db.whatsappPreferenceLog.create({
+      })
+      await tx.whatsappPreferenceLog.create({
         data: {
           customerId: customer.id,
           field: 'whatsappMarketingOptIn',
@@ -87,8 +124,8 @@ export async function applyOptOut(
           actorId: opts?.actorId,
           note: opts?.note,
         },
-      }),
-    ])
+      })
+    })
   }
 }
 
@@ -100,13 +137,23 @@ export async function applyOptIn(
   opts?: { actorId?: string; note?: string },
 ): Promise<void> {
   const customer = await db.customer.findUnique({ where: { phone } })
-  if (!customer) return
+  if (!customer) {
+    console.warn(`[whatsapp-policy] applyOptIn: customer not found for phone ${phone}`)
+    return
+  }
 
   const now = new Date()
-  const oldValue = customer.whatsappMarketingOptIn
 
-  await db.$transaction([
-    db.customer.update({
+  await db.$transaction(async (tx) => {
+    const current = await tx.customer.findUnique({
+      where: { id: customer.id },
+      select: { whatsappMarketingOptIn: true, whatsappServiceOptIn: true },
+    })
+    if (!current) return
+
+    const oldValue = current.whatsappMarketingOptIn
+
+    await tx.customer.update({
       where: { id: customer.id },
       data: {
         whatsappMarketingOptIn: true,
@@ -114,8 +161,8 @@ export async function applyOptIn(
         whatsappMarketingSource: source,
         lastWhatsappPrefSyncAt: now,
       },
-    }),
-    db.whatsappPreferenceLog.create({
+    })
+    await tx.whatsappPreferenceLog.create({
       data: {
         customerId: customer.id,
         field: 'whatsappMarketingOptIn',
@@ -125,6 +172,6 @@ export async function applyOptIn(
         actorId: opts?.actorId,
         note: opts?.note,
       },
-    }),
-  ])
+    })
+  })
 }
