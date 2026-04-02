@@ -116,7 +116,11 @@ export async function sendBookingConfirmation(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'booking_confirmation')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_confirmation)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_confirmation`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_confirmation)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -152,7 +156,11 @@ export async function sendProviderOnTheWay(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'technician_on_the_way')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: technician_on_the_way)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: technician_on_the_way`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: technician_on_the_way)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -188,7 +196,11 @@ export async function sendExtraWorkApproval(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'extra_work_approval')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: extra_work_approval)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: extra_work_approval`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: extra_work_approval)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -223,7 +235,11 @@ export async function sendJobCompleted(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'job_completed')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: job_completed)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: job_completed`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: job_completed)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -256,7 +272,11 @@ export async function sendProviderArrived(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'technician_arrived')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: technician_arrived)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: technician_arrived`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: technician_arrived)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -289,7 +309,11 @@ export async function sendBookingReminder(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'booking_reminder')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_reminder)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_reminder`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_reminder)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -322,7 +346,11 @@ export async function sendFollowUp(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'follow_up')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: follow_up)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: follow_up`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: follow_up)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -356,7 +384,11 @@ export async function sendQuoteReady(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'quote_ready')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: quote_ready)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: quote_ready`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: quote_ready)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -391,7 +423,11 @@ export async function sendBookingCancelled(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'booking_cancelled')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_cancelled)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_cancelled`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_cancelled)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -426,7 +462,11 @@ export async function sendPaymentReminder(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'payment_reminder')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: payment_reminder)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: payment_reminder`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: payment_reminder)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -457,7 +497,11 @@ export async function sendPaymentReceived(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'payment_received')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: payment_received)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: payment_received`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: payment_received)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -488,7 +532,11 @@ export async function sendProviderAssigned(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'technician_assigned')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: technician_assigned)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: technician_assigned`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: technician_assigned)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -520,7 +568,11 @@ export async function sendBookingRescheduled(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'booking_rescheduled')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: booking_rescheduled)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_rescheduled`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_rescheduled)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -551,7 +603,11 @@ export async function sendSlotAvailable(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'slot_available')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: slot_available)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. phone=${params.customerPhone} template: slot_available`)
+    } else {
+      console.warn(`[whatsapp] blocked phone=${params.customerPhone}: ${check.reason} (template: slot_available)`)
+    }
     return
   }
   const externalId = await sendTemplate({
@@ -582,7 +638,11 @@ export async function sendNoProviderAvailable(params: {
 }): Promise<void> {
   const check = await canSend(params.customerPhone, 'no_technician_available')
   if (!check.allowed) {
-    console.log(`[whatsapp] blocked ${params.customerPhone}: ${check.reason} (template: no_technician_available)`)
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: no_technician_available`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: no_technician_available)`)
+    }
     return
   }
   const externalId = await sendTemplate({
