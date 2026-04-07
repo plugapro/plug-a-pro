@@ -56,12 +56,16 @@ export function createServiceClient() {
 export const getSession = cache(async (): Promise<AuthUser | null> => {
   try {
     const cookieStore = await cookies()
+    // Read the token set by POST /api/auth/session (HttpOnly cookie)
+    const token = cookieStore.get('sb-access-token')?.value
+    if (!token) return null
+
     const supabase = createServerClient()
 
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(token)
 
     if (error || !user) return null
 

@@ -852,102 +852,42 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
   const quoteId = buttonId.replace('quote_accept_', '').replace('quote_decline_', '')
   const action = buttonId.startsWith('quote_accept_') ? 'approve' : 'decline'
 
-  try {
-    const result = await db.$transaction(async (tx) => {
-      const quote = await tx.quote.findUnique({
-        where: { id: quoteId },
-        include: {
-          match: {
-            include: {
-              provider: { select: { id: true, phone: true, name: true } },
-              jobRequest: {
-                include: {
-                  customer: { select: { id: true, phone: true, name: true } },
-                },
-              },
-            },
-          },
-        },
-      })
+  const { processQuoteDecision } = await import('./quotes')
+  const result = await processQuoteDecision(quoteId, action, { verifyCustomerPhone: phone })
 
-      if (!quote) throw new Error('NOT_FOUND')
-      if (quote.match.jobRequest.customer.phone !== phone) throw new Error('FORBIDDEN')
-      if (quote.status !== 'PENDING') throw new Error('ALREADY_ACTIONED')
-      if (quote.validUntil && new Date() > quote.validUntil) throw new Error('EXPIRED')
-
-      if (action === 'decline') {
-        await tx.quote.update({ where: { id: quoteId }, data: { status: 'DECLINED', declinedAt: new Date() } })
-        await tx.match.update({ where: { id: quote.matchId }, data: { status: 'QUOTE_DECLINED' } })
-        return {
-          action: 'declined' as const,
-          providerPhone: quote.match.provider.phone,
-          category: quote.match.jobRequest.category,
-        }
-      }
-
-      await tx.quote.update({ where: { id: quoteId }, data: { status: 'APPROVED', approvedAt: new Date() } })
-      await tx.match.update({ where: { id: quote.matchId }, data: { status: 'QUOTE_APPROVED' } })
-
-      const scheduledDate = quote.preferredDate ?? new Date(Date.now() + 48 * 60 * 60 * 1000)
-
-      const booking = await tx.booking.create({
-        data: {
-          matchId: quote.matchId,
-          quoteId: quote.id,
-          status: 'SCHEDULED',
-          scheduledDate,
-        },
-      })
-
-      await tx.job.create({
-        data: {
-          bookingId: booking.id,
-          providerId: quote.match.provider.id,
-          status: 'SCHEDULED',
-        },
-      })
-
-      return {
-        action: 'approved' as const,
-        providerPhone: quote.match.provider.phone,
-        providerName: quote.match.provider.name,
-        category: quote.match.jobRequest.category,
-        scheduledDate,
-      }
-    })
-
-    if (result.action === 'approved') {
-      const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
-        weekday: 'short', day: 'numeric', month: 'short',
-      })
-      await sendCtaUrl(
-        result.providerPhone,
-        `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
-        'View Job',
-        `${appUrl}/technician`
-      ).catch(() => {})
-      await sendText(
-        phone,
-        `✅ *Booking confirmed!*\n\n*${result.providerName}* is scheduled for *${dateStr}*. We'll send you a reminder the day before.\n\nQuestions? Reply here anytime.`
-      )
-    } else {
-      await sendText(
-        result.providerPhone,
-        `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${result.category} quote. Your profile remains active and new leads will come through as they arise.`
-      ).catch(() => {})
-      await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'UNKNOWN'
-    if (msg === 'ALREADY_ACTIONED') {
+  if ('error' in result) {
+    if (result.error === 'ALREADY_ACTIONED') {
       await sendText(phone, action === 'approve'
         ? "✅ You've already accepted this quote. Check your messages for the booking confirmation."
         : "This quote has already been declined. Reply *Hi* if you'd like to submit a new service request.")
-    } else if (msg === 'EXPIRED') {
+    } else if (result.error === 'EXPIRED') {
       await sendText(phone, "⏰ This quote has expired. Reply *Hi* to submit a new request and we'll get a fresh quote to you.")
     } else {
       await sendText(phone, "😔 Something went wrong on our end. Please use the link in the original quote message, or reply *Hi* to start again.")
     }
+    return
+  }
+
+  if (result.action === 'approved') {
+    const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
+      weekday: 'short', day: 'numeric', month: 'short',
+    })
+    await sendCtaUrl(
+      result.provider.phone,
+      `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
+      'View Job',
+      `${appUrl}/technician`
+    ).catch(() => {})
+    await sendText(
+      phone,
+      `✅ *Booking confirmed!*\n\n*${result.provider.name}* is scheduled for *${dateStr}*. We'll send you a reminder the day before.\n\nQuestions? Reply here anytime.`
+    )
+  } else {
+    await sendText(
+      result.provider.phone,
+      `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${result.category} quote. Your profile remains active and new leads will come through as they arise.`
+    ).catch(() => {})
+    await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
   }
 }
 

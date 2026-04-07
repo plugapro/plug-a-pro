@@ -64,7 +64,8 @@ describe('canSend', () => {
       makeCustomer({ whatsappMarketingOptIn: false }),
     )
 
-    const result = await canSend(PHONE, 'booking_cancelled')
+    // slot_available is MARKETING; booking_cancelled was reclassified UTILITY in b0c900b
+    const result = await canSend(PHONE, 'slot_available')
 
     expect(result).toEqual({ allowed: false, reason: 'marketing_opted_out' })
   })
@@ -73,7 +74,7 @@ describe('canSend', () => {
     const { db } = await import('../../lib/db')
     ;(db.customer.findUnique as any).mockResolvedValue(makeCustomer())
 
-    const result = await canSend(PHONE, 'booking_cancelled')
+    const result = await canSend(PHONE, 'slot_available')
 
     expect(result).toEqual({ allowed: true })
   })

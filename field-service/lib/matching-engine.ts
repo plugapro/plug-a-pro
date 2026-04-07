@@ -79,9 +79,15 @@ export async function dispatchLeads(jobRequestId: string): Promise<DispatchResul
   let leadsDispatched = 0
 
   for (const provider of candidates) {
-    // Idempotency: skip if lead already exists
+    // Idempotency: skip if an active lead already exists for this job+provider.
+    // EXPIRED and DECLINED leads do NOT block re-dispatch — the provider should
+    // be re-eligible once their previous lead expires or they decline.
     const existing = await db.lead.findFirst({
-      where: { jobRequestId, providerId: provider.id },
+      where: {
+        jobRequestId,
+        providerId: provider.id,
+        status: { in: ['SENT', 'ACCEPTED'] },
+      },
     })
     if (existing) continue
 

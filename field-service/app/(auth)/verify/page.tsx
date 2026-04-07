@@ -48,14 +48,22 @@ function VerifyForm() {
       }
 
       if (data.session?.access_token) {
-        const maxAge = data.session.expires_in ?? 3600
-        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
+        // Set the session as an HttpOnly cookie via the server — prevents JS/XSS from reading it
+        await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: data.session.access_token,
+            expiresIn: data.session.expires_in ?? 3600,
+          }),
+        })
       }
 
       const res = await fetch('/api/auth/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: data.user.id, phone }),
+        // userId omitted — server reads it from the verified session cookie
+        body: JSON.stringify({ phone }),
       })
 
       if (!res.ok) {

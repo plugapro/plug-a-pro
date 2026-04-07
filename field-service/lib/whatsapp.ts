@@ -775,6 +775,36 @@ export async function sendAdminNewApplication(params: {
 
 // ─── Webhook verification ─────────────────────────────────────────────────────
 
+/**
+ * Verify the X-Hub-Signature-256 header sent by Meta on every POST webhook.
+ * The signature is HMAC-SHA256 of the raw request body, keyed with WHATSAPP_APP_SECRET.
+ *
+ * Returns false (and rejects the request) when:
+ *  - WHATSAPP_APP_SECRET is not configured
+ *  - The header is missing or malformed
+ *  - The computed HMAC does not match
+ */
+export function verifyMetaSignature(rawBody: string, signature: string): boolean {
+  const appSecret = process.env.WHATSAPP_APP_SECRET
+  if (!appSecret) {
+    console.error('[whatsapp] WHATSAPP_APP_SECRET not configured — rejecting webhook')
+    return false
+  }
+
+  const received = signature.startsWith('sha256=') ? signature.slice(7) : ''
+  if (!received) return false
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createHmac, timingSafeEqual } = require('crypto') as typeof import('crypto')
+  const expected = createHmac('sha256', appSecret).update(rawBody).digest('hex')
+
+  try {
+    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'))
+  } catch {
+    return false
+  }
+}
+
 /** Verify the hub.verify_token during webhook setup */
 export function verifyWebhookChallenge(
   mode: string | null,

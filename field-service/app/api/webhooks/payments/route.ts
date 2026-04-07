@@ -20,9 +20,11 @@ export async function POST(request: NextRequest) {
     request.headers.get('x-yoco-signature') ??
     ''
 
+  const reqId = crypto.randomUUID().slice(0, 8)
+
   // Verify webhook authenticity
   if (!verifyWebhookSignature(rawBody, signature)) {
-    console.warn('[webhook/payments] Invalid signature')
+    console.warn(`[webhook/payments:${reqId}] Invalid signature`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -30,22 +32,37 @@ export async function POST(request: NextRequest) {
   try {
     event = parseWebhookEvent(rawBody)
   } catch (err) {
-    console.error('[webhook/payments] Parse error:', err)
+    console.error(`[webhook/payments:${reqId}] Parse error:`, err)
     return NextResponse.json({ error: 'Bad request' }, { status: 400 })
   }
 
   try {
     if (event.type === 'payment.success') {
+      // Idempotency guard: check status BEFORE applying the payment success handler.
+      // If the booking is already SCHEDULED, the confirmation was already sent on a
+      // previous delivery of this webhook — do not send it again.
+      const existingBooking = await db.booking.findUnique({
+        where: { id: event.bookingId },
+        select: { status: true },
+      })
+
+      // Early-return BEFORE handlePaymentSuccess to prevent any duplicate DB writes.
+      // handlePaymentSuccess is idempotent in isolation, but we still avoid the write.
+      if (existingBooking?.status === 'SCHEDULED') {
+        console.info(
+          `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} — already processed`,
+        )
+        return NextResponse.json({ status: 'ok' })
+      }
+
       await handlePaymentSuccess(event)
 
-      // Send WhatsApp booking confirmation
       const booking = await db.booking.findUnique({
         where: { id: event.bookingId },
         include: {
           match: { include: { jobRequest: { include: { customer: true } } } },
         },
       })
-
 
       const customer = booking?.match?.jobRequest?.customer
       if (customer && booking?.scheduledDate) {
@@ -72,7 +89,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
-    console.error('[webhook/payments] Handler error:', err)
+    console.error(`[webhook/payments:${reqId}] Handler error:`, err)
     // Return 200 to prevent retries on known-bad events
     return NextResponse.json({ status: 'error', message: String(err) })
   }

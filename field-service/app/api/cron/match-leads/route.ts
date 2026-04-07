@@ -1,5 +1,5 @@
 // ─── Cron: Auto-match OPEN job requests + expire stale leads ─────────────────
-// Runs every 30 minutes via Vercel Cron.
+// Runs every 30 minutes during business hours (07:00–20:00) via Vercel Cron — schedule: */30 7-20 * * *
 // 1. Expires leads past their expiresAt → frees job for re-dispatch
 // 2. Finds OPEN job requests with no active SENT lead → dispatches
 // 3. Alerts admin if jobs remain unmatched after 1 hour
@@ -18,13 +18,14 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
+  const reqId = crypto.randomUUID().slice(0, 8)
   const results = { dispatched: 0, expired: 0, noMatch: 0, errors: 0 }
 
   // 1. Expire stale leads
   try {
     results.expired = await expireStaleLeads()
   } catch (err) {
-    console.error('[cron/match-leads] Error expiring leads:', err)
+    console.error(`[cron/match-leads:${reqId}] Error expiring leads:`, err)
     results.errors++
   }
 
@@ -49,10 +50,10 @@ export async function GET(request: Request) {
         await db.jobRequest.update({ where: { id: jr.id }, data: { status: 'MATCHING' } })
       } else if (result.noMatch) {
         results.noMatch++
-        console.warn(`[cron/match-leads] No providers for job ${jr.id}`)
+        console.warn(`[cron/match-leads:${reqId}] No providers for job ${jr.id}`)
       }
     } catch (err) {
-      console.error(`[cron/match-leads] Error dispatching job ${jr.id}:`, err)
+      console.error(`[cron/match-leads:${reqId}] Error dispatching job ${jr.id}:`, err)
       results.errors++
     }
   }
@@ -74,6 +75,6 @@ export async function GET(request: Request) {
     }
   }
 
-  console.log('[cron/match-leads]', results)
+  console.log(`[cron/match-leads:${reqId}]`, results)
   return NextResponse.json({ ok: true, ...results })
 }

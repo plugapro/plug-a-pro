@@ -10,7 +10,7 @@ describe("buildChatSystemPrompt", () => {
 
   it("includes the product name", async () => {
     const prompt = await buildChatSystemPrompt();
-    expect(prompt).toContain("My Product");
+    expect(prompt).toContain("Plug-A-Pro");
   });
 
   it("includes FAQ section", async () => {

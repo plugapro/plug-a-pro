@@ -7,7 +7,7 @@
 // or by verifying the payload signature (if using the optional app-level signature).
 
 import { type NextRequest, NextResponse, after } from 'next/server'
-import { verifyWebhookChallenge } from '@/lib/whatsapp'
+import { verifyWebhookChallenge, verifyMetaSignature } from '@/lib/whatsapp'
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
 
@@ -30,8 +30,20 @@ export function GET(request: NextRequest) {
 
 // POST — inbound events (delivery receipts, status updates, inbound messages)
 export async function POST(request: NextRequest) {
+  // Read raw body first — needed for signature verification
+  const rawBody = await request.text()
+
+  const reqId = crypto.randomUUID().slice(0, 8)
+
+  // Verify the request is genuinely from Meta before touching any data
+  const signature = request.headers.get('x-hub-signature-256') ?? ''
+  if (!verifyMetaSignature(rawBody, signature)) {
+    console.warn(`[webhook/whatsapp:${reqId}] Rejected: invalid or missing X-Hub-Signature-256`)
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   try {
-    const payload = await request.json()
+    const payload = JSON.parse(rawBody)
 
     // Validate it's from WhatsApp
     if (payload.object !== 'whatsapp_business_account') {
@@ -48,7 +60,7 @@ export async function POST(request: NextRequest) {
         for (const message of value.messages ?? []) {
           after(
             processInboundMessage(message).catch((err: unknown) => {
-              console.error('[webhook/whatsapp] Bot error:', err)
+              console.error(`[webhook/whatsapp:${reqId}] Bot error:`, err)
             })
           )
         }
@@ -77,7 +89,7 @@ export async function POST(request: NextRequest) {
     // Must return 200 quickly to prevent Meta from retrying
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
-    console.error('[webhook/whatsapp] Parse error:', err)
+    console.error(`[webhook/whatsapp:${reqId}] Parse error:`, err)
     return NextResponse.json({ error: 'Bad request' }, { status: 400 })
   }
 }
