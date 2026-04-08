@@ -1,6 +1,6 @@
 # Plug-A-Pro — Release Readiness Tracker
 
-> **Updated:** 2026-04-06
+> **Updated:** 2026-04-08
 > **Branch:** `feat/whatsapp-marketing-preferences`
 > **Apps:** `field-service/` (marketplace) · `marketing/` (site)
 
@@ -20,6 +20,29 @@
 ---
 
 ## Priority 0 — Deploy / Test Baseline
+
+### P0-0 · WhatsApp templates approved in Meta ⚠️ NEW BLOCKER
+| Field | Value |
+|-------|-------|
+| Status | 🔴 Blocker — verified missing |
+| Owner | operator |
+| Evidence | `docs/whatsapp-template-verification-2026-04-08.md` |
+| Verified | 2026-04-08 via Meta Graph API v21.0 |
+
+**Findings:** WABA `104200...7877` (from `.env.production.local`) contains only `sample_template`. All 21 production templates are absent from Meta. The registration script comment ("9 templates already APPROVED in en_ZA") does not reflect this WABA's actual state.
+
+**Critical path:** `quote_ready` is the first template triggered in the core marketplace loop. Without it, customers receive no quote link and cannot approve a quote → no bookings → marketplace loop dead.
+
+**Remediation steps:**
+1. Confirm whether `104200...7877` is the correct live WABA (check Meta Business Manager → Business Settings → WhatsApp Accounts). If a different WABA holds the "approved" templates, update `WHATSAPP_WABA_ID` and `WHATSAPP_PHONE_NUMBER_ID` in Vercel production env vars and `.env.production.local`.
+2. Run `WHATSAPP_ACCESS_TOKEN=<prod> WHATSAPP_WABA_ID=<prod> node field-service/scripts/register-whatsapp-templates.mjs`
+3. Await Meta review — 24–72h for UTILITY, up to 72h for MARKETING.
+4. Re-verify: all 21 templates show `APPROVED`.
+5. Update `docs/whatsapp-template-verification-2026-04-08.md` with confirmed state.
+
+**Lead time estimate:** 2–4 days.
+
+---
 
 ### P0-1 · Field-service test suite green
 | Field | Value |
@@ -314,14 +337,14 @@ cd marketing && npm run lint && npm run test && npm run build
 
 | Priority | Total | ✅ Closed | 🔴 Open Blockers | 🟡 Pre-prod open |
 |----------|-------|-----------|-----------------|-----------------|
-| P0 | 4 | 3 (P0-1, P0-2, P0-3) | — | 1 (P0-4 DB marking pending) |
+| P0 | 5 | 3 (P0-1, P0-2, P0-3) | 1 (P0-0 templates) | 1 (P0-4 DB marking) |
 | P1 | 5 | 5 (P1-A, P1-B, P1-C, P1-D, P1-E) | — | — |
 | P2 | 5 | 2 (P2-G, P2-H) | — | 3 (P2-F partial, P2-I partial, P2-J) + 1 ops (P2-K) |
 | P3 | 9 | 0 | — | — (post-launch) |
 
 **Go-live gate:** All P0 and P1 items must be ✅ before production deployment.
 
-> **Status as of 2026-04-06:** All P1 stop-ship blockers are closed. P0-4 requires live DB access to mark the baseline migration as applied (can be done during staging deploy). No outstanding hard blockers remain for go-live.
+> **Status as of 2026-04-08:** New hard blocker found — P0-0 WhatsApp templates. WABA `104200...7877` has no production templates approved; the core `quote_ready` template is missing, making the marketplace loop non-functional. Estimated 2–4 days to register and obtain Meta approval. All P1 code blockers remain closed.
 
 ---
 

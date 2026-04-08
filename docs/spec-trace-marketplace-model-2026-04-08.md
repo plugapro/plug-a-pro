@@ -76,10 +76,10 @@ These are the only Phase 1 checklist items still open after the current implemen
    - Release treatment: public claims about relay chat were removed so the product no longer over-promises this behavior.
 
 2. Notification templates approved in Meta
-   - Status: Not verifiable from repository evidence
-   - Why it is still open: code can show scripts, config, and comments, but not current approval state inside Meta Business Manager.
-   - Evidence: [field-service/scripts/register-whatsapp-templates.mjs](../field-service/scripts/register-whatsapp-templates.mjs), [field-service/README.md](../field-service/README.md)
-   - Release treatment: operational verification still needs to be done outside the repo.
+   - Status: ⛔ LAUNCH-BLOCKED — verification completed, no templates approved
+   - Evidence: [docs/whatsapp-template-verification-2026-04-08.md](./whatsapp-template-verification-2026-04-08.md)
+   - Verified 2026-04-08 via Meta Graph API. WABA `104200...7877` contains only `sample_template`. All 21 production templates are absent. The `quote_ready` template is the critical path — customers cannot receive quote links without it. Estimated 2–4 days to register and obtain approval from Meta.
+   - Release treatment: operator must (1) confirm correct WABA ID, (2) run registration script, (3) await Meta review (24–72h), (4) re-verify before go-live.
 
 ## Out Of Scope For Phase 1
 
