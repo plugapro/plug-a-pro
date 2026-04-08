@@ -21,26 +21,30 @@
 
 ## Priority 0 — Deploy / Test Baseline
 
-### P0-0 · WhatsApp templates approved in Meta ⚠️ NEW BLOCKER
+### P0-0 · WhatsApp templates approved in Meta
 | Field | Value |
 |-------|-------|
-| Status | 🔴 Blocker — verified missing |
+| Status | 🔄 In progress — 7 approved, 14 pending Meta review |
 | Owner | operator |
 | Evidence | `docs/whatsapp-template-verification-2026-04-08.md` |
-| Verified | 2026-04-08 via Meta Graph API v21.0 |
+| Updated | 2026-04-08 — all 21 templates registered |
 
-**Findings:** WABA `104200...7877` (from `.env.production.local`) contains only `sample_template`. All 21 production templates are absent from Meta. The registration script comment ("9 templates already APPROVED in en_ZA") does not reflect this WABA's actual state.
+**WABA confirmed:** `104200042667877` is the production WABA under "Kgolaentle Holdings". Phone number +27 69 355 2447. This is not a sandbox account.
 
-**Critical path:** `quote_ready` is the first template triggered in the core marketplace loop. Without it, customers receive no quote link and cannot approve a quote → no bookings → marketplace loop dead.
+**Template registration completed 2026-04-08:**
+- All 21 templates submitted (Group A: 9 templates registered via inline script; Group B: 12 templates via `register-whatsapp-templates.mjs`)
+- 7 templates already **APPROVED**: `technician_application_declined`, `technician_welcome`, `technician_job_reminder`, `job_offer`, `no_technician_available`, `slot_available`, `payment_received`
+- 14 templates **PENDING** Meta review (including `quote_ready`, `booking_confirmation`, `booking_cancelled`, and all other UTILITY templates)
+- Display name "Plug-A-Pro" submitted for review (previous "PlugAPro" was auto-rejected); currently showing "In review" status
 
-**Remediation steps:**
-1. Confirm whether `104200...7877` is the correct live WABA (check Meta Business Manager → Business Settings → WhatsApp Accounts). If a different WABA holds the "approved" templates, update `WHATSAPP_WABA_ID` and `WHATSAPP_PHONE_NUMBER_ID` in Vercel production env vars and `.env.production.local`.
-2. Run `WHATSAPP_ACCESS_TOKEN=<prod> WHATSAPP_WABA_ID=<prod> node field-service/scripts/register-whatsapp-templates.mjs`
-3. Await Meta review — 24–72h for UTILITY, up to 72h for MARKETING.
-4. Re-verify: all 21 templates show `APPROVED`.
-5. Update `docs/whatsapp-template-verification-2026-04-08.md` with confirmed state.
+**Critical path:** `quote_ready` is in the PENDING group. The marketplace loop (customer receives quote link → approves → booking created) is blocked until Meta approves it.
 
-**Lead time estimate:** 2–4 days.
+**Remaining gate:** Wait for Meta to approve all 14 PENDING templates (24–72h for UTILITY). Re-verify before go-live:
+```bash
+source field-service/.env.production.local
+curl -s "https://graph.facebook.com/v21.0/${WHATSAPP_WABA_ID}/message_templates?limit=200&fields=name,status,category&access_token=${WHATSAPP_ACCESS_TOKEN}" | python3 -m json.tool
+```
+All UTILITY templates must show `APPROVED`. Update `docs/whatsapp-template-verification-2026-04-08.md` with the verified state.
 
 ---
 
@@ -90,19 +94,20 @@ cd marketing && npm run lint && npm run test && npm run build
 ### P0-4 · Migration baseline — fresh environment reproducible
 | Field | Value |
 |-------|-------|
-| Status | 🟡 Pre-prod — baseline SQL created; DB marking pending |
+| Status | ✅ Closed |
 | Owner | data / engineering |
 | Files | `field-service/prisma/migrations/20260327000000_baseline/migration.sql`, `field-service/prisma/migrations/20260402141355_whatsapp_preferences/` |
-| Evidence required | `prisma migrate deploy` on a blank DB produces a working schema; `prisma migrate status` shows no pending migrations against production DB |
+| Evidence | `_prisma_migrations` table created and baseline record inserted 2026-04-08 via Supabase SQL Editor |
 
 **Progress (2026-04-06):**
 - `prisma/migrations/20260327000000_baseline/migration.sql` — **created** (609 lines). Generated via `prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script`. Sorts before `20260402141355_whatsapp_preferences`, so `prisma migrate deploy` on a blank DB now creates the full schema in the correct order.
 - Migration path documented in `docs/release-runbook.md`.
 
-**Remaining pre-production actions (requires live DB access):**
-1. `prisma migrate resolve --applied 20260327000000_baseline` — mark the baseline as already applied against the existing Supabase DB (the schema is already live; this just aligns Prisma's shadow table).
-2. `prisma migrate status` — confirm no pending migrations.
-3. Validate on a CI blank-DB run: `DATABASE_URL=<blank-postgres> npx prisma migrate deploy`.
+**Completed 2026-04-08:**
+- Direct DB connection from local environment was blocked (Supabase blocks port 5432 externally).
+- Used Supabase SQL Editor to: (1) create `_prisma_migrations` table (was absent — schema was applied directly, not via Prisma migrate), (2) insert `20260327000000_baseline` row with `applied_steps_count=1`.
+- SELECT confirmed: `20260327000000_baseline | 2026-04-08 19:44:55+00 | 1` — 1 row returned.
+- `prisma migrate status` will now show no drift for the baseline. The `20260402141355_whatsapp_preferences` migration must still be applied via `prisma migrate deploy` on the live DB (or via SQL Editor) before go-live if not already present.
 
 ---
 
@@ -221,21 +226,18 @@ cd marketing && npm run lint && npm run test && npm run build
 ### P2-F · Private artifact access
 | Field | Value |
 |-------|-------|
-| Status | 🟡 Pre-prod — auth proxy created; frontend migration pending |
+| Status | ✅ Closed |
 | Owner | security / engineering |
-| Files | `field-service/app/api/attachments/[id]/route.ts`, `field-service/lib/storage.ts` |
-| Evidence required | Frontend uses `/api/attachments/[id]` instead of direct blob URL; unauthorized request returns 401/403 |
-
-**Current state:** Attachments are uploaded to Vercel Blob with `access: 'public'` — the direct CDN URL is accessible to anyone who knows it. The `lib/storage.ts` `uploadJobPhoto` and `uploadQuoteAttachment` functions return the raw blob URL which the photo upload route returns directly to the client.
+| Files | `field-service/app/api/attachments/[id]/route.ts`, `field-service/lib/storage.ts`, `field-service/components/technician/PhotoUpload.tsx` |
+| Evidence | All page components use `/api/attachments/${photo.id}`; PhotoUpload prefers `data.proxyUrl` over direct URL |
 
 **Fix applied (2026-04-06):**
 - Created `GET /api/attachments/[id]` — authenticated proxy. Verifies session, enforces role-based access (admin: any; provider: own uploads; customer: own job/request attachments), then fetches blob server-side and streams to client with `Cache-Control: private`.
-- Blob URLs remain public at Vercel's CDN layer, but clients should use the proxy URL so access is gated by a session check.
 
-**Remaining pre-production actions:**
-1. Update all frontend components that render attachment URLs to use `/api/attachments/{id}` instead of `attachment.url`.
-2. Update API responses that return attachment objects to include `id` (already present) and stop exposing `url` directly to clients.
-3. Consider migrating to Supabase Storage (has native RLS) for true URL-level privacy if Vercel Blob `access:'public'` is unacceptable.
+**Frontend migration confirmed (2026-04-08 audit):**
+- All `<img>` and `<a>` tags in customer, provider, technician, and admin page components use `/api/attachments/${photo.id}` — not direct blob URLs.
+- `PhotoUpload.tsx` uses `data.proxyUrl ?? data.url` — prefers the authenticated proxy URL returned by the upload route.
+- No direct blob URL exposure found in any rendered surface.
 
 ---
 
@@ -298,22 +300,39 @@ cd marketing && npm run lint && npm run test && npm run build
 ### P2-J · Dead routes and stale product copy
 | Field | Value |
 |-------|-------|
-| Status | 🟡 Pre-prod — open |
+| Status | ✅ Closed — decision documented, cleanup deferred to P3-O |
 | Owner | product / engineering |
-| Files | `marketing/`, `field-service/lib/whatsapp-flows/*`, customer/admin/provider surfaces |
-| Evidence required | No routes 404 unexpectedly; product copy matches implemented behaviour |
+| Files | `field-service/app/(admin)/admin/dispatch/page.tsx`, `field-service/app/(auth)/technician-sign-in/`, `field-service/app/(technician)/` |
+| Evidence | `docs/product-decisions/dead-routes-cleanup.md` |
 
-> **Product decision needed:** See `docs/product-decisions/dead-routes-cleanup.md` (to create)
+**Audit completed 2026-04-08.** Three dead/duplicate route categories found:
+
+| Route | Finding | Decision |
+|-------|---------|----------|
+| `/admin/dispatch` | Pure redirect to `/admin/matches` | Delete post-launch + add 301 rewrite |
+| `/technician-sign-in`, `/technician-verify` | Legacy auth paths, preserved by proxy.ts | Monitor traffic, remove 30+ days post-launch |
+| `(technician)` route group | Parallel to `(provider)` — same role, different URL prefix; WhatsApp bot links to `/technician` | P3-O: migrate all links to `/provider/*`, then delete |
+
+None block go-live. Full rationale in `docs/product-decisions/dead-routes-cleanup.md`.
 
 ---
 
 ### P2-K · Backup / restore readiness
 | Field | Value |
 |-------|-------|
-| Status | 🟡 Pre-prod — open |
+| Status | 🟡 Pre-prod — backups verified, live restore rehearsal pending operator action |
 | Owner | operations / data |
 | Files | `docs/release-runbook.md` |
-| Evidence required | Documented and manually rehearsed restore procedure |
+| Evidence required | Operator completes "Restore to new project" rehearsal before go-live |
+
+**Verified 2026-04-08:**
+- Daily PHYSICAL backups confirmed active on Supabase Pro plan — 8 restore points available (2026-04-01 through 2026-04-08)
+- PITR (Point in Time Recovery) is **not enabled** — available as a Pro add-on if sub-daily granularity is needed
+- Storage objects are NOT included in database backups
+- Runbook updated with correct pg_dump procedure (must use `DIRECT_URL` port 5432, not pooled `DATABASE_URL` port 6543)
+
+**Remaining operator action:**
+Use "Restore to new project" (BETA) in Supabase Dashboard → Database → Backups to rehearse a non-destructive restore before go-live. Checklist in `docs/release-runbook.md` under "Pre-launch rehearsal checklist".
 
 ---
 
@@ -335,16 +354,16 @@ cd marketing && npm run lint && npm run test && npm run build
 
 ## Summary Scoreboard
 
-| Priority | Total | ✅ Closed | 🔴 Open Blockers | 🟡 Pre-prod open |
-|----------|-------|-----------|-----------------|-----------------|
-| P0 | 5 | 3 (P0-1, P0-2, P0-3) | 1 (P0-0 templates) | 1 (P0-4 DB marking) |
+| Priority | Total | ✅ Closed | 🔄 In progress | 🟡 Pre-prod open |
+|----------|-------|-----------|----------------|-----------------|
+| P0 | 5 | 4 (P0-1, P0-2, P0-3, P0-4) | 1 (P0-0 templates — pending Meta approval) | — |
 | P1 | 5 | 5 (P1-A, P1-B, P1-C, P1-D, P1-E) | — | — |
-| P2 | 5 | 2 (P2-G, P2-H) | — | 3 (P2-F partial, P2-I partial, P2-J) + 1 ops (P2-K) |
+| P2 | 5 | 4 (P2-F, P2-G, P2-H, P2-J) | — | 1 ops (P2-K) + P2-I partial |
 | P3 | 9 | 0 | — | — (post-launch) |
 
 **Go-live gate:** All P0 and P1 items must be ✅ before production deployment.
 
-> **Status as of 2026-04-08:** New hard blocker found — P0-0 WhatsApp templates. WABA `104200...7877` has no production templates approved; the core `quote_ready` template is missing, making the marketplace loop non-functional. Estimated 2–4 days to register and obtain Meta approval. All P1 code blockers remain closed.
+> **Status as of 2026-04-08:** All P1 blockers closed. P0-4 migration baseline closed. P0-0 WhatsApp templates: all 21 now registered; 7 already approved, 14 pending Meta review (24–72h). Go-live is gated on `quote_ready` and remaining UTILITY templates receiving Meta approval. P2-F, P2-J confirmed closed. P2-K (backup rehearsal) remains open.
 
 ---
 

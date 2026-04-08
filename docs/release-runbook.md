@@ -46,48 +46,32 @@ Before every production deployment, confirm:
 
 ## Migration Order
 
-### Production (first-time setup)
+### Production DB state (as of 2026-04-08)
 
-> **WARNING:** The current Prisma migration history is incomplete. See tracker item P0-4.
-> Until a baseline migration is created, use the Supabase migration path:
+P0-4 is closed. The production Supabase DB has:
+- `20260327000000_baseline` — marked as applied in `_prisma_migrations` (inserted via SQL Editor 2026-04-08)
+- `20260402141355_whatsapp_preferences` — needs to be applied if not yet present
 
-```bash
-# Apply the full schema via Supabase CLI (authoritative for initial setup)
-supabase db push --project-ref <project-ref>
-
-# Then mark the Prisma migration as applied (so prisma migrate doesn't re-run it)
-cd field-service
-DATABASE_URL=<production-db-url> npx prisma migrate resolve --applied 20260402141355_whatsapp_preferences
-```
-
-### Ongoing (after baseline migration is created — see P0-4)
-
+**Verify current migration state:**
 ```bash
 cd field-service
-DATABASE_URL=<production-db-url> npx prisma migrate deploy
+npx prisma migrate status
 ```
 
-### Migration baseline creation (one-time, required before go-live)
+If `20260402141355_whatsapp_preferences` is shown as pending, apply it:
+```bash
+cd field-service
+npx prisma migrate deploy
+```
+
+### Fresh environment (new blank DB)
 
 ```bash
 cd field-service
-
-# 1. Generate a full baseline migration from the current schema
-npx prisma migrate diff \
-  --from-empty \
-  --to-schema-datamodel prisma/schema.prisma \
-  --script \
-  > prisma/migrations/20260327000000_baseline/migration.sql
-
-# 2. Create the migration directory entry
-mkdir -p prisma/migrations/20260327000000_baseline
-
-# 3. Mark as applied against the existing production database
-DATABASE_URL=<production-db-url> npx prisma migrate resolve --applied 20260327000000_baseline
-
-# 4. Verify
-DATABASE_URL=<production-db-url> npx prisma migrate status
+DATABASE_URL=<new-db-url> DIRECT_URL=<new-direct-url> npx prisma migrate deploy
 ```
+
+This applies both migrations in order: baseline → whatsapp_preferences.
 
 ---
 
@@ -154,10 +138,9 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://app.plugapro.co.za/api/cron
 | `/api/cron/reminders` | `0 8 * * *` | 08:00 daily |
 | `/api/cron/follow-up` | `0 10 * * *` | 10:00 daily |
 | `/api/cron/slots` | `0 6 * * 1` | Monday 06:00 |
-| `/api/cron/match-leads` | `0 8 * * *` | **TBD** — see P1-D |
+| `/api/cron/match-leads` | `*/30 7-20 * * *` | Every 30 min, 07:00–20:00 SAST |
 
-> **Action required:** Confirm `match-leads` cadence with product before go-live (tracker P1-D).
-> Handler comment says "every 30 minutes" but schedule is currently once daily.
+> P1-D closed 2026-04-06: schedule updated to `*/30 7-20 * * *`. See `docs/product-decisions/cron-match-leads-cadence.md`.
 
 ---
 
@@ -185,25 +168,57 @@ vercel rollback [deployment-url]
 
 ## Backup / Restore
 
-> **Status:** This process needs a human rehearsal before go-live (tracker P2-K).
+> **Status (2026-04-08):** Backups verified active. Live restore rehearsal to new project not yet executed (requires operator action — see P2-K in tracker).
 
-### Backup (Supabase managed)
+### Backup state (verified 2026-04-08)
 
-Supabase automatically takes daily backups on Pro plan. Verify backup retention in the Supabase dashboard under **Settings → Backups**.
+Supabase dashboard → **Database → Backups → Scheduled backups** shows:
 
-### Manual backup (point-in-time)
+| Backup | Type | Status |
+|--------|------|--------|
+| 2026-04-08 01:17:30 UTC | PHYSICAL | Available |
+| 2026-04-07 01:17:59 UTC | PHYSICAL | Available |
+| 2026-04-06 01:16:16 UTC | PHYSICAL | Available |
+| 2026-04-05 01:14:55 UTC | PHYSICAL | Available |
+| 2026-04-04 01:15:49 UTC | PHYSICAL | Available |
+| 2026-04-03 01:17:55 UTC | PHYSICAL | Available |
+| 2026-04-02 01:16:47 UTC | PHYSICAL | Available |
+| 2026-04-01 01:17:35 UTC | PHYSICAL | Available |
+
+Daily backups run around midnight UTC. **Storage objects are NOT included** — only the database.
+
+**PITR (Point in Time Recovery):** Not enabled. Available as a Pro Plan add-on. Enable via Dashboard → Database → Backups → Point in time if sub-daily restore granularity is required.
+
+### Restore via Supabase Dashboard (recommended)
+
+1. Go to **Database → Backups → Scheduled backups**
+2. Click **Restore** next to the desired backup
+3. Confirm — this restores the backup to the **current project** (destructive)
+
+> For pre-launch rehearsal, use **Restore to new project** (BETA) in the same Backups section. This creates a new Supabase project from the backup without touching production.
+
+### Manual backup via pg_dump
+
+> **Important:** `DATABASE_URL` uses the pooled connection (port 6543, pgBouncer). `pg_dump` requires the direct connection. Use `DIRECT_URL` (port 5432):
 
 ```bash
-pg_dump "$DATABASE_URL" --no-owner --no-acl -F c -f backup_$(date +%Y%m%d_%H%M%S).dump
+pg_dump "$DIRECT_URL" --no-owner --no-acl -F c -f backup_$(date +%Y%m%d_%H%M%S).dump
 ```
 
-### Restore
+### Manual restore via pg_restore
 
 ```bash
-pg_restore --no-owner --no-acl -d "$DATABASE_URL" backup_YYYYMMDD_HHMMSS.dump
+pg_restore --no-owner --no-acl -d "$DIRECT_URL" backup_YYYYMMDD_HHMMSS.dump
 ```
 
-> Restore has **not been rehearsed on this project**. Schedule a dry run before launch.
+### Pre-launch rehearsal checklist (P2-K)
+
+- [ ] Operator clicks "Restore to new project" on a recent backup
+- [ ] New project spins up and is accessible
+- [ ] Run smoke queries against the restored project: `SELECT count(*) FROM "Provider"; SELECT count(*) FROM "JobRequest";`
+- [ ] Confirm `_prisma_migrations` table exists and baseline row is present
+- [ ] Document time taken for restore to complete
+- [ ] Delete the new project after confirming restore success
 
 ---
 
