@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 import {
   Wrench,
   Zap,
@@ -12,6 +13,10 @@ import {
 } from "lucide-react";
 import { buildMetadata } from "@/lib/metadata";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
+import { Button } from "@/components/ui/button";
+import { whatsappNumberDisplay } from "@/lib/whatsapp";
+import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
+import { WhatsAppTextLink } from "@/components/marketing/WhatsAppTextLink";
 
 export const metadata: Metadata = buildMetadata({
   title: "Services",
@@ -136,6 +141,25 @@ export default function ServicesPage() {
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
           Plug-A-Pro matches you to nearby workers for a wide range of small home jobs. Describe what you need — we&apos;ll find the right person.
         </p>
+        <p className="text-sm font-medium mt-6 mb-8">
+          Start on WhatsApp at {whatsappNumberDisplay}
+        </p>
+        <div className="flex gap-4 justify-center flex-wrap">
+          <WhatsAppCtaButton
+            audience="customer"
+            label="Start on WhatsApp"
+            source="solutions_header"
+            size="lg"
+          />
+          <Button
+            nativeButton={false}
+            render={<Link href="/how-it-works" />}
+            variant="outline"
+            size="lg"
+          >
+            See how it works
+          </Button>
+        </div>
       </div>
 
       <div className="py-16 px-4">
@@ -187,13 +211,11 @@ export default function ServicesPage() {
           <p className="text-sm text-muted-foreground mb-4">
             If it&apos;s a small home job, there&apos;s probably a worker near you who can do it. Describe your job and we&apos;ll try to match you.
           </p>
-          <a
-            href="/waitlist"
-            className="text-sm font-medium underline-offset-4 hover:underline"
-            style={{ color: "var(--accent-brand)" }}
-          >
-            Request help →
-          </a>
+          <WhatsAppTextLink
+            audience="customer"
+            label="Request help on WhatsApp →"
+            source="solutions_fallback"
+          />
         </div>
       </div>
 

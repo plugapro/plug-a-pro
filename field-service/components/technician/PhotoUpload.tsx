@@ -46,8 +46,8 @@ export function PhotoUpload({ jobId, label, existingUrl, onUploaded }: Props) {
     }
 
     const data = await res.json()
-    setPreviewUrl(data.url)
-    onUploaded(data.url)
+    setPreviewUrl(data.proxyUrl ?? data.url)
+    onUploaded(data.proxyUrl ?? data.url)
     startTransition(() => router.refresh())
   }
 

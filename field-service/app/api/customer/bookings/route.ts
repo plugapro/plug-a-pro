@@ -10,8 +10,11 @@ import { getSession } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
-  if (!session) {
+  if (!session || session.role !== 'customer') {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+  }
+  if (!session.phone) {
+    return NextResponse.json({ error: 'Verified phone required' }, { status: 403 })
   }
 
   let body: {
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest) {
     where: { userId: session.id },
     create: {
       userId: session.id,
-      phone: session.phone ?? '',
+      phone: session.phone,
       name: 'Customer',
     },
     update: {},

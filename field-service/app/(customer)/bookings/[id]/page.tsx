@@ -44,7 +44,7 @@ export default async function BookingDetailPage({
               address: true,
             },
           },
-          provider: { select: { name: true } },
+          provider: { select: { id: true, name: true } },
         },
       },
       quote: true,
@@ -78,6 +78,13 @@ export default async function BookingDetailPage({
   const currentJobStatus = booking.job?.status
   const currentStatusIndex = JOB_TIMELINE.findIndex((s) => s.status === currentJobStatus)
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const disputes = booking.job
+    ? await db.dispute.findMany({
+        where: { jobId: booking.job.id },
+        orderBy: { createdAt: 'desc' },
+      })
+    : []
+  const hasOpenDispute = disputes.some((dispute) => ['OPEN', 'UNDER_REVIEW'].includes(dispute.status))
 
   const canCancel =
     booking.status === 'SCHEDULED' || booking.status === 'RESCHEDULED'
@@ -109,6 +116,53 @@ export default async function BookingDetailPage({
     })
 
     redirect('/bookings')
+  }
+
+  async function raiseDispute(formData: FormData) {
+    'use server'
+    const { getSession: getActiveSession } = await import('@/lib/auth')
+    const activeSession = await getActiveSession()
+    if (!activeSession || activeSession.role !== 'customer') redirect('/sign-in')
+
+    const freshBooking = await db.booking.findUnique({
+      where: { id },
+      include: {
+        match: {
+          include: {
+            jobRequest: { include: { customer: true } },
+          },
+        },
+        job: { select: { id: true } },
+      },
+    })
+
+    if (!freshBooking || !freshBooking.job) redirect('/bookings')
+    if (freshBooking.match.jobRequest.customer.userId !== activeSession.id) redirect('/bookings')
+
+    const reason = String(formData.get('reason') ?? '').trim()
+    if (reason.length < 10) redirect(`/bookings/${id}`)
+
+    const existing = await db.dispute.findFirst({
+      where: {
+        jobId: freshBooking.job.id,
+        status: { in: ['OPEN', 'UNDER_REVIEW'] },
+      },
+      select: { id: true },
+    })
+
+    if (!existing) {
+      await db.dispute.create({
+        data: {
+          jobId: freshBooking.job.id,
+          raisedById: activeSession.id,
+          raisedByRole: 'customer',
+          reason,
+          status: 'OPEN',
+        },
+      })
+    }
+
+    redirect(`/bookings/${id}`)
   }
 
   return (
@@ -145,7 +199,11 @@ export default async function BookingDetailPage({
           </Row>
         )}
         {booking.match.provider && (
-          <Row label="Provider">{booking.match.provider.name}</Row>
+          <Row label="Provider">
+            <Link href={`/providers/${booking.match.provider.id}`} className="text-primary hover:underline">
+              {booking.match.provider.name}
+            </Link>
+          </Row>
         )}
         <Row label="Total">R {Number(booking.quote.amount).toFixed(2)}</Row>
       </div>
@@ -243,6 +301,55 @@ export default async function BookingDetailPage({
         <div className="rounded-xl border bg-card p-4 text-center text-sm text-muted-foreground">
           You rated this {existingRating.score}/5 — thank you!
         </div>
+      )}
+
+      {booking.job && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div>
+              <p className="font-medium text-sm">Need help with this job?</p>
+              <p className="text-sm text-muted-foreground">
+                Raise an issue with Plug-A-Pro support and we&apos;ll review the quote, photos, and job history on record.
+              </p>
+            </div>
+
+            {disputes.length > 0 && (
+              <div className="space-y-2">
+                {disputes.map((dispute) => (
+                  <div key={dispute.id} className="rounded-lg border px-3 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium">Issue #{dispute.id.slice(-8).toUpperCase()}</p>
+                      <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                        {dispute.status.replaceAll('_', ' ').toLowerCase()}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-muted-foreground">{dispute.reason}</p>
+                    {dispute.resolution && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Resolution: {dispute.resolution}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!hasOpenDispute && (
+              <form action={raiseDispute} className="space-y-3">
+                <textarea
+                  name="reason"
+                  minLength={10}
+                  required
+                  placeholder="Describe the issue so support can review it."
+                  className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+                <Button type="submit" variant="outline" className="w-full">
+                  Raise an issue with support
+                </Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Cancel booking */}

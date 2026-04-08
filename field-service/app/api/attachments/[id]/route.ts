@@ -30,8 +30,29 @@ export async function GET(
   const attachment = await db.attachment.findUnique({
     where: { id },
     include: {
-      job: { select: { providerId: true, booking: { select: { match: { select: { jobRequest: { select: { customerId: true } } } } } } } },
-      jobRequest: { select: { customerId: true } },
+      job: {
+        select: {
+          providerId: true,
+          booking: {
+            select: {
+              match: {
+                select: {
+                  jobRequest: {
+                    select: {
+                      customer: { select: { userId: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      jobRequest: {
+        select: {
+          customer: { select: { userId: true } },
+        },
+      },
     },
   })
 
@@ -48,8 +69,8 @@ export async function GET(
       }
       if (session.role === 'customer') {
         const customerViaJob =
-          attachment.job?.booking?.match?.jobRequest?.customerId === session.id
-        const customerViaRequest = attachment.jobRequest?.customerId === session.id
+          attachment.job?.booking?.match?.jobRequest?.customer?.userId === session.id
+        const customerViaRequest = attachment.jobRequest?.customer?.userId === session.id
         return customerViaJob || customerViaRequest
       }
       return false

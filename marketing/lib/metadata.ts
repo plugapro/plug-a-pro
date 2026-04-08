@@ -8,7 +8,7 @@ export const siteConfig = {
   url: "https://plugapro.co.za", // TODO: update with production URL
   accent: "oklch(0.55 0.2 250)",
   ogImage: "/og.png",
-  whatsappNumber: "+27693552447",
+  whatsappNumber: "+27 69 355 2447",
   links: {
     app: "https://app.plugapro.co.za", // TODO: update with production app URL
     twitter: "https://twitter.com/plugapro", // TODO: update with real handle

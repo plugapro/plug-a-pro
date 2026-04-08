@@ -1,3 +1,5 @@
+"use client";
+
 import type { LucideIcon } from "lucide-react";
 import {
   Wrench,
@@ -9,6 +11,10 @@ import {
   Paintbrush,
   ShieldCheck,
 } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { analytics } from "@/lib/analytics";
+import { buildWhatsAppLink, whatsappAudienceOptions } from "@/lib/whatsapp";
 
 const JOB_CATEGORIES: { icon: LucideIcon; name: string; description: string }[] = [
   { icon: Wrench, name: "Plumbing", description: "Taps, toilets, drains, leaks, and pipe repairs" },
@@ -118,6 +124,51 @@ export function WhoItsFor() {
                   aria-hidden="true"
                 />
                 {benefit}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-border/40 pt-12">
+          <div className="mb-8 max-w-2xl">
+            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
+              Start on WhatsApp
+            </p>
+            <h2 className="text-3xl md:text-4xl font-bold mb-3">
+              Pick your path and start the conversation
+            </h2>
+            <p className="text-muted-foreground">
+              Whether you need help at home, want more work, or want to join as a provider or partner, the first step is the same: message us on WhatsApp.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {whatsappAudienceOptions.map((option) => (
+              <div
+                key={option.audience}
+                className="rounded-2xl border border-border/40 p-6 bg-muted/20 space-y-4"
+              >
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold">{option.label}</h3>
+                  <p className="text-sm text-muted-foreground">{option.description}</p>
+                </div>
+                <Button
+                  nativeButton={false}
+                  render={
+                    <Link
+                      href={buildWhatsAppLink(option.message)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  }
+                  variant={option.audience === "customer" ? "default" : "outline"}
+                  className="w-full"
+                  onClick={() => {
+                    analytics.whatsappClick(`who_its_for_${option.audience}`);
+                    analytics.ctaClick(option.label, "who_its_for", option.audience);
+                  }}
+                >
+                  {option.label}
+                </Button>
               </div>
             ))}
           </div>

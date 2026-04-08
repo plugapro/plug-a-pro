@@ -88,6 +88,43 @@ export default async function ProviderProfilePage() {
     provider.schedule.map((s) => [s.dayOfWeek, s])
   )
 
+  const completedJobs = await db.job.findMany({
+    where: {
+      providerId: provider.id,
+      status: 'COMPLETED',
+    },
+    include: {
+      booking: {
+        include: {
+          match: {
+            include: {
+              jobRequest: {
+                include: {
+                  customer: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { completedAt: 'desc' },
+    take: 20,
+  })
+
+  const reviews = await db.review.findMany({
+    where: {
+      reviewerType: 'CUSTOMER',
+      jobId: { in: completedJobs.map((job) => job.id) },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  const averageRating = reviews.length > 0
+    ? reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length
+    : null
+  const reviewByJobId = new Map(reviews.map((review) => [review.jobId, review]))
+
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
       <h1 className="text-xl font-semibold">My Profile</h1>
@@ -178,6 +215,77 @@ export default async function ProviderProfilePage() {
 
         <Button type="submit" className="w-full">Save changes</Button>
       </form>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Rating &amp; review history
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div className="rounded-lg border px-3 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Average</p>
+              <p className="mt-1 font-semibold">
+                {averageRating ? `${averageRating.toFixed(1)} / 5` : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg border px-3 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Reviews</p>
+              <p className="mt-1 font-semibold">{reviews.length}</p>
+            </div>
+            <div className="rounded-lg border px-3 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Completed jobs</p>
+              <p className="mt-1 font-semibold">{completedJobs.length}</p>
+            </div>
+          </div>
+
+          {completedJobs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Complete a few jobs and customer reviews will appear here.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {completedJobs.map((job) => {
+                const review = reviewByJobId.get(job.id)
+                return (
+                  <div key={job.id} className="rounded-lg border px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium capitalize">
+                          {job.booking.match.jobRequest.category}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {job.booking.match.jobRequest.customer.name}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {(job.completedAt ?? job.createdAt).toLocaleDateString('en-ZA', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </p>
+                    </div>
+                    {review ? (
+                      <>
+                        <p className="mt-2 text-sm">{'★'.repeat(review.score)}{'☆'.repeat(5 - review.score)}</p>
+                        {review.comment && (
+                          <p className="mt-2 text-sm text-muted-foreground">{review.comment}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        No customer review left for this job yet.
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <PushSubscribeButton />
       <SignOutButton />

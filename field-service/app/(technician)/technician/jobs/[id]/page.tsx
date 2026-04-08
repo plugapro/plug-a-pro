@@ -60,6 +60,51 @@ export default async function JobDetailPage({
   const address    = jobRequest.address
   const b          = job.booking
   const customerFirst = customer.name.split(' ')[0]
+  const disputes = await db.dispute.findMany({
+    where: { jobId: job.id },
+    orderBy: { createdAt: 'desc' },
+  })
+  const hasOpenDispute = disputes.some((dispute) => ['OPEN', 'UNDER_REVIEW'].includes(dispute.status))
+
+  async function raiseDispute(formData: FormData) {
+    'use server'
+    const { requireProvider: getActiveProvider } = await import('@/lib/auth')
+    const activeSession = await getActiveProvider()
+
+    const activeProvider = await db.provider.findUnique({ where: { userId: activeSession.id } })
+    if (!activeProvider) redirect('/technician')
+
+    const reason = String(formData.get('reason') ?? '').trim()
+    if (reason.length < 10) redirect(`/technician/jobs/${id}`)
+
+    const freshJob = await db.job.findUnique({
+      where: { id },
+      select: { id: true, providerId: true },
+    })
+    if (!freshJob || freshJob.providerId !== activeProvider.id) redirect('/technician')
+
+    const existing = await db.dispute.findFirst({
+      where: {
+        jobId: freshJob.id,
+        status: { in: ['OPEN', 'UNDER_REVIEW'] },
+      },
+      select: { id: true },
+    })
+
+    if (!existing) {
+      await db.dispute.create({
+        data: {
+          jobId: freshJob.id,
+          raisedById: activeSession.id,
+          raisedByRole: 'provider',
+          reason,
+          status: 'OPEN',
+        },
+      })
+    }
+
+    redirect(`/technician/jobs/${id}`)
+  }
 
   return (
     <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-24">
@@ -142,7 +187,7 @@ export default async function JobDetailPage({
                 <div key={photo.id} className="space-y-1">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={photo.url}
+                    src={`/api/attachments/${photo.id}`}
                     alt={photo.label ?? 'Job photo'}
                     className="rounded-lg object-cover w-full h-40"
                   />
@@ -164,7 +209,7 @@ export default async function JobDetailPage({
                 <PhotoUpload
                   jobId={job.id}
                   label="before"
-                  existingUrl={job.photos.find((p) => p.label === 'before')?.url}
+                  existingUrl={job.photos.find((p) => p.label === 'before') ? `/api/attachments/${job.photos.find((p) => p.label === 'before')!.id}` : undefined}
                   onUploaded={() => {}}
                 />
               </div>
@@ -173,7 +218,7 @@ export default async function JobDetailPage({
                 <PhotoUpload
                   jobId={job.id}
                   label="after"
-                  existingUrl={job.photos.find((p) => p.label === 'after')?.url}
+                  existingUrl={job.photos.find((p) => p.label === 'after') ? `/api/attachments/${job.photos.find((p) => p.label === 'after')!.id}` : undefined}
                   onUploaded={() => {}}
                 />
               </div>
@@ -213,6 +258,53 @@ export default async function JobDetailPage({
           ))}
         </div>
       )}
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div>
+            <p className="font-medium text-sm">Problem on this job?</p>
+            <p className="text-sm text-muted-foreground">
+              Raise it with Plug-A-Pro support so the written quote, photos, and job history can be reviewed.
+            </p>
+          </div>
+
+          {disputes.length > 0 && (
+            <div className="space-y-2">
+              {disputes.map((dispute) => (
+                <div key={dispute.id} className="rounded-lg border px-3 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium">Issue #{dispute.id.slice(-8).toUpperCase()}</p>
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {dispute.status.replaceAll('_', ' ').toLowerCase()}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{dispute.reason}</p>
+                  {dispute.resolution && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Resolution: {dispute.resolution}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!hasOpenDispute && (
+            <form action={raiseDispute} className="space-y-3">
+              <textarea
+                name="reason"
+                minLength={10}
+                required
+                placeholder="Describe the issue so support can review it."
+                className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+              <Button type="submit" variant="outline" className="w-full">
+                Raise an issue with support
+              </Button>
+            </form>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

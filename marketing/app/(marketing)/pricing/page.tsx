@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { buildMetadata } from "@/lib/metadata";
-import { Button } from "@/components/ui/button";
+import { whatsappNumberDisplay } from "@/lib/whatsapp";
+import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 
 export const metadata: Metadata = buildMetadata({
   title: "Pricing",
@@ -22,18 +22,23 @@ export default function PricingPage() {
       <p className="text-muted-foreground mb-10">
         When we introduce monetisation — for providers, for customers, or both — we&apos;ll communicate it clearly before it takes effect. No surprises.
       </p>
+      <p className="text-sm font-medium mb-8">
+        Start on WhatsApp at {whatsappNumberDisplay}
+      </p>
       <div className="flex gap-4 justify-center flex-wrap">
-        <Button nativeButton={false} render={<Link href="/waitlist" />} size="lg">
-          Request help
-        </Button>
-        <Button
-          nativeButton={false}
-          render={<Link href="/for-workers" />}
+        <WhatsAppCtaButton
+          audience="customer"
+          label="Chat on WhatsApp"
+          source="pricing_customer"
+          size="lg"
+        />
+        <WhatsAppCtaButton
+          audience="worker"
+          label="I’m looking for work"
+          source="pricing_worker"
           variant="outline"
           size="lg"
-        >
-          Register as a worker
-        </Button>
+        />
       </div>
     </div>
   );

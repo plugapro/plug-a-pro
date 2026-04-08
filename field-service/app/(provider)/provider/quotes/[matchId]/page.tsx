@@ -6,8 +6,81 @@ import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { QuoteForm } from '@/components/technician/QuoteForm'
+import { Button } from '@/components/ui/button'
 
 export const metadata = buildMetadata({ title: 'Submit Quote', noIndex: true })
+
+async function markInspectionComplete(formData: FormData) {
+  'use server'
+
+  const session = await requireProvider()
+  const matchId = String(formData.get('matchId') ?? '')
+  if (!matchId) return
+
+  const provider = await db.provider.findUnique({ where: { userId: session.id } })
+  if (!provider) redirect('/provider')
+
+  const match = await db.match.findUnique({
+    where: { id: matchId },
+    select: {
+      id: true,
+      providerId: true,
+      inspectionNeeded: true,
+      status: true,
+    },
+  })
+
+  if (!match || match.providerId !== provider.id || !match.inspectionNeeded) {
+    redirect('/provider')
+  }
+
+  if (match.status === 'INSPECTION_COMPLETE' || match.status === 'QUOTED') {
+    redirect(`/provider/quotes/${matchId}`)
+  }
+
+  if (match.status !== 'INSPECTION_SCHEDULED') {
+    redirect('/provider')
+  }
+
+  await db.$transaction(async (tx) => {
+    const inspection = await tx.inspectionSlot.findFirst({
+      where: {
+        matchId,
+        status: { in: ['PROPOSED', 'CONFIRMED'] },
+      },
+      orderBy: { proposedAt: 'desc' },
+    })
+
+    if (inspection) {
+      await tx.inspectionSlot.update({
+        where: { id: inspection.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          confirmedAt: inspection.confirmedAt ?? new Date(),
+        },
+      })
+    } else {
+      await tx.inspectionSlot.create({
+        data: {
+          matchId,
+          proposedAt: new Date(),
+          confirmedAt: new Date(),
+          completedAt: new Date(),
+          status: 'COMPLETED',
+          notes: 'Marked complete from provider quote screen',
+        },
+      })
+    }
+
+    await tx.match.update({
+      where: { id: matchId },
+      data: { status: 'INSPECTION_COMPLETE' },
+    })
+  })
+
+  redirect(`/provider/quotes/${matchId}`)
+}
 
 export default async function QuotePage({
   params,
@@ -48,13 +121,28 @@ export default async function QuotePage({
         </p>
       </div>
 
-      <QuoteForm
-        matchId={matchId}
-        postInspection={match.inspectionNeeded}
-        category={jobRequest.category}
-        area={area}
-        description={jobRequest.description}
-      />
+      {match.inspectionNeeded && match.status === 'INSPECTION_SCHEDULED' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm">
+          <p className="font-medium text-amber-900">Inspection still needs to be completed</p>
+          <p className="text-amber-800">
+            Mark the site visit complete before submitting the quote. This records the inspection step in the lifecycle.
+          </p>
+          <form action={markInspectionComplete}>
+            <input type="hidden" name="matchId" value={matchId} />
+            <Button type="submit" className="w-full">Mark inspection complete</Button>
+          </form>
+        </div>
+      )}
+
+      {(!match.inspectionNeeded || match.status === 'INSPECTION_COMPLETE' || match.status === 'QUOTED') && (
+        <QuoteForm
+          matchId={matchId}
+          postInspection={match.inspectionNeeded}
+          category={jobRequest.category}
+          area={area}
+          description={jobRequest.description}
+        />
+      )}
     </div>
   )
 }

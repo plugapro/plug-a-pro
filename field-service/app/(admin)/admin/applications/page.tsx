@@ -61,6 +61,7 @@ async function approveApplication(formData: FormData) {
       skills: app.skills,
       serviceAreas: app.serviceAreas,
       active: true,
+      verified: true,
     },
   })
 

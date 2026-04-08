@@ -87,7 +87,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `👷 *Join Plug a Pro as a Service Provider*\n\nEarn money doing what you're good at. We connect you with customers who need your skills.\n\n*Here's how it works:*\n• We send you job leads in your area\n• You confirm availability and go do the job\n• We handle payment — you get paid reliably\n\nReady to apply?`,
+    `👷 *Join Plug a Pro as a Service Provider*\n\nEarn money doing what you're good at. We connect you with customers who need your skills.\n\n*Here's how it works:*\n• We send you job leads in your area\n• You confirm availability and go do the job\n• Plug a Pro keeps the quote and job record clear so payment can be settled properly\n\nReady to apply?`,
     [
       { id: 'reg_start', title: '✅ Yes, Apply Now' },
       { id: 'reg_cancel', title: '❌ Not Now' },

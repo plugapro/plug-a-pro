@@ -1,5 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { analytics } from "@/lib/analytics";
+import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
 
 const SIDES = [
   {
@@ -10,12 +14,13 @@ const SIDES = [
       "Describe your job, get matched to nearby workers, and receive quotes — at no cost. You only pay the worker for the job itself.",
     points: [
       "No platform fee to request a match",
-      "See worker profiles and reviews before deciding",
       "Approve quotes before any work begins",
+      "Keep the booking and job updates on WhatsApp",
       "Pay directly to the worker on completion",
     ],
-    cta: "Request help",
-    href: "/waitlist",
+    cta: "Start on WhatsApp",
+    href: buildWhatsAppLink(whatsappMessages.customer),
+    ctaAudience: "customer" as const,
     highlight: false,
   },
   {
@@ -30,8 +35,9 @@ const SIDES = [
       "Small commission per completed job (announced at launch)",
       "Build a verified review history that earns you more leads",
     ],
-    cta: "Join as a worker",
-    href: "/for-workers",
+    cta: "I’m looking for work",
+    href: buildWhatsAppLink(whatsappMessages.worker),
+    ctaAudience: "worker" as const,
     highlight: true,
   },
 ];
@@ -65,9 +71,13 @@ export function PricingCards() {
           </ul>
           <Button
             nativeButton={false}
-            render={<Link href={side.href} />}
+            render={<Link href={side.href} target="_blank" rel="noopener noreferrer" />}
             variant={side.highlight ? "default" : "outline"}
             className="w-full"
+            onClick={() => {
+              analytics.whatsappClick(`pricing_cards_${side.ctaAudience}`);
+              analytics.ctaClick(side.cta, "pricing_cards", side.ctaAudience);
+            }}
           >
             {side.cta}
           </Button>

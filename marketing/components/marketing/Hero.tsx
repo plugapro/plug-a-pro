@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
+import {
+  buildWhatsAppLink,
+  whatsappAudienceOptions,
+  whatsappMessages,
+  whatsappNumberDisplay,
+} from "@/lib/whatsapp";
 
 export function Hero() {
   return (
@@ -45,6 +51,12 @@ export function Hero() {
           the price before anything starts. No app downloads, no strangers
           cold-calling. Just WhatsApp.
         </p>
+        <p className="text-sm text-muted-foreground mb-4 max-w-2xl mx-auto">
+          Need a service provider, looking for work, or want to join as a service provider? Start with us on WhatsApp.
+        </p>
+        <p className="text-sm font-medium mb-10 max-w-lg mx-auto" style={{ color: "oklch(0.985 0 0 / 0.86)" }}>
+          WhatsApp us on {whatsappNumberDisplay}
+        </p>
         <p className="text-sm text-muted-foreground mb-10 max-w-lg mx-auto">
           Started a DIY project and got stuck?{" "}
           <Link
@@ -59,22 +71,48 @@ export function Hero() {
         <div className="flex gap-4 justify-center flex-wrap">
           <Button
             nativeButton={false}
-            render={<Link href="/waitlist" />}
+            render={
+              <Link
+                href={buildWhatsAppLink(whatsappMessages.customer)}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            }
             size="lg"
-            onClick={() => analytics.ctaClick("Get early access", "hero", "customer")}
+            onClick={() => {
+              analytics.whatsappClick("hero_primary");
+              analytics.ctaClick("Start on WhatsApp", "hero", "customer");
+            }}
           >
-            Get early access
+            Start on WhatsApp
           </Button>
           <Button
             nativeButton={false}
-            render={<Link href="/for-workers" />}
+            render={<Link href="/how-it-works" />}
             variant="outline"
             size="lg"
             style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
-            onClick={() => analytics.ctaClick("I want work", "hero", "worker")}
+            onClick={() => analytics.howItWorksClick("hero_secondary_cta")}
           >
-            I want work →
+            Learn how it works
           </Button>
+        </div>
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
+          {whatsappAudienceOptions.map((option) => (
+            <Link
+              key={option.audience}
+              href={buildWhatsAppLink(option.message)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                analytics.whatsappClick(`hero_${option.audience}`);
+                analytics.ctaClick(option.label, "hero_audience", option.audience);
+              }}
+            >
+              {option.label}
+            </Link>
+          ))}
         </div>
         {/* Trust bullets */}
         <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm" style={{ color: "oklch(0.985 0 0 / 0.7)" }}>

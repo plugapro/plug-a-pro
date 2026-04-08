@@ -47,29 +47,33 @@ flowchart TD
   Z --> X
   Y -->|Approves| AA[(Booking created\nstatus: SCHEDULED)]
 
-  AA --> AB[Payment link sent\nPeach / Yoco checkout]
-  AB --> AC{Payment}
-  AC -->|Failed| AD[Retry or contact support]
-  AC -->|Paid| AE[(Payment PAID\nPayout PENDING)]
+  AA --> AB{Collection mode}
+  AB -->|Launch mode bypass| AC[(Payment marked AUTHORISED\nlaunch_mode)]
+  AB -->|Checkout enabled| AD[Payment link sent\nPeach / Yoco checkout]
+  AD --> AE{Payment}
+  AE -->|Failed| AF[Retry or contact support]
+  AE -->|Paid| AG[(Payment PAID)]
 
-  AE --> AF[Provider executes job\nsee Provider Journey]
-  AF --> AG{Job outcome}
-  AG -->|Issue raised| AH[(Dispute opened)]
-  AH --> AI[Admin mediates]
-  AI --> AJ[Resolved]
-  AG -->|Completed OK| AK[Customer confirms\ncompletion]
+  AC --> AH[Provider executes job\nsee Provider Journey]
+  AG --> AH
+  AH --> AI{Job outcome}
+  AI -->|Issue raised| AJ[(Dispute opened)]
+  AJ --> AK[Admin mediates]
+  AK --> AL[Resolved]
+  AI -->|Completed OK| AM[Customer confirms\ncompletion]
 
-  AK --> AL[Leave a review\n1–5 stars + comment]
-  AL --> AM([Journey complete])
+  AM --> AN[Leave a review\n1–5 stars + comment]
+  AN --> AO([Journey complete])
 
   style A fill:#1d4ed8,color:#fff
-  style AM fill:#16a34a,color:#fff
-  style AH fill:#dc2626,color:#fff
+  style AO fill:#16a34a,color:#fff
+  style AJ fill:#dc2626,color:#fff
   style L fill:#1e293b,color:#94a3b8
   style O fill:#1e293b,color:#94a3b8
   style R fill:#1e293b,color:#94a3b8
   style AA fill:#1e293b,color:#94a3b8
-  style AE fill:#1e293b,color:#94a3b8
+  style AC fill:#1e293b,color:#94a3b8
+  style AG fill:#1e293b,color:#94a3b8
 `
 
 const PROVIDER_JOURNEY = `
@@ -122,9 +126,9 @@ flowchart TD
 
   AJ --> AK[(Job: PENDING_COMPLETION_CONFIRMATION)]
   AK --> AL[Customer confirms\ncompletion]
-  AL --> AM[(Payment released\nPayout: PROCESSING)]
-  AM --> AN[Bank transfer received\nPayout: PAID]
-  AN --> AO([Journey complete — get paid!])
+  AL --> AM[(Payment record updated\nlaunch mode or checkout)]
+  AM --> AN[Job archived with\nreview history]
+  AN --> AO([Journey complete])
 
   style A fill:#7c3aed,color:#fff
   style AO fill:#16a34a,color:#fff
@@ -172,6 +176,7 @@ flowchart TD
   PROV_ACTION -->|Accept| PROV_ACCEPT[(Lead ACCEPTED\nMatch created)]
   PROV_ACTION -->|Decline| PROV_DECLINE[(Lead DECLINED)]
   PROV_ACCEPT --> PROV_NOTIFY[Notify customer of match]
+  PROV_ACCEPT --> PROV_QUOTE[Share app link for inspection or quote flow]
 
   DISPATCH -->|flow=reschedule| RESC_REASON[Ask: reason for reschedule]
   RESC_REASON --> RESC_SLOT[Propose new slot]
@@ -185,6 +190,7 @@ flowchart TD
   JR_DONE --> SAVE2[Save conversation state]
   REG_DONE --> SAVE2
   PROV_NOTIFY --> SAVE2
+  PROV_QUOTE --> SAVE2
   RESC_DONE --> SAVE2
   CANCEL_DONE --> SAVE2
   ST_SHOW --> SAVE2
@@ -217,7 +223,7 @@ stateDiagram-v2
   QUOTED --> QUOTE_DECLINED : customer declines
   QUOTE_DECLINED --> QUOTED : provider revises
 
-  QUOTE_APPROVED --> SCHEDULED : booking + payment confirmed
+  QUOTE_APPROVED --> SCHEDULED : booking created
 
   SCHEDULED --> EN_ROUTE : provider en route
   EN_ROUTE --> ARRIVED : provider on site
@@ -243,36 +249,31 @@ stateDiagram-v2
 const PAYMENT_FLOW = `
 flowchart LR
   A([Customer approves quote]) --> B[(Booking created\nstatus: SCHEDULED)]
-  B --> C[Platform generates\npayment link]
-  C --> D{PSP Provider\nPeach Payments / Yoco}
+  B --> C{PAYMENT_COLLECTION_MODE}
+  C -->|bypass| D[(Payment\nstatus: AUTHORISED\npspProvider: launch_mode)]
+  C -->|checkout| E[Platform generates\npayment link]
+  E --> F{PSP Provider\nPeach Payments / Yoco}
 
-  D -->|Customer pays| E[(Payment\nstatus: AUTHORISED)]
-  D -->|Payment fails| F[Retry / contact support]
-  F --> D
+  F -->|Customer pays| G[(Payment\nstatus: AUTHORISED)]
+  F -->|Payment fails| H[Retry / contact support]
+  H --> F
 
-  E --> G[PSP webhook fires\nPOST /api/webhooks/payments]
-  G --> H{Verify webhook\nsignature}
-  H -->|Invalid| I[Reject — log security event]
-  H -->|Valid| J[(Payment status → PAID\npaidAt recorded)]
+  G --> I[PSP webhook fires\nPOST /api/webhooks/payments]
+  I --> J{Verify webhook\nsignature}
+  J -->|Invalid| K[Reject — log security event]
+  J -->|Valid| L[(Payment status → PAID\npaidAt recorded)]
 
-  J --> K[(ProviderPayout created\nstatus: PENDING\ngrossAmount = booking quote)]
-  K --> L[Admin triggers payout\nor scheduled batch]
-  L --> M[(Payout → PROCESSING)]
-  M --> N[Bank transfer\nvia EFT / PayFast split]
-  N -->|Transfer confirmed| O[(Payout → PAID\nnetAmount = gross − commission\nreference recorded)]
-  N -->|Transfer fails| P[(Payout → FAILED)]
-  P --> Q[Manual retry by admin]
-  Q --> N
-
-  O --> R([Provider receives funds])
+  D --> M[Booking continues in\nlaunch adoption mode]
+  L --> M
+  M --> N[Provider completes job]
+  N --> O[Admin / offline settlement\naccording to launch ops]
+  O --> P([Collection flow complete])
 
   style A fill:#1d4ed8,color:#fff
-  style R fill:#16a34a,color:#fff
-  style I fill:#dc2626,color:#fff
-  style P fill:#dc2626,color:#fff
-  style J fill:#1e293b,color:#94a3b8
-  style K fill:#1e293b,color:#94a3b8
-  style O fill:#1e293b,color:#94a3b8
+  style P fill:#16a34a,color:#fff
+  style K fill:#dc2626,color:#fff
+  style D fill:#1e293b,color:#94a3b8
+  style L fill:#1e293b,color:#94a3b8
 `
 
 const PLATFORM_OVERVIEW = `
@@ -377,7 +378,7 @@ const FLOWS = [
   {
     id: 'payments',
     label: 'Payment Flow',
-    description: 'Customer payment through to provider payout',
+    description: 'Launch-mode collection behavior with optional checkout path',
     chart: PAYMENT_FLOW,
   },
 ]

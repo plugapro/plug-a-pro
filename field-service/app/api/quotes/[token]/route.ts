@@ -87,27 +87,27 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   return NextResponse.json({
     status: result.action,
     scheduledDate: result.action === 'approved' ? result.scheduledDate.toISOString() : null,
+    paymentMode: result.action === 'approved' ? result.payment.mode : null,
+    paymentStatus: result.action === 'approved' ? result.payment.status : null,
+    paymentUrl: result.action === 'approved' ? result.payment.checkoutUrl : null,
   })
 }
 
 async function notifyAfterDecision(result: {
-  action: string
-  quote: {
-    match: {
-      provider: { phone: string; name: string }
-      jobRequest: { customer: { phone: string; name: string }; category: string }
-    }
-  }
-  booking?: { scheduledDate: Date }
+  action: 'approved' | 'declined'
+  provider: { phone: string; name: string }
+  customer: { phone: string; name: string }
+  category: string
+  scheduledDate?: Date
 }) {
   const { sendText, sendCtaUrl } = await import('@/lib/whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const providerPhone = result.quote.match.provider.phone
-  const customerPhone = result.quote.match.jobRequest.customer.phone
-  const category = result.quote.match.jobRequest.category
+  const providerPhone = result.provider.phone
+  const customerPhone = result.customer.phone
+  const category = result.category
 
-  if (result.action === 'approved' && result.booking) {
-    const dateStr = result.booking.scheduledDate.toLocaleDateString('en-ZA', {
+  if (result.action === 'approved' && result.scheduledDate) {
+    const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
       weekday: 'short', day: 'numeric', month: 'short',
     })
     await sendCtaUrl(
@@ -119,7 +119,7 @@ async function notifyAfterDecision(result: {
     ).catch(() => {})
     await sendText(
       customerPhone,
-      `✅ *Booking Confirmed!*\n\n${result.quote.match.provider.name} will arrive on ${dateStr}.\n\nYou'll receive a reminder the day before.`
+      `✅ *Booking Confirmed!*\n\n${result.provider.name} will arrive on ${dateStr}.\n\nYou'll receive a reminder the day before.`
     ).catch(() => {})
   } else {
     await sendText(

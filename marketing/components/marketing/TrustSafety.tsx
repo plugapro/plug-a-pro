@@ -16,7 +16,7 @@ const TRUST_POINTS: {
   {
     icon: Phone,
     title: "Your number stays private",
-    body: "By default, your personal WhatsApp number is not shared with the other party. All messages go through the Plug-A-Pro platform.",
+    body: "Plug-A-Pro handles the intake, quote approval, and status updates from the platform number, so direct contact is not required to get the job moving.",
   },
   {
     icon: UserCheck,
@@ -36,7 +36,7 @@ const TRUST_POINTS: {
   {
     icon: MessageCircle,
     title: "Disputes handled on the platform",
-    body: "If something goes wrong, raise it through the platform. We have the full job record: status history, photos, quotes, and messages.",
+    body: "If something goes wrong, contact Plug-A-Pro support. We review the written quote, status history, and photos already on the job record.",
   },
   {
     icon: Star,

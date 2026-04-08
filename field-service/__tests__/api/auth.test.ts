@@ -114,7 +114,7 @@ describe('POST /api/auth/link', () => {
 
   it('rejects invalid phone format', async () => {
     const { getSession } = await import('../../lib/auth')
-    ;(getSession as any).mockResolvedValue({ id: 'user-123', role: 'customer' })
+    ;(getSession as any).mockResolvedValue({ id: 'user-123', role: 'customer', phone: '+27821234567' })
 
     const { POST } = await import('../../app/api/auth/link/route')
     const req = new NextRequest('http://localhost/api/auth/link', {
@@ -129,7 +129,11 @@ describe('POST /api/auth/link', () => {
 
   it('uses session userId, not any client-supplied userId', async () => {
     const { getSession, linkCustomerAccount } = await import('../../lib/auth')
-    ;(getSession as any).mockResolvedValue({ id: 'server-user-id', role: 'customer' })
+    ;(getSession as any).mockResolvedValue({
+      id: 'server-user-id',
+      role: 'customer',
+      phone: '+27821234567',
+    })
     ;(linkCustomerAccount as any).mockResolvedValue({ id: 'cust-001', isNew: false })
 
     const { POST } = await import('../../app/api/auth/link/route')
@@ -148,9 +152,32 @@ describe('POST /api/auth/link', () => {
     )
   })
 
+  it('rejects when the submitted phone does not match the verified session phone', async () => {
+    const { getSession } = await import('../../lib/auth')
+    ;(getSession as any).mockResolvedValue({
+      id: 'server-user-id',
+      role: 'customer',
+      phone: '+27820000000',
+    })
+
+    const { POST } = await import('../../app/api/auth/link/route')
+    const req = new NextRequest('http://localhost/api/auth/link', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(403)
+  })
+
   it('returns customerId on success', async () => {
     const { getSession, linkCustomerAccount } = await import('../../lib/auth')
-    ;(getSession as any).mockResolvedValue({ id: 'user-123', role: 'customer' })
+    ;(getSession as any).mockResolvedValue({
+      id: 'user-123',
+      role: 'customer',
+      phone: '+27821234567',
+    })
     ;(linkCustomerAccount as any).mockResolvedValue({ id: 'cust-001', isNew: true })
 
     const { POST } = await import('../../app/api/auth/link/route')

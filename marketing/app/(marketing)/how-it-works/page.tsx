@@ -19,7 +19,7 @@ const CUSTOMER_STEPS = [
     step: "2",
     title: "Get matched to a nearby worker",
     detail:
-      "The platform finds available workers near you who have the right skills. A lead is sent to up to four matching workers simultaneously. You're notified when one accepts.",
+      "The platform finds available workers near you who have the right skills. A lead is sent to up to three matching workers. You&apos;re notified when one accepts.",
   },
   {
     step: "3",
@@ -70,7 +70,7 @@ const WORKER_STEPS = [
     step: "4",
     title: "Say yes or no to the job",
     detail:
-      "If you can do it, tap to accept. You'll then see the full address and can message the customer through the app.",
+      "If you can do it, tap to accept. You'll then see the full address and move into Plug-A-Pro's inspection or quoting flow for that job.",
   },
   {
     step: "5",
@@ -82,7 +82,7 @@ const WORKER_STEPS = [
     step: "6",
     title: "Get paid and collect your rating",
     detail:
-      "You get paid through the platform after the job is finished. The customer leaves you a star rating. The more good ratings you have, the more work comes your way.",
+      "You get paid once the job is finished. The customer leaves you a star rating. The more good ratings you have, the more work comes your way.",
   },
 ];
 
@@ -164,7 +164,7 @@ export default function HowItWorksPage() {
               Your number stays private
             </p>
             <p>
-              Neither party&apos;s personal WhatsApp number is shared by default. All communication goes through Plug-A-Pro. The customer&apos;s address is shared with the worker in stages as the job moves forward.
+              Neither party&apos;s personal WhatsApp number is shared by default. Plug-A-Pro keeps the intake, quote approval, and job updates on record while the customer&apos;s address is shared with the worker in stages as the job moves forward.
             </p>
           </div>
         </div>

@@ -26,6 +26,12 @@ export async function POST(request: NextRequest) {
     if (!phone || typeof phone !== 'string' || !/^\+\d{10,15}$/.test(phone)) {
       return NextResponse.json({ error: 'Valid E.164 phone required' }, { status: 400 })
     }
+    if (!session.phone || session.phone !== phone) {
+      return NextResponse.json(
+        { error: 'Phone must match the verified session phone' },
+        { status: 403 }
+      )
+    }
 
     const result = await linkCustomerAccount({ userId: session.id, phone })
 

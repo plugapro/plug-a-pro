@@ -3,6 +3,7 @@
 // Called by both the HTTP approval page and the WhatsApp bot button handler.
 
 import { db } from './db'
+import { initializeBookingPayment, type PaymentCollectionMode } from './payments'
 
 export type QuoteDecisionResult =
   | {
@@ -11,6 +12,11 @@ export type QuoteDecisionResult =
       matchId: string
       bookingId: string
       scheduledDate: Date
+      payment: {
+        mode: PaymentCollectionMode
+        status: 'AUTHORISED' | 'PENDING'
+        checkoutUrl: string | null
+      }
       provider: { id: string; phone: string; name: string }
       customer: { id: string; phone: string; name: string }
       category: string
@@ -32,7 +38,7 @@ export async function processQuoteDecision(
   options?: { verifyCustomerPhone?: string }
 ): Promise<QuoteDecisionResult | { error: QuoteDecisionError }> {
   try {
-    return await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx) => {
       const quote = await tx.quote.findUnique({
         where: { id: quoteId },
         include: {
@@ -104,8 +110,33 @@ export async function processQuoteDecision(
         provider,
         customer,
         category,
+        paymentAmount: Number(quote.amount),
       }
     })
+
+    if (result.action === 'approved') {
+      const payment = await initializeBookingPayment({
+        bookingId: result.bookingId,
+        amountRand: result.paymentAmount,
+        customerEmail: null,
+        customerPhone: result.customer.phone,
+        description: `${result.category} booking`,
+      })
+
+      return {
+        action: 'approved',
+        quoteId: result.quoteId,
+        matchId: result.matchId,
+        bookingId: result.bookingId,
+        scheduledDate: result.scheduledDate,
+        payment,
+        provider: result.provider,
+        customer: result.customer,
+        category: result.category,
+      }
+    }
+
+    return result
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'UNKNOWN'
     if (msg === 'NOT_FOUND' || msg === 'ALREADY_ACTIONED' || msg === 'EXPIRED' || msg === 'FORBIDDEN') {
