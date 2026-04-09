@@ -39,7 +39,7 @@ export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
 
   // Allow public paths
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (isPublicPath(pathname)) {
     return response
   }
 
@@ -89,6 +89,13 @@ export async function proxy(request: NextRequest) {
   } catch {
     return redirectToSignIn(request)
   }
+}
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((path) => {
+    if (path === '/') return pathname === '/'
+    return pathname === path || pathname.startsWith(`${path}/`)
+  })
 }
 
 function redirectToSignIn(request: NextRequest): NextResponse {

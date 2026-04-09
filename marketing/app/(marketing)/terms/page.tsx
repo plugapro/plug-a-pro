@@ -38,7 +38,7 @@ export default function TermsPage() {
         <ul>
           <li>Submit job requests via WhatsApp or the web app</li>
           <li>Be matched with nearby verified Providers</li>
-          <li>Receive quotes, confirm bookings, and make secure online payments</li>
+          <li>Receive quotes, confirm bookings, and keep the job record in writing</li>
           <li>Rate and review completed jobs</li>
         </ul>
         <p>Plug a Pro allows Providers to:</p>
@@ -46,7 +46,7 @@ export default function TermsPage() {
           <li>Register and be verified on the platform</li>
           <li>Receive job leads matching their skills and service area</li>
           <li>Accept, quote, and complete jobs</li>
-          <li>Receive payment via the platform</li>
+          <li>Rely on the platform record when settling the job</li>
         </ul>
 
         <h2>4. Customer Obligations</h2>
@@ -70,8 +70,9 @@ export default function TermsPage() {
 
         <h2>6. Payments</h2>
         <p>
-          Payments are processed securely through <strong>PayFast</strong>. By making a payment you agree to
-          PayFast&rsquo;s terms of service.
+          Plug a Pro is introducing platform-assisted payments in stages. During the launch phase, payment
+          may be handled either through an online checkout link or directly between the customer and Provider,
+          depending on the service and workflow in use at the time of booking.
         </p>
         <h3>Refund Policy</h3>
         <ul>
@@ -83,8 +84,8 @@ export default function TermsPage() {
           We will investigate and may issue a partial or full refund at our discretion.</li>
         </ul>
         <p>
-          For quote-based jobs, payment is due after you accept the quote. Work commences only after
-          payment is confirmed.
+          For quote-based jobs, you always receive the written quote first. Any payment instructions that apply
+          to that booking will be confirmed once the quote is accepted.
         </p>
 
         <h2>7. Matching and Availability</h2>
@@ -119,7 +120,7 @@ export default function TermsPage() {
         <p>
           Plug a Pro is a marketplace. We do not perform the services ourselves and are not liable
           for the quality, safety, or outcome of work performed by Providers. Our liability to you
-          in connection with any job is limited to the amount paid for that job through our platform.
+          in connection with any job is limited to the amount, if any, that we directly processed for that job.
         </p>
         <p>
           To the maximum extent permitted by South African law, we exclude liability for indirect,

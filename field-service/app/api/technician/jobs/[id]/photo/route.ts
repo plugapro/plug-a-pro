@@ -77,7 +77,11 @@ export async function POST(
       select: { id: true },
     })
 
-    return NextResponse.json({ url, id: attachment?.id ?? null })
+    return NextResponse.json({
+      url,
+      id: attachment?.id ?? null,
+      proxyUrl: attachment ? `/api/attachments/${attachment.id}` : url,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upload failed'
     return NextResponse.json({ error: message }, { status: 422 })

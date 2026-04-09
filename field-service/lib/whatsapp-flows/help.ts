@@ -113,7 +113,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_payment':
       await sendButtons(
         ctx.phone,
-        `💳 *How Payment Works*\n\nWe accept:\n• Credit & debit card (Visa / Mastercard)\n• Instant EFT\n\nYou pay *online when booking*. Your booking is only confirmed once payment is received.\n\nFor quote-based jobs, we send you the quote first — you only pay after you accept it.`,
+        `💳 *How Payment Works*\n\nDuring our launch phase, payment is arranged after your quote is accepted and confirmed with the provider.\n\nFor some jobs we may send an online payment link. For others, Plug a Pro support will confirm the payment method with you directly.\n\nFor quote-based jobs, we always send the quote first so you can approve the price before anything moves ahead.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -124,7 +124,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_technician':
       await sendButtons(
         ctx.phone,
-        `👷 *Our Technicians*\n\nAll Plug a Pro technicians are:\n\n✅ ID-verified\n✅ Skill-assessed\n✅ Rated by previous customers\n\nWe never share your contact details directly with technicians. All communication goes through the app for your safety.`,
+        `👷 *Our Technicians*\n\nAll Plug a Pro technicians are:\n\n✅ ID-verified\n✅ Skill-assessed\n✅ Rated by previous customers\n\nWe do not need to share your personal contact details just to get the job moving. Plug a Pro handles the early quote and update flow for your safety.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },

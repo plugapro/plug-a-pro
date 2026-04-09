@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -9,6 +11,8 @@ import {
   SheetClose,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { analytics } from "@/lib/analytics";
+import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
 
 const navLinks = [
   { href: "/how-it-works", label: "How it works" },
@@ -50,11 +54,15 @@ export function Nav() {
           {/* Desktop CTA */}
           <Button
             nativeButton={false}
-            render={<Link href="/waitlist" />}
+            render={<Link href={buildWhatsAppLink(whatsappMessages.customer)} target="_blank" rel="noopener noreferrer" />}
             size="sm"
             className="hidden md:inline-flex"
+            onClick={() => {
+              analytics.whatsappClick("nav_desktop");
+              analytics.ctaClick("Chat on WhatsApp", "nav", "customer");
+            }}
           >
-            Get early access
+            Chat on WhatsApp
           </Button>
 
           {/* Mobile hamburger */}
@@ -80,10 +88,20 @@ export function Nav() {
               </nav>
               <div className="mt-6">
                 <SheetClose
-                  render={<Link href="/waitlist" />}
+                  render={
+                    <Link
+                      href={buildWhatsAppLink(whatsappMessages.customer)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  }
                   className="w-full inline-flex items-center justify-center rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                  onClick={() => {
+                    analytics.whatsappClick("nav_mobile");
+                    analytics.ctaClick("Chat on WhatsApp", "nav_mobile", "customer");
+                  }}
                 >
-                  Get early access
+                  Chat on WhatsApp
                 </SheetClose>
               </div>
             </SheetContent>

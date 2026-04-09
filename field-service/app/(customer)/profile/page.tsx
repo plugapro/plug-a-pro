@@ -13,6 +13,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { WhatsappPreferencesCard } from './WhatsappPreferencesCard'
 
 export const metadata = buildMetadata({ title: 'Profile', noIndex: true })
 
@@ -87,6 +88,9 @@ export default async function ProfilePage() {
           </form>
         </CardContent>
       </Card>
+
+      {/* WhatsApp notifications */}
+      <WhatsappPreferencesCard />
 
       {/* Navigation */}
       <div className="space-y-2">

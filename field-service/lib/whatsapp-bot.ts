@@ -28,6 +28,7 @@ import {
   PROVIDER_JOURNEY_TRIGGERS,
 } from './whatsapp-flows/provider-journey'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
+import { applyOptIn, applyOptOut } from './whatsapp-policy'
 
 // Conversation TTL: 30 minutes of inactivity resets to welcome
 const CONVERSATION_TTL_MS = 30 * 60 * 1000
@@ -51,6 +52,12 @@ const CANCEL_KEYWORDS = ['cancel', 'cancellation', 'kanselleer', 'stop booking']
 // Keywords that show a provider's active jobs list
 const PROVIDER_KEYWORDS = ['myjobs', 'my jobs', 'my work', 'jobs']
 
+// Keywords that trigger marketing opt-out
+const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no marketing', 'opt out', 'optout']
+
+// Keywords that trigger marketing opt-in
+const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in', 'optin']
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
@@ -66,6 +73,32 @@ export async function processInboundMessage(
 
     // Override: reset keywords always restart
     const rawText = reply.text?.toLowerCase() ?? ''
+
+    // ── Marketing opt-out/in — must precede RESET_KEYWORDS and CANCEL_KEYWORDS checks
+    // Ordering: marketing consent > cancel booking > reset to menu
+    // 'stop offers' / 'unsubscribe' → opt-out (not the same as 'stop' → menu reset)
+    if (STOP_PHRASES.some((p) => rawText === p || rawText.startsWith(p + ' '))) {
+      await applyOptOut(phone, 'bot', { note: `keyword: "${reply.text?.trim()}"` })
+      await sendText(
+        phone,
+        "✅ You've been unsubscribed from promotional messages.\n\nYou'll still receive important updates about your bookings. 📋\n\nTo re-subscribe, reply: *START OFFERS*"
+      )
+      return
+    }
+
+    // ── Marketing opt-in ──────────────────────────────────────────────────────
+    if (START_PHRASES.some((p) => {
+      if (p === 'subscribe') return rawText === p   // exact match only
+      return rawText === p || rawText.startsWith(p + ' ')
+    })) {
+      await applyOptIn(phone, 'bot', { note: `keyword: "${reply.text?.trim()}"` })
+      await sendText(
+        phone,
+        "✅ You're now subscribed to special offers and promotions! 🎉\n\nReply *STOP OFFERS* at any time to unsubscribe."
+      )
+      return
+    }
+
     const isReset = RESET_KEYWORDS.some((k) => rawText === k || rawText.startsWith(k + ' '))
     const isStatus = STATUS_KEYWORDS.some((k) => rawText.includes(k))
     const isRegistration = REGISTRATION_TRIGGERS.some(
@@ -164,31 +197,22 @@ export async function processInboundMessage(
       step = 'status_show'
     } else if (reply.id?.startsWith('mdc_')) {
       // ── Match decline reason responses ──────────────────────────────────────
-      const matchId = reply.id.replace(/^mdc_(unavailable|area|other)_/, '')
+      const leadId = reply.id.replace(/^mdc_(unavailable|area|other)_/, '')
       const reasonMap: Record<string, string> = {
-        [`mdc_unavailable_${matchId}`]: 'Not available',
-        [`mdc_area_${matchId}`]: 'Too far',
-        [`mdc_other_${matchId}`]: 'Other',
+        [`mdc_unavailable_${leadId}`]: 'Not available',
+        [`mdc_area_${leadId}`]: 'Too far',
+        [`mdc_other_${leadId}`]: 'Other',
       }
       const reason = reasonMap[reply.id] ?? 'Declined'
 
       const provider = await db.provider.findUnique({ where: { phone } })
       if (provider) {
-        const match = await db.match.findUnique({ where: { id: matchId } })
-        if (match && match.providerId === provider.id) {
-          await db.lead.updateMany({
-            where: { jobRequestId: match.jobRequestId, providerId: provider.id },
-            data: { status: 'DECLINED', respondedAt: new Date() },
-          })
-          await db.match.update({
-            where: { id: matchId },
-            data: { status: 'CANCELLED' },
-          }).catch(() => {})
-        }
+        const { declineLead } = await import('./matching-engine')
+        await declineLead({ leadId, providerId: provider.id })
       }
 
       const { sendText } = await import('./whatsapp-interactive')
-      await sendText(phone, `Understood — lead passed (${reason}). We'll reassign it to another provider.`)
+      await sendText(phone, `Understood — lead passed (${reason}). We'll keep matching this job with other providers.`)
       return
     } else if (
       reply.id?.startsWith('match_accept_') ||
@@ -313,7 +337,7 @@ async function saveConversation(params: {
 
 export async function notifyProviderNewJob(params: {
   providerPhone: string
-  matchId: string          // Match.id — used for quote routing
+  leadId: string
   category: string
   area: string             // suburb/city for display
   description: string      // short job description
@@ -324,11 +348,11 @@ export async function notifyProviderNewJob(params: {
 
   await sendButtons(
     params.providerPhone,
-    `🔔 *New Lead — ${params.category}*\n📍 ${params.area}  |  👤 ${params.customerInitial}\n📋 ${params.description}\n\n_Expires in 4 hours. Ref: ${params.matchId.slice(-8).toUpperCase()}_`,
+    `🔔 *New Lead — ${params.category}*\n📍 ${params.area}  |  👤 ${params.customerInitial}\n📋 ${params.description}\n\n_Expires in 4 hours. Ref: ${params.leadId.slice(-8).toUpperCase()}_`,
     [
-      { id: `match_accept_${params.matchId}`, title: '✅ Accept & Quote' },
-      { id: `match_inspect_${params.matchId}`, title: '🔍 View Details' },
-      { id: `match_decline_${params.matchId}`, title: '❌ Decline' },
+      { id: `match_accept_${params.leadId}`, title: '✅ Accept & Quote' },
+      { id: `match_inspect_${params.leadId}`, title: '🔍 View Details' },
+      { id: `match_decline_${params.leadId}`, title: '❌ Decline' },
     ]
   )
 }
@@ -352,6 +376,9 @@ export async function notifyProviderApplicationResult(params: {
       { footer: 'Welcome to the Plug a Pro network! 👋' }
     )
   } else {
+    // Intentional direct sendTemplate bypass: provider applicants have no Customer record,
+    // so canSend() would return 'customer_not_found'. This is a provider-facing transactional
+    // message (application outcome) — opt-in policy does not apply.
     const { sendTemplate } = await import('./whatsapp')
     await sendTemplate({
       to: params.phone,
@@ -516,7 +543,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
   const { sendButtons, sendCtaUrl, sendText } = await import('./whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
-  const matchId = buttonId
+  const leadId = buttonId
     .replace('match_accept_', '')
     .replace('match_inspect_', '')
     .replace('match_decline_', '')
@@ -527,19 +554,35 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
     return
   }
 
-  const match = await db.match.findUnique({
-    where: { id: matchId },
-    include: { jobRequest: { include: { address: true } } },
+  const lead = await db.lead.findUnique({
+    where: { id: leadId },
+    include: {
+      jobRequest: { include: { address: true } },
+      provider: { select: { id: true } },
+    },
   })
 
-  if (!match || match.providerId !== provider.id) {
+  if (!lead || lead.providerId !== provider.id) {
     await sendText(phone, '⚠️ This lead is no longer available.')
     return
   }
 
-  const quoteUrl = `${appUrl}/technician/quotes/${matchId}`
-
   if (buttonId.startsWith('match_accept_')) {
+    const { acceptLead } = await import('./matching-engine')
+    const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: false })
+
+    if (!result.ok) {
+      const message =
+        result.reason === 'TAKEN'
+          ? '⚠️ Another provider has already accepted this job.'
+          : result.reason === 'EXPIRED'
+          ? '⏰ This lead expired before you responded.'
+          : '⚠️ This lead is no longer available.'
+      await sendText(phone, message)
+      return
+    }
+
+    const quoteUrl = `${appUrl}/technician/quotes/${result.matchId}`
     await sendCtaUrl(
       phone,
       `✅ *Build your quote*\n\nAdd your labour cost, materials (if any), and estimated time — the customer will receive it for approval.`,
@@ -551,10 +594,21 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
   }
 
   if (buttonId.startsWith('match_inspect_')) {
-    await db.match.update({
-      where: { id: matchId },
-      data: { inspectionNeeded: true, status: 'INSPECTION_SCHEDULED' },
-    })
+    const { acceptLead } = await import('./matching-engine')
+    const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: true })
+
+    if (!result.ok) {
+      const message =
+        result.reason === 'TAKEN'
+          ? '⚠️ Another provider has already accepted this job.'
+          : result.reason === 'EXPIRED'
+          ? '⏰ This lead expired before you responded.'
+          : '⚠️ This lead is no longer available.'
+      await sendText(phone, message)
+      return
+    }
+
+    const quoteUrl = `${appUrl}/technician/quotes/${result.matchId}`
     await sendCtaUrl(
       phone,
       `🔍 *Inspection first — understood.*\n\nContact the customer to arrange a visit. Once you've assessed the job, return here to submit your quote.`,
@@ -566,13 +620,13 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
   }
 
   if (buttonId.startsWith('match_decline_')) {
-    await sendButtons(
-      phone,
-      '❌ *Decline Lead*\n\nWhy are you declining?',
-      [
-        { id: `mdc_unavailable_${matchId}`, title: '📅 Not available' },
-        { id: `mdc_area_${matchId}`, title: '📍 Too far' },
-        { id: `mdc_other_${matchId}`, title: '✏️ Other reason' },
+      await sendButtons(
+        phone,
+        '❌ *Decline Lead*\n\nWhy are you declining?',
+        [
+        { id: `mdc_unavailable_${leadId}`, title: '📅 Not available' },
+        { id: `mdc_area_${leadId}`, title: '📍 Too far' },
+        { id: `mdc_other_${leadId}`, title: '✏️ Other reason' },
       ]
     )
     return
@@ -816,102 +870,42 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
   const quoteId = buttonId.replace('quote_accept_', '').replace('quote_decline_', '')
   const action = buttonId.startsWith('quote_accept_') ? 'approve' : 'decline'
 
-  try {
-    const result = await db.$transaction(async (tx) => {
-      const quote = await tx.quote.findUnique({
-        where: { id: quoteId },
-        include: {
-          match: {
-            include: {
-              provider: { select: { id: true, phone: true, name: true } },
-              jobRequest: {
-                include: {
-                  customer: { select: { id: true, phone: true, name: true } },
-                },
-              },
-            },
-          },
-        },
-      })
+  const { processQuoteDecision } = await import('./quotes')
+  const result = await processQuoteDecision(quoteId, action, { verifyCustomerPhone: phone })
 
-      if (!quote) throw new Error('NOT_FOUND')
-      if (quote.match.jobRequest.customer.phone !== phone) throw new Error('FORBIDDEN')
-      if (quote.status !== 'PENDING') throw new Error('ALREADY_ACTIONED')
-      if (quote.validUntil && new Date() > quote.validUntil) throw new Error('EXPIRED')
-
-      if (action === 'decline') {
-        await tx.quote.update({ where: { id: quoteId }, data: { status: 'DECLINED', declinedAt: new Date() } })
-        await tx.match.update({ where: { id: quote.matchId }, data: { status: 'QUOTE_DECLINED' } })
-        return {
-          action: 'declined' as const,
-          providerPhone: quote.match.provider.phone,
-          category: quote.match.jobRequest.category,
-        }
-      }
-
-      await tx.quote.update({ where: { id: quoteId }, data: { status: 'APPROVED', approvedAt: new Date() } })
-      await tx.match.update({ where: { id: quote.matchId }, data: { status: 'QUOTE_APPROVED' } })
-
-      const scheduledDate = quote.preferredDate ?? new Date(Date.now() + 48 * 60 * 60 * 1000)
-
-      const booking = await tx.booking.create({
-        data: {
-          matchId: quote.matchId,
-          quoteId: quote.id,
-          status: 'SCHEDULED',
-          scheduledDate,
-        },
-      })
-
-      await tx.job.create({
-        data: {
-          bookingId: booking.id,
-          providerId: quote.match.provider.id,
-          status: 'SCHEDULED',
-        },
-      })
-
-      return {
-        action: 'approved' as const,
-        providerPhone: quote.match.provider.phone,
-        providerName: quote.match.provider.name,
-        category: quote.match.jobRequest.category,
-        scheduledDate,
-      }
-    })
-
-    if (result.action === 'approved') {
-      const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
-        weekday: 'short', day: 'numeric', month: 'short',
-      })
-      await sendCtaUrl(
-        result.providerPhone,
-        `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
-        'View Job',
-        `${appUrl}/technician`
-      ).catch(() => {})
-      await sendText(
-        phone,
-        `✅ *Booking confirmed!*\n\n*${result.providerName}* is scheduled for *${dateStr}*. We'll send you a reminder the day before.\n\nQuestions? Reply here anytime.`
-      )
-    } else {
-      await sendText(
-        result.providerPhone,
-        `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${result.category} quote. Your profile remains active and new leads will come through as they arise.`
-      ).catch(() => {})
-      await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'UNKNOWN'
-    if (msg === 'ALREADY_ACTIONED') {
+  if ('error' in result) {
+    if (result.error === 'ALREADY_ACTIONED') {
       await sendText(phone, action === 'approve'
         ? "✅ You've already accepted this quote. Check your messages for the booking confirmation."
         : "This quote has already been declined. Reply *Hi* if you'd like to submit a new service request.")
-    } else if (msg === 'EXPIRED') {
+    } else if (result.error === 'EXPIRED') {
       await sendText(phone, "⏰ This quote has expired. Reply *Hi* to submit a new request and we'll get a fresh quote to you.")
     } else {
       await sendText(phone, "😔 Something went wrong on our end. Please use the link in the original quote message, or reply *Hi* to start again.")
     }
+    return
+  }
+
+  if (result.action === 'approved') {
+    const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
+      weekday: 'short', day: 'numeric', month: 'short',
+    })
+    await sendCtaUrl(
+      result.provider.phone,
+      `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
+      'View Job',
+      `${appUrl}/technician`
+    ).catch(() => {})
+    await sendText(
+      phone,
+      `✅ *Booking confirmed!*\n\n*${result.provider.name}* is scheduled for *${dateStr}*. We'll send you a reminder the day before.\n\nQuestions? Reply here anytime.`
+    )
+  } else {
+    await sendText(
+      result.provider.phone,
+      `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${result.category} quote. Your profile remains active and new leads will come through as they arise.`
+    ).catch(() => {})
+    await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
   }
 }
 

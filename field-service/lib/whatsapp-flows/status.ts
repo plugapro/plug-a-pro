@@ -86,7 +86,9 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
     : JOB_REQUEST_STATUS_LABELS[requestStatus] ?? requestStatus
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const trackingUrl = `${appUrl}/requests/${latest.id}`
+  const trackingUrl = appUrl
+    ? `${appUrl}/requests/${latest.id}`
+    : `/requests/${latest.id}`
 
   // Extra work pending? Send approval reminder
   if (jobStatus === 'AWAITING_APPROVAL' && activeJob) {

@@ -7,7 +7,6 @@ import { HowItWorksSteps } from "@/components/marketing/HowItWorksSteps";
 import { OperatingModel } from "@/components/marketing/OperatingModel";
 import { Features } from "@/components/marketing/Features";
 import { TrustSafety } from "@/components/marketing/TrustSafety";
-import { SocialProof } from "@/components/marketing/SocialProof";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { SectionTracker } from "@/components/analytics/SectionTracker";
 import { ScrollDepthTracker } from "@/components/analytics/ScrollDepthTracker";

@@ -16,7 +16,7 @@ export const metadata: Metadata = buildMetadata({
 const CUSTOMER_FAQS = [
   {
     q: "What is Plug-A-Pro?",
-    a: "Plug-A-Pro connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and the whole process happens through the app: quoting, booking, tracking, and payment.",
+    a: "Plug-A-Pro connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and Plug-A-Pro keeps the quote, booking, and job updates in one written record.",
   },
   {
     q: "What types of jobs can I get help with?",
@@ -28,7 +28,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "Will the worker see my phone number?",
-    a: "Not by default. All communication at the matching and quoting stage goes through the Plug-A-Pro platform. Your personal number is only shared if you and the worker explicitly agree to direct contact.",
+    a: "Not by default. Plug-A-Pro handles the initial intake, matching, quote approval, and job updates from the platform number. If you and the worker want to share direct contact details later, that happens by choice.",
   },
   {
     q: "How do quotes work?",
@@ -36,7 +36,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "What happens if something goes wrong?",
-    a: "Raise a dispute through the app. We have the full job record: status history, photos, quotes, and messages. Our team reviews and resolves every dispute.",
+    a: "Contact Plug-A-Pro support on WhatsApp. We review the written quote, job status history, and photos on record before deciding what happens next.",
   },
   {
     q: "Started a DIY project and got stuck?",
@@ -59,7 +59,7 @@ const WORKER_FAQS = [
   },
   {
     q: "How do leads work?",
-    a: "When a customer job matches your skills and area, you receive a WhatsApp notification with the job category, suburb, and urgency. You accept or decline. If you accept, you get the full address and a platform message thread opens with the customer.",
+    a: "When a customer job matches your skills and area, you receive a WhatsApp notification with the job category, suburb, and urgency. You accept or decline. If you accept, you get the full address and move forward to inspection or quoting through Plug-A-Pro.",
   },
   {
     q: "What information does the customer see about me?",

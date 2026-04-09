@@ -24,6 +24,8 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
   const [scheduledDate, setScheduledDate] = useState<string | null>(
     quote.status === 'APPROVED' ? (quote.preferredDate ?? null) : null
   )
+  const [paymentMode, setPaymentMode] = useState<'bypass' | 'checkout' | null>(null)
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   if (quote.status === 'APPROVED' || result === 'approved') {
@@ -42,6 +44,16 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         <p className="text-sm text-muted-foreground">
           {quote.providerName} has been notified. You&apos;ll receive a confirmation message on WhatsApp.
         </p>
+        {paymentMode === 'bypass' && (
+          <p className="text-sm text-muted-foreground">
+            Online payment is being phased in. For now, payment is coordinated in launch mode so your booking can move ahead without a checkout step.
+          </p>
+        )}
+        {paymentMode === 'checkout' && paymentUrl && (
+          <Button asChild className="w-full">
+            <a href={paymentUrl} target="_blank" rel="noopener noreferrer">Complete payment</a>
+          </Button>
+        )}
       </div>
     )
   }
@@ -89,9 +101,18 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         }
         throw new Error(data.error ?? 'Something went wrong')
       }
-      const data = await res.json().catch(() => ({})) as { status?: string; scheduledDate?: string | null }
+      const data = await res.json().catch(() => ({})) as {
+        status?: string
+        scheduledDate?: string | null
+        paymentMode?: 'bypass' | 'checkout' | null
+        paymentUrl?: string | null
+      }
       if (action === 'approve' && data.scheduledDate) {
         setScheduledDate(data.scheduledDate)
+      }
+      if (action === 'approve') {
+        setPaymentMode(data.paymentMode ?? null)
+        setPaymentUrl(data.paymentUrl ?? null)
       }
       setResult(action === 'approve' ? 'approved' : 'declined')
     } catch (err) {

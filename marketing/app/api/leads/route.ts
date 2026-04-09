@@ -65,6 +65,11 @@ function normalizePhone(value: string) {
     ? `+${cleaned.slice(1).replace(/\+/g, "")}`
     : cleaned.replace(/\+/g, "");
 
+  // Convert SA local format 0XXXXXXXXX → +27XXXXXXXXX
+  if (/^0\d{9}$/.test(withSinglePlus)) {
+    return `+27${withSinglePlus.slice(1)}`;
+  }
+
   return withSinglePlus;
 }
 
@@ -90,7 +95,7 @@ export async function POST(request: Request) {
   }
 
   const { error } = await supabase
-    .from("leads")
+    .from("marketing_leads")
     .insert(
       result.data.type === "onboarding"
         ? {

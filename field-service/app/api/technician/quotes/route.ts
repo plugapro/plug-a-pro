@@ -73,8 +73,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ quoteId: existing.id, alreadySubmitted: true })
   }
 
-  if (!['MATCHED', 'INSPECTION_SCHEDULED', 'INSPECTION_COMPLETE'].includes(match.status)) {
-    return NextResponse.json({ error: 'Quote already submitted for this match' }, { status: 409 })
+  const expectedStatuses = match.inspectionNeeded
+    ? ['INSPECTION_COMPLETE']
+    : ['MATCHED']
+
+  if (!expectedStatuses.includes(match.status)) {
+    const error = match.inspectionNeeded
+      ? 'Complete the inspection before submitting a quote'
+      : 'Quote already submitted for this match'
+    return NextResponse.json({ error }, { status: 409 })
+  }
+
+  if (match.inspectionNeeded && !postInspection) {
+    return NextResponse.json(
+      { error: 'Inspection jobs must be submitted as post-inspection quotes' },
+      { status: 400 },
+    )
   }
 
   const totalAmount = labourCost + materialsCost

@@ -17,14 +17,14 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "Trust & Safety",
   description:
-    "How Plug-A-Pro protects customers and workers: anonymous communication, worker screening, written quotes, photo evidence, and dispute mediation.",
+    "How Plug-A-Pro protects customers and workers: careful contact handling, worker screening, written quotes, photo evidence, and manual support review.",
 });
 
 const CUSTOMER_PROTECTIONS = [
   {
     icon: Eye,
     title: "Your number stays private",
-    body: "Customers and workers never exchange personal phone numbers through the platform. All messages go through a platform relay until both parties explicitly agree to share contact details.",
+    body: "Plug-A-Pro handles the intake, matching, quote approval, and status updates from the platform number. Direct contact is not required to get the job booked and tracked.",
   },
   {
     icon: UserCheck,
@@ -57,12 +57,12 @@ const WORKER_PROTECTIONS = [
   {
     icon: Eye,
     title: "Your number stays private too",
-    body: "Workers also benefit from the relay communication model. You don't need to share your personal number with every customer. The platform handles contact until you're comfortable.",
+    body: "Workers also benefit from the platform-managed flow. Plug-A-Pro handles the intake, quote approval, and status updates so you do not have to share your personal number just to get started.",
   },
   {
     icon: ShieldCheck,
-    title: "Payment is held and then released",
-    body: "Payment is processed before the job completes. When the job is confirmed done, funds are released to you. You don't chase payment after the fact.",
+    title: "Written job record for payment follow-through",
+    body: "The quote, extra work approvals, photos, and completion trail stay on record so payment discussions are anchored to something written instead of memory or verbal promises.",
   },
 ];
 
@@ -71,13 +71,13 @@ const DISPUTE_STEPS = [
     number: "1",
     title: "Raise a dispute",
     detail:
-      "Either the customer or the worker can raise a dispute through the platform. This pauses the payment release and opens a mediation case.",
+      "Either the customer or the worker can contact Plug-A-Pro support. We open a manual review case and check the written job record before deciding next steps.",
   },
   {
     number: "2",
     title: "Both sides submit evidence",
     detail:
-      "The platform asks both parties to submit their account, any photos, and the written quote. All platform communications are already stored as a record.",
+      "We ask both sides for their account of what happened, any photos, and the written quote. The job record gives support a starting point for the review.",
   },
   {
     number: "3",
@@ -89,7 +89,7 @@ const DISPUTE_STEPS = [
     number: "4",
     title: "Resolution",
     detail:
-      "Based on the evidence, we either release payment to the worker, issue a partial refund, or process a full refund to the customer. Both parties are notified of the outcome and the reasoning.",
+      "Based on the evidence, Plug-A-Pro sets the next step for the case and notifies both parties of the outcome and reasoning. Financial resolution depends on the payment method used for that job during the launch phase.",
   },
 ];
 
@@ -105,7 +105,7 @@ export default function TrustPage() {
           Built on accountability. For both sides.
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-          Plug-A-Pro protects customers by documenting everything and screening workers. It protects workers by documenting agreements and holding payments. Everyone benefits from a system that keeps both sides accountable.
+          Plug-A-Pro protects customers by documenting everything and screening workers. It protects workers by documenting agreements and keeping a clean service record. Everyone benefits from a system that keeps both sides accountable.
         </p>
       </div>
 
@@ -123,11 +123,11 @@ export default function TrustPage() {
             <h2 className="text-2xl font-bold">Anonymous communication</h2>
           </div>
           <p className="text-muted-foreground mb-8 max-w-2xl">
-            By default, customers and workers never exchange personal phone numbers. All messages go through Plug-A-Pro. Both parties see Plug-A-Pro contact details, not each other&apos;s personal numbers.
+            Plug-A-Pro manages the intake, matching, quote approval, and status updates from the platform number. That means the job can move forward without either side needing to exchange personal contact details at the start.
           </p>
           <div className="rounded-2xl border border-border/40 p-6 bg-muted/20">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">How it works:</strong> Messages arrive via the Plug-A-Pro WhatsApp number with details about the job. Neither party needs to store the other&apos;s contact details. Once both parties have met on-site, they can choose to share contact details directly. It&apos;s never required.
+              <strong className="text-foreground">How it works:</strong> The job starts on the Plug-A-Pro WhatsApp number. Quotes and approval stay in writing, and both sides receive structured updates from Plug-A-Pro as the booking moves forward. If they later want direct contact, that happens outside the initial matching flow.
             </p>
           </div>
         </div>
@@ -213,7 +213,7 @@ export default function TrustPage() {
             <h2 className="text-2xl font-bold">Dispute resolution</h2>
           </div>
           <p className="text-muted-foreground mb-10 max-w-2xl">
-            When something goes wrong, there is a process. Payment is held while we review the dispute. Neither side can walk away with money that hasn&apos;t been earned or refunded.
+            When something goes wrong, there is still a process. Plug-A-Pro reviews the quote, photos, and job history on record so support is working from written evidence rather than guesswork.
           </p>
           <div className="space-y-0">
             {DISPUTE_STEPS.map((s, i) => (

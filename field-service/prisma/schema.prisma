@@ -28,10 +28,19 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  addresses   Address[]
-  jobRequests JobRequest[]
-  ratings     Review[]
-  messages    MessageEvent[]
+  // WhatsApp preferences
+  whatsappServiceOptIn      Boolean   @default(true)   // lifecycle/utility msgs
+  whatsappMarketingOptIn    Boolean   @default(false)  // promotional/marketing msgs
+  whatsappMarketingOptInAt  DateTime?
+  whatsappMarketingOptOutAt DateTime?
+  whatsappMarketingSource   String?   // "bot" | "pwa" | "admin" | "import"
+  lastWhatsappPrefSyncAt    DateTime?
+
+  addresses              Address[]
+  jobRequests            JobRequest[]
+  ratings                Review[]
+  messages               MessageEvent[]
+  whatsappPreferenceLogs WhatsappPreferenceLog[]
 
   @@map("customers")
 }
@@ -471,6 +480,22 @@ model MessageEvent {
   booking  Booking?  @relation(fields: [bookingId], references: [id])
 
   @@map("message_events")
+}
+
+model WhatsappPreferenceLog {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  field       String   // "whatsappMarketingOptIn" | "whatsappServiceOptIn"
+  oldValue    Boolean
+  newValue    Boolean
+  source      String   // "bot" | "pwa" | "admin" | "webhook" | "import"
+  actorId     String?  // admin user id if source=="admin"
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@map("whatsapp_preference_logs")
 }
 
 // Per-phone conversation session — drives the WhatsApp bot state machine

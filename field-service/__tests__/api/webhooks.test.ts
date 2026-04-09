@@ -178,3 +178,6 @@ describe('verifyWebhookSignature', () => {
     expect(result).toBe(false)
   })
 })
+
+// Note: verifyMetaSignature and payments idempotency tests are in webhooks-security.test.ts
+// (kept separate to avoid mock hoisting conflicts)

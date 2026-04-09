@@ -4,6 +4,8 @@ import { buildMetadata } from "@/lib/metadata";
 import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { Smartphone, MapPin, Star, ShieldCheck } from "lucide-react";
+import { whatsappNumberDisplay } from "@/lib/whatsapp";
+import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 
 export const metadata: Metadata = buildMetadata({
   title: "For Workers",
@@ -20,7 +22,7 @@ const BENEFITS = [
   {
     icon: Smartphone,
     title: "Works on your WhatsApp",
-    body: "Get job notifications, say yes or no, and talk to customers. All through the WhatsApp you already use. Nothing to download.",
+    body: "Get job notifications, say yes or no, and move through the Plug-A-Pro quote flow on the WhatsApp you already use. Nothing to download.",
   },
   {
     icon: ShieldCheck,
@@ -51,7 +53,7 @@ const HOW_TO_JOIN = [
     step: "3",
     title: "Start getting work",
     detail:
-      "When a job in your area matches what you do, you'll get a WhatsApp message. Say yes, talk to the customer through the app, send your price, do the job, and get paid.",
+      "When a job in your area matches what you do, you'll get a WhatsApp message. Say yes, move into the Plug-A-Pro quote flow, do the job, and get paid.",
   },
 ];
 
@@ -69,10 +71,16 @@ export default function ForWorkersPage() {
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
           Plug-A-Pro brings paying home-job customers to you. Register once, set your areas and skills, and start receiving matched leads on WhatsApp.
         </p>
+        <p className="text-sm font-medium mb-8">
+          Start on WhatsApp at {whatsappNumberDisplay}
+        </p>
         <div className="flex gap-4 justify-center flex-wrap">
-          <Button nativeButton={false} render={<Link href="/waitlist" />} size="lg">
-            Register as a worker
-          </Button>
+          <WhatsAppCtaButton
+            audience="worker"
+            label="Start on WhatsApp"
+            source="for_workers_header"
+            size="lg"
+          />
           <Button
             nativeButton={false}
             render={<Link href="/how-it-works" />}
@@ -182,9 +190,12 @@ export default function ForWorkersPage() {
               </li>
             ))}
           </ul>
-          <Button nativeButton={false} render={<Link href="/waitlist" />} size="sm">
-            Register now
-          </Button>
+          <WhatsAppCtaButton
+            audience="provider"
+            label="Join on WhatsApp"
+            source="for_workers_provider_join"
+            size="sm"
+          />
         </div>
       </section>
 

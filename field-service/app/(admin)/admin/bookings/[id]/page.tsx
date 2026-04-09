@@ -370,14 +370,14 @@ export default async function BookingDetailPage({
                         {booking.job.photos.map((photo: { id: string; url: string; label?: string | null }) => (
                           <a
                             key={photo.id}
-                            href={photo.url}
+                            href={`/api/attachments/${photo.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="group relative block overflow-hidden rounded-md border aspect-square bg-muted"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={photo.url}
+                              src={`/api/attachments/${photo.id}`}
                               alt={photo.label ?? 'Job photo'}
                               className="h-full w-full object-cover transition-opacity group-hover:opacity-80"
                             />

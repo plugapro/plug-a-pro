@@ -4,6 +4,7 @@
 // Steps: address → description → confirm → submitted
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -344,12 +345,12 @@ export function BookingFlow({
             </CardContent>
           </Card>
 
-          <a
+          <Link
             href="/bookings"
             className="block text-center text-xs text-muted-foreground hover:text-foreground"
           >
             View my bookings
-          </a>
+          </Link>
         </div>
       )}
     </div>

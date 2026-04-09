@@ -24,7 +24,7 @@ export default function PrivacyPage() {
           <li><strong>Contact:</strong> WhatsApp phone number (used as your account identifier)</li>
           <li><strong>Location:</strong> Service address (street, suburb, city) provided when booking</li>
           <li><strong>Job details:</strong> Service category, availability preferences, and job descriptions</li>
-          <li><strong>Payment:</strong> Payment confirmation data from PayFast — we do not store card numbers</li>
+          <li><strong>Payment:</strong> If platform-assisted payment is used for a booking, confirmation and reconciliation data from the payment provider. We do not store card numbers.</li>
           <li><strong>Conversation history:</strong> WhatsApp messages exchanged with our bot to process your requests</li>
         </ul>
 
@@ -33,7 +33,7 @@ export default function PrivacyPage() {
           <li><strong>Identity:</strong> Full name and ID verification status</li>
           <li><strong>Contact:</strong> WhatsApp phone number</li>
           <li><strong>Professional:</strong> Skills, service areas, experience, and availability</li>
-          <li><strong>Earnings:</strong> Job completion records and payment disbursement history</li>
+          <li><strong>Earnings:</strong> Job completion records and any payout or settlement history processed through the platform</li>
         </ul>
 
         <h3>Automatically Collected</h3>
@@ -47,7 +47,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Service delivery:</strong> Matching customers with suitable nearby providers</li>
           <li><strong>Communications:</strong> Booking confirmations, job updates, and support via WhatsApp</li>
-          <li><strong>Payments:</strong> Processing and reconciling payments through PayFast</li>
+          <li><strong>Payments:</strong> Processing and reconciling platform-assisted payments when that workflow is used</li>
           <li><strong>Safety:</strong> Verifying provider identity, detecting fraud, and preventing abuse</li>
           <li><strong>Improvement:</strong> Analysing anonymised usage patterns to improve the platform</li>
           <li><strong>Legal compliance:</strong> Meeting obligations under POPIA and South African law</li>
@@ -56,8 +56,8 @@ export default function PrivacyPage() {
 
         <h2>3. How We Share Your Information</h2>
         <ul>
-          <li><strong>Matched providers:</strong> Receive your first name, suburb, and job description only. Your phone number is not shared directly &mdash; all communication flows through our platform.</li>
-          <li><strong>PayFast:</strong> Payment processing. Their privacy policy governs data they collect at checkout.</li>
+          <li><strong>Matched providers:</strong> Receive your first name, suburb, and job description only. Your phone number is not shared directly at the start of the workflow.</li>
+          <li><strong>Payment providers:</strong> If a booking uses platform-assisted payment, the provider handling checkout will process payment data under their own privacy terms.</li>
           <li><strong>Supabase:</strong> Database and authentication infrastructure, hosted in a GDPR-compliant data centre.</li>
           <li><strong>Meta (WhatsApp):</strong> Messages via our WhatsApp channel are processed by Meta Platforms under their terms.</li>
           <li><strong>Vercel:</strong> Our hosting provider for application code and infrastructure.</li>

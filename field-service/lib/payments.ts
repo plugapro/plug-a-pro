@@ -10,6 +10,14 @@
 
 import { db } from './db'
 
+export type PaymentCollectionMode = 'bypass' | 'checkout'
+
+export interface BookingPaymentSetup {
+  mode: PaymentCollectionMode
+  status: 'AUTHORISED' | 'PENDING'
+  checkoutUrl: string | null
+}
+
 // ─── Interface ────────────────────────────────────────────────────────────────
 
 export interface CheckoutParams {
@@ -50,6 +58,10 @@ interface PspProvider {
   verifyWebhook(rawBody: string, signature: string): boolean
   parseWebhookEvent(rawBody: string): PaymentEvent
   createRefund(pspReference: string, amountCents: number): Promise<RefundResult>
+}
+
+export function getPaymentCollectionMode(): PaymentCollectionMode {
+  return process.env.PAYMENT_COLLECTION_MODE === 'checkout' ? 'checkout' : 'bypass'
 }
 
 // ─── Provider: Peach Payments (South Africa) ─────────────────────────────────
@@ -364,6 +376,69 @@ export async function createCheckout(params: CheckoutParams): Promise<CheckoutSe
   })
 
   return session
+}
+
+export async function initializeBookingPayment(params: {
+  bookingId: string
+  amountRand: number
+  customerEmail?: string | null
+  customerPhone?: string | null
+  description: string
+}): Promise<BookingPaymentSetup> {
+  const mode = getPaymentCollectionMode()
+
+  if (mode === 'bypass') {
+    await db.payment.upsert({
+      where: { bookingId: params.bookingId },
+      create: {
+        bookingId: params.bookingId,
+        status: 'AUTHORISED',
+        amount: params.amountRand,
+        currency: 'ZAR',
+        pspProvider: 'launch_mode',
+        metadata: {
+          collectionMode: 'bypass',
+          note: 'Online collection suppressed during adoption phase',
+        },
+      },
+      update: {
+        status: 'AUTHORISED',
+        pspProvider: 'launch_mode',
+        metadata: {
+          collectionMode: 'bypass',
+          note: 'Online collection suppressed during adoption phase',
+        },
+      },
+    })
+
+    return {
+      mode,
+      status: 'AUTHORISED',
+      checkoutUrl: null,
+    }
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const session = await createCheckout({
+    bookingId: params.bookingId,
+    amount: Math.round(params.amountRand * 100),
+    currency: 'ZAR',
+    customerEmail: params.customerEmail ?? undefined,
+    customerPhone: params.customerPhone ?? undefined,
+    description: params.description,
+    successUrl: `${appUrl}/bookings/${params.bookingId}`,
+    cancelUrl: `${appUrl}/quotes`,
+    notifyUrl: `${appUrl}/api/webhooks/payments`,
+    metadata: {
+      bookingId: params.bookingId,
+    },
+  })
+
+  return {
+    mode,
+    status: 'PENDING',
+    checkoutUrl: session.url,
+  }
 }
 
 export function verifyWebhookSignature(rawBody: string, signature: string): boolean {

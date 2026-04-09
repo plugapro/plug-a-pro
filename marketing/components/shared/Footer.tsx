@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { siteConfig } from "@/lib/metadata";
 import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
+import { whatsappNumberDisplay } from "@/lib/whatsapp";
 
 export function Footer() {
   return (
@@ -10,6 +11,7 @@ export function Footer() {
         <div>
           <Image src="/logo-nav.png" alt={siteConfig.name} width={318} height={110} className="h-12 w-auto mb-2" />
           <p>{siteConfig.description}</p>
+          <p className="mt-3">WhatsApp: {whatsappNumberDisplay}</p>
           <WhatsAppButton source="footer" />
         </div>
         <nav className="flex flex-wrap gap-x-8 gap-y-3">

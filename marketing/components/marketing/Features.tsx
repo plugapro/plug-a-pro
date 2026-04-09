@@ -19,7 +19,7 @@ const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
     icon: Phone,
     title: "Safe contact",
     description:
-      "Neither party's personal number is shared by default. All communication is mediated through the platform until both sides are comfortable.",
+      "Plug-A-Pro handles the intake, matching, quote approval, and status updates from the platform number so jobs can move forward without forcing direct contact at the start.",
   },
   {
     icon: FileText,

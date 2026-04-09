@@ -105,7 +105,7 @@ export default async function ProviderHomePage() {
         <div className="flex flex-col items-center py-12 text-center space-y-2">
           <p className="text-muted-foreground">No jobs assigned yet.</p>
           <p className="text-sm text-muted-foreground">
-            You'll receive a WhatsApp message when a job is ready.
+            You&apos;ll receive a WhatsApp message when a job is ready.
           </p>
         </div>
       )}

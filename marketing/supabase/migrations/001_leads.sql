@@ -1,4 +1,4 @@
-create table if not exists leads (
+create table if not exists marketing_leads (
   id          uuid primary key default gen_random_uuid(),
   type        text not null check (type in ('waitlist', 'contact', 'chat')),
   email       text not null,
@@ -9,5 +9,5 @@ create table if not exists leads (
   created_at  timestamptz default now()
 );
 
-create index if not exists leads_venture_idx
-  on leads (venture, type, created_at desc);
+create index if not exists marketing_leads_venture_idx
+  on marketing_leads (venture, type, created_at desc);

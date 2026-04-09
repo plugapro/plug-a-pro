@@ -1,0 +1,81 @@
+name: field-service CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'field-service/**'
+      - '.github/workflows/field-service-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'field-service/**'
+      - '.github/workflows/field-service-ci.yml'
+
+defaults:
+  run:
+    working-directory: field-service
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: field-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Build check runs on every push; requires secrets to be configured in repo settings.
+    # On first setup, add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
+    # as repository secrets. Build will be skipped if secrets are absent.
+    if: >
+      github.event_name == 'push' &&
+      (vars.CI_BUILD_ENABLED == 'true' || secrets.NEXT_PUBLIC_SUPABASE_URL != '')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: field-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: field-service
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: field-service
+        env:
+          # prisma generate reads the schema only — no live DB connection needed
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+      - name: Build
+        run: npm run build
+        working-directory: field-service
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}

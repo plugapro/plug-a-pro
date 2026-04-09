@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
+import { whatsappNumberDisplay } from "@/lib/whatsapp";
+import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
 
 export const metadata: Metadata = buildMetadata({
   title: "About",
@@ -48,9 +50,10 @@ export default function AboutPage() {
 
           <h2>Get in touch</h2>
           <p>
-            We&apos;re in early access.{" "}
-            <a href="/waitlist">Join the waitlist</a> to be among the first homeowners or workers on the platform, or{" "}
-            <a href="/contact">contact us</a> directly.
+            We&apos;re in early access. Start on WhatsApp at {whatsappNumberDisplay} or use the contact page if you need something else.
+          </p>
+          <p>
+            <WhatsAppButton source="about_get_in_touch" audience="customer" />
           </p>
         </div>
       </div>

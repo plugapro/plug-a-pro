@@ -24,13 +24,25 @@ import {
 
 export const metadata = buildMetadata({ title: 'Customer', noIndex: true })
 
+async function adminToggleMarketing(customerId: string, phone: string, value: boolean, actorId: string) {
+  'use server'
+  const { applyOptIn, applyOptOut } = await import('@/lib/whatsapp-policy')
+  if (value) {
+    await applyOptIn(phone, 'admin', { actorId })
+  } else {
+    await applyOptOut(phone, 'admin', { actorId })
+  }
+  const { redirect } = await import('next/navigation')
+  redirect(`/admin/customers/${customerId}`)
+}
+
 export default async function CustomerDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  await requireAdmin()
+  const admin = await requireAdmin()
 
   const customer = await db.customer.findUnique({
     where: { id },
@@ -50,6 +62,19 @@ export default async function CustomerDetailPage({
         },
       },
       _count: { select: { jobRequests: true } },
+      whatsappPreferenceLogs: {
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          field: true,
+          oldValue: true,
+          newValue: true,
+          source: true,
+          createdAt: true,
+          note: true,
+        },
+      },
     },
   })
 
@@ -121,6 +146,72 @@ export default async function CustomerDetailPage({
                 year: 'numeric',
               })}
             </Row>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* WhatsApp Preferences */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            WhatsApp Preferences
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <Row label="Service messages">
+            {customer.whatsappServiceOptIn
+              ? <Badge variant="secondary">Opted in</Badge>
+              : <Badge variant="outline">Opted out</Badge>}
+          </Row>
+          <Row label="Marketing messages">
+            {customer.whatsappMarketingOptIn
+              ? <Badge variant="secondary">Opted in</Badge>
+              : <Badge variant="outline">Opted out</Badge>}
+          </Row>
+          {customer.whatsappMarketingOptInAt && (
+            <Row label="Opted in at">
+              {customer.whatsappMarketingOptInAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </Row>
+          )}
+          {customer.whatsappMarketingOptOutAt && (
+            <Row label="Opted out at">
+              {customer.whatsappMarketingOptOutAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </Row>
+          )}
+          {customer.whatsappMarketingSource && (
+            <Row label="Last source">{customer.whatsappMarketingSource}</Row>
+          )}
+
+          {/* Admin override form */}
+          <div className="pt-2 border-t">
+            <form
+              action={adminToggleMarketing.bind(null, customer.id, customer.phone, !customer.whatsappMarketingOptIn, admin.id)}
+            >
+              <button
+                type="submit"
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                {customer.whatsappMarketingOptIn ? 'Opt out (admin override)' : 'Opt in (admin override)'}
+              </button>
+            </form>
+          </div>
+
+          {/* Audit log */}
+          {customer.whatsappPreferenceLogs.length > 0 && (
+            <div className="pt-2 border-t">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Recent changes</p>
+              <div className="space-y-1">
+                {customer.whatsappPreferenceLogs.map((log) => (
+                  <div key={log.id} className="text-xs text-muted-foreground flex gap-2">
+                    <span className="w-24 flex-shrink-0">
+                      {log.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                    </span>
+                    <span>{log.field}: {String(log.oldValue)} → {String(log.newValue)}</span>
+                    <span className="ml-auto">{log.source}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

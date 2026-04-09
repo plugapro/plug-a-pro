@@ -46,8 +46,14 @@ export default function AdminSignInPage() {
       }
 
       if (data.session?.access_token) {
-        const maxAge = data.session.expires_in ?? 3600
-        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`
+        await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: data.session.access_token,
+            expiresIn: data.session.expires_in ?? 3600,
+          }),
+        })
       }
 
       router.replace('/admin')

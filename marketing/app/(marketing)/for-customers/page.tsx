@@ -3,6 +3,8 @@ import Link from "next/link";
 import { buildMetadata } from "@/lib/metadata";
 import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
+import { whatsappNumberDisplay } from "@/lib/whatsapp";
+import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 import {
   MessageCircle,
   MapPin,
@@ -33,7 +35,7 @@ const HOW_IT_WORKS = [
     step: "02",
     title: "We match you to nearby workers",
     detail:
-      "We find available workers in your area who have the right skills. You'll see their profile, ratings, and reviews from previous customers before anyone contacts you.",
+      "We find available workers in your area who have the right skills. Once a worker accepts, we keep the process moving on WhatsApp so you can review the quote before work starts.",
   },
   {
     icon: UserCheck,
@@ -47,7 +49,7 @@ const HOW_IT_WORKS = [
     step: "04",
     title: "Approve the quote in writing",
     detail:
-      "All quotes come through the app. You review the price and scope, then approve in writing. No verbal agreements. Everything is written down.",
+      "All quotes come through Plug-A-Pro in writing. You review the price and scope, then approve in writing. No verbal agreements. Everything is written down.",
   },
   {
     icon: Camera,
@@ -61,7 +63,7 @@ const HOW_IT_WORKS = [
     step: "06",
     title: "Pay and leave a review",
     detail:
-      "Once you're satisfied, payment is processed. Leave a review to help other customers and reward good workers. Your review builds the community.",
+      "Once the job is done, Plug-A-Pro confirms the close-out and you can leave a review to help other customers and reward good workers. Your review builds the community.",
   },
 ];
 
@@ -69,7 +71,7 @@ const PROTECTIONS = [
   {
     icon: ShieldCheck,
     title: "Your number stays private",
-    body: "We never share your personal phone number with workers. All communication goes through the platform until you choose to share contact details.",
+    body: "We never need to share your personal phone number just to get the job moving. Plug-A-Pro handles intake, quote approval, and status updates from the platform number.",
   },
   {
     icon: UserCheck,
@@ -89,7 +91,7 @@ const PROTECTIONS = [
   {
     icon: Clock,
     title: "Platform mediation for disputes",
-    body: "If something goes wrong, raise a dispute through us. We hold payment until the issue is sorted. We don't just release funds and disappear.",
+    body: "If something goes wrong, contact Plug-A-Pro support. We review the written quote, job history, and photos already attached to the record.",
   },
   {
     icon: Star,
@@ -110,12 +112,18 @@ export default function ForCustomersPage() {
           Home jobs sorted. On WhatsApp.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          Describe what you need. We&apos;ll match you to a nearby, reviewed worker. See their profile, approve a quote, and get the job done.
+          Describe what you need. We&apos;ll match you to a nearby worker, send the quote for approval, and keep the job moving on WhatsApp.
+        </p>
+        <p className="text-sm font-medium mb-8">
+          Start on WhatsApp at {whatsappNumberDisplay}
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
-          <Button nativeButton={false} render={<Link href="/waitlist" />} size="lg">
-            Request help
-          </Button>
+          <WhatsAppCtaButton
+            audience="customer"
+            label="Start on WhatsApp"
+            source="for_customers_header"
+            size="lg"
+          />
           <Button
             nativeButton={false}
             render={<Link href="/solutions" />}
