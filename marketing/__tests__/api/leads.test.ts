@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/leads/route";
 
-// Mock the supabase module
+const { marketingInsertMock, intakeInsertMock, fromMock } = vi.hoisted(() => ({
+  marketingInsertMock: vi.fn().mockResolvedValue({ error: null }),
+  intakeInsertMock: vi.fn().mockResolvedValue({ error: null }),
+  fromMock: vi.fn((table: string) => ({
+    insert: table === "onboarding_intakes" ? intakeInsertMock : marketingInsertMock,
+  })),
+}));
+
 vi.mock("@/lib/supabase", () => ({
   supabase: {
-    from: vi.fn().mockReturnValue({
-      insert: vi.fn().mockResolvedValue({ error: null }),
-    }),
+    from: fromMock,
   },
 }));
 
@@ -24,6 +29,8 @@ function makeRequest(body: unknown, ip = "127.0.0.1"): Request {
 describe("POST /api/leads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    marketingInsertMock.mockResolvedValue({ error: null });
+    intakeInsertMock.mockResolvedValue({ error: null });
   });
 
   it("returns 200 for valid waitlist submission", async () => {
@@ -74,6 +81,8 @@ describe("POST /api/leads", () => {
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(json.whatsappUrl).toContain("wa.me");
+    expect(fromMock).toHaveBeenCalledWith("marketing_leads");
+    expect(fromMock).toHaveBeenCalledWith("onboarding_intakes");
   });
 
   it("returns correct prefill message for provider journey", async () => {

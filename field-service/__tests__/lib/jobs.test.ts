@@ -42,6 +42,7 @@ vi.mock('@/lib/db', () => ({
     $transaction: vi.fn().mockImplementation(async (fn) => fn({
       job: { update: vi.fn().mockResolvedValue(mockJob) },
       jobStatusEvent: { create: vi.fn().mockResolvedValue({}) },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
     })),
     booking: {
       findUnique: vi.fn().mockResolvedValue({ matchId: 'match_1' }),
@@ -61,6 +62,7 @@ vi.mock('@/lib/whatsapp', () => ({
   sendProviderOnTheWay: vi.fn().mockResolvedValue(undefined),
   sendProviderArrived: vi.fn().mockResolvedValue(undefined),
   sendJobCompleted: vi.fn().mockResolvedValue(undefined),
+  sendText: vi.fn().mockResolvedValue(undefined),
 }))
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
@@ -130,9 +132,14 @@ describe('transitionJob', () => {
   it('includes actorId and actorRole in status event', async () => {
     const txJobUpdate = vi.fn().mockResolvedValue(mockJob)
     const txEventCreate = vi.fn().mockResolvedValue({})
+    const txAuditCreate = vi.fn().mockResolvedValue({})
 
     ;(db.$transaction as ReturnType<typeof vi.fn>).mockImplementationOnce(async (fn) =>
-      fn({ job: { update: txJobUpdate }, jobStatusEvent: { create: txEventCreate } })
+      fn({
+        job: { update: txJobUpdate },
+        jobStatusEvent: { create: txEventCreate },
+        auditLog: { create: txAuditCreate },
+      })
     )
     ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...mockJob,
@@ -168,11 +175,13 @@ describe('VALID_TRANSITIONS coverage', () => {
     ['ARRIVED', 'STARTED'],
     ['STARTED', 'PAUSED'],
     ['STARTED', 'AWAITING_APPROVAL'],
-    ['STARTED', 'COMPLETED'],
+    ['STARTED', 'PENDING_COMPLETION_CONFIRMATION'],
     ['STARTED', 'FAILED'],
     ['PAUSED', 'STARTED'],
     ['AWAITING_APPROVAL', 'STARTED'],
-    ['AWAITING_APPROVAL', 'COMPLETED'],
+    ['AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION'],
+    ['PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'],
+    ['SCHEDULED', 'CANCELLED'],
     ['CALLBACK_REQUIRED', 'SCHEDULED'],
   ]
 

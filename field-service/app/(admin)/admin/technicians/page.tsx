@@ -26,7 +26,7 @@ export default async function ProvidersPage() {
     include: {
       _count: {
         select: {
-          jobs: { where: { status: { notIn: ['COMPLETED', 'FAILED'] } } },
+          jobs: { where: { status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] } } },
         },
       },
       jobs: {

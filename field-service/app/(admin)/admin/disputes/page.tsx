@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
 
 export const metadata = buildMetadata({ title: 'Disputes', noIndex: true })
@@ -30,6 +31,16 @@ async function updateDisputeAction(formData: FormData) {
   }
 
   const resolvedStatuses = ['RESOLVED_CUSTOMER', 'RESOLVED_PROVIDER', 'RESOLVED_SPLIT', 'CLOSED']
+  const existing = await db.dispute.findUnique({
+    where: { id: disputeId },
+    select: {
+      status: true,
+      resolution: true,
+      resolvedAt: true,
+      resolvedById: true,
+    },
+  })
+  if (!existing) return
 
   await db.dispute.update({
     where: { id: disputeId },
@@ -37,6 +48,21 @@ async function updateDisputeAction(formData: FormData) {
       status: status as 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_CUSTOMER' | 'RESOLVED_PROVIDER' | 'RESOLVED_SPLIT' | 'CLOSED',
       resolution,
       resolvedAt: resolvedStatuses.includes(status) ? new Date() : null,
+      resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
+    },
+  })
+
+  await recordAuditLog({
+    actorId: admin.id,
+    actorRole: admin.role,
+    action: 'dispute.update',
+    entityType: 'dispute',
+    entityId: disputeId,
+    before: existing,
+    after: {
+      status,
+      resolution,
+      resolvedAt: resolvedStatuses.includes(status) ? new Date().toISOString() : null,
       resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
     },
   })

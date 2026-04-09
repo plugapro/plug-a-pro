@@ -2,7 +2,9 @@
 // Direct integration — no intermediary required.
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages
 
+import type { Prisma } from '@prisma/client'
 import { db } from './db'
+import { logOutboundMessage } from './message-events'
 import { TEMPLATES, type TemplateName } from './messaging-templates'
 import { canSend } from './whatsapp-policy'
 
@@ -73,6 +75,9 @@ export async function sendTemplate(params: {
 export async function sendText(params: {
   to: string
   text: string
+  bookingId?: string
+  templateName?: string
+  metadata?: Record<string, unknown>
 }): Promise<string> {
   const { accessToken, phoneNumberId } = getConfig()
 
@@ -100,7 +105,18 @@ export async function sendText(params: {
   }
 
   const data = await response.json()
-  return data.messages?.[0]?.id ?? ''
+  const externalId = data.messages?.[0]?.id ?? ''
+
+  await logOutboundMessage({
+    bookingId: params.bookingId,
+    to: params.to,
+    templateName: params.templateName ?? 'freeform:text',
+    body: params.text,
+    externalId,
+    metadata: params.metadata,
+  }).catch(() => {})
+
+  return externalId
 }
 
 // ─── High-level messaging functions ──────────────────────────────────────────
@@ -625,7 +641,7 @@ export async function sendSlotAvailable(params: {
       },
     ],
   })
-  await logMessage({ bookingId: '', to: params.customerPhone, template: 'slot_available', externalId })
+  await logOutboundMessage({ to: params.customerPhone, templateName: 'slot_available', externalId })
 }
 
 export async function sendNoProviderAvailable(params: {
@@ -670,8 +686,9 @@ export async function sendJobOffer(params: {
   area: string         // "Sandton, Johannesburg"
   scheduledWindow: string
   jobUrl: string
+  bookingId?: string   // not yet available at lead-dispatch time — optional for logging
 }): Promise<void> {
-  await sendTemplate({
+  const externalId = await sendTemplate({
     to: params.providerPhone,
     template: 'job_offer',
     components: [
@@ -687,7 +704,7 @@ export async function sendJobOffer(params: {
       },
     ],
   })
-  // No DB log needed — no bookingId in context
+  await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'job_offer', externalId })
 }
 
 export async function sendProviderJobReminder(params: {
@@ -697,8 +714,9 @@ export async function sendProviderJobReminder(params: {
   address: string
   scheduledWindow: string
   jobUrl: string
+  bookingId?: string
 }): Promise<void> {
-  await sendTemplate({
+  const externalId = await sendTemplate({
     to: params.providerPhone,
     template: 'technician_job_reminder',
     components: [
@@ -714,6 +732,7 @@ export async function sendProviderJobReminder(params: {
       },
     ],
   })
+  await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'technician_job_reminder', externalId })
 }
 
 export async function sendProviderPaymentReleased(params: {
@@ -722,8 +741,9 @@ export async function sendProviderPaymentReleased(params: {
   amount: string          // "R 280.00"
   serviceName: string
   arrivalEstimate: string // "1–2 business days"
+  bookingId?: string
 }): Promise<void> {
-  await sendTemplate({
+  const externalId = await sendTemplate({
     to: params.providerPhone,
     template: 'technician_payment_released',
     components: [
@@ -738,6 +758,7 @@ export async function sendProviderPaymentReleased(params: {
       },
     ],
   })
+  await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'technician_payment_released', externalId })
 }
 
 /** Notify admin when a new provider application is submitted via WhatsApp.
@@ -847,8 +868,46 @@ export async function processWebhookEvent(payload: WhatsAppWebhookPayload): Prom
 
       // Log inbound messages (for future two-way chat support)
       for (const message of value.messages ?? []) {
-        // TODO: route inbound messages to admin notification or automated reply
-        console.log('[WhatsApp inbound]', message.from, message.text?.body)
+        try {
+          await db.inboundWhatsAppMessage.create({
+            data: {
+              externalId: message.id,
+              phone: message.from,
+              messageType: message.type,
+              body: message.text?.body,
+              payload: message as unknown as Prisma.InputJsonValue,
+              processedAt: new Date(),
+            },
+          })
+        } catch (error: unknown) {
+          const isPrismaUnique =
+            typeof error === 'object' &&
+            error !== null &&
+            'code' in error &&
+            (error as { code: string }).code === 'P2002'
+
+          if (isPrismaUnique) {
+            await db.inboundWhatsAppMessage.update({
+              where: { externalId: message.id },
+              data: {
+                duplicateCount: { increment: 1 },
+                lastSeenAt: new Date(),
+              },
+            })
+            continue
+          }
+
+          throw error
+        }
+
+        const { processInboundMessage } = await import('./whatsapp-bot')
+        await processInboundMessage({
+          from: message.from,
+          id: message.id,
+          type: message.type,
+          text: message.text,
+          timestamp: String(Date.now()),
+        })
       }
     }
   }
@@ -862,16 +921,11 @@ async function logMessage(params: {
   template: TemplateName
   externalId: string
 }) {
-  await db.messageEvent.create({
-    data: {
-      bookingId: params.bookingId,
-      channel: 'WHATSAPP',
-      templateName: params.template,
-      to: params.to,
-      externalId: params.externalId,
-      status: 'SENT',
-      sentAt: new Date(),
-    },
+  await logOutboundMessage({
+    bookingId: params.bookingId || undefined,
+    to: params.to,
+    templateName: params.template,
+    externalId: params.externalId,
   })
 }
 

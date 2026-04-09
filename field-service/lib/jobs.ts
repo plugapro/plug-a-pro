@@ -6,19 +6,21 @@
 
 import { db } from './db'
 import type { JobStatus } from '@prisma/client'
+import { recordAuditLog } from './audit'
 
 // ─── Valid transitions ────────────────────────────────────────────────────────
 
 const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
-  SCHEDULED: ['EN_ROUTE', 'CALLBACK_REQUIRED'],
-  EN_ROUTE: ['ARRIVED', 'CALLBACK_REQUIRED'],
-  ARRIVED: ['STARTED', 'CALLBACK_REQUIRED'],
-  STARTED: ['PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION', 'COMPLETED', 'FAILED'],
-  PAUSED: ['STARTED', 'AWAITING_APPROVAL', 'FAILED'],
-  AWAITING_APPROVAL: ['STARTED', 'PENDING_COMPLETION_CONFIRMATION', 'COMPLETED', 'FAILED'],
+  SCHEDULED: ['EN_ROUTE', 'CALLBACK_REQUIRED', 'CANCELLED'],
+  EN_ROUTE: ['ARRIVED', 'CALLBACK_REQUIRED', 'CANCELLED'],
+  ARRIVED: ['STARTED', 'CALLBACK_REQUIRED', 'CANCELLED'],
+  STARTED: ['PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION', 'FAILED', 'CANCELLED'],
+  PAUSED: ['STARTED', 'AWAITING_APPROVAL', 'FAILED', 'CANCELLED'],
+  AWAITING_APPROVAL: ['STARTED', 'PENDING_COMPLETION_CONFIRMATION', 'FAILED', 'CANCELLED'],
   PENDING_COMPLETION_CONFIRMATION: ['COMPLETED', 'STARTED'],
   COMPLETED: [], // terminal
-  FAILED: ['CALLBACK_REQUIRED'],
+  CANCELLED: [], // terminal
+  FAILED: ['CALLBACK_REQUIRED', 'CANCELLED'],
   CALLBACK_REQUIRED: ['SCHEDULED'], // admin can reassign
 }
 
@@ -61,6 +63,7 @@ export async function transitionJob(params: {
     if (toStatus === 'ARRIVED') updates.arrivedAt = new Date()
     if (toStatus === 'STARTED') updates.startedAt = new Date()
     if (toStatus === 'COMPLETED') updates.completedAt = new Date()
+    if (toStatus === 'CANCELLED') updates.failureReason = notes ?? 'Cancelled'
 
     await tx.job.update({ where: { id: jobId }, data: updates })
 
@@ -75,6 +78,19 @@ export async function transitionJob(params: {
         notes,
       },
     })
+
+    await recordAuditLog(
+      {
+        actorId,
+        actorRole,
+        action: 'job.status_transition',
+        entityType: 'job',
+        entityId: jobId,
+        before: { status: job.status },
+        after: { status: toStatus, notes: notes ?? null },
+      },
+      tx
+    )
   })
 
   // Trigger side effects outside the transaction
@@ -103,7 +119,7 @@ async function triggerSideEffects(params: {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   try {
-    const { sendProviderOnTheWay, sendJobCompleted } = await import('./whatsapp')
+    const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
 
     if (toStatus === 'EN_ROUTE') {
       await sendProviderOnTheWay({
@@ -122,6 +138,26 @@ async function triggerSideEffects(params: {
         customerName: customer.name,
         customerPhone: customer.phone,
         providerName,
+      })
+    }
+
+    if (toStatus === 'STARTED') {
+      const bookingUrl = `${appUrl}/bookings/${job.bookingId}`
+      await sendText({
+        to: customer.phone,
+        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\nTrack it here: ${bookingUrl}`,
+        bookingId: job.bookingId,
+        templateName: 'freeform:job_started',
+      })
+    }
+
+    if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
+      const bookingUrl = `${appUrl}/bookings/${job.bookingId}`
+      await sendText({
+        to: customer.phone,
+        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nPlease confirm completion here: ${bookingUrl}`,
+        bookingId: job.bookingId,
+        templateName: 'freeform:completion_confirmation_request',
       })
     }
 
@@ -176,7 +212,7 @@ export async function getProviderJobs(providerId: string) {
   return db.job.findMany({
     where: {
       providerId,
-      status: { notIn: ['COMPLETED', 'FAILED'] },
+      status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] },
       booking: {
         scheduledDate: { gte: today, lt: tomorrow },
       },
@@ -220,6 +256,14 @@ export async function createExtraWork(params: {
   customerName: string
   bookingId: string
 }): Promise<string> {
+  // Idempotency guard: return existing token if there is already a PENDING extra-work
+  // request for this job (prevents duplicate creation on provider double-tap or message retry)
+  const existingPending = await db.extraWork.findFirst({
+    where: { jobId: params.jobId, status: 'PENDING' },
+    select: { approvalToken: true },
+  })
+  if (existingPending) return existingPending.approvalToken
+
   const extra = await db.extraWork.create({
     data: {
       jobId: params.jobId,

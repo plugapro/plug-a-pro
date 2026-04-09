@@ -95,13 +95,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  const normalizedPhone =
+    result.data.type === "onboarding"
+      ? normalizePhone(result.data.phone)
+      : undefined;
+
   const { error } = await supabase
     .from("marketing_leads")
     .insert(
       result.data.type === "onboarding"
         ? {
             type: result.data.type,
-            phone: normalizePhone(result.data.phone),
+            phone: normalizedPhone,
             journey: result.data.journey,
             message: result.data.message,
             source: result.data.source,
@@ -117,6 +122,33 @@ export async function POST(request: Request) {
       { error: "Failed to save. Please try again." },
       { status: 500 }
     );
+  }
+
+  if (result.data.type === "onboarding" && normalizedPhone) {
+    const { error: intakeError } = await supabase
+      .from("onboarding_intakes")
+      .insert({
+        source: "marketing",
+        sourceRef: result.data.source ?? "website",
+        journey: result.data.journey,
+        phone: normalizedPhone,
+        name: result.data.name,
+        message: result.data.message,
+        status: "NEW",
+        whatsappOptIn: true,
+        metadata: {
+          venture: siteConfig.venture,
+          source: result.data.source ?? null,
+        },
+      });
+
+    if (intakeError) {
+      console.error("[leads] onboarding intake insert error:", intakeError.message);
+      return NextResponse.json(
+        { error: "Saved your details, but failed to create the operational intake handoff." },
+        { status: 500 }
+      );
+    }
   }
 
   if (result.data.type === "onboarding") {

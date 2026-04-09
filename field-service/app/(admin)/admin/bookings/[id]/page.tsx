@@ -7,6 +7,9 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
+import { cancelBookingLifecycle } from '@/lib/bookings'
+import { recordAuditLog } from '@/lib/audit'
+import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -33,7 +36,7 @@ export default async function BookingDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   const { id } = await params
 
   const booking = await db.booking.findUnique({
@@ -48,6 +51,7 @@ export default async function BookingDetailPage({
             },
           },
           provider: true,
+          quotes: { orderBy: { createdAt: 'desc' } },
         },
       },
       quote:   true,
@@ -75,12 +79,19 @@ export default async function BookingDetailPage({
 
   async function cancelBooking() {
     'use server'
-    await db.booking.update({ where: { id }, data: { status: 'CANCELLED' } })
+    const activeAdmin = await requireAdmin()
+    await cancelBookingLifecycle({
+      bookingId: id,
+      actorId: activeAdmin.id,
+      actorRole: 'admin',
+      reason: 'Cancelled by admin from booking detail',
+    })
     redirect('/admin/bookings')
   }
 
   async function markPaid() {
     'use server'
+    const activeAdmin = await requireAdmin()
     const amount = booking!.quote?.amount ?? 0
     await db.payment.upsert({
       where:  { bookingId: id },
@@ -93,6 +104,17 @@ export default async function BookingDetailPage({
       update: { status: 'PAID', paidAt: new Date() },
     })
     await db.booking.update({ where: { id }, data: { status: 'SCHEDULED' } })
+    await recordAuditLog({
+      actorId: activeAdmin.id,
+      actorRole: activeAdmin.role,
+      action: 'payment.mark_paid',
+      entityType: 'booking',
+      entityId: id,
+      after: {
+        bookingStatus: 'SCHEDULED',
+        paymentStatus: 'PAID',
+      },
+    })
     redirect(`/admin/bookings/${id}`)
   }
 
@@ -265,6 +287,35 @@ export default async function BookingDetailPage({
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Quote History</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Full revision trail for this job, including customer feedback and the accepted quote record.
+              </p>
+              <QuoteHistoryTimeline
+                audience="provider"
+                quotes={booking.match.quotes.map((quote) => ({
+                  id: quote.id,
+                  amount: Number(quote.amount),
+                  labourCost: Number(quote.labourCost),
+                  materialsCost: Number(quote.materialsCost),
+                  description: quote.description,
+                  status: quote.status,
+                  estimatedHours: quote.estimatedHours,
+                  preferredDate: quote.preferredDate,
+                  validUntil: quote.validUntil,
+                  createdAt: quote.createdAt,
+                  approvedAt: quote.approvedAt,
+                  declinedAt: quote.declinedAt,
+                  notes: quote.notes,
+                }))}
+              />
             </CardContent>
           </Card>
 

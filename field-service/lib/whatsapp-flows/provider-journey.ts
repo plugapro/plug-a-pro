@@ -4,6 +4,7 @@
 
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import { db } from '../db'
+import { transitionJob } from '../jobs'
 import type { FlowContext, FlowResult } from './types'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -120,7 +121,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
   const activeJobs = await db.job.findMany({
     where: {
       providerId: provider.id,
-      status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
+      status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION'] },
     },
     include: {
       booking: {
@@ -150,6 +151,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
     STARTED: 'In progress',
     PAUSED: 'Paused',
     AWAITING_APPROVAL: 'Awaiting approval',
+    PENDING_COMPLETION_CONFIRMATION: 'Awaiting customer confirmation',
   }
 
   const rows = activeJobs.slice(0, 5).map((job: any) => {
@@ -253,9 +255,10 @@ function getNextStatusOptions(currentStatus: string): Array<{ id: string; label:
     SCHEDULED:         [{ id: 'EN_ROUTE', label: '🚗 On My Way' }],
     EN_ROUTE:          [{ id: 'ARRIVED', label: "📍 I've Arrived" }],
     ARRIVED:           [{ id: 'STARTED', label: '🔧 Start Work' }],
-    STARTED:           [{ id: 'COMPLETED', label: '✅ Job Done' }, { id: 'PAUSED', label: '⏸ Pause' }],
+    STARTED:           [{ id: 'PENDING_COMPLETION_CONFIRMATION', label: '✅ Ready for Sign-Off' }, { id: 'PAUSED', label: '⏸ Pause' }],
     PAUSED:            [{ id: 'STARTED', label: '🔧 Resume Work' }],
     AWAITING_APPROVAL: [],
+    PENDING_COMPLETION_CONFIRMATION: [],
   }
   return transitions[currentStatus] ?? []
 }
@@ -270,11 +273,12 @@ async function handleStatusConfirm(ctx: FlowContext): Promise<FlowResult> {
   }
 
   // Parse: pj_upd_<jobId>_<newStatus>
-  // jobId is a cuid — may contain underscores, so we find the LAST underscore-bounded token
+  // cuid IDs do not contain underscores, so the first underscore after the prefix
+  // separates the job ID from the target status.
   const withoutPrefix = ctx.reply.id.replace('pj_upd_', '')
-  const lastUnderscore = withoutPrefix.lastIndexOf('_')
-  const jobId = withoutPrefix.slice(0, lastUnderscore)
-  const newStatus = withoutPrefix.slice(lastUnderscore + 1)
+  const firstUnderscore = withoutPrefix.indexOf('_')
+  const jobId = withoutPrefix.slice(0, firstUnderscore)
+  const newStatus = withoutPrefix.slice(firstUnderscore + 1)
 
   const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
   if (!provider) {
@@ -303,20 +307,20 @@ async function handleStatusConfirm(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  await db.job.update({ where: { id: jobId }, data: { status: newStatus as any } })
-  await db.jobStatusEvent.create({
-    data: { jobId, status: newStatus, note: 'Updated via WhatsApp by provider' } as any,
+  await transitionJob({
+    jobId,
+    toStatus: newStatus as any,
+    actorId: provider.id,
+    actorRole: 'provider',
+    notes: 'Updated via WhatsApp by provider',
   })
-
-  // Notify customer
-  await notifyCustomerStatusChange(jobAny, newStatus)
 
   const statusMessages: Record<string, string> = {
     EN_ROUTE:  '🚗 Status updated — *On My Way*!\n\nThe customer has been notified you are en route.',
     ARRIVED:   "📍 Status updated — *Arrived*!\n\nThe customer has been notified you're at the location.",
     STARTED:   '🔧 Status updated — *Work Started*!\n\nUpdate to ✅ Done when finished.',
     PAUSED:    '⏸ Job paused.\n\nReply *my jobs* to resume when ready.',
-    COMPLETED: `🎉 *Job marked as complete!*\n\nGreat work! The customer has been notified.`,
+    PENDING_COMPLETION_CONFIRMATION: `✅ *Marked ready for customer sign-off!*\n\nThe customer has been asked to confirm completion.`,
   }
 
   await sendButtons(
@@ -341,25 +345,4 @@ async function handleProblemReport(ctx: FlowContext): Promise<FlowResult> {
     `🚨 *Report a Problem*\n\nPlease reply with a description of the issue and we'll follow up within 2 hours.\n\nInclude:\n• Your job reference number\n• What went wrong\n\nOr call: ${process.env.SUPPORT_WHATSAPP_NUMBER ?? 'our support line'}`
   )
   return { nextStep: 'done' }
-}
-
-// ─── Internal: Notify customer of status change ───────────────────────────────
-
-async function notifyCustomerStatusChange(job: any, newStatus: string): Promise<void> {
-  const customer = job.booking?.match?.jobRequest?.customer
-  if (!customer?.phone) return
-
-  const category = job.booking?.match?.jobRequest?.category ?? 'Job'
-
-  const messages: Record<string, string> = {
-    EN_ROUTE:  `🚗 *Your ${category} worker is on the way!*\n\nThey'll arrive shortly. Make sure someone is home.`,
-    ARRIVED:   `📍 *Your ${category} worker has arrived.*\n\nThey're at your location now.`,
-    STARTED:   `🔧 *Work has started on your ${category} job.*\n\nYou'll be notified when it's done.`,
-    COMPLETED: `🎉 *Your ${category} job is complete!*\n\nReply *Hi* to leave a rating — it takes 30 seconds and really helps our workers.`,
-  }
-
-  const msg = messages[newStatus]
-  if (msg) {
-    await sendText(customer.phone, msg).catch(() => {})
-  }
 }

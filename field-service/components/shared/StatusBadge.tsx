@@ -9,6 +9,7 @@ const JOB_CONFIG: Record<JobStatus, { label: string; className: string }> = {
   AWAITING_APPROVAL: { label: 'Awaiting Approval', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
   PENDING_COMPLETION_CONFIRMATION: { label: 'Pending Confirmation', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
   COMPLETED: { label: 'Completed', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  CANCELLED: { label: 'Cancelled', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
   FAILED: { label: 'Failed', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
   CALLBACK_REQUIRED: { label: 'Callback Required', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
 }

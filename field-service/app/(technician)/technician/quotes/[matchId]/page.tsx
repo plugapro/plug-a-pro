@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
+import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { QuoteForm } from '@/components/technician/QuoteForm'
 import { Button } from '@/components/ui/button'
@@ -97,7 +98,7 @@ export default async function QuotePage({
     where: { id: matchId },
     include: {
       jobRequest: { include: { address: true } },
-      quotes: { orderBy: { createdAt: 'desc' }, take: 1 },
+      quotes: { orderBy: { createdAt: 'desc' } },
     },
   })
 
@@ -169,6 +170,37 @@ export default async function QuotePage({
           <p className="text-green-800">
             This job has already moved past the quote stage. Open the technician dashboard to continue execution.
           </p>
+        </div>
+      )}
+
+      {match.quotes.length > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+              Quote history
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Every version sent to the customer, including revision reasons and current status.
+            </p>
+          </div>
+          <QuoteHistoryTimeline
+            audience="provider"
+            quotes={match.quotes.map((quote) => ({
+              id: quote.id,
+              amount: Number(quote.amount),
+              labourCost: Number(quote.labourCost),
+              materialsCost: Number(quote.materialsCost),
+              description: quote.description,
+              status: quote.status,
+              estimatedHours: quote.estimatedHours,
+              preferredDate: quote.preferredDate,
+              validUntil: quote.validUntil,
+              createdAt: quote.createdAt,
+              approvedAt: quote.approvedAt,
+              declinedAt: quote.declinedAt,
+              notes: quote.notes,
+            }))}
+          />
         </div>
       )}
 

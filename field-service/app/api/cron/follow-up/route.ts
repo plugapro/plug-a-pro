@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasSuccessfulMessageForBooking } from '@/lib/message-events'
 import { sendFollowUp } from '@/lib/whatsapp'
 
 export async function GET(request: Request) {
@@ -46,6 +47,16 @@ export async function GET(request: Request) {
   for (const booking of toNotify) {
     const customer = booking.match.jobRequest.customer
     try {
+      const alreadySent = await hasSuccessfulMessageForBooking({
+        bookingId: booking.id,
+        templateName: 'follow_up',
+        since: windowStart,
+      })
+      if (alreadySent) {
+        console.info(`[cron/follow-up] Skipping duplicate follow-up for booking ${booking.id}`)
+        continue
+      }
+
       await sendFollowUp({
         bookingId:     booking.id,
         customerName:  customer.name,

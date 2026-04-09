@@ -7,6 +7,10 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { cancelBookingLifecycle } from '@/lib/bookings'
+import { transitionJob } from '@/lib/jobs'
+import { recordAuditLog } from '@/lib/audit'
+import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
@@ -20,6 +24,7 @@ const JOB_TIMELINE: Array<{ status: string; label: string; description: string }
   { status: 'ARRIVED',           label: 'Arrived',               description: 'Your provider is on site' },
   { status: 'STARTED',           label: 'Work started',          description: 'Work is in progress' },
   { status: 'AWAITING_APPROVAL', label: 'Your approval needed',  description: 'Review additional work request' },
+  { status: 'PENDING_COMPLETION_CONFIRMATION', label: 'Awaiting your sign-off', description: 'Review the completed work and confirm if everything is done' },
   { status: 'COMPLETED',         label: 'Completed',             description: 'Your job is complete' },
 ]
 
@@ -45,6 +50,7 @@ export default async function BookingDetailPage({
             },
           },
           provider: { select: { id: true, name: true } },
+          quotes: { orderBy: { createdAt: 'desc' } },
         },
       },
       quote: true,
@@ -110,12 +116,47 @@ export default async function BookingDetailPage({
     if (b.match.jobRequest.customer?.userId !== sess.id) redirect('/bookings')
     if (b.status !== 'SCHEDULED' && b.status !== 'RESCHEDULED') redirect(`/bookings/${id}`)
 
-    await db.booking.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    await cancelBookingLifecycle({
+      bookingId: id,
+      actorId: sess.id,
+      actorRole: 'customer',
+      reason: 'Cancelled by customer from booking page',
     })
 
     redirect('/bookings')
+  }
+
+  async function confirmCompletion() {
+    'use server'
+    const { getSession: getActiveSession } = await import('@/lib/auth')
+    const activeSession = await getActiveSession()
+    if (!activeSession || activeSession.role !== 'customer') redirect('/sign-in')
+
+    const freshBooking = await db.booking.findUnique({
+      where: { id },
+      include: {
+        match: {
+          include: {
+            jobRequest: { include: { customer: true } },
+          },
+        },
+        job: { select: { id: true, status: true } },
+      },
+    })
+
+    if (!freshBooking || !freshBooking.job) redirect('/bookings')
+    if (freshBooking.match.jobRequest.customer.userId !== activeSession.id) redirect('/bookings')
+    if (freshBooking.job.status !== 'PENDING_COMPLETION_CONFIRMATION') redirect(`/bookings/${id}`)
+
+    await transitionJob({
+      jobId: freshBooking.job.id,
+      toStatus: 'COMPLETED',
+      actorId: activeSession.id,
+      actorRole: 'customer',
+      notes: 'Customer confirmed job completion from booking page',
+    })
+
+    redirect(`/bookings/${id}`)
   }
 
   async function raiseDispute(formData: FormData) {
@@ -158,6 +199,19 @@ export default async function BookingDetailPage({
           raisedByRole: 'customer',
           reason,
           status: 'OPEN',
+        },
+      })
+
+      await recordAuditLog({
+        actorId: activeSession.id,
+        actorRole: 'customer',
+        action: 'dispute.raise',
+        entityType: 'job',
+        entityId: freshBooking.job.id,
+        after: {
+          disputeRaised: true,
+          raisedByRole: 'customer',
+          reason,
         },
       })
     }
@@ -208,6 +262,36 @@ export default async function BookingDetailPage({
         <Row label="Total">R {Number(booking.quote.amount).toFixed(2)}</Row>
       </div>
 
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div>
+            <p className="text-sm font-medium">Quote history</p>
+            <p className="text-sm text-muted-foreground">
+              Review each quote version, customer feedback, and the accepted pricing record.
+            </p>
+          </div>
+          <QuoteHistoryTimeline
+            audience="customer"
+            quotes={booking.match.quotes.map((quote) => ({
+              id: quote.id,
+              amount: Number(quote.amount),
+              labourCost: Number(quote.labourCost),
+              materialsCost: Number(quote.materialsCost),
+              description: quote.description,
+              status: quote.status,
+              estimatedHours: quote.estimatedHours,
+              preferredDate: quote.preferredDate,
+              validUntil: quote.validUntil,
+              createdAt: quote.createdAt,
+              approvedAt: quote.approvedAt,
+              declinedAt: quote.declinedAt,
+              notes: quote.notes,
+              approvalToken: quote.approvalToken,
+            }))}
+          />
+        </CardContent>
+      </Card>
+
       {/* Pending approval */}
       {currentJobStatus === 'AWAITING_APPROVAL' && booking.job?.extras[0] && (
         <div className="rounded-xl border border-orange-300 bg-orange-50 dark:bg-orange-900/10 p-4 space-y-3">
@@ -223,6 +307,22 @@ export default async function BookingDetailPage({
               Review &amp; approve
             </a>
           </Button>
+        </div>
+      )}
+
+      {currentJobStatus === 'PENDING_COMPLETION_CONFIRMATION' && booking.job && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20 p-4 space-y-3">
+          <p className="font-medium text-emerald-800 dark:text-emerald-300">
+            Your provider has marked the work as complete
+          </p>
+          <p className="text-sm text-emerald-900/80 dark:text-emerald-100/80">
+            Review the job photos and details above. If the work is complete, confirm it here so we can close the job and issue the final record.
+          </p>
+          <form action={confirmCompletion}>
+            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+              Confirm completion
+            </Button>
+          </form>
         </div>
       )}
 

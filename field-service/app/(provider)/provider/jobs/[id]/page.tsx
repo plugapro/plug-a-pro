@@ -8,6 +8,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
+import { recordAuditLog } from '@/lib/audit'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { JobStatusControls } from '@/components/technician/StatusControls'
@@ -101,6 +102,19 @@ export default async function JobDetailPage({
           status: 'OPEN',
         },
       })
+
+      await recordAuditLog({
+        actorId: activeSession.id,
+        actorRole: 'provider',
+        action: 'dispute.raise',
+        entityType: 'job',
+        entityId: freshJob.id,
+        after: {
+          disputeRaised: true,
+          raisedByRole: 'provider',
+          reason,
+        },
+      })
     }
 
     redirect(`/provider/jobs/${id}`)
@@ -174,7 +188,7 @@ export default async function JobDetailPage({
       )}
 
       {/* Photos section */}
-      {(['STARTED', 'ARRIVED', 'COMPLETED'] as const).includes(job.status as 'STARTED' | 'ARRIVED' | 'COMPLETED') && (
+      {(['STARTED', 'ARRIVED', 'PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] as const).includes(job.status as 'STARTED' | 'ARRIVED' | 'PENDING_COMPLETION_CONFIRMATION' | 'COMPLETED') && (
         <div className="space-y-3">
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
             Job photos
@@ -202,7 +216,7 @@ export default async function JobDetailPage({
           )}
 
           {/* Upload controls — only when job is not yet completed */}
-          {job.status !== 'COMPLETED' && (
+          {!['COMPLETED', 'CANCELLED'].includes(job.status) && (
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground font-medium">Before</p>

@@ -23,6 +23,7 @@ const TRANSITIONS: Record<JobStatus, { label: string; next: JobStatus; variant: 
   AWAITING_APPROVAL:                [],
   PENDING_COMPLETION_CONFIRMATION:  [],
   COMPLETED:                        [],
+  CANCELLED:                        [],
   FAILED:                           [],
   CALLBACK_REQUIRED:                [],
 }

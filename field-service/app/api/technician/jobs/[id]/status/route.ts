@@ -10,7 +10,13 @@ import { db } from '@/lib/db'
 import type { JobStatus } from '@prisma/client'
 
 const VALID_STATUSES: JobStatus[] = [
-  'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'COMPLETED', 'FAILED', 'CALLBACK_REQUIRED',
+  'EN_ROUTE',
+  'ARRIVED',
+  'STARTED',
+  'PAUSED',
+  'PENDING_COMPLETION_CONFIRMATION',
+  'FAILED',
+  'CALLBACK_REQUIRED',
 ]
 
 export async function POST(

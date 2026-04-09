@@ -9,12 +9,12 @@ vi.mock('@/lib/db', () => ({
     job: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
-      update: vi.fn(),
-    },
-    jobStatusEvent: {
-      create: vi.fn(),
     },
   },
+}))
+
+vi.mock('@/lib/jobs', () => ({
+  transitionJob: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/whatsapp-interactive', () => ({
@@ -26,6 +26,7 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
+import { transitionJob } from '@/lib/jobs'
 
 const mockCtx = (step: string, replyId?: string, replyText?: string, data: object = {}) => ({
   phone: '+27711111111',
@@ -135,7 +136,7 @@ describe('handleProviderJourneyFlow', () => {
       expect(db.job.findMany).toHaveBeenCalledWith({
         where: {
           providerId: 'prov_1',
-          status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
+          status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION'] },
         },
         include: {
           booking: {
@@ -223,7 +224,7 @@ describe('handleProviderJourneyFlow', () => {
   })
 
   describe('pj_status_confirm step', () => {
-    it('updates job status in DB and creates JobStatusEvent', async () => {
+    it('uses the central state machine for provider WhatsApp status updates', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'prov_1', name: 'Sipho', availableNow: true,
       })
@@ -240,30 +241,17 @@ describe('handleProviderJourneyFlow', () => {
           },
         },
       })
-      ;(db.job.update as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'jobabcdef123456789ghijklmno',
-        status: 'COMPLETED',
-      })
-      ;(db.jobStatusEvent.create as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'event_1',
+      const result = await handleProviderJourneyFlow(mockCtx('pj_status_confirm', 'pj_upd_jobabcdef123456789ghijklmno_PENDING_COMPLETION_CONFIRMATION'))
+      expect(transitionJob).toHaveBeenCalledWith({
         jobId: 'jobabcdef123456789ghijklmno',
-        status: 'COMPLETED',
-      })
-      const result = await handleProviderJourneyFlow(mockCtx('pj_status_confirm', 'pj_upd_jobabcdef123456789ghijklmno_COMPLETED'))
-      expect(db.job.update).toHaveBeenCalledWith({
-        where: { id: 'jobabcdef123456789ghijklmno' },
-        data: { status: 'COMPLETED' },
-      })
-      expect(db.jobStatusEvent.create).toHaveBeenCalledWith({
-        data: {
-          jobId: 'jobabcdef123456789ghijklmno',
-          status: 'COMPLETED',
-          note: 'Updated via WhatsApp by provider',
-        },
+        toStatus: 'PENDING_COMPLETION_CONFIRMATION',
+        actorId: 'prov_1',
+        actorRole: 'provider',
+        notes: 'Updated via WhatsApp by provider',
       })
       expect(wa.sendButtons).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('complete'),
+        expect.stringContaining('sign-off'),
         expect.any(Array)
       )
       expect(result.nextStep).toBe('pj_toggle_available')

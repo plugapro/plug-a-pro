@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -54,7 +55,6 @@ export default async function RequestDetailPage({
           },
           quotes: {
             orderBy: { createdAt: 'desc' },
-            take: 1,
           },
           booking: {
             include: {
@@ -158,31 +158,29 @@ export default async function RequestDetailPage({
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Quote
+              Quote history
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-medium">R {Number(latestQuote.amount).toFixed(2)}</p>
-                <p className="text-muted-foreground mt-1">{latestQuote.description}</p>
-              </div>
-              <StatusBadge status={latestQuote.status} type="quote" />
-            </div>
-            {latestQuote.validUntil && (
-              <Row label="Valid until">
-                {latestQuote.validUntil.toLocaleDateString('en-ZA', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </Row>
-            )}
-            {latestQuote.status === 'PENDING' && (
-              <Button asChild className="w-full">
-                <Link href={`/quotes/${latestQuote.approvalToken}`}>Review quote</Link>
-              </Button>
-            )}
+            <QuoteHistoryTimeline
+              audience="customer"
+              quotes={match?.quotes.map((quote) => ({
+                id: quote.id,
+                amount: Number(quote.amount),
+                labourCost: Number(quote.labourCost),
+                materialsCost: Number(quote.materialsCost),
+                description: quote.description,
+                status: quote.status,
+                estimatedHours: quote.estimatedHours,
+                preferredDate: quote.preferredDate,
+                validUntil: quote.validUntil,
+                createdAt: quote.createdAt,
+                approvedAt: quote.approvedAt,
+                declinedAt: quote.declinedAt,
+                notes: quote.notes,
+                approvalToken: quote.approvalToken,
+              })) ?? []}
+            />
           </CardContent>
         </Card>
       )}

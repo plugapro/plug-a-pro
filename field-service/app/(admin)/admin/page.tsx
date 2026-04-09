@@ -39,7 +39,7 @@ export default async function AdminDashboardPage() {
     }),
     db.job.count({
       where: {
-        status: { notIn: ['COMPLETED', 'FAILED'] },
+        status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] },
         booking: { scheduledDate: { gte: today, lt: tomorrow } },
       },
     }),

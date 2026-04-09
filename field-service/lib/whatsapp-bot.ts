@@ -257,6 +257,14 @@ export async function processInboundMessage(
     } else if (flow === 'provider_journey') {
       result = await handleProviderJourneyFlow(ctx)
     } else {
+      if (flow === 'idle' && reply.type === 'text' && rawText.length >= 2) {
+        const relayed = await tryMediatedRelay(phone, reply.text ?? '')
+        if (relayed) {
+          await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+          return
+        }
+      }
+
       // Idle / unknown — show main menu
       await showMainMenu(phone)
       result = { nextStep: 'welcome', nextData: {} }
@@ -332,6 +340,143 @@ async function saveConversation(params: {
   })
 }
 
+async function tryMediatedRelay(phone: string, text: string): Promise<boolean> {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+
+  const provider = await db.provider.findUnique({
+    where: { phone },
+    select: { id: true, name: true, phone: true },
+  })
+
+  if (provider) {
+    const activeJob = await db.job.findFirst({
+      where: {
+        providerId: provider.id,
+        status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION'] },
+      },
+      include: {
+        booking: {
+          include: {
+            match: {
+              include: {
+                jobRequest: { include: { customer: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+
+    const bookingId = activeJob?.bookingId
+    const customer = activeJob?.booking.match.jobRequest.customer
+    if (activeJob && customer?.phone) {
+      await sendText(
+        customer.phone,
+        `💬 Message from your provider (${provider.name}):\n${trimmed}\n\nReply here and we'll pass your response back.`,
+        {
+          bookingId,
+          templateName: 'interactive:relay_provider_to_customer',
+          metadata: {
+            direction: 'provider_to_customer',
+            providerId: provider.id,
+            jobId: activeJob.id,
+          },
+        }
+      )
+      await sendText(phone, '✅ We relayed your message to the customer.', {
+        bookingId,
+        templateName: 'interactive:relay_ack_provider',
+      })
+      return true
+    }
+  }
+
+  const customer = await db.customer.findUnique({
+    where: { phone },
+    select: { id: true, name: true, phone: true },
+  })
+
+  if (!customer) return false
+
+  const activeBooking = await db.booking.findFirst({
+    where: {
+      status: { in: ['SCHEDULED', 'RESCHEDULED'] },
+      match: {
+        jobRequest: {
+          customerId: customer.id,
+        },
+      },
+    },
+    include: {
+      match: {
+        include: {
+          provider: true,
+          jobRequest: true,
+        },
+      },
+      job: true,
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  if (activeBooking?.match.provider?.phone && activeBooking.job && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(activeBooking.job.status)) {
+    await sendText(
+      activeBooking.match.provider.phone,
+      `💬 Message from your customer (${customer.name}):\n${trimmed}\n\nReply here and we'll pass your response back.`,
+      {
+        bookingId: activeBooking.id,
+        templateName: 'interactive:relay_customer_to_provider',
+        metadata: {
+          direction: 'customer_to_provider',
+          customerId: customer.id,
+          jobId: activeBooking.job.id,
+        },
+      }
+    )
+    await sendText(phone, '✅ We relayed your message to the provider.', {
+      bookingId: activeBooking.id,
+      templateName: 'interactive:relay_ack_customer',
+    })
+    return true
+  }
+
+  const activeMatch = await db.match.findFirst({
+    where: {
+      status: { in: ['MATCHED', 'INSPECTION_SCHEDULED', 'INSPECTION_COMPLETE', 'QUOTED', 'QUOTE_DECLINED'] },
+      jobRequest: { customerId: customer.id },
+    },
+    include: {
+      provider: true,
+      jobRequest: true,
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  if (activeMatch?.provider?.phone) {
+    await sendText(
+      activeMatch.provider.phone,
+      `💬 Message from your customer (${customer.name}):\n${trimmed}\n\nReply here and we'll pass your response back.`,
+      {
+        templateName: 'interactive:relay_customer_to_provider',
+        metadata: {
+          direction: 'customer_to_provider',
+          customerId: customer.id,
+          matchId: activeMatch.id,
+        },
+      }
+    )
+    await sendText(phone, '✅ We relayed your message to the provider.', {
+      templateName: 'interactive:relay_ack_customer',
+      metadata: { matchId: activeMatch.id },
+    })
+    return true
+  }
+
+  return false
+}
+
 // ─── Job notification to provider via WhatsApp ───────────────────────────────
 // Replaces direct customer ↔ provider contact — all mediated through the platform
 
@@ -404,38 +549,48 @@ async function handleRescheduleFlow(
   const { sendButtons, sendText } = await import('./whatsapp-interactive')
 
   if (ctx.step === 'reschedule_reason') {
-    // Find latest active job request
+    // Find latest active booking
     const customer = await db.customer.findUnique({
       where: { phone: ctx.phone },
     })
     if (!customer) {
-      await sendText(ctx.phone, "📋 No job requests found for your number. Send 'Hi' to submit a new request.")
+      await sendText(ctx.phone, "📋 No active bookings found for your number. Send 'Hi' to submit a new request.")
       return { nextStep: 'done' }
     }
 
-    const jobRequest = await db.jobRequest.findFirst({
+    const booking = await db.booking.findFirst({
       where: {
-        customerId: customer.id,
-        status: { in: ['OPEN', 'MATCHING', 'MATCHED'] },
+        status: { in: ['SCHEDULED', 'RESCHEDULED'] },
+        match: {
+          jobRequest: { customerId: customer.id },
+        },
       },
-      orderBy: { createdAt: 'desc' },
+      include: {
+        match: {
+          include: {
+            jobRequest: true,
+          },
+        },
+        job: true,
+      },
+      orderBy: { updatedAt: 'desc' },
     })
 
-    if (!jobRequest) {
-      await sendText(ctx.phone, "You don't have any active job requests to reschedule. Send 'Hi' to submit a new request.")
+    if (!booking || (booking.job && ['COMPLETED', 'FAILED', 'CANCELLED'].includes(booking.job.status))) {
+      await sendText(ctx.phone, "You don't have any active bookings to reschedule. Send 'Hi' to submit a new request.")
       return { nextStep: 'done' }
     }
 
     await sendButtons(
       ctx.phone,
-      `🔄 *Reschedule Request*\n\n🔧 ${jobRequest.category}\n\nWhy do you need to reschedule?`,
+      `🔄 *Reschedule Request*\n\n🔧 ${booking.match.jobRequest.category}\n\nWhy do you need to reschedule?`,
       [
         { id: 'rs_personal', title: '👤 Personal reason' },
         { id: 'rs_work', title: '💼 Work conflict' },
         { id: 'rs_other', title: '✏️ Other' },
       ]
     )
-    return { nextStep: 'reschedule_confirm', nextData: { rescheduleBookingId: jobRequest.id } }
+    return { nextStep: 'reschedule_confirm', nextData: { rescheduleBookingId: booking.id } }
   }
 
   if (ctx.step === 'reschedule_confirm') {
@@ -447,31 +602,50 @@ async function handleRescheduleFlow(
       }
       const reason = reasons[ctx.reply.id] ?? 'Not specified'
 
-      await sendButtons(
-        ctx.phone,
-        `🗓 Please reply with your preferred new availability (e.g. "Next week, mornings" or "Saturday afternoon").\n\nReason noted: _${reason}_`,
-        [
-          { id: 'rs_confirm_yes', title: '✅ Send Availability' },
-          { id: 'rs_confirm_no', title: '❌ Keep Original' },
-        ]
-      )
-      return { nextStep: 'reschedule_confirm', nextData: { rescheduleReason: reason } }
-    }
-
-    if (ctx.reply.id === 'rs_confirm_yes') {
       await sendText(
         ctx.phone,
-        `✅ Got it! Please type your preferred new availability and we'll update your request.\n\nSend 'Hi' to return to the menu.`
+        `🗓 Please reply with your preferred new availability (e.g. "Next week, mornings" or "Saturday afternoon").\n\nReason noted: _${reason}_`
       )
-      return { nextStep: 'done' }
-    }
-
-    if (ctx.reply.id === 'rs_confirm_no') {
-      await sendText(ctx.phone, 'No problem! Your original availability has been kept. 👍')
-      return { nextStep: 'done' }
+      return { nextStep: 'reschedule_select_slot', nextData: { rescheduleReason: reason } }
     }
 
     return { nextStep: 'reschedule_confirm' }
+  }
+
+  if (ctx.step === 'reschedule_select_slot') {
+    const requestedAvailability = ctx.reply.text?.trim()
+    if (!requestedAvailability || requestedAvailability.length < 5) {
+      await sendText(
+        ctx.phone,
+        'Please type the new availability you want us to work with, for example "Friday after 3pm" or "Saturday morning".'
+      )
+      return { nextStep: 'reschedule_select_slot', nextData: { rescheduleReason: ctx.data.rescheduleReason } }
+    }
+
+    const customer = await db.customer.findUnique({
+      where: { phone: ctx.phone },
+      select: { id: true },
+    })
+
+    if (!customer || !ctx.data.rescheduleBookingId) {
+      await sendText(ctx.phone, "We couldn't find the booking to reschedule. Reply 'Hi' to start again.")
+      return { nextStep: 'done' }
+    }
+
+    const { requestBookingReschedule } = await import('./bookings')
+    await requestBookingReschedule({
+      bookingId: ctx.data.rescheduleBookingId,
+      actorId: customer.id,
+      actorRole: 'customer',
+      reason: ctx.data.rescheduleReason ?? 'Customer requested reschedule',
+      requestedAvailability,
+    })
+
+    await sendText(
+      ctx.phone,
+      `✅ We’ve logged your reschedule request.\n\nRequested availability: ${requestedAvailability}\n\nOur team will confirm the updated booking time with you shortly.`
+    )
+    return { nextStep: 'done' }
   }
 
   return { nextStep: 'done' }

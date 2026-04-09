@@ -76,7 +76,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
   const latest = jobRequests[0]
   const job = latest.match?.booking?.job ?? null
   // Use the most recent active job if present
-  const activeJob = (job && !['COMPLETED', 'FAILED'].includes(job.status)) ? job : job ?? null
+  const activeJob = (job && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status)) ? job : job ?? null
 
   const jobStatus = activeJob?.status
   const requestStatus = latest.status

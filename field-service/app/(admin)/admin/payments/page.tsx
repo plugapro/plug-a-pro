@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
+import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
 import type { PaymentStatus } from '@prisma/client'
 
@@ -15,15 +16,19 @@ export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
 async function issueRefundAction(formData: FormData) {
   'use server'
-  await requireAdmin()
-
+  const admin = await requireAdmin()
   const paymentId = formData.get('paymentId') as string
   const amount    = Number(formData.get('amount'))
 
   // Look up the payment to get the bookingId for the lib function
   const payment = await db.payment.findUnique({
     where: { id: paymentId },
-    select: { bookingId: true },
+    select: {
+      bookingId: true,
+      status: true,
+      refundedAmount: true,
+      refundedAt: true,
+    },
   })
   if (!payment) return
 
@@ -32,6 +37,18 @@ async function issueRefundAction(formData: FormData) {
     await issueRefund({
       bookingId:   payment.bookingId,
       amountCents: Math.round(amount * 100),
+    })
+
+    await recordAuditLog({
+      actorId: admin.id,
+      actorRole: admin.role,
+      action: 'payment.refund',
+      entityType: 'payment',
+      entityId: paymentId,
+      before: payment,
+      after: {
+        requestedAmount: amount,
+      },
     })
   } catch (err) {
     console.error('[admin/payments] Refund failed:', err)

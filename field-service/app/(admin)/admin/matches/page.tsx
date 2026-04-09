@@ -36,7 +36,6 @@ export default async function MatchesModerationPage() {
       },
       quotes: {
         orderBy: { createdAt: 'desc' },
-        take: 1,
       },
       booking: {
         include: {
@@ -92,6 +91,8 @@ export default async function MatchesModerationPage() {
             )}
             {matches.map((match) => {
               const latestQuote = match.quotes[0] ?? null
+              const quoteVersionCount = match.quotes.length
+              const declinedQuoteCount = match.quotes.filter((quote) => quote.status === 'DECLINED').length
               return (
                 <TableRow key={match.id}>
                   <TableCell>
@@ -131,6 +132,15 @@ export default async function MatchesModerationPage() {
                         <p className="text-xs text-muted-foreground">
                           R {Number(latestQuote.amount).toFixed(2)}
                         </p>
+                        <p className="text-xs text-muted-foreground">
+                          {quoteVersionCount} version{quoteVersionCount === 1 ? '' : 's'}
+                          {declinedQuoteCount > 0 ? ` · ${declinedQuoteCount} declined` : ''}
+                        </p>
+                        {latestQuote.notes && (
+                          <p className="max-w-xs text-xs text-muted-foreground line-clamp-2">
+                            Feedback: {latestQuote.notes}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <span className="text-xs text-muted-foreground">No quote yet</span>

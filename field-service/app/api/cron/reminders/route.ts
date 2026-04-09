@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasSuccessfulMessageForBooking } from '@/lib/message-events'
 import { sendBookingReminder } from '@/lib/whatsapp'
 
 export async function GET(request: Request) {
@@ -33,6 +34,16 @@ export async function GET(request: Request) {
   for (const booking of bookings) {
     const customer = booking.match.jobRequest.customer
     try {
+      const alreadySent = await hasSuccessfulMessageForBooking({
+        bookingId: booking.id,
+        templateName: 'booking_reminder',
+        since: windowStart,
+      })
+      if (alreadySent) {
+        console.info(`[cron/reminders] Skipping duplicate reminder for booking ${booking.id}`)
+        continue
+      }
+
       const scheduledWindow = booking.scheduledWindow ?? 'Time to be confirmed'
 
       await sendBookingReminder({

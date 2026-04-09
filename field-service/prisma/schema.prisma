@@ -464,10 +464,11 @@ model MessageEvent {
   customerId    String?
   bookingId     String?
   channel       MessageChannel
+  direction     String         @default("OUTBOUND") // "INBOUND" | "OUTBOUND"
   templateName  String?
   body          String?
   to            String         // phone number or email
-  externalId    String?        // WhatsApp message ID
+  externalId    String?        // WhatsApp message ID (WAMID)
   status        MessageStatus  @default(QUEUED)
   sentAt        DateTime?
   deliveredAt   DateTime?
@@ -480,6 +481,23 @@ model MessageEvent {
   booking  Booking?  @relation(fields: [bookingId], references: [id])
 
   @@map("message_events")
+}
+
+model InboundWhatsAppMessage {
+  id             String   @id @default(cuid())
+  externalId     String   @unique
+  phone          String
+  messageType    String
+  body           String?
+  payload        Json     @default("{}")
+  duplicateCount Int      @default(0)
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+  processedAt    DateTime?
+  failureReason  String?
+
+  @@index([phone, firstSeenAt])
+  @@map("inbound_whatsapp_messages")
 }
 
 model WhatsappPreferenceLog {
@@ -528,6 +546,26 @@ model AuditLog {
   timestamp  DateTime @default(now())
 
   @@map("audit_logs")
+}
+
+model OnboardingIntake {
+  id             String   @id @default(cuid())
+  source         String
+  sourceRef      String?
+  journey        String
+  phone          String
+  name           String?
+  email          String?
+  message        String?
+  status         String   @default("NEW")
+  whatsappOptIn  Boolean  @default(true)
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([phone, createdAt])
+  @@index([status, createdAt])
+  @@map("onboarding_intakes")
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -590,6 +628,7 @@ enum JobStatus {
   AWAITING_APPROVAL // extra work submitted, waiting for customer
   PENDING_COMPLETION_CONFIRMATION // work done, customer needs to confirm
   COMPLETED         // customer confirmed complete
+  CANCELLED         // booking/job cancelled before completion
   FAILED            // job could not be completed
   CALLBACK_REQUIRED // provider flagged need for follow-up
 }
