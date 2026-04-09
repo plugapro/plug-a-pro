@@ -3,12 +3,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
-import {
-  buildWhatsAppLink,
-  whatsappAudienceOptions,
-  whatsappMessages,
-  whatsappNumberDisplay,
-} from "@/lib/whatsapp";
+import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
 
 export function Hero() {
   return (
@@ -46,27 +41,10 @@ export function Hero() {
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
           Get home help done right. Nearby workers, quoted in writing, on WhatsApp.
         </h1>
-        <p className="text-xl text-muted-foreground mb-3 max-w-2xl mx-auto">
+        <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
           Describe your job. We find a vetted local worker near you. You approve
           the price before anything starts. No app downloads, no strangers
           cold-calling. Just WhatsApp.
-        </p>
-        <p className="text-sm text-muted-foreground mb-4 max-w-2xl mx-auto">
-          Need a service provider, looking for work, or want to join as a service provider? Start with us on WhatsApp.
-        </p>
-        <p className="text-sm font-medium mb-10 max-w-lg mx-auto" style={{ color: "oklch(0.985 0 0 / 0.86)" }}>
-          WhatsApp us on {whatsappNumberDisplay}
-        </p>
-        <p className="text-sm text-muted-foreground mb-10 max-w-lg mx-auto">
-          Started a DIY project and got stuck?{" "}
-          <Link
-            href="/how-it-works"
-            className="underline-offset-4 hover:underline"
-            style={{ color: "var(--accent-brand)" }}
-            onClick={() => analytics.howItWorksClick("hero_diy_link")}
-          >
-            Our workers can assess, continue, or finish it.
-          </Link>
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button
@@ -96,23 +74,6 @@ export function Hero() {
           >
             Learn how it works
           </Button>
-        </div>
-        <div className="mt-5 flex flex-wrap justify-center gap-3">
-          {whatsappAudienceOptions.map((option) => (
-            <Link
-              key={option.audience}
-              href={buildWhatsAppLink(option.message)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
-              onClick={() => {
-                analytics.whatsappClick(`hero_${option.audience}`);
-                analytics.ctaClick(option.label, "hero_audience", option.audience);
-              }}
-            >
-              {option.label}
-            </Link>
-          ))}
         </div>
         {/* Trust bullets */}
         <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm" style={{ color: "oklch(0.985 0 0 / 0.7)" }}>
