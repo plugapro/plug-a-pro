@@ -20,7 +20,6 @@ const contactSchema = baseSchema.extend({
 
 const onboardingSchema = baseSchema.extend({
   type: z.literal("onboarding"),
-  name: z.string().trim().min(2).max(120),
   phone: z
     .string()
     .trim()
@@ -30,10 +29,6 @@ const onboardingSchema = baseSchema.extend({
       message: "Enter a valid mobile number.",
     }),
   journey: z.enum(["customer", "provider", "both"]),
-  city: z.string().trim().min(2).max(120),
-  serviceCategory: z.string().trim().min(2).max(120),
-  businessName: z.string().trim().max(120).optional(),
-  whatsappOptIn: z.boolean().default(true),
 });
 
 const schema = z.discriminatedUnion("type", [contactSchema, onboardingSchema]);
@@ -73,6 +68,12 @@ function normalizePhone(value: string) {
   return withSinglePlus;
 }
 
+const journeyPrefill: Record<string, string> = {
+  customer: "Hi, I want to register as a customer and book services through Plug-A-Pro.",
+  provider: "Hi, I want to join Plug-A-Pro as a service provider.",
+  both: "Hi, I want to join Plug-A-Pro as both a customer and service provider.",
+};
+
 export async function POST(request: Request) {
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
@@ -100,16 +101,12 @@ export async function POST(request: Request) {
       result.data.type === "onboarding"
         ? {
             type: result.data.type,
-            name: result.data.name,
             phone: normalizePhone(result.data.phone),
             journey: result.data.journey,
-            city: result.data.city,
-            service_category: result.data.serviceCategory,
-            business_name: result.data.businessName,
-            whatsapp_opt_in: result.data.whatsappOptIn,
             message: result.data.message,
             source: result.data.source,
             venture: siteConfig.venture,
+            whatsapp_opt_in: true,
           }
         : { ...result.data, venture: siteConfig.venture }
     );
@@ -123,22 +120,9 @@ export async function POST(request: Request) {
   }
 
   if (result.data.type === "onboarding") {
-    const whatsappSummary = [
-      `Hi ${siteConfig.name}, I have completed self-registration.`,
-      `Name: ${result.data.name}`,
-      `Mobile: ${normalizePhone(result.data.phone)}`,
-      `I am joining as: ${result.data.journey}`,
-      `Area: ${result.data.city}`,
-      `Service / need: ${result.data.serviceCategory}`,
-      result.data.businessName ? `Business: ${result.data.businessName}` : null,
-      result.data.message ? `Extra info: ${result.data.message}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
     return NextResponse.json({
       success: true,
-      whatsappUrl: buildWhatsAppLink(whatsappSummary),
+      whatsappUrl: buildWhatsAppLink(journeyPrefill[result.data.journey]),
     });
   }
 

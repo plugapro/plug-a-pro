@@ -63,16 +63,11 @@ describe("POST /api/leads", () => {
     expect(res.status).toBe(200);
   });
 
-  it("returns a WhatsApp handoff URL for valid onboarding submissions", async () => {
+  it("returns a WhatsApp handoff URL for minimal onboarding submission", async () => {
     const req = makeRequest({
       type: "onboarding",
-      name: "Alice Example",
-      phone: "+27 82 123 4567",
-      journey: "provider",
-      city: "Midrand",
-      serviceCategory: "Electrical",
-      businessName: "Alice Sparks",
-      whatsappOptIn: true,
+      phone: "+27821234567",
+      journey: "customer",
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -81,14 +76,40 @@ describe("POST /api/leads", () => {
     expect(json.whatsappUrl).toContain("wa.me");
   });
 
+  it("returns correct prefill message for provider journey", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      phone: "+27821234567",
+      journey: "provider",
+    });
+    const res = await POST(req);
+    const json = await res.json();
+    expect(json.whatsappUrl).toContain("service+provider");
+  });
+
+  it("accepts SA local format phone number", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      phone: "0821234567",
+      journey: "customer",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+  });
+
   it("rejects onboarding submissions without a phone number", async () => {
     const req = makeRequest({
       type: "onboarding",
-      name: "Alice Example",
       journey: "customer",
-      city: "Pretoria East",
-      serviceCategory: "Plumbing",
-      whatsappOptIn: true,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects onboarding submissions without a journey", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      phone: "+27821234567",
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
