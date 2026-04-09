@@ -21,7 +21,7 @@ export default function OnboardingPage() {
             Get started on WhatsApp in under a minute.
           </h1>
           <p className="mt-5 text-base leading-7 text-muted-foreground">
-            Pick your role, enter your number. We'll open WhatsApp with the right context so the conversation starts in the right place.
+            Pick your role, enter your number. We&apos;ll open WhatsApp with the right context so the conversation starts in the right place.
           </p>
         </section>
 

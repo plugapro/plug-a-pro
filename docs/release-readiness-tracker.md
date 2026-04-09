@@ -363,7 +363,14 @@ Use "Restore to new project" (BETA) in Supabase Dashboard → Database → Backu
 
 **Go-live gate:** All P0 and P1 items must be ✅ before production deployment.
 
-> **Status as of 2026-04-08:** All P1 blockers closed. P0-4 migration baseline closed. P0-0 WhatsApp templates: all 21 now registered; 7 already approved, 14 pending Meta review (24–72h). Go-live is gated on `quote_ready` and remaining UTILITY templates receiving Meta approval. P2-F, P2-J confirmed closed. P2-K (backup rehearsal) remains open.
+> **Status as of 2026-04-09:** All P1 blockers closed. P0-4 migration baseline closed. P0-0 WhatsApp templates: all 21 now registered; 7 already approved, 14 pending Meta review (24–72h). Go-live is gated on `quote_ready` and remaining UTILITY templates receiving Meta approval. P2-F, P2-J confirmed closed. P2-K (backup rehearsal) remains open.
+>
+> **2026-04-09 sweep:** WAMID inbound dedup, cron send-dedup, outbound observability, mediated relay, and createExtraWork idempotency all implemented (see `reports/meta-whatsapp-remediation-sweep.md`). Lint and TS errors driven to zero across both apps. 107 tests passing.
+>
+> **Blocked residuals** (require external action — no code changes possible):
+> - **P0-0** — 14 WhatsApp templates pending Meta approval. Operator must re-run verification script after approval and confirm `quote_ready` is APPROVED before go-live.
+> - **P2-K** — Supabase backup restore rehearsal. Operator must use "Restore to new project" in Supabase Dashboard before go-live.
+> - **Migration deploy** — `20260402141355_whatsapp_preferences` and `20260409103000_assurance_second_sweep` must be applied to production DB via `prisma migrate deploy` (or Supabase SQL Editor) at deploy time.
 
 ---
 

@@ -2,6 +2,7 @@
 // Direct integration — no intermediary required.
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages
 
+import { createHmac, timingSafeEqual } from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from './db'
 import { logOutboundMessage } from './message-events'
@@ -815,8 +816,6 @@ export function verifyMetaSignature(rawBody: string, signature: string): boolean
   const received = signature.startsWith('sha256=') ? signature.slice(7) : ''
   if (!received) return false
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createHmac, timingSafeEqual } = require('crypto') as typeof import('crypto')
   const expected = createHmac('sha256', appSecret).update(rawBody).digest('hex')
 
   try {

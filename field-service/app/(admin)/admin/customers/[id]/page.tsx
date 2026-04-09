@@ -81,7 +81,7 @@ export default async function CustomerDetailPage({
   if (!customer) notFound()
 
   // Flatten to a list of bookings with enough context to render the table
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // jr typed as any to avoid Prisma Decimal vs number mismatch in render shape
   const bookings = customer.jobRequests.flatMap((jr: any) =>
     jr.match?.booking
       ? [{

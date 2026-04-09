@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Third-party AI UI components — not maintained in-repo
+    "components/ai-elements/**",
   ]),
 ]);
 
