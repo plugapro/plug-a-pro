@@ -11,6 +11,16 @@ import { db } from './db'
 
 const LEAD_EXPIRY_HOURS = 4
 const MAX_LEADS_PER_REQUEST = 3
+const FAIRNESS_WINDOW_DAYS = 7
+
+function isUniqueLeadError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'P2002'
+  )
+}
 
 export interface CandidateInput {
   category: string
@@ -59,6 +69,37 @@ export async function findCandidateProviders(input: CandidateInput) {
     },
   })
 
+  const fairnessSince = new Date(Date.now() - FAIRNESS_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const providerIds = providers.map((provider) => provider.id)
+  const [recentLeadCounts, recentAcceptedCounts] = providerIds.length
+    ? await Promise.all([
+        db.lead.groupBy({
+          by: ['providerId'],
+          where: {
+            providerId: { in: providerIds },
+            sentAt: { gte: fairnessSince },
+          },
+          _count: { _all: true },
+        }),
+        db.lead.groupBy({
+          by: ['providerId'],
+          where: {
+            providerId: { in: providerIds },
+            status: 'ACCEPTED',
+            respondedAt: { gte: fairnessSince },
+          },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], []]
+
+  const leadCountByProvider = new Map(
+    recentLeadCounts.map((row) => [row.providerId, row._count._all])
+  )
+  const acceptedCountByProvider = new Map(
+    recentAcceptedCounts.map((row) => [row.providerId, row._count._all])
+  )
+
   return providers
     .map((p) => {
       const hasSkill = p.skills.some((s) => s.toLowerCase() === categoryNorm)
@@ -75,10 +116,30 @@ export async function findCandidateProviders(input: CandidateInput) {
       }
 
       if (bestAreaScore < 0) return null
-      return { provider: p, score: bestAreaScore }
+      return {
+        provider: p,
+        score: bestAreaScore,
+        recentLeadCount: leadCountByProvider.get(p.id) ?? 0,
+        recentAcceptedCount: acceptedCountByProvider.get(p.id) ?? 0,
+      }
     })
-    .filter((entry): entry is { provider: (typeof providers)[number]; score: number } => entry !== null)
-    .sort((a, b) => b.score - a.score || a.provider.name.localeCompare(b.provider.name))
+    .filter(
+      (
+        entry
+      ): entry is {
+        provider: (typeof providers)[number]
+        score: number
+        recentLeadCount: number
+        recentAcceptedCount: number
+      } => entry !== null
+    )
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        a.recentLeadCount - b.recentLeadCount ||
+        a.recentAcceptedCount - b.recentAcceptedCount ||
+        a.provider.name.localeCompare(b.provider.name)
+    )
     .map((entry) => entry.provider)
 }
 
@@ -92,6 +153,10 @@ export async function dispatchLeads(jobRequestId: string): Promise<DispatchResul
   })
 
   if (!jobRequest) {
+    return { jobRequestId, leadsDispatched: 0, candidatesFound: 0, noMatch: true }
+  }
+
+  if (!['OPEN', 'MATCHING'].includes(jobRequest.status)) {
     return { jobRequestId, leadsDispatched: 0, candidatesFound: 0, noMatch: true }
   }
 
@@ -111,25 +176,41 @@ export async function dispatchLeads(jobRequestId: string): Promise<DispatchResul
   for (const provider of candidates) {
     if (leadsDispatched >= MAX_LEADS_PER_REQUEST) break
 
+    // Stop dispatching if another provider has already accepted the request.
+    const existingMatch = await db.match.findUnique({ where: { jobRequestId } })
+    if (existingMatch) break
+
     // Idempotency: skip if an active lead already exists for this job+provider.
-    // EXPIRED and DECLINED leads do NOT block re-dispatch — the provider should
-    // be re-eligible once their previous lead expires or they decline.
+    // If the provider previously declined or the lead expired, reuse the same
+    // row instead of creating a duplicate because the schema keeps one lead row
+    // per job/provider pair.
     const existing = await db.lead.findFirst({
       where: {
         jobRequestId,
         providerId: provider.id,
-        status: { in: ['SENT', 'VIEWED', 'ACCEPTED'] },
       },
     })
-    if (existing) continue
+    if (existing?.status && ['SENT', 'VIEWED', 'ACCEPTED'].includes(existing.status)) continue
 
-    // Stop dispatching if another provider has already accepted the request.
-    const existingMatch = await db.match.findUnique({ where: { jobRequestId } })
-    if (existingMatch) continue
-
-    const lead = await db.lead.create({
-      data: { jobRequestId, providerId: provider.id, status: 'SENT', expiresAt },
-    })
+    let lead
+    try {
+      lead = existing
+        ? await db.lead.update({
+            where: { id: existing.id },
+            data: {
+              status: 'SENT',
+              sentAt: new Date(),
+              respondedAt: null,
+              expiresAt,
+            },
+          })
+        : await db.lead.create({
+            data: { jobRequestId, providerId: provider.id, status: 'SENT', expiresAt },
+          })
+    } catch (error) {
+      if (isUniqueLeadError(error)) continue
+      throw error
+    }
 
     const description =
       jobRequest.title || (jobRequest.description ?? '').slice(0, 60) || jobRequest.category
@@ -149,6 +230,13 @@ export async function dispatchLeads(jobRequestId: string): Promise<DispatchResul
     })
 
     leadsDispatched++
+  }
+
+  if (leadsDispatched > 0 && jobRequest.status !== 'MATCHING') {
+    await db.jobRequest.update({
+      where: { id: jobRequestId },
+      data: { status: 'MATCHING' },
+    })
   }
 
   return {
@@ -175,6 +263,9 @@ export async function acceptLead(params: {
 
       if (!lead) return { ok: false as const, reason: 'NOT_FOUND' }
       if (lead.providerId !== params.providerId) return { ok: false as const, reason: 'FORBIDDEN' }
+      if (!['SENT', 'VIEWED', 'ACCEPTED'].includes(lead.status)) {
+        return { ok: false as const, reason: 'TAKEN' }
+      }
       if (lead.expiresAt && lead.expiresAt < new Date()) {
         await tx.lead.update({
           where: { id: lead.id },
@@ -256,14 +347,17 @@ export async function declineLead(params: {
 }): Promise<{ ok: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
   const lead = await db.lead.findUnique({
     where: { id: params.leadId },
-    select: { id: true, providerId: true, jobRequestId: true },
+    select: { id: true, providerId: true, jobRequestId: true, status: true },
   })
 
   if (!lead) return { ok: false, reason: 'NOT_FOUND' }
   if (lead.providerId !== params.providerId) return { ok: false, reason: 'FORBIDDEN' }
+  if (!['SENT', 'VIEWED'].includes(lead.status)) {
+    return { ok: true }
+  }
 
   await db.lead.updateMany({
-    where: { id: lead.id, status: { in: ['SENT', 'VIEWED', 'ACCEPTED'] } },
+    where: { id: lead.id, status: { in: ['SENT', 'VIEWED'] } },
     data: { status: 'DECLINED', respondedAt: new Date() },
   })
 
@@ -289,7 +383,7 @@ export async function declineLead(params: {
 
 export async function expireStaleLeads(): Promise<number> {
   const staleLeads = await db.lead.findMany({
-    where: { status: 'SENT', expiresAt: { lt: new Date() } },
+    where: { status: { in: ['SENT', 'VIEWED'] }, expiresAt: { lt: new Date() } },
   })
 
   let expired = 0

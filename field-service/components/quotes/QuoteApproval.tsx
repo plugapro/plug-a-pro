@@ -2,7 +2,25 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
+
+const REVISION_REASONS = [
+  'Price is too high for the scope',
+  'Need the quote broken down more clearly',
+  'Need a different date or timing',
+  'Need the provider to inspect first',
+  'Need materials or labour adjusted',
+  'Other',
+] as const
 
 interface Quote {
   id: string
@@ -26,6 +44,8 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
   )
   const [paymentMode, setPaymentMode] = useState<'bypass' | 'checkout' | null>(null)
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null)
+  const [revisionReason, setRevisionReason] = useState<string>('')
+  const [revisionNotes, setRevisionNotes] = useState('')
   const [error, setError] = useState('')
 
   if (quote.status === 'APPROVED' || result === 'approved') {
@@ -40,6 +60,11 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         <p className="font-semibold">Quote Accepted</p>
         {dateStr && (
           <p className="text-sm font-medium">{quote.providerName} is scheduled for {dateStr}.</p>
+        )}
+        {!dateStr && (
+          <p className="text-sm font-medium">
+            {quote.providerName} has been notified. Plug-A-Pro will confirm the service date with you next.
+          </p>
         )}
         <p className="text-sm text-muted-foreground">
           {quote.providerName} has been notified. You&apos;ll receive a confirmation message on WhatsApp.
@@ -63,7 +88,9 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
       <div className="rounded-lg border p-6 text-center space-y-2">
         <p className="text-2xl">❌</p>
         <p className="font-semibold">Quote Declined</p>
-        <p className="text-sm text-muted-foreground">We&apos;ve notified the provider. We&apos;ll find you another option.</p>
+        <p className="text-sm text-muted-foreground">
+          We&apos;ve notified the provider. They can revise and resend the quote if the job still makes sense to continue.
+        </p>
       </div>
     )
   }
@@ -82,13 +109,22 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
   }
 
   async function respond(action: 'approve' | 'decline') {
+    if (action === 'decline' && !revisionReason) {
+      setError('Select a reason so the provider can revise the quote properly.')
+      return
+    }
+
     setStatus('submitting')
     setError('')
     try {
+      const feedback =
+        action === 'decline'
+          ? [revisionReason, revisionNotes.trim()].filter(Boolean).join(': ')
+          : null
       const res = await fetch(`/api/quotes/${token}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, feedback }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string }
@@ -98,6 +134,9 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         }
         if (data.error === 'EXPIRED') {
           throw new Error('This quote has expired. Please contact the provider to request a new one.')
+        }
+        if (data.error === 'MISSING_PREFERRED_DATE') {
+          throw new Error('This quote is missing a preferred job date. Please ask the provider to resend it with a date.')
         }
         throw new Error(data.error ?? 'Something went wrong')
       }
@@ -148,6 +187,35 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         <p>{quote.description}</p>
       </div>
 
+      <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="revision-reason">If you need a revision</Label>
+          <Select value={revisionReason} onValueChange={setRevisionReason}>
+            <SelectTrigger id="revision-reason" className="w-full">
+              <SelectValue placeholder="Select what should change" />
+            </SelectTrigger>
+            <SelectContent>
+              {REVISION_REASONS.map((reason) => (
+                <SelectItem key={reason} value={reason}>
+                  {reason}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="revision-notes">Add detail for the provider</Label>
+          <Textarea
+            id="revision-notes"
+            rows={3}
+            placeholder="Optional: explain what should be adjusted before you can accept."
+            value={revisionNotes}
+            onChange={(event) => setRevisionNotes(event.target.value)}
+          />
+        </div>
+      </div>
+
       {(quote.estimatedHours || quote.preferredDate || quote.validUntil) && (
         <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5 text-sm">
           {quote.estimatedHours && (
@@ -180,7 +248,7 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
           disabled={status === 'submitting'}
           onClick={() => respond('decline')}
         >
-          Decline
+          Request Revision
         </Button>
         <Button
           className="flex-1"

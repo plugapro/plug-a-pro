@@ -25,17 +25,24 @@ export type QuoteDecisionResult =
       action: 'declined'
       quoteId: string
       matchId: string
+      canRevise: boolean
+      feedback: string | null
       provider: { id: string; phone: string; name: string }
       customer: { id: string; phone: string; name: string }
       category: string
     }
 
-export type QuoteDecisionError = 'NOT_FOUND' | 'ALREADY_ACTIONED' | 'EXPIRED' | 'FORBIDDEN'
+export type QuoteDecisionError =
+  | 'NOT_FOUND'
+  | 'ALREADY_ACTIONED'
+  | 'EXPIRED'
+  | 'FORBIDDEN'
+  | 'MISSING_PREFERRED_DATE'
 
 export async function processQuoteDecision(
   quoteId: string,
   action: 'approve' | 'decline',
-  options?: { verifyCustomerPhone?: string }
+  options?: { verifyCustomerPhone?: string; customerFeedback?: string | null }
 ): Promise<QuoteDecisionResult | { error: QuoteDecisionError }> {
   try {
     const result = await db.$transaction(async (tx) => {
@@ -70,15 +77,25 @@ export async function processQuoteDecision(
       const category = quote.match.jobRequest.category
 
       if (action === 'decline') {
+        const feedback = options?.customerFeedback?.trim() || null
         await tx.quote.update({
           where: { id: quoteId },
-          data: { status: 'DECLINED', declinedAt: new Date() },
+          data: { status: 'DECLINED', declinedAt: new Date(), notes: feedback },
         })
         await tx.match.update({
           where: { id: quote.matchId },
           data: { status: 'QUOTE_DECLINED' },
         })
-        return { action: 'declined' as const, quoteId, matchId: quote.matchId, provider, customer, category }
+        return {
+          action: 'declined' as const,
+          quoteId,
+          matchId: quote.matchId,
+          canRevise: true,
+          feedback,
+          provider,
+          customer,
+          category,
+        }
       }
 
       // Approve
@@ -91,7 +108,11 @@ export async function processQuoteDecision(
         data: { status: 'QUOTE_APPROVED' },
       })
 
-      const scheduledDate = quote.preferredDate ?? new Date(Date.now() + 48 * 60 * 60 * 1000)
+      if (!quote.preferredDate) {
+        throw new Error('MISSING_PREFERRED_DATE')
+      }
+
+      const scheduledDate = quote.preferredDate
 
       const booking = await tx.booking.create({
         data: { matchId: quote.matchId, quoteId: quote.id, status: 'SCHEDULED', scheduledDate },
@@ -139,7 +160,13 @@ export async function processQuoteDecision(
     return result
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'UNKNOWN'
-    if (msg === 'NOT_FOUND' || msg === 'ALREADY_ACTIONED' || msg === 'EXPIRED' || msg === 'FORBIDDEN') {
+    if (
+      msg === 'NOT_FOUND' ||
+      msg === 'ALREADY_ACTIONED' ||
+      msg === 'EXPIRED' ||
+      msg === 'FORBIDDEN' ||
+      msg === 'MISSING_PREFERRED_DATE'
+    ) {
       return { error: msg as QuoteDecisionError }
     }
     throw err

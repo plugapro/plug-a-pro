@@ -12,7 +12,6 @@ type Params = { params: Promise<{ token: string }> }
 export async function GET(_req: NextRequest, { params }: Params) {
   const reqId = crypto.randomUUID().slice(0, 8)
   const { token } = await params
-  console.info(`[quotes:${reqId}] GET token=${token}`)
   const quote = await db.quote.findUnique({
     where: { approvalToken: token },
     include: {
@@ -28,7 +27,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   })
 
   if (!quote) {
-    console.warn(`[quotes:${reqId}] GET not found: token=${token}`)
+    console.warn(`[quotes:${reqId}] GET not found`)
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
@@ -53,7 +52,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 export async function PATCH(request: NextRequest, { params }: Params) {
   const reqId = crypto.randomUUID().slice(0, 8)
   const { token } = await params
-  const body = await request.json().catch(() => ({})) as { action?: string }
+  const body = await request.json().catch(() => ({})) as { action?: string; feedback?: string }
 
   if (body.action !== 'approve' && body.action !== 'decline') {
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
@@ -68,14 +67,17 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
   }
 
-  const result = await processQuoteDecision(quoteRow.id, body.action as 'approve' | 'decline')
+  const result = await processQuoteDecision(quoteRow.id, body.action as 'approve' | 'decline', {
+    customerFeedback: body.action === 'decline' ? body.feedback ?? null : null,
+  })
 
   if ('error' in result) {
-    console.warn(`[quotes:${reqId}] Decision error: ${result.error} token=${token}`)
+    console.warn(`[quotes:${reqId}] Decision error: ${result.error}`)
     const status =
       result.error === 'NOT_FOUND' ? 404 :
       result.error === 'ALREADY_ACTIONED' ? 409 :
-      result.error === 'EXPIRED' ? 410 : 422
+      result.error === 'EXPIRED' ? 410 :
+      result.error === 'MISSING_PREFERRED_DATE' ? 409 : 422
     return NextResponse.json({ error: result.error }, { status })
   }
 
@@ -99,6 +101,7 @@ async function notifyAfterDecision(result: {
   customer: { phone: string; name: string }
   category: string
   scheduledDate?: Date
+  feedback?: string | null
 }) {
   const { sendText, sendCtaUrl } = await import('@/lib/whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -124,7 +127,7 @@ async function notifyAfterDecision(result: {
   } else {
     await sendText(
       providerPhone,
-      `❌ The customer declined your quote for the ${category} job. The lead has been returned to the queue.`
+      `❌ The customer requested a quote revision for the ${category} job.${result.feedback ? `\n\nCustomer feedback:\n${result.feedback}` : ''}\n\nReview the scope and submit a revised quote through the app when ready.`
     ).catch(() => {})
   }
 }

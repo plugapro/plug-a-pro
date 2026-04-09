@@ -1,5 +1,5 @@
 // POST /api/technician/quotes
-// Body: { matchId, labourCost, materialsCost?, description, estimatedHours?, validFor, preferredDate?, postInspection? }
+// Body: { matchId, labourCost, materialsCost?, description, estimatedHours?, validFor, preferredDate, postInspection? }
 // Creates a Quote linked to the Match and sends WhatsApp notification to the client.
 
 import { randomBytes } from 'crypto'
@@ -49,6 +49,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
   }
 
+  if (!preferredDate) {
+    return NextResponse.json({ error: 'Preferred job date is required' }, { status: 400 })
+  }
+
+  const preferredDateValue = new Date(preferredDate)
+  if (Number.isNaN(preferredDateValue.getTime())) {
+    return NextResponse.json({ error: 'Preferred job date is invalid' }, { status: 400 })
+  }
+
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  if (preferredDateValue < startOfToday) {
+    return NextResponse.json({ error: 'Preferred job date must be today or later' }, { status: 400 })
+  }
+
   const hours = VALID_FOR_OPTIONS[validFor] ?? 48
   const validUntil = new Date(Date.now() + hours * 60 * 60 * 1000)
 
@@ -67,15 +82,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Match not found' }, { status: 404 })
   }
 
-  // Idempotent — return existing quote before status guard to avoid double-submission window
-  const existing = await db.quote.findFirst({ where: { matchId } })
+  // One live quote at a time. Declined / expired quotes can be revised by creating
+  // a new quote version on the same match.
+  const existing = await db.quote.findFirst({
+    where: { matchId },
+    orderBy: { createdAt: 'desc' },
+  })
   if (existing) {
-    return NextResponse.json({ quoteId: existing.id, alreadySubmitted: true })
+    if (existing.status === 'PENDING') {
+      const isExpired = existing.validUntil ? new Date() > existing.validUntil : false
+      if (!isExpired) {
+        return NextResponse.json({ quoteId: existing.id, alreadySubmitted: true, status: existing.status })
+      }
+
+      await db.quote.update({
+        where: { id: existing.id },
+        data: { status: 'EXPIRED' },
+      })
+    } else if (existing.status === 'APPROVED') {
+      return NextResponse.json({ error: 'This quote has already been approved' }, { status: 409 })
+    }
   }
 
   const expectedStatuses = match.inspectionNeeded
-    ? ['INSPECTION_COMPLETE']
-    : ['MATCHED']
+    ? ['INSPECTION_COMPLETE', 'QUOTE_DECLINED']
+    : ['MATCHED', 'QUOTE_DECLINED']
 
   if (!expectedStatuses.includes(match.status)) {
     const error = match.inspectionNeeded
@@ -103,7 +134,7 @@ export async function POST(request: NextRequest) {
       estimatedHours: estimatedHours ?? null,
       description,
       validUntil,
-      preferredDate: preferredDate ? new Date(preferredDate) : null,
+      preferredDate: preferredDateValue,
       postInspection,
       approvalToken,
       status: 'PENDING',

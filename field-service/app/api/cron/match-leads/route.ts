@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
   for (const jr of openRequests) {
     const activeLead = await db.lead.findFirst({
-      where: { jobRequestId: jr.id, status: 'SENT' },
+      where: { jobRequestId: jr.id, status: { in: ['SENT', 'VIEWED', 'ACCEPTED'] } },
     })
     if (activeLead) continue
 
@@ -47,7 +47,6 @@ export async function GET(request: Request) {
       const result = await dispatchLeads(jr.id)
       if (result.leadsDispatched > 0) {
         results.dispatched++
-        await db.jobRequest.update({ where: { id: jr.id }, data: { status: 'MATCHING' } })
       } else if (result.noMatch) {
         results.noMatch++
         console.warn(`[cron/match-leads:${reqId}] No providers for job ${jr.id}`)

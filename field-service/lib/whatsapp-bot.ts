@@ -567,6 +567,11 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
     return
   }
 
+  await db.lead.updateMany({
+    where: { id: lead.id, status: 'SENT' },
+    data: { status: 'VIEWED' },
+  })
+
   if (buttonId.startsWith('match_accept_')) {
     const { acceptLead } = await import('./matching-engine')
     const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: false })

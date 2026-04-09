@@ -37,6 +37,7 @@ export function QuoteForm({ matchId, postInspection: preChecked = false, categor
     e.preventDefault()
     if (labour <= 0) { setError('Labour cost is required'); return }
     if (desc.trim().length < 10) { setError('Description must be at least 10 characters'); return }
+    if (!preferredDate) { setError('Preferred job date is required'); return }
 
     setSubmitting(true)
     setError('')
@@ -165,13 +166,14 @@ export function QuoteForm({ matchId, postInspection: preChecked = false, categor
         </div>
 
         <div className="space-y-1">
-          <Label htmlFor="preferredDate">Preferred job date</Label>
+          <Label htmlFor="preferredDate">Preferred job date *</Label>
           <Input
             id="preferredDate"
             type="date"
             value={preferredDate}
             onChange={(e) => setPreferredDate(e.target.value)}
             min={new Date().toISOString().split('T')[0]}
+            required
           />
         </div>
 

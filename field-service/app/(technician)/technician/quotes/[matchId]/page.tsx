@@ -104,13 +104,17 @@ export default async function QuotePage({
   if (!match) notFound()
   if (match.providerId !== provider.id) redirect('/technician')
 
-  if (match.quotes.length > 0 && match.status === 'QUOTED') {
-    redirect('/technician?quote=already-sent')
-  }
+  const latestQuote = match.quotes[0] ?? null
 
   const jobRequest = match.jobRequest
   const addr = jobRequest.address
   const area = addr ? `${addr.suburb ?? ''}${addr.city ? `, ${addr.city}` : ''}`.trim() : 'Location in app'
+  const quoteAwaitingDecision = match.status === 'QUOTED' && latestQuote?.status === 'PENDING'
+  const quoteCanBeRevised =
+    match.status === 'QUOTE_DECLINED' ||
+    latestQuote?.status === 'DECLINED' ||
+    latestQuote?.status === 'EXPIRED'
+  const quoteApproved = match.status === 'QUOTE_APPROVED' || latestQuote?.status === 'APPROVED'
 
   return (
     <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-24">
@@ -134,7 +138,41 @@ export default async function QuotePage({
         </div>
       )}
 
-      {(!match.inspectionNeeded || match.status === 'INSPECTION_COMPLETE' || match.status === 'QUOTED') && (
+      {quoteAwaitingDecision && latestQuote && (
+        <div className="rounded-xl border bg-muted/40 p-4 space-y-2 text-sm">
+          <p className="font-medium">Quote awaiting customer decision</p>
+          <p className="text-muted-foreground">
+            Your latest quote for R {Number(latestQuote.amount).toFixed(2)} has been sent to the customer.
+            Wait for them to accept or decline before sending another one.
+          </p>
+        </div>
+      )}
+
+      {quoteCanBeRevised && latestQuote && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2 text-sm">
+          <p className="font-medium text-blue-900">Revise and resend your quote</p>
+          <p className="text-blue-800">
+            The previous quote was not accepted. Review the scope, update your pricing, and send a revised quote.
+          </p>
+          {latestQuote.notes && (
+            <div className="rounded-lg border border-blue-200 bg-white/80 px-3 py-2 text-blue-900">
+              <p className="text-xs font-semibold uppercase tracking-wide">Customer feedback</p>
+              <p className="mt-1 text-sm">{latestQuote.notes}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {quoteApproved && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-2 text-sm">
+          <p className="font-medium text-green-900">Quote already approved</p>
+          <p className="text-green-800">
+            This job has already moved past the quote stage. Open the technician dashboard to continue execution.
+          </p>
+        </div>
+      )}
+
+      {(!quoteAwaitingDecision && !quoteApproved && (!match.inspectionNeeded || match.status === 'INSPECTION_COMPLETE' || quoteCanBeRevised)) && (
         <QuoteForm
           matchId={matchId}
           postInspection={match.inspectionNeeded}
