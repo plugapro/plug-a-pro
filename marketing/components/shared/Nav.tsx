@@ -12,7 +12,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { analytics } from "@/lib/analytics";
-import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
 
 const navLinks = [
   { href: "/how-it-works", label: "How it works" },
@@ -54,15 +53,12 @@ export function Nav() {
           {/* Desktop CTA */}
           <Button
             nativeButton={false}
-            render={<Link href={buildWhatsAppLink(whatsappMessages.customer)} target="_blank" rel="noopener noreferrer" />}
+            render={<Link href="/onboarding" />}
             size="sm"
             className="hidden md:inline-flex"
-            onClick={() => {
-              analytics.whatsappClick("nav_desktop");
-              analytics.ctaClick("Chat on WhatsApp", "nav", "customer");
-            }}
+            onClick={() => analytics.ctaClick("Get started", "nav", "customer")}
           >
-            Chat on WhatsApp
+            Get started
           </Button>
 
           {/* Mobile hamburger */}
@@ -88,20 +84,11 @@ export function Nav() {
               </nav>
               <div className="mt-6">
                 <SheetClose
-                  render={
-                    <Link
-                      href={buildWhatsAppLink(whatsappMessages.customer)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    />
-                  }
+                  render={<Link href="/onboarding" />}
                   className="w-full inline-flex items-center justify-center rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-                  onClick={() => {
-                    analytics.whatsappClick("nav_mobile");
-                    analytics.ctaClick("Chat on WhatsApp", "nav_mobile", "customer");
-                  }}
+                  onClick={() => analytics.ctaClick("Get started", "nav_mobile", "customer")}
                 >
-                  Chat on WhatsApp
+                  Get started
                 </SheetClose>
               </div>
             </SheetContent>
