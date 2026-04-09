@@ -89,15 +89,17 @@ Key relationships:
 
 ## WhatsApp template rules
 
-| Template | Type | Opt-out blocks? |
-|----------|------|-----------------|
-| `booking_confirmation` | UTILITY | No |
-| `booking_cancelled` | UTILITY | No |
-| `quote_ready` | UTILITY | No |
-| `slot_available` | MARKETING | Yes |
-| `promo_*` | MARKETING | Yes |
+| Template | Type | Opt-out blocks? | Meta status |
+|----------|------|-----------------|-------------|
+| `booking_confirmation` | UTILITY | No | APPROVED |
+| `booking_cancelled` | UTILITY | No | APPROVED |
+| `quote_ready` | MARKETING | Yes (`whatsappMarketingOptIn`) | PENDING — Meta classified as MARKETING |
+| `technician_assigned` | UTILITY | No | PENDING |
+| `slot_available` | MARKETING | Yes | APPROVED |
+| `promo_*` | MARKETING | Yes | — |
 
 Never reclassify UTILITY → MARKETING without checking all `canSend()` call sites.
+`quote_ready` reclassified 2026-04-09: Meta overrode our UTILITY submission → MARKETING. Code updated to match.
 
 ---
 
@@ -107,4 +109,4 @@ Tracker: `docs/release-readiness-tracker.md`
 Runbook: `docs/release-runbook.md`
 Smoke tests: `docs/staging-smoke-test.md`
 
-Go-live gate: all P0 + P1 items ✅. Current status: all P1 closed; P0-4 needs `prisma migrate resolve --applied 20260327000000_baseline` against live Supabase DB.
+Go-live gate: all P0 + P1 items ✅. Current status: all P1 closed, P0-4 baseline applied 2026-04-08. Pending migrations: `20260402141355_whatsapp_preferences`, `20260409103000_assurance_second_sweep` — apply via `prisma migrate deploy` at production deploy time. P0-0 gated on `quote_ready` Meta approval.

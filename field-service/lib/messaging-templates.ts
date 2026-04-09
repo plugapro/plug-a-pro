@@ -145,7 +145,10 @@ export const TEMPLATES = {
   quote_ready: {
     name: 'quote_ready',
     language: 'en_ZA',
-    category: 'UTILITY',
+    // Meta classified this as MARKETING (not UTILITY) — category must match or policy gate is wrong.
+    // Implication: customers must have whatsappMarketingOptIn=true to receive quote notifications.
+    // If this blocks too many users, re-submit with a more transactional body to get UTILITY approval.
+    category: 'MARKETING',
     description: 'Sent when admin completes a quote review',
     // {{1}} customer name, {{2}} service, {{3}} quoted price, {{4}} quote URL
     example:

@@ -24,27 +24,49 @@
 ### P0-0 · WhatsApp templates approved in Meta
 | Field | Value |
 |-------|-------|
-| Status | 🔄 In progress — 7 approved, 14 pending Meta review |
+| Status | 🔄 In progress — 20 approved, 2 pending (`quote_ready`, `technician_assigned`) |
 | Owner | operator |
-| Evidence | `docs/whatsapp-template-verification-2026-04-08.md` |
-| Updated | 2026-04-08 — all 21 templates registered |
+| Evidence | Live API check 2026-04-09 |
+| Updated | 2026-04-09 |
 
 **WABA confirmed:** `104200042667877` is the production WABA under "Kgolaentle Holdings". Phone number +27 69 355 2447. This is not a sandbox account.
 
-**Template registration completed 2026-04-08:**
-- All 21 templates submitted (Group A: 9 templates registered via inline script; Group B: 12 templates via `register-whatsapp-templates.mjs`)
-- 7 templates already **APPROVED**: `technician_application_declined`, `technician_welcome`, `technician_job_reminder`, `job_offer`, `no_technician_available`, `slot_available`, `payment_received`
-- 14 templates **PENDING** Meta review (including `quote_ready`, `booking_confirmation`, `booking_cancelled`, and all other UTILITY templates)
-- Display name "Plug-A-Pro" submitted for review (previous "PlugAPro" was auto-rejected); currently showing "In review" status
+**Live status as of 2026-04-09 (verified via Graph API):**
 
-**Critical path:** `quote_ready` is in the PENDING group. The marketplace loop (customer receives quote link → approves → booking created) is blocked until Meta approves it.
+| Template | Status | Category (Meta) |
+|----------|--------|-----------------|
+| `booking_confirmation` | ✅ APPROVED | UTILITY |
+| `booking_cancelled` | ✅ APPROVED | UTILITY |
+| `booking_reminder` | ✅ APPROVED | UTILITY |
+| `booking_rescheduled` | ✅ APPROVED | UTILITY |
+| `extra_work_approval` | ✅ APPROVED | UTILITY |
+| `follow_up` | ✅ APPROVED | UTILITY |
+| `job_completed` | ✅ APPROVED | UTILITY |
+| `job_offer` | ✅ APPROVED | MARKETING |
+| `no_technician_available` | ✅ APPROVED | UTILITY |
+| `payment_received` | ✅ APPROVED | UTILITY |
+| `payment_reminder` | ✅ APPROVED | UTILITY |
+| `slot_available` | ✅ APPROVED | MARKETING |
+| `technician_application_declined` | ✅ APPROVED | UTILITY |
+| `technician_application_received` | ✅ APPROVED | UTILITY |
+| `technician_arrived` | ✅ APPROVED | UTILITY |
+| `technician_job_reminder` | ✅ APPROVED | UTILITY |
+| `technician_on_the_way` | ✅ APPROVED | UTILITY |
+| `technician_payment_released` | ✅ APPROVED | UTILITY |
+| `technician_welcome` | ✅ APPROVED | MARKETING |
+| `quote_ready` | 🔄 PENDING | **MARKETING** (Meta reclassified from our UTILITY submission) |
+| `technician_assigned` | 🔄 PENDING | UTILITY |
 
-**Remaining gate:** Wait for Meta to approve all 14 PENDING templates (24–72h for UTILITY). Re-verify before go-live:
+**Critical finding — `quote_ready` category mismatch (resolved 2026-04-09):**
+Meta overrode our UTILITY submission and classified `quote_ready` as MARKETING. Code updated accordingly: `lib/messaging-templates.ts` category changed to `MARKETING`. `canSend()` will now gate on `whatsappMarketingOptIn`. CLAUDE.md template table updated.
+
+**Critical path:** `quote_ready` still PENDING. Marketplace quote delivery loop is blocked until Meta approves it. `technician_assigned` is also PENDING but not on critical path.
+
+**Remaining gate:** Wait for Meta to approve `quote_ready` and `technician_assigned`. Re-verify:
 ```bash
 source field-service/.env.production.local
 curl -s "https://graph.facebook.com/v21.0/${WHATSAPP_WABA_ID}/message_templates?limit=200&fields=name,status,category&access_token=${WHATSAPP_ACCESS_TOKEN}" | python3 -m json.tool
 ```
-All UTILITY templates must show `APPROVED`. Update `docs/whatsapp-template-verification-2026-04-08.md` with the verified state.
 
 ---
 
@@ -54,7 +76,7 @@ All UTILITY templates must show `APPROVED`. Update `docs/whatsapp-template-verif
 | Status | ✅ Closed |
 | Owner | engineering |
 | Files changed | `field-service/__tests__/lib/whatsapp-policy.test.ts` |
-| Evidence | `92 passed, 4 todo` — all tests pass (suite grown from 65 as new tests added in P1/P2 items) |
+| Evidence | `107 passed, 4 todo` — all tests pass (2026-04-09) |
 
 **Root cause:** Commit `b0c900b` reclassified `booking_cancelled` and `quote_ready` from MARKETING → UTILITY. Tests 3 and 4 of `whatsapp-policy.test.ts` still referenced `booking_cancelled` expecting MARKETING behaviour. Fixed by switching to `slot_available` (a true MARKETING template).
 
@@ -108,6 +130,11 @@ cd marketing && npm run lint && npm run test && npm run build
 - Used Supabase SQL Editor to: (1) create `_prisma_migrations` table (was absent — schema was applied directly, not via Prisma migrate), (2) insert `20260327000000_baseline` row with `applied_steps_count=1`.
 - SELECT confirmed: `20260327000000_baseline | 2026-04-08 19:44:55+00 | 1` — 1 row returned.
 - `prisma migrate status` will now show no drift for the baseline. The `20260402141355_whatsapp_preferences` migration must still be applied via `prisma migrate deploy` on the live DB (or via SQL Editor) before go-live if not already present.
+
+**Completed 2026-04-09:**
+- Applied `20260402141355_whatsapp_preferences` and `20260409103000_assurance_second_sweep` to production DB via Supabase MCP `apply_migration`.
+- Schema verified post-apply: `whatsapp_preference_logs` ✅, `inbound_whatsapp_messages` ✅, `onboarding_intakes` ✅, `JobStatus.CANCELLED` ✅, `message_events.direction` ✅.
+- Both migrations recorded in `_prisma_migrations` with correct checksums. `prisma migrate deploy` will detect no pending migrations.
 
 ---
 
@@ -368,9 +395,9 @@ Use "Restore to new project" (BETA) in Supabase Dashboard → Database → Backu
 > **2026-04-09 sweep:** WAMID inbound dedup, cron send-dedup, outbound observability, mediated relay, and createExtraWork idempotency all implemented (see `reports/meta-whatsapp-remediation-sweep.md`). Lint and TS errors driven to zero across both apps. 107 tests passing.
 >
 > **Blocked residuals** (require external action — no code changes possible):
-> - **P0-0** — 14 WhatsApp templates pending Meta approval. Operator must re-run verification script after approval and confirm `quote_ready` is APPROVED before go-live.
+> - **P0-0** — 2 WhatsApp templates still PENDING Meta approval (`quote_ready` critical path; `technician_assigned` non-critical). Operator must re-run verification script after approval. `quote_ready` must be APPROVED before go-live.
 > - **P2-K** — Supabase backup restore rehearsal. Operator must use "Restore to new project" in Supabase Dashboard before go-live.
-> - **Migration deploy** — `20260402141355_whatsapp_preferences` and `20260409103000_assurance_second_sweep` must be applied to production DB via `prisma migrate deploy` (or Supabase SQL Editor) at deploy time.
+> - ~~Migration deploy~~ — ✅ Both pending migrations applied to production DB 2026-04-09 via Supabase MCP.
 
 ---
 
