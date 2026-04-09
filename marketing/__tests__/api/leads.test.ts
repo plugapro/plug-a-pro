@@ -62,4 +62,35 @@ describe("POST /api/leads", () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
   });
+
+  it("returns a WhatsApp handoff URL for valid onboarding submissions", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      name: "Alice Example",
+      phone: "+27 82 123 4567",
+      journey: "provider",
+      city: "Midrand",
+      serviceCategory: "Electrical",
+      businessName: "Alice Sparks",
+      whatsappOptIn: true,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.whatsappUrl).toContain("wa.me");
+  });
+
+  it("rejects onboarding submissions without a phone number", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      name: "Alice Example",
+      journey: "customer",
+      city: "Pretoria East",
+      serviceCategory: "Plumbing",
+      whatsappOptIn: true,
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
 });

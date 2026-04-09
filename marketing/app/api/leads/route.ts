@@ -3,14 +3,40 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { siteConfig } from "@/lib/metadata";
+import { buildWhatsAppLink } from "@/lib/whatsapp";
 
-const schema = z.object({
+const phoneRegex = /^\+?[1-9]\d{7,14}$/;
+
+const baseSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  message: z.string().trim().max(1500).optional(),
+  source: z.string().trim().max(120).optional(),
+});
+
+const contactSchema = baseSchema.extend({
   type: z.enum(["waitlist", "contact", "chat"]),
   email: z.string().email(),
-  name: z.string().optional(),
-  message: z.string().optional(),
-  source: z.string().optional(),
 });
+
+const onboardingSchema = baseSchema.extend({
+  type: z.literal("onboarding"),
+  name: z.string().trim().min(2).max(120),
+  phone: z
+    .string()
+    .trim()
+    .min(8)
+    .max(20)
+    .refine((value) => phoneRegex.test(normalizePhone(value)), {
+      message: "Enter a valid mobile number.",
+    }),
+  journey: z.enum(["customer", "provider", "both"]),
+  city: z.string().trim().min(2).max(120),
+  serviceCategory: z.string().trim().min(2).max(120),
+  businessName: z.string().trim().max(120).optional(),
+  whatsappOptIn: z.boolean().default(true),
+});
+
+const schema = z.discriminatedUnion("type", [contactSchema, onboardingSchema]);
 
 // Best-effort in-memory rate limiter.
 // NOTE: Resets on Vercel cold starts — not reliable across serverless invocations.
@@ -31,6 +57,15 @@ function isRateLimited(ip: string): boolean {
   if (entry.count >= LIMIT) return true;
   entry.count++;
   return false;
+}
+
+function normalizePhone(value: string) {
+  const cleaned = value.replace(/[^\d+]/g, "");
+  const withSinglePlus = cleaned.startsWith("+")
+    ? `+${cleaned.slice(1).replace(/\+/g, "")}`
+    : cleaned.replace(/\+/g, "");
+
+  return withSinglePlus;
 }
 
 export async function POST(request: Request) {
@@ -56,7 +91,23 @@ export async function POST(request: Request) {
 
   const { error } = await supabase
     .from("leads")
-    .insert({ ...result.data, venture: siteConfig.venture });
+    .insert(
+      result.data.type === "onboarding"
+        ? {
+            type: result.data.type,
+            name: result.data.name,
+            phone: normalizePhone(result.data.phone),
+            journey: result.data.journey,
+            city: result.data.city,
+            service_category: result.data.serviceCategory,
+            business_name: result.data.businessName,
+            whatsapp_opt_in: result.data.whatsappOptIn,
+            message: result.data.message,
+            source: result.data.source,
+            venture: siteConfig.venture,
+          }
+        : { ...result.data, venture: siteConfig.venture }
+    );
 
   if (error) {
     console.error("[leads] insert error:", error.message);
@@ -64,6 +115,26 @@ export async function POST(request: Request) {
       { error: "Failed to save. Please try again." },
       { status: 500 }
     );
+  }
+
+  if (result.data.type === "onboarding") {
+    const whatsappSummary = [
+      `Hi ${siteConfig.name}, I have completed self-registration.`,
+      `Name: ${result.data.name}`,
+      `Mobile: ${normalizePhone(result.data.phone)}`,
+      `I am joining as: ${result.data.journey}`,
+      `Area: ${result.data.city}`,
+      `Service / need: ${result.data.serviceCategory}`,
+      result.data.businessName ? `Business: ${result.data.businessName}` : null,
+      result.data.message ? `Extra info: ${result.data.message}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    return NextResponse.json({
+      success: true,
+      whatsappUrl: buildWhatsAppLink(whatsappSummary),
+    });
   }
 
   return NextResponse.json({ success: true });
