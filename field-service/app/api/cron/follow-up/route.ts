@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
+  const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
   // "~24h ago" window: 28h ago → 20h ago
   const windowStart = new Date(now.getTime() - 28 * 60 * 60 * 1000)
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
         since: windowStart,
       })
       if (alreadySent) {
-        console.info(`[cron/follow-up] Skipping duplicate follow-up for booking ${booking.id}`)
+        console.info(`[cron/follow-up:${reqId}] Skipping duplicate follow-up for booking ${booking.id}`)
         continue
       }
 
@@ -65,11 +66,12 @@ export async function GET(request: Request) {
       })
 
       sent++
-      console.log(`[cron/follow-up] Sent follow-up for booking ${booking.id}`)
+      console.log(`[cron/follow-up:${reqId}] Sent follow-up for booking ${booking.id}`)
     } catch (err) {
-      console.error(`[cron/follow-up] Failed for booking ${booking.id}:`, err)
+      console.error(`[cron/follow-up:${reqId}] Failed for booking ${booking.id}:`, err)
     }
   }
 
+  console.log(`[cron/follow-up:${reqId}]`, { sent })
   return NextResponse.json({ sent })
 }

@@ -41,7 +41,7 @@ async function handleHelpMenu(ctx: FlowContext): Promise<FlowResult> {
         { id: 'faq_cancel',          title: '❌ Cancellations',       description: 'Cancel a booking & refunds' },
         { id: 'faq_reschedule',      title: '🔄 Rescheduling',        description: 'Change your booking time' },
         { id: 'faq_payment',         title: '💳 How payment works',   description: 'Cards, EFT, and when to pay' },
-        { id: 'faq_technician',      title: '👷 Our technicians',     description: 'Vetting and safety checks' },
+        { id: 'faq_technician',      title: '👷 Our providers',       description: 'How profiles and records work' },
         { id: 'faq_problem_with_job', title: '🚨 Problem with a job', description: 'Report an issue with a job' },
         { id: 'faq_contact_human',   title: '📞 Speak to a person',   description: 'Talk to our support team' },
       ],
@@ -91,7 +91,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_cancel':
       await sendButtons(
         ctx.phone,
-        `❌ *Cancellation Policy*\n\n• Cancel *24h or more* before your booking — full refund\n• Cancel *less than 24h* before — 50% cancellation fee\n• No-show — no refund\n\nTo cancel, tap the button below or reply "cancel".`,
+        `❌ *Cancellation Help*\n\nIf you need to cancel, send the request through Plug a Pro and we’ll stop the job on the platform.\n\nIf an online payment was already collected, support will review the refund handling based on the booking stage and payment status.\n\nTo cancel, tap the button below or reply "cancel".`,
         [
           { id: 'start_cancel', title: '❌ Cancel My Booking' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -102,7 +102,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_reschedule':
       await sendButtons(
         ctx.phone,
-        `🔄 *Rescheduling*\n\nYou can reschedule your booking for free up to *6 hours* before your appointment.\n\nTap below to choose a new time.`,
+        `🔄 *Rescheduling*\n\nTell us why you need to move the booking and the new availability that works for you.\n\nPlug a Pro will log the request and confirm the updated time with you through the platform.`,
         [
           { id: 'start_reschedule', title: '🔄 Reschedule Booking' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -124,7 +124,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_technician':
       await sendButtons(
         ctx.phone,
-        `👷 *Our Technicians*\n\nAll Plug a Pro technicians are:\n\n✅ ID-verified\n✅ Skill-assessed\n✅ Rated by previous customers\n\nWe do not need to share your personal contact details just to get the job moving. Plug a Pro handles the early quote and update flow for your safety.`,
+        `👷 *Our Providers*\n\nPlug a Pro shows provider profiles, completed job history, and customer ratings where those records exist on the platform.\n\nProfile details such as skills and service areas come from the provider unless a field says it was checked by Plug a Pro.\n\nWe keep the early quote and update flow on the platform so there is a written record of what was agreed.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },

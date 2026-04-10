@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchLeads, expireStaleLeads } from '@/lib/matching-engine'
+import { expireStaleQuotes } from '@/lib/quotes'
 import { sendText } from '@/lib/whatsapp-interactive'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
@@ -19,13 +20,21 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, noMatch: 0, errors: 0 }
+  const results = { dispatched: 0, expired: 0, expiredQuotes: 0, noMatch: 0, errors: 0 }
 
   // 1. Expire stale leads
   try {
     results.expired = await expireStaleLeads()
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error expiring leads:`, err)
+    results.errors++
+  }
+
+  // 1b. Expire stale quotes (PENDING past validUntil)
+  try {
+    results.expiredQuotes = await expireStaleQuotes()
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error expiring quotes:`, err)
     results.errors++
   }
 

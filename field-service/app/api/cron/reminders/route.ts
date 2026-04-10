@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
+  const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
   // "Tomorrow" window: 20h from now → 28h from now
   const windowStart = new Date(now.getTime() + 20 * 60 * 60 * 1000)
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
         since: windowStart,
       })
       if (alreadySent) {
-        console.info(`[cron/reminders] Skipping duplicate reminder for booking ${booking.id}`)
+        console.info(`[cron/reminders:${reqId}] Skipping duplicate reminder for booking ${booking.id}`)
         continue
       }
 
@@ -55,11 +56,12 @@ export async function GET(request: Request) {
       })
 
       sent++
-      console.log(`[cron/reminders] Sent reminder for booking ${booking.id}`)
+      console.log(`[cron/reminders:${reqId}] Sent reminder for booking ${booking.id}`)
     } catch (err) {
-      console.error(`[cron/reminders] Failed for booking ${booking.id}:`, err)
+      console.error(`[cron/reminders:${reqId}] Failed for booking ${booking.id}:`, err)
     }
   }
 
+  console.log(`[cron/reminders:${reqId}]`, { sent })
   return NextResponse.json({ sent })
 }

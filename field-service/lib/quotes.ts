@@ -14,7 +14,7 @@ export type QuoteDecisionResult =
       scheduledDate: Date
       payment: {
         mode: PaymentCollectionMode
-        status: 'AUTHORISED' | 'PENDING'
+        status: 'PENDING'
         checkoutUrl: string | null
       }
       provider: { id: string; phone: string; name: string }
@@ -38,6 +38,22 @@ export type QuoteDecisionError =
   | 'EXPIRED'
   | 'FORBIDDEN'
   | 'MISSING_PREFERRED_DATE'
+
+/**
+ * Mark PENDING quotes whose validUntil has passed as EXPIRED.
+ * Called by the match-leads cron every 30 min so stale quotes don't
+ * accumulate as PENDING in reports and admin views.
+ */
+export async function expireStaleQuotes(): Promise<number> {
+  const { count } = await db.quote.updateMany({
+    where: {
+      status: 'PENDING',
+      validUntil: { lt: new Date() },
+    },
+    data: { status: 'EXPIRED' },
+  })
+  return count
+}
 
 export async function processQuoteDecision(
   quoteId: string,
