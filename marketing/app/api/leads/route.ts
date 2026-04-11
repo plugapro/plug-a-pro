@@ -31,7 +31,20 @@ const onboardingSchema = baseSchema.extend({
   journey: z.enum(["customer", "provider", "both"]),
 });
 
-const schema = z.discriminatedUnion("type", [contactSchema, onboardingSchema]);
+const leadMagnetSchema = baseSchema.extend({
+  type: z.literal("lead_magnet"),
+  phone: z
+    .string()
+    .trim()
+    .min(8)
+    .max(20)
+    .refine((value) => phoneRegex.test(normalizePhone(value)), {
+      message: "Enter a valid mobile number.",
+    }),
+  magnet: z.enum(["template-pack", "dispatch-checklist", "cashflow-tracker"]),
+});
+
+const schema = z.discriminatedUnion("type", [contactSchema, onboardingSchema, leadMagnetSchema]);
 
 // Best-effort in-memory rate limiter.
 // NOTE: Resets on Vercel cold starts — not reliable across serverless invocations.
@@ -74,6 +87,12 @@ const journeyPrefill: Record<string, string> = {
   both: "Hi, I want to join Plug-A-Pro as both a customer and service provider.",
 };
 
+const magnetPrefill: Record<string, string> = {
+  "template-pack": "Hi ServiceMen, I'd like the free WhatsApp template pack please.",
+  "dispatch-checklist": "Hi ServiceMen, I'd like the free dispatch checklist please.",
+  "cashflow-tracker": "Hi ServiceMen, I'd like the free cash flow tracker please.",
+};
+
 export async function POST(request: Request) {
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
@@ -100,21 +119,32 @@ export async function POST(request: Request) {
       ? normalizePhone(result.data.phone)
       : undefined;
 
+  const insertPayload =
+    result.data.type === "onboarding"
+      ? {
+          type: result.data.type,
+          phone: normalizedPhone,
+          journey: result.data.journey,
+          message: result.data.message,
+          source: result.data.source,
+          venture: siteConfig.venture,
+          whatsapp_opt_in: true,
+        }
+      : result.data.type === "lead_magnet"
+      ? {
+          type: result.data.type,
+          phone: normalizePhone(result.data.phone),
+          name: result.data.name,
+          source: result.data.source ?? `lead-magnet/${result.data.magnet}`,
+          message: result.data.magnet,
+          venture: siteConfig.venture,
+          whatsapp_opt_in: true,
+        }
+      : { ...result.data, venture: siteConfig.venture };
+
   const { error } = await supabase
     .from("marketing_leads")
-    .insert(
-      result.data.type === "onboarding"
-        ? {
-            type: result.data.type,
-            phone: normalizedPhone,
-            journey: result.data.journey,
-            message: result.data.message,
-            source: result.data.source,
-            venture: siteConfig.venture,
-            whatsapp_opt_in: true,
-          }
-        : { ...result.data, venture: siteConfig.venture }
-    );
+    .insert(insertPayload);
 
   if (error) {
     console.error("[leads] insert error:", error.message);
@@ -155,6 +185,13 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       whatsappUrl: buildWhatsAppLink(journeyPrefill[result.data.journey]),
+    });
+  }
+
+  if (result.data.type === "lead_magnet") {
+    return NextResponse.json({
+      success: true,
+      whatsappUrl: buildWhatsAppLink(magnetPrefill[result.data.magnet]),
     });
   }
 
