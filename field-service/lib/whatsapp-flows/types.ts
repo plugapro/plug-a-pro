@@ -43,6 +43,7 @@ export type FlowStep =
   | 'reg_edit_field'          // field-level edit selection
   // Status flow
   | 'status_show'
+  | 'status_pick'   // disambiguation step: customer choosing between multiple active requests
   // Reschedule flow
   | 'reschedule_reason'
   | 'reschedule_select_slot'
