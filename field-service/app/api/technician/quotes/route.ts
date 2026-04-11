@@ -7,6 +7,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { sendQuoteToClient } from '@/lib/whatsapp-bot'
+import { sendQuoteReady } from '@/lib/whatsapp'
 
 const VALID_FOR_OPTIONS: Record<string, number> = {
   '24h': 24, '48h': 48, '72h': 72, '1w': 168,
@@ -147,7 +148,11 @@ export async function POST(request: NextRequest) {
   })
 
   const customerPhone = match.jobRequest.customer.phone
+  const customerName = match.jobRequest.customer.name ?? 'there'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
   if (customerPhone) {
+    // Interactive message — works when customer is in an active 24h session
     sendQuoteToClient({
       customerPhone,
       providerName: provider.name,
@@ -160,7 +165,19 @@ export async function POST(request: NextRequest) {
       validUntil,
       approvalToken,
     }).catch((err: unknown) => {
-      console.error('[quotes] Failed to send WhatsApp quote notification:', err)
+      console.error('[quotes] Failed to send WhatsApp interactive quote notification:', err)
+    })
+
+    // Template fallback — delivers even when customer is outside the 24h session window
+    sendQuoteReady({
+      bookingId: matchId,
+      customerName,
+      customerPhone,
+      serviceName: match.jobRequest.category,
+      quotedPrice: `R ${totalAmount.toFixed(2)}`,
+      quoteUrl: `${appUrl}/quotes/${approvalToken}`,
+    }).catch((err: unknown) => {
+      console.error('[quotes] Failed to send WhatsApp quote_ready template:', err)
     })
   }
 

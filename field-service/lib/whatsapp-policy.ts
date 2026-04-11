@@ -18,7 +18,7 @@ import { TEMPLATES, TemplateName } from './messaging-templates'
 
 export type PolicyResult =
   | { allowed: true }
-  | { allowed: false; reason: 'service_opted_out' | 'marketing_opted_out' | 'customer_not_found' | 'unknown_template' | 'db_error' }
+  | { allowed: false; reason: 'service_opted_out' | 'marketing_opted_out' | 'customer_not_found' | 'provider_not_found' | 'unknown_template' | 'db_error' }
 
 // ─── canSend ──────────────────────────────────────────────────────────────────
 
@@ -41,11 +41,18 @@ export async function canSend(phone: string, templateName: TemplateName): Promis
       return { allowed: true }
     }
 
-    // MARKETING
-    if (!customer || !customer.whatsappMarketingOptIn) {
-      return { allowed: false, reason: customer ? 'marketing_opted_out' : 'customer_not_found' }
+    // MARKETING — check customer first, then fall back to provider
+    if (customer) {
+      return customer.whatsappMarketingOptIn
+        ? { allowed: true }
+        : { allowed: false, reason: 'marketing_opted_out' }
     }
-    return { allowed: true }
+
+    const provider = await db.provider.findUnique({ where: { phone } })
+    if (!provider) return { allowed: false, reason: 'provider_not_found' }
+    return provider.whatsappMarketingOptIn
+      ? { allowed: true }
+      : { allowed: false, reason: 'marketing_opted_out' }
   } catch {
     return { allowed: false, reason: 'db_error' }
   }

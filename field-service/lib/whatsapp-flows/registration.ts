@@ -45,6 +45,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectExperience(ctx)
     case 'reg_collect_availability':
       return handleCollectAvailability(ctx)
+    case 'reg_collect_evidence':
+      return handleCollectEvidence(ctx)
     case 'reg_confirm':
       return handleConfirm(ctx)
     case 'reg_pending':
@@ -171,7 +173,7 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
   const rows = [
     { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
-    { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town & surrounds' },
+    { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town area (coming soon)' },
     { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: 'Durban & surrounds' },
     { id: 'area_eastern_cape', title: 'Eastern Cape', description: 'Port Elizabeth & surrounds' },
     { id: 'area_other', title: 'Other province', description: 'Rest of South Africa' },
@@ -209,7 +211,7 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
         title: 'Areas',
         rows: [
           { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
-          { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town & surrounds' },
+          { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town area (coming soon)' },
           { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: 'Durban & surrounds' },
           { id: 'area_eastern_cape', title: 'Eastern Cape', description: 'Port Elizabeth & surrounds' },
           { id: 'area_other', title: 'Other province', description: 'Rest of South Africa' },
@@ -255,51 +257,87 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
 
   await sendButtons(
     ctx.phone,
-    '📅 Are you available on weekends?\n\nWe get many weekend requests — workers who work Saturdays earn significantly more.',
+    '📅 Are you available on weekends?\n\nWe get many weekend requests — workers who work Saturdays often get more leads.',
     [
       { id: 'avail_weekdays_only', title: '📋 Weekdays only' },
       { id: 'avail_incl_sat', title: '📅 Mon–Sat' },
       { id: 'avail_any_day', title: '✅ Any day' },
     ]
   )
-  return { nextStep: 'reg_confirm', nextData: { experience } }
+  return { nextStep: 'reg_collect_evidence', nextData: { experience } }
 }
 
-async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
+async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   const availMap: Record<string, { label: string; days: string[] }> = {
     avail_weekdays_only: { label: 'Weekdays only', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
     avail_incl_sat: { label: 'Mon–Sat', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] },
     avail_any_day: { label: 'Any day', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
   }
 
-  // Handle "Edit" — show field selection, not full restart
-  if (ctx.reply.id === 'reg_edit') {
-    return showEditMenu(ctx)
+  if (ctx.reply.id?.startsWith('avail_')) {
+    const avail = availMap[ctx.reply.id]
+    const availability = avail?.days ?? []
+
+    await sendButtons(
+      ctx.phone,
+      '🧾 Would you like to add an optional proof note?\n\nExamples: past jobs, references, or certificate names. This stays provider-supplied unless Plug a Pro says a specific item was reviewed.',
+      [
+        { id: 'evidence_add', title: '✍️ Add proof note' },
+        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+      ]
+    )
+    return { nextStep: 'reg_collect_evidence', nextData: { availability } }
   }
 
-  if (!ctx.reply.id?.startsWith('avail_')) {
-    await sendText(ctx.phone, 'Please choose your availability from the options above.')
-    return { nextStep: 'reg_confirm' }
+  if (ctx.reply.id === 'evidence_add') {
+    await sendText(
+      ctx.phone,
+      '🧾 Share a short note about any past work, references, or certificate names you want customers to see later.\n\nReply with your note, or type *skip* to continue without one.'
+    )
+    return { nextStep: 'reg_collect_evidence' }
   }
 
-  const avail = availMap[ctx.reply.id]
-  const availability = avail?.days ?? []
-  const availLabel = avail?.label ?? availability.join(', ')
+  if (ctx.reply.id === 'evidence_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
+    return showRegistrationSummary(ctx, { evidenceNote: '' })
+  }
 
-  const { name, skills, serviceAreas, experience } = ctx.data
+  const evidenceNote = ctx.reply.text?.trim()
+  if (!evidenceNote) {
+    await sendText(ctx.phone, 'Reply with your proof note, or type *skip* if you do not want to add one now.')
+    return { nextStep: 'reg_collect_evidence' }
+  }
+
+  return showRegistrationSummary(ctx, { evidenceNote })
+}
+
+async function showRegistrationSummary(
+  ctx: FlowContext,
+  overrides?: Partial<FlowContext['data']>
+): Promise<FlowResult> {
+  const availLabel =
+    (overrides?.availability?.length ?? ctx.data.availability?.length ?? 0) >= 7 ? 'Any day'
+    : (overrides?.availability?.length ?? ctx.data.availability?.length ?? 0) >= 6 ? 'Mon–Sat'
+    : 'Weekdays only'
+
+  const merged = { ...ctx.data, ...overrides }
+  const { name, skills, serviceAreas, experience, evidenceNote } = merged
   const skillList = (skills ?? []).join(', ')
   const areaList = (serviceAreas ?? []).join(', ')
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n\nShall I submit your application?`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}\nShall I submit your application?`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
       { id: 'submit_no', title: '❌ Cancel' },
     ]
   )
-  return { nextStep: 'reg_pending', nextData: { availability } }
+  return { nextStep: 'reg_pending', nextData: overrides }
+}
+
+async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
+  return showRegistrationSummary(ctx)
 }
 
 async function handlePending(ctx: FlowContext): Promise<FlowResult> {
@@ -331,6 +369,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         serviceAreas: ctx.data.serviceAreas ?? [],
         experience: ctx.data.experience ?? null,
         availability: availLabel,
+        evidenceNote: ctx.data.evidenceNote?.trim() || null,
         status: 'PENDING',
       },
     })
@@ -379,12 +418,13 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 // ─── Field-level edit ─────────────────────────────────────────────────────────
 
 async function showEditMenu(ctx: FlowContext): Promise<FlowResult> {
-  const { name, skills, serviceAreas, experience } = ctx.data
+  const { name, skills, serviceAreas, experience, evidenceNote } = ctx.data
   const summary = [
     name            ? `👤 ${name}` : null,
     skills?.length  ? `🔧 ${skills.join(', ')}` : null,
     serviceAreas?.[0] ? `📍 ${serviceAreas[0]}` : null,
     experience      ? `💼 ${experience}` : null,
+    evidenceNote    ? `🧾 ${evidenceNote}` : null,
   ].filter(Boolean).join('\n')
 
   await sendList(
@@ -395,6 +435,7 @@ async function showEditMenu(ctx: FlowContext): Promise<FlowResult> {
       { id: 'edit_skills',       title: '🔧 Skills' },
       { id: 'edit_area',         title: '📍 Area' },
       { id: 'edit_experience',   title: '💼 Experience' },
+      { id: 'edit_evidence',     title: '🧾 Proof note' },
       { id: 'edit_availability', title: '📅 Availability' },
     ]}],
     { buttonLabel: 'Choose Field' }
@@ -433,17 +474,24 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_availability' }
     }
 
+    case 'edit_evidence':
+      await sendText(
+        ctx.phone,
+        '🧾 Share a short note about past work, references, or certificate names you want customers to see later.\n\nReply with your note, or type *skip* to clear it.'
+      )
+      return { nextStep: 'reg_collect_evidence' }
+
     case 'edit_availability':
       await sendButtons(
         ctx.phone,
-        '📅 Are you available on weekends?\n\nWe get many weekend requests — workers who work Saturdays earn significantly more.',
+        '📅 Are you available on weekends?\n\nWe get many weekend requests — workers who work Saturdays often get more leads.',
         [
           { id: 'avail_weekdays_only', title: '📋 Weekdays only' },
           { id: 'avail_incl_sat',      title: '📅 Mon–Sat' },
           { id: 'avail_any_day',       title: '✅ Any day' },
         ]
       )
-      return { nextStep: 'reg_confirm' }
+      return { nextStep: 'reg_collect_evidence' }
 
     default:
       // Unknown reply — re-show the edit menu

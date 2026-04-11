@@ -74,22 +74,45 @@ model Provider {
   email        String?
   name         String
   bio          String?
+  experience   String?
   skills       String[] @default([]) // category slugs: "plumbing", "painting", etc.
   serviceAreas String[] @default([]) // suburb/city names they cover
+  evidenceNote String?
+  portfolioUrls String[] @default([])
   active       Boolean  @default(true)
   availableNow Boolean  @default(true)   // currently online and accepting leads
-  verified     Boolean  @default(false)
+  verified     Boolean  @default(false) // internal lead-eligibility flag after marketplace review; not a public guarantee
+  averageRating Float   @default(0)
+  reliabilityScore Float @default(0.5)
+  completedJobsCount Int @default(0)
+  onTimeRate   Float    @default(1)
+  acceptanceRate Float  @default(1)
+  maxTravelMinutes Int  @default(90)
+  lastKnownLat Float?
+  lastKnownLng Float?
+  lastKnownLocationLabel String?
+  lastKnownLocationAt DateTime?
   avatarUrl    String?
+  whatsappMarketingOptIn Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   schedule          ProviderSchedule[]
+  technicianSkills  TechnicianSkill[]
+  technicianCertifications TechnicianCertification[]
+  technicianServiceAreas TechnicianServiceArea[]
+  technicianAvailability TechnicianAvailability?
+  scheduleItems     TechnicianScheduleItem[]
   leads             Lead[]
   matches           Match[]
   jobs              Job[]
   reviews           Review[]
   pushSubscriptions PushSubscription[]
   applications      ProviderApplication[]
+  preferredByRequests JobRequest[] @relation("PreferredProvider")
+  assignmentHolds   AssignmentHold[]
+  matchAttempts     MatchAttempt[]
+  selectedDispatchDecisions DispatchDecision[] @relation("DispatchDecisionSelectedProvider")
 
   @@map("providers")
 }
@@ -132,6 +155,7 @@ model ProviderApplication {
   serviceAreas String[]          @default([])
   experience   String?           // e.g. "3–5 years" — set on application submit
   availability String?           // e.g. "Any day" or "Mon–Sat" — set on application submit
+  evidenceNote String?
   idNumber     String?
   status       ApplicationStatus @default(PENDING)
   notes        String?           // admin review notes
@@ -155,6 +179,15 @@ model JobRequest {
   category    String           // "plumbing" | "painting" | "garden" | etc.
   title       String           // short description: "Leaking tap in bathroom"
   description String           // full details provided by customer
+  requestedWindowStart DateTime?
+  requestedWindowEnd DateTime?
+  requestedArrivalLatest DateTime?
+  estimatedDurationMinutes Int?
+  requiredSkillTags String[]   @default([])
+  requiredCertificationCodes String[] @default([])
+  preferredProviderId String?
+  assignmentMode AssignmentMode @default(AUTO_ASSIGN)
+  latestDispatchDecisionId String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt   DateTime?        // if no match within window, mark EXPIRED
   createdAt   DateTime         @default(now())
@@ -162,9 +195,14 @@ model JobRequest {
 
   customer    Customer     @relation(fields: [customerId], references: [id])
   address     Address?     @relation(fields: [addressId], references: [id])
+  preferredProvider Provider? @relation("PreferredProvider", fields: [preferredProviderId], references: [id])
   attachments Attachment[]
   leads       Lead[]
   match       Match?
+  scheduleItems TechnicianScheduleItem[]
+  matchAttempts MatchAttempt[]
+  assignmentHolds AssignmentHold[]
+  dispatchDecisions DispatchDecision[]
 
   @@map("job_requests")
 }
@@ -177,6 +215,9 @@ model Lead {
   id           String     @id @default(cuid())
   jobRequestId String
   providerId   String
+  dispatchDecisionId String?
+  matchAttemptId String?
+  assignmentHoldId String?
   status       LeadStatus @default(SENT)
   sentAt       DateTime   @default(now())
   respondedAt  DateTime?
@@ -184,6 +225,9 @@ model Lead {
 
   jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
   provider   Provider   @relation(fields: [providerId], references: [id])
+  dispatchDecision DispatchDecision? @relation(fields: [dispatchDecisionId], references: [id], onDelete: SetNull)
+  matchAttempt MatchAttempt? @relation(fields: [matchAttemptId], references: [id], onDelete: SetNull)
+  assignmentHold AssignmentHold? @relation(fields: [assignmentHoldId], references: [id], onDelete: SetNull)
 
   @@unique([jobRequestId, providerId])
   @@map("leads")
@@ -266,6 +310,8 @@ model Booking {
   status          BookingStatus @default(SCHEDULED)
   scheduledDate   DateTime
   scheduledWindow String?       // "09:00-12:00"
+  scheduledStartAt DateTime?
+  scheduledEndAt   DateTime?
   notes           String?
   cancelReason    String?
   rescheduleCount Int           @default(0)
@@ -278,6 +324,7 @@ model Booking {
   payment  Payment?
   invoice  Invoice?
   messages MessageEvent[]
+  scheduleItems TechnicianScheduleItem[]
 
   @@map("bookings")
 }
@@ -368,6 +415,7 @@ model Payment {
   id             String        @id @default(cuid())
   bookingId      String        @unique
   status         PaymentStatus @default(PENDING)
+  collectionMode PaymentCollectionMode @default(OFFLINE_RECORDED)
   amount         Decimal       @db.Decimal(10, 2)
   currency       String        @default("ZAR")
   pspProvider    String?       // "peach" | "yoco" | "payfast"
@@ -403,6 +451,195 @@ model ProviderPayout {
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@map("provider_payouts")
+}
+
+model TechnicianSkill {
+  id             String   @id @default(cuid())
+  providerId     String
+  skillTag       String
+  proficiency    Int?
+  yearsExperience Float?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, skillTag])
+  @@map("technician_skills")
+}
+
+model TechnicianCertification {
+  id              String              @id @default(cuid())
+  providerId      String
+  certificationCode String
+  certificationName String
+  issuingAuthority String?
+  status          TechnicianCertificationStatus @default(SELF_DECLARED)
+  expiresAt       DateTime?
+  verifiedAt      DateTime?
+  evidenceUrl     String?
+  notes           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, certificationCode])
+  @@map("technician_certifications")
+}
+
+model TechnicianServiceArea {
+  id          String   @id @default(cuid())
+  providerId  String
+  areaType    TechnicianServiceAreaType @default(SUBURB)
+  label       String
+  city        String?
+  province    String?
+  lat         Float?
+  lng         Float?
+  radiusKm    Float?
+  priority    Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, active])
+  @@map("technician_service_areas")
+}
+
+model TechnicianAvailability {
+  id                 String   @id @default(cuid())
+  providerId         String   @unique
+  availabilityState  TechnicianAvailabilityState @default(AVAILABLE)
+  nextAvailableAt    DateTime?
+  breakUntil         DateTime?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@map("technician_availability")
+}
+
+model TechnicianScheduleItem {
+  id                  String   @id @default(cuid())
+  providerId          String
+  bookingId           String?
+  jobRequestId        String?
+  assignmentHoldId    String?
+  itemType            TechnicianScheduleItemType
+  status              TechnicianScheduleItemStatus @default(ACTIVE)
+  title               String?
+  startAt             DateTime
+  endAt               DateTime
+  bufferBeforeMinutes Int      @default(15)
+  bufferAfterMinutes  Int      @default(15)
+  source              String
+  locationLabel       String?
+  lat                 Float?
+  lng                 Float?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  provider       Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  booking        Booking?        @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  jobRequest     JobRequest?     @relation(fields: [jobRequestId], references: [id], onDelete: SetNull)
+  assignmentHold AssignmentHold? @relation(fields: [assignmentHoldId], references: [id], onDelete: SetNull)
+
+  @@index([providerId, startAt, endAt])
+  @@map("technician_schedule_items")
+}
+
+model DispatchDecision {
+  id                    String   @id @default(cuid())
+  jobRequestId          String
+  mode                  DispatchMode
+  status                DispatchDecisionStatus @default(RANKED)
+  initiatedById         String
+  initiatedByRole       String
+  selectedProviderId    String?
+  selectedMatchAttemptId String? @unique
+  overrideReason        String?
+  scoreWeights          Json     @default("{}")
+  consideredCount       Int      @default(0)
+  eligibleCount         Int      @default(0)
+  rankingSummary        Json?
+  filterSummary         Json?
+  explanation           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  jobRequest           JobRequest     @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  selectedProvider     Provider?      @relation("DispatchDecisionSelectedProvider", fields: [selectedProviderId], references: [id], onDelete: SetNull)
+  selectedMatchAttempt MatchAttempt?  @relation("DispatchDecisionSelectedMatchAttempt", fields: [selectedMatchAttemptId], references: [id], onDelete: SetNull)
+  matchAttempts        MatchAttempt[]
+  assignmentHolds      AssignmentHold[]
+  leads                Lead[]
+
+  @@index([jobRequestId, createdAt])
+  @@map("dispatch_decisions")
+}
+
+model MatchAttempt {
+  id                 String   @id @default(cuid())
+  jobRequestId       String
+  providerId         String
+  dispatchDecisionId String
+  attemptNumber      Int
+  rankedPosition     Int?
+  stage              MatchAttemptStage @default(FILTERED_OUT)
+  hardFilterPassed   Boolean @default(false)
+  filteredReasonCodes String[] @default([])
+  feasibilityNotes   String[] @default([])
+  score              Float?
+  scoreBreakdown     Json?
+  offeredAt          DateTime?
+  respondedAt        DateTime?
+  responseOutcome    AssignmentResponseOutcome?
+  reasonCode         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  jobRequest        JobRequest      @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  provider          Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  dispatchDecision  DispatchDecision @relation(fields: [dispatchDecisionId], references: [id], onDelete: Cascade)
+  leads             Lead[]
+  assignmentHolds   AssignmentHold[]
+  selectedByDispatch DispatchDecision? @relation("DispatchDecisionSelectedMatchAttempt")
+
+  @@unique([dispatchDecisionId, providerId])
+  @@index([jobRequestId, rankedPosition])
+  @@map("match_attempts")
+}
+
+model AssignmentHold {
+  id                 String   @id @default(cuid())
+  jobRequestId       String
+  providerId         String
+  dispatchDecisionId String
+  matchAttemptId     String
+  status             AssignmentHoldStatus @default(ACTIVE)
+  offeredAt          DateTime @default(now())
+  expiresAt          DateTime
+  respondedAt        DateTime?
+  releasedAt         DateTime?
+  outcomeReasonCode  String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  jobRequest       JobRequest       @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  provider         Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  dispatchDecision DispatchDecision @relation(fields: [dispatchDecisionId], references: [id], onDelete: Cascade)
+  matchAttempt     MatchAttempt     @relation(fields: [matchAttemptId], references: [id], onDelete: Cascade)
+  leads            Lead[]
+  scheduleItems    TechnicianScheduleItem[]
+
+  @@index([jobRequestId, status])
+  @@map("assignment_holds")
 }
 
 model Invoice {
@@ -597,6 +834,89 @@ enum MatchStatus {
   CANCELLED                 // cancelled at match stage
 }
 
+enum AssignmentMode {
+  AUTO_ASSIGN
+  OPS_REVIEW
+}
+
+enum DispatchMode {
+  AUTO_ASSIGN
+  OPS_REVIEW
+  MANUAL_OVERRIDE
+}
+
+enum DispatchDecisionStatus {
+  RANKED
+  OFFERING
+  ASSIGNED
+  NO_MATCH
+  OVERRIDDEN
+  CANCELLED
+}
+
+enum MatchAttemptStage {
+  FILTERED_OUT
+  RANKED
+  OFFERED
+  REJECTED
+  TIMED_OUT
+  ACCEPTED
+  SKIPPED
+  OVERRIDDEN
+}
+
+enum AssignmentResponseOutcome {
+  ACCEPTED
+  REJECTED
+  TIMED_OUT
+  EXPIRED
+  OVERRIDDEN
+  CANCELLED
+}
+
+enum AssignmentHoldStatus {
+  ACTIVE
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  RELEASED
+  CANCELLED
+}
+
+enum TechnicianCertificationStatus {
+  SELF_DECLARED
+  EVIDENCE_UPLOADED
+  REVIEWED
+  VERIFIED
+  EXPIRED
+}
+
+enum TechnicianServiceAreaType {
+  SUBURB
+  CITY
+  CUSTOM
+}
+
+enum TechnicianAvailabilityState {
+  AVAILABLE
+  BUSY
+  PAUSED
+  OFFLINE
+}
+
+enum TechnicianScheduleItemType {
+  BOOKING
+  BREAK
+  MANUAL_BLOCK
+  ASSIGNMENT_HOLD
+}
+
+enum TechnicianScheduleItemStatus {
+  ACTIVE
+  RELEASED
+  CANCELLED
+}
+
 enum InspectionStatus {
   PROPOSED   // provider proposed a time
   CONFIRMED  // customer confirmed the slot
@@ -640,6 +960,11 @@ enum PaymentStatus {
   FAILED
   REFUNDED
   PARTIALLY_REFUNDED
+}
+
+enum PaymentCollectionMode {
+  OFFLINE_RECORDED
+  PLATFORM_CHECKOUT
 }
 
 enum PayoutStatus {

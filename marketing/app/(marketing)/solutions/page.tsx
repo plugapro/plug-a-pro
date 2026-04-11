@@ -29,6 +29,7 @@ const SERVICES: {
   name: string;
   headline: string;
   examples: string[];
+  caveat?: string;
 }[] = [
   {
     icon: Home,
@@ -101,6 +102,7 @@ const SERVICES: {
       "Outdoor light and sensor fitting",
       "Extending a power point or adding a switch",
     ],
+    caveat: "Note: work on distribution boards, new circuits, or wiring extensions may require a Certificate of Compliance (COC) under South African law. Confirm with your provider before work begins.",
   },
   {
     icon: Hammer,
@@ -182,21 +184,28 @@ export default function ServicesPage() {
                     {service.headline}
                   </p>
                 </div>
-                <ul className="md:col-span-2 space-y-3">
-                  {service.examples.map((example) => (
-                    <li
-                      key={example}
-                      className="flex items-start gap-3 text-sm text-muted-foreground"
-                    >
-                      <span
-                        className="mt-1.5 size-1.5 rounded-full flex-shrink-0"
-                        style={{ background: "var(--accent-brand)" }}
-                        aria-hidden="true"
-                      />
-                      {example}
-                    </li>
-                  ))}
-                </ul>
+                <div className="md:col-span-2 space-y-3">
+                  <ul className="space-y-3">
+                    {service.examples.map((example) => (
+                      <li
+                        key={example}
+                        className="flex items-start gap-3 text-sm text-muted-foreground"
+                      >
+                        <span
+                          className="mt-1.5 size-1.5 rounded-full flex-shrink-0"
+                          style={{ background: "var(--accent-brand)" }}
+                          aria-hidden="true"
+                        />
+                        {example}
+                      </li>
+                    ))}
+                  </ul>
+                  {service.caveat && (
+                    <p className="text-xs text-muted-foreground border-t border-border/40 pt-3 mt-3">
+                      {service.caveat}
+                    </p>
+                  )}
+                </div>
               </div>
             );
           })}

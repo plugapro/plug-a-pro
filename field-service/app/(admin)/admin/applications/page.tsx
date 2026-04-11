@@ -58,10 +58,13 @@ async function approveApplication(formData: FormData) {
       userId: authData?.user?.id ?? null,
       name: app.name,
       phone: app.phone,
+      experience: app.experience,
       skills: app.skills,
       serviceAreas: app.serviceAreas,
+      evidenceNote: app.evidenceNote,
       active: true,
       verified: true,
+      whatsappMarketingOptIn: true,
     },
   })
 
@@ -140,7 +143,7 @@ export default async function ApplicationsPage() {
       <div>
         <h1 className="text-xl font-semibold">Provider Applications</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Applications submitted via WhatsApp — review and approve to onboard new providers
+          Applications submitted via WhatsApp. Approving an application allows that provider to receive marketplace leads.
         </p>
       </div>
 
@@ -176,7 +179,27 @@ export default async function ApplicationsPage() {
                   <span className="text-muted-foreground">Area: </span>
                   {app.serviceAreas.join(', ') || '—'}
                 </div>
+                <div>
+                  <span className="text-muted-foreground">Experience: </span>
+                  {app.experience || '—'}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Availability: </span>
+                  {app.availability || '—'}
+                </div>
               </div>
+
+              {app.evidenceNote && (
+                <div className="rounded-lg border bg-muted/30 px-3 py-3 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Provider-shared evidence note
+                  </p>
+                  <p className="mt-2">{app.evidenceNote}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    This is supplied by the applicant. Approval only allows marketplace participation unless Plug-A-Pro explicitly reviews a specific item.
+                  </p>
+                </div>
+              )}
 
               <p className="text-xs text-muted-foreground">
                 Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -229,9 +252,9 @@ export default async function ApplicationsPage() {
               <TableBody>
                 {reviewed.map((app) => (
                   <TableRow key={app.id}>
-                    <TableCell>{app.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{app.phone}</TableCell>
-                    <TableCell className="text-muted-foreground">{app.skills.join(', ') || '—'}</TableCell>
+                  <TableCell>{app.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{app.phone}</TableCell>
+                  <TableCell className="text-muted-foreground">{app.skills.join(', ') || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={getStatusVariant(app.status)} className="rounded-full">
                         {app.status}
