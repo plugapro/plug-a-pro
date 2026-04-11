@@ -4,7 +4,7 @@
 > Trigger: CHECKLIST
 
 ## Delivery Message
-> Hi [Name] 👋 Here's your free ServiceMen Dispatch Checklist — run through this every morning before your team hits the road. Takes 5–10 minutes and prevents most of the chaos that happens mid-morning.
+> Hi [Name] 👋 Here's your free Plug A Pro Dispatch Checklist — run through this every morning before your team hits the road. Takes 5–10 minutes and prevents most of the chaos that happens mid-morning.
 
 ---
 
@@ -41,7 +41,7 @@
 ---
 
 **Time:** 5–10 minutes
-**If it's taking longer:** ServiceMen automates most of this.
+**If it's taking longer:** Plug A Pro automates most of this.
 
 ## Follow-Up Message
-> If this takes more than 15 minutes, too much is living in your head and group chats. ServiceMen handles the follow-ups, reminders, and updates automatically. Reply DEMO to see how.
+> If this takes more than 15 minutes, too much is living in your head and group chats. Plug A Pro handles the follow-ups, reminders, and updates automatically. Reply DEMO to see how.

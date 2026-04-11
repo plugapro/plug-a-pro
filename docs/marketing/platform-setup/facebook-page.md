@@ -1,8 +1,8 @@
-# Facebook Page Setup — ServiceMen App
+# Facebook Page Setup — Plug A Pro
 
 ## Page Creation
 - [ ] Create Page as Business/Brand
-- [ ] Page name: **ServiceMen App**
+- [ ] Page name: **Plug A Pro**
 - [ ] Category: Software / Business Software
 - [ ] Upload logo (min 180x180px)
 - [ ] Upload cover image (820x312px)
@@ -17,19 +17,19 @@
 > WhatsApp-first job management for South African service businesses with 3–15 technicians.
 
 ## About Section
-> ServiceMen App helps South African service businesses stop running operations from scattered phone calls, WhatsApp group chats, and spreadsheets. Built for businesses with 3–15 technicians — plumbers, electricians, appliance repair, aircon service, pest control, and maintenance. Starting in Gauteng. Built for the South African market.
+> Plug A Pro helps South African service businesses stop running operations from scattered phone calls, WhatsApp group chats, and spreadsheets. Built for businesses with 3–15 technicians — plumbers, electricians, appliance repair, aircon service, pest control, and maintenance. Starting in Gauteng. Built for the South African market.
 
 ## Pinned Post
-> Welcome to ServiceMen App.
+> Welcome to Plug A Pro.
 >
 > If you run a service business with a team of technicians — plumbing, electrical, appliance repair, aircon, pest control, cleaning — you know the chaos.
 >
 > Customers calling your personal number. Quotes going unanswered. Technicians at the wrong address. Payments in cash with no record.
 >
-> We built ServiceMen to fix that. WhatsApp-first, built for South Africa, for teams of 3–15.
+> We built Plug A Pro to fix that. WhatsApp-first, built for South Africa, for teams of 3–15.
 >
-> WhatsApp us to see how it works: [wa.me link]
-> Free WhatsApp template pack: [/free-templates link]
+> WhatsApp us to see how it works: https://wa.me/27693552447
+> Free WhatsApp template pack: https://plugapro.co.za/free-templates
 
 ## Services Section
 - Job Request Management

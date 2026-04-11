@@ -5,7 +5,7 @@
 > Build once, share as "anyone with link can view" — they copy to their Drive
 
 ## Delivery Message
-> Hi [Name] 👋 Here's your free ServiceMen Cash Flow Tracker — a Google Sheets template built for SA service businesses.
+> Hi [Name] 👋 Here's your free Plug A Pro Cash Flow Tracker — a Google Sheets template built for SA service businesses.
 >
 > 👉 Click to copy: [Google Sheets link]
 >
@@ -44,4 +44,4 @@ Auto-filtered view: Payment Status = "Unpaid", sorted by Days Outstanding descen
 ---
 
 ## Follow-Up Message
-> The dashboard will show your outstanding invoices automatically as you add jobs. Most service businesses who fill this in for a week are shocked at how much is sitting unpaid. ServiceMen automates the follow-up on those — no manual chasing. Reply DEMO to see how.
+> The dashboard will show your outstanding invoices automatically as you add jobs. Most service businesses who fill this in for a week are shocked at how much is sitting unpaid. Plug A Pro automates the follow-up on those — no manual chasing. Reply DEMO to see how.

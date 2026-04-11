@@ -1,9 +1,9 @@
-# Instagram Business Setup — ServiceMen App
+# Instagram Business Setup — Plug A Pro
 
 ## Account Setup
 - [ ] Convert to Business account
-- [ ] Username: **@servicemenapp**
-- [ ] Display name: ServiceMen App
+- [ ] Username: **@plugapro**
+- [ ] Display name: Plug A Pro
 - [ ] Category: Software
 - [ ] Upload logo as profile picture
 - [ ] Connect to Facebook Page
@@ -16,9 +16,9 @@
 
 ## Link in Bio
 Single page or Linktree with:
-1. "Book a free 30-min walkthrough" → wa.me link
-2. "Get the free WhatsApp template pack" → /free-templates
-3. "See pricing" → pricing page
+1. "Book a free 30-min walkthrough" → https://wa.me/27693552447?text=DEMO
+2. "Get the free WhatsApp template pack" → https://plugapro.co.za/free-templates
+3. "See pricing" → https://plugapro.co.za/pricing
 
 ## Story Highlights
 | Highlight | Content |

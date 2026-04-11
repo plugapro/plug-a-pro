@@ -1,8 +1,8 @@
-# WhatsApp Business Setup — ServiceMen App
+# WhatsApp Business Setup — Plug A Pro
 
 ## Account Setup
 - [ ] Create WhatsApp Business account on dedicated business number
-- [ ] Business name: **ServiceMen App**
+- [ ] Business name: **Plug A Pro**
 - [ ] Business category: Technology
 - [ ] Upload logo as profile picture
 - [ ] Set hours: Mon–Fri 07:00–18:00, Sat 08:00–13:00 SAST
@@ -13,10 +13,10 @@
 > WhatsApp-first job management for service businesses. Bookings, dispatch, updates, and payments — all in one.
 
 **Business description:**
-> ServiceMen helps South African service businesses with 3–15 technicians run their operations without the chaos of scattered calls, WhatsApp group chats, and spreadsheets. Built in South Africa, for South Africa.
+> Plug A Pro helps South African service businesses with 3–15 technicians run their operations without the chaos of scattered calls, WhatsApp group chats, and spreadsheets. Built in South Africa, for South Africa.
 
 ## Greeting Message
-> Hi, thanks for reaching out to ServiceMen App. We help service businesses in SA run bookings, dispatch, and payments through WhatsApp.
+> Hi, thanks for reaching out to Plug A Pro. We help service businesses in SA run bookings, dispatch, and payments through WhatsApp.
 >
 > Reply with:
 > DEMO — to book a 30-min walkthrough
@@ -34,7 +34,7 @@
 
 | Shortcut | Message |
 |---|---|
-| /demo | "We'd love to show you ServiceMen. How many technicians do you have, and what kind of work do you do?" |
+| /demo | "We'd love to show you Plug A Pro. How many technicians do you have, and what kind of work do you do?" |
 | /templates | "Sending you the free WhatsApp Template Pack now — 5 ready-to-use messages for your service jobs." |
 | /pricing | "Our pricing is based on team size. Plans start from [R]/month for 3–15 technicians. Want to talk through what fits your setup?" |
 | /thanks | "Appreciate it! Let us know anytime you need help. 🙌" |

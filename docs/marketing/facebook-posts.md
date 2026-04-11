@@ -1,4 +1,4 @@
-# Facebook Posts — ServiceMen App
+# Facebook Posts — Plug A Pro
 
 > Platform: Facebook Page
 > Cadence: 3x per week
@@ -16,7 +16,7 @@
 > For most businesses we've spoken to, it's 12–20 messages just to confirm one appointment.
 >
 > There's a better way. Comment below or WhatsApp us to see it.
-> [WhatsApp link]
+> https://wa.me/27693552447
 
 **Asset:** Text only
 **CTA:** Comment / WhatsApp link
@@ -25,13 +25,13 @@
 
 ## Post 2 — Week 1 | Awareness | Product intro
 
-> If your "dispatch system" is a WhatsApp group and your "invoicing system" is a photo of a handwritten job sheet — we built ServiceMen for you.
+> If your "dispatch system" is a WhatsApp group and your "invoicing system" is a photo of a handwritten job sheet — we built Plug A Pro for you.
 >
-> South African field service platform. WhatsApp-first. Built for teams of 3–15 technicians.
+> Plug A Pro — South African field service platform. WhatsApp-first. Built for teams of 3–15 technicians.
 >
 > Plumbers, electricians, appliance repair, aircon service, pest control, cleaning — if you send technicians to customers, we can help.
 >
-> WhatsApp us to see how it works 👇 [link]
+> WhatsApp us to see how it works 👇 https://wa.me/27693552447
 
 **Asset:** Brand image or product screenshot
 **CTA:** WhatsApp link
@@ -51,9 +51,9 @@
 > Technician on the way ✅
 > Job complete — invoice attached ✅
 >
-> ServiceMen sends all of these automatically. Your customers stay informed. Your phone stops ringing for updates.
+> Plug A Pro sends all of these automatically. Your customers stay informed. Your phone stops ringing for updates.
 >
-> See how it works: [WhatsApp link]
+> See how it works: https://wa.me/27693552447
 
 **Asset:** WhatsApp message screenshot mockup
 **CTA:** WhatsApp link
@@ -66,7 +66,7 @@
 >
 > We know what load shedding does to your scheduling. We know how WhatsApp-first your customers are. We know the difference between a Joburg market and what the generic American field service apps assume about your business.
 >
-> That's why we built ServiceMen. Not a localised version of something built for the US market. Built here, for here.
+> That's why we built Plug A Pro. Not a localised version of something built for the US market. Built here, for here.
 >
 > Like our page for updates 👆
 
@@ -79,7 +79,7 @@
 
 > 🎁 Free for any SA service business owner:
 >
-> The ServiceMen WhatsApp Template Pack — 5 ready-to-use message templates:
+> The Plug A Pro WhatsApp Template Pack — 5 ready-to-use message templates:
 >
 > ✅ New job request acknowledgement
 > ✅ Quote ready notification
@@ -89,7 +89,7 @@
 >
 > Professional, clear, ready to copy and paste.
 >
-> WhatsApp us the word TEMPLATES and we'll send them through: [link]
+> WhatsApp us the word TEMPLATES and we'll send them through: https://wa.me/27693552447?text=TEMPLATES
 
 **Asset:** Template pack preview graphic
 **CTA:** WhatsApp link with TEMPLATES prefill
@@ -98,7 +98,7 @@
 
 ## Post 6 — Week 4 | Trust | Early social proof
 
-> What our early users are saying after their first month on ServiceMen:
+> What our early users are saying after their first month on Plug A Pro:
 >
 > "I used to spend the first 2 hours of every morning sorting out the day's jobs. Now I check the dashboard in 10 minutes." — Electrical contractor, Pretoria
 >
@@ -106,7 +106,7 @@
 >
 > "I collected 3 payments in one day that had been sitting for weeks. The system sent the reminders." — Plumbing business, Centurion
 >
-> Sound like something your business needs? WhatsApp us 👉 [link]
+> Sound like something your business needs? WhatsApp us 👉 https://wa.me/27693552447
 
 **Asset:** Quote graphic with branding
 **CTA:** WhatsApp link
@@ -125,7 +125,7 @@
 >
 > If this takes you more than 30 minutes, your system is doing too little work.
 >
-> ServiceMen handles most of this automatically. Want to see how?
+> Plug A Pro handles most of this automatically. Want to see how?
 > Comment DEMO and we'll set up a walkthrough.
 
 **Asset:** Checklist graphic
@@ -135,7 +135,7 @@
 
 ## Post 8 — Week 6 | Feature | Job dispatch flow
 
-> 📲 How job dispatch works in ServiceMen:
+> 📲 How job dispatch works in Plug A Pro:
 >
 > 1. Customer request comes in
 > 2. You assign it to the closest available technician (from your dashboard)
@@ -145,7 +145,7 @@
 >
 > No phone tag. No group chat chaos. No missed follow-ups.
 >
-> WhatsApp us to see it live: [link]
+> WhatsApp us to see it live: https://wa.me/27693552447
 
 **Asset:** Flow diagram or short screen recording
 **CTA:** WhatsApp link
@@ -158,9 +158,9 @@
 >
 > Your phone is blowing up. You're trying to update a spreadsheet that's now offline. The group chat is full of voice notes you haven't listened to.
 >
-> This is what ServiceMen was built for.
+> This is what Plug A Pro was built for.
 >
-> WhatsApp us to see how it handles exactly this situation: [link]
+> WhatsApp us to see how it handles exactly this situation: https://wa.me/27693552447
 
 **Asset:** Text only
 **CTA:** WhatsApp link
@@ -171,14 +171,14 @@
 
 > "Isn't this just for big companies?"
 >
-> No. The businesses that benefit most from ServiceMen are exactly at the stage where chaos starts:
+> No. The businesses that benefit most from Plug A Pro are exactly at the stage where chaos starts:
 > 3 technicians → you can still manage in your head
 > 5 technicians → it starts breaking
 > 8 technicians → it's costing you real money and customers
 >
-> We built this for 3–15. That's the zone. That's who we serve.
+> Plug A Pro was built for 3–15. That's the zone. That's who we serve.
 >
-> If you're in that zone — WhatsApp us: [link]
+> If you're in that zone — WhatsApp us: https://wa.me/27693552447
 
 **Asset:** Text only or simple graphic
 **CTA:** WhatsApp link
@@ -189,7 +189,7 @@
 
 > ⏰ Founding 50 update:
 >
-> We opened early access to 50 service businesses in Gauteng. 38 spots are taken.
+> We opened early access to 50 service businesses in Gauteng. [X] spots are taken.
 >
 > What's included in the Founding 50:
 > ✅ 3 months free
@@ -197,9 +197,9 @@
 > ✅ Founding member pricing locked in
 > ✅ Direct line to the product team
 >
-> 12 spots left. We're closing this cohort on [date].
+> [X] spots left. We're closing this cohort on [date].
 >
-> WhatsApp us if you want one: [link]
+> WhatsApp us if you want one: https://wa.me/27693552447
 
 **Asset:** Deadline/urgency graphic
 **CTA:** WhatsApp link
@@ -210,11 +210,11 @@
 
 > 90 days. [X] service businesses. [X] jobs managed. [X] payments collected.
 >
-> ServiceMen is growing — and every business on the platform was running on WhatsApp group chats and spreadsheets before they signed up.
+> Plug A Pro is growing — and every business on the platform was running on WhatsApp group chats and spreadsheets before they signed up.
 >
 > If you haven't had a look yet — now's a good time.
 >
-> WhatsApp us: [link]
+> WhatsApp us: https://wa.me/27693552447
 
 **Asset:** Stats/milestone graphic
 **CTA:** WhatsApp link

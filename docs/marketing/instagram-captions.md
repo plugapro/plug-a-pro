@@ -1,6 +1,6 @@
-# Instagram Captions — ServiceMen App
+# Instagram Captions — Plug A Pro
 
-> Platform: Instagram Business (@servicemenapp)
+> Platform: Instagram Business (@plugapro)
 > Cadence: 3x per week from Week 3
 > Link in bio: WhatsApp link + /free-templates page
 
@@ -12,7 +12,7 @@ Your phone is your CRM. Your WhatsApp is your dispatch system. Your brain is you
 
 Sound familiar? There's a better version of this.
 
-ServiceMen — WhatsApp-first job management for SA service businesses.
+Plug A Pro — WhatsApp-first job management for SA service businesses.
 Link in bio 👆
 
 #fieldservice #southafrica #plumbing #electrician #servicebusiness #gauteng #businessowner
@@ -23,8 +23,8 @@ Link in bio 👆
 
 ## Caption 2 — Week 3 | Awareness | Before/after
 
-Before ServiceMen: 12 WhatsApp messages to book one job.
-After ServiceMen: customer books, technician dispatched, confirmation sent — without you in the middle.
+Before Plug A Pro: 12 WhatsApp messages to book one job.
+After Plug A Pro: customer books, technician dispatched, confirmation sent — without you in the middle.
 
 Built for SA service businesses with 3–15 technicians.
 Link in bio to see how it works.
@@ -58,7 +58,7 @@ You: *scrolling WhatsApp trying to find the voice note with the job details*
 
 This is fixable.
 
-ServiceMen sends customers real-time updates via WhatsApp so they stop calling you.
+Plug A Pro sends customers real-time updates via WhatsApp so they stop calling you.
 
 Link in bio for a free walkthrough.
 
@@ -75,7 +75,7 @@ Link in bio for a free walkthrough.
 The chaos doesn't mean you're bad at business.
 It means you need the right system.
 
-ServiceMen is built for exactly this stage.
+Plug A Pro is built for exactly this stage.
 Link in bio 👆
 
 #smallbusiness #southafrica #servicebusiness #fieldservice
@@ -92,7 +92,7 @@ We know load shedding disrupts your schedule.
 We know WhatsApp is how your customers communicate.
 We know the generic American field service apps don't fit how you work.
 
-ServiceMen was built here. For here.
+Plug A Pro was built here. For here.
 
 Link in bio to learn more.
 
@@ -121,7 +121,7 @@ DM us TEMPLATES or grab the link in bio.
 
 ## Caption 8 — Week 7 | Trust | Day in the life
 
-What a day in the life looks like for a ServiceMen user:
+What a day in the life looks like for a Plug A Pro user:
 
 7am — check dashboard: 6 jobs for today, all confirmed
 9am — new job request comes in, assigned in 2 clicks
@@ -141,7 +141,7 @@ The best service businesses in SA aren't necessarily the ones with the best tech
 
 They're the ones that respond fastest, communicate clearest, and collect payment cleanest.
 
-Operations win customers. ServiceMen is your operations layer.
+Operations win customers. Plug A Pro is your operations layer.
 
 Link in bio.
 
@@ -157,7 +157,7 @@ Not because he hired more staff. Not because he got better at sales.
 
 Because customers stopped falling through the cracks when their quote sat unanswered for 4 days.
 
-ServiceMen sent the follow-up automatically. They said yes.
+Plug A Pro sent the follow-up automatically. They said yes.
 
 Link in bio to see how.
 
@@ -169,7 +169,7 @@ Link in bio to see how.
 
 ⏰ Founding 50 — 12 spots left.
 
-First 50 SA service businesses on ServiceMen get:
+First 50 SA service businesses on Plug A Pro get:
 3 months free + hands-on onboarding + founding pricing locked in.
 
 Closing [date].

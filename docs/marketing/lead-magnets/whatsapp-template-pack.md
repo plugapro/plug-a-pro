@@ -5,7 +5,7 @@
 > Page: /free-templates (marketing site)
 
 ## Delivery Message (send first)
-> Hi [Name] 👋 Here's your free ServiceMen WhatsApp Template Pack — 5 messages your team should be sending for every service job. Copy, paste, and customise the [brackets] for your business.
+> Hi [Name] 👋 Here's your free Plug A Pro WhatsApp Template Pack — 5 messages your team should be sending for every service job. Copy, paste, and customise the [brackets] for your business.
 
 ---
 
@@ -75,4 +75,4 @@
 ## Follow-Up Delivery Message
 > That's your 5 templates 👆 Save them as Quick Replies in WhatsApp Business for one-tap sending.
 >
-> These are the manual version. Want to see ServiceMen send all of these automatically? Reply DEMO and I'll show you how in 30 minutes.
+> These are the manual version. Want to see Plug A Pro send all of these automatically? Reply DEMO and I'll show you how in 30 minutes.

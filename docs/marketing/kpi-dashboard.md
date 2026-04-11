@@ -1,4 +1,4 @@
-# KPI Dashboard — ServiceMen App Go-To-Market
+# KPI Dashboard — Plug A Pro Go-To-Market
 
 > Track weekly (every Monday) and at month-end.
 > Tool: Google Sheets
