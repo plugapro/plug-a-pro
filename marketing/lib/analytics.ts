@@ -32,6 +32,11 @@ export const analytics = {
     track("whatsapp_click", { source });
   },
 
+  /** Lead magnet form submitted — phone captured, WhatsApp handoff triggered */
+  leadMagnetDownload(magnet: "template-pack" | "dispatch-checklist" | "cashflow-tracker", source: string) {
+    track("lead_magnet_download", { magnet, source });
+  },
+
   /** Chat widget toggled open */
   chatOpen() {
     track("chat_widget_open");
