@@ -224,7 +224,7 @@ describe('handleStatusFlow — status_pick step', () => {
     const result = await handleStatusFlow(
       makeCtx({
         step:  'status_pick',
-        reply: { type: 'interactive', id: 'status_req_jr_2', text: 'Electrical' },
+        reply: { type: 'list_reply', id: 'status_req_jr_2', text: 'Electrical' },
       })
     )
 

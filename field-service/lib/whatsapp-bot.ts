@@ -30,8 +30,8 @@ import {
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
 import { applyOptIn, applyOptOut } from './whatsapp-policy'
 
-// Conversation TTL: 30 minutes of inactivity resets to welcome
-const CONVERSATION_TTL_MS = 30 * 60 * 1000
+// Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
+const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
 
 // Keywords that restart the main menu from any state
 const RESET_KEYWORDS = [

@@ -771,14 +771,15 @@ model WhatsappPreferenceLog {
 
 // Per-phone conversation session — drives the WhatsApp bot state machine
 model Conversation {
-  id        String   @id @default(cuid())
-  phone     String   @unique // E.164 WhatsApp number — one session per number
-  flow      String   // 'idle' | 'job_request' | 'registration' | 'status' | 'help'
-  step      String   // current step within the flow
-  data      Json     @default("{}") // accumulated session data
-  expiresAt DateTime // TTL: reset to welcome after 30min inactivity
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String    @id @default(cuid())
+  phone             String    @unique // E.164 WhatsApp number — one session per number
+  flow              String    // 'idle' | 'job_request' | 'registration' | 'status' | 'help'
+  step              String    // current step within the flow
+  data              Json      @default("{}") // accumulated session data
+  expiresAt         DateTime  // TTL: reset to welcome after 30min inactivity
+  timeoutNotifiedAt DateTime? // set once when the inactivity timeout message is sent — deduplication guard
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@map("conversations")
 }
