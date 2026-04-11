@@ -1,0 +1,108 @@
+// ─── Supabase Auth Hook: Send SMS OTP via SMSPortal ───────────────────────────
+// Triggered by Supabase whenever a phone OTP needs to be sent.
+//
+// Configure in: Supabase Dashboard → Auth → Auth Hooks → Send SMS
+// Hook type: HTTPS
+// URL: https://<project-ref>.supabase.co/functions/v1/send-sms-otp
+//
+// Required env vars (set via: supabase secrets set KEY=value):
+//   SMSPORTAL_CLIENT_ID      — SMSPortal API client ID
+//   SMSPORTAL_CLIENT_SECRET  — SMSPortal API secret
+//   SEND_SMS_HOOK_SECRET     — shared secret set in Supabase Auth Hooks dashboard
+
+const SMSPORTAL_CLIENT_ID     = Deno.env.get('SMSPORTAL_CLIENT_ID')!
+const SMSPORTAL_CLIENT_SECRET = Deno.env.get('SMSPORTAL_CLIENT_SECRET')!
+const HOOK_SECRET             = Deno.env.get('SEND_SMS_HOOK_SECRET')!
+
+const SMSPORTAL_AUTH_URL = 'https://rest.smsportal.com/Authentication'
+const SMSPORTAL_SEND_URL = 'https://rest.smsportal.com/v1/bulkmessages'
+
+// ─── SMSPortal auth — exchange client credentials for a Bearer token ──────────
+
+async function getSMSPortalToken(): Promise<string> {
+  const credentials = btoa(`${SMSPORTAL_CLIENT_ID}:${SMSPORTAL_CLIENT_SECRET}`)
+  const res = await fetch(SMSPORTAL_AUTH_URL, {
+    headers: { Authorization: `Basic ${credentials}` },
+  })
+  if (!res.ok) {
+    throw new Error(`SMSPortal auth failed: ${res.status} ${await res.text()}`)
+  }
+  const { token } = await res.json()
+  if (!token) throw new Error('SMSPortal: no token in auth response')
+  return token
+}
+
+// ─── Send a single OTP message ────────────────────────────────────────────────
+
+async function sendOtp(phone: string, otp: string): Promise<void> {
+  const token = await getSMSPortalToken()
+
+  const body = {
+    messages: [
+      {
+        content: `Your Plug-A-Pro code is ${otp}. Valid for 10 minutes. Do not share this code.`,
+        destination: phone,
+      },
+    ],
+  }
+
+  const res = await fetch(SMSPORTAL_SEND_URL, {
+    method:  'POST',
+    headers: {
+      Authorization:  `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    throw new Error(`SMSPortal send failed: ${res.status} ${await res.text()}`)
+  }
+}
+
+// ─── Hook handler ─────────────────────────────────────────────────────────────
+
+Deno.serve(async (req: Request) => {
+  const reqId = crypto.randomUUID().slice(0, 8)
+  const log   = (msg: string) => console.log(`[send-sms-otp:${reqId}] ${msg}`)
+
+  // Verify shared secret
+  const authHeader = req.headers.get('authorization')
+  if (authHeader !== `Bearer ${HOOK_SECRET}`) {
+    log('WARN: unauthorized request — invalid hook secret')
+    return new Response('Unauthorized', { status: 401 })
+  }
+
+  let payload: { user?: { phone?: string }; sms?: { otp?: string } }
+  try {
+    payload = await req.json()
+  } catch {
+    return json({ error: 'Invalid JSON body' }, 400)
+  }
+
+  const phone = payload.user?.phone
+  const otp   = payload.sms?.otp
+
+  if (!phone || !otp) {
+    log(`WARN: missing fields — phone=${!!phone} otp=${!!otp}`)
+    return json({ error: 'Missing phone or otp in payload' }, 400)
+  }
+
+  log(`sending OTP to phone=${phone.slice(0, 6)}****`)
+
+  try {
+    await sendOtp(phone, otp)
+    log(`sent OK phone=${phone.slice(0, 6)}****`)
+    return json({})
+  } catch (err) {
+    log(`ERROR: ${String(err)}`)
+    return json({ error: String(err) }, 500)
+  }
+})
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
