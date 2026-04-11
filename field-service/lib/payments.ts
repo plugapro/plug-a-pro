@@ -136,10 +136,14 @@ class PeachPaymentsProvider implements PspProvider {
       .createHmac('sha256', this.webhookSecret)
       .update(rawBody)
       .digest('hex')
-    return crypto.timingSafeEqual(
-      Buffer.from(computed),
-      Buffer.from(signature)
-    )
+    try {
+      const a = Buffer.from(computed, 'hex')
+      const b = Buffer.from(signature, 'hex')
+      if (a.length !== b.length) return false
+      return crypto.timingSafeEqual(a, b)
+    } catch {
+      return false
+    }
   }
 
   parseWebhookEvent(rawBody: string): PaymentEvent {
@@ -453,7 +457,10 @@ export function verifyWebhookSignature(rawBody: string, signature: string): bool
   const crypto = require('crypto')
   const computed = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
   try {
-    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature))
+    const a = Buffer.from(computed, 'hex')
+    const b = Buffer.from(signature, 'hex')
+    if (a.length !== b.length) return false
+    return crypto.timingSafeEqual(a, b)
   } catch {
     return false
   }

@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     customerAcceptedScope,
   } = body
 
-  if (!category || !title || !street || !suburb || !city || !province) {
+  if (!category || !title || !description || !street || !suburb || !city || !province) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 

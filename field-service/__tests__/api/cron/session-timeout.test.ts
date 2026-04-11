@@ -60,6 +60,21 @@ describe('GET /api/cron/session-timeout — auth', () => {
     expect(res.status).toBe(401)
     expect(wa.sendText).not.toHaveBeenCalled()
   })
+
+  it('returns 401 when CRON_SECRET env var is unset (bypass prevention)', async () => {
+    const original = process.env.CRON_SECRET
+    delete process.env.CRON_SECRET
+
+    // This is the bypass vector: template literal renders undefined as "undefined"
+    const req = new Request('http://localhost/api/cron/session-timeout', {
+      headers: { authorization: 'Bearer undefined' },
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(401)
+    expect(wa.sendText).not.toHaveBeenCalled()
+
+    process.env.CRON_SECRET = original
+  })
 })
 
 // ─── No expired sessions ──────────────────────────────────────────────────────

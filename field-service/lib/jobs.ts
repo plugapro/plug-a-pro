@@ -4,6 +4,7 @@
 // - Immutable audit trail (JobStatusEvent)
 // - Side effects (messaging, invoice)
 
+import { randomUUID } from 'crypto'
 import { db } from './db'
 import type { JobStatus } from '@prisma/client'
 import { recordAuditLog } from './audit'
@@ -185,7 +186,7 @@ async function triggerSideEffects(params: {
         await db.invoice.create({
           data: {
             bookingId:   job.bookingId,
-            number:      `INV-${Date.now()}`,
+            number:      `INV-${Date.now()}-${randomUUID().slice(0, 6).toUpperCase()}`,
             totalAmount: bookingRecord?.quote?.amount ?? 0,
             pdfUrl:      null,
             createdAt:   new Date(),

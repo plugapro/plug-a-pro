@@ -48,10 +48,16 @@ export async function DELETE(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const provider = await db.provider.findUnique({
+    where: { userId: session.id },
+    select: { id: true },
+  })
+  if (!provider) return NextResponse.json({ error: 'Not a provider' }, { status: 403 })
+
   const { endpoint } = await req.json() as { endpoint: string }
   if (!endpoint) return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 })
 
-  await db.pushSubscription.deleteMany({ where: { endpoint } })
+  await db.pushSubscription.deleteMany({ where: { endpoint, providerId: provider.id } })
 
   return NextResponse.json({ ok: true })
 }
