@@ -4,7 +4,7 @@ import { processQuoteDecision } from '../../lib/quotes'
 const { mockDb, mockInitializeBookingPayment } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
-    quote: { findUnique: vi.fn(), update: vi.fn() },
+    quote: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     match: { update: vi.fn() },
     booking: { create: vi.fn() },
     job: { create: vi.fn() },
@@ -28,6 +28,7 @@ describe('processQuoteDecision', () => {
       callback(mockDb as any)
     )
     mockDb.technicianScheduleItem.updateMany.mockResolvedValue({})
+    mockDb.quote.updateMany.mockResolvedValue({ count: 1 })
   })
 
   it('stores customer feedback when a quote is declined for revision', async () => {
@@ -46,7 +47,6 @@ describe('processQuoteDecision', () => {
         },
       },
     })
-    mockDb.quote.update.mockResolvedValue({})
     mockDb.match.update.mockResolvedValue({})
 
     const result = await processQuoteDecision('quote-1', 'decline', {
@@ -63,8 +63,8 @@ describe('processQuoteDecision', () => {
       customer: { id: 'customer-1', phone: '+27999999999', name: 'Customer' },
       category: 'plumbing',
     })
-    expect(mockDb.quote.update).toHaveBeenCalledWith({
-      where: { id: 'quote-1' },
+    expect(mockDb.quote.updateMany).toHaveBeenCalledWith({
+      where: { id: 'quote-1', status: 'PENDING' },
       data: {
         status: 'DECLINED',
         declinedAt: expect.any(Date),
@@ -91,7 +91,6 @@ describe('processQuoteDecision', () => {
         },
       },
     })
-    mockDb.quote.update.mockResolvedValue({})
     mockDb.match.update.mockResolvedValue({})
 
     const result = await processQuoteDecision('quote-1', 'approve')

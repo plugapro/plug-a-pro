@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchLeads } from '@/lib/matching-engine'
 import { processPendingAssignmentWorkflows } from '@/lib/matching/service'
+import { reconcileProviderRecordsFromApplications } from '@/lib/provider-record'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { sendText } from '@/lib/whatsapp-interactive'
 
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, errors: 0 }
+  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reconciledProviders: 0, errors: 0 }
 
   // 1. Expire stale offers and retry the next ranked technician where possible
   try {
@@ -41,17 +42,30 @@ export async function GET(request: Request) {
     results.errors++
   }
 
+  // 1c. Ensure pending and approved applications have live provider rows so
+  // automatch can handle normal intake without operator intervention.
+  try {
+    const reconciliation = await reconcileProviderRecordsFromApplications(db)
+    results.reconciledProviders = reconciliation.reconciled
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error reconciling provider applications:`, err)
+    results.errors++
+  }
+
   // 2. Dispatch leads for OPEN requests with no active lead
+  // take: 100 handles ~50 concurrent open requests safely at 30-min cadence.
+  // If queue grows beyond this, add cursor-based pagination here.
   const openRequests = await db.jobRequest.findMany({
     where: { status: 'OPEN' },
-    include: { address: true },
+    select: { id: true },
     orderBy: { createdAt: 'asc' },
-    take: 20,
+    take: 100,
   })
 
   for (const jr of openRequests) {
     const activeLead = await db.lead.findFirst({
       where: { jobRequestId: jr.id, status: { in: ['SENT', 'VIEWED', 'ACCEPTED'] } },
+      select: { id: true },
     })
     if (activeLead) continue
 

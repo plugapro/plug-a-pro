@@ -838,7 +838,10 @@ export function verifyWebhookChallenge(
   return null
 }
 
-/** Process an inbound webhook payload (delivery receipts + inbound messages) */
+/**
+ * @deprecated Use app/api/webhooks/whatsapp/route.ts directly — it has deduplication,
+ * WAMID logging, and after() async processing. This function is kept only for legacy tests.
+ */
 export async function processWebhookEvent(payload: WhatsAppWebhookPayload): Promise<void> {
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {

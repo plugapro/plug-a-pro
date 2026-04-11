@@ -257,7 +257,9 @@ export async function processInboundMessage(
     } else if (flow === 'provider_journey') {
       result = await handleProviderJourneyFlow(ctx)
     } else {
-      if (flow === 'idle' && reply.type === 'text' && rawText.length >= 2) {
+      // Only relay free-form text — never relay reset keywords (hi/hello/menu/etc.)
+      // isReset means the user wants the main menu, not to message a provider
+      if (flow === 'idle' && reply.type === 'text' && rawText.length >= 2 && !isReset) {
         const relayed = await tryMediatedRelay(phone, reply.text ?? '')
         if (relayed) {
           await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })

@@ -92,6 +92,27 @@ export async function transitionJob(params: {
       },
       tx
     )
+
+    // Booking completion + invoice are atomic with the job transition
+    if (toStatus === 'COMPLETED') {
+      await tx.booking.update({
+        where: { id: job.bookingId },
+        data: { status: 'COMPLETED' },
+      })
+      const bookingRecord = await tx.booking.findUnique({
+        where: { id: job.bookingId },
+        include: { quote: { select: { amount: true } } },
+      })
+      await tx.invoice.create({
+        data: {
+          bookingId:   job.bookingId,
+          number:      `INV-${Date.now()}-${randomUUID().slice(0, 6).toUpperCase()}`,
+          totalAmount: bookingRecord?.quote?.amount ?? 0,
+          pdfUrl:      null,
+          createdAt:   new Date(),
+        },
+      })
+    }
   })
 
   // Trigger side effects outside the transaction
@@ -163,12 +184,6 @@ async function triggerSideEffects(params: {
     }
 
     if (toStatus === 'COMPLETED') {
-      // Update parent booking status
-      await db.booking.update({
-        where: { id: job.bookingId },
-        data: { status: 'COMPLETED' },
-      })
-
       const invoiceUrl = `${appUrl}/bookings/${job.bookingId}/invoice`
       await sendJobCompleted({
         bookingId: job.bookingId,
@@ -176,25 +191,6 @@ async function triggerSideEffects(params: {
         customerPhone: customer.phone,
         invoiceUrl,
       })
-
-      // Create invoice record (PDF generation is out of scope — pdfUrl set later)
-      try {
-        const bookingRecord = await db.booking.findUnique({
-          where: { id: job.bookingId },
-          include: { quote: { select: { amount: true } } },
-        })
-        await db.invoice.create({
-          data: {
-            bookingId:   job.bookingId,
-            number:      `INV-${Date.now()}-${randomUUID().slice(0, 6).toUpperCase()}`,
-            totalAmount: bookingRecord?.quote?.amount ?? 0,
-            pdfUrl:      null,
-            createdAt:   new Date(),
-          },
-        })
-      } catch (invoiceErr) {
-        console.error('[jobs] Invoice creation failed:', invoiceErr)
-      }
     }
   } catch (err) {
     // Log but don't fail the status transition on messaging errors

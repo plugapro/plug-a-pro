@@ -170,7 +170,6 @@ export async function processQuoteDecision(
       ) {
         throw new Error('FORBIDDEN')
       }
-      if (quote.status !== 'PENDING') throw new Error('ALREADY_ACTIONED')
       if (quote.validUntil && new Date() > quote.validUntil) throw new Error('EXPIRED')
 
       const provider = quote.match.provider
@@ -179,10 +178,12 @@ export async function processQuoteDecision(
 
       if (action === 'decline') {
         const feedback = options?.customerFeedback?.trim() || null
-        await tx.quote.update({
-          where: { id: quoteId },
+        // Atomic claim: updateMany returns count=0 if another request already actioned the quote
+        const claimed = await tx.quote.updateMany({
+          where: { id: quoteId, status: 'PENDING' },
           data: { status: 'DECLINED', declinedAt: new Date(), notes: feedback },
         })
+        if (claimed.count === 0) throw new Error('ALREADY_ACTIONED')
         await tx.match.update({
           where: { id: quote.matchId },
           data: { status: 'QUOTE_DECLINED' },
@@ -199,11 +200,12 @@ export async function processQuoteDecision(
         }
       }
 
-      // Approve
-      await tx.quote.update({
-        where: { id: quoteId },
+      // Approve — atomic claim prevents concurrent double-approval
+      const claimed = await tx.quote.updateMany({
+        where: { id: quoteId, status: 'PENDING' },
         data: { status: 'APPROVED', approvedAt: new Date() },
       })
+      if (claimed.count === 0) throw new Error('ALREADY_ACTIONED')
       await tx.match.update({
         where: { id: quote.matchId },
         data: { status: 'QUOTE_APPROVED' },
