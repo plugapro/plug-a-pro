@@ -80,7 +80,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_how_long':
       await sendButtons(
         ctx.phone,
-        `⏱ *Job Duration*\n\nThis depends on the service:\n\n• Leak repair — 1–2 hours\n• Electrical fault finding — 1–3 hours\n• Regular clean — 2–4 hours\n• Deep clean — 4–6 hours\n\nYour technician will let you know if the job will take longer and get your approval before continuing.`,
+        `⏱ *Job Duration*\n\nDuration depends on the job and the provider. Typical ranges:\n\n• Leak repair — 1–2 hours\n• Electrical fault finding — 1–3 hours\n• Regular clean — 2–4 hours\n• Deep clean — 4–6 hours\n\nThe provider will let you know if the job will take longer, and must get your approval before continuing.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },
