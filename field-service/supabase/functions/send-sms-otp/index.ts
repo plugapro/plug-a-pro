@@ -10,6 +10,13 @@
 //   SMSPORTAL_CLIENT_SECRET  — SMSPortal API secret
 //   SEND_SMS_HOOK_SECRET     — shared secret set in Supabase Auth Hooks dashboard
 
+declare const Deno: {
+  env: {
+    get(name: string): string | undefined
+  }
+  serve(handler: (req: Request) => Response | Promise<Response>): void
+}
+
 const SMSPORTAL_CLIENT_ID     = Deno.env.get('SMSPORTAL_CLIENT_ID')!
 const SMSPORTAL_CLIENT_SECRET = Deno.env.get('SMSPORTAL_CLIENT_SECRET')!
 const HOOK_SECRET             = Deno.env.get('SEND_SMS_HOOK_SECRET')!
