@@ -9,7 +9,8 @@ import {
   type InboundReply,
 } from '../whatsapp-interactive'
 import { db } from '../db'
-import { getCategoryPolicy, mergeCategoryRequirements } from '../service-category-policy'
+import { getCategoryPolicy } from '../service-category-policy'
+import { createJobRequest } from '../job-requests/create-job-request'
 import type { FlowContext, FlowResult } from './types'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -302,71 +303,35 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
   try {
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
-    const categoryRequirements = mergeCategoryRequirements({ category })
     const categoryPolicy = getCategoryPolicy(category)
 
-    // Find or create customer
-    const customer = await db.customer.upsert({
-      where: { phone: ctx.phone },
-      create: {
-        phone: ctx.phone,
-        name: ctx.data.customerName ?? 'WhatsApp Customer',
-      },
-      update: {},
-    })
+    // Prefer structured address fields; fall back to splitting the composite string
+    const addrParts = (ctx.data.address ?? '').split(',').map((p: string) => p.trim())
 
-    // Find or create address — prefer structured fields, fall back to split for legacy data
-    const addrParts = (ctx.data.address ?? '').split(',').map((p) => p.trim())
-    const address = await db.address.create({
-      data: {
-        customerId: customer.id,
-        street: ctx.data.addressStreet ?? addrParts[0] ?? '',
-        suburb: ctx.data.addressSuburb ?? addrParts[1] ?? '',
-        city:   ctx.data.addressCity   ?? addrParts[2] ?? addrParts[1] ?? '',
-        province: addrParts[3] ?? '',
-      },
+    const result = await createJobRequest({
+      phone: ctx.phone,
+      customerName: ctx.data.customerName ?? 'WhatsApp Customer',
+      category,
+      title: ctx.data.selectedCategory ?? category,
+      description: ctx.data.availabilityNote
+        ? `Preferred availability: ${ctx.data.availabilityNote}`
+        : '',
+      street:   ctx.data.addressStreet  ?? addrParts[0] ?? '',
+      suburb:   ctx.data.addressSuburb  ?? addrParts[1] ?? '',
+      city:     ctx.data.addressCity    ?? addrParts[2] ?? addrParts[1] ?? '',
+      province: addrParts[3] ?? '',
     })
-
-    // Create JobRequest
-    const jobRequest = await db.jobRequest.create({
-      data: {
-        customerId: customer.id,
-        addressId: address.id,
-        category,
-        title: ctx.data.selectedCategory ?? '',
-        description: ctx.data.availabilityNote
-          ? `Preferred availability: ${ctx.data.availabilityNote}`
-          : '',
-        estimatedDurationMinutes: 120,
-        requiredCertificationCodes: categoryRequirements.requiredCertificationCodes,
-        requiredEquipmentTags: categoryRequirements.requiredEquipmentTags,
-        requiredVehicleTypes: categoryRequirements.requiredVehicleTypes,
-        autoCreateBookingOnAssignment: false,
-        assignmentMode: 'AUTO_ASSIGN',
-        status: 'OPEN',
-      },
-    })
-
-    // Trigger matching in background — non-blocking
-    import('../matching-engine')
-      .then(({ dispatchLeads }) => dispatchLeads(jobRequest.id))
-      .then((result) => {
-        if (result.noMatch) {
-          console.log(`[job-request] No providers found for ${jobRequest.id} — cron will retry`)
-        }
-      })
-      .catch((err) => console.error('[job-request] Matching error:', err))
 
     await sendButtons(
       ctx.phone,
-      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${jobRequest.id.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.${categoryPolicy.bookingOnAssignment ? '\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._' : ''}`,
+      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.${categoryPolicy.bookingOnAssignment ? '\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._' : ''}`,
       [
         { id: 'status', title: '📋 Track My Request' },
         { id: 'back_home', title: '🏠 Main Menu' },
       ]
     )
 
-    return { nextStep: 'done', nextData: { jobRequestId: jobRequest.id, customerId: customer.id } }
+    return { nextStep: 'done', nextData: { jobRequestId: result.jobRequestId, customerId: result.customerId } }
   } catch (err) {
     console.error('[job-request-flow] Create job request error:', err)
     await sendText(

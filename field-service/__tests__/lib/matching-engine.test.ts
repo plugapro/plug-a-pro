@@ -12,14 +12,21 @@ const {
   mockAcceptAssignmentOffer,
   mockRejectAssignmentOffer,
   mockProcessPendingAssignmentWorkflows,
+  mockNotifyProviderNewJob,
+  mockReconcileProviderRecordsFromApplications,
 } = vi.hoisted(() => ({
   mockDb: {
-    jobRequest: { findUnique: vi.fn() },
+    jobRequest: { findUnique: vi.fn(), updateMany: vi.fn() },
+    provider: { findMany: vi.fn() },
+    lead: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
+    match: { findUnique: vi.fn(), create: vi.fn() },
   },
   mockRunAssignmentForJobRequest: vi.fn(),
   mockAcceptAssignmentOffer: vi.fn(),
   mockRejectAssignmentOffer: vi.fn(),
   mockProcessPendingAssignmentWorkflows: vi.fn(),
+  mockNotifyProviderNewJob: vi.fn(),
+  mockReconcileProviderRecordsFromApplications: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({
@@ -33,9 +40,18 @@ vi.mock('../../lib/matching/service', () => ({
   processPendingAssignmentWorkflows: mockProcessPendingAssignmentWorkflows,
 }))
 
+vi.mock('../../lib/whatsapp-bot', () => ({
+  notifyProviderNewJob: mockNotifyProviderNewJob,
+}))
+
+vi.mock('../../lib/provider-record', () => ({
+  reconcileProviderRecordsFromApplications: mockReconcileProviderRecordsFromApplications,
+}))
+
 describe('matching-engine compatibility wrappers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockReconcileProviderRecordsFromApplications.mockResolvedValue({ reconciled: 0 })
   })
 
   it('dispatchLeads returns an offered hold for the top ranked technician', async () => {
@@ -78,6 +94,13 @@ describe('matching-engine compatibility wrappers', () => {
       matchId: 'match-1',
       inspectionNeeded: false,
     })
+  })
+
+  it('dispatchLeads propagates errors from the assignment service', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({ id: 'jr-1', status: 'OPEN' })
+    mockRunAssignmentForJobRequest.mockRejectedValue(new Error('Service unavailable'))
+
+    await expect(dispatchLeads('jr-1')).rejects.toThrow('Service unavailable')
   })
 
   it('declineLead treats expired or taken offers as a no-op for compatibility', async () => {

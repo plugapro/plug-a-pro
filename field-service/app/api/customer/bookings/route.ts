@@ -5,9 +5,8 @@
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { mergeCategoryRequirements } from '@/lib/service-category-policy'
+import { createJobRequest } from '@/lib/job-requests/create-job-request'
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -74,70 +73,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const categoryRequirements = mergeCategoryRequirements({
-    category,
-    requiredCertificationCodes,
-    requiredEquipmentTags,
-    requiredVehicleTypes,
-  })
-
-  // 1. Resolve or create Customer
-  const customer = await db.customer.upsert({
-    where: { userId: session.id },
-    create: {
+  try {
+    const result = await createJobRequest({
       userId: session.id,
-      phone: session.phone,
-      name: 'Customer',
-    },
-    update: {},
-  })
-
-  // 2. Create Address
-  const address = await db.address.create({
-    data: {
-      customerId: customer.id,
+      phone: session.phone!,
+      category,
+      title,
+      description: description ?? '',
+      estimatedDurationMinutes: estimatedDurationMinutes ?? undefined,
+      requestedWindowStart: requestedWindowStart ? new Date(requestedWindowStart) : null,
+      requestedWindowEnd: requestedWindowEnd ? new Date(requestedWindowEnd) : null,
+      requestedArrivalLatest: requestedArrivalLatest ? new Date(requestedArrivalLatest) : null,
+      assignmentMode: assignmentMode ?? 'AUTO_ASSIGN',
+      preferredProviderId: preferredProviderId ?? null,
+      customerAcceptedAmount: typeof customerAcceptedAmount === 'number' ? customerAcceptedAmount : null,
+      customerAcceptedScope: customerAcceptedScope ?? null,
+      requiredSkillTags: requiredSkillTags ?? [],
+      requiredCertificationCodes,
+      requiredEquipmentTags,
+      requiredVehicleTypes,
       street,
       suburb,
       city,
       province,
       postalCode: postalCode ?? null,
-    },
-  })
-
-  // 3. Create JobRequest
-  let jobRequest: { id: string }
-  try {
-    jobRequest = await db.jobRequest.create({
-      data: {
-        customerId: customer.id,
-        addressId: address.id,
-        category,
-        title,
-        description: description ?? '',
-        status: 'OPEN',
-        requestedWindowStart: requestedWindowStart ? new Date(requestedWindowStart) : undefined,
-        requestedWindowEnd: requestedWindowEnd ? new Date(requestedWindowEnd) : undefined,
-        requestedArrivalLatest: requestedArrivalLatest ? new Date(requestedArrivalLatest) : undefined,
-        estimatedDurationMinutes: estimatedDurationMinutes ?? undefined,
-        requiredSkillTags: requiredSkillTags ?? [],
-        requiredCertificationCodes: categoryRequirements.requiredCertificationCodes,
-        requiredEquipmentTags: categoryRequirements.requiredEquipmentTags,
-        requiredVehicleTypes: categoryRequirements.requiredVehicleTypes,
-        preferredProviderId: preferredProviderId ?? undefined,
-        assignmentMode: assignmentMode ?? 'AUTO_ASSIGN',
-        customerAcceptedAmount:
-          typeof customerAcceptedAmount === 'number' ? customerAcceptedAmount : undefined,
-        customerAcceptedScope: customerAcceptedScope?.trim() || undefined,
-        autoCreateBookingOnAssignment:
-          categoryRequirements.policy.bookingOnAssignment &&
-          typeof customerAcceptedAmount === 'number',
-      },
-      select: { id: true },
     })
+    return NextResponse.json({ jobRequestId: result.jobRequestId })
   } catch (err) {
-    console.error('[bookings] jobRequest.create failed', err)
+    console.error('[bookings] createJobRequest failed', err)
     return NextResponse.json({ error: 'Failed to create job request' }, { status: 500 })
   }
-
-  return NextResponse.json({ jobRequestId: jobRequest.id })
 }

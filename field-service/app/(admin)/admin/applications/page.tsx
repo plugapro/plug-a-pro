@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { requireAdmin, createServiceClient } from '@/lib/auth'
+import { syncProviderRecord } from '@/lib/provider-record'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +27,22 @@ import type { ApplicationStatus } from '@prisma/client'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
 
+const providerApplicationSelect = {
+  id: true,
+  providerId: true,
+  phone: true,
+  name: true,
+  skills: true,
+  serviceAreas: true,
+  experience: true,
+  availability: true,
+  status: true,
+  notes: true,
+  reviewedAt: true,
+  reviewedById: true,
+  submittedAt: true,
+} as const
+
 // ─── Server Actions ───────────────────────────────────────────────────────────
 
 async function approveApplication(formData: FormData) {
@@ -33,7 +50,10 @@ async function approveApplication(formData: FormData) {
   const id = formData.get('id') as string
   const session = await requireAdmin()
 
-  const app = await db.providerApplication.findUnique({ where: { id } })
+  const app = await db.providerApplication.findUnique({
+    where: { id },
+    select: providerApplicationSelect,
+  })
   if (!app || app.status !== 'PENDING') return
 
   // Create Supabase user (phone OTP — no email/password)
@@ -52,27 +72,39 @@ async function approveApplication(formData: FormData) {
     // Still create Provider record — user can be linked later
   }
 
-  // Create Provider record
-  await db.provider.create({
-    data: {
-      userId: authData?.user?.id ?? null,
-      name: app.name,
-      phone: app.phone,
-      experience: app.experience,
-      skills: app.skills,
-      serviceAreas: app.serviceAreas,
-      evidenceNote: app.evidenceNote,
-      active: true,
-      verified: true,
-      whatsappMarketingOptIn: true,
-    },
+  const providerId = await syncProviderRecord(db, {
+    userId: authData?.user?.id ?? null,
+    phone: app.phone,
+    name: app.name,
+    skills: app.skills,
+    serviceAreas: app.serviceAreas,
+    active: true,
+    availableNow: true,
+    verified: true,
   })
+
+  // Stamp providerId into user_metadata so getSession() returns it on first login.
+  // Without this, session.providerId is undefined until the user re-authenticates
+  // and triggers a metadata refresh.
+  if (authData?.user?.id) {
+    const { error: metaError } = await supabase.auth.admin.updateUserById(authData.user.id, {
+      user_metadata: {
+        role: 'provider',
+        name: app.name,
+        providerId,
+      },
+    })
+    if (metaError) {
+      console.error('[applications] Failed to stamp providerId in user_metadata:', metaError)
+    }
+  }
 
   // Update application status
   await db.providerApplication.update({
     where: { id },
     data: {
       status: 'APPROVED',
+      providerId,
       reviewedAt: new Date(),
       reviewedById: session.id,
     },
@@ -95,13 +127,25 @@ async function rejectApplication(formData: FormData) {
   const reason = (formData.get('reason') as string) || undefined
   const session = await requireAdmin()
 
-  const app = await db.providerApplication.findUnique({ where: { id } })
+  const app = await db.providerApplication.findUnique({
+    where: { id },
+    select: providerApplicationSelect,
+  })
   if (!app || app.status !== 'PENDING') return
 
   await db.providerApplication.update({
     where: { id },
     data: {
       status: 'REJECTED',
+      provider: app.providerId
+        ? {
+            update: {
+              active: false,
+              availableNow: false,
+              verified: false,
+            },
+          }
+        : undefined,
       reviewedAt: new Date(),
       reviewedById: session.id,
       notes: reason,
@@ -131,6 +175,7 @@ export default async function ApplicationsPage() {
   await requireAdmin()
 
   const applications = await db.providerApplication.findMany({
+    select: providerApplicationSelect,
     orderBy: { submittedAt: 'desc' },
     take: 100,
   })
@@ -188,18 +233,6 @@ export default async function ApplicationsPage() {
                   {app.availability || '—'}
                 </div>
               </div>
-
-              {app.evidenceNote && (
-                <div className="rounded-lg border bg-muted/30 px-3 py-3 text-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Provider-shared evidence note
-                  </p>
-                  <p className="mt-2">{app.evidenceNote}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    This is supplied by the applicant. Approval only allows marketplace participation unless Plug-A-Pro explicitly reviews a specific item.
-                  </p>
-                </div>
-              )}
 
               <p className="text-xs text-muted-foreground">
                 Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}

@@ -63,9 +63,20 @@ export async function GET(
 
   // Access check
   if (session.role !== 'admin') {
+    // For provider role we need the Provider.id (DB row) to compare against job.providerId.
+    // session.id is the Supabase userId, not the Provider PK.
+    let providerDbId: string | null = null
+    if (session.role === 'provider') {
+      const providerRecord = await db.provider.findUnique({
+        where: { userId: session.id },
+        select: { id: true },
+      })
+      providerDbId = providerRecord?.id ?? null
+    }
+
     const allowed = (() => {
       if (session.role === 'provider') {
-        return attachment.job?.providerId != null && attachment.uploadedBy === session.id
+        return providerDbId != null && attachment.job?.providerId === providerDbId
       }
       if (session.role === 'customer') {
         const customerViaJob =
