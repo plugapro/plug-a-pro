@@ -44,7 +44,15 @@ export default function SignInPage() {
       const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalised })
 
       if (otpError) {
-        setError(otpError.message)
+        // Map known Supabase infrastructure errors to user-friendly messages
+        const msg = otpError.message.toLowerCase()
+        if (msg.includes('unsupported') || msg.includes('provider') || msg.includes('sms')) {
+          setError('SMS login is temporarily unavailable. Please contact support@plugapro.co.za.')
+        } else if (msg.includes('rate') || msg.includes('limit')) {
+          setError('Too many attempts. Please wait a few minutes and try again.')
+        } else {
+          setError('Could not send code. Please try again or contact support@plugapro.co.za.')
+        }
         return
       }
 
