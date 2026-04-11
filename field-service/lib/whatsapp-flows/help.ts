@@ -58,7 +58,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_cost':
       await sendButtons(
         ctx.phone,
-        `💰 *Pricing*\n\nPrices depend on the service:\n\n• Plumbing — from R 350\n• Electrical — from R 300\n• Cleaning — from R 450\n• Painting — from R 800\n\nYou will always see the price *before* you confirm your booking. No hidden fees.\n\nFor larger jobs, we will send you a quote first.`,
+        `💰 *Pricing*\n\nPrices depend on the job and the provider.\n\nWe always send a written quote before anything starts — you approve the price before confirming.\n\nAny extra work is quoted and approved separately before the provider continues.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -69,7 +69,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_areas':
       await sendButtons(
         ctx.phone,
-        `📍 *Areas We Serve*\n\nWe currently operate in:\n\n• Johannesburg (Sandton, Randburg, Midrand, Soweto, Fourways)\n• Pretoria (Centurion, Hatfield, Sunnyside)\n• Cape Town (City Bowl, Northern Suburbs, Southern Suburbs)\n\nEnter your suburb when booking and we'll confirm availability. We're expanding! 🚀`,
+        `📍 *Areas We Serve*\n\nWe're launching in Johannesburg and Pretoria, with more cities coming soon.\n\nTell us your suburb when booking and we'll check if we have providers near you. If we're not in your area yet, we'll add you to the waitlist and let you know when we arrive. 🚀`,
         [
           { id: 'book', title: '🔧 Book Now' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -91,7 +91,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_cancel':
       await sendButtons(
         ctx.phone,
-        `❌ *Cancellation Help*\n\nIf you need to cancel, send the request through Plug a Pro and we’ll stop the job on the platform.\n\nIf an online payment was already collected, support will review the refund handling based on the booking stage and payment status.\n\nTo cancel, tap the button below or reply "cancel".`,
+        `❌ *Cancellation Help*\n\nSend a cancellation request through Plug a Pro and we’ll stop the job on the platform.\n\nIf you paid online, our team reviews your case against the booking stage and payment method and aims to respond within 2 business hours. Refund eligibility depends on when you cancel and whether work has started — we’ll walk you through the options.\n\nTo cancel, tap the button below or reply "cancel".`,
         [
           { id: 'start_cancel', title: '❌ Cancel My Booking' },
           { id: 'back_to_help', title: '← Back to Help' },

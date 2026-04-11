@@ -75,8 +75,8 @@ const PROTECTIONS = [
   },
   {
     icon: UserCheck,
-    title: "Workers are reviewed before joining",
-    body: "Every worker on the platform goes through a manual application review. We check their skills, service area, and accept or decline based on quality signals.",
+    title: "Applications reviewed before activation",
+    body: "Applications are manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each worker has submitted and recorded on Plug-A-Pro.",
   },
   {
     icon: FileText,

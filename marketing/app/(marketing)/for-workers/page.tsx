@@ -45,9 +45,9 @@ const HOW_TO_JOIN = [
   },
   {
     step: "2",
-    title: "We check your details",
+    title: "We review your application",
     detail:
-      "We look at your application before sending you any work. Once you're approved, your profile is live and customers in your area can find you.",
+      "We review the details you submit before sending you any work. If your application is accepted for marketplace participation, your profile goes live and customers in your area can find you.",
   },
   {
     step: "3",
@@ -165,6 +165,9 @@ export default function ForWorkersPage() {
           <h2 className="text-xl font-bold mb-4">Who we&apos;re looking for</h2>
           <p className="text-sm text-muted-foreground mb-4">
             You don&apos;t need a formal business or company registration to join. If you have practical skills and a track record of doing good work, we want to hear from you.
+          </p>
+          <p className="text-sm text-muted-foreground mb-4">
+            For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You are responsible for holding any credentials that apply to the work you offer. Plug-A-Pro records the types of work you list but does not verify your licences unless a specific check is requested.
           </p>
           <ul className="grid grid-cols-2 gap-2 mb-6">
             {[

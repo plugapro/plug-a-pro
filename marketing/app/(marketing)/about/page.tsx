@@ -32,7 +32,7 @@ export default function AboutPage() {
             South Africa has hundreds of thousands of skilled independent workers who earn their living job to job. Most find work through word of mouth, standing outside hardware stores, or WhatsApp groups. That&apos;s not a reliable pipeline.
           </p>
           <p>
-            Plug-A-Pro gives independent workers a steady flow of local jobs matched to their skills and the areas they cover. No app to download. No monthly fees. Work comes to them on the WhatsApp they already use.
+            Plug-A-Pro connects independent workers with local job leads matched to their skills and the areas they cover. No app to download. No monthly fees. Work comes to them on the WhatsApp they already use.
           </p>
 
           <h2>How it works</h2>

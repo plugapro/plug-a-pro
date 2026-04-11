@@ -36,7 +36,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "What happens if something goes wrong?",
-    a: "Contact Plug-A-Pro support on WhatsApp. We review the written quote, job status history, and photos on record before deciding what happens next.",
+    a: "Contact Plug-A-Pro support on WhatsApp with a description of the issue and any photos. We'll follow up within 2 hours during business hours. We review the written quote, job history, before-and-after photos, and communication records. If the issue is about scope or price, the written record is the reference point. We aim to resolve disputes within 5 business days and will keep you updated as the process moves forward.",
   },
   {
     q: "Started a DIY project and got stuck?",
@@ -51,7 +51,7 @@ const CUSTOMER_FAQS = [
 const WORKER_FAQS = [
   {
     q: "Who can register as a worker?",
-    a: "Anyone with practical home-job skills: handymen, painters, plumbers (small jobs), gardeners, appliance repairers, electricians (minor work), and general DIY workers. You don't need a registered company to join.",
+    a: "Anyone with practical home-job skills: handymen, painters, plumbers (small jobs), gardeners, appliance repairers, electricians (minor work), and general DIY workers. You don't need a registered company to join. For certain job types — electrical, gas, structural work — South African law may require a licence regardless of business registration. You are responsible for holding the right credentials for the work you offer.",
   },
   {
     q: "How do I register?",
