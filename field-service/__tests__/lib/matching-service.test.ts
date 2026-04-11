@@ -43,9 +43,9 @@ const {
     lead: { upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
     quote: { create: vi.fn() },
     booking: { create: vi.fn() },
-    job: { create: vi.fn() },
+    job: { create: vi.fn(), findMany: vi.fn() },
     technicianScheduleItem: { create: vi.fn(), updateMany: vi.fn() },
-    match: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    match: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(),
   },
   mockNotifyProviderNewJob: vi.fn().mockResolvedValue(undefined),
@@ -82,6 +82,7 @@ describe('matching service', () => {
     mockDb.dispatchDecision.findUnique.mockResolvedValue(null)
     mockDb.matchAttempt.create.mockResolvedValue({})
     mockDb.jobRequest.update.mockResolvedValue({})
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest('AUTO_ASSIGN'))
     mockDb.assignmentHold.updateMany.mockResolvedValue({})
     mockDb.assignmentHold.update.mockResolvedValue({})
     mockDb.technicianScheduleItem.updateMany.mockResolvedValue({})
@@ -92,6 +93,8 @@ describe('matching service', () => {
     mockDb.quote.create.mockResolvedValue({ id: 'quote-1' })
     mockDb.booking.create.mockResolvedValue({ id: 'booking-1' })
     mockDb.job.create.mockResolvedValue({})
+    mockDb.job.findMany.mockResolvedValue([])
+    mockDb.match.findMany.mockResolvedValue([])
     mockDb.match.update.mockResolvedValue({})
     mockDb.provider.findUniqueOrThrow.mockResolvedValue({
       id: 'provider-preferred',
@@ -312,6 +315,29 @@ describe('matching service', () => {
     expect(result.candidates[0].scoreBreakdown.customerPreference).toBe(1)
   })
 
+  it('keeps active providers eligible even when marketplace review is still pending', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest('AUTO_ASSIGN'))
+    mockDb.provider.findMany.mockResolvedValue([
+      makeProvider('provider-pending-review', 'Pending Review Pro', { verified: false }),
+    ])
+
+    const result = await rankCandidatesForJobRequest('jr-pending-review')
+
+    expect(mockDb.provider.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { active: true },
+      }),
+    )
+    expect(result.eligibleCount).toBe(1)
+    expect(result.candidates[0].providerId).toBe('provider-pending-review')
+    expect(result.candidates[0].feasibilityNotes).toContain(
+      'Profile is still pending marketplace review',
+    )
+    expect(result.candidates[0].scoreBreakdown.reasons).toContain(
+      'Profile pending marketplace review',
+    )
+  })
+
   it('creates an assignment hold for the top ranked technician in auto-assign mode', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest('AUTO_ASSIGN'))
     mockDb.provider.findMany.mockResolvedValue([makeProvider('provider-preferred', 'Preferred Pro')])
@@ -358,6 +384,13 @@ describe('matching service', () => {
     mockDb.match.findUnique.mockResolvedValue(null)
     mockDb.match.create.mockResolvedValue({ id: 'match-1' })
     mockDb.jobRequest.findUniqueOrThrow.mockResolvedValue({
+      ...makeJobRequest('AUTO_ASSIGN'),
+      category: 'Handyman',
+      customerAcceptedAmount: 850,
+      customerAcceptedScope: 'Install shelves and hang curtain rails',
+      autoCreateBookingOnAssignment: true,
+    })
+    mockDb.jobRequest.findUnique.mockResolvedValue({
       ...makeJobRequest('AUTO_ASSIGN'),
       category: 'Handyman',
       customerAcceptedAmount: 850,
@@ -434,7 +467,18 @@ function makeJobRequest(mode: 'AUTO_ASSIGN' | 'OPS_REVIEW') {
   }
 }
 
-function makeProvider(id: string, name: string) {
+function makeProvider(
+  id: string,
+  name: string,
+  overrides: Partial<ReturnType<typeof baseProvider>> = {},
+) {
+  return {
+    ...baseProvider(id, name),
+    ...overrides,
+  }
+}
+
+function baseProvider(id: string, name: string) {
   return {
     id,
     name,

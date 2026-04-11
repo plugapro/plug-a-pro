@@ -6,7 +6,8 @@ import { requireAdmin } from '@/lib/auth'
 import { siteConfig } from '@/lib/metadata'
 
 const NAV_ITEMS = [
-  { href: '/admin',              label: 'Dashboard' },
+  { href: '/admin',              label: 'Operations' },
+  { href: '/admin/dispatch',     label: 'Dispatch' },
   { href: '/admin/bookings',     label: 'Bookings' },
   { href: '/admin/matches',      label: 'Matches' },
   { href: '/admin/applications', label: 'Applications' },

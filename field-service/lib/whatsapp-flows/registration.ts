@@ -4,6 +4,7 @@
 
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import { db } from '../db'
+import { syncProviderRecord } from '../provider-record'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — mirrors job-request.ts
@@ -361,15 +362,25 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       : (ctx.data.availability?.length ?? 0) >= 6 ? 'Mon–Sat'
       : 'Weekdays only'
 
+    const providerId = await syncProviderRecord(db, {
+      phone: ctx.phone,
+      name: ctx.data.name ?? 'Unknown',
+      skills: ctx.data.skills ?? [],
+      serviceAreas: ctx.data.serviceAreas ?? [],
+      active: true,
+      availableNow: true,
+      verified: false,
+    })
+
     const application = await db.providerApplication.create({
       data: {
+        providerId,
         phone: ctx.phone,
         name: ctx.data.name ?? 'Unknown',
         skills: ctx.data.skills ?? [],
         serviceAreas: ctx.data.serviceAreas ?? [],
         experience: ctx.data.experience ?? null,
         availability: availLabel,
-        evidenceNote: ctx.data.evidenceNote?.trim() || null,
         status: 'PENDING',
       },
     })

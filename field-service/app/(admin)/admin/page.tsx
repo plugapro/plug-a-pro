@@ -1,54 +1,279 @@
-// Admin dashboard — KPI overview
-// Server-rendered, daily metrics at a glance
-
 export const dynamic = 'force-dynamic'
 
+import Link from 'next/link'
+import type { ApplicationStatus, DisputeStatus, JobStatus, PaymentStatus } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { KpiCard } from '@/components/admin/KpiCard'
 import { buildMetadata } from '@/lib/metadata'
+import { cn } from '@/lib/utils'
+import { StatusBadge } from '@/components/shared/StatusBadge'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-export const metadata = buildMetadata({ title: 'Dashboard', noIndex: true })
+export const metadata = buildMetadata({ title: 'Operations Dashboard', noIndex: true })
+
+const jobRequestSummarySelect = {
+  id: true,
+  title: true,
+  category: true,
+  status: true,
+  expiresAt: true,
+  createdAt: true,
+  customer: {
+    select: {
+      name: true,
+      phone: true,
+    },
+  },
+  address: {
+    select: {
+      suburb: true,
+      city: true,
+    },
+  },
+} as const
+
+const quoteSummarySelect = {
+  id: true,
+  amount: true,
+  validUntil: true,
+  status: true,
+  createdAt: true,
+  match: {
+    select: {
+      provider: { select: { name: true } },
+      jobRequest: {
+        select: jobRequestSummarySelect,
+      },
+    },
+  },
+} as const
+
+const jobBoardSelect = {
+  id: true,
+  status: true,
+  failureReason: true,
+  updatedAt: true,
+  provider: { select: { name: true } },
+  booking: {
+    select: {
+      scheduledDate: true,
+      scheduledWindow: true,
+      match: {
+        select: {
+          jobRequest: {
+            select: jobRequestSummarySelect,
+          },
+        },
+      },
+    },
+  },
+} as const
+
+const paymentFollowUpSelect = {
+  id: true,
+  status: true,
+  amount: true,
+  updatedAt: true,
+  pspProvider: true,
+  booking: {
+    select: {
+      scheduledDate: true,
+      match: {
+        select: {
+          jobRequest: {
+            select: jobRequestSummarySelect,
+          },
+        },
+      },
+    },
+  },
+} as const
+
+const disputeSummarySelect = {
+  id: true,
+  jobId: true,
+  reason: true,
+  status: true,
+  createdAt: true,
+  raisedByRole: true,
+} as const
+
+const providerApplicationSummarySelect = {
+  id: true,
+  name: true,
+  phone: true,
+  skills: true,
+  serviceAreas: true,
+  status: true,
+  submittedAt: true,
+} as const
+
+const ACTIVE_FIELD_STATUSES: JobStatus[] = [
+  'EN_ROUTE',
+  'ARRIVED',
+  'STARTED',
+  'PAUSED',
+  'AWAITING_APPROVAL',
+  'PENDING_COMPLETION_CONFIRMATION',
+] 
+
+const FIELD_EXCEPTION_STATUSES: JobStatus[] = [
+  'AWAITING_APPROVAL',
+  'PENDING_COMPLETION_CONFIRMATION',
+  'FAILED',
+  'CALLBACK_REQUIRED',
+] 
+
+const PAYMENT_EXCEPTION_STATUSES: PaymentStatus[] = [
+  'PENDING',
+  'FAILED',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+] 
+
+const OPEN_DISPUTE_STATUSES: DisputeStatus[] = ['OPEN', 'UNDER_REVIEW']
 
 export default async function AdminDashboardPage() {
   await requireAdmin()
 
-  const today = new Date()
+  const now = new Date()
+  const today = new Date(now)
   today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const weekAgo = new Date(today)
+  const weekAgo = new Date(now)
   weekAgo.setDate(weekAgo.getDate() - 7)
 
   const [
-    todayBookings,
-    todayJobs,
+    validationQueue,
+    validationCount,
+    dispatchQueue,
+    dispatchCount,
     pendingQuotes,
-    activeJobs,
-    weekRevenue,
-    pendingPayments,
-    pendingApplications,
-    openJobRequests,
-    totalProviders,
+    quoteCount,
   ] = await Promise.all([
-    db.booking.count({
-      where: {
-        createdAt: { gte: today, lt: tomorrow },
-        status: { not: 'CANCELLED' },
-      },
+    db.jobRequest.findMany({
+      where: { status: 'PENDING_VALIDATION' },
+      select: jobRequestSummarySelect,
+      orderBy: { createdAt: 'asc' },
+      take: 6,
     }),
-    db.job.count({
-      where: {
-        status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] },
-        booking: { scheduledDate: { gte: today, lt: tomorrow } },
+    db.jobRequest.count({
+      where: { status: 'PENDING_VALIDATION' },
+    }),
+    db.jobRequest.findMany({
+      where: { status: { in: ['OPEN', 'MATCHING'] } },
+      select: {
+        ...jobRequestSummarySelect,
+        match: {
+          select: {
+            provider: { select: { name: true } },
+          },
+        },
+        _count: {
+          select: { leads: true },
+        },
       },
+      orderBy: { createdAt: 'asc' },
+      take: 6,
+    }),
+    db.jobRequest.count({
+      where: { status: { in: ['OPEN', 'MATCHING'] } },
+    }),
+    db.quote.findMany({
+      where: { status: { in: ['PENDING', 'REVISED'] } },
+      select: quoteSummarySelect,
+      orderBy: { createdAt: 'asc' },
+      take: 6,
     }),
     db.quote.count({
-      where: { status: 'PENDING' },
+      where: { status: { in: ['PENDING', 'REVISED'] } },
+    }),
+  ])
+
+  const [
+    activeFieldCount,
+    fieldExceptions,
+    fieldExceptionCount,
+    financeFollowUp,
+    paymentExceptionCount,
+  ] = await Promise.all([
+    db.job.count({
+      where: { status: { in: ACTIVE_FIELD_STATUSES } },
+    }),
+    db.job.findMany({
+      where: { status: { in: FIELD_EXCEPTION_STATUSES } },
+      select: jobBoardSelect,
+      orderBy: { updatedAt: 'asc' },
+      take: 6,
     }),
     db.job.count({
+      where: { status: { in: FIELD_EXCEPTION_STATUSES } },
+    }),
+    db.payment.findMany({
+      where: { status: { in: PAYMENT_EXCEPTION_STATUSES } },
+      select: paymentFollowUpSelect,
+      orderBy: { updatedAt: 'asc' },
+      take: 6,
+    }),
+    db.payment.count({
+      where: { status: { in: PAYMENT_EXCEPTION_STATUSES } },
+    }),
+  ])
+
+  const [
+    openDisputes,
+    disputeCount,
+    providerOnboarding,
+    providerReviewCount,
+    weekRequests,
+    weekMatches,
+    weekQuotes,
+    weekBookings,
+  ] = await Promise.all([
+    db.dispute.findMany({
+      where: { status: { in: OPEN_DISPUTE_STATUSES } },
+      select: disputeSummarySelect,
+      orderBy: { createdAt: 'asc' },
+      take: 6,
+    }),
+    db.dispute.count({
+      where: { status: { in: OPEN_DISPUTE_STATUSES } },
+    }),
+    db.providerApplication.findMany({
+      where: { status: 'PENDING' },
+      select: providerApplicationSummarySelect,
+      orderBy: { submittedAt: 'asc' },
+      take: 6,
+    }),
+    db.providerApplication.count({
+      where: { status: 'PENDING' },
+    }),
+    db.jobRequest.count({
+      where: { createdAt: { gte: weekAgo } },
+    }),
+    db.match.count({
+      where: { createdAt: { gte: weekAgo } },
+    }),
+    db.quote.count({
+      where: { createdAt: { gte: weekAgo } },
+    }),
+    db.booking.count({
+      where: { createdAt: { gte: weekAgo } },
+    }),
+  ])
+
+  const [weekCompleted, weekPaid, weekRevenue] = await Promise.all([
+    db.job.count({
       where: {
-        status: { in: ['EN_ROUTE', 'ARRIVED', 'STARTED', 'AWAITING_APPROVAL'] },
+        status: 'COMPLETED',
+        completedAt: { gte: weekAgo },
+      },
+    }),
+    db.payment.count({
+      where: {
+        status: 'PAID',
+        paidAt: { gte: weekAgo },
       },
     }),
     db.payment.aggregate({
@@ -58,100 +283,666 @@ export default async function AdminDashboardPage() {
       },
       _sum: { amount: true },
     }),
-    db.booking.count({
-      where: { status: 'SCHEDULED' },
-    }),
-    db.providerApplication.count({
-      where: { status: 'PENDING' },
-    }),
-    db.jobRequest.count({
-      where: { status: { notIn: ['CANCELLED', 'EXPIRED'] } },
-    }),
-    db.provider.count({
-      where: { active: true },
-    }),
   ])
 
-  const kpis = [
+  const heroStats = [
     {
-      label: "Today's Bookings",
-      value: todayBookings,
-      description: 'New bookings created today',
-      href: '/admin/bookings',
+      label: 'Requests needing validation',
+      value: validationCount,
+      tone: heroToneClass(validationCount > 0 ? 'warning' : 'default'),
     },
     {
-      label: "Today's Jobs",
-      value: todayJobs,
-      description: 'Jobs scheduled for today',
-      href: '/admin/matches',
+      label: 'Dispatch queue',
+      value: dispatchCount,
+      tone: heroToneClass(dispatchCount > 2 ? 'warning' : 'default'),
     },
     {
-      label: 'Active in Field',
-      value: activeJobs,
-      description: 'Providers currently on a job',
-      href: '/admin/matches',
-      highlight: activeJobs > 0,
+      label: 'Jobs in field',
+      value: activeFieldCount,
+      tone: heroToneClass(activeFieldCount > 0 ? 'info' : 'default'),
     },
     {
-      label: 'Pending Quotes',
-      value: pendingQuotes,
-      description: 'Quotes awaiting review',
+      label: 'Operational exceptions',
+      value: fieldExceptionCount + paymentExceptionCount + disputeCount,
+      tone: heroToneClass(
+        fieldExceptionCount + paymentExceptionCount + disputeCount > 0 ? 'danger' : 'default'
+      ),
+    },
+  ]
+
+  const queueCards = [
+    {
+      lane: 'Ops',
+      title: 'Validation queue',
+      count: validationCount,
+      target: 'Triage inside 15 min',
+      href: '/admin/dispatch',
+      note: 'Requests missing platform validation before matching can start.',
+    },
+    {
+      lane: 'Dispatch',
+      title: 'Dispatch pressure',
+      count: dispatchCount,
+      target: 'Assign inside 20 min',
+      href: '/admin/dispatch',
+      note: `${activeFieldCount} jobs already live in the field today.`,
+    },
+    {
+      lane: 'Finance',
+      title: 'Finance follow-up',
+      count: paymentExceptionCount,
+      target: 'Resolve inside 1 day',
+      href: '/admin/payments',
+      note: 'Pending, failed, and refund-state payments requiring intervention.',
+    },
+    {
+      lane: 'Trust',
+      title: 'Trust recovery',
+      count: disputeCount,
+      target: 'Acknowledge inside 2 hours',
+      href: '/admin/disputes',
+      note: 'Open disputes and complaints with customer-provider risk attached.',
+    },
+    {
+      lane: 'Quotes',
+      title: 'Quote approvals',
+      count: quoteCount,
+      target: 'Chase inside 4 hours',
       href: '/admin/bookings?tab=quotes',
-      highlight: pendingQuotes > 0,
+      note: 'Quotes waiting on customer decision or revision follow-through.',
     },
     {
-      label: 'Scheduled Bookings',
-      value: pendingPayments,
-      description: 'Bookings in scheduled state',
-      href: '/admin/bookings',
-    },
-    {
-      label: '7-Day Revenue',
-      value: `R ${Number(weekRevenue._sum.amount ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 0 })}`,
-      description: 'Collected in last 7 days',
-      href: '/admin/reports',
-    },
-    {
-      label: 'Applications',
-      value: pendingApplications,
-      description: 'Provider applications pending review',
+      lane: 'Supply',
+      title: 'Provider onboarding',
+      count: providerReviewCount,
+      target: 'Review inside 1 day',
       href: '/admin/applications',
-      highlight: pendingApplications > 0,
-    },
-    {
-      label: 'Open Job Requests',
-      value: openJobRequests,
-      description: 'Active job requests from customers',
-      href: '/admin/matches',
-      highlight: openJobRequests > 0,
-    },
-    {
-      label: 'Active Providers',
-      value: totalProviders,
-      description: 'Providers currently active on platform',
-      href: '/admin/providers',
+      note: 'Pending applications that block future assignment capacity.',
     },
   ]
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          {today.toLocaleDateString('en-ZA', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          })}
-        </p>
-      </div>
+    <div className="space-y-8">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,0.9fr)]">
+        <Card className="border-slate-200 bg-[linear-gradient(135deg,rgba(248,250,252,1),rgba(239,246,255,1))]">
+          <CardHeader className="gap-4">
+            <div className="space-y-2">
+              <Badge variant="outline" className="border-slate-300 bg-white/80 text-slate-700">
+                Control Tower
+              </Badge>
+              <div className="space-y-2">
+                <h1 className="text-2xl font-semibold tracking-tight">Operations Dashboard</h1>
+                <p className="max-w-2xl text-sm text-slate-600">
+                  Run the platform from queues, not lagging reports. This view surfaces validation,
+                  dispatch, quote, field, finance, trust, and supply actions that need an owner
+                  now.
+                </p>
+              </div>
+              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                {now.toLocaleDateString('en-ZA', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {heroStats.map((stat) => (
+              <HeroStat key={stat.label} label={stat.label} value={stat.value} tone={stat.tone} />
+            ))}
+          </CardContent>
+        </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {kpis.map((kpi) => (
-          <KpiCard key={kpi.label} {...kpi} />
+        <Card>
+          <CardHeader className="gap-3">
+            <CardTitle className="text-base">Immediate actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button asChild className="w-full justify-between">
+              <Link href="/admin/dispatch">
+                Open dispatch console
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
+              <Link href="/admin/payments">
+                Review finance blockers
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
+              <Link href="/admin/disputes">
+                Work complaints and disputes
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
+              <Link href="/admin/applications">
+                Approve providers
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {queueCards.map((card) => (
+          <QueueCard key={card.title} {...card} />
         ))}
-      </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Validation queue</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                New requests that need enough information before ops can match them.
+              </p>
+            </div>
+            <Badge className={slaBadgeClass(validationCount > 0 ? 'warning' : 'default')}>
+              {validationCount} open
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {validationQueue.length === 0 ? (
+              <EmptyState message="No requests are waiting on validation." />
+            ) : (
+              validationQueue.map((request) => (
+                <div key={request.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{request.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {request.customer.name}
+                        {request.address ? ` · ${request.address.suburb}, ${request.address.city}` : ''}
+                      </p>
+                    </div>
+                    <StatusBadge status={request.status} type="jobRequest" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>Age {formatAge(request.createdAt, now)}</span>
+                    <span>Phone {request.customer.phone}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Dispatch pressure</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Open service requests and active field load that can tip into lateness.
+              </p>
+            </div>
+            <Badge className={slaBadgeClass(dispatchCount > 0 ? 'warning' : 'default')}>
+              {dispatchCount} queued
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {dispatchQueue.length === 0 ? (
+              <EmptyState message="No open or matching requests need dispatch attention." />
+            ) : (
+              dispatchQueue.map((request) => (
+                <div key={request.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{request.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {request.customer.name}
+                        {request.address ? ` · ${request.address.suburb}, ${request.address.city}` : ''}
+                      </p>
+                    </div>
+                    <StatusBadge status={request.status} type="jobRequest" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge className={laneBadgeClass('Dispatch')}>
+                      {request._count.leads} leads sent
+                    </Badge>
+                    <Badge variant="outline">
+                      {request.expiresAt
+                        ? `Expires ${formatShortDate(request.expiresAt)}`
+                        : `Opened ${formatAge(request.createdAt, now)} ago`}
+                    </Badge>
+                    {request.match?.provider ? (
+                      <Badge variant="outline">Matched to {request.match.provider.name}</Badge>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Quote approvals</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Quotes that can move revenue forward with a customer decision or chase.
+              </p>
+            </div>
+            <Badge className={slaBadgeClass(quoteCount > 0 ? 'warning' : 'default')}>
+              {quoteCount} waiting
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingQuotes.length === 0 ? (
+              <EmptyState message="No quotes are waiting on approval right now." />
+            ) : (
+              pendingQuotes.map((quote) => (
+                <div key={quote.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{quote.match.jobRequest.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {quote.match.jobRequest.customer.name} · {quote.match.provider.name}
+                      </p>
+                    </div>
+                    <StatusBadge status={quote.status} type="quote" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge className={slaBadgeClass(getSlaTone(quote.createdAt, now, 240))}>
+                      Age {formatAge(quote.createdAt, now)}
+                    </Badge>
+                    <Badge variant="outline">{formatCurrency(Number(quote.amount))}</Badge>
+                    {quote.validUntil ? (
+                      <Badge variant="outline">Valid until {formatShortDate(quote.validUntil)}</Badge>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Field exceptions</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Jobs that are blocked, failed, or waiting on human intervention.
+              </p>
+            </div>
+            <Badge className={slaBadgeClass(fieldExceptionCount > 0 ? 'danger' : 'default')}>
+              {fieldExceptionCount} escalated
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {fieldExceptions.length === 0 ? (
+              <EmptyState message="No field exceptions are open right now." />
+            ) : (
+              fieldExceptions.map((job) => (
+                <div key={job.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{job.booking.match.jobRequest.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {job.provider.name} · {job.booking.match.jobRequest.customer.name}
+                      </p>
+                    </div>
+                    <StatusBadge status={job.status} type="job" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge className={slaBadgeClass(getSlaTone(job.updatedAt, now, 60))}>
+                      Last update {formatAge(job.updatedAt, now)}
+                    </Badge>
+                    <Badge variant="outline">{formatBookingWindow(job.booking)}</Badge>
+                    {job.failureReason ? <Badge variant="outline">{job.failureReason}</Badge> : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Finance follow-up</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Payments that can block closeout, payout, or dispute resolution.
+              </p>
+            </div>
+            <Badge className={slaBadgeClass(paymentExceptionCount > 0 ? 'danger' : 'default')}>
+              {paymentExceptionCount} blocked
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {financeFollowUp.length === 0 ? (
+              <EmptyState message="No payments are awaiting manual finance follow-up." />
+            ) : (
+              financeFollowUp.map((payment) => (
+                <div key={payment.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{payment.booking.match.jobRequest.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {payment.booking.match.jobRequest.customer.name}
+                      </p>
+                    </div>
+                    <PaymentBadge status={payment.status} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge className={slaBadgeClass(getSlaTone(payment.updatedAt, now, 1440))}>
+                      Age {formatAge(payment.updatedAt, now)}
+                    </Badge>
+                    <Badge variant="outline">{formatCurrency(Number(payment.amount))}</Badge>
+                    <Badge variant="outline">
+                      {payment.pspProvider ? payment.pspProvider.toUpperCase() : 'Offline recorded'}
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Trust recovery</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Open disputes and customer-provider issues that need acknowledgement and ownership.
+              </p>
+            </div>
+            <Badge className={slaBadgeClass(disputeCount > 0 ? 'danger' : 'default')}>
+              {disputeCount} open
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {openDisputes.length === 0 ? (
+              <EmptyState message="No open disputes are on the board." />
+            ) : (
+              openDisputes.map((dispute) => (
+                <div key={dispute.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{dispute.reason}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Job {dispute.jobId.slice(0, 8)} · Raised by {dispute.raisedByRole}
+                      </p>
+                    </div>
+                    <DisputeBadge status={dispute.status} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge className={slaBadgeClass(getSlaTone(dispute.createdAt, now, 120))}>
+                      Age {formatAge(dispute.createdAt, now)}
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Provider onboarding</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Pending applications that determine near-term supply and coverage.
+              </p>
+            </div>
+            <Badge className={slaBadgeClass(providerReviewCount > 0 ? 'warning' : 'default')}>
+              {providerReviewCount} pending
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {providerOnboarding.length === 0 ? (
+              <EmptyState message="No provider applications are waiting for review." />
+            ) : (
+              providerOnboarding.map((application) => (
+                <div key={application.id} className="rounded-xl border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium">{application.name}</p>
+                      <p className="text-sm text-muted-foreground">{application.phone}</p>
+                    </div>
+                    <ApplicationBadge status={application.status} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {application.skills.slice(0, 3).map((skill) => (
+                      <Badge key={skill} variant="outline">
+                        {skill}
+                      </Badge>
+                    ))}
+                    {application.serviceAreas.slice(0, 2).map((area) => (
+                      <Badge key={area} className={laneBadgeClass('Supply')}>
+                        {area}
+                      </Badge>
+                    ))}
+                    <Badge className={slaBadgeClass(getSlaTone(application.submittedAt, now, 1440))}>
+                      Age {formatAge(application.submittedAt, now)}
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">7-day funnel snapshot</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Weekly operational conversion from demand capture to paid completion.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <FunnelMetric label="Requests" value={weekRequests} note="Demand entering ops" />
+            <FunnelMetric label="Matches" value={weekMatches} note={ratioLabel(weekMatches, weekRequests)} />
+            <FunnelMetric label="Quotes" value={weekQuotes} note={ratioLabel(weekQuotes, weekMatches)} />
+            <FunnelMetric label="Bookings" value={weekBookings} note={ratioLabel(weekBookings, weekQuotes)} />
+            <FunnelMetric
+              label="Completed jobs"
+              value={weekCompleted}
+              note={ratioLabel(weekCompleted, weekBookings)}
+            />
+            <FunnelMetric label="Paid" value={weekPaid} note={ratioLabel(weekPaid, weekCompleted)} />
+            <div className="rounded-xl border bg-slate-50 p-4 sm:col-span-2 xl:col-span-3">
+              <p className="text-sm font-medium text-slate-900">7-day revenue collected</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                {formatCurrency(Number(weekRevenue._sum.amount ?? 0))}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
     </div>
   )
+}
+
+function QueueCard({
+  lane,
+  title,
+  count,
+  target,
+  href,
+  note,
+}: {
+  lane: string
+  title: string
+  count: number
+  target: string
+  href: string
+  note: string
+}) {
+  return (
+    <Card>
+      <CardHeader className="gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <Badge className={laneBadgeClass(lane)}>{lane}</Badge>
+          <Badge className={slaBadgeClass(count > 0 ? 'warning' : 'default')}>{count} open</Badge>
+        </div>
+        <div className="space-y-1">
+          <CardTitle className="text-base">{title}</CardTitle>
+          <p className="text-sm text-muted-foreground">{note}</p>
+        </div>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-3xl font-semibold tracking-tight">{count}</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{target}</p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href={href}>Open</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function HeroStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: string
+}) {
+  return (
+    <div className={cn('rounded-2xl border p-4', tone)}>
+      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+    </div>
+  )
+}
+
+function FunnelMetric({
+  label,
+  value,
+  note,
+}: {
+  label: string
+  value: number
+  note: string
+}) {
+  return (
+    <div className="rounded-xl border p-4">
+      <p className="text-sm font-medium">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{note}</p>
+    </div>
+  )
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+      {message}
+    </div>
+  )
+}
+
+function PaymentBadge({
+  status,
+}: {
+  status: PaymentStatus
+}) {
+  const classes =
+    status === 'FAILED'
+      ? 'bg-red-100 text-red-700'
+      : status === 'PENDING'
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-zinc-100 text-zinc-700'
+
+  return <Badge className={classes}>{status.replaceAll('_', ' ')}</Badge>
+}
+
+function DisputeBadge({ status }: { status: DisputeStatus }) {
+  const classes =
+    status === 'OPEN' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+
+  return <Badge className={classes}>{status.replaceAll('_', ' ')}</Badge>
+}
+
+function ApplicationBadge({ status }: { status: ApplicationStatus }) {
+  return <Badge className="bg-amber-100 text-amber-700">{status}</Badge>
+}
+
+function formatAge(from: Date, to: Date) {
+  const diffMs = Math.max(0, to.getTime() - from.getTime())
+  const minutes = Math.floor(diffMs / 60000)
+
+  if (minutes < 60) return `${minutes}m`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+
+  const days = Math.floor(hours / 24)
+  return `${days}d`
+}
+
+function formatTarget(date?: Date | null) {
+  if (!date) return 'No arrival target'
+  return `Target ${date.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+function formatBookingWindow(booking: {
+  scheduledDate: Date
+  scheduledWindow: string | null
+}) {
+  if (booking.scheduledWindow) return booking.scheduledWindow
+  return booking.scheduledDate.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function formatCurrency(amount: number) {
+  return `R ${amount.toLocaleString('en-ZA', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`
+}
+
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function getSlaTone(createdAt: Date, now: Date, targetMinutes: number) {
+  const ageMinutes = (now.getTime() - createdAt.getTime()) / 60000
+  if (ageMinutes > targetMinutes) return 'danger'
+  if (ageMinutes > targetMinutes * 0.6) return 'warning'
+  return 'default'
+}
+
+function ratioLabel(current: number, previous: number) {
+  if (previous === 0) return 'No upstream volume'
+  return `${Math.round((current / previous) * 100)}% of previous stage`
+}
+
+function laneBadgeClass(lane: string) {
+  if (lane === 'Ops') return 'bg-slate-100 text-slate-700'
+  if (lane === 'Dispatch') return 'bg-blue-100 text-blue-700'
+  if (lane === 'Finance') return 'bg-emerald-100 text-emerald-700'
+  if (lane === 'Trust') return 'bg-rose-100 text-rose-700'
+  if (lane === 'Quotes') return 'bg-amber-100 text-amber-700'
+  return 'bg-violet-100 text-violet-700'
+}
+
+function slaBadgeClass(tone: 'default' | 'warning' | 'danger') {
+  if (tone === 'danger') return 'bg-red-100 text-red-700'
+  if (tone === 'warning') return 'bg-amber-100 text-amber-700'
+  return 'bg-slate-100 text-slate-700'
+}
+
+function heroToneClass(tone: 'default' | 'warning' | 'danger' | 'info') {
+  if (tone === 'danger') return 'border-red-200 bg-red-50'
+  if (tone === 'warning') return 'border-amber-200 bg-amber-50'
+  if (tone === 'info') return 'border-blue-200 bg-blue-50'
+  return 'border-white/70 bg-white/80'
 }
