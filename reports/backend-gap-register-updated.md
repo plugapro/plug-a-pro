@@ -27,7 +27,8 @@ These items cannot be closed from the repository or local environment. Each requ
 | # | Severity | Issue | Blocked by | Required action |
 |---|---|---|---|---|
 | B1 | P1 | Live PSP checkout / refund / webhook execution verification | Peach Payments credentials + provider console | Ops to run live payment cycle in staging with real PSP account |
-| B2 | P1 | Meta WhatsApp template approval + live delivery verification | Meta Business Manager access | Ops to confirm `quote_ready` and `technician_assigned` template approval status in WABA console |
+| B2 | ~~P1~~ | ~~Meta WhatsApp template approval + live delivery verification~~ | **CLEARED 2026-04-10** | All 21 templates confirmed "Active – Quality pending" in WABA 104200042667877. `quote_ready` and `technician_assigned` live. |
+| B9 | P1 | WhatsApp Business display name — "Plug-A-Pro" rejected, re-submission blocked | Meta display name review queue | Prior submission "PlugAPro" is in active review. Once resolved (approved/rejected), resubmit "Plug A Pro" (no hyphen, spaces allowed). Monitor WABA console. WhatsApp profile description updated 2026-04-10 to remove blocked terms ("Trusted pros", "verified"). |
 
 ### Blocked by missing product / documentation decision
 
