@@ -48,7 +48,7 @@ flowchart TD
   Y -->|Approves| AA[(Booking created\nstatus: SCHEDULED)]
 
   AA --> AB{Collection mode}
-  AB -->|Launch mode bypass| AC[(Payment marked AUTHORISED\nlaunch_mode)]
+  AB -->|Launch mode bypass| AC[(Payment recorded only\nstatus: PENDING\noffline follow-through)]
   AB -->|Checkout enabled| AD[Payment link sent\nPeach / Yoco checkout]
   AD --> AE{Payment}
   AE -->|Failed| AF[Retry or contact support]
@@ -250,7 +250,7 @@ const PAYMENT_FLOW = `
 flowchart LR
   A([Customer approves quote]) --> B[(Booking created\nstatus: SCHEDULED)]
   B --> C{PAYMENT_COLLECTION_MODE}
-  C -->|bypass| D[(Payment\nstatus: AUTHORISED\npspProvider: launch_mode)]
+  C -->|bypass| D[(Payment\nstatus: PENDING\ncollectionMode: OFFLINE_RECORDED)]
   C -->|checkout| E[Platform generates\npayment link]
   E --> F{PSP Provider\nPeach Payments / Yoco}
 

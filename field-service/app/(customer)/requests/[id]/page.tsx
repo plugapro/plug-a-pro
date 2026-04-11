@@ -7,8 +7,11 @@ import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
+import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { buildProviderTrustSignals } from '@/lib/provider-trust'
 
 export const metadata = buildMetadata({ title: 'Request Details', noIndex: true })
 
@@ -48,8 +51,11 @@ export default async function RequestDetailPage({
               id: true,
               name: true,
               bio: true,
+              experience: true,
               skills: true,
               serviceAreas: true,
+              evidenceNote: true,
+              portfolioUrls: true,
               verified: true,
             },
           },
@@ -77,6 +83,15 @@ export default async function RequestDetailPage({
   const latestQuote = match?.quotes[0] ?? null
   const booking = match?.booking ?? null
   const provider = match?.provider ?? null
+  const providerSignals = provider
+    ? buildProviderTrustSignals({
+        marketplaceApproved: provider.verified,
+        skills: provider.skills,
+        serviceAreas: provider.serviceAreas,
+        experience: provider.experience,
+        evidenceNote: provider.evidenceNote,
+      })
+    : []
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
@@ -141,12 +156,29 @@ export default async function RequestDetailPage({
               </div>
               {match && <StatusBadge status={match.status} type="match" />}
             </div>
-            {provider.skills.length > 0 && (
-              <Row label="Skills">{provider.skills.join(', ')}</Row>
+            <ProviderTrustSignals signals={providerSignals} />
+            {provider.portfolioUrls.length > 0 && (
+              <div className="rounded-lg border px-3 py-3">
+                <p className="text-sm font-medium">Portfolio links</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Shared by the provider unless Plug-A-Pro says a specific link or document was reviewed.
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {provider.portfolioUrls.map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block break-all text-sm text-primary hover:underline"
+                    >
+                      {url}
+                    </a>
+                  ))}
+                </div>
+              </div>
             )}
-            {provider.serviceAreas.length > 0 && (
-              <Row label="Areas">{provider.serviceAreas.join(', ')}</Row>
-            )}
+            <ProviderTrustNote marketplaceApproved={provider.verified} />
             <Button asChild variant="outline" className="w-full">
               <Link href={`/providers/${provider.id}`}>View provider profile</Link>
             </Button>

@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { mergeCategoryRequirements } from '@/lib/service-category-policy'
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -26,6 +27,18 @@ export async function POST(req: NextRequest) {
     city: string
     province: string
     postalCode?: string
+    requestedWindowStart?: string
+    requestedWindowEnd?: string
+    requestedArrivalLatest?: string
+    estimatedDurationMinutes?: number
+    requiredSkillTags?: string[]
+    requiredCertificationCodes?: string[]
+    requiredEquipmentTags?: string[]
+    requiredVehicleTypes?: string[]
+    preferredProviderId?: string
+    assignmentMode?: 'AUTO_ASSIGN' | 'OPS_REVIEW'
+    customerAcceptedAmount?: number
+    customerAcceptedScope?: string
   }
 
   try {
@@ -34,11 +47,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const { category, title, description, street, suburb, city, province, postalCode } = body
+  const {
+    category,
+    title,
+    description,
+    street,
+    suburb,
+    city,
+    province,
+    postalCode,
+    requestedWindowStart,
+    requestedWindowEnd,
+    requestedArrivalLatest,
+    estimatedDurationMinutes,
+    requiredSkillTags,
+    requiredCertificationCodes,
+    requiredEquipmentTags,
+    requiredVehicleTypes,
+    preferredProviderId,
+    assignmentMode,
+    customerAcceptedAmount,
+    customerAcceptedScope,
+  } = body
 
   if (!category || !title || !street || !suburb || !city || !province) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+
+  const categoryRequirements = mergeCategoryRequirements({
+    category,
+    requiredCertificationCodes,
+    requiredEquipmentTags,
+    requiredVehicleTypes,
+  })
 
   // 1. Resolve or create Customer
   const customer = await db.customer.upsert({
@@ -74,6 +115,22 @@ export async function POST(req: NextRequest) {
         title,
         description: description ?? '',
         status: 'OPEN',
+        requestedWindowStart: requestedWindowStart ? new Date(requestedWindowStart) : undefined,
+        requestedWindowEnd: requestedWindowEnd ? new Date(requestedWindowEnd) : undefined,
+        requestedArrivalLatest: requestedArrivalLatest ? new Date(requestedArrivalLatest) : undefined,
+        estimatedDurationMinutes: estimatedDurationMinutes ?? undefined,
+        requiredSkillTags: requiredSkillTags ?? [],
+        requiredCertificationCodes: categoryRequirements.requiredCertificationCodes,
+        requiredEquipmentTags: categoryRequirements.requiredEquipmentTags,
+        requiredVehicleTypes: categoryRequirements.requiredVehicleTypes,
+        preferredProviderId: preferredProviderId ?? undefined,
+        assignmentMode: assignmentMode ?? 'AUTO_ASSIGN',
+        customerAcceptedAmount:
+          typeof customerAcceptedAmount === 'number' ? customerAcceptedAmount : undefined,
+        customerAcceptedScope: customerAcceptedScope?.trim() || undefined,
+        autoCreateBookingOnAssignment:
+          categoryRequirements.policy.bookingOnAssignment &&
+          typeof customerAcceptedAmount === 'number',
       },
       select: { id: true },
     })

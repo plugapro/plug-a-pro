@@ -9,6 +9,7 @@ import {
   type InboundReply,
 } from '../whatsapp-interactive'
 import { db } from '../db'
+import { getCategoryPolicy, mergeCategoryRequirements } from '../service-category-policy'
 import type { FlowContext, FlowResult } from './types'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -277,7 +278,7 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}\n🗓 ${availabilityNote}\n\nShall I submit this request? We'll match you with a qualified worker nearby.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}\n🗓 ${availabilityNote}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },
@@ -300,6 +301,10 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
   }
 
   try {
+    const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
+    const categoryRequirements = mergeCategoryRequirements({ category })
+    const categoryPolicy = getCategoryPolicy(category)
+
     // Find or create customer
     const customer = await db.customer.upsert({
       where: { phone: ctx.phone },
@@ -327,11 +332,17 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       data: {
         customerId: customer.id,
         addressId: address.id,
-        category: ctx.data.category ?? ctx.data.selectedCategory ?? '',
+        category,
         title: ctx.data.selectedCategory ?? '',
         description: ctx.data.availabilityNote
           ? `Preferred availability: ${ctx.data.availabilityNote}`
           : '',
+        estimatedDurationMinutes: 120,
+        requiredCertificationCodes: categoryRequirements.requiredCertificationCodes,
+        requiredEquipmentTags: categoryRequirements.requiredEquipmentTags,
+        requiredVehicleTypes: categoryRequirements.requiredVehicleTypes,
+        autoCreateBookingOnAssignment: false,
+        assignmentMode: 'AUTO_ASSIGN',
         status: 'OPEN',
       },
     })
@@ -348,7 +359,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
     await sendButtons(
       ctx.phone,
-      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${jobRequest.id.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.`,
+      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${jobRequest.id.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.${categoryPolicy.bookingOnAssignment ? '\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._' : ''}`,
       [
         { id: 'status', title: '📋 Track My Request' },
         { id: 'back_home', title: '🏠 Main Menu' },

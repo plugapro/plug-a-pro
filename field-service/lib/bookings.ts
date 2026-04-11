@@ -79,11 +79,16 @@ export async function cancelBookingLifecycle(params: {
       })
     }
 
+    await tx.technicianScheduleItem.updateMany({
+      where: { bookingId: booking.id, status: 'ACTIVE' },
+      data: { status: 'CANCELLED' },
+    })
+
     if (booking.payment) {
-      await tx.payment.update({
-        where: { bookingId: booking.id },
-        data: {
-          metadata: {
+    await tx.payment.update({
+      where: { bookingId: booking.id },
+      data: {
+        metadata: {
             ...(((booking.payment.metadata as Prisma.JsonObject | null) ?? {})),
             cancellation: {
               cancelledAt: new Date().toISOString(),
@@ -136,7 +141,7 @@ export async function cancelBookingLifecycle(params: {
     customerPhone: booking.match.jobRequest.customer.phone,
     serviceName: booking.match.jobRequest.category,
     refundNote:
-      booking.payment?.status === 'PAID'
+      booking.payment?.collectionMode === 'PLATFORM_CHECKOUT' && booking.payment?.status === 'PAID'
         ? 'We are processing your refund.'
         : 'No online payment was collected for this booking.',
   }).catch((error) => {

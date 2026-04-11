@@ -7,7 +7,8 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchLeads, expireStaleLeads } from '@/lib/matching-engine'
+import { dispatchLeads } from '@/lib/matching-engine'
+import { processPendingAssignmentWorkflows } from '@/lib/matching/service'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { sendText } from '@/lib/whatsapp-interactive'
 
@@ -20,13 +21,15 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, expiredQuotes: 0, noMatch: 0, errors: 0 }
+  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, errors: 0 }
 
-  // 1. Expire stale leads
+  // 1. Expire stale offers and retry the next ranked technician where possible
   try {
-    results.expired = await expireStaleLeads()
+    const workflowResult = await processPendingAssignmentWorkflows()
+    results.expired = workflowResult.expiredOffers
+    results.reoffered = workflowResult.reoffered
   } catch (err) {
-    console.error(`[cron/match-leads:${reqId}] Error expiring leads:`, err)
+    console.error(`[cron/match-leads:${reqId}] Error processing assignment workflows:`, err)
     results.errors++
   }
 

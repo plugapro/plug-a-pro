@@ -9,6 +9,10 @@ import type {
 import { db } from '../db'
 import { MATCHING_CONFIG, type MatchingWeights } from './config'
 import { buildWorkingWindow, deriveRequestWindow, evaluateScheduleFit, normalizeCommitments } from './scheduling'
+import { getCategoryPolicy, mergeCategoryRequirements } from '../service-category-policy'
+import { isLocationStale, pointFallsWithinRadius } from './geography'
+import { createBookingArtifactsForApprovedQuote } from '../quotes'
+import { initializeBookingPayment } from '../payments'
 import type {
   DispatchActor,
   DispatchHistoryResult,
@@ -35,12 +39,37 @@ function getReliabilityScore(provider: MatchingProvider) {
     1,
     Math.max(
       0,
-      provider.reliabilityScore * 0.5 +
-        provider.onTimeRate * 0.25 +
-        provider.acceptanceRate * 0.15 +
-        Math.min(provider.averageRating / 5, 1) * 0.1,
+      provider.reliabilityScore * 0.3 +
+        provider.onTimeRate * 0.2 +
+        provider.punctualityScore * 0.2 +
+        (1 - provider.cancellationRate) * 0.1 +
+        (1 - provider.complaintRate) * 0.1 +
+        provider.acceptanceRate * 0.05 +
+        Math.min(provider.averageRating / 5, 1) * 0.05,
     ),
   )
+}
+
+function buildDispatchIdempotencyKey(params: {
+  jobRequest: MatchingJobRequest
+  mode: AssignmentMode
+}) {
+  return JSON.stringify({
+    jobRequestId: params.jobRequest.id,
+    category: normalizeTag(params.jobRequest.category),
+    mode: params.mode,
+    requestedWindowStart: params.jobRequest.requestedWindowStart?.toISOString() ?? null,
+    requestedWindowEnd: params.jobRequest.requestedWindowEnd?.toISOString() ?? null,
+    requestedArrivalLatest: params.jobRequest.requestedArrivalLatest?.toISOString() ?? null,
+    estimatedDurationMinutes: params.jobRequest.estimatedDurationMinutes ?? null,
+    requiredSkillTags: [...params.jobRequest.requiredSkillTags].sort(),
+    requiredCertificationCodes: [...params.jobRequest.requiredCertificationCodes].sort(),
+    requiredEquipmentTags: [...params.jobRequest.requiredEquipmentTags].sort(),
+    requiredVehicleTypes: [...params.jobRequest.requiredVehicleTypes].sort(),
+    preferredProviderId: params.jobRequest.preferredProviderId ?? null,
+    autoCreateBookingOnAssignment: params.jobRequest.autoCreateBookingOnAssignment,
+    customerAcceptedAmount: params.jobRequest.customerAcceptedAmount?.toString() ?? null,
+  })
 }
 
 function hasRequiredSkills(jobRequest: MatchingJobRequest, provider: MatchingProvider) {
@@ -62,7 +91,12 @@ function hasRequiredSkills(jobRequest: MatchingJobRequest, provider: MatchingPro
 }
 
 function hasRequiredCertifications(jobRequest: MatchingJobRequest, provider: MatchingProvider) {
-  if (jobRequest.requiredCertificationCodes.length === 0) return true
+  const requirements = mergeCategoryRequirements({
+    category: jobRequest.category,
+    requiredCertificationCodes: jobRequest.requiredCertificationCodes,
+  })
+
+  if (requirements.requiredCertificationCodes.length === 0) return true
 
   const activeCertifications = new Set(
     provider.technicianCertifications
@@ -70,12 +104,53 @@ function hasRequiredCertifications(jobRequest: MatchingJobRequest, provider: Mat
       .map((cert) => normalizeTag(cert.certificationCode)),
   )
 
-  return jobRequest.requiredCertificationCodes
+  return requirements.requiredCertificationCodes
     .map(normalizeTag)
     .every((code) => activeCertifications.has(code))
 }
 
+function hasRequiredEquipment(jobRequest: MatchingJobRequest, provider: MatchingProvider) {
+  const requirements = mergeCategoryRequirements({
+    category: jobRequest.category,
+    requiredEquipmentTags: jobRequest.requiredEquipmentTags,
+  })
+  if (requirements.requiredEquipmentTags.length === 0) return true
+
+  const providerEquipment = new Set(provider.equipmentTags.map(normalizeTag))
+  return requirements.requiredEquipmentTags
+    .map(normalizeTag)
+    .every((equipmentTag) => providerEquipment.has(equipmentTag))
+}
+
+function hasRequiredVehicleTypes(jobRequest: MatchingJobRequest, provider: MatchingProvider) {
+  const requirements = mergeCategoryRequirements({
+    category: jobRequest.category,
+    requiredVehicleTypes: jobRequest.requiredVehicleTypes,
+  })
+  if (requirements.requiredVehicleTypes.length === 0) return true
+
+  const providerVehicles = new Set(provider.vehicleTypes.map(normalizeTag))
+  return requirements.requiredVehicleTypes
+    .map(normalizeTag)
+    .some((vehicleType) => providerVehicles.has(vehicleType))
+}
+
 function providerCoversAddress(provider: MatchingProvider, address: MatchingAddress) {
+  if (address.lat != null && address.lng != null) {
+    const radiusAreas = provider.technicianServiceAreas.filter(
+      (area) =>
+        area.active &&
+        area.areaType === 'RADIUS' &&
+        pointFallsWithinRadius({
+          center: { lat: area.lat, lng: area.lng },
+          point: { lat: address.lat, lng: address.lng },
+          radiusKm: area.radiusKm,
+        }),
+    )
+
+    if (radiusAreas.length > 0) return true
+  }
+
   const addressTerms = [
     address.suburb,
     address.city,
@@ -103,6 +178,7 @@ function buildScoreBreakdown(params: {
   weights?: MatchingWeights
 }) {
   const weights = params.weights ?? MATCHING_CONFIG.weights
+  const categoryPolicy = getCategoryPolicy(params.jobRequest.category)
   const skillMatch = hasRequiredSkills(params.jobRequest, params.provider) ? 1 : 0
   const scheduleFit = params.scheduleFitScore
   const travelEfficiency = Math.max(
@@ -131,6 +207,14 @@ function buildScoreBreakdown(params: {
     `Estimated travel ${params.travelMinutes} minutes`,
     `Reliability score ${reliability.toFixed(2)}`,
   ]
+
+  if (categoryPolicy.regulated) {
+    reasons.push('Regulated service requirements checked')
+  }
+
+  if (!isLocationStale(params.provider.lastKnownLocationAt)) {
+    reasons.push('Recent technician location available')
+  }
 
   if (customerPreference > 0) {
     reasons.push('Preferred or repeat technician')
@@ -242,6 +326,12 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
     if (!hasRequiredCertifications(jobRequest, provider)) {
       filteredReasonCodes.push('MISSING_REQUIRED_CERTIFICATION')
     }
+    if (!hasRequiredEquipment(jobRequest, provider)) {
+      filteredReasonCodes.push('MISSING_REQUIRED_EQUIPMENT')
+    }
+    if (!hasRequiredVehicleTypes(jobRequest, provider)) {
+      filteredReasonCodes.push('MISSING_REQUIRED_VEHICLE')
+    }
 
     const scheduleRule =
       provider.schedule.find((rule) => rule.dayOfWeek === requestWindow.startAt.getDay()) ?? null
@@ -322,6 +412,9 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
         completedJobsCount: provider.completedJobsCount,
         onTimeRate: provider.onTimeRate,
         acceptanceRate: provider.acceptanceRate,
+        complaintRate: provider.complaintRate,
+        cancellationRate: provider.cancellationRate,
+        punctualityScore: provider.punctualityScore,
       },
       selectionReason: scoreBreakdown.reasons[0] ?? 'Best overall operational fit',
     })
@@ -343,6 +436,7 @@ async function persistDispatchDecision(params: {
   ranking: RankingResult
   actor: DispatchActor
   mode: AssignmentMode | 'MANUAL_OVERRIDE'
+  idempotencyKey?: string
   overrideProviderId?: string
   overrideReason?: string | null
 }) {
@@ -369,6 +463,7 @@ async function persistDispatchDecision(params: {
       status,
       initiatedById: params.actor.actorId,
       initiatedByRole: params.actor.actorRole,
+      idempotencyKey: params.idempotencyKey,
       selectedProviderId: params.overrideProviderId,
       overrideReason: params.overrideReason ?? undefined,
       consideredCount: params.ranking.consideredCount,
@@ -521,6 +616,7 @@ async function createOfferForAttempt(params: {
       status: 'OFFERING',
       selectedProviderId: params.providerId,
       selectedMatchAttemptId: params.matchAttemptId,
+      nextRetryAt: expiresAt,
     },
   })
 
@@ -586,12 +682,75 @@ export async function runAssignmentForJobRequest(params: {
   mode?: AssignmentMode
 }) : Promise<DispatchRunResult> {
   const actor = params.actor ?? { actorId: 'system', actorRole: 'system' as const }
+  const jobRequestForKey = await db.jobRequest.findUniqueOrThrow({
+    where: { id: params.jobRequestId },
+  })
+  const mode = params.mode ?? jobRequestForKey.assignmentMode
+  const idempotencyKey = buildDispatchIdempotencyKey({
+    jobRequest: jobRequestForKey,
+    mode,
+  })
   const ranking = await rankCandidatesForJobRequest(params.jobRequestId)
-  const mode = params.mode ?? ranking.assignmentMode
+  const existingMatch = await db.match.findUnique({
+    where: { jobRequestId: params.jobRequestId },
+  })
+
+  if (existingMatch) {
+    return {
+      ...ranking,
+      dispatchDecisionId: 'existing-match',
+      status: 'ASSIGNED',
+      offeredProviderId: existingMatch.providerId,
+      assignmentHoldId: null,
+    }
+  }
+
+  const activeHold = await db.assignmentHold.findFirst({
+    where: {
+      jobRequestId: params.jobRequestId,
+      status: 'ACTIVE',
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (activeHold) {
+    const activeDecision = await db.dispatchDecision.findUnique({
+      where: { id: activeHold.dispatchDecisionId },
+    })
+
+    return {
+      ...ranking,
+      dispatchDecisionId: activeHold.dispatchDecisionId,
+      status: activeDecision?.status ?? 'OFFERING',
+      offeredProviderId: activeHold.providerId,
+      assignmentHoldId: activeHold.id,
+    }
+  }
+
+  const existingDecision = await db.dispatchDecision.findFirst({
+    where: {
+      jobRequestId: params.jobRequestId,
+      idempotencyKey,
+      status: mode === 'OPS_REVIEW' ? 'RANKED' : { in: ['RANKED', 'OFFERING'] },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (existingDecision && mode === 'OPS_REVIEW') {
+    return {
+      ...ranking,
+      dispatchDecisionId: existingDecision.id,
+      status: existingDecision.status,
+      offeredProviderId: existingDecision.selectedProviderId,
+      assignmentHoldId: null,
+    }
+  }
+
   const dispatchDecision = await persistDispatchDecision({
     ranking,
     actor,
     mode,
+    idempotencyKey,
   })
 
   if (mode === 'OPS_REVIEW' || ranking.candidates.length === 0) {
@@ -645,7 +804,7 @@ async function offerNextRankedCandidate(params: {
   if (!nextAttempt) {
     await db.dispatchDecision.update({
       where: { id: params.dispatchDecisionId },
-      data: { status: 'NO_MATCH' },
+      data: { status: 'NO_MATCH', nextRetryAt: null },
     })
     await db.jobRequest.update({
       where: { id: params.jobRequestId },
@@ -653,6 +812,14 @@ async function offerNextRankedCandidate(params: {
     })
     return { nextOfferedProviderId: null, assignmentHoldId: null }
   }
+
+  await db.dispatchDecision.update({
+    where: { id: params.dispatchDecisionId },
+    data: {
+      retryCount: { increment: 1 },
+      nextRetryAt: new Date(Date.now() + MATCHING_CONFIG.retryDelayMinutes * 60_000),
+    },
+  })
 
   const offer = await createOfferForAttempt({
     dispatchDecisionId: params.dispatchDecisionId,
@@ -673,7 +840,7 @@ export async function acceptAssignmentOffer(params: {
   providerId: string
   inspectionNeeded?: boolean
 }): Promise<OfferResolutionResult> {
-  return db.$transaction(async (tx) => {
+  const transactionResult = await db.$transaction(async (tx) => {
     const lead = await tx.lead.findUnique({
       where: { id: params.leadId },
       include: {
@@ -756,10 +923,19 @@ export async function acceptAssignmentOffer(params: {
         ok: true as const,
         responseOutcome: 'ACCEPTED',
         matchId: existingMatch.id,
+        bookingId: null,
         assignmentHoldId: lead.assignmentHold.id,
         nextOfferedProviderId: null,
       }
     }
+
+    const jobRequest = await tx.jobRequest.findUniqueOrThrow({
+      where: { id: lead.jobRequestId },
+      include: {
+        address: true,
+        customer: { select: { id: true, phone: true, name: true } },
+      },
+    })
 
     await tx.lead.update({
       where: { id: lead.id },
@@ -840,14 +1016,125 @@ export async function acceptAssignmentOffer(params: {
       data: { status: 'RELEASED' },
     })
 
+    let bookingId: string | null = null
+    let paymentAmount: number | null = null
+    if (
+      jobRequest.autoCreateBookingOnAssignment &&
+      jobRequest.customerAcceptedAmount != null
+    ) {
+      const requestWindow = deriveRequestWindow(jobRequest)
+      const autoQuote = await tx.quote.create({
+        data: {
+          matchId: match.id,
+          amount: jobRequest.customerAcceptedAmount,
+          labourCost: jobRequest.customerAcceptedAmount,
+          materialsCost: 0,
+          estimatedHours:
+            (jobRequest.estimatedDurationMinutes ?? MATCHING_CONFIG.defaultDurationMinutes) / 60,
+          description:
+            jobRequest.customerAcceptedScope ||
+            jobRequest.description ||
+            `Customer-approved ${jobRequest.category} scope`,
+          preferredDate: requestWindow.startAt,
+          approvalToken: crypto.randomUUID(),
+          status: 'APPROVED',
+          approvedAt: new Date(),
+          notes: 'Auto-approved from customer accepted amount at assignment acceptance',
+        },
+      })
+
+      await tx.match.update({
+        where: { id: match.id },
+        data: { status: 'QUOTE_APPROVED' },
+      })
+
+      const booking = await createBookingArtifactsForApprovedQuote(tx, {
+        quoteId: autoQuote.id,
+        matchId: match.id,
+        providerId: params.providerId,
+        category: jobRequest.category,
+        jobRequestId: jobRequest.id,
+        address: jobRequest.address,
+        scheduledDate: requestWindow.startAt,
+        estimatedDurationMinutes: jobRequest.estimatedDurationMinutes,
+        source: 'assignment_acceptance',
+      })
+
+      bookingId = booking.bookingId
+      paymentAmount = Number(jobRequest.customerAcceptedAmount)
+    }
+
     return {
       ok: true as const,
       responseOutcome: 'ACCEPTED',
       matchId: match.id,
+      bookingId,
+      paymentAmount,
+      customerPhone: jobRequest.customer.phone,
+      category: jobRequest.category,
       assignmentHoldId: lead.assignmentHold.id,
       nextOfferedProviderId: null,
     }
   })
+
+  if (!transactionResult.ok) {
+    return {
+      ok: false,
+      reason: transactionResult.reason as 'NOT_FOUND' | 'FORBIDDEN' | 'EXPIRED' | 'TAKEN',
+    }
+  }
+
+  if (
+    transactionResult.bookingId &&
+    transactionResult.paymentAmount != null &&
+    transactionResult.paymentAmount > 0
+  ) {
+    await initializeBookingPayment({
+      bookingId: transactionResult.bookingId,
+      amountRand: transactionResult.paymentAmount,
+      customerEmail: null,
+      customerPhone: transactionResult.customerPhone,
+      description: `${transactionResult.category} booking`,
+    })
+  }
+
+  return {
+    ok: true,
+    responseOutcome: transactionResult.responseOutcome as 'ACCEPTED' | 'REJECTED' | 'TIMED_OUT' | 'EXPIRED' | 'OVERRIDDEN' | 'CANCELLED',
+    matchId: transactionResult.matchId,
+    bookingId: transactionResult.bookingId ?? null,
+    assignmentHoldId: transactionResult.assignmentHoldId,
+    nextOfferedProviderId: transactionResult.nextOfferedProviderId,
+  }
+}
+
+export async function processPendingAssignmentWorkflows() {
+  const activeHolds = await db.assignmentHold.findMany({
+    where: {
+      status: 'ACTIVE',
+      expiresAt: { lte: new Date() },
+    },
+    select: { id: true },
+  })
+
+  let expiredOffers = 0
+  let reoffered = 0
+
+  for (const hold of activeHolds) {
+    const result = await expireAssignmentOffer({ assignmentHoldId: hold.id })
+    if (result.expired) {
+      expiredOffers++
+      if (result.nextOfferedProviderId) {
+        reoffered++
+      }
+    }
+  }
+
+  return {
+    processed: activeHolds.length,
+    expiredOffers,
+    reoffered,
+  }
 }
 
 export async function rejectAssignmentOffer(params: {

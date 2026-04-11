@@ -13,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 
 export const metadata = buildMetadata({ title: 'My Profile', noIndex: true })
 
@@ -39,14 +41,47 @@ async function updateProfile(formData: FormData) {
 
   const name  = (formData.get('name')  as string | null)?.trim()
   const email = (formData.get('email') as string | null)?.trim()
+  const bio = (formData.get('bio') as string | null)?.trim()
+  const experience = (formData.get('experience') as string | null)?.trim()
+  const evidenceNote = (formData.get('evidenceNote') as string | null)?.trim()
+  const skillsInput = (formData.get('skills') as string | null)?.trim() ?? ''
+  const serviceAreasInput = (formData.get('serviceAreas') as string | null)?.trim() ?? ''
+  const portfolioUrlsInput = (formData.get('portfolioUrls') as string | null)?.trim() ?? ''
+  const skills = skillsInput
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const serviceAreas = serviceAreasInput
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const portfolioUrls = portfolioUrlsInput
+    .split('\n')
+    .map((value) => value.trim())
+    .filter(Boolean)
 
   // Update profile fields
-  if (name || email !== undefined) {
+  if (
+    name ||
+    email !== undefined ||
+    bio !== undefined ||
+    experience !== undefined ||
+    evidenceNote !== undefined ||
+    skillsInput !== undefined ||
+    serviceAreasInput !== undefined ||
+    portfolioUrlsInput !== undefined
+  ) {
     await dbServer.provider.update({
       where: { id: provider.id },
       data: {
         ...(name  ? { name }  : {}),
         ...(email !== null && email !== undefined ? { email: email || null } : {}),
+        bio: bio || null,
+        experience: experience || null,
+        evidenceNote: evidenceNote || null,
+        skills,
+        serviceAreas,
+        portfolioUrls,
       },
     })
   }
@@ -163,6 +198,77 @@ export default async function ProviderProfilePage() {
               <span className="text-muted-foreground text-sm">Phone</span>
               <p className="text-sm pt-1">{provider.phone ?? '—'}</p>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Public profile and evidence
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="bio" className="text-sm">Bio</Label>
+              <Textarea
+                id="bio"
+                name="bio"
+                defaultValue={provider.bio ?? ''}
+                rows={3}
+                placeholder="Tell customers what kind of work you do."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="experience" className="text-sm">Experience</Label>
+              <Input
+                id="experience"
+                name="experience"
+                defaultValue={provider.experience ?? ''}
+                placeholder="Example: 3–5 years"
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="skills" className="text-sm">Skills</Label>
+              <Textarea
+                id="skills"
+                name="skills"
+                defaultValue={provider.skills.join(', ')}
+                rows={2}
+                placeholder="Comma-separated, for example: Plumbing, Handyman"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="serviceAreas" className="text-sm">Service areas</Label>
+              <Textarea
+                id="serviceAreas"
+                name="serviceAreas"
+                defaultValue={provider.serviceAreas.join(', ')}
+                rows={2}
+                placeholder="Comma-separated, for example: Soweto, Roodepoort"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="evidenceNote" className="text-sm">Provider evidence note</Label>
+              <Textarea
+                id="evidenceNote"
+                name="evidenceNote"
+                defaultValue={provider.evidenceNote ?? ''}
+                rows={4}
+                placeholder="Optional: mention past jobs, references, or certificate names. Only add items you are comfortable sharing."
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="portfolioUrls" className="text-sm">Portfolio links</Label>
+              <Textarea
+                id="portfolioUrls"
+                name="portfolioUrls"
+                defaultValue={provider.portfolioUrls.join('\n')}
+                rows={3}
+                placeholder="Optional: one link per line to examples of your work."
+              />
+            </div>
+            <ProviderTrustNote marketplaceApproved={provider.verified} />
           </CardContent>
         </Card>
 

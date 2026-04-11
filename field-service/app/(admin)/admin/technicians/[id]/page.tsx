@@ -180,10 +180,18 @@ export default async function ProviderProfilePage({ params }: Props) {
                 <p className="font-medium">{provider.active ? 'Active' : 'Inactive'}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Verified</p>
+                <p className="text-muted-foreground">Experience</p>
+                <p className="font-medium">{provider.experience ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Approved for matching</p>
                 <p className="font-medium">{provider.verified ? 'Yes' : 'No'}</p>
               </div>
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              Skills and service areas are supplied by the provider. This flag only controls whether the application passed Plug-A-Pro&apos;s marketplace review for lead eligibility.
+            </p>
 
             {provider.skills.length > 0 && (
               <>
@@ -211,6 +219,41 @@ export default async function ProviderProfilePage({ params }: Props) {
                       <Badge key={area} variant="outline" className="rounded-full text-xs">
                         {area}
                       </Badge>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {provider.evidenceNote && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Provider-shared evidence note</p>
+                  <p className="text-sm">{provider.evidenceNote}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    This note is supplied by the provider. It does not become a verified claim unless Plug-A-Pro reviews a specific item and labels it as such.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {provider.portfolioUrls.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Portfolio links</p>
+                  <div className="space-y-2">
+                    {provider.portfolioUrls.map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block break-all text-sm text-primary hover:underline"
+                      >
+                        {url}
+                      </a>
                     ))}
                   </div>
                 </div>

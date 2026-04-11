@@ -21,8 +21,10 @@ export default function TermsPage() {
         <p>
           Plug a Pro (&ldquo;Plug a Pro&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a South African marketplace that connects
           customers who need home services (plumbing, electrical, painting, gardening, and more) with
-          independent, verified service providers (&ldquo;Providers&rdquo;). We are a marketplace, not a service
-          provider. We do not employ the Providers listed on the platform.
+          independent service providers (&ldquo;Providers&rdquo;). We are a marketplace, not a service
+          provider. We do not employ the Providers listed on the platform. Information shown on a Provider
+          profile may include provider-supplied details, platform-recorded job history, and any checks or
+          documents that Plug a Pro explicitly labels as reviewed.
         </p>
 
         <h2>2. Eligibility</h2>
@@ -37,13 +39,13 @@ export default function TermsPage() {
         <p>Plug a Pro allows customers to:</p>
         <ul>
           <li>Submit job requests via WhatsApp or the web app</li>
-          <li>Be matched with nearby verified Providers</li>
+          <li>Be matched with nearby Providers whose applications have been reviewed for marketplace participation</li>
           <li>Receive quotes, confirm bookings, and keep the job record in writing</li>
           <li>Rate and review completed jobs</li>
         </ul>
         <p>Plug a Pro allows Providers to:</p>
         <ul>
-          <li>Register and be verified on the platform</li>
+          <li>Register and complete the platform&apos;s application review flow</li>
           <li>Receive job leads matching their skills and service area</li>
           <li>Accept, quote, and complete jobs</li>
           <li>Rely on the platform record when settling the job</li>
@@ -61,8 +63,8 @@ export default function TermsPage() {
         <h2>5. Provider Obligations</h2>
         <ul>
           <li>Provide accurate information about your skills, experience, and qualifications</li>
-          <li>Hold any required licences and maintain adequate public liability insurance</li>
-          <li>Arrive on time and complete work to a professional standard</li>
+          <li>Hold any licences, registrations, or certifications required by law for the work you choose to do</li>
+          <li>Arrive on time and complete only the work you are legally and practically able to perform</li>
           <li>Quote honestly and not add undisclosed costs after a job is accepted</li>
           <li>Comply with all applicable South African health, safety, and labour laws</li>
           <li>Not solicit customers off-platform for services matching those booked through Plug a Pro</li>
@@ -76,12 +78,9 @@ export default function TermsPage() {
         </p>
         <h3>Refund Policy</h3>
         <ul>
-          <li><strong>Cancelled 24+ hours before the booking:</strong> Full refund</li>
-          <li><strong>Cancelled less than 24 hours before the booking:</strong> 50% cancellation fee applies</li>
-          <li><strong>No-show (customer not available):</strong> No refund</li>
-          <li><strong>Provider no-show:</strong> Full refund issued within 3&ndash;5 business days</li>
-          <li><strong>Disputed work quality:</strong> Contact support within 48 hours of job completion.
-          We will investigate and may issue a partial or full refund at our discretion.</li>
+          <li><strong>If Plug a Pro processed the payment:</strong> any refund or reversal is reviewed against the booking stage, the platform record, and the payment method used for that job.</li>
+          <li><strong>If the customer paid the Provider directly:</strong> Plug a Pro can review the dispute record, but cannot guarantee a refund or reverse a direct payment it did not process.</li>
+          <li><strong>Disputed work quality:</strong> contact support as soon as possible after the job. We review the quote, job history, photos, and available communication records before deciding what platform action is available.</li>
         </ul>
         <p>
           For quote-based jobs, you always receive the written quote first. Any payment instructions that apply
@@ -118,9 +117,10 @@ export default function TermsPage() {
 
         <h2>10. Limitation of Liability</h2>
         <p>
-          Plug a Pro is a marketplace. We do not perform the services ourselves and are not liable
-          for the quality, safety, or outcome of work performed by Providers. Our liability to you
-          in connection with any job is limited to the amount, if any, that we directly processed for that job.
+          Plug a Pro is a marketplace. We do not perform the services ourselves and do not guarantee
+          the identity, licensing, legality, safety, or quality of work performed by Providers except where
+          a specific check is expressly stated on the platform. Our liability to you in connection with any
+          job is limited to the amount, if any, that we directly processed for that job.
         </p>
         <p>
           To the maximum extent permitted by South African law, we exclude liability for indirect,

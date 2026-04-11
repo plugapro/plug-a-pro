@@ -77,6 +77,8 @@ model Provider {
   experience   String?
   skills       String[] @default([]) // category slugs: "plumbing", "painting", etc.
   serviceAreas String[] @default([]) // suburb/city names they cover
+  equipmentTags String[] @default([])
+  vehicleTypes String[] @default([])
   evidenceNote String?
   portfolioUrls String[] @default([])
   active       Boolean  @default(true)
@@ -87,6 +89,12 @@ model Provider {
   completedJobsCount Int @default(0)
   onTimeRate   Float    @default(1)
   acceptanceRate Float  @default(1)
+  complaintCount Int    @default(0)
+  complaintRate Float   @default(0)
+  providerCancellationCount Int @default(0)
+  cancellationRate Float @default(0)
+  lateArrivalCount Int  @default(0)
+  punctualityScore Float @default(1)
   maxTravelMinutes Int  @default(90)
   lastKnownLat Float?
   lastKnownLng Float?
@@ -185,8 +193,13 @@ model JobRequest {
   estimatedDurationMinutes Int?
   requiredSkillTags String[]   @default([])
   requiredCertificationCodes String[] @default([])
+  requiredEquipmentTags String[] @default([])
+  requiredVehicleTypes String[] @default([])
   preferredProviderId String?
   assignmentMode AssignmentMode @default(AUTO_ASSIGN)
+  customerAcceptedAmount Decimal? @db.Decimal(10, 2)
+  customerAcceptedScope String?
+  autoCreateBookingOnAssignment Boolean @default(false)
   latestDispatchDecisionId String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt   DateTime?        // if no match within window, mark EXPIRED
@@ -561,9 +574,12 @@ model DispatchDecision {
   status                DispatchDecisionStatus @default(RANKED)
   initiatedById         String
   initiatedByRole       String
+  idempotencyKey        String?
   selectedProviderId    String?
   selectedMatchAttemptId String? @unique
   overrideReason        String?
+  retryCount            Int      @default(0)
+  nextRetryAt           DateTime?
   scoreWeights          Json     @default("{}")
   consideredCount       Int      @default(0)
   eligibleCount         Int      @default(0)
@@ -894,6 +910,7 @@ enum TechnicianCertificationStatus {
 enum TechnicianServiceAreaType {
   SUBURB
   CITY
+  RADIUS
   CUSTOM
 }
 

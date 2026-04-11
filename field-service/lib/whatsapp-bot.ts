@@ -487,13 +487,16 @@ export async function notifyProviderNewJob(params: {
   area: string             // suburb/city for display
   description: string      // short job description
   customerInitial: string  // first name only
+  expiresInMinutes?: number
 }): Promise<void> {
   const { sendButtons } = await import('./whatsapp-interactive')
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const expiryLabel = params.expiresInMinutes
+    ? `${params.expiresInMinutes} minutes`
+    : '4 hours'
 
   await sendButtons(
     params.providerPhone,
-    `🔔 *New Lead — ${params.category}*\n📍 ${params.area}  |  👤 ${params.customerInitial}\n📋 ${params.description}\n\n_Expires in 4 hours. Ref: ${params.leadId.slice(-8).toUpperCase()}_`,
+    `🔔 *New Lead — ${params.category}*\n📍 ${params.area}  |  👤 ${params.customerInitial}\n📋 ${params.description}\n\n_Expires in ${expiryLabel}. Ref: ${params.leadId.slice(-8).toUpperCase()}_`,
     [
       { id: `match_accept_${params.leadId}`, title: '✅ Accept & Quote' },
       { id: `match_inspect_${params.leadId}`, title: '🔍 View Details' },
@@ -515,7 +518,7 @@ export async function notifyProviderApplicationResult(params: {
     const { sendCtaUrl } = await import('./whatsapp-interactive')
     await sendCtaUrl(
       params.phone,
-      `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug a Pro has been *approved*.\n\nYou can now log in to your provider portal to complete your profile, set your schedule, and start receiving job assignments.`,
+      `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug a Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule, and start responding to matching requests.`,
       'Open Provider Portal',
       `${appUrl}/provider`,
       { footer: 'Welcome to the Plug a Pro network! 👋' }

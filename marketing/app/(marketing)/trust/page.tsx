@@ -17,7 +17,7 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "Trust & Safety",
   description:
-    "How Plug-A-Pro protects customers and workers: careful contact handling, worker screening, written quotes, photo evidence, and manual support review.",
+    "How Plug-A-Pro reduces risk with staged contact sharing, written quotes, photo evidence, and manual support review.",
 });
 
 const CUSTOMER_PROTECTIONS = [
@@ -28,8 +28,8 @@ const CUSTOMER_PROTECTIONS = [
   },
   {
     icon: UserCheck,
-    title: "Workers are manually reviewed",
-    body: "Every worker who applies goes through a manual review before their profile goes live. We check the skills they claim, the areas they cover, and any available references or prior work evidence.",
+    title: "Applications are manually reviewed",
+    body: "Every worker who applies goes through a manual review before their profile goes live. We record the work types they claim, the areas they cover, and any references or prior work evidence they choose to share. Unless a field says otherwise, profile details remain provider-supplied information.",
   },
   {
     icon: FileText,
@@ -39,7 +39,7 @@ const CUSTOMER_PROTECTIONS = [
   {
     icon: Camera,
     title: "Before and after photos on every job",
-    body: "Workers are required to attach before and after photos to the job record. If a dispute arises about the quality or completeness of work, there is photographic evidence from the site.",
+    body: "Workers are required to attach before and after photos to the job record. If a dispute arises about what happened on site, there is photographic evidence attached to the platform history.",
   },
 ];
 
@@ -105,7 +105,7 @@ export default function TrustPage() {
           Built on accountability. For both sides.
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto text-lg">
-          Plug-A-Pro protects customers by documenting everything and screening workers. It protects workers by documenting agreements and keeping a clean service record. Everyone benefits from a system that keeps both sides accountable.
+          Plug-A-Pro reduces risk by documenting agreements, delaying direct contact until the job is moving, and keeping the job record in writing. It does not guarantee the identity, licensing, safety, or workmanship of a provider unless a specific field says that check happened.
         </p>
       </div>
 
@@ -138,7 +138,7 @@ export default function TrustPage() {
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-3">How we protect customers</h2>
           <p className="text-muted-foreground mb-10 max-w-xl">
-            Letting a stranger into your home requires trust. These are the safeguards in place.
+            Letting a stranger into your home requires judgment. These are the platform controls that help customers make a better-informed decision.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {CUSTOMER_PROTECTIONS.map((p) => {
@@ -171,7 +171,7 @@ export default function TrustPage() {
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-3">How we protect workers</h2>
           <p className="text-muted-foreground mb-10 max-w-xl">
-            Independent workers take on real risk with every job. We document agreements so workers aren&apos;t left exposed.
+            Independent workers take on real risk with every job. We document agreements so workers are less exposed to unclear scope and payment disputes.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {WORKER_PROTECTIONS.map((p) => {
@@ -259,7 +259,7 @@ export default function TrustPage() {
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              Workers are responsible for the quality of their own work. Plug-A-Pro provides the framework: reviews, photos, and written quotes. We do not warrant the outcome of any job.
+              Workers are responsible for the quality and legality of their own work. Plug-A-Pro provides the framework: profiles, written quotes, photos, ratings, and support review of the record we hold. We do not warrant the outcome of any job.
             </li>
           </ul>
           <div className="mt-6 pt-6 border-t border-border/40">

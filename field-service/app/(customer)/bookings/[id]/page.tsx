@@ -292,6 +292,23 @@ export default async function BookingDetailPage({
         </CardContent>
       </Card>
 
+      {booking.payment && (
+        <Card>
+          <CardContent className="p-4 space-y-2 text-sm">
+            <p className="font-medium">Payment record</p>
+            {booking.payment.collectionMode === 'PLATFORM_CHECKOUT' ? (
+              <p className="text-muted-foreground">
+                Plug-A-Pro created an online checkout record for this booking. Status: <span className="font-medium text-foreground">{booking.payment.status.toLowerCase().replace(/_/g, ' ')}</span>.
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                Plug-A-Pro recorded this booking without taking online payment. Payment may still be settled directly with the provider or confirmed offline through support.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Pending approval */}
       {currentJobStatus === 'AWAITING_APPROVAL' && booking.job?.extras[0] && (
         <div className="rounded-xl border border-orange-300 bg-orange-50 dark:bg-orange-900/10 p-4 space-y-3">

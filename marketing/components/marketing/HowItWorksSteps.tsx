@@ -12,14 +12,14 @@ const STEPS = [
     number: "02",
     title: "Get matched to a nearby worker",
     description:
-      "We find available, rated workers near you who do that type of job. A lead is sent to matching workers. The first to accept, or the one you choose, takes the job.",
+      "We find available workers near you whose profile matches that type of job. A lead is sent to matching workers. The first to accept, or the one you choose, takes the job.",
     detail: "Your personal number is not shared at this stage.",
   },
   {
     number: "03",
     title: "Agree on price, book, done",
     description:
-      "The worker visits to inspect if needed, or sends a quote directly. You approve before any work starts. Pay after it's done, safely and with a record.",
+      "The worker visits to inspect if needed, or sends a quote directly. You approve before any work starts. Payment follows the written quote and booking flow used for that job.",
     detail: "Extra work requires your explicit approval before it begins.",
   },
 ];

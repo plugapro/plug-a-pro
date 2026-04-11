@@ -8,6 +8,7 @@ const { mockDb, mockInitializeBookingPayment } = vi.hoisted(() => ({
     match: { update: vi.fn() },
     booking: { create: vi.fn() },
     job: { create: vi.fn() },
+    technicianScheduleItem: { create: vi.fn(), updateMany: vi.fn() },
   },
   mockInitializeBookingPayment: vi.fn(),
 }))
@@ -26,6 +27,7 @@ describe('processQuoteDecision', () => {
     mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) =>
       callback(mockDb as any)
     )
+    mockDb.technicianScheduleItem.updateMany.mockResolvedValue({})
   })
 
   it('stores customer feedback when a quote is declined for revision', async () => {
@@ -40,6 +42,7 @@ describe('processQuoteDecision', () => {
         jobRequest: {
           category: 'plumbing',
           customer: { id: 'customer-1', phone: '+27999999999', name: 'Customer' },
+          address: { suburb: 'Sandton', city: 'Johannesburg', lat: null, lng: null },
         },
       },
     })
@@ -84,6 +87,7 @@ describe('processQuoteDecision', () => {
         jobRequest: {
           category: 'plumbing',
           customer: { id: 'customer-1', phone: '+27999999999', name: 'Customer' },
+          address: { suburb: 'Sandton', city: 'Johannesburg', lat: null, lng: null },
         },
       },
     })

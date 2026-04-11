@@ -37,6 +37,7 @@ export type FlowStep =
   | 'reg_collect_area'
   | 'reg_collect_experience'
   | 'reg_collect_availability'
+  | 'reg_collect_evidence'
   | 'reg_confirm'
   | 'reg_pending'
   | 'reg_edit_field'          // field-level edit selection
@@ -96,6 +97,7 @@ export interface ConversationData {
   serviceAreas?: string[]
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"
   availability?: string[]       // ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+  evidenceNote?: string
 
   // Provider job management
   pendingJobId?: string

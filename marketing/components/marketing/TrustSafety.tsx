@@ -20,8 +20,8 @@ const TRUST_POINTS: {
   },
   {
     icon: UserCheck,
-    title: "Workers are screened before activation",
-    body: "Every provider goes through a review process before they can receive leads. Suspended workers cannot return without re-review.",
+    title: "Applications are reviewed before activation",
+    body: "A provider must complete an application review before receiving leads. This is an eligibility check for marketplace participation, not a promise of licensing, safety, or workmanship.",
   },
   {
     icon: FileText,
@@ -31,7 +31,7 @@ const TRUST_POINTS: {
   {
     icon: Camera,
     title: "Before and after photos on every job",
-    body: "Workers upload photos at the start and end of every job. Kept on record for your protection and theirs.",
+    body: "Workers upload photos at the start and end of every job. They stay on record to help with job history and dispute review.",
   },
   {
     icon: MessageCircle,
@@ -54,10 +54,10 @@ export function TrustSafety() {
             Trust & safety
           </p>
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Built for two strangers to work together safely
+            Built to reduce risk with clearer records
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            Every feature is designed so neither side has to take an uncomfortable leap of faith.
+            Plug-A-Pro does not remove every risk, but it does create clearer records, staged contact sharing, and better evidence than an informal offline deal.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

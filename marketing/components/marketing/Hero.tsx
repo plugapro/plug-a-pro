@@ -42,9 +42,9 @@ export function Hero() {
           Get home help done right. Nearby workers, quoted in writing, on WhatsApp.
         </h1>
         <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-          Describe your job. We find a vetted local worker near you. You approve
-          the price before anything starts. No app downloads, no strangers
-          cold-calling. Just WhatsApp.
+          Describe your job. We match you with nearby independent workers, show
+          you the provider profile and quote, and keep the decision in writing
+          before anything starts. No app downloads. Just WhatsApp.
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button

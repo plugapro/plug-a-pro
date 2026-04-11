@@ -4,6 +4,9 @@
 
 import { db } from './db'
 import { initializeBookingPayment, type PaymentCollectionMode } from './payments'
+import { addMinutes, format } from 'date-fns'
+import { MATCHING_CONFIG } from './matching/config'
+import type { Prisma } from '@prisma/client'
 
 export type QuoteDecisionResult =
   | {
@@ -55,6 +58,87 @@ export async function expireStaleQuotes(): Promise<number> {
   return count
 }
 
+export async function createBookingArtifactsForApprovedQuote(
+  tx: Prisma.TransactionClient,
+  params: {
+    quoteId: string
+    matchId: string
+    providerId: string
+    category: string
+    jobRequestId: string
+    address: {
+      suburb?: string | null
+      city?: string | null
+      lat?: number | null
+      lng?: number | null
+    } | null
+    scheduledDate: Date
+    estimatedDurationMinutes?: number | null
+    source: 'quote_approval' | 'assignment_acceptance'
+  }
+) {
+  const scheduledStartAt = params.scheduledDate
+  const estimatedDurationMinutes = Math.max(
+    MATCHING_CONFIG.defaultDurationMinutes,
+    params.estimatedDurationMinutes ?? MATCHING_CONFIG.defaultDurationMinutes,
+  )
+  const scheduledEndAt = addMinutes(scheduledStartAt, estimatedDurationMinutes)
+  const scheduledWindow = `${format(scheduledStartAt, 'HH:mm')}-${format(scheduledEndAt, 'HH:mm')}`
+
+  const booking = await tx.booking.create({
+    data: {
+      matchId: params.matchId,
+      quoteId: params.quoteId,
+      status: 'SCHEDULED',
+      scheduledDate: params.scheduledDate,
+      scheduledStartAt,
+      scheduledEndAt,
+      scheduledWindow,
+    },
+  })
+
+  await tx.job.create({
+    data: { bookingId: booking.id, providerId: params.providerId, status: 'SCHEDULED' },
+  })
+
+  await tx.technicianScheduleItem.updateMany({
+    where: {
+      providerId: params.providerId,
+      jobRequestId: params.jobRequestId,
+      itemType: 'ASSIGNMENT_HOLD',
+      status: 'ACTIVE',
+    },
+    data: {
+      status: 'RELEASED',
+      updatedAt: new Date(),
+    },
+  })
+
+  await tx.technicianScheduleItem.create({
+    data: {
+      providerId: params.providerId,
+      bookingId: booking.id,
+      jobRequestId: params.jobRequestId,
+      itemType: 'BOOKING',
+      title: `${params.category} booking`,
+      startAt: scheduledStartAt,
+      endAt: scheduledEndAt,
+      source: params.source,
+      locationLabel: [params.address?.suburb, params.address?.city].filter(Boolean).join(', '),
+      lat: params.address?.lat ?? undefined,
+      lng: params.address?.lng ?? undefined,
+    },
+  })
+
+  return {
+    bookingId: booking.id,
+    scheduledDate: params.scheduledDate,
+    scheduledStartAt,
+    scheduledEndAt,
+    scheduledWindow,
+  }
+}
+
 export async function processQuoteDecision(
   quoteId: string,
   action: 'approve' | 'decline',
@@ -71,6 +155,7 @@ export async function processQuoteDecision(
               jobRequest: {
                 include: {
                   customer: { select: { id: true, phone: true, name: true } },
+                  address: true,
                 },
               },
             },
@@ -129,21 +214,25 @@ export async function processQuoteDecision(
       }
 
       const scheduledDate = quote.preferredDate
-
-      const booking = await tx.booking.create({
-        data: { matchId: quote.matchId, quoteId: quote.id, status: 'SCHEDULED', scheduledDate },
-      })
-
-      await tx.job.create({
-        data: { bookingId: booking.id, providerId: provider.id, status: 'SCHEDULED' },
+      const booking = await createBookingArtifactsForApprovedQuote(tx, {
+        quoteId: quote.id,
+        matchId: quote.matchId,
+        providerId: provider.id,
+        category,
+        jobRequestId: quote.match.jobRequest.id,
+        address: quote.match.jobRequest.address,
+        scheduledDate,
+        estimatedDurationMinutes:
+          Math.round((quote.estimatedHours ?? 0) * 60) || MATCHING_CONFIG.defaultDurationMinutes,
+        source: 'quote_approval',
       })
 
       return {
         action: 'approved' as const,
         quoteId,
         matchId: quote.matchId,
-        bookingId: booking.id,
-        scheduledDate,
+        bookingId: booking.bookingId,
+        scheduledDate: booking.scheduledDate,
         provider,
         customer,
         category,

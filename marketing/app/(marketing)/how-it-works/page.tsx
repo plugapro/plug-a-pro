@@ -58,7 +58,7 @@ const WORKER_STEPS = [
     step: "2",
     title: "We check your application",
     detail:
-      "We look at what you sent before we start sending you work. Once you're approved, your profile goes live and you're ready to get jobs in your area.",
+      "We review what you sent before we start sending you work. If your application is accepted for marketplace participation, your profile goes live and you're ready to get jobs in your area.",
   },
   {
     step: "3",

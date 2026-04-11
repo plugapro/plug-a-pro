@@ -6,6 +6,9 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
+import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
+import { buildProviderTrustSignals } from '@/lib/provider-trust'
 
 export const metadata = buildMetadata({ title: 'Provider Profile', noIndex: true })
 
@@ -46,8 +49,11 @@ export default async function CustomerProviderProfilePage({
       id: true,
       name: true,
       bio: true,
+      experience: true,
       skills: true,
       serviceAreas: true,
+      evidenceNote: true,
+      portfolioUrls: true,
       verified: true,
     },
   })
@@ -89,6 +95,16 @@ export default async function CustomerProviderProfilePage({
   const averageRating = reviews.length > 0
     ? reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length
     : null
+  const trustSignals = buildProviderTrustSignals({
+    marketplaceApproved: provider.verified,
+    skills: provider.skills,
+    serviceAreas: provider.serviceAreas,
+    experience: provider.experience,
+    evidenceNote: provider.evidenceNote,
+    completedJobs: jobs.length,
+    reviewCount: reviews.length,
+    averageRating,
+  })
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
@@ -98,7 +114,7 @@ export default async function CustomerProviderProfilePage({
         </Link>
         <h1 className="text-xl font-semibold mt-1">{provider.name}</h1>
         <p className="text-sm text-muted-foreground">
-          {provider.verified ? 'Verified provider' : 'Provider profile'}
+          {provider.verified ? 'Reviewed marketplace profile' : 'Provider profile'}
         </p>
       </div>
 
@@ -110,15 +126,31 @@ export default async function CustomerProviderProfilePage({
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {provider.bio && <p>{provider.bio}</p>}
-          {provider.skills.length > 0 && <Row label="Skills">{provider.skills.join(', ')}</Row>}
-          {provider.serviceAreas.length > 0 && (
-            <Row label="Service areas">{provider.serviceAreas.join(', ')}</Row>
+          <ProviderTrustSignals signals={trustSignals} />
+          {provider.portfolioUrls.length > 0 && (
+            <div className="rounded-lg border px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-medium">Portfolio links</p>
+                <span className="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Provider-shared evidence
+                </span>
+              </div>
+              <div className="mt-2 space-y-2">
+                {provider.portfolioUrls.map((url) => (
+                  <a
+                    key={url}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block break-all text-sm text-primary hover:underline"
+                  >
+                    {url}
+                  </a>
+                ))}
+              </div>
+            </div>
           )}
-          <Row label="Completed jobs">{jobs.length}</Row>
-          <Row label="Average rating">
-            {averageRating ? `${averageRating.toFixed(1)} / 5` : 'No ratings yet'}
-          </Row>
-          <Row label="Reviews">{reviews.length}</Row>
+          <ProviderTrustNote marketplaceApproved={provider.verified} className="pt-1" />
         </CardContent>
       </Card>
 
@@ -160,15 +192,6 @@ export default async function CustomerProviderProfilePage({
           )}
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right">{children}</span>
     </div>
   )
 }

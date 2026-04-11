@@ -11,7 +11,7 @@ import React from "react";
 const CUSTOMER_PROBLEMS: { icon: React.ElementType; label: string; problem: string }[] = [
   {
     icon: SearchX,
-    label: "No trusted way to find local help",
+    label: "No clear way to compare local help",
     problem: "Searching online gives big national companies, not nearby workers",
   },
   {
@@ -27,7 +27,7 @@ const CUSTOMER_PROBLEMS: { icon: React.ElementType; label: string; problem: stri
   {
     icon: Lock,
     label: "Your number shared with strangers",
-    problem: "No safe way to communicate without exposing personal contact details",
+    problem: "No structured way to communicate without exposing personal contact details too early",
   },
 ];
 
@@ -113,13 +113,13 @@ export function ProblemStatement() {
           <ProblemColumn
             label="For customers"
             headline="Getting home help shouldn't be this hard"
-            body="Finding a trustworthy worker for a small job is harder than it should be, and too risky when you don't know who's coming to your home."
+            body="Finding a nearby worker for a small job is harder than it should be, especially when you cannot see enough detail to make an informed choice."
             items={CUSTOMER_PROBLEMS}
           />
           <ProblemColumn
             label="For workers"
             headline="Skills aren't the problem. Access to work is."
-            body="Skilled independent workers across South Africa have the ability but lack a safe, structured way to connect with paying customers."
+            body="Skilled independent workers across South Africa have the ability but lack a structured, traceable way to connect with paying customers."
             items={PROVIDER_PROBLEMS}
           />
         </div>

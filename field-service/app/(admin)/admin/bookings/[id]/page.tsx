@@ -249,7 +249,11 @@ export default async function BookingDetailPage({
                 <span className="text-muted-foreground font-medium">Payment</span>
                 <div className="col-span-2 flex items-center gap-2">
                   {booking.payment ? (
-                    <PaymentStatusBadge status={booking.payment.status} />
+                    <PaymentStatusBadge
+                      status={booking.payment.status}
+                      pspProvider={booking.payment.pspProvider}
+                      collectionMode={booking.payment.collectionMode}
+                    />
                   ) : (
                     <span className="text-muted-foreground">No payment record</span>
                   )}
@@ -544,7 +548,15 @@ function formatJobStatus(status: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function PaymentStatusBadge({ status }: { status: string }) {
+function PaymentStatusBadge({
+  status,
+  pspProvider,
+  collectionMode,
+}: {
+  status: string
+  pspProvider?: string | null
+  collectionMode?: string | null
+}) {
   const map: Record<string, string> = {
     PENDING:            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
     AUTHORISED:         'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
@@ -553,7 +565,10 @@ function PaymentStatusBadge({ status }: { status: string }) {
     REFUNDED:           'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
     PARTIALLY_REFUNDED: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
   }
-  const label = status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, ' ')
+  const label =
+    status === 'PENDING' && collectionMode === 'OFFLINE_RECORDED'
+      ? 'Offline follow-through'
+      : status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, ' ')
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${map[status] ?? 'bg-zinc-100 text-zinc-600'}`}>
       {label}

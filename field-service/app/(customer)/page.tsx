@@ -14,8 +14,8 @@ import {
 } from 'lucide-react'
 
 export const metadata = buildMetadata({
-  title: 'Request trusted home services',
-  description: 'Fast. Reliable. Guaranteed. Request a job online in minutes.',
+  title: 'Request local home services',
+  description: 'Describe the job, review written quotes, and choose a nearby provider.',
 })
 
 const CATEGORIES = [
@@ -37,13 +37,13 @@ export default async function CustomerHomePage() {
         <div className="mx-auto max-w-2xl">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-400">
             <Star className="h-3 w-3 text-amber-400" />
-            Trusted by homeowners
+            Built for written quotes and tracked jobs
           </div>
           <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-            Request trusted home services
+            Request local home services
           </h1>
           <p className="mb-8 text-lg font-medium text-zinc-400 sm:text-xl">
-            Fast. Reliable. Guaranteed.
+            Nearby providers. Written quotes. Clear records.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Button asChild size="lg" className="text-base font-semibold">
@@ -71,7 +71,7 @@ export default async function CustomerHomePage() {
                 <Wrench className="h-5 w-5" />
               </div>
               <p className="mb-1 font-semibold">Choose a category</p>
-              <p className="text-sm text-muted-foreground">Browse our range of professional home services.</p>
+              <p className="text-sm text-muted-foreground">Choose the type of help you need.</p>
             </div>
             <div className="flex flex-col items-center text-center">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -85,7 +85,7 @@ export default async function CustomerHomePage() {
                 <Star className="h-5 w-5" />
               </div>
               <p className="mb-1 font-semibold">We&apos;ll be there</p>
-              <p className="text-sm text-muted-foreground">A vetted professional arrives on time, every time.</p>
+              <p className="text-sm text-muted-foreground">We match your request to a nearby provider and keep the job record in writing.</p>
             </div>
           </div>
         </div>
@@ -96,7 +96,7 @@ export default async function CustomerHomePage() {
         <div className="mx-auto max-w-3xl">
           <h2 className="mb-2 text-2xl font-bold tracking-tight">Our services</h2>
           <p className="mb-10 text-sm text-muted-foreground">
-            Everything your home needs, requested online in minutes.
+            Request a nearby provider in a few taps and review the quote before work starts.
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2">

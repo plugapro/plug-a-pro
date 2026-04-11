@@ -81,6 +81,8 @@ async function main() {
       name:         'Sipho Dlamini',
       skills:       ['Plumbing', 'General Maintenance'],
       serviceAreas: ['Sandton', 'Randburg', 'Midrand'],
+      equipmentTags: ['plumbing-kit', 'basic-toolkit'],
+      vehicleTypes: ['bakkie'],
       active:       true,
       verified:     true,
     },
@@ -89,6 +91,8 @@ async function main() {
       name:         'Thabo Mokoena',
       skills:       ['Electrical', 'Painting'],
       serviceAreas: ['Sandton', 'Centurion', 'Midrand'],
+      equipmentTags: ['multimeter', 'ladder'],
+      vehicleTypes: ['van'],
       active:       true,
       verified:     true,
     },
@@ -97,6 +101,8 @@ async function main() {
       name:         'Nomsa Zulu',
       skills:       ['Cleaning', 'Gardening'],
       serviceAreas: ['Claremont', 'Bellville', 'Observatory'],
+      equipmentTags: ['cleaning-kit', 'garden-tools'],
+      vehicleTypes: ['hatchback'],
       active:       true,
       verified:     true,
     },
@@ -106,7 +112,24 @@ async function main() {
     await prisma.provider.upsert({
       where:  { phone: p.phone },
       create: p,
-      update: { name: p.name, skills: p.skills, serviceAreas: p.serviceAreas },
+      update: {
+        name: p.name,
+        skills: p.skills,
+        serviceAreas: p.serviceAreas,
+        equipmentTags: p.equipmentTags,
+        vehicleTypes: p.vehicleTypes,
+        averageRating: 4.6,
+        reliabilityScore: 0.82,
+        completedJobsCount: 12,
+        onTimeRate: 0.91,
+        acceptanceRate: 0.88,
+        complaintCount: 1,
+        complaintRate: 0.08,
+        providerCancellationCount: 1,
+        cancellationRate: 0.08,
+        lateArrivalCount: 1,
+        punctualityScore: 0.9,
+      },
     })
   }
 
@@ -115,6 +138,74 @@ async function main() {
   )
 
   console.log(`✔ Providers: ${provider1.name}, ${provider2.name}, ${provider3.name}`)
+
+  for (const provider of [provider1, provider2, provider3]) {
+    await prisma.technicianSkill.deleteMany({ where: { providerId: provider.id } })
+    await prisma.technicianServiceArea.deleteMany({ where: { providerId: provider.id } })
+    await prisma.technicianAvailability.deleteMany({ where: { providerId: provider.id } })
+
+    await prisma.technicianSkill.createMany({
+      data: provider.skills.map((skillTag) => ({
+        providerId: provider.id,
+        skillTag,
+        active: true,
+      })),
+    })
+
+    await prisma.technicianServiceArea.createMany({
+      data: provider.serviceAreas.map((label) => ({
+        providerId: provider.id,
+        label,
+        areaType: 'SUBURB',
+        active: true,
+      })),
+    })
+
+    const radiusPreset =
+      provider.id === provider1.id
+        ? { lat: -26.1076, lng: 28.0567, radiusKm: 18 }
+        : provider.id === provider2.id
+          ? { lat: -25.9992, lng: 28.1263, radiusKm: 20 }
+          : { lat: -33.9698, lng: 18.4637, radiusKm: 14 }
+
+    await prisma.technicianServiceArea.create({
+      data: {
+        providerId: provider.id,
+        label: `${provider.name} radius`,
+        city: provider.serviceAreas[0] ?? null,
+        areaType: 'RADIUS',
+        lat: radiusPreset.lat,
+        lng: radiusPreset.lng,
+        radiusKm: radiusPreset.radiusKm,
+        active: true,
+      },
+    })
+
+    await prisma.technicianAvailability.create({
+      data: {
+        providerId: provider.id,
+        availabilityState: provider.availableNow ? 'AVAILABLE' : 'OFFLINE',
+      },
+    })
+  }
+
+  await prisma.technicianCertification.createMany({
+    data: [
+      {
+        providerId: provider1.id,
+        certificationCode: 'PLUMBING_SELF_DECLARED',
+        certificationName: 'Plumbing experience shared by provider',
+        status: 'SELF_DECLARED',
+      },
+      {
+        providerId: provider2.id,
+        certificationCode: 'WIREMAN',
+        certificationName: 'Wireman licence',
+        status: 'REVIEWED',
+      },
+    ],
+    skipDuplicates: true,
+  })
 
   // ── Provider schedules (Mon–Fri 08:00–17:00) ──────────────────────────────────
   for (const provider of [provider1, provider2, provider3]) {

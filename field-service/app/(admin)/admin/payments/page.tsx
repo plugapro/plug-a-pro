@@ -8,7 +8,7 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
-import type { PaymentStatus } from '@prisma/client'
+import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
@@ -84,6 +84,11 @@ const FILTER_OPTIONS: { value: PaymentStatus | 'ALL'; label: string }[] = [
   { value: 'FAILED',  label: 'Failed' },
 ]
 
+const COLLECTION_LABEL: Record<PaymentCollectionMode, string> = {
+  OFFLINE_RECORDED: 'Offline / recorded only',
+  PLATFORM_CHECKOUT: 'Platform checkout',
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function PaymentsPage({
@@ -125,7 +130,9 @@ export default async function PaymentsPage({
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Payments</h1>
-        <p className="text-sm text-muted-foreground mt-1">{payments.length} payments</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          {payments.length} payments. Offline-recorded rows are booking trace records only until the money is actually collected and marked paid.
+        </p>
       </div>
 
       {/* Status filter tabs */}
@@ -158,6 +165,7 @@ export default async function PaymentsPage({
               <th className="text-left px-4 py-3 font-medium">Job Request</th>
               <th className="text-left px-4 py-3 font-medium">Amount</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
+              <th className="text-left px-4 py-3 font-medium">Collection</th>
               <th className="text-left px-4 py-3 font-medium">PSP Ref</th>
               <th className="text-left px-4 py-3 font-medium">Paid At</th>
               <th className="px-4 py-3"></th>
@@ -166,7 +174,7 @@ export default async function PaymentsPage({
           <tbody className="divide-y">
             {payments.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                   No payments found
                 </td>
               </tr>
@@ -194,6 +202,12 @@ export default async function PaymentsPage({
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[p.status]}`}>
                       {STATUS_LABEL[p.status]}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {COLLECTION_LABEL[p.collectionMode]}
+                    {p.pspProvider && (
+                      <p className="mt-1 font-mono text-[11px] text-muted-foreground">{p.pspProvider}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                     {p.pspReference ? p.pspReference.slice(-12) : '—'}

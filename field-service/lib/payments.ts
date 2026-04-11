@@ -14,7 +14,7 @@ export type PaymentCollectionMode = 'bypass' | 'checkout'
 
 export interface BookingPaymentSetup {
   mode: PaymentCollectionMode
-  status: 'AUTHORISED' | 'PENDING'
+  status: 'PENDING'
   checkoutUrl: string | null
 }
 
@@ -362,6 +362,7 @@ export async function createCheckout(params: CheckoutParams): Promise<CheckoutSe
     create: {
       bookingId: params.bookingId,
       status: 'PENDING',
+      collectionMode: 'PLATFORM_CHECKOUT',
       amount: params.amount / 100,
       currency: params.currency,
       pspProvider: process.env.PSP_PROVIDER ?? 'peach',
@@ -369,6 +370,7 @@ export async function createCheckout(params: CheckoutParams): Promise<CheckoutSe
       checkoutUrl: session.url,
     },
     update: {
+      collectionMode: 'PLATFORM_CHECKOUT',
       pspCheckoutId: session.id,
       checkoutUrl: session.url,
       status: 'PENDING',
@@ -388,22 +390,26 @@ export async function initializeBookingPayment(params: {
   const mode = getPaymentCollectionMode()
 
   if (mode === 'bypass') {
+    // Launch-mode bypass keeps a payment record for traceability, but no online
+    // payment has been collected or guaranteed by the platform at this stage.
     await db.payment.upsert({
       where: { bookingId: params.bookingId },
       create: {
         bookingId: params.bookingId,
-        status: 'AUTHORISED',
+        status: 'PENDING',
+        collectionMode: 'OFFLINE_RECORDED',
         amount: params.amountRand,
         currency: 'ZAR',
-        pspProvider: 'launch_mode',
+        pspProvider: null,
         metadata: {
           collectionMode: 'bypass',
           note: 'Online collection suppressed during adoption phase',
         },
       },
       update: {
-        status: 'AUTHORISED',
-        pspProvider: 'launch_mode',
+        status: 'PENDING',
+        collectionMode: 'OFFLINE_RECORDED',
+        pspProvider: null,
         metadata: {
           collectionMode: 'bypass',
           note: 'Online collection suppressed during adoption phase',
@@ -413,7 +419,7 @@ export async function initializeBookingPayment(params: {
 
     return {
       mode,
-      status: 'AUTHORISED',
+      status: 'PENDING',
       checkoutUrl: null,
     }
   }
