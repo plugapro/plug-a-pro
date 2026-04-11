@@ -96,11 +96,32 @@ describe('matching-engine compatibility wrappers', () => {
     })
   })
 
-  it('dispatchLeads propagates errors from the assignment service', async () => {
+  it('dispatchLeads propagates non-schema errors from the assignment service', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue({ id: 'jr-1', status: 'OPEN' })
     mockRunAssignmentForJobRequest.mockRejectedValue(new Error('Service unavailable'))
 
     await expect(dispatchLeads('jr-1')).rejects.toThrow('Service unavailable')
+  })
+
+  it('dispatchLeads falls back to legacy when assignment_holds table is missing (P2021)', async () => {
+    mockDb.jobRequest.findUnique
+      .mockResolvedValueOnce({ id: 'jr-1', status: 'OPEN' })
+      .mockResolvedValueOnce({
+        id: 'jr-1', status: 'OPEN', category: 'Plumbing', title: 'Burst pipe',
+        description: '', customer: { name: 'Test' }, address: { suburb: 'Randburg', city: 'Johannesburg' },
+      })
+    mockRunAssignmentForJobRequest.mockRejectedValue({ code: 'P2021' })
+    mockDb.provider.findMany.mockResolvedValue([
+      { id: 'p-1', phone: '+27799887766', availableNow: true, skills: ['plumbing'], serviceAreas: ['randburg'] },
+    ])
+    mockDb.lead.findMany.mockResolvedValue([])
+    mockDb.lead.create.mockResolvedValue({ id: 'lead-1', expiresAt: new Date(Date.now() + 3_600_000) })
+    mockDb.jobRequest.updateMany.mockResolvedValue({ count: 1 })
+
+    const result = await dispatchLeads('jr-1')
+
+    expect(result.leadsDispatched).toBe(1)
+    expect(mockDb.lead.create).toHaveBeenCalledOnce()
   })
 
   it('declineLead treats expired or taken offers as a no-op for compatibility', async () => {

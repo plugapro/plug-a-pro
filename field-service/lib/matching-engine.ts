@@ -37,6 +37,16 @@ type LegacyDispatchJobRequest = {
   address: { suburb: string | null; city: string | null } | null
 }
 
+// TODO: remove once pending migrations (assignment_holds, match_attempts, dispatch_decisions,
+// whatsapp_preferences, assurance_second_sweep) are applied to production via `prisma migrate deploy`.
+// This guard is re-instated to protect production while the schema gap exists.
+// Tracks Prisma errors P2021 (table missing) and P2022 (column missing).
+function isSchemaCompatError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = 'code' in error ? (error as { code?: string }).code : undefined
+  return code === 'P2021' || code === 'P2022'
+}
+
 function firstName(name: string | null | undefined) {
   return name?.trim().split(/\s+/)[0] || 'Customer'
 }
@@ -340,17 +350,23 @@ export async function dispatchLeads(jobRequestId: string): Promise<DispatchResul
     return { jobRequestId, leadsDispatched: 0, candidatesFound: 0, noMatch: true }
   }
 
-  const result = await runAssignmentForJobRequest({
-    jobRequestId,
-    actor: { actorId: 'system', actorRole: 'system' },
-    mode: 'AUTO_ASSIGN',
-  })
+  try {
+    const result = await runAssignmentForJobRequest({
+      jobRequestId,
+      actor: { actorId: 'system', actorRole: 'system' },
+      mode: 'AUTO_ASSIGN',
+    })
 
-  return {
-    jobRequestId,
-    leadsDispatched: result.assignmentHoldId ? 1 : 0,
-    candidatesFound: result.candidates.length,
-    noMatch: result.candidates.length === 0,
+    return {
+      jobRequestId,
+      leadsDispatched: result.assignmentHoldId ? 1 : 0,
+      candidatesFound: result.candidates.length,
+      noMatch: result.candidates.length === 0,
+    }
+  } catch (error) {
+    if (!isSchemaCompatError(error)) throw error
+    console.warn('[matching-engine] assignment_holds schema not yet migrated — using legacy dispatch')
+    return dispatchLeadsLegacy(jobRequestId)
   }
 }
 
@@ -359,17 +375,19 @@ export async function acceptLead(params: {
   providerId: string
   inspectionNeeded?: boolean
 }): Promise<LeadAcceptanceResult> {
-  const result = await acceptAssignmentOffer(params)
-
-  if (!result.ok) {
-    return result
-  }
-
-  return {
-    ok: true,
-    leadId: params.leadId,
-    matchId: result.matchId ?? '',
-    inspectionNeeded: params.inspectionNeeded === true,
+  try {
+    const result = await acceptAssignmentOffer(params)
+    if (!result.ok) return result
+    return {
+      ok: true,
+      leadId: params.leadId,
+      matchId: result.matchId ?? '',
+      inspectionNeeded: params.inspectionNeeded === true,
+    }
+  } catch (error) {
+    if (!isSchemaCompatError(error)) throw error
+    console.warn('[matching-engine] assignment schema not yet migrated — using legacy acceptLead')
+    return acceptLeadLegacy(params)
   }
 }
 
@@ -377,19 +395,27 @@ export async function declineLead(params: {
   leadId: string
   providerId: string
 }): Promise<{ ok: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
-  const result = await rejectAssignmentOffer(params)
-
-  if (!result.ok) {
-    if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') {
-      return { ok: true }
+  try {
+    const result = await rejectAssignmentOffer(params)
+    if (!result.ok) {
+      if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') return { ok: true }
+      return { ok: false, reason: result.reason }
     }
-    return { ok: false, reason: result.reason }
+    return { ok: true }
+  } catch (error) {
+    if (!isSchemaCompatError(error)) throw error
+    console.warn('[matching-engine] assignment schema not yet migrated — using legacy declineLead')
+    return declineLeadLegacy(params)
   }
-
-  return { ok: true }
 }
 
 export async function expireStaleLeads(): Promise<number> {
-  const result = await processPendingAssignmentWorkflows()
-  return result.expiredOffers
+  try {
+    const result = await processPendingAssignmentWorkflows()
+    return result.expiredOffers
+  } catch (error) {
+    if (!isSchemaCompatError(error)) throw error
+    console.warn('[matching-engine] assignment schema not yet migrated — using legacy expireStaleLeads')
+    return expireStaleLeadsLegacy()
+  }
 }
