@@ -97,8 +97,9 @@ export const TEMPLATES = {
     category: 'UTILITY',
     description: 'Sent when technician status changes to EN_ROUTE',
     // {{1}} customer name, {{2}} technician name, {{3}} ETA
+    // Body registered with Meta 2026-04-08 (original body was rejected — leading param).
     example:
-      'Hi {{1}}, {{2}} is on their way to you and should arrive in {{3}}.',
+      'Hi {{1}}, your Plug-A-Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!',
   },
 
   technician_arrived: {

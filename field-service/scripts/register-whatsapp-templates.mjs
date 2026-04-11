@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // ─── WhatsApp template registration script ───────────────────────────────────
-// Registers the 12 new Plug-A-Pro message templates via Meta Graph API.
+// Registers Plug-A-Pro message templates via Meta Graph API.
 //
-// The 9 templates already APPROVED in en_ZA are NOT re-submitted here:
-//   booking_confirmation, booking_reminder, booking_cancelled,
-//   technician_on_the_way, technician_arrived, extra_work_approval,
-//   job_completed, follow_up, quote_ready
+// As of 2026-04-08, all 21 production templates were registered against WABA
+// 104200042667877 (Kgolaentle Holdings, +27 69 355 2447). This script covered
+// Group B (12 templates); Group A (9 templates) were registered via inline
+// script during the same session. All 21 are PENDING or APPROVED on that WABA.
+//
+// NOTE: the comment below about "9 already APPROVED" referred to a different
+// registration assumption that was not accurate for WABA 104200042667877.
 //
 // Usage:
 //   WHATSAPP_ACCESS_TOKEN=<token> WHATSAPP_WABA_ID=<waba_id> node scripts/register-whatsapp-templates.mjs
