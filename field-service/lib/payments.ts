@@ -428,7 +428,7 @@ export async function initializeBookingPayment(params: {
     }
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   const session = await createCheckout({
     bookingId: params.bookingId,
     amount: Math.round(params.amountRand * 100),

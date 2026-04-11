@@ -163,6 +163,15 @@ export async function processInboundMessage(
       return
     }
 
+    // Provider-journey button IDs can arrive from any flow (e.g. registration sends
+    // pj_view_jobs after the "already registered" message). Force the correct flow so
+    // the handler that owns these buttons always processes them.
+    if (reply.id === 'pj_view_jobs' || reply.id === 'pj_toggle' ||
+        reply.id === 'pj_go_online' || reply.id === 'pj_go_offline') {
+      flow = 'provider_journey'
+      step = 'pj_toggle_available'
+    }
+
     // Route to appropriate flow (keyword overrides only when idle or expired)
     if (isReset || isExpired) {
       flow = 'idle'
@@ -513,7 +522,7 @@ export async function notifyProviderApplicationResult(params: {
   approved: boolean
   reason?: string
 }): Promise<void> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   if (params.approved) {
     // Use sendCtaUrl so the provider can tap directly into their portal
@@ -720,7 +729,7 @@ async function handleCancelFlow(
 
 async function handleMatchLeadResponse(phone: string, buttonId: string): Promise<void> {
   const { sendButtons, sendCtaUrl, sendText } = await import('./whatsapp-interactive')
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   const leadId = buttonId
     .replace('match_accept_', '')
@@ -823,7 +832,7 @@ async function handleProviderJobFlow(
   ctx: Parameters<typeof handleJobRequestFlow>[0]
 ): Promise<{ nextStep: FlowStep; nextData?: Partial<ConversationData> }> {
   const { sendButtons, sendCtaUrl, sendText, sendList } = await import('./whatsapp-interactive')
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   // ── "My jobs" list ──────────────────────────────────────────────────────────
   if (ctx.step === 'tech_job_list') {
@@ -1026,7 +1035,7 @@ export async function sendQuoteToClient(params: {
   approvalToken: string
 }): Promise<void> {
   const { sendButtons } = await import('./whatsapp-interactive')
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   const webLink = `${appUrl}/quotes/${params.approvalToken}`
 
   const materialsLine = params.materialsCost > 0
@@ -1049,7 +1058,7 @@ export async function sendQuoteToClient(params: {
 
 async function handleCustomerQuoteResponse(phone: string, buttonId: string): Promise<void> {
   const { sendText, sendCtaUrl } = await import('./whatsapp-interactive')
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   const quoteId = buttonId.replace('quote_accept_', '').replace('quote_decline_', '')
   const action = buttonId.startsWith('quote_accept_') ? 'approve' : 'decline'

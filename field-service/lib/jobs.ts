@@ -138,7 +138,7 @@ async function triggerSideEffects(params: {
   const providerName = job.provider?.name ?? 'Your provider'
 
   const customer = job.booking.match.jobRequest.customer
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   try {
     const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
@@ -281,7 +281,7 @@ export async function createExtraWork(params: {
 
   // Send approval request via WhatsApp
   const { sendExtraWorkApproval } = await import('./whatsapp')
-  const approvalUrl = `${process.env.NEXT_PUBLIC_APP_URL}/approve/${extra.approvalToken}`
+  const approvalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? '').trim()}/approve/${extra.approvalToken}`
 
   await sendExtraWorkApproval({
     bookingId: params.bookingId,

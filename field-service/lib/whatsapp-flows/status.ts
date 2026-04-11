@@ -180,7 +180,7 @@ async function showRequestStatus(
     ? JOB_STATUS_LABELS[jobStatus] ?? jobStatus
     : JOB_REQUEST_STATUS_LABELS[requestStatus] ?? requestStatus
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   log(`resolved status=${statusLabel} jobStatus=${jobStatus ?? 'none'} requestStatus=${requestStatus} appUrl=${appUrl || '(empty)'}`)
 

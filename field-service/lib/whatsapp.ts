@@ -775,7 +775,7 @@ export async function sendAdminNewApplication(params: {
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (!adminPhone) return // not configured — skip silently
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   const reviewUrl = `${appUrl}/admin/applications`
   const skillList = params.skills.join(', ') || 'Not specified'
   const areaList = params.serviceAreas.join(', ') || 'Not specified'
@@ -979,7 +979,7 @@ export async function sendAdminNoMatch(params: {
 }): Promise<void> {
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (!adminPhone) return
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   await sendText({
     to: adminPhone,
@@ -994,7 +994,7 @@ export async function sendAdminProviderDropped(params: {
 }): Promise<void> {
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (!adminPhone) return
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   await sendText({
     to: adminPhone,
