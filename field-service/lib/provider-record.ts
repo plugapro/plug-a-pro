@@ -1,3 +1,14 @@
+// Phone normalizer — keeps provider record lookups consistent regardless of
+// whether the caller supplies "+27821234567" or "0821234567".
+function normalizePhone(raw: string): string {
+  const stripped = raw.replace(/[\s\-()]/g, '')
+  if (stripped.startsWith('+')) return stripped
+  if (stripped.startsWith('0') && stripped.length === 10) {
+    return `+27${stripped.slice(1)}`
+  }
+  return stripped
+}
+
 type ProviderRecordSyncClient = {
   provider: {
     findUnique: (...args: any[]) => Promise<{ id: string } | null>
@@ -39,8 +50,9 @@ export async function syncProviderRecord(
   client: ProviderRecordSyncClient,
   input: SyncProviderRecordInput,
 ) {
+  const phone = normalizePhone(input.phone)
   const existing = await client.provider.findUnique({
-    where: { phone: input.phone },
+    where: { phone },
     select: { id: true },
   })
 
@@ -77,7 +89,7 @@ export async function syncProviderRecord(
           ($1, $2, $3, null, null, $4, $5, $6, $7, $8, null, $9, $10, $11)
       `,
       id,
-      input.phone,
+      phone,
       input.name,
       input.skills,
       input.serviceAreas,
@@ -92,7 +104,7 @@ export async function syncProviderRecord(
     await client.provider.createMany({
       data: {
         id,
-        phone: input.phone,
+        phone,
         name: input.name,
         userId: input.userId ?? null,
         skills: input.skills,
