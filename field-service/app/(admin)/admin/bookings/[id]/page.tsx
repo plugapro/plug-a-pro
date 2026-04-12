@@ -282,7 +282,7 @@ export default async function BookingDetailPage({
                           href={booking.invoice.pdfUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline"
+                          className="text-xs text-primary hover:underline"
                         >
                           View PDF
                         </a>
@@ -358,7 +358,7 @@ export default async function BookingDetailPage({
                       <ol className="space-y-2">
                         {booking.job.statusHistory.map((event: { id: string; fromStatus: string | null; toStatus: string; timestamp: Date; actorRole: string; notes?: string | null }) => (
                           <li key={event.id} className="flex items-start gap-3">
-                            <span className="mt-0.5 h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600 shrink-0 translate-y-1" />
+                            <span className="mt-0.5 h-2 w-2 rounded-full bg-primary/35 shrink-0 translate-y-1" />
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                                 <span className="font-medium">
@@ -557,35 +557,35 @@ function PaymentStatusBadge({
   pspProvider?: string | null
   collectionMode?: string | null
 }) {
-  const map: Record<string, string> = {
-    PENDING:            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    AUTHORISED:         'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    PAID:               'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-    FAILED:             'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-    REFUNDED:           'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
-    PARTIALLY_REFUNDED: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+  const map: Record<string, 'warning' | 'info' | 'success' | 'danger' | 'neutral'> = {
+    PENDING:            'warning',
+    AUTHORISED:         'info',
+    PAID:               'success',
+    FAILED:             'danger',
+    REFUNDED:           'neutral',
+    PARTIALLY_REFUNDED: 'neutral',
   }
   const label =
     status === 'PENDING' && collectionMode === 'OFFLINE_RECORDED'
       ? 'Offline follow-through'
       : status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, ' ')
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${map[status] ?? 'bg-zinc-100 text-zinc-600'}`}>
+    <Badge variant={map[status] ?? 'neutral'}>
       {label}
-    </span>
+    </Badge>
   )
 }
 
 function ApprovalStatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    PENDING:  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    APPROVED: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-    DECLINED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  const map: Record<string, 'warning' | 'success' | 'danger'> = {
+    PENDING:  'warning',
+    APPROVED: 'success',
+    DECLINED: 'danger',
   }
   const label = status.charAt(0) + status.slice(1).toLowerCase()
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap shrink-0 ${map[status] ?? 'bg-zinc-100 text-zinc-600'}`}>
+    <Badge variant={map[status] ?? 'neutral'}>
       {label}
-    </span>
+    </Badge>
   )
 }

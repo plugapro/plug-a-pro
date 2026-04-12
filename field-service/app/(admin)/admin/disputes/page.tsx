@@ -5,16 +5,20 @@ import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 
 export const metadata = buildMetadata({ title: 'Disputes', noIndex: true })
 
-const DISPUTE_STYLES: Record<string, string> = {
-  OPEN: 'bg-red-100 text-red-700',
-  UNDER_REVIEW: 'bg-amber-100 text-amber-700',
-  RESOLVED_CUSTOMER: 'bg-blue-100 text-blue-700',
-  RESOLVED_PROVIDER: 'bg-green-100 text-green-700',
-  RESOLVED_SPLIT: 'bg-purple-100 text-purple-700',
-  CLOSED: 'bg-zinc-100 text-zinc-700',
+const DISPUTE_STYLES: Record<string, 'danger' | 'warning' | 'info' | 'success' | 'brand' | 'neutral'> = {
+  OPEN: 'danger',
+  UNDER_REVIEW: 'warning',
+  RESOLVED_CUSTOMER: 'info',
+  RESOLVED_PROVIDER: 'success',
+  RESOLVED_SPLIT: 'brand',
+  CLOSED: 'neutral',
 }
 
 async function updateDisputeAction(formData: FormData) {
@@ -138,9 +142,9 @@ export default async function AdminDisputesPage() {
                       })}
                     </p>
                   </div>
-                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${DISPUTE_STYLES[dispute.status] ?? DISPUTE_STYLES.OPEN}`}>
+                  <Badge variant={DISPUTE_STYLES[dispute.status] ?? DISPUTE_STYLES.OPEN}>
                     {dispute.status.replaceAll('_', ' ').toLowerCase()}
-                  </span>
+                  </Badge>
                 </div>
 
                 <p className="text-sm">{dispute.reason}</p>
@@ -188,31 +192,34 @@ export default async function AdminDisputesPage() {
                 <form action={updateDisputeAction} className="space-y-3 rounded-lg border bg-muted/20 px-3 py-3">
                   <input type="hidden" name="disputeId" value={dispute.id} />
                   <div className="grid gap-3 md:grid-cols-[180px_1fr]">
-                    <select
+                    <Select
                       name="status"
                       defaultValue={dispute.status}
-                      className="rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
-                      <option value="OPEN">Open</option>
-                      <option value="UNDER_REVIEW">Under review</option>
-                      <option value="RESOLVED_CUSTOMER">Resolved for customer</option>
-                      <option value="RESOLVED_PROVIDER">Resolved for provider</option>
-                      <option value="RESOLVED_SPLIT">Resolved with split outcome</option>
-                      <option value="CLOSED">Closed</option>
-                    </select>
-                    <textarea
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="OPEN">Open</SelectItem>
+                        <SelectItem value="UNDER_REVIEW">Under review</SelectItem>
+                        <SelectItem value="RESOLVED_CUSTOMER">Resolved for customer</SelectItem>
+                        <SelectItem value="RESOLVED_PROVIDER">Resolved for provider</SelectItem>
+                        <SelectItem value="RESOLVED_SPLIT">Resolved with split outcome</SelectItem>
+                        <SelectItem value="CLOSED">Closed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Textarea
                       name="resolution"
                       defaultValue={dispute.resolution ?? ''}
                       placeholder="Add internal resolution notes for this case."
-                      className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="min-h-24"
                     />
                   </div>
-                  <button
+                  <Button
                     type="submit"
-                    className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
                   >
                     Save dispute update
-                  </button>
+                  </Button>
                 </form>
               </div>
             )
@@ -225,7 +232,7 @@ export default async function AdminDisputesPage() {
 
 function SummaryCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-xl border bg-card p-4 shadow-[var(--shadow-soft)]">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
     </div>

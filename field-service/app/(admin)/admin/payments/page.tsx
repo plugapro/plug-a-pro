@@ -9,6 +9,9 @@ import { requireAdmin } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
 import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
@@ -59,13 +62,13 @@ async function issueRefundAction(formData: FormData) {
 
 // ─── Status badge styling ─────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<PaymentStatus, string> = {
-  PENDING:            'bg-amber-100 text-amber-700',
-  AUTHORISED:         'bg-blue-100 text-blue-700',
-  PAID:               'bg-green-100 text-green-700',
-  FAILED:             'bg-red-100 text-red-700',
-  REFUNDED:           'bg-zinc-100 text-zinc-600',
-  PARTIALLY_REFUNDED: 'bg-zinc-100 text-zinc-600',
+const STATUS_STYLES: Record<PaymentStatus, 'warning' | 'info' | 'success' | 'danger' | 'neutral'> = {
+  PENDING:            'warning',
+  AUTHORISED:         'info',
+  PAID:               'success',
+  FAILED:             'danger',
+  REFUNDED:           'neutral',
+  PARTIALLY_REFUNDED: 'neutral',
 }
 
 const STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -145,8 +148,8 @@ export default async function PaymentsPage({
               href={opt.value === 'ALL' ? '/admin/payments' : `/admin/payments?status=${opt.value}`}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 active
-                  ? 'bg-foreground text-background'
-                  : 'border hover:bg-accent text-muted-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(37,99,235,0.18)]'
+                  : 'border border-border/80 bg-card/70 text-muted-foreground hover:bg-accent'
               }`}
             >
               {opt.label}
@@ -199,9 +202,9 @@ export default async function PaymentsPage({
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[p.status]}`}>
+                    <Badge variant={STATUS_STYLES[p.status]}>
                       {STATUS_LABEL[p.status]}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">
                     {COLLECTION_LABEL[p.collectionMode]}
@@ -221,24 +224,25 @@ export default async function PaymentsPage({
                     {p.status === 'PAID' && (
                       <form action={issueRefundAction} className="flex items-center gap-1">
                         <input type="hidden" name="paymentId" value={p.id} />
-                        <input
+                        <Input
                           type="number"
                           name="amount"
                           min="0.01"
                           max={Number(p.amount)}
                           step="0.01"
                           defaultValue={Number(p.amount)}
-                          className="w-24 rounded border bg-background px-2 py-1 text-xs"
+                          className="h-8 w-24 rounded-lg text-xs"
                         />
-                        <button
+                        <Button
                           type="submit"
-                          className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200 transition-colors"
+                          variant="outline"
+                          size="sm"
                           onClick={(e) => {
                             if (!confirm('Issue refund for this payment?')) e.preventDefault()
                           }}
                         >
                           Refund
-                        </button>
+                        </Button>
                       </form>
                     )}
                   </td>

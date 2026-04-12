@@ -43,7 +43,7 @@ function KpiCard({
         <p className="text-2xl font-semibold">{value}</p>
         {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
         {change !== null && (
-          <p className={`text-xs font-medium ${change >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+          <p className={`text-xs font-medium ${change >= 0 ? 'text-[var(--tone-success-fg)]' : 'text-[var(--tone-danger-fg)]'}`}>
             {change >= 0 ? '+' : ''}{change.toFixed(1)}% vs last month
           </p>
         )}
