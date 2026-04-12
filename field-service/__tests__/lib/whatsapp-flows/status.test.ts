@@ -190,14 +190,36 @@ describe('handleStatusFlow — multiple active requests', () => {
       expect.arrayContaining([
         expect.objectContaining({
           rows: expect.arrayContaining([
-            expect.objectContaining({ id: 'status_req_jr_1', title: 'Plumbing' }),
-            expect.objectContaining({ id: 'status_req_jr_2', title: 'Electrical' }),
+            expect.objectContaining({ id: 'status_req_jr_1', title: expect.stringContaining('Plumbing') }),
+            expect.objectContaining({ id: 'status_req_jr_2', title: expect.stringContaining('Electrical') }),
           ]),
         }),
       ]),
       expect.any(Object)
     )
     expect(result.nextStep).toBe('status_pick')
+  })
+
+  it('uses distinct picker labels for requests in the same category', async () => {
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([
+      makeJobRequest({ id: 'jr_1', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-12T08:31:00Z') }),
+      makeJobRequest({ id: 'jr_2', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-02T08:31:00Z') }),
+      makeJobRequest({ id: 'jr_3', category: 'DIY & Assembly', status: 'PENDING_VALIDATION', createdAt: new Date('2026-03-31T08:31:00Z') }),
+    ] as never)
+
+    await handleStatusFlow(makeCtx())
+
+    const sections = vi.mocked(wa.sendList).mock.calls[0]?.[2] ?? []
+    const rows = sections[0]?.rows ?? []
+
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'status_req_jr_1', title: expect.stringContaining('Painting') }),
+        expect.objectContaining({ id: 'status_req_jr_2', title: expect.stringContaining('Painting') }),
+      ])
+    )
+    expect(rows[0].title).not.toBe(rows[1].title)
   })
 
   it('filters out terminal requests from the disambiguation list', async () => {
@@ -214,6 +236,56 @@ describe('handleStatusFlow — multiple active requests', () => {
 
     expect(wa.sendList).not.toHaveBeenCalled()
     expect(wa.sendButtons).toHaveBeenCalled()
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('falls back to buttons when the disambiguation list send fails', async () => {
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([
+      makeJobRequest({ id: 'jr_1', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-12') }),
+      makeJobRequest({ id: 'jr_2', category: 'Electrical', status: 'MATCHING', createdAt: new Date('2026-04-09') }),
+    ] as never)
+    vi.mocked(wa.sendList).mockRejectedValueOnce(new Error('Meta rejected list payload'))
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('2 active requests'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'status_req_jr_1' }),
+        expect.objectContaining({ id: 'status_req_jr_2' }),
+      ]),
+      expect.any(Object)
+    )
+    expect(result.nextStep).toBe('status_pick')
+  })
+
+  it('falls back to the newest request when list and button picker sends both fail', async () => {
+    const latest = makeJobRequest({ id: 'jr_1', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-12') })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([
+      latest,
+      makeJobRequest({ id: 'jr_2', category: 'Electrical', status: 'MATCHING', createdAt: new Date('2026-04-09') }),
+    ] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(latest as never)
+    vi.mocked(wa.sendList).mockRejectedValueOnce(new Error('Meta rejected list payload'))
+    vi.mocked(wa.sendButtons)
+      .mockRejectedValueOnce(new Error('Meta rejected button payload'))
+      .mockResolvedValue(undefined)
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("showing your newest active request instead")
+    )
+    expect(wa.sendButtons).toHaveBeenLastCalledWith(
+      PHONE,
+      expect.stringContaining(`${APP_URL}/requests/jr_1`),
+      expect.any(Array),
+      expect.any(Object)
+    )
     expect(result.nextStep).toBe('done')
   })
 })
@@ -307,6 +379,24 @@ describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
     )
     const body: string = vi.mocked(wa.sendButtons).mock.calls[0][1]
     expect(body).not.toContain('🔗')
+    expect(result.nextStep).toBe('done')
+  })
+})
+
+describe('handleStatusFlow — send fallback resilience', () => {
+  it('falls back to text when the status button send fails', async () => {
+    const jr = makeJobRequest()
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(wa.sendButtons).mockRejectedValueOnce(new Error('Meta rejected button payload'))
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining(`${APP_URL}/requests/jr_abc123`)
+    )
     expect(result.nextStep).toBe('done')
   })
 })

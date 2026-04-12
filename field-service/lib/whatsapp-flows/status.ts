@@ -33,6 +33,14 @@ const JOB_REQUEST_STATUS_LABELS: Record<string, string> = {
 const TERMINAL_JOB_STATUSES   = ['COMPLETED', 'FAILED', 'CANCELLED']
 const TERMINAL_REQUEST_STATUSES = ['EXPIRED', 'CANCELLED']
 
+function truncate(text: string, max: number) {
+  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`
+}
+
+function formatRequestDate(date: Date) {
+  return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
@@ -111,28 +119,64 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
   // ── Disambiguation: >1 active requests ──────────────────────────────────
   if (activeRequests.length > 1) {
     log('multiple active requests — sending disambiguation list')
-    await sendList(
-      ctx.phone,
-      `📋 *You have ${activeRequests.length} active requests.*\n\nWhich one would you like to check?`,
-      [{
-        title: 'Active Requests',
-        rows: activeRequests.slice(0, 9).map((jr) => {
-          const job = jr.match?.booking?.job ?? null
-          const activeJob = (job && !TERMINAL_JOB_STATUSES.includes(job.status)) ? job : null
-          const statusLabel = activeJob
-            ? JOB_STATUS_LABELS[activeJob.status] ?? activeJob.status
-            : JOB_REQUEST_STATUS_LABELS[jr.status] ?? jr.status
-          const date = jr.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
-          return {
-            id:          `status_req_${jr.id}`,
-            title:       jr.category,
-            description: `${statusLabel} · ${date}`,
-          }
-        }),
-      }],
-      { buttonLabel: 'Choose Request' }
-    )
-    return { nextStep: 'status_pick' }
+    const requestChoices = activeRequests.slice(0, 9).map((jr) => {
+      const job = jr.match?.booking?.job ?? null
+      const activeJob = (job && !TERMINAL_JOB_STATUSES.includes(job.status)) ? job : null
+      const statusLabel = activeJob
+        ? JOB_STATUS_LABELS[activeJob.status] ?? activeJob.status
+        : JOB_REQUEST_STATUS_LABELS[jr.status] ?? jr.status
+      const date = formatRequestDate(jr.createdAt)
+      return {
+        id: `status_req_${jr.id}`,
+        title: truncate(`${jr.category} · ${date}`, 24),
+        description: truncate(`${statusLabel} · Ref ${jr.id.slice(-6).toUpperCase()}`, 72),
+        buttonTitle: truncate(`${jr.category} ${date}`, 20),
+      }
+    })
+
+    try {
+      await sendList(
+        ctx.phone,
+        `📋 *You have ${activeRequests.length} active requests.*\n\nWhich one would you like to check?`,
+        [{
+          title: 'Active Requests',
+          rows: requestChoices.map(({ id, title, description }) => ({
+            id,
+            title,
+            description,
+          })),
+        }],
+        { buttonLabel: 'Choose Request' }
+      )
+      return { nextStep: 'status_pick' }
+    } catch (error) {
+      log(`WARN: sendList failed for request picker — falling back. error=${error instanceof Error ? error.message : String(error)}`)
+
+      const buttonChoices = requestChoices.slice(0, 3).map(({ id, buttonTitle }) => ({
+        id,
+        title: buttonTitle,
+      }))
+
+      if (buttonChoices.length >= 2) {
+        try {
+          await sendButtons(
+            ctx.phone,
+            `📋 *You have ${activeRequests.length} active requests.*\n\nTap one below to view its latest status.${activeRequests.length > 3 ? '\n\nIf you do not see the one you want, reply *status* again and we will show your newest request.' : ''}`,
+            buttonChoices,
+            { footer: 'Reply "menu" for main menu' }
+          )
+          return { nextStep: 'status_pick' }
+        } catch (fallbackError) {
+          log(`WARN: sendButtons fallback failed for request picker — showing latest request. error=${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
+        }
+      }
+
+      await sendText(
+        ctx.phone,
+        `📋 I couldn't show the full request list right now, so I'm showing your newest active request instead.`
+      )
+      return showRequestStatus(ctx.phone, activeRequests[0].id, reqId)
+    }
   }
 
   // ── Single active request — or fall back to most recent ─────────────────
@@ -200,12 +244,20 @@ async function showRequestStatus(
       }
       const approvalUrl = `${appUrl}/approve/${extra.approvalToken}`
       log(`sending extra-work approval CTA approvalUrl=${approvalUrl}`)
-      await sendCtaUrl(
-        phone,
-        `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nTap below to approve or decline:`,
-        'Review & Approve',
-        approvalUrl
-      )
+      try {
+        await sendCtaUrl(
+          phone,
+          `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nTap below to approve or decline:`,
+          'Review & Approve',
+          approvalUrl
+        )
+      } catch (error) {
+        log(`WARN: sendCtaUrl failed for approval request — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
+        await sendText(
+          phone,
+          `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nOpen this link to approve or decline:\n${approvalUrl}`
+        )
+      }
       return { nextStep: 'done' }
     }
   }
@@ -214,14 +266,22 @@ async function showRequestStatus(
   const trackingLink = appUrl ? `\n\n🔗 ${appUrl}/requests/${jr.id}` : ''
   log(`sending status buttons trackingLink=${trackingLink || '(none)'}`)
 
-  await sendButtons(
-    phone,
-    `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingLink}`,
-    [
-      { id: 'back_home', title: '🏠 Main Menu' },
-    ],
-    { footer: 'Reply "menu" to return to main menu' }
-  )
+  try {
+    await sendButtons(
+      phone,
+      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingLink}`,
+      [
+        { id: 'back_home', title: '🏠 Main Menu' },
+      ],
+      { footer: 'Reply "menu" to return to main menu' }
+    )
+  } catch (error) {
+    log(`WARN: sendButtons failed for request status — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
+    await sendText(
+      phone,
+      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingLink}\n\nReply "menu" to return to the main menu.`
+    )
+  }
 
   return { nextStep: 'done' }
 }
