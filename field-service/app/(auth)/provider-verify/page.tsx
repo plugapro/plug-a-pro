@@ -91,7 +91,7 @@ function ProviderVerifyForm() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+        <p className="app-kicker">
           Worker Portal
         </p>
         <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
@@ -116,7 +116,7 @@ function ProviderVerifyForm() {
           className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
         />
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         <Button type="submit" size="lg" disabled={loading || otp.length < 6} className="w-full">
           {loading ? 'Verifying…' : 'Confirm'}

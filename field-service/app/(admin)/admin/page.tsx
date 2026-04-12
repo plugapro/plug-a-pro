@@ -364,21 +364,21 @@ export default async function AdminDashboardPage() {
   return (
     <div className="space-y-8">
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,0.9fr)]">
-        <Card className="border-slate-200 bg-[linear-gradient(135deg,rgba(248,250,252,1),rgba(239,246,255,1))]">
+        <Card className="app-hero-surface border-border/70">
           <CardHeader className="gap-4">
             <div className="space-y-2">
-              <Badge variant="outline" className="border-slate-300 bg-white/80 text-slate-700">
+              <Badge variant="brand">
                 Control Tower
               </Badge>
               <div className="space-y-2">
                 <h1 className="text-2xl font-semibold tracking-tight">Operations Dashboard</h1>
-                <p className="max-w-2xl text-sm text-slate-600">
+                <p className="max-w-2xl text-sm text-muted-foreground">
                   Run the platform from queues, not lagging reports. This view surfaces validation,
                   dispatch, quote, field, finance, trust, and supply actions that need an owner
                   now.
                 </p>
               </div>
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+              <p className="app-kicker">
                 {now.toLocaleDateString('en-ZA', {
                   weekday: 'long',
                   day: 'numeric',
@@ -443,7 +443,7 @@ export default async function AdminDashboardPage() {
                 New requests that need enough information before ops can match them.
               </p>
             </div>
-            <Badge className={slaBadgeClass(validationCount > 0 ? 'warning' : 'default')}>
+            <Badge variant={slaBadgeClass(validationCount > 0 ? 'warning' : 'default')}>
               {validationCount} open
             </Badge>
           </CardHeader>
@@ -481,7 +481,7 @@ export default async function AdminDashboardPage() {
                 Open service requests and active field load that can tip into lateness.
               </p>
             </div>
-            <Badge className={slaBadgeClass(dispatchCount > 0 ? 'warning' : 'default')}>
+            <Badge variant={slaBadgeClass(dispatchCount > 0 ? 'warning' : 'default')}>
               {dispatchCount} queued
             </Badge>
           </CardHeader>
@@ -502,7 +502,7 @@ export default async function AdminDashboardPage() {
                     <StatusBadge status={request.status} type="jobRequest" />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className={laneBadgeClass('Dispatch')}>
+                    <Badge variant={laneBadgeClass('Dispatch')}>
                       {request._count.leads} leads sent
                     </Badge>
                     <Badge variant="outline">
@@ -528,7 +528,7 @@ export default async function AdminDashboardPage() {
                 Quotes that can move revenue forward with a customer decision or chase.
               </p>
             </div>
-            <Badge className={slaBadgeClass(quoteCount > 0 ? 'warning' : 'default')}>
+            <Badge variant={slaBadgeClass(quoteCount > 0 ? 'warning' : 'default')}>
               {quoteCount} waiting
             </Badge>
           </CardHeader>
@@ -548,7 +548,7 @@ export default async function AdminDashboardPage() {
                     <StatusBadge status={quote.status} type="quote" />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className={slaBadgeClass(getSlaTone(quote.createdAt, now, 240))}>
+                    <Badge variant={slaBadgeClass(getSlaTone(quote.createdAt, now, 240))}>
                       Age {formatAge(quote.createdAt, now)}
                     </Badge>
                     <Badge variant="outline">{formatCurrency(Number(quote.amount))}</Badge>
@@ -570,7 +570,7 @@ export default async function AdminDashboardPage() {
                 Jobs that are blocked, failed, or waiting on human intervention.
               </p>
             </div>
-            <Badge className={slaBadgeClass(fieldExceptionCount > 0 ? 'danger' : 'default')}>
+            <Badge variant={slaBadgeClass(fieldExceptionCount > 0 ? 'danger' : 'default')}>
               {fieldExceptionCount} escalated
             </Badge>
           </CardHeader>
@@ -590,7 +590,7 @@ export default async function AdminDashboardPage() {
                     <StatusBadge status={job.status} type="job" />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className={slaBadgeClass(getSlaTone(job.updatedAt, now, 60))}>
+                    <Badge variant={slaBadgeClass(getSlaTone(job.updatedAt, now, 60))}>
                       Last update {formatAge(job.updatedAt, now)}
                     </Badge>
                     <Badge variant="outline">{formatBookingWindow(job.booking)}</Badge>
@@ -610,7 +610,7 @@ export default async function AdminDashboardPage() {
                 Payments that can block closeout, payout, or dispute resolution.
               </p>
             </div>
-            <Badge className={slaBadgeClass(paymentExceptionCount > 0 ? 'danger' : 'default')}>
+            <Badge variant={slaBadgeClass(paymentExceptionCount > 0 ? 'danger' : 'default')}>
               {paymentExceptionCount} blocked
             </Badge>
           </CardHeader>
@@ -630,7 +630,7 @@ export default async function AdminDashboardPage() {
                     <PaymentBadge status={payment.status} />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className={slaBadgeClass(getSlaTone(payment.updatedAt, now, 1440))}>
+                    <Badge variant={slaBadgeClass(getSlaTone(payment.updatedAt, now, 1440))}>
                       Age {formatAge(payment.updatedAt, now)}
                     </Badge>
                     <Badge variant="outline">{formatCurrency(Number(payment.amount))}</Badge>
@@ -652,7 +652,7 @@ export default async function AdminDashboardPage() {
                 Open disputes and customer-provider issues that need acknowledgement and ownership.
               </p>
             </div>
-            <Badge className={slaBadgeClass(disputeCount > 0 ? 'danger' : 'default')}>
+            <Badge variant={slaBadgeClass(disputeCount > 0 ? 'danger' : 'default')}>
               {disputeCount} open
             </Badge>
           </CardHeader>
@@ -672,7 +672,7 @@ export default async function AdminDashboardPage() {
                     <DisputeBadge status={dispute.status} />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge className={slaBadgeClass(getSlaTone(dispute.createdAt, now, 120))}>
+                    <Badge variant={slaBadgeClass(getSlaTone(dispute.createdAt, now, 120))}>
                       Age {formatAge(dispute.createdAt, now)}
                     </Badge>
                   </div>
@@ -692,7 +692,7 @@ export default async function AdminDashboardPage() {
                 Pending applications that determine near-term supply and coverage.
               </p>
             </div>
-            <Badge className={slaBadgeClass(providerReviewCount > 0 ? 'warning' : 'default')}>
+            <Badge variant={slaBadgeClass(providerReviewCount > 0 ? 'warning' : 'default')}>
               {providerReviewCount} pending
             </Badge>
           </CardHeader>
@@ -716,11 +716,11 @@ export default async function AdminDashboardPage() {
                       </Badge>
                     ))}
                     {application.serviceAreas.slice(0, 2).map((area) => (
-                      <Badge key={area} className={laneBadgeClass('Supply')}>
+                      <Badge key={area} variant={laneBadgeClass('Supply')}>
                         {area}
                       </Badge>
                     ))}
-                    <Badge className={slaBadgeClass(getSlaTone(application.submittedAt, now, 1440))}>
+                    <Badge variant={slaBadgeClass(getSlaTone(application.submittedAt, now, 1440))}>
                       Age {formatAge(application.submittedAt, now)}
                     </Badge>
                   </div>
@@ -748,9 +748,9 @@ export default async function AdminDashboardPage() {
               note={ratioLabel(weekCompleted, weekBookings)}
             />
             <FunnelMetric label="Paid" value={weekPaid} note={ratioLabel(weekPaid, weekCompleted)} />
-            <div className="rounded-xl border bg-slate-50 p-4 sm:col-span-2 xl:col-span-3">
-              <p className="text-sm font-medium text-slate-900">7-day revenue collected</p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+            <div className="tone-info rounded-xl border p-4 sm:col-span-2 xl:col-span-3">
+              <p className="text-sm font-medium">7-day revenue collected</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
                 {formatCurrency(Number(weekRevenue._sum.amount ?? 0))}
               </p>
             </div>
@@ -780,8 +780,8 @@ function QueueCard({
     <Card>
       <CardHeader className="gap-3">
         <div className="flex items-center justify-between gap-3">
-          <Badge className={laneBadgeClass(lane)}>{lane}</Badge>
-          <Badge className={slaBadgeClass(count > 0 ? 'warning' : 'default')}>{count} open</Badge>
+          <Badge variant={laneBadgeClass(lane)}>{lane}</Badge>
+          <Badge variant={slaBadgeClass(count > 0 ? 'warning' : 'default')}>{count} open</Badge>
         </div>
         <div className="space-y-1">
           <CardTitle className="text-base">{title}</CardTitle>
@@ -812,8 +812,8 @@ function HeroStat({
 }) {
   return (
     <div className={cn('rounded-2xl border p-4', tone)}>
-      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="text-xs uppercase tracking-[0.16em] text-current/80">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
     </div>
   )
 }
@@ -849,25 +849,24 @@ function PaymentBadge({
 }: {
   status: PaymentStatus
 }) {
-  const classes =
+  const variant =
     status === 'FAILED'
-      ? 'bg-red-100 text-red-700'
+      ? 'danger'
       : status === 'PENDING'
-        ? 'bg-amber-100 text-amber-700'
-        : 'bg-zinc-100 text-zinc-700'
+        ? 'warning'
+        : 'neutral'
 
-  return <Badge className={classes}>{status.replaceAll('_', ' ')}</Badge>
+  return <Badge variant={variant}>{status.replaceAll('_', ' ')}</Badge>
 }
 
 function DisputeBadge({ status }: { status: DisputeStatus }) {
-  const classes =
-    status === 'OPEN' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+  const variant = status === 'OPEN' ? 'danger' : 'warning'
 
-  return <Badge className={classes}>{status.replaceAll('_', ' ')}</Badge>
+  return <Badge variant={variant}>{status.replaceAll('_', ' ')}</Badge>
 }
 
 function ApplicationBadge({ status }: { status: ApplicationStatus }) {
-  return <Badge className="bg-amber-100 text-amber-700">{status}</Badge>
+  return <Badge variant="warning">{status}</Badge>
 }
 
 function formatAge(from: Date, to: Date) {
@@ -925,24 +924,24 @@ function ratioLabel(current: number, previous: number) {
   return `${Math.round((current / previous) * 100)}% of previous stage`
 }
 
-function laneBadgeClass(lane: string) {
-  if (lane === 'Ops') return 'bg-slate-100 text-slate-700'
-  if (lane === 'Dispatch') return 'bg-blue-100 text-blue-700'
-  if (lane === 'Finance') return 'bg-emerald-100 text-emerald-700'
-  if (lane === 'Trust') return 'bg-rose-100 text-rose-700'
-  if (lane === 'Quotes') return 'bg-amber-100 text-amber-700'
-  return 'bg-violet-100 text-violet-700'
+function laneBadgeClass(lane: string): 'neutral' | 'info' | 'success' | 'danger' | 'warning' | 'brand' {
+  if (lane === 'Ops') return 'neutral'
+  if (lane === 'Dispatch') return 'info'
+  if (lane === 'Finance') return 'success'
+  if (lane === 'Trust') return 'danger'
+  if (lane === 'Quotes') return 'warning'
+  return 'brand'
 }
 
-function slaBadgeClass(tone: 'default' | 'warning' | 'danger') {
-  if (tone === 'danger') return 'bg-red-100 text-red-700'
-  if (tone === 'warning') return 'bg-amber-100 text-amber-700'
-  return 'bg-slate-100 text-slate-700'
+function slaBadgeClass(tone: 'default' | 'warning' | 'danger'): 'neutral' | 'warning' | 'danger' {
+  if (tone === 'danger') return 'danger'
+  if (tone === 'warning') return 'warning'
+  return 'neutral'
 }
 
 function heroToneClass(tone: 'default' | 'warning' | 'danger' | 'info') {
-  if (tone === 'danger') return 'border-red-200 bg-red-50'
-  if (tone === 'warning') return 'border-amber-200 bg-amber-50'
-  if (tone === 'info') return 'border-blue-200 bg-blue-50'
-  return 'border-white/70 bg-white/80'
+  if (tone === 'danger') return 'tone-danger'
+  if (tone === 'warning') return 'tone-warning'
+  if (tone === 'info') return 'tone-info'
+  return 'tone-neutral'
 }

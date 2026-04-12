@@ -140,12 +140,12 @@ export function BookingFlow({
         {(['address', 'description', 'confirm', 'submitted'] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
             <span
-              className={`h-5 w-5 rounded-full flex items-center justify-center text-xs font-medium ${
+              className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold ${
                 step === s
-                  ? 'bg-foreground text-background'
+                  ? 'border-primary bg-primary text-primary-foreground'
                   : ['address', 'description', 'confirm', 'submitted'].indexOf(step) > i
-                  ? 'bg-green-500 text-white'
-                  : 'bg-muted text-muted-foreground'
+                    ? 'tone-success'
+                    : 'border-border bg-card text-muted-foreground'
               }`}
             >
               {i + 1}
@@ -157,7 +157,7 @@ export function BookingFlow({
 
       {/* Error banner */}
       {error && (
-        <div className="rounded-xl border border-red-300 bg-red-50 dark:bg-red-900/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+        <div className="tone-danger rounded-2xl border px-4 py-3 text-sm">
           {error}
         </div>
       )}

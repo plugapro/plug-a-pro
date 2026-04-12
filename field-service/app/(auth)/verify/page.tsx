@@ -94,6 +94,7 @@ function VerifyForm() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
+        <p className="app-kicker">Customer Access</p>
         <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
         <p className="text-sm text-muted-foreground">
           We sent a 6-digit code to{' '}
@@ -117,7 +118,7 @@ function VerifyForm() {
           className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
         />
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         <Button type="submit" size="lg" disabled={loading || otp.length < 6} className="w-full">
           {loading ? 'Verifying…' : 'Confirm'}

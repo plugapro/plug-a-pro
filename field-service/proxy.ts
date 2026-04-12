@@ -114,7 +114,7 @@ function redirectToSignIn(request: NextRequest): NextResponse {
 
 export const config = {
   matcher: [
-    // Match all paths except static files, _next internals, and favicon
-    '/((?!_next/static|_next/image|favicon.ico|og.png|manifest.json|icons/).*)',
+    // Match all paths except static files and asset requests.
+    '/((?!_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico)$|manifest.json|icons/).*)',
   ],
 }

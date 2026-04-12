@@ -68,6 +68,7 @@ export default function SignInPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
+        <p className="app-kicker">Customer Access</p>
         <h1 className="text-2xl font-semibold text-foreground">Welcome back</h1>
         <p className="text-sm text-muted-foreground">Enter your number to receive a one-time code</p>
       </div>
@@ -89,7 +90,7 @@ export default function SignInPage() {
           />
         </div>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         <Button type="submit" size="lg" disabled={loading || !phone} className="w-full">
           {loading ? 'Sending code…' : 'Send code'}

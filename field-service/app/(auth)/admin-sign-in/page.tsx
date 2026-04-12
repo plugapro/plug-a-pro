@@ -68,17 +68,17 @@ export default function AdminSignInPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
+        <p className="app-kicker">
           Admin Portal
         </p>
-        <h1 className="text-2xl font-semibold text-white">Sign in</h1>
-        <p className="text-sm text-zinc-400">Internal team access only</p>
+        <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
+        <p className="text-sm text-muted-foreground">Internal team access only</p>
       </div>
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="email" className="text-zinc-300">Email</Label>
+          <Label htmlFor="email" className="text-foreground">Email</Label>
           <Input
             id="email"
             type="email"
@@ -88,12 +88,12 @@ export default function AdminSignInPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             disabled={loading}
-            className="h-11 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+            className="h-11"
           />
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="password" className="text-zinc-300">Password</Label>
+          <Label htmlFor="password" className="text-foreground">Password</Label>
           <Input
             id="password"
             type="password"
@@ -103,11 +103,11 @@ export default function AdminSignInPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             disabled={loading}
-            className="h-11 bg-zinc-950 border-zinc-700 text-white placeholder:text-zinc-600 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20"
+            className="h-11"
           />
         </div>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         <Button
           type="submit"

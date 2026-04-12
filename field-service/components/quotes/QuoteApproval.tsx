@@ -55,7 +55,7 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         })
       : null
     return (
-      <div className="rounded-lg border bg-green-50 dark:bg-green-950 p-6 text-center space-y-2">
+      <div className="tone-success rounded-2xl border p-6 text-center space-y-2">
         <p className="text-2xl">✅</p>
         <p className="font-semibold">Quote Accepted</p>
         {dateStr && (
@@ -85,7 +85,7 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
 
   if (quote.status === 'DECLINED' || result === 'declined') {
     return (
-      <div className="rounded-lg border p-6 text-center space-y-2">
+      <div className="tone-danger rounded-2xl border p-6 text-center space-y-2">
         <p className="text-2xl">❌</p>
         <p className="font-semibold">Quote Declined</p>
         <p className="text-sm text-muted-foreground">
@@ -97,7 +97,7 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
 
   if (quote.expired || quote.status === 'EXPIRED') {
     return (
-      <div className="rounded-lg border p-6 text-center space-y-2">
+      <div className="tone-warning rounded-2xl border p-6 text-center space-y-2">
         <p className="text-2xl">⏱️</p>
         <p className="font-semibold">Quote Expired</p>
         <p className="text-sm text-muted-foreground">

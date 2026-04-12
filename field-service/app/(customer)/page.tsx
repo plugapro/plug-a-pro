@@ -32,17 +32,16 @@ const CATEGORIES = [
 export default async function CustomerHomePage() {
   return (
     <div className="min-h-screen">
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-zinc-950 px-4 py-20 text-center text-white sm:py-28">
-        <div className="mx-auto max-w-2xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-zinc-400">
-            <Star className="h-3 w-3 text-amber-400" />
+      <section className="relative overflow-hidden px-4 py-16 sm:py-24">
+        <div className="app-hero-surface mx-auto max-w-5xl rounded-[2rem] border border-border/70 px-6 py-12 text-center sm:px-10 sm:py-16">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--tone-brand-border)] bg-[var(--tone-brand-bg)] px-3 py-1 text-xs font-medium text-[var(--tone-brand-fg)]">
+            <Star className="h-3 w-3" />
             Built for written quotes and tracked jobs
           </div>
-          <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
+          <h1 className="mb-4 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
             Request local home services
           </h1>
-          <p className="mb-8 text-lg font-medium text-zinc-400 sm:text-xl">
+          <p className="mx-auto mb-8 max-w-2xl text-lg font-medium text-muted-foreground sm:text-xl">
             Nearby providers. Written quotes. Clear records.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -52,15 +51,14 @@ export default async function CustomerHomePage() {
                 <ChevronRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="border-zinc-700 bg-transparent text-white hover:bg-zinc-800 text-base font-semibold">
+            <Button asChild size="lg" variant="outline" className="text-base font-semibold">
               <Link href="/bookings">Track my booking</Link>
             </Button>
           </div>
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="border-b border-zinc-800 bg-zinc-900/50 px-4 py-14">
+      <section className="px-4 py-14">
         <div className="mx-auto max-w-3xl">
           <h2 className="mb-10 text-center text-sm font-semibold uppercase tracking-widest text-muted-foreground">
             How it works
@@ -91,7 +89,6 @@ export default async function CustomerHomePage() {
         </div>
       </section>
 
-      {/* Category catalogue */}
       <section className="px-4 py-14">
         <div className="mx-auto max-w-3xl">
           <h2 className="mb-2 text-2xl font-bold tracking-tight">Our services</h2>
@@ -127,8 +124,7 @@ export default async function CustomerHomePage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-zinc-800 px-4 py-8 text-center">
+      <footer className="border-t border-border/70 px-4 py-8 text-center">
         <p className="text-xs text-muted-foreground">
           © 2026 Plug-A-Pro. All rights reserved.
         </p>
