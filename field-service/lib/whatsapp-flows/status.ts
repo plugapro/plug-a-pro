@@ -211,27 +211,15 @@ async function showRequestStatus(
   }
 
   // ── Default: show status + tracking link ────────────────────────────────
-  if (!appUrl) {
-    log('WARN: NEXT_PUBLIC_APP_URL is not set — sending text-only status (no CTA link)')
-    await sendButtons(
-      phone,
-      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}\n\nContact support for more details: support@plugapro.co.za`,
-      [
-        { id: 'back_home', title: '🏠 Main Menu' },
-      ],
-      { footer: 'Reply "menu" to return to main menu' }
-    )
-    return { nextStep: 'done' }
-  }
+  const trackingLink = appUrl ? `\n\n🔗 ${appUrl}/requests/${jr.id}` : ''
+  log(`sending status buttons trackingLink=${trackingLink || '(none)'}`)
 
-  const trackingUrl = `${appUrl}/requests/${jr.id}`
-  log(`sending tracking CTA trackingUrl=${trackingUrl}`)
-
-  await sendCtaUrl(
+  await sendButtons(
     phone,
-    `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}`,
-    'View Request',
-    trackingUrl,
+    `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingLink}`,
+    [
+      { id: 'back_home', title: '🏠 Main Menu' },
+    ],
     { footer: 'Reply "menu" to return to main menu' }
   )
 

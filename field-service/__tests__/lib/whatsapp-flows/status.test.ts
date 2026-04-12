@@ -102,7 +102,7 @@ describe('handleStatusFlow — customer exists, no requests', () => {
 // ─── Single active request ────────────────────────────────────────────────────
 
 describe('handleStatusFlow — single active request (no job)', () => {
-  it('sends CTA with correct tracking URL and returns done', async () => {
+  it('sends buttons with inline tracking URL and returns done', async () => {
     const jr = makeJobRequest()
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
@@ -110,11 +110,16 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     const result = await handleStatusFlow(makeCtx())
 
-    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining(`${APP_URL}/requests/jr_abc123`),
+      expect.any(Array),
+      expect.any(Object)
+    )
+    expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Plumbing'),
-      'View Request',
-      `${APP_URL}/requests/jr_abc123`,
+      expect.any(Array),
       expect.any(Object)
     )
     expect(result.nextStep).toBe('done')
@@ -128,7 +133,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     await handleStatusFlow(makeCtx())
 
-    const call = vi.mocked(wa.sendCtaUrl).mock.calls[0]
+    const call = vi.mocked(wa.sendButtons).mock.calls[0]
     expect(call[1]).toContain('Provider scheduled')
     expect(call[1]).not.toContain('Worker scheduled')
     expect(call[1]).not.toContain('technician')
@@ -148,7 +153,7 @@ describe('handleStatusFlow — completed job shows request-level status', () => 
 
       await handleStatusFlow(makeCtx())
 
-      const call = vi.mocked(wa.sendCtaUrl).mock.calls[0]
+      const call = vi.mocked(wa.sendButtons).mock.calls[0]
       // Should show "Finding a provider" (OPEN label), not "Job completed/failed/cancelled"
       expect(call[1]).toContain('Finding a provider')
     }
@@ -204,11 +209,11 @@ describe('handleStatusFlow — multiple active requests', () => {
     ] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(activeJr as never)
 
-    // Only 1 active → no disambiguation, goes straight to CTA
+    // Only 1 active → no disambiguation, goes straight to status buttons
     const result = await handleStatusFlow(makeCtx())
 
     expect(wa.sendList).not.toHaveBeenCalled()
-    expect(wa.sendCtaUrl).toHaveBeenCalled()
+    expect(wa.sendButtons).toHaveBeenCalled()
     expect(result.nextStep).toBe('done')
   })
 })
@@ -231,11 +236,16 @@ describe('handleStatusFlow — status_pick step', () => {
     expect(db.jobRequest.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'jr_2' } })
     )
-    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining(`${APP_URL}/requests/jr_2`),
+      expect.any(Array),
+      expect.any(Object)
+    )
+    expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Electrical'),
-      'View Request',
-      `${APP_URL}/requests/jr_2`,
+      expect.any(Array),
       expect.any(Object)
     )
     expect(result.nextStep).toBe('done')
@@ -278,7 +288,7 @@ describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
     delete process.env.NEXT_PUBLIC_APP_URL
   })
 
-  it('sends text-only fallback when appUrl is empty', async () => {
+  it('sends status buttons without tracking link when appUrl is empty', async () => {
     const jr = makeJobRequest()
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
@@ -286,15 +296,17 @@ describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
 
     const result = await handleStatusFlow(makeCtx())
 
-    // Must NOT send a CTA with a relative path
+    // Must NOT use sendCtaUrl
     expect(wa.sendCtaUrl).not.toHaveBeenCalled()
-    // Must send a buttons fallback instead
+    // Must send buttons with status info but no tracking URL
     expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('support@plugapro.co.za'),
+      expect.stringContaining('Plumbing'),
       expect.any(Array),
       expect.any(Object)
     )
+    const body: string = vi.mocked(wa.sendButtons).mock.calls[0][1]
+    expect(body).not.toContain('🔗')
     expect(result.nextStep).toBe('done')
   })
 })

@@ -113,7 +113,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
         const display = [lastAddress.street, lastAddress.suburb, lastAddress.city].filter(Boolean).join(', ')
         await sendButtons(
           ctx.phone,
-          `📍 *Where should we send the worker for ${category}?*\n\nLast used:\n_${display}_`,
+          `📍 *Where do you need the ${category} work done?*\n\nLast used:\n_${display}_`,
           [
             { id: 'addr_same', title: '📍 Same address' },
             { id: 'addr_new',  title: '✏️ Different address' },
@@ -133,7 +133,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
       }
 
       // No saved address — go straight to street prompt
-      await sendText(ctx.phone, `📍 *Where should we send the worker for ${category}?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`)
+      await sendText(ctx.phone, `📍 *Where do you need the ${category} work done?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`)
       return { nextStep: 'collect_address_street', nextData: baseData }
     }
 
@@ -173,7 +173,7 @@ async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
   const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
   await sendText(
     ctx.phone,
-    `📍 *Where should we send the worker for ${category}?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
+    `📍 *Where do you need the ${category} work done?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
   )
   return { nextStep: 'collect_address_street' }
 }
@@ -229,7 +229,7 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
     const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
     await sendText(
       ctx.phone,
-      `📍 *Where should we send the worker for ${category}?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
+      `📍 *Where do you need the ${category} work done?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
     )
     return { nextStep: 'collect_address_street' }
   }
