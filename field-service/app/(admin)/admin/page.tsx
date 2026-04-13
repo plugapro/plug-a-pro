@@ -196,11 +196,16 @@ export default async function AdminDashboardPage() {
     }),
   ])
 
-  const [validationAssignments, quoteAssignments] = await Promise.all([
+  const [validationAssignments, dispatchAssignments, quoteAssignments] = await Promise.all([
     listOpsQueueAssignments(
       db,
       OPS_QUEUE_TYPES.VALIDATION,
       validationQueue.map((request) => request.id),
+    ),
+    listOpsQueueAssignments(
+      db,
+      OPS_QUEUE_TYPES.DISPATCH,
+      dispatchQueue.map((request) => request.id),
     ),
     listOpsQueueAssignments(
       db,
@@ -280,7 +285,12 @@ export default async function AdminDashboardPage() {
     }),
   ])
 
-  const [disputeAssignments, paymentAssignments, providerAssignments] = await Promise.all([
+  const [fieldExceptionAssignments, disputeAssignments, paymentAssignments, providerAssignments] = await Promise.all([
+    listOpsQueueAssignments(
+      db,
+      OPS_QUEUE_TYPES.FIELD_EXCEPTION,
+      fieldExceptions.map((job) => job.id),
+    ),
     listOpsQueueAssignments(
       db,
       OPS_QUEUE_TYPES.DISPUTE,
@@ -297,6 +307,56 @@ export default async function AdminDashboardPage() {
       providerOnboarding.map((application) => application.id),
     ),
   ])
+
+  const validationHealth = summarizeQueueHealth(
+    validationQueue,
+    validationAssignments,
+    now,
+    15,
+    (request) => request.createdAt,
+  )
+  const dispatchHealth = summarizeQueueHealth(
+    dispatchQueue,
+    dispatchAssignments,
+    now,
+    20,
+    (request) => request.createdAt,
+  )
+  const quoteHealth = summarizeQueueHealth(
+    pendingQuotes,
+    quoteAssignments,
+    now,
+    240,
+    (quote) => quote.createdAt,
+  )
+  const fieldExceptionHealth = summarizeQueueHealth(
+    fieldExceptions,
+    fieldExceptionAssignments,
+    now,
+    60,
+    (job) => job.updatedAt,
+  )
+  const paymentHealth = summarizeQueueHealth(
+    financeFollowUp,
+    paymentAssignments,
+    now,
+    1440,
+    (payment) => payment.updatedAt,
+  )
+  const disputeHealth = summarizeQueueHealth(
+    openDisputes,
+    disputeAssignments,
+    now,
+    120,
+    (dispute) => dispute.createdAt,
+  )
+  const providerHealth = summarizeQueueHealth(
+    providerOnboarding,
+    providerAssignments,
+    now,
+    1440,
+    (application) => application.submittedAt,
+  )
 
   const [weekCompleted, weekPaid, weekRevenue] = await Promise.all([
     db.job.count({
@@ -324,12 +384,12 @@ export default async function AdminDashboardPage() {
     {
       label: 'Requests needing validation',
       value: validationCount,
-      tone: heroToneClass(validationCount > 0 ? 'warning' : 'default'),
+      tone: heroToneClass(queueHealthHeroTone(validationHealth)),
     },
     {
       label: 'Dispatch queue',
       value: dispatchCount,
-      tone: heroToneClass(dispatchCount > 2 ? 'warning' : 'default'),
+      tone: heroToneClass(queueHealthHeroTone(dispatchHealth)),
     },
     {
       label: 'Jobs in field',
@@ -353,6 +413,8 @@ export default async function AdminDashboardPage() {
       target: 'Triage inside 15 min',
       href: '/admin/validation',
       note: 'Requests missing platform validation before matching can start.',
+      detail: queueHealthDetail(validationHealth),
+      tone: queueHealthCardTone(validationHealth),
     },
     {
       lane: 'Dispatch',
@@ -361,6 +423,18 @@ export default async function AdminDashboardPage() {
       target: 'Assign inside 20 min',
       href: '/admin/dispatch',
       note: `${activeFieldCount} jobs already live in the field today.`,
+      detail: queueHealthDetail(dispatchHealth),
+      tone: queueHealthCardTone(dispatchHealth),
+    },
+    {
+      lane: 'Field',
+      title: 'Field exceptions',
+      count: fieldExceptionCount,
+      target: 'Triage inside 1 hour',
+      href: '/admin/field-exceptions',
+      note: 'Jobs that are blocked, failed, or waiting on customer action.',
+      detail: queueHealthDetail(fieldExceptionHealth),
+      tone: queueHealthCardTone(fieldExceptionHealth),
     },
     {
       lane: 'Finance',
@@ -369,6 +443,8 @@ export default async function AdminDashboardPage() {
       target: 'Resolve inside 1 day',
       href: '/admin/payments',
       note: 'Pending, failed, and refund-state payments requiring intervention.',
+      detail: queueHealthDetail(paymentHealth),
+      tone: queueHealthCardTone(paymentHealth),
     },
     {
       lane: 'Trust',
@@ -377,6 +453,8 @@ export default async function AdminDashboardPage() {
       target: 'Acknowledge inside 2 hours',
       href: '/admin/disputes',
       note: 'Open disputes and complaints with customer-provider risk attached.',
+      detail: queueHealthDetail(disputeHealth),
+      tone: queueHealthCardTone(disputeHealth),
     },
     {
       lane: 'Quotes',
@@ -385,6 +463,8 @@ export default async function AdminDashboardPage() {
       target: 'Chase inside 4 hours',
       href: '/admin/quotes',
       note: 'Quotes waiting on customer decision or revision follow-through.',
+      detail: queueHealthDetail(quoteHealth),
+      tone: queueHealthCardTone(quoteHealth),
     },
     {
       lane: 'Supply',
@@ -393,6 +473,8 @@ export default async function AdminDashboardPage() {
       target: 'Review inside 1 day',
       href: '/admin/applications',
       note: 'Pending applications that block future assignment capacity.',
+      detail: queueHealthDetail(providerHealth),
+      tone: queueHealthCardTone(providerHealth),
     },
   ]
 
@@ -444,6 +526,12 @@ export default async function AdminDashboardPage() {
             <Button asChild variant="outline" className="w-full justify-between">
               <Link href="/admin/dispatch">
                 Open dispatch console
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
+              <Link href="/admin/field-exceptions">
+                Triage field exceptions
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
@@ -543,7 +631,7 @@ export default async function AdminDashboardPage() {
                 Open service requests and active field load that can tip into lateness.
               </p>
             </div>
-            <Badge variant={slaBadgeClass(dispatchCount > 0 ? 'warning' : 'default')}>
+            <Badge variant={slaBadgeClass(queueHealthBadgeTone(dispatchHealth))}>
               {dispatchCount} queued
             </Badge>
           </CardHeader>
@@ -561,7 +649,14 @@ export default async function AdminDashboardPage() {
                         {request.address ? ` · ${request.address.suburb}, ${request.address.city}` : ''}
                       </p>
                     </div>
-                    <StatusBadge status={request.status} type="jobRequest" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={request.status} type="jobRequest" />
+                      <Badge
+                        variant={assignmentBadgeVariant(dispatchAssignments.get(request.id), admin.id)}
+                      >
+                        {formatOpsQueueOwnerLabel(dispatchAssignments.get(request.id), admin.id)}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Badge variant={laneBadgeClass('Dispatch')}>
@@ -575,6 +670,11 @@ export default async function AdminDashboardPage() {
                     {request.match?.provider ? (
                       <Badge variant="outline">Matched to {request.match.provider.name}</Badge>
                     ) : null}
+                  </div>
+                  <div className="mt-3">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/admin/dispatch?request=${request.id}`}>Open in dispatch</Link>
+                    </Button>
                   </div>
                 </div>
               ))
@@ -644,7 +744,7 @@ export default async function AdminDashboardPage() {
                 Jobs that are blocked, failed, or waiting on human intervention.
               </p>
             </div>
-            <Badge variant={slaBadgeClass(fieldExceptionCount > 0 ? 'danger' : 'default')}>
+            <Badge variant={slaBadgeClass(queueHealthBadgeTone(fieldExceptionHealth))}>
               {fieldExceptionCount} escalated
             </Badge>
           </CardHeader>
@@ -661,7 +761,14 @@ export default async function AdminDashboardPage() {
                         {job.provider.name} · {job.booking.match.jobRequest.customer.name}
                       </p>
                     </div>
-                    <StatusBadge status={job.status} type="job" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={job.status} type="job" />
+                      <Badge
+                        variant={assignmentBadgeVariant(fieldExceptionAssignments.get(job.id), admin.id)}
+                      >
+                        {formatOpsQueueOwnerLabel(fieldExceptionAssignments.get(job.id), admin.id)}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Badge variant={slaBadgeClass(getSlaTone(job.updatedAt, now, 60))}>
@@ -669,6 +776,11 @@ export default async function AdminDashboardPage() {
                     </Badge>
                     <Badge variant="outline">{formatBookingWindow(job.booking)}</Badge>
                     {job.failureReason ? <Badge variant="outline">{job.failureReason}</Badge> : null}
+                  </div>
+                  <div className="mt-3">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/admin/field-exceptions">Open field exceptions queue</Link>
+                    </Button>
                   </div>
                 </div>
               ))
@@ -866,6 +978,8 @@ function QueueCard({
   target,
   href,
   note,
+  detail,
+  tone,
 }: {
   lane: string
   title: string
@@ -873,17 +987,20 @@ function QueueCard({
   target: string
   href: string
   note: string
+  detail: string
+  tone: 'default' | 'warning' | 'danger'
 }) {
   return (
     <Card>
       <CardHeader className="gap-3">
         <div className="flex items-center justify-between gap-3">
           <Badge variant={laneBadgeClass(lane)}>{lane}</Badge>
-          <Badge variant={slaBadgeClass(count > 0 ? 'warning' : 'default')}>{count} open</Badge>
+          <Badge variant={slaBadgeClass(tone)}>{count} open</Badge>
         </div>
         <div className="space-y-1">
           <CardTitle className="text-base">{title}</CardTitle>
           <p className="text-sm text-muted-foreground">{note}</p>
+          <p className="text-xs text-muted-foreground">{detail}</p>
         </div>
       </CardHeader>
       <CardContent className="flex items-center justify-between gap-3">
@@ -1025,6 +1142,7 @@ function ratioLabel(current: number, previous: number) {
 function laneBadgeClass(lane: string): 'neutral' | 'info' | 'success' | 'danger' | 'warning' | 'brand' {
   if (lane === 'Ops') return 'neutral'
   if (lane === 'Dispatch') return 'info'
+  if (lane === 'Field') return 'danger'
   if (lane === 'Finance') return 'success'
   if (lane === 'Trust') return 'danger'
   if (lane === 'Quotes') return 'warning'
@@ -1042,6 +1160,102 @@ function heroToneClass(tone: 'default' | 'warning' | 'danger' | 'info') {
   if (tone === 'warning') return 'tone-warning'
   if (tone === 'info') return 'tone-info'
   return 'tone-neutral'
+}
+
+function summarizeQueueHealth<T extends { id: string }>(
+  items: T[],
+  assignments: Map<string, { claimedById: string | null }>,
+  now: Date,
+  targetMinutes: number,
+  getTimestamp: (item: T) => Date,
+) {
+  let claimedCount = 0
+  let unclaimedCount = 0
+  let overdueCount = 0
+  let overdueClaimedCount = 0
+  let overdueUnclaimedCount = 0
+
+  for (const item of items) {
+    const assignment = assignments.get(item.id)
+    const claimed = Boolean(assignment?.claimedById)
+    const overdue = getSlaTone(getTimestamp(item), now, targetMinutes) === 'danger'
+
+    if (claimed) {
+      claimedCount += 1
+    } else {
+      unclaimedCount += 1
+    }
+
+    if (overdue) {
+      overdueCount += 1
+      if (claimed) {
+        overdueClaimedCount += 1
+      } else {
+        overdueUnclaimedCount += 1
+      }
+    }
+  }
+
+  return {
+    claimedCount,
+    unclaimedCount,
+    overdueCount,
+    overdueClaimedCount,
+    overdueUnclaimedCount,
+  }
+}
+
+function queueHealthCardTone(stats: {
+  overdueUnclaimedCount: number
+  overdueClaimedCount: number
+  unclaimedCount: number
+}) {
+  if (stats.overdueUnclaimedCount > 0) return 'danger' as const
+  if (stats.overdueClaimedCount > 0 || stats.unclaimedCount > 0) return 'warning' as const
+  return 'default' as const
+}
+
+function queueHealthBadgeTone(stats: {
+  overdueUnclaimedCount: number
+  overdueClaimedCount: number
+  unclaimedCount: number
+}) {
+  return queueHealthCardTone(stats)
+}
+
+function queueHealthHeroTone(stats: {
+  overdueUnclaimedCount: number
+  overdueClaimedCount: number
+  unclaimedCount: number
+}) {
+  if (stats.overdueUnclaimedCount > 0) return 'danger' as const
+  if (stats.overdueClaimedCount > 0 || stats.unclaimedCount > 0) return 'warning' as const
+  return 'default' as const
+}
+
+function queueHealthDetail(stats: {
+  claimedCount: number
+  unclaimedCount: number
+  overdueClaimedCount: number
+  overdueUnclaimedCount: number
+}) {
+  const parts: string[] = []
+
+  if (stats.overdueUnclaimedCount > 0) {
+    parts.push(`${stats.overdueUnclaimedCount} overdue unclaimed`)
+  }
+  if (stats.overdueClaimedCount > 0) {
+    parts.push(`${stats.overdueClaimedCount} overdue claimed`)
+  }
+  if (stats.unclaimedCount > 0) {
+    parts.push(`${stats.unclaimedCount} unclaimed`)
+  } else if (stats.claimedCount > 0) {
+    parts.push(`${stats.claimedCount} claimed`)
+  } else {
+    parts.push('No open work')
+  }
+
+  return parts.join(' · ')
 }
 
 function assignmentBadgeVariant(

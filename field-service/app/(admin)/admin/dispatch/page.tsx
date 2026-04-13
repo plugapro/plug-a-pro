@@ -12,6 +12,14 @@ import {
   runAssignmentForJobRequest,
 } from '@/lib/matching/service'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  OPS_QUEUE_TYPES,
+  claimOpsQueueItem,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+  releaseOpsQueueItem,
+} from '@/lib/ops-queue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -39,6 +47,12 @@ export default async function AdminDispatchPage({
     take: 30,
   })
 
+  const assignments = await listOpsQueueAssignments(
+    db,
+    OPS_QUEUE_TYPES.DISPATCH,
+    requests.map((jobRequest) => jobRequest.id),
+  )
+
   const selectedRequest = request
     ? requests.find((jobRequest) => jobRequest.id === request) ??
       await db.jobRequest.findUnique({
@@ -61,6 +75,7 @@ export default async function AdminDispatchPage({
       mode: 'AUTO_ASSIGN',
     })
     revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
     redirect(`/admin/dispatch?request=${jobRequestId}`)
   }
 
@@ -74,6 +89,7 @@ export default async function AdminDispatchPage({
       mode: 'OPS_REVIEW',
     })
     revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
     redirect(`/admin/dispatch?request=${jobRequestId}`)
   }
 
@@ -89,6 +105,42 @@ export default async function AdminDispatchPage({
       overrideReason: 'Selected by admin from dispatch console',
     })
     revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
+    redirect(`/admin/dispatch?request=${jobRequestId}`)
+  }
+
+  async function claimDispatch(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    if (!jobRequestId) return
+
+    await claimOpsQueueItem(db, {
+      queueType: OPS_QUEUE_TYPES.DISPATCH,
+      entityId: jobRequestId,
+      claimedById: activeAdmin.id,
+      claimedByRole: activeAdmin.role,
+      claimedByLabel: activeAdmin.email ?? 'admin',
+    })
+
+    revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
+    redirect(`/admin/dispatch?request=${jobRequestId}`)
+  }
+
+  async function releaseDispatch(formData: FormData) {
+    'use server'
+    await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    if (!jobRequestId) return
+
+    await releaseOpsQueueItem(db, {
+      queueType: OPS_QUEUE_TYPES.DISPATCH,
+      entityId: jobRequestId,
+    })
+
+    revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
     redirect(`/admin/dispatch?request=${jobRequestId}`)
   }
 
@@ -117,47 +169,95 @@ export default async function AdminDispatchPage({
             {requests.length === 0 && (
               <p className="text-sm text-muted-foreground">No open or matching requests.</p>
             )}
-            {requests.map((jobRequest) => (
-              <Link
-                key={jobRequest.id}
-                href={`/admin/dispatch?request=${jobRequest.id}`}
-                className={`block rounded-lg border p-3 transition-colors ${
-                  selectedRequest?.id === jobRequest.id
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:bg-muted/50'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{jobRequest.title}</p>
-                    <p className="text-xs text-muted-foreground">{jobRequest.customer.name}</p>
+            {requests.map((jobRequest) => {
+              const assignment = assignments.get(jobRequest.id)
+
+              return (
+                <Link
+                  key={jobRequest.id}
+                  href={`/admin/dispatch?request=${jobRequest.id}`}
+                  className={`block rounded-lg border p-3 transition-colors ${
+                    selectedRequest?.id === jobRequest.id
+                      ? 'border-primary bg-primary/5'
+                      : 'hover:bg-muted/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{jobRequest.title}</p>
+                      <p className="text-xs text-muted-foreground">{jobRequest.customer.name}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={jobRequest.status} type="jobRequest" />
+                      <Badge
+                        variant={
+                          assignment?.claimedById === admin.id
+                            ? 'brand'
+                            : assignment?.claimedById
+                              ? 'warning'
+                              : 'outline'
+                        }
+                      >
+                        {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                      </Badge>
+                    </div>
                   </div>
-                  <StatusBadge status={jobRequest.status} type="jobRequest" />
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {jobRequest.address
-                    ? `${jobRequest.address.suburb}, ${jobRequest.address.city}`
-                    : 'Area unavailable'}
-                </p>
-              </Link>
-            ))}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {jobRequest.address
+                      ? `${jobRequest.address.suburb}, ${jobRequest.address.city}`
+                      : 'Area unavailable'}
+                  </p>
+                </Link>
+              )
+            })}
           </CardContent>
         </Card>
 
         <div className="space-y-6">
           {selectedRequest ? (
             <>
+              {(() => {
+                const assignment = assignments.get(selectedRequest.id)
+                const claimedByCurrentUser = assignment?.claimedById === admin.id
+
+                return (
               <Card>
                 <CardHeader className="space-y-1">
-                  <CardTitle className="text-base">{selectedRequest.title}</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedRequest.category} · {selectedRequest.customer.name} ·{' '}
-                    {selectedRequest.address
-                      ? `${selectedRequest.address.suburb}, ${selectedRequest.address.city}`
-                      : 'Area unavailable'}
-                  </p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <CardTitle className="text-base">{selectedRequest.title}</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedRequest.category} · {selectedRequest.customer.name} ·{' '}
+                        {selectedRequest.address
+                          ? `${selectedRequest.address.suburb}, ${selectedRequest.address.city}`
+                          : 'Area unavailable'}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={
+                        claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'
+                      }
+                    >
+                      {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </div>
                 </CardHeader>
                 <CardContent className="flex flex-wrap gap-3">
+                  {!claimedByCurrentUser ? (
+                    <form action={claimDispatch}>
+                      <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                      <Button type="submit" variant="outline">
+                        {assignment?.claimedById ? 'Take over dispatch' : 'Claim dispatch'}
+                      </Button>
+                    </form>
+                  ) : (
+                    <form action={releaseDispatch}>
+                      <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                      <Button type="submit" variant="outline">
+                        Release dispatch
+                      </Button>
+                    </form>
+                  )}
                   <form action={runAutoAssign}>
                     <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
                     <Button type="submit">Auto-assign top candidate</Button>
@@ -170,6 +270,8 @@ export default async function AdminDispatchPage({
                   </form>
                 </CardContent>
               </Card>
+                )
+              })()}
 
               <Card>
                 <CardHeader>

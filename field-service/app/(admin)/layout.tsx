@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/admin',              label: 'Operations',  icon: 'operations' as const },
   { href: '/admin/validation',   label: 'Validation',  icon: 'workflow' as const },
   { href: '/admin/dispatch',     label: 'Dispatch',    icon: 'dispatch' as const },
+  { href: '/admin/field-exceptions', label: 'Field Exceptions', icon: 'disputes' as const },
   { href: '/admin/quotes',       label: 'Quotes',      icon: 'reports' as const },
   { href: '/admin/bookings',     label: 'Bookings',    icon: 'jobs' as const },
   { href: '/admin/matches',      label: 'Matches',     icon: 'workflow' as const },
