@@ -1,13 +1,4 @@
-// Phone normalizer — keeps provider record lookups consistent regardless of
-// whether the caller supplies "+27821234567" or "0821234567".
-function normalizePhone(raw: string): string {
-  const stripped = raw.replace(/[\s\-()]/g, '')
-  if (stripped.startsWith('+')) return stripped
-  if (stripped.startsWith('0') && stripped.length === 10) {
-    return `+27${stripped.slice(1)}`
-  }
-  return stripped
-}
+import { normalizePhone } from './utils'
 
 type ProviderRecordSyncClient = {
   provider: {

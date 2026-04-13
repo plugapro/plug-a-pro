@@ -5,6 +5,11 @@ import type { ApplicationStatus, DisputeStatus, JobStatus, PaymentStatus } from 
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  OPS_QUEUE_TYPES,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+} from '@/lib/ops-queue'
 import { cn } from '@/lib/utils'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
@@ -136,7 +141,7 @@ const PAYMENT_EXCEPTION_STATUSES: PaymentStatus[] = [
 const OPEN_DISPUTE_STATUSES: DisputeStatus[] = ['OPEN', 'UNDER_REVIEW']
 
 export default async function AdminDashboardPage() {
-  await requireAdmin()
+  const admin = await requireAdmin()
 
   const now = new Date()
   const today = new Date(now)
@@ -189,6 +194,19 @@ export default async function AdminDashboardPage() {
     db.quote.count({
       where: { status: { in: ['PENDING', 'REVISED'] } },
     }),
+  ])
+
+  const [validationAssignments, quoteAssignments] = await Promise.all([
+    listOpsQueueAssignments(
+      db,
+      OPS_QUEUE_TYPES.VALIDATION,
+      validationQueue.map((request) => request.id),
+    ),
+    listOpsQueueAssignments(
+      db,
+      OPS_QUEUE_TYPES.QUOTE_APPROVAL,
+      pendingQuotes.map((quote) => quote.id),
+    ),
   ])
 
   const [
@@ -316,7 +334,7 @@ export default async function AdminDashboardPage() {
       title: 'Validation queue',
       count: validationCount,
       target: 'Triage inside 15 min',
-      href: '/admin/dispatch',
+      href: '/admin/validation',
       note: 'Requests missing platform validation before matching can start.',
     },
     {
@@ -348,7 +366,7 @@ export default async function AdminDashboardPage() {
       title: 'Quote approvals',
       count: quoteCount,
       target: 'Chase inside 4 hours',
-      href: '/admin/bookings?tab=quotes',
+      href: '/admin/quotes',
       note: 'Quotes waiting on customer decision or revision follow-through.',
     },
     {
@@ -401,8 +419,20 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Button asChild className="w-full justify-between">
+              <Link href="/admin/validation">
+                Open validation queue
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
               <Link href="/admin/dispatch">
                 Open dispatch console
+                <span aria-hidden="true">→</span>
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full justify-between">
+              <Link href="/admin/quotes">
+                Work quote approvals
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
@@ -461,11 +491,26 @@ export default async function AdminDashboardPage() {
                         {request.address ? ` · ${request.address.suburb}, ${request.address.city}` : ''}
                       </p>
                     </div>
-                    <StatusBadge status={request.status} type="jobRequest" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={request.status} type="jobRequest" />
+                      <Badge
+                        variant={assignmentBadgeVariant(
+                          validationAssignments.get(request.id),
+                          admin.id,
+                        )}
+                      >
+                        {formatOpsQueueOwnerLabel(validationAssignments.get(request.id), admin.id)}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
                     <span>Age {formatAge(request.createdAt, now)}</span>
                     <span>Phone {request.customer.phone}</span>
+                  </div>
+                  <div className="mt-3">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/admin/validation">Open validation queue</Link>
+                    </Button>
                   </div>
                 </div>
               ))
@@ -545,7 +590,14 @@ export default async function AdminDashboardPage() {
                         {quote.match.jobRequest.customer.name} · {quote.match.provider.name}
                       </p>
                     </div>
-                    <StatusBadge status={quote.status} type="quote" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={quote.status} type="quote" />
+                      <Badge
+                        variant={assignmentBadgeVariant(quoteAssignments.get(quote.id), admin.id)}
+                      >
+                        {formatOpsQueueOwnerLabel(quoteAssignments.get(quote.id), admin.id)}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Badge variant={slaBadgeClass(getSlaTone(quote.createdAt, now, 240))}>
@@ -555,6 +607,11 @@ export default async function AdminDashboardPage() {
                     {quote.validUntil ? (
                       <Badge variant="outline">Valid until {formatShortDate(quote.validUntil)}</Badge>
                     ) : null}
+                  </div>
+                  <div className="mt-3">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/admin/quotes">Open quote queue</Link>
+                    </Button>
                   </div>
                 </div>
               ))
@@ -944,4 +1001,17 @@ function heroToneClass(tone: 'default' | 'warning' | 'danger' | 'info') {
   if (tone === 'warning') return 'tone-warning'
   if (tone === 'info') return 'tone-info'
   return 'tone-neutral'
+}
+
+function assignmentBadgeVariant(
+  assignment:
+    | {
+        claimedById: string | null
+      }
+    | undefined,
+  currentActorId?: string | null,
+) {
+  if (!assignment?.claimedById) return 'outline' as const
+  if (currentActorId && assignment.claimedById === currentActorId) return 'brand' as const
+  return 'warning' as const
 }

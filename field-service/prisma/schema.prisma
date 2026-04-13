@@ -802,6 +802,22 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model OpsQueueAssignment {
+  id             String       @id @default(cuid())
+  queueType      OpsQueueType
+  entityId       String
+  claimedById    String?
+  claimedByRole  String?
+  claimedByLabel String?
+  claimedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([queueType, entityId])
+  @@index([queueType, claimedById])
+  @@map("ops_queue_assignments")
+}
+
 model OnboardingIntake {
   id             String   @id @default(cuid())
   source         String
@@ -933,6 +949,14 @@ enum TechnicianScheduleItemStatus {
   ACTIVE
   RELEASED
   CANCELLED
+}
+
+enum OpsQueueType {
+  VALIDATION
+  QUOTE_APPROVAL
+  DISPUTE
+  PAYMENT_FOLLOW_UP
+  PROVIDER_ONBOARDING
 }
 
 enum InspectionStatus {

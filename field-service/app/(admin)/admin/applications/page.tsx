@@ -9,7 +9,10 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { requireAdmin, createServiceClient } from '@/lib/auth'
 import { syncProviderRecord } from '@/lib/provider-record'
-import { StatusBadge } from '@/components/shared/StatusBadge'
+import {
+  findConflictingActiveProviderApplications,
+  getConflictingActiveProviderApplicationIds,
+} from '@/lib/provider-applications'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -55,6 +58,19 @@ async function approveApplication(formData: FormData) {
     select: providerApplicationSelect,
   })
   if (!app || app.status !== 'PENDING') return
+
+  const conflictingApplications = await findConflictingActiveProviderApplications(db, app.phone, {
+    excludeId: app.id,
+  })
+  if (conflictingApplications.length > 0) {
+    console.warn('[applications] Approval blocked by duplicate active applications', {
+      applicationId: app.id,
+      phone: app.phone,
+      conflictingApplicationIds: conflictingApplications.map((candidate) => candidate.id),
+    })
+    revalidatePath('/admin/applications')
+    return
+  }
 
   // Create Supabase user (phone OTP — no email/password)
   const supabase = createServiceClient()
@@ -179,6 +195,7 @@ export default async function ApplicationsPage() {
     orderBy: { submittedAt: 'desc' },
     take: 100,
   })
+  const conflictingApplicationIds = getConflictingActiveProviderApplicationIds(applications)
 
   const pending  = applications.filter((a) => a.status === 'PENDING')
   const reviewed = applications.filter((a) => a.status !== 'PENDING')
@@ -202,67 +219,82 @@ export default async function ApplicationsPage() {
           <p className="text-sm text-muted-foreground py-4">No pending applications.</p>
         )}
 
-        {pending.map((app) => (
-          <Card key={app.id}>
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-0.5">
-                  <p className="font-medium">{app.name}</p>
-                  <p className="text-sm text-muted-foreground">{app.phone}</p>
-                </div>
-                <Badge variant={getStatusVariant(app.status)} className="rounded-full">
-                  {app.status}
-                </Badge>
-              </div>
+        {pending.map((app) => {
+          const hasConflict = conflictingApplicationIds.has(app.id)
 
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Skills: </span>
-                  {app.skills.join(', ') || '—'}
+          return (
+            <Card key={app.id}>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <p className="font-medium">{app.name}</p>
+                    <p className="text-sm text-muted-foreground">{app.phone}</p>
+                  </div>
+                  <Badge variant={getStatusVariant(app.status)} className="rounded-full">
+                    {app.status}
+                  </Badge>
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Area: </span>
-                  {app.serviceAreas.join(', ') || '—'}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Experience: </span>
-                  {app.experience || '—'}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Availability: </span>
-                  {app.availability || '—'}
-                </div>
-              </div>
 
-              <p className="text-xs text-muted-foreground">
-                Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
-                {' · '}Ref: {app.id.slice(-8).toUpperCase()}
-              </p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Skills: </span>
+                    {app.skills.join(', ') || '—'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Area: </span>
+                    {app.serviceAreas.join(', ') || '—'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Experience: </span>
+                    {app.experience || '—'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Availability: </span>
+                    {app.availability || '—'}
+                  </div>
+                </div>
 
-              <div className="flex gap-2 pt-1">
-                <form action={approveApplication}>
-                  <input type="hidden" name="id" value={app.id} />
-                  <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-                    Approve
-                  </Button>
-                </form>
+                <p className="text-xs text-muted-foreground">
+                  Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {' · '}Ref: {app.id.slice(-8).toUpperCase()}
+                </p>
 
-                <form action={rejectApplication} className="flex gap-2">
-                  <input type="hidden" name="id" value={app.id} />
-                  <Input
-                    type="text"
-                    name="reason"
-                    placeholder="Reason (optional)"
-                    className="h-8 w-48 text-sm"
-                  />
-                  <Button type="submit" size="sm" variant="outline">
-                    Reject
-                  </Button>
-                </form>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                {hasConflict && (
+                  <div className="rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                    Duplicate active application detected for this phone number. Reject or resolve the duplicate before approving so one provider does not end up with multiple active application records.
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <form action={approveApplication}>
+                    <input type="hidden" name="id" value={app.id} />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={hasConflict}
+                      className="bg-green-600 hover:bg-green-700 text-white disabled:bg-muted disabled:text-muted-foreground"
+                    >
+                      Approve
+                    </Button>
+                  </form>
+
+                  <form action={rejectApplication} className="flex gap-2">
+                    <input type="hidden" name="id" value={app.id} />
+                    <Input
+                      type="text"
+                      name="reason"
+                      placeholder="Reason (optional)"
+                      className="h-8 w-48 text-sm"
+                    />
+                    <Button type="submit" size="sm" variant="outline">
+                      Reject
+                    </Button>
+                  </form>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </section>
 
       {/* Reviewed */}

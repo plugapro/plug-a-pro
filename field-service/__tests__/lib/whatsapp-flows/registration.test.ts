@@ -131,6 +131,22 @@ describe('registration flow — duplicate prevention', () => {
       )
       expect(result.nextStep).toBe('reg_collect_name')
     })
+
+    it('still blocks a new application when the latest row is rejected but an older APPROVED one exists', async () => {
+      ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'app_approved1',
+        status: 'APPROVED',
+      })
+
+      const result = await handleRegistrationFlow(makeCtx('reg_start'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('already registered'),
+        expect.any(Array),
+      )
+      expect(result.nextStep).toBe('pj_toggle_available')
+    })
   })
 
   // ── handlePending (submit step) ────────────────────────────────────────────
@@ -227,6 +243,26 @@ describe('registration flow — duplicate prevention', () => {
           data: expect.objectContaining({ phone }),
         })
       )
+    })
+
+    it('recovers cleanly when a unique constraint race creates the application first', async () => {
+      ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 'app_raced_pending',
+          status: 'PENDING',
+          name: 'Thabo Nkosi',
+        })
+      ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockRejectedValue({
+        code: 'P2002',
+      })
+
+      const result = await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, dataWithFullProfile)
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('already under review'))
     })
   })
 })

@@ -6,6 +6,7 @@ import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import { db } from '../db'
 import { syncProviderRecord } from '../provider-record'
 import { normalizePhone } from '../utils'
+import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — mirrors job-request.ts
@@ -63,12 +64,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
 // ─── Step handlers ────────────────────────────────────────────────────────────
 
 async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
-  // Check if already registered or application pending — use normalized phone for safety
-  const normalizedPhone = normalizePhone(ctx.phone)
-  const existing = await db.providerApplication.findFirst({
-    where: { phone: normalizedPhone },
-    orderBy: { submittedAt: 'desc' },
-  })
+  // Existing active applications own the provider identity for this phone number.
+  const existing = await findLatestActiveProviderApplicationByPhone(db, ctx.phone)
 
   if (existing?.status === 'APPROVED') {
     await sendButtons(
@@ -366,16 +363,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
     // ── Idempotency guard: prevent duplicate application on double-tap ─────────
     // Race condition: user taps "Submit" twice (or retries quickly). Check for
-    // an existing non-rejected application before creating a new record.
+    // an existing active application before creating a new record.
     const normalizedPhone = normalizePhone(ctx.phone)
-    const existingApp = await db.providerApplication.findFirst({
-      where: {
-        phone: normalizedPhone,
-        status: { in: ['PENDING', 'APPROVED'] },
-      },
-      orderBy: { submittedAt: 'desc' },
-      select: { id: true, status: true, name: true },
-    })
+    const existingApp = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
 
     if (existingApp?.status === 'APPROVED') {
       await sendText(
@@ -404,18 +394,39 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       verified: false,
     })
 
-    const application = await db.providerApplication.create({
-      data: {
-        providerId,
-        phone: normalizedPhone,
-        name: ctx.data.name ?? 'Unknown',
-        skills: ctx.data.skills ?? [],
-        serviceAreas: ctx.data.serviceAreas ?? [],
-        experience: ctx.data.experience ?? null,
-        availability: availLabel,
-        status: 'PENDING',
-      },
-    })
+    let application: { id: string }
+    try {
+      application = await db.providerApplication.create({
+        data: {
+          providerId,
+          phone: normalizedPhone,
+          name: ctx.data.name ?? 'Unknown',
+          skills: ctx.data.skills ?? [],
+          serviceAreas: ctx.data.serviceAreas ?? [],
+          experience: ctx.data.experience ?? null,
+          availability: availLabel,
+          status: 'PENDING',
+        },
+      })
+    } catch (error) {
+      const duplicateRace =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+
+      if (!duplicateRace) throw error
+
+      const racedExisting = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
+      if (!racedExisting) throw error
+
+      const ref = racedExisting.id.slice(-8).toUpperCase()
+      await sendText(
+        ctx.phone,
+        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 24 hours. Reply *menu* anytime to return to the main menu.`
+      )
+      return { nextStep: 'done' }
+    }
 
     const ref = application.id.slice(-8).toUpperCase()
 
