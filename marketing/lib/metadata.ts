@@ -13,7 +13,7 @@ export const siteConfig = {
     app: "https://app.plugapro.co.za",
     twitter: "https://x.com/EdgeDiscip40626",
     instagram: "https://www.instagram.com/plugapro/",
-    facebook: "", // set once Facebook vanity URL is claimed
+    facebook: "https://www.facebook.com/plugapro",
   },
 } as const;
 
