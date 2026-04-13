@@ -6,6 +6,7 @@
 
 import { db } from '../db'
 import { mergeCategoryRequirements } from '../service-category-policy'
+import { geocodeAddress } from '../geocoding'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -57,6 +58,14 @@ export async function createJobRequest(
     requiredVehicleTypes: params.requiredVehicleTypes,
   })
 
+  // Geocode before the transaction — non-blocking, failure is safe to ignore
+  const geo = await geocodeAddress({
+    street:   params.street,
+    suburb:   params.suburb,
+    city:     params.city,
+    province: params.province,
+  })
+
   // Atomic: customer upsert + address + jobRequest in one transaction
   const result = await db.$transaction(async (tx) => {
     // Resolve or create customer — support both userId-keyed (web) and
@@ -89,11 +98,13 @@ export async function createJobRequest(
     const address = await tx.address.create({
       data: {
         customerId: customer.id,
-        street: params.street,
-        suburb: params.suburb,
-        city: params.city,
-        province: params.province,
+        street:     params.street,
+        suburb:     params.suburb,
+        city:       params.city,
+        province:   params.province,
         postalCode: params.postalCode ?? null,
+        lat:        geo?.lat ?? null,
+        lng:        geo?.lng ?? null,
       },
       select: { id: true },
     })
