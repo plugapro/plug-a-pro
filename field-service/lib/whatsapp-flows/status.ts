@@ -262,31 +262,32 @@ async function showRequestStatus(
     }
   }
 
-  // ── Default: show status + tracking link ────────────────────────────────
+  // ── Default: show status + direct ticket link ────────────────────────────
+  const ticketRef = jr.id.slice(-6).toUpperCase()
   const trackingUrl = appUrl ? `${appUrl}/requests/${jr.id}` : ''
-  log(`sending status buttons trackingUrl=${trackingUrl || '(none)'}`)
+  log(`sending status CTA trackingUrl=${trackingUrl || '(none)'} ticketRef=${ticketRef}`)
 
   try {
     if (trackingUrl) {
       await sendCtaUrl(
         phone,
-        `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}\n\nOpen your request in the app to track progress. Sign in with this same phone number if prompted.`,
-        'Track Request',
+        `📋 *Ticket #${ticketRef}*\n\n🔧 ${jr.category}\n${statusLabel}\n\nTap below to view your ticket.`,
+        'View Ticket',
         trackingUrl
       )
     } else {
       await sendButtons(
         phone,
-        `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}`,
+        `📋 *Ticket #${ticketRef}*\n\n🔧 ${jr.category}\n${statusLabel}`,
         [{ id: 'back_home', title: '🏠 Main Menu' }],
         { footer: 'Reply "menu" to return to main menu' }
       )
     }
   } catch (error) {
-    log(`WARN: status response send failed — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
+    log(`WARN: status CTA send failed — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
     await sendText(
       phone,
-      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}\n\nOpen the Plug A Pro app to track your request. Sign in with this same phone number if prompted.\n\nReply "menu" to return to the main menu.`
+      `📋 *Ticket #${ticketRef}*\n\n🔧 ${jr.category}\n${statusLabel}\n\nOpen the Plug A Pro app and look up ticket *#${ticketRef}* to track progress.\n\nReply "menu" to return to the main menu.`
     )
   }
 

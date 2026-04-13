@@ -113,7 +113,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Plumbing'),
-      'Track Request',
+      'View Ticket',
       `${APP_URL}/requests/jr_abc123`
     )
     expect(result.nextStep).toBe('done')
@@ -277,7 +277,7 @@ describe('handleStatusFlow — multiple active requests', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Painting'),
-      'Track Request',
+      'View Ticket',
       `${APP_URL}/requests/jr_1`
     )
     expect(result.nextStep).toBe('done')
@@ -305,7 +305,7 @@ describe('handleStatusFlow — status_pick step', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Electrical'),
-      'Track Request',
+      'View Ticket',
       `${APP_URL}/requests/jr_2`
     )
     expect(result.nextStep).toBe('done')
@@ -384,7 +384,7 @@ describe('handleStatusFlow — send fallback resilience', () => {
     // Fallback no longer includes raw URL (UAT-006: security improvement)
     expect(wa.sendText).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Open the Plug A Pro app to track your request')
+      expect.stringContaining('Open the Plug A Pro app and look up ticket')
     )
     expect(result.nextStep).toBe('done')
   })
