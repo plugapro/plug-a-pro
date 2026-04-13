@@ -75,6 +75,7 @@ export default async function AdminValidationQueuePage() {
       claimedById: activeAdmin.id,
       claimedByRole: activeAdmin.role,
       claimedByLabel: activeAdmin.email ?? 'admin',
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     redirect('/admin/validation')
@@ -82,13 +83,14 @@ export default async function AdminValidationQueuePage() {
 
   async function releaseValidation(formData: FormData) {
     'use server'
-    await requireAdmin()
+    const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
     if (!jobRequestId) return
 
     await releaseOpsQueueItem(db, {
       queueType: OPS_QUEUE_TYPES.VALIDATION,
       entityId: jobRequestId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     redirect('/admin/validation')
@@ -126,6 +128,7 @@ export default async function AdminValidationQueuePage() {
     await releaseOpsQueueItem(db, {
       queueType: OPS_QUEUE_TYPES.VALIDATION,
       entityId: jobRequestId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     await dispatchLeads(jobRequestId).catch((error) => {
@@ -170,6 +173,7 @@ export default async function AdminValidationQueuePage() {
     await releaseOpsQueueItem(db, {
       queueType: OPS_QUEUE_TYPES.VALIDATION,
       entityId: jobRequestId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     redirect('/admin/validation')

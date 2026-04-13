@@ -166,6 +166,7 @@ export default async function AdminDispatchPage({
       claimedById: activeAdmin.id,
       claimedByRole: activeAdmin.role,
       claimedByLabel: activeAdmin.email ?? 'admin',
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     revalidatePath('/admin/dispatch')
@@ -175,13 +176,14 @@ export default async function AdminDispatchPage({
 
   async function releaseDispatch(formData: FormData) {
     'use server'
-    await requireAdmin()
+    const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
     if (!jobRequestId) return
 
     await releaseOpsQueueItem(db, {
       queueType: OPS_QUEUE_TYPES.DISPATCH,
       entityId: jobRequestId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     revalidatePath('/admin/dispatch')

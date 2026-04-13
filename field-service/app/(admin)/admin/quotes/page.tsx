@@ -91,18 +91,20 @@ export default async function AdminQuoteQueuePage() {
       claimedById: activeAdmin.id,
       claimedByRole: activeAdmin.role,
       claimedByLabel: activeAdmin.email ?? 'admin',
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
   }
 
   async function releaseQuote(formData: FormData) {
     'use server'
-    await requireAdmin()
+    const activeAdmin = await requireAdmin()
     const quoteId = String(formData.get('quoteId') ?? '')
     if (!quoteId) return
 
     await releaseOpsQueueItem(db, {
       queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
       entityId: quoteId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
   }
 

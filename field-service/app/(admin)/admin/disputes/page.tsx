@@ -96,6 +96,7 @@ async function claimDisputeAction(formData: FormData) {
     claimedById: admin.id,
     claimedByRole: admin.role,
     claimedByLabel: admin.email ?? 'admin',
+    actor: { actorId: admin.id, actorRole: admin.role },
   })
 
   revalidatePath('/admin/disputes')
@@ -105,13 +106,14 @@ async function claimDisputeAction(formData: FormData) {
 async function releaseDisputeAction(formData: FormData) {
   'use server'
 
-  await requireAdmin()
+  const admin = await requireAdmin()
   const disputeId = String(formData.get('disputeId') ?? '')
   if (!disputeId) return
 
   await releaseOpsQueueItem(db, {
     queueType: OPS_QUEUE_TYPES.DISPUTE,
     entityId: disputeId,
+    actor: { actorId: admin.id, actorRole: admin.role },
   })
 
   revalidatePath('/admin/disputes')

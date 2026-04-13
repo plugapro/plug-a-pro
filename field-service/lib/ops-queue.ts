@@ -1,4 +1,5 @@
 import type { OpsQueueType } from '@prisma/client'
+import { recordAuditLog } from '@/lib/audit'
 
 type OpsQueueAssignmentRecord = {
   id: string
@@ -13,9 +14,15 @@ type OpsQueueAssignmentRecord = {
 type OpsQueueClient = {
   opsQueueAssignment: {
     findMany: (...args: any[]) => Promise<OpsQueueAssignmentRecord[]>
+    findUnique: (...args: any[]) => Promise<OpsQueueAssignmentRecord | null>
     upsert: (...args: any[]) => Promise<OpsQueueAssignmentRecord>
     updateMany: (...args: any[]) => Promise<{ count: number }>
   }
+}
+
+type OpsQueueActor = {
+  actorId: string
+  actorRole: string
 }
 
 export const OPS_QUEUE_TYPES = {
@@ -62,9 +69,30 @@ export async function claimOpsQueueItem(
     claimedById: string
     claimedByRole: string
     claimedByLabel: string
+    actor?: OpsQueueActor
   },
 ) {
-  return client.opsQueueAssignment.upsert({
+  const before = params.actor
+    ? await client.opsQueueAssignment.findUnique({
+        where: {
+          queueType_entityId: {
+            queueType: params.queueType,
+            entityId: params.entityId,
+          },
+        },
+        select: {
+          id: true,
+          queueType: true,
+          entityId: true,
+          claimedById: true,
+          claimedByRole: true,
+          claimedByLabel: true,
+          claimedAt: true,
+        },
+      })
+    : null
+
+  const assignment = await client.opsQueueAssignment.upsert({
     where: {
       queueType_entityId: {
         queueType: params.queueType,
@@ -95,6 +123,46 @@ export async function claimOpsQueueItem(
       claimedAt: true,
     },
   })
+
+  if (params.actor) {
+    await recordAuditLog(
+      {
+        actorId: params.actor.actorId,
+        actorRole: params.actor.actorRole,
+        action: 'ops_queue.claim',
+        entityType: 'ops_queue_item',
+        entityId: `${params.queueType}:${params.entityId}`,
+        before: before
+          ? {
+              queueType: before.queueType,
+              entityId: before.entityId,
+              claimedById: before.claimedById,
+              claimedByRole: before.claimedByRole,
+              claimedByLabel: before.claimedByLabel,
+              claimedAt: before.claimedAt?.toISOString() ?? null,
+            }
+          : {
+              queueType: params.queueType,
+              entityId: params.entityId,
+              claimedById: null,
+              claimedByRole: null,
+              claimedByLabel: null,
+              claimedAt: null,
+            },
+        after: {
+          queueType: assignment.queueType,
+          entityId: assignment.entityId,
+          claimedById: assignment.claimedById,
+          claimedByRole: assignment.claimedByRole,
+          claimedByLabel: assignment.claimedByLabel,
+          claimedAt: assignment.claimedAt?.toISOString() ?? null,
+        },
+      },
+      client as never,
+    )
+  }
+
+  return assignment
 }
 
 export async function releaseOpsQueueItem(
@@ -102,9 +170,30 @@ export async function releaseOpsQueueItem(
   params: {
     queueType: OpsQueueType
     entityId: string
+    actor?: OpsQueueActor
   },
 ) {
-  return client.opsQueueAssignment.updateMany({
+  const before = params.actor
+    ? await client.opsQueueAssignment.findUnique({
+        where: {
+          queueType_entityId: {
+            queueType: params.queueType,
+            entityId: params.entityId,
+          },
+        },
+        select: {
+          id: true,
+          queueType: true,
+          entityId: true,
+          claimedById: true,
+          claimedByRole: true,
+          claimedByLabel: true,
+          claimedAt: true,
+        },
+      })
+    : null
+
+  const result = await client.opsQueueAssignment.updateMany({
     where: {
       queueType: params.queueType,
       entityId: params.entityId,
@@ -116,6 +205,37 @@ export async function releaseOpsQueueItem(
       claimedAt: null,
     },
   })
+
+  if (params.actor && before && result.count > 0) {
+    await recordAuditLog(
+      {
+        actorId: params.actor.actorId,
+        actorRole: params.actor.actorRole,
+        action: 'ops_queue.release',
+        entityType: 'ops_queue_item',
+        entityId: `${params.queueType}:${params.entityId}`,
+        before: {
+          queueType: before.queueType,
+          entityId: before.entityId,
+          claimedById: before.claimedById,
+          claimedByRole: before.claimedByRole,
+          claimedByLabel: before.claimedByLabel,
+          claimedAt: before.claimedAt?.toISOString() ?? null,
+        },
+        after: {
+          queueType: params.queueType,
+          entityId: params.entityId,
+          claimedById: null,
+          claimedByRole: null,
+          claimedByLabel: null,
+          claimedAt: null,
+        },
+      },
+      client as never,
+    )
+  }
+
+  return result
 }
 
 export function formatOpsQueueOwnerLabel(

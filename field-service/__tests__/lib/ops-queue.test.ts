@@ -8,6 +8,10 @@ import {
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
 
+vi.mock('@/lib/audit', () => ({
+  recordAuditLog: vi.fn(),
+}))
+
 describe('ops queue helpers', () => {
   it('loads assignments into an entity-id keyed map', async () => {
     const client = {
@@ -58,6 +62,7 @@ describe('ops queue helpers', () => {
 
     const client = {
       opsQueueAssignment: {
+        findUnique: vi.fn(),
         upsert: vi.fn().mockResolvedValue({
           id: 'assign_1',
           queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
@@ -76,6 +81,7 @@ describe('ops queue helpers', () => {
       claimedById: 'admin_1',
       claimedByRole: 'OWNER',
       claimedByLabel: 'ops@plugapro.co.za',
+      actor: { actorId: 'admin_1', actorRole: 'OWNER' },
     })
 
     expect(client.opsQueueAssignment.upsert).toHaveBeenCalledWith({
@@ -110,12 +116,31 @@ describe('ops queue helpers', () => {
       },
     })
 
+    const { recordAuditLog } = await import('@/lib/audit')
+    expect(recordAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ops_queue.claim',
+        entityType: 'ops_queue_item',
+        entityId: `${OPS_QUEUE_TYPES.QUOTE_APPROVAL}:quote_1`,
+      }),
+      client,
+    )
+
     vi.useRealTimers()
   })
 
   it('releases claim ownership from a queue item', async () => {
     const client = {
       opsQueueAssignment: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'assign_1',
+          queueType: OPS_QUEUE_TYPES.DISPUTE,
+          entityId: 'dispute_1',
+          claimedById: 'admin_1',
+          claimedByRole: 'OWNER',
+          claimedByLabel: 'ops@plugapro.co.za',
+          claimedAt: new Date('2026-04-13T10:00:00.000Z'),
+        }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }
@@ -123,6 +148,7 @@ describe('ops queue helpers', () => {
     await releaseOpsQueueItem(client as never, {
       queueType: OPS_QUEUE_TYPES.DISPUTE,
       entityId: 'dispute_1',
+      actor: { actorId: 'admin_2', actorRole: 'OWNER' },
     })
 
     expect(client.opsQueueAssignment.updateMany).toHaveBeenCalledWith({
@@ -137,6 +163,16 @@ describe('ops queue helpers', () => {
         claimedAt: null,
       },
     })
+
+    const { recordAuditLog } = await import('@/lib/audit')
+    expect(recordAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ops_queue.release',
+        entityType: 'ops_queue_item',
+        entityId: `${OPS_QUEUE_TYPES.DISPUTE}:dispute_1`,
+      }),
+      client,
+    )
   })
 
   it('formats owner labels for unclaimed, self-claimed, and other-claimed work', () => {

@@ -163,6 +163,7 @@ async function approveApplication(formData: FormData) {
   await releaseOpsQueueItem(db, {
     queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
     entityId: app.id,
+    actor: { actorId: session.id, actorRole: session.role },
   })
 
   revalidatePath('/admin/applications')
@@ -229,6 +230,7 @@ async function rejectApplication(formData: FormData) {
   await releaseOpsQueueItem(db, {
     queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
     entityId: app.id,
+    actor: { actorId: session.id, actorRole: session.role },
   })
 
   revalidatePath('/admin/applications')
@@ -247,6 +249,7 @@ async function claimApplication(formData: FormData) {
     claimedById: admin.id,
     claimedByRole: admin.role,
     claimedByLabel: admin.email ?? 'admin',
+    actor: { actorId: admin.id, actorRole: admin.role },
   })
 
   revalidatePath('/admin/applications')
@@ -255,13 +258,14 @@ async function claimApplication(formData: FormData) {
 
 async function releaseApplication(formData: FormData) {
   'use server'
-  await requireAdmin()
+  const admin = await requireAdmin()
   const id = String(formData.get('id') ?? '')
   if (!id) return
 
   await releaseOpsQueueItem(db, {
     queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
     entityId: id,
+    actor: { actorId: admin.id, actorRole: admin.role },
   })
 
   revalidatePath('/admin/applications')

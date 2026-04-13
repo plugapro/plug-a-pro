@@ -98,6 +98,7 @@ async function claimPaymentAction(formData: FormData) {
     claimedById: admin.id,
     claimedByRole: admin.role,
     claimedByLabel: admin.email ?? 'admin',
+    actor: { actorId: admin.id, actorRole: admin.role },
   })
 
   revalidatePath('/admin/payments')
@@ -106,13 +107,14 @@ async function claimPaymentAction(formData: FormData) {
 
 async function releasePaymentAction(formData: FormData) {
   'use server'
-  await requireAdmin()
+  const admin = await requireAdmin()
   const paymentId = String(formData.get('paymentId') ?? '')
   if (!paymentId) return
 
   await releaseOpsQueueItem(db, {
     queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
     entityId: paymentId,
+    actor: { actorId: admin.id, actorRole: admin.role },
   })
 
   revalidatePath('/admin/payments')

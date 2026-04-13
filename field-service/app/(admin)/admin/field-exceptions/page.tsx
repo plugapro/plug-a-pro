@@ -99,6 +99,7 @@ export default async function AdminFieldExceptionsPage() {
       claimedById: activeAdmin.id,
       claimedByRole: activeAdmin.role,
       claimedByLabel: activeAdmin.email ?? 'admin',
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     revalidatePath('/admin/field-exceptions')
@@ -107,13 +108,14 @@ export default async function AdminFieldExceptionsPage() {
 
   async function releaseFieldException(formData: FormData) {
     'use server'
-    await requireAdmin()
+    const activeAdmin = await requireAdmin()
     const jobId = String(formData.get('jobId') ?? '')
     if (!jobId) return
 
     await releaseOpsQueueItem(db, {
       queueType: OPS_QUEUE_TYPES.FIELD_EXCEPTION,
       entityId: jobId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
 
     revalidatePath('/admin/field-exceptions')

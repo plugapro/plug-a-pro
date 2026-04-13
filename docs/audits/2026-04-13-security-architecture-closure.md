@@ -96,11 +96,12 @@ Goal: identify remaining exploitable weaknesses, architecture integrity issues, 
 ### 3. Medium: auditability is uneven across privileged workflows
 - Pattern:
   - booking, dispute, dispatch override, and status transitions are audited
-  - queue claim/release and some failed admin action attempts are not fully audit-logged
+  - queue claim/release is now audit-logged through the shared ops queue helper
+  - some failed admin action attempts are still not fully audit-logged
 - Impact:
   - reduces operational traceability during incident review and staff accountability analysis
 - Recommendation:
-  - extend audit coverage to queue ownership mutations and failed privileged attempts where operationally useful
+  - extend audit coverage to failed privileged attempts where operationally useful
 
 ### 4. Medium: duplicated provider and technician route trees remain a maintainability risk
 - Areas:

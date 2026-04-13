@@ -123,6 +123,10 @@ Open work in this plan focuses on the remaining residual risks and the closure a
 - Acceptance criteria:
   - material privileged ops actions have durable audit records with actor, entity, before/after where appropriate
   - audit additions do not break existing flows or introduce false positives
+- Current execution state:
+  - partially implemented in Codex
+  - queue claim/release now records audit events through the shared ops queue helper
+  - remaining auditability follow-up is focused on failed privileged attempts where operationally useful
 
 ### Workstream 5: Shared Validation For High-Risk Write Paths
 - Priority: `P2`
