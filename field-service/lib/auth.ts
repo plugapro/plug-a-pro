@@ -73,10 +73,17 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
     const role = (user.user_metadata?.role ?? 'customer') as UserRole
     const providerId = user.user_metadata?.providerId
 
+    // Supabase stores phone without the '+' prefix (e.g. "27823035070").
+    // Normalise to E.164 so comparisons downstream are consistent.
+    const rawPhone = user.phone ?? null
+    const phone = rawPhone
+      ? rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`
+      : null
+
     return {
       id: user.id,
       email: user.email ?? null,
-      phone: user.phone ?? null,
+      phone,
       role,
       providerId,
     }
