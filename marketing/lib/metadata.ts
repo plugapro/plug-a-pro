@@ -10,8 +10,10 @@ export const siteConfig = {
   ogImage: "/og.png",
   whatsappNumber: "+27 69 355 2447",
   links: {
-    app: "https://app.plugapro.co.za", // TODO: update with production app URL
-    twitter: "https://twitter.com/plugapro", // TODO: update with real handle
+    app: "https://app.plugapro.co.za",
+    twitter: "https://x.com/EdgeDiscip40626",
+    instagram: "https://www.instagram.com/plugapro/",
+    facebook: "", // set once Facebook vanity URL is claimed
   },
 } as const;
 
