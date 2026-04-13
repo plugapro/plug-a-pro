@@ -208,7 +208,6 @@ export default async function AdminDashboardPage() {
       pendingQuotes.map((quote) => quote.id),
     ),
   ])
-
   const [
     activeFieldCount,
     fieldExceptions,
@@ -279,6 +278,24 @@ export default async function AdminDashboardPage() {
     db.booking.count({
       where: { createdAt: { gte: weekAgo } },
     }),
+  ])
+
+  const [disputeAssignments, paymentAssignments, providerAssignments] = await Promise.all([
+    listOpsQueueAssignments(
+      db,
+      OPS_QUEUE_TYPES.DISPUTE,
+      openDisputes.map((dispute) => dispute.id),
+    ),
+    listOpsQueueAssignments(
+      db,
+      OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+      financeFollowUp.map((payment) => payment.id),
+    ),
+    listOpsQueueAssignments(
+      db,
+      OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+      providerOnboarding.map((application) => application.id),
+    ),
   ])
 
   const [weekCompleted, weekPaid, weekRevenue] = await Promise.all([
@@ -483,7 +500,7 @@ export default async function AdminDashboardPage() {
             ) : (
               validationQueue.map((request) => (
                 <div key={request.id} className="rounded-xl border p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <p className="font-medium">{request.title}</p>
                       <p className="text-sm text-muted-foreground">
@@ -684,7 +701,14 @@ export default async function AdminDashboardPage() {
                         {payment.booking.match.jobRequest.customer.name}
                       </p>
                     </div>
-                    <PaymentBadge status={payment.status} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <PaymentBadge status={payment.status} />
+                      <Badge
+                        variant={assignmentBadgeVariant(paymentAssignments.get(payment.id), admin.id)}
+                      >
+                        {formatOpsQueueOwnerLabel(paymentAssignments.get(payment.id), admin.id)}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Badge variant={slaBadgeClass(getSlaTone(payment.updatedAt, now, 1440))}>
@@ -719,14 +743,21 @@ export default async function AdminDashboardPage() {
             ) : (
               openDisputes.map((dispute) => (
                 <div key={dispute.id} className="rounded-xl border p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <p className="font-medium">{dispute.reason}</p>
                       <p className="text-sm text-muted-foreground">
                         Job {dispute.jobId.slice(0, 8)} · Raised by {dispute.raisedByRole}
                       </p>
                     </div>
-                    <DisputeBadge status={dispute.status} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <DisputeBadge status={dispute.status} />
+                      <Badge
+                        variant={assignmentBadgeVariant(disputeAssignments.get(dispute.id), admin.id)}
+                      >
+                        {formatOpsQueueOwnerLabel(disputeAssignments.get(dispute.id), admin.id)}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Badge variant={slaBadgeClass(getSlaTone(dispute.createdAt, now, 120))}>
@@ -759,12 +790,22 @@ export default async function AdminDashboardPage() {
             ) : (
               providerOnboarding.map((application) => (
                 <div key={application.id} className="rounded-xl border p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <p className="font-medium">{application.name}</p>
                       <p className="text-sm text-muted-foreground">{application.phone}</p>
                     </div>
-                    <ApplicationBadge status={application.status} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ApplicationBadge status={application.status} />
+                      <Badge
+                        variant={assignmentBadgeVariant(
+                          providerAssignments.get(application.id),
+                          admin.id,
+                        )}
+                      >
+                        {formatOpsQueueOwnerLabel(providerAssignments.get(application.id), admin.id)}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {application.skills.slice(0, 3).map((skill) => (

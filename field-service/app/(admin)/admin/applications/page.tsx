@@ -14,6 +14,13 @@ import {
   getConflictingActiveProviderApplicationIds,
 } from '@/lib/provider-applications'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  OPS_QUEUE_TYPES,
+  claimOpsQueueItem,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+  releaseOpsQueueItem,
+} from '@/lib/ops-queue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -134,7 +141,13 @@ async function approveApplication(formData: FormData) {
     approved: true,
   }).catch(() => {})
 
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: app.id,
+  })
+
   revalidatePath('/admin/applications')
+  revalidatePath('/admin')
 }
 
 async function rejectApplication(formData: FormData) {
@@ -176,7 +189,46 @@ async function rejectApplication(formData: FormData) {
     reason,
   }).catch(() => {})
 
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: app.id,
+  })
+
   revalidatePath('/admin/applications')
+  revalidatePath('/admin')
+}
+
+async function claimApplication(formData: FormData) {
+  'use server'
+  const admin = await requireAdmin()
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  await claimOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: id,
+    claimedById: admin.id,
+    claimedByRole: admin.role,
+    claimedByLabel: admin.email ?? 'admin',
+  })
+
+  revalidatePath('/admin/applications')
+  revalidatePath('/admin')
+}
+
+async function releaseApplication(formData: FormData) {
+  'use server'
+  await requireAdmin()
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: id,
+  })
+
+  revalidatePath('/admin/applications')
+  revalidatePath('/admin')
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -188,7 +240,7 @@ function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 
 }
 
 export default async function ApplicationsPage() {
-  await requireAdmin()
+  const admin = await requireAdmin()
 
   const applications = await db.providerApplication.findMany({
     select: providerApplicationSelect,
@@ -196,6 +248,11 @@ export default async function ApplicationsPage() {
     take: 100,
   })
   const conflictingApplicationIds = getConflictingActiveProviderApplicationIds(applications)
+  const assignments = await listOpsQueueAssignments(
+    db,
+    OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    applications.map((application) => application.id),
+  )
 
   const pending  = applications.filter((a) => a.status === 'PENDING')
   const reviewed = applications.filter((a) => a.status !== 'PENDING')
@@ -221,6 +278,8 @@ export default async function ApplicationsPage() {
 
         {pending.map((app) => {
           const hasConflict = conflictingApplicationIds.has(app.id)
+          const assignment = assignments.get(app.id)
+          const claimedByCurrentUser = assignment?.claimedById === admin.id
 
           return (
             <Card key={app.id}>
@@ -230,9 +289,14 @@ export default async function ApplicationsPage() {
                     <p className="font-medium">{app.name}</p>
                     <p className="text-sm text-muted-foreground">{app.phone}</p>
                   </div>
-                  <Badge variant={getStatusVariant(app.status)} className="rounded-full">
-                    {app.status}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={getStatusVariant(app.status)} className="rounded-full">
+                      {app.status}
+                    </Badge>
+                    <Badge variant={claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'}>
+                      {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -266,6 +330,22 @@ export default async function ApplicationsPage() {
                 )}
 
                 <div className="flex gap-2 pt-1">
+                  {!claimedByCurrentUser ? (
+                    <form action={claimApplication}>
+                      <input type="hidden" name="id" value={app.id} />
+                      <Button type="submit" size="sm" variant="outline">
+                        {assignment?.claimedById ? 'Take over' : 'Claim'}
+                      </Button>
+                    </form>
+                  ) : (
+                    <form action={releaseApplication}>
+                      <input type="hidden" name="id" value={app.id} />
+                      <Button type="submit" size="sm" variant="outline">
+                        Release
+                      </Button>
+                    </form>
+                  )}
+
                   <form action={approveApplication}>
                     <input type="hidden" name="id" value={app.id} />
                     <Button

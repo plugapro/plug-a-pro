@@ -1,10 +1,18 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  OPS_QUEUE_TYPES,
+  claimOpsQueueItem,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+  releaseOpsQueueItem,
+} from '@/lib/ops-queue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -70,10 +78,48 @@ async function updateDisputeAction(formData: FormData) {
       resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
     },
   })
+
+  revalidatePath('/admin/disputes')
+  revalidatePath('/admin')
+}
+
+async function claimDisputeAction(formData: FormData) {
+  'use server'
+
+  const admin = await requireAdmin()
+  const disputeId = String(formData.get('disputeId') ?? '')
+  if (!disputeId) return
+
+  await claimOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.DISPUTE,
+    entityId: disputeId,
+    claimedById: admin.id,
+    claimedByRole: admin.role,
+    claimedByLabel: admin.email ?? 'admin',
+  })
+
+  revalidatePath('/admin/disputes')
+  revalidatePath('/admin')
+}
+
+async function releaseDisputeAction(formData: FormData) {
+  'use server'
+
+  await requireAdmin()
+  const disputeId = String(formData.get('disputeId') ?? '')
+  if (!disputeId) return
+
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.DISPUTE,
+    entityId: disputeId,
+  })
+
+  revalidatePath('/admin/disputes')
+  revalidatePath('/admin')
 }
 
 export default async function AdminDisputesPage() {
-  await requireAdmin()
+  const admin = await requireAdmin()
 
   const disputes = await db.dispute.findMany({
     orderBy: { createdAt: 'desc' },
@@ -99,6 +145,12 @@ export default async function AdminDisputesPage() {
       },
     },
   })
+
+  const assignments = await listOpsQueueAssignments(
+    db,
+    OPS_QUEUE_TYPES.DISPUTE,
+    disputes.map((dispute) => dispute.id),
+  )
 
   const jobById = new Map(jobs.map((job) => [job.id, job]))
   const openCount = disputes.filter((dispute) => dispute.status === 'OPEN').length
@@ -128,6 +180,8 @@ export default async function AdminDisputesPage() {
             const job = jobById.get(dispute.jobId)
             const booking = job?.booking
             const customer = booking?.match.jobRequest.customer
+            const assignment = assignments.get(dispute.id)
+            const claimedByCurrentUser = assignment?.claimedById === admin.id
             return (
               <div key={dispute.id} className="rounded-xl border bg-card p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
@@ -142,9 +196,14 @@ export default async function AdminDisputesPage() {
                       })}
                     </p>
                   </div>
-                  <Badge variant={DISPUTE_STYLES[dispute.status] ?? DISPUTE_STYLES.OPEN}>
-                    {dispute.status.replaceAll('_', ' ').toLowerCase()}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={DISPUTE_STYLES[dispute.status] ?? DISPUTE_STYLES.OPEN}>
+                      {dispute.status.replaceAll('_', ' ').toLowerCase()}
+                    </Badge>
+                    <Badge variant={claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'}>
+                      {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </div>
                 </div>
 
                 <p className="text-sm">{dispute.reason}</p>
@@ -188,6 +247,24 @@ export default async function AdminDisputesPage() {
                     <p className="mt-1">{dispute.resolution}</p>
                   </div>
                 )}
+
+                <div className="flex flex-wrap gap-2">
+                  {!claimedByCurrentUser ? (
+                    <form action={claimDisputeAction}>
+                      <input type="hidden" name="disputeId" value={dispute.id} />
+                      <Button type="submit" variant="outline" size="sm">
+                        {assignment?.claimedById ? 'Take over' : 'Claim'}
+                      </Button>
+                    </form>
+                  ) : (
+                    <form action={releaseDisputeAction}>
+                      <input type="hidden" name="disputeId" value={dispute.id} />
+                      <Button type="submit" variant="outline" size="sm">
+                        Release
+                      </Button>
+                    </form>
+                  )}
+                </div>
 
                 <form action={updateDisputeAction} className="space-y-3 rounded-lg border bg-muted/20 px-3 py-3">
                   <input type="hidden" name="disputeId" value={dispute.id} />

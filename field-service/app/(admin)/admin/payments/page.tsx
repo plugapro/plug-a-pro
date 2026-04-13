@@ -8,6 +8,13 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  OPS_QUEUE_TYPES,
+  claimOpsQueueItem,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+  releaseOpsQueueItem,
+} from '@/lib/ops-queue'
 import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -58,6 +65,40 @@ async function issueRefundAction(formData: FormData) {
   }
 
   revalidatePath('/admin/payments')
+  revalidatePath('/admin')
+}
+
+async function claimPaymentAction(formData: FormData) {
+  'use server'
+  const admin = await requireAdmin()
+  const paymentId = String(formData.get('paymentId') ?? '')
+  if (!paymentId) return
+
+  await claimOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    entityId: paymentId,
+    claimedById: admin.id,
+    claimedByRole: admin.role,
+    claimedByLabel: admin.email ?? 'admin',
+  })
+
+  revalidatePath('/admin/payments')
+  revalidatePath('/admin')
+}
+
+async function releasePaymentAction(formData: FormData) {
+  'use server'
+  await requireAdmin()
+  const paymentId = String(formData.get('paymentId') ?? '')
+  if (!paymentId) return
+
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    entityId: paymentId,
+  })
+
+  revalidatePath('/admin/payments')
+  revalidatePath('/admin')
 }
 
 // ─── Status badge styling ─────────────────────────────────────────────────────
@@ -99,7 +140,7 @@ export default async function PaymentsPage({
 }: {
   searchParams: Promise<{ status?: string }>
 }) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   const { status } = await searchParams
 
   const validStatuses: PaymentStatus[] = ['PENDING', 'AUTHORISED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED']
@@ -128,6 +169,12 @@ export default async function PaymentsPage({
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
+
+  const assignments = await listOpsQueueAssignments(
+    db,
+    OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    payments.map((payment) => payment.id),
+  )
 
   return (
     <div className="space-y-6">
@@ -171,13 +218,14 @@ export default async function PaymentsPage({
               <th className="text-left px-4 py-3 font-medium">Collection</th>
               <th className="text-left px-4 py-3 font-medium">PSP Ref</th>
               <th className="text-left px-4 py-3 font-medium">Paid At</th>
+              <th className="text-left px-4 py-3 font-medium">Owner</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {payments.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
                   No payments found
                 </td>
               </tr>
@@ -185,6 +233,8 @@ export default async function PaymentsPage({
             {payments.map((p) => {
               const customer = p.booking.match?.jobRequest.customer
               const jobTitle = p.booking.match?.jobRequest.title ?? '—'
+              const assignment = assignments.get(p.id)
+              const claimedByCurrentUser = assignment?.claimedById === admin.id
               return (
                 <tr key={p.id} className="hover:bg-muted/30">
                   <td className="px-4 py-3 font-mono text-xs">{p.id.slice(-8).toUpperCase()}</td>
@@ -221,30 +271,52 @@ export default async function PaymentsPage({
                       : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    {p.status === 'PAID' && (
-                      <form action={issueRefundAction} className="flex items-center gap-1">
-                        <input type="hidden" name="paymentId" value={p.id} />
-                        <Input
-                          type="number"
-                          name="amount"
-                          min="0.01"
-                          max={Number(p.amount)}
-                          step="0.01"
-                          defaultValue={Number(p.amount)}
-                          className="h-8 w-24 rounded-lg text-xs"
-                        />
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            if (!confirm('Issue refund for this payment?')) e.preventDefault()
-                          }}
-                        >
-                          Refund
-                        </Button>
-                      </form>
-                    )}
+                    <Badge variant={claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'}>
+                      {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!claimedByCurrentUser ? (
+                        <form action={claimPaymentAction}>
+                          <input type="hidden" name="paymentId" value={p.id} />
+                          <Button type="submit" variant="outline" size="sm">
+                            {assignment?.claimedById ? 'Take over' : 'Claim'}
+                          </Button>
+                        </form>
+                      ) : (
+                        <form action={releasePaymentAction}>
+                          <input type="hidden" name="paymentId" value={p.id} />
+                          <Button type="submit" variant="outline" size="sm">
+                            Release
+                          </Button>
+                        </form>
+                      )}
+                      {p.status === 'PAID' && (
+                        <form action={issueRefundAction} className="flex items-center gap-1">
+                          <input type="hidden" name="paymentId" value={p.id} />
+                          <Input
+                            type="number"
+                            name="amount"
+                            min="0.01"
+                            max={Number(p.amount)}
+                            step="0.01"
+                            defaultValue={Number(p.amount)}
+                            className="h-8 w-24 rounded-lg text-xs"
+                          />
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              if (!confirm('Issue refund for this payment?')) e.preventDefault()
+                            }}
+                          >
+                            Refund
+                          </Button>
+                        </form>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )
