@@ -255,7 +255,7 @@ async function showRequestStatus(
         log(`WARN: sendCtaUrl failed for approval request — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
         await sendText(
           phone,
-          `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nOpen this link to approve or decline:\n${approvalUrl}`
+          `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nOpen the Plug A Pro app or reply *menu* to manage your request.`
         )
       }
       return { nextStep: 'done' }
@@ -286,7 +286,7 @@ async function showRequestStatus(
     log(`WARN: status response send failed — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
     await sendText(
       phone,
-      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingUrl ? `\n\nOpen in the app:\n${trackingUrl}\n\nSign in with this same phone number if prompted.` : ''}\n\nReply "menu" to return to the main menu.`
+      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}\n\nOpen the Plug A Pro app to track your request. Sign in with this same phone number if prompted.\n\nReply "menu" to return to the main menu.`
     )
   }
 

@@ -63,7 +63,8 @@ const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in',
 export async function processInboundMessage(
   message: InboundMessage
 ): Promise<void> {
-  const phone = message.from
+  // Normalise to E.164 (+27…). Meta sends without the leading '+'.
+  const phone = message.from.startsWith('+') ? message.from : `+${message.from}`
   const reply = parseInbound(message)
 
   try {
@@ -98,6 +99,10 @@ export async function processInboundMessage(
       )
       return
     }
+
+    // Drop reactions, images, voice notes, stickers, documents — nothing actionable.
+    // Must be checked BEFORE flow dispatch so mid-flow reactions don't retrigger menus.
+    if (reply.type === 'other') return
 
     const isReset = RESET_KEYWORDS.some((k) => rawText === k || rawText.startsWith(k + ' '))
     const isStatus = STATUS_KEYWORDS.some((k) => rawText.includes(k))
@@ -266,13 +271,6 @@ export async function processInboundMessage(
     } else if (flow === 'provider_journey') {
       result = await handleProviderJourneyFlow(ctx)
     } else {
-      // Silently drop non-text, non-interactive messages (reactions, images, voice notes,
-      // stickers, documents) — these have no actionable content for the bot and must not
-      // trigger a menu flood when users react to or send media in an idle session.
-      if (reply.type === 'other') {
-        return
-      }
-
       // Only relay free-form text — never relay reset keywords (hi/hello/menu/etc.)
       // isReset means the user wants the main menu, not to message a provider
       if (flow === 'idle' && reply.type === 'text' && rawText.length >= 2 && !isReset) {

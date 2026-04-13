@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { AppLogo } from '@/components/shared/app-logo'
 import { AppNavLink } from '@/components/shared/app-nav-link'
+import { MobileGate } from '@/components/shared/mobile-gate'
 import { siteConfig } from '@/lib/metadata'
 
 export const metadata: Metadata = {
@@ -29,13 +30,14 @@ export default async function CustomerLayout({
 }) {
   const session = await getSession()
   const customer = session ? await resolveCustomerForSession(db, session) : null
+  const rawPhone = session?.phone ?? customer?.phone ?? null
   const customerLabel =
     customer?.name?.trim() ||
-    session?.phone ||
-    customer?.phone ||
-    'Customer App'
+    (rawPhone ? rawPhone.replace(/^\+27/, '0') : null) ||
+    'My Account'
 
   return (
+    <MobileGate>
     <div className="app-shell flex min-h-screen flex-col">
       <header className="app-shell-header sticky top-0 z-50 safe-top">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
@@ -63,5 +65,6 @@ export default async function CustomerLayout({
         </div>
       </nav>
     </div>
+    </MobileGate>
   )
 }

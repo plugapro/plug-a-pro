@@ -381,9 +381,10 @@ describe('handleStatusFlow — send fallback resilience', () => {
 
     const result = await handleStatusFlow(makeCtx())
 
+    // Fallback no longer includes raw URL (UAT-006: security improvement)
     expect(wa.sendText).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining(`${APP_URL}/requests/jr_abc123`)
+      expect.stringContaining('Open the Plug A Pro app to track your request')
     )
     expect(result.nextStep).toBe('done')
   })
