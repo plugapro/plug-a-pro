@@ -266,6 +266,13 @@ export async function processInboundMessage(
     } else if (flow === 'provider_journey') {
       result = await handleProviderJourneyFlow(ctx)
     } else {
+      // Silently drop non-text, non-interactive messages (reactions, images, voice notes,
+      // stickers, documents) — these have no actionable content for the bot and must not
+      // trigger a menu flood when users react to or send media in an idle session.
+      if (reply.type === 'other') {
+        return
+      }
+
       // Only relay free-form text — never relay reset keywords (hi/hello/menu/etc.)
       // isReset means the user wants the main menu, not to message a provider
       if (flow === 'idle' && reply.type === 'text' && rawText.length >= 2 && !isReset) {

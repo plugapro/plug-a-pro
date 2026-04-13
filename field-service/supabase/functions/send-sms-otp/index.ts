@@ -9,6 +9,9 @@
 //   SMSPORTAL_CLIENT_ID      — SMSPortal API client ID
 //   SMSPORTAL_CLIENT_SECRET  — SMSPortal API secret
 //   SEND_SMS_HOOK_SECRET     — shared secret set in Supabase Auth Hooks dashboard
+//                              (format: v1,whsec_<base64> — copied from dashboard)
+
+import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
 
 declare const Deno: {
   env: {
@@ -19,7 +22,9 @@ declare const Deno: {
 
 const SMSPORTAL_CLIENT_ID     = Deno.env.get('SMSPORTAL_CLIENT_ID')!
 const SMSPORTAL_CLIENT_SECRET = Deno.env.get('SMSPORTAL_CLIENT_SECRET')!
-const HOOK_SECRET             = Deno.env.get('SEND_SMS_HOOK_SECRET')!
+const HOOK_SECRET_FULL        = Deno.env.get('SEND_SMS_HOOK_SECRET') ?? ''
+// Strip the v1,whsec_ prefix — the standardwebhooks library expects raw base64
+const HOOK_SECRET_RAW         = HOOK_SECRET_FULL.replace('v1,whsec_', '')
 
 const SMSPORTAL_AUTH_URL = 'https://rest.smsportal.com/Authentication'
 const SMSPORTAL_SEND_URL = 'https://rest.smsportal.com/v1/bulkmessages'
@@ -73,22 +78,54 @@ Deno.serve(async (req: Request) => {
   const reqId = crypto.randomUUID().slice(0, 8)
   const log   = (msg: string) => console.log(`[send-sms-otp:${reqId}] ${msg}`)
 
-  // Verify shared secret
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${HOOK_SECRET}`) {
-    log('WARN: unauthorized request — invalid hook secret')
+  // Read body as text first (required for standardwebhooks verification)
+  const payload = await req.text()
+  const headers = Object.fromEntries(req.headers)
+
+  // Log all incoming header names for diagnosis
+  const headerNames = Object.keys(headers).join(', ')
+  log(`DEBUG: headers present: ${headerNames}`)
+  log(`DEBUG: hook_secret_full len=${HOOK_SECRET_FULL.length} raw len=${HOOK_SECRET_RAW.length}`)
+
+  let verified = false
+
+  // Strategy 1: Standard Webhooks HMAC (GoTrue sends webhook-id/timestamp/signature)
+  if (HOOK_SECRET_RAW && headers['webhook-id']) {
+    try {
+      const wh = new Webhook(HOOK_SECRET_RAW)
+      wh.verify(payload, headers)
+      verified = true
+      log('DEBUG: standardwebhooks verification passed')
+    } catch (err) {
+      log(`DEBUG: standardwebhooks failed — ${String(err)}`)
+    }
+  }
+
+  // Strategy 2: Simple Bearer token (older GoTrue versions)
+  if (!verified && HOOK_SECRET_FULL) {
+    const authHeader = headers['authorization'] ?? ''
+    if (authHeader === `Bearer ${HOOK_SECRET_FULL}`) {
+      verified = true
+      log('DEBUG: bearer token verification passed')
+    } else {
+      log(`DEBUG: bearer check failed — recv="${authHeader.slice(0, 20)}..." exp="Bearer ${HOOK_SECRET_FULL.slice(0, 20)}..."`)
+    }
+  }
+
+  if (!verified) {
+    log(`WARN: unauthorized — neither standardwebhooks nor bearer matched`)
     return new Response('Unauthorized', { status: 401 })
   }
 
-  let payload: { user?: { phone?: string }; sms?: { otp?: string } }
+  let parsedPayload: { user?: { phone?: string }; sms?: { otp?: string } }
   try {
-    payload = await req.json()
+    parsedPayload = JSON.parse(payload)
   } catch {
     return json({ error: 'Invalid JSON body' }, 400)
   }
 
-  const phone = payload.user?.phone
-  const otp   = payload.sms?.otp
+  const phone = parsedPayload.user?.phone
+  const otp   = parsedPayload.sms?.otp
 
   if (!phone || !otp) {
     log(`WARN: missing fields — phone=${!!phone} otp=${!!otp}`)

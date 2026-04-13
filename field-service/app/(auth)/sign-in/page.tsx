@@ -46,11 +46,16 @@ export default function SignInPage() {
       if (otpError) {
         // Map known Supabase infrastructure errors to user-friendly messages
         const msg = otpError.message.toLowerCase()
-        if (msg.includes('unsupported') || msg.includes('provider') || msg.includes('sms')) {
+        if (msg.includes('unsupported') || msg.includes('provider') || msg.includes('sms') || msg.includes('not enabled') || msg.includes('phone')) {
           setError('SMS login is temporarily unavailable. Please contact support@plugapro.co.za.')
         } else if (msg.includes('rate') || msg.includes('limit')) {
           setError('Too many attempts. Please wait a few minutes and try again.')
+        } else if (msg.includes('invalid') || msg.includes('format')) {
+          setError('Invalid phone number format. Please use your full South African number.')
         } else {
+          // Preserve the raw error for support diagnosis (not shown to users in production,
+          // but logged here so it appears in browser console for debugging)
+          console.error('[sign-in] Supabase OTP error:', otpError.message)
           setError('Could not send code. Please try again or contact support@plugapro.co.za.')
         }
         return
