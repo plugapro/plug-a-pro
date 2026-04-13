@@ -86,7 +86,7 @@ export default async function ProviderHomePage() {
           <p className="text-sm text-muted-foreground py-2">No active jobs right now.</p>
         )}
         {activeJobs.map((job) => (
-          <JobCard key={job.id} job={job} />
+          <JobCard key={job.id} job={job} basePath="/provider" />
         ))}
       </section>
 
@@ -96,7 +96,7 @@ export default async function ProviderHomePage() {
             Upcoming ({upcomingJobs.length})
           </h2>
           {upcomingJobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+            <JobCard key={job.id} job={job} basePath="/provider" />
           ))}
         </section>
       )}

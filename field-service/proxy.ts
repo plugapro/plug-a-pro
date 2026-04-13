@@ -102,13 +102,15 @@ function isPublicPath(pathname: string): boolean {
 
 function redirectToSignIn(request: NextRequest): NextResponse {
   // Route unauthenticated requests to the correct sign-in page based on path prefix
-  const { pathname } = request.nextUrl
+  const { pathname, search } = request.nextUrl
   let destination = '/sign-in' // default: customer
   if (pathname.startsWith('/provider') || pathname.startsWith('/technician')) destination = '/provider-sign-in'
   if (pathname.startsWith('/admin')) destination = '/admin-sign-in'
 
   const url = new URL(destination, request.url)
-  url.searchParams.set('callbackUrl', pathname)
+  const callbackPath = `${pathname}${search}`
+  url.searchParams.set('callbackUrl', callbackPath)
+  url.searchParams.set('next', callbackPath)
   return NextResponse.redirect(url)
 }
 

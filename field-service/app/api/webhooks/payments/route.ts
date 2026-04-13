@@ -91,6 +91,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error(`[webhook/payments:${reqId}] Handler error:`, err)
     // Return 200 to prevent retries on known-bad events
-    return NextResponse.json({ status: 'error', message: String(err) })
+    return NextResponse.json({ status: 'error' })
   }
 }

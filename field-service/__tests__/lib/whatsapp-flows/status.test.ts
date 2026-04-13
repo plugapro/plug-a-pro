@@ -102,7 +102,7 @@ describe('handleStatusFlow — customer exists, no requests', () => {
 // ─── Single active request ────────────────────────────────────────────────────
 
 describe('handleStatusFlow — single active request (no job)', () => {
-  it('sends buttons with inline tracking URL and returns done', async () => {
+  it('sends a CTA tracking link and returns done', async () => {
     const jr = makeJobRequest()
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
@@ -110,17 +110,11 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     const result = await handleStatusFlow(makeCtx())
 
-    expect(wa.sendButtons).toHaveBeenCalledWith(
-      PHONE,
-      expect.stringContaining(`${APP_URL}/requests/jr_abc123`),
-      expect.any(Array),
-      expect.any(Object)
-    )
-    expect(wa.sendButtons).toHaveBeenCalledWith(
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Plumbing'),
-      expect.any(Array),
-      expect.any(Object)
+      'Track Request',
+      `${APP_URL}/requests/jr_abc123`
     )
     expect(result.nextStep).toBe('done')
   })
@@ -133,7 +127,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     await handleStatusFlow(makeCtx())
 
-    const call = vi.mocked(wa.sendButtons).mock.calls[0]
+    const call = vi.mocked(wa.sendCtaUrl).mock.calls[0]
     expect(call[1]).toContain('Provider scheduled')
     expect(call[1]).not.toContain('Worker scheduled')
     expect(call[1]).not.toContain('technician')
@@ -153,7 +147,7 @@ describe('handleStatusFlow — completed job shows request-level status', () => 
 
       await handleStatusFlow(makeCtx())
 
-      const call = vi.mocked(wa.sendButtons).mock.calls[0]
+      const call = vi.mocked(wa.sendCtaUrl).mock.calls[0]
       // Should show "Finding a provider" (OPEN label), not "Job completed/failed/cancelled"
       expect(call[1]).toContain('Finding a provider')
     }
@@ -231,11 +225,11 @@ describe('handleStatusFlow — multiple active requests', () => {
     ] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(activeJr as never)
 
-    // Only 1 active → no disambiguation, goes straight to status buttons
+    // Only 1 active → no disambiguation, goes straight to status response
     const result = await handleStatusFlow(makeCtx())
 
     expect(wa.sendList).not.toHaveBeenCalled()
-    expect(wa.sendButtons).toHaveBeenCalled()
+    expect(wa.sendCtaUrl).toHaveBeenCalled()
     expect(result.nextStep).toBe('done')
   })
 
@@ -280,11 +274,11 @@ describe('handleStatusFlow — multiple active requests', () => {
       PHONE,
       expect.stringContaining("showing your newest active request instead")
     )
-    expect(wa.sendButtons).toHaveBeenLastCalledWith(
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining(`${APP_URL}/requests/jr_1`),
-      expect.any(Array),
-      expect.any(Object)
+      expect.stringContaining('Painting'),
+      'Track Request',
+      `${APP_URL}/requests/jr_1`
     )
     expect(result.nextStep).toBe('done')
   })
@@ -308,17 +302,11 @@ describe('handleStatusFlow — status_pick step', () => {
     expect(db.jobRequest.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'jr_2' } })
     )
-    expect(wa.sendButtons).toHaveBeenCalledWith(
-      PHONE,
-      expect.stringContaining(`${APP_URL}/requests/jr_2`),
-      expect.any(Array),
-      expect.any(Object)
-    )
-    expect(wa.sendButtons).toHaveBeenCalledWith(
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Electrical'),
-      expect.any(Array),
-      expect.any(Object)
+      'Track Request',
+      `${APP_URL}/requests/jr_2`
     )
     expect(result.nextStep).toBe('done')
   })
@@ -384,12 +372,12 @@ describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
 })
 
 describe('handleStatusFlow — send fallback resilience', () => {
-  it('falls back to text when the status button send fails', async () => {
+  it('falls back to text when the status CTA send fails', async () => {
     const jr = makeJobRequest()
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
-    vi.mocked(wa.sendButtons).mockRejectedValueOnce(new Error('Meta rejected button payload'))
+    vi.mocked(wa.sendCtaUrl).mockRejectedValueOnce(new Error('Meta rejected CTA payload'))
 
     const result = await handleStatusFlow(makeCtx())
 

@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { resolveCustomerForSession } from '@/lib/customer-session'
 import { SignOutButton } from '@/components/customer/SignOutButton'
 import { buildMetadata } from '@/lib/metadata'
 import { Card, CardContent } from '@/components/ui/card'
@@ -23,14 +24,18 @@ async function updateProfile(formData: FormData) {
   const session = await getServerSession()
   if (!session) return
 
-  const name  = (formData.get('name')  as string | null)?.trim()
+  const name = (formData.get('name') as string | null)?.trim()
   const email = (formData.get('email') as string | null)?.trim()
 
   const { db: dbServer } = await import('@/lib/db')
+  const { resolveCustomerForSession: resolveCustomer } = await import('@/lib/customer-session')
+  const customer = await resolveCustomer(dbServer, session)
+  if (!customer) return
+
   await dbServer.customer.update({
-    where: { userId: session.id },
+    where: { id: customer.id },
     data: {
-      ...(name  ? { name }  : {}),
+      ...(name ? { name } : {}),
       ...(email !== null && email !== undefined ? { email: email || null } : {}),
     },
   })
@@ -40,12 +45,12 @@ async function updateProfile(formData: FormData) {
 
 export default async function ProfilePage() {
   const session = await getSession()
-  if (!session) redirect('/sign-in')
+  if (!session) redirect(`/sign-in?next=${encodeURIComponent('/profile')}`)
 
-  const customer = await db.customer.findUnique({
-    where: { userId: session.id },
-    include: { _count: { select: { jobRequests: true } } },
-  })
+  const customer = await resolveCustomerForSession(db, session)
+  const requestCount = customer
+    ? await db.jobRequest.count({ where: { customerId: customer.id } })
+    : 0
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
@@ -81,8 +86,8 @@ export default async function ProfilePage() {
               <p className="text-sm pt-1">{session.phone ?? customer?.phone ?? '—'}</p>
             </div>
             <div className="space-y-1 text-sm">
-              <span className="text-muted-foreground text-sm">Bookings</span>
-              <p className="text-sm pt-1">{customer?._count?.jobRequests ?? 0}</p>
+              <span className="text-muted-foreground text-sm">Requests</span>
+              <p className="text-sm pt-1">{requestCount}</p>
             </div>
             <Button type="submit" className="w-full">Save changes</Button>
           </form>
@@ -96,7 +101,7 @@ export default async function ProfilePage() {
       <div className="space-y-2">
         <Button asChild variant="outline" className="w-full justify-between rounded-xl h-auto px-4 py-4">
           <Link href="/bookings">
-            <span>My Bookings</span>
+            <span>My Requests &amp; Bookings</span>
             <span className="text-muted-foreground">→</span>
           </Link>
         </Button>

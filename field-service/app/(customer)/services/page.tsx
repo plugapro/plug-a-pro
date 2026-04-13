@@ -25,7 +25,7 @@ const CATEGORIES = [
 
 export default async function ServicesPage() {
   const session = await getSession()
-  if (!session) redirect('/sign-in')
+  if (!session) redirect(`/sign-in?next=${encodeURIComponent('/services')}`)
 
   return (
     <div className="px-4 py-6 space-y-8 max-w-lg mx-auto">

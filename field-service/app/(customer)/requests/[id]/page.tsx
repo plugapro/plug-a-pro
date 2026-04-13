@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
+import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
@@ -20,12 +21,11 @@ export default async function RequestDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
+  const { id } = await params
   const session = await getSession()
   if (!session || session.role !== 'customer') {
-    redirect('/sign-in')
+    redirect(`/sign-in?next=${encodeURIComponent(`/requests/${id}`)}`)
   }
-
-  const { id } = await params
 
   const jobRequest = await db.jobRequest.findUnique({
     where: { id },
@@ -75,7 +75,8 @@ export default async function RequestDetailPage({
   })
 
   if (!jobRequest) notFound()
-  if (jobRequest.customer.userId !== session.id) {
+  const customer = await resolveCustomerForSession(db, session)
+  if (!customer || customer.id !== jobRequest.customer.id) {
     redirect('/bookings')
   }
 
@@ -98,7 +99,7 @@ export default async function RequestDetailPage({
       <div className="flex items-start justify-between gap-3">
         <div>
           <Link href="/bookings" className="text-xs text-muted-foreground hover:text-foreground">
-            ← My bookings
+            ← My requests & bookings
           </Link>
           <h1 className="text-xl font-semibold mt-1">Request #{jobRequest.id.slice(-8).toUpperCase()}</h1>
           <p className="text-sm text-muted-foreground capitalize">{jobRequest.category}</p>

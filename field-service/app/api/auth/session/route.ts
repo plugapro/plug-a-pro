@@ -19,6 +19,9 @@ function buildCookieHeader(token: string, maxAge: number): string {
   return `sb-access-token=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`
 }
 
+const DEFAULT_SESSION_MAX_AGE = 60 * 60
+const MAX_SESSION_MAX_AGE = 60 * 60 * 24
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -46,7 +49,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
     }
 
-    const maxAge = typeof expiresIn === 'number' && expiresIn > 0 ? expiresIn : 3600
+    const requestedMaxAge =
+      typeof expiresIn === 'number' && Number.isFinite(expiresIn) ? expiresIn : DEFAULT_SESSION_MAX_AGE
+    const maxAge = Math.min(
+      MAX_SESSION_MAX_AGE,
+      Math.max(DEFAULT_SESSION_MAX_AGE, Math.floor(requestedMaxAge)),
+    )
 
     const response = NextResponse.json({ userId: user.id })
     response.headers.set('Set-Cookie', buildCookieHeader(accessToken, maxAge))

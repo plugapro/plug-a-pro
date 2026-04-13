@@ -18,6 +18,14 @@ export interface GeoPoint {
   lng: number
 }
 
+export interface ReverseGeocodeResult {
+  street: string | null
+  suburb: string | null
+  city: string | null
+  province: string | null
+  postalCode: string | null
+}
+
 interface GeocodeInput {
   street?: string
   suburb: string
@@ -42,6 +50,7 @@ function staticLookup(input: GeocodeInput): GeoPoint | null {
 // ─── 2. Nominatim fallback ────────────────────────────────────────────────────
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
+const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
 const USER_AGENT = 'PlugAPro/1.0 (https://plugapro.co.za; contact@plugapro.co.za)'
 
 async function nominatimLookup(input: GeocodeInput): Promise<GeoPoint | null> {
@@ -90,6 +99,54 @@ export async function geocodeAddress(input: GeocodeInput): Promise<GeoPoint | nu
     if (staticResult) return staticResult
 
     return await nominatimLookup(input)
+  } catch {
+    return null
+  }
+}
+
+export async function reverseGeocodeCoordinates(
+  point: GeoPoint,
+): Promise<ReverseGeocodeResult | null> {
+  const params = new URLSearchParams({
+    lat: String(point.lat),
+    lon: String(point.lng),
+    format: 'jsonv2',
+    zoom: '18',
+    addressdetails: '1',
+  })
+
+  try {
+    const res = await fetch(`${NOMINATIM_REVERSE_URL}?${params}`, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (!res.ok) return null
+
+    const data = await res.json() as {
+      address?: {
+        road?: string
+        house_number?: string
+        suburb?: string
+        neighbourhood?: string
+        city?: string
+        town?: string
+        village?: string
+        state?: string
+        postcode?: string
+      }
+    }
+
+    const address = data.address
+    if (!address) return null
+
+    return {
+      street: [address.house_number, address.road].filter(Boolean).join(' ').trim() || null,
+      suburb: address.suburb ?? address.neighbourhood ?? null,
+      city: address.city ?? address.town ?? address.village ?? null,
+      province: address.state ?? null,
+      postalCode: address.postcode ?? null,
+    }
   } catch {
     return null
   }

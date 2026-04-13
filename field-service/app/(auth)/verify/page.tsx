@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
+import { getSafeNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -17,6 +19,10 @@ function VerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const phone = searchParams.get('phone') ?? ''
+  const next = getSafeNextPath(
+    searchParams.get('next') ?? searchParams.get('callbackUrl'),
+    '/bookings',
+  )
 
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
@@ -43,7 +49,7 @@ function VerifyForm() {
       })
 
       if (verifyError || !data.user) {
-        setError(verifyError?.message ?? 'Invalid or expired code. Please try again.')
+        setError(getOtpVerifyErrorMessage(verifyError?.message))
         return
       }
 
@@ -70,7 +76,7 @@ function VerifyForm() {
         console.warn('[verify] linkCustomerAccount failed:', await res.text())
       }
 
-      router.replace('/bookings')
+      router.replace(next)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

@@ -211,6 +211,7 @@ export default async function QuotePage({
           category={jobRequest.category}
           area={area}
           description={jobRequest.description}
+          basePath="/provider"
         />
       )}
     </div>

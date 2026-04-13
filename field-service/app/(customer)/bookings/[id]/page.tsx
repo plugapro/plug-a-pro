@@ -7,6 +7,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { resolveCustomerForSession } from '@/lib/customer-session'
 import { cancelBookingLifecycle } from '@/lib/bookings'
 import { transitionJob } from '@/lib/jobs'
 import { recordAuditLog } from '@/lib/audit'
@@ -33,10 +34,9 @@ export default async function BookingDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  const session = await getSession()
-  if (!session) redirect('/sign-in')
-
   const { id } = await params
+  const session = await getSession()
+  if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
   const booking = await db.booking.findUnique({
     where: { id },
@@ -68,11 +68,12 @@ export default async function BookingDetailPage({
 
   if (!booking) notFound()
 
-  const customer = booking.match.jobRequest.customer
+  const bookingCustomer = booking.match.jobRequest.customer
+  const customer = await resolveCustomerForSession(db, session)
   const address = booking.match.jobRequest.address
 
   // Verify ownership
-  if (customer.userId !== session.id) {
+  if (!customer || bookingCustomer.id !== customer.id) {
     redirect('/bookings')
   }
 
@@ -99,7 +100,7 @@ export default async function BookingDetailPage({
     'use server'
     const { getSession: getsess } = await import('@/lib/auth')
     const sess = await getsess()
-    if (!sess) redirect('/sign-in')
+    if (!sess) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
     const b = await db.booking.findUnique({
       where: { id },
@@ -107,13 +108,14 @@ export default async function BookingDetailPage({
         status: true,
         match: {
           select: {
-            jobRequest: { select: { customer: { select: { userId: true } } } },
+            jobRequest: { select: { customer: { select: { id: true } } } },
           },
         },
       },
     })
     if (!b) notFound()
-    if (b.match.jobRequest.customer?.userId !== sess.id) redirect('/bookings')
+    const currentCustomer = await resolveCustomerForSession(db, sess)
+    if (!currentCustomer || b.match.jobRequest.customer?.id !== currentCustomer.id) redirect('/bookings')
     if (b.status !== 'SCHEDULED' && b.status !== 'RESCHEDULED') redirect(`/bookings/${id}`)
 
     await cancelBookingLifecycle({
@@ -130,7 +132,7 @@ export default async function BookingDetailPage({
     'use server'
     const { getSession: getActiveSession } = await import('@/lib/auth')
     const activeSession = await getActiveSession()
-    if (!activeSession || activeSession.role !== 'customer') redirect('/sign-in')
+    if (!activeSession || activeSession.role !== 'customer') redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
     const freshBooking = await db.booking.findUnique({
       where: { id },
@@ -145,7 +147,8 @@ export default async function BookingDetailPage({
     })
 
     if (!freshBooking || !freshBooking.job) redirect('/bookings')
-    if (freshBooking.match.jobRequest.customer.userId !== activeSession.id) redirect('/bookings')
+    const currentCustomer = await resolveCustomerForSession(db, activeSession)
+    if (!currentCustomer || freshBooking.match.jobRequest.customer.id !== currentCustomer.id) redirect('/bookings')
     if (freshBooking.job.status !== 'PENDING_COMPLETION_CONFIRMATION') redirect(`/bookings/${id}`)
 
     await transitionJob({
@@ -163,7 +166,7 @@ export default async function BookingDetailPage({
     'use server'
     const { getSession: getActiveSession } = await import('@/lib/auth')
     const activeSession = await getActiveSession()
-    if (!activeSession || activeSession.role !== 'customer') redirect('/sign-in')
+    if (!activeSession || activeSession.role !== 'customer') redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
     const freshBooking = await db.booking.findUnique({
       where: { id },
@@ -178,7 +181,8 @@ export default async function BookingDetailPage({
     })
 
     if (!freshBooking || !freshBooking.job) redirect('/bookings')
-    if (freshBooking.match.jobRequest.customer.userId !== activeSession.id) redirect('/bookings')
+    const currentCustomer = await resolveCustomerForSession(db, activeSession)
+    if (!currentCustomer || freshBooking.match.jobRequest.customer.id !== currentCustomer.id) redirect('/bookings')
 
     const reason = String(formData.get('reason') ?? '').trim()
     if (reason.length < 10) redirect(`/bookings/${id}`)
@@ -225,7 +229,7 @@ export default async function BookingDetailPage({
       <div className="flex items-start justify-between gap-2">
         <div>
           <Link href="/bookings" className="text-xs text-muted-foreground hover:text-foreground">
-            ← My Bookings
+            ← My Requests & Bookings
           </Link>
           <h1 className="text-xl font-semibold mt-1">
             {booking.job?.id ? `Job #${booking.id.slice(-8).toUpperCase()}` : `Booking #${booking.id.slice(-8).toUpperCase()}`}

@@ -1,9 +1,8 @@
 // GET /api/attachments/[id]
 // Authenticated proxy for job attachments.
-// Vercel Blob stores files with access:'public', so direct blob URLs are
-// technically reachable by anyone. This route acts as an auth gate:
-// clients should use this endpoint instead of the raw blob URL so that
-// access is tied to a verified session.
+// New uploads default to private blob access, while legacy public blobs may
+// still exist. This route acts as the only supported retrieval path so that
+// attachment access remains tied to a verified session.
 //
 // Access rules:
 //   - admin: can access any attachment
@@ -11,8 +10,10 @@
 //   - customer: can access attachments on their own job requests / jobs
 
 import { type NextRequest, NextResponse } from 'next/server'
+import { head } from '@vercel/blob'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { resolveCustomerForSession } from '@/lib/customer-session'
 
 export async function GET(
   _request: NextRequest,
@@ -39,7 +40,7 @@ export async function GET(
                 select: {
                   jobRequest: {
                     select: {
-                      customer: { select: { userId: true } },
+                      customer: { select: { id: true } },
                     },
                   },
                 },
@@ -50,7 +51,7 @@ export async function GET(
       },
       jobRequest: {
         select: {
-          customer: { select: { userId: true } },
+          customer: { select: { id: true } },
         },
       },
     },
@@ -73,6 +74,10 @@ export async function GET(
       })
       providerDbId = providerRecord?.id ?? null
     }
+    const customerRecord =
+      session.role === 'customer'
+        ? await resolveCustomerForSession(db, session)
+        : null
 
     const allowed = (() => {
       if (session.role === 'provider') {
@@ -80,8 +85,8 @@ export async function GET(
       }
       if (session.role === 'customer') {
         const customerViaJob =
-          attachment.job?.booking?.match?.jobRequest?.customer?.userId === session.id
-        const customerViaRequest = attachment.jobRequest?.customer?.userId === session.id
+          attachment.job?.booking?.match?.jobRequest?.customer?.id === customerRecord?.id
+        const customerViaRequest = attachment.jobRequest?.customer?.id === customerRecord?.id
         return customerViaJob || customerViaRequest
       }
       return false
@@ -93,10 +98,19 @@ export async function GET(
     }
   }
 
+  // Resolve a server-side download URL first so private blobs stay opaque to clients.
+  let upstreamUrl = attachment.url
+  try {
+    const blob = await head(attachment.url)
+    upstreamUrl = blob.downloadUrl
+  } catch (err) {
+    console.warn(`[attachments:${reqId}] Metadata lookup fallback for ${id}:`, err)
+  }
+
   // Proxy the blob — fetch server-side and stream to client
   let upstream: Response
   try {
-    upstream = await fetch(attachment.url)
+    upstream = await fetch(upstreamUrl)
   } catch (err) {
     console.error(`[attachments:${reqId}] Fetch error for ${id}:`, err)
     return NextResponse.json({ error: 'Could not retrieve file' }, { status: 502 })

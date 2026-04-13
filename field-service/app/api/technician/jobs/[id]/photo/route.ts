@@ -5,6 +5,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { getProviderPhotoRouteErrorMessage } from '@/lib/provider-action-errors'
 import { uploadJobPhoto } from '@/lib/storage'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -78,12 +79,13 @@ export async function POST(
     })
 
     return NextResponse.json({
-      url,
       id: attachment?.id ?? null,
-      proxyUrl: attachment ? `/api/attachments/${attachment.id}` : url,
+      proxyUrl: attachment ? `/api/attachments/${attachment.id}` : null,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Upload failed'
-    return NextResponse.json({ error: message }, { status: 422 })
+    return NextResponse.json(
+      { error: getProviderPhotoRouteErrorMessage(err) },
+      { status: 422 },
+    )
   }
 }

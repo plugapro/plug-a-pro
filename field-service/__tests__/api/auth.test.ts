@@ -77,6 +77,31 @@ describe('POST /api/auth/session', () => {
     expect(setCookie).toContain('sb-access-token=valid-token')
     // HttpOnly presence is already asserted above — no further check needed
   })
+
+  it('clamps client-provided cookie max-age to a safe server-side ceiling', async () => {
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'user-123' } },
+          error: null,
+        }),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/session/route')
+    const req = new NextRequest('http://localhost/api/auth/session', {
+      method: 'POST',
+      body: JSON.stringify({ accessToken: 'valid-token', expiresIn: 60 * 60 * 24 * 30 }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    const setCookie = res.headers.get('Set-Cookie') ?? ''
+    expect(setCookie).toContain('Max-Age=86400')
+  })
 })
 
 describe('DELETE /api/auth/session', () => {

@@ -24,13 +24,14 @@ import {
 
 export const metadata = buildMetadata({ title: 'Customer', noIndex: true })
 
-async function adminToggleMarketing(customerId: string, phone: string, value: boolean, actorId: string) {
+async function adminToggleMarketing(customerId: string, phone: string, value: boolean) {
   'use server'
+  const admin = await requireAdmin()
   const { applyOptIn, applyOptOut } = await import('@/lib/whatsapp-policy')
   if (value) {
-    await applyOptIn(phone, 'admin', { actorId })
+    await applyOptIn(phone, 'admin', { actorId: admin.id, note: 'Admin override from customer detail' })
   } else {
-    await applyOptOut(phone, 'admin', { actorId })
+    await applyOptOut(phone, 'admin', { actorId: admin.id, note: 'Admin override from customer detail' })
   }
   const { redirect } = await import('next/navigation')
   redirect(`/admin/customers/${customerId}`)
@@ -185,7 +186,7 @@ export default async function CustomerDetailPage({
           {/* Admin override form */}
           <div className="pt-2 border-t">
             <form
-              action={adminToggleMarketing.bind(null, customer.id, customer.phone, !customer.whatsappMarketingOptIn, admin.id)}
+              action={adminToggleMarketing.bind(null, customer.id, customer.phone, !customer.whatsappMarketingOptIn)}
             >
               <button
                 type="submit"

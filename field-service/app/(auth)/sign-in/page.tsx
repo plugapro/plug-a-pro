@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { getSafeNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -16,9 +17,14 @@ function getSupabaseClient() {
 
 export default function SignInPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const next = getSafeNextPath(
+    searchParams.get('next') ?? searchParams.get('callbackUrl'),
+    '/bookings',
+  )
 
   function normalise(raw: string): string {
     const digits = raw.replace(/\D/g, '')
@@ -61,7 +67,9 @@ export default function SignInPage() {
         return
       }
 
-      router.push(`/verify?phone=${encodeURIComponent(normalised)}`)
+      router.push(
+        `/verify?phone=${encodeURIComponent(normalised)}&next=${encodeURIComponent(next)}`,
+      )
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

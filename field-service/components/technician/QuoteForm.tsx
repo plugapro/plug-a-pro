@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { getProviderActionClientErrorMessage } from '@/lib/provider-action-errors'
 
 interface QuoteFormProps {
   matchId: string
@@ -15,9 +16,17 @@ interface QuoteFormProps {
   category: string
   area: string
   description: string
+  basePath?: '/provider' | '/technician'
 }
 
-export function QuoteForm({ matchId, postInspection: preChecked = false, category, area, description }: QuoteFormProps) {
+export function QuoteForm({
+  matchId,
+  postInspection: preChecked = false,
+  category,
+  area,
+  description,
+  basePath = '/technician',
+}: QuoteFormProps) {
   const router = useRouter()
   const [labourCost, setLabourCost] = useState('')
   const [materialsCost, setMaterialsCost] = useState('')
@@ -60,12 +69,24 @@ export function QuoteForm({ matchId, postInspection: preChecked = false, categor
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(data.error ?? 'Failed to submit quote')
+        setError(
+          getProviderActionClientErrorMessage({
+            action: 'quote',
+            status: res.status,
+            error: data.error ?? null,
+          }),
+        )
+        setSubmitting(false)
+        return
       }
 
-      router.push('/technician?quote=sent')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      router.push(`${basePath}?quote=sent`)
+    } catch {
+      setError(
+        getProviderActionClientErrorMessage({
+          action: 'quote',
+        }),
+      )
       setSubmitting(false)
     }
   }
@@ -199,7 +220,7 @@ export function QuoteForm({ matchId, postInspection: preChecked = false, categor
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex gap-3 pt-2">
-        <Button type="button" variant="outline" className="flex-1" onClick={() => router.back()}>
+        <Button type="button" variant="outline" className="flex-1" onClick={() => router.push(basePath)}>
           Cancel
         </Button>
         <Button type="submit" className="flex-1" disabled={submitting}>

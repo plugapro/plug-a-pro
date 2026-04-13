@@ -7,6 +7,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -53,9 +54,19 @@ function formatJobStatus(status: string): string {
 
 async function toggleActive(providerId: string, currentActive: boolean) {
   'use server'
+  const admin = await requireAdmin()
   await db.provider.update({
     where: { id: providerId },
     data: { active: !currentActive },
+  })
+  await recordAuditLog({
+    actorId: admin.id,
+    actorRole: admin.role,
+    action: 'provider.active_toggle',
+    entityType: 'provider',
+    entityId: providerId,
+    before: { active: currentActive },
+    after: { active: !currentActive },
   })
   redirect(`/admin/providers/${providerId}`)
 }

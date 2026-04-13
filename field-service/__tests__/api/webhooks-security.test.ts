@@ -213,4 +213,26 @@ describe('POST /api/webhooks/payments — idempotency', () => {
     const { sendBookingConfirmation } = await import('@/lib/whatsapp')
     expect(sendBookingConfirmation).not.toHaveBeenCalled()
   })
+
+  it('does not leak raw handler errors in the webhook response body', async () => {
+    const { handlePaymentSuccess } = await import('@/lib/payments')
+    ;(handlePaymentSuccess as any).mockRejectedValueOnce(new Error('database timeout: internal stack'))
+
+    const { db } = await import('@/lib/db')
+    ;(db.booking.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
+
+    const { POST } = await import('../../app/api/webhooks/payments/route')
+    const req = new NextRequest('http://localhost/api/webhooks/payments', {
+      method: 'POST',
+      body: '{"type":"payment.success"}',
+      headers: { 'Content-Type': 'application/json', 'x-signature': 'valid' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    const body = await res.json()
+    expect(body).toEqual({ status: 'error' })
+    expect(JSON.stringify(body)).not.toContain('database timeout')
+  })
 })

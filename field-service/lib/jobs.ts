@@ -184,7 +184,7 @@ async function triggerSideEffects(params: {
     }
 
     if (toStatus === 'COMPLETED') {
-      const invoiceUrl = `${appUrl}/bookings/${job.bookingId}/invoice`
+      const invoiceUrl = `${appUrl}/bookings/${job.bookingId}`
       await sendJobCompleted({
         bookingId: job.bookingId,
         customerName: customer.name,

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireAdmin } from '@/lib/auth'
+import { recordAuditLog } from '@/lib/audit'
 import { db } from '@/lib/db'
 import {
   getDispatchHistory,
@@ -11,6 +12,7 @@ import {
   rankCandidatesForJobRequest,
   runAssignmentForJobRequest,
 } from '@/lib/matching/service'
+import { getDispatchAdminMessage } from '@/lib/admin-action-messages'
 import { buildMetadata } from '@/lib/metadata'
 import {
   OPS_QUEUE_TYPES,
@@ -29,10 +31,11 @@ export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 export default async function AdminDispatchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ request?: string }>
+  searchParams: Promise<{ request?: string; message?: string }>
 }) {
   const admin = await requireAdmin()
-  const { request } = await searchParams
+  const { request, message } = await searchParams
+  const banner = getDispatchAdminMessage(message)
 
   const requests = await db.jobRequest.findMany({
     where: {
@@ -69,28 +72,54 @@ export default async function AdminDispatchPage({
     'use server'
     const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    await runAssignmentForJobRequest({
-      jobRequestId,
-      actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-      mode: 'AUTO_ASSIGN',
-    })
-    revalidatePath('/admin/dispatch')
-    revalidatePath('/admin')
-    redirect(`/admin/dispatch?request=${jobRequestId}`)
+    try {
+      await runAssignmentForJobRequest({
+        jobRequestId,
+        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+        mode: 'AUTO_ASSIGN',
+      })
+      await recordAuditLog({
+        actorId: activeAdmin.id,
+        actorRole: activeAdmin.role,
+        action: 'dispatch.auto_assign',
+        entityType: 'job_request',
+        entityId: jobRequestId,
+        after: { mode: 'AUTO_ASSIGN' },
+      })
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+    } catch (error) {
+      console.error('[admin/dispatch] Auto-assign failed', { jobRequestId, error })
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
   }
 
   async function rerankForReview(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    await runAssignmentForJobRequest({
-      jobRequestId,
-      actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-      mode: 'OPS_REVIEW',
-    })
-    revalidatePath('/admin/dispatch')
-    revalidatePath('/admin')
-    redirect(`/admin/dispatch?request=${jobRequestId}`)
+    try {
+      await runAssignmentForJobRequest({
+        jobRequestId,
+        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+        mode: 'OPS_REVIEW',
+      })
+      await recordAuditLog({
+        actorId: activeAdmin.id,
+        actorRole: activeAdmin.role,
+        action: 'dispatch.rerank',
+        entityType: 'job_request',
+        entityId: jobRequestId,
+        after: { mode: 'OPS_REVIEW' },
+      })
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+    } catch (error) {
+      console.error('[admin/dispatch] Rerank failed', { jobRequestId, error })
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
   }
 
   async function overrideAssignment(formData: FormData) {
@@ -98,15 +127,31 @@ export default async function AdminDispatchPage({
     const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
     const providerId = String(formData.get('providerId') ?? '')
-    await manualOverrideAssignment({
-      jobRequestId,
-      providerId,
-      actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-      overrideReason: 'Selected by admin from dispatch console',
-    })
-    revalidatePath('/admin/dispatch')
-    revalidatePath('/admin')
-    redirect(`/admin/dispatch?request=${jobRequestId}`)
+    try {
+      await manualOverrideAssignment({
+        jobRequestId,
+        providerId,
+        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+        overrideReason: 'Selected by admin from dispatch console',
+      })
+      await recordAuditLog({
+        actorId: activeAdmin.id,
+        actorRole: activeAdmin.role,
+        action: 'dispatch.override_assignment',
+        entityType: 'job_request',
+        entityId: jobRequestId,
+        after: {
+          providerId,
+          overrideReason: 'Selected by admin from dispatch console',
+        },
+      })
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+    } catch (error) {
+      console.error('[admin/dispatch] Override failed', { jobRequestId, providerId, error })
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
   }
 
   async function claimDispatch(formData: FormData) {
@@ -159,6 +204,12 @@ export default async function AdminDispatchPage({
           Rank technicians, inspect schedule fit, and override the selected assignee when needed.
         </p>
       </div>
+
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <Card>

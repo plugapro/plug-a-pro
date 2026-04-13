@@ -7,6 +7,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { transitionJob } from '@/lib/jobs'
 import { db } from '@/lib/db'
+import { getProviderStatusRouteErrorMessage } from '@/lib/provider-action-errors'
 import type { JobStatus } from '@prisma/client'
 
 const VALID_STATUSES: JobStatus[] = [
@@ -56,7 +57,9 @@ export async function POST(
     })
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Transition failed'
-    return NextResponse.json({ error: message }, { status: 422 })
+    return NextResponse.json(
+      { error: getProviderStatusRouteErrorMessage(err) },
+      { status: 422 },
+    )
   }
 }

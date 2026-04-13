@@ -66,13 +66,114 @@ export function BookingFlow({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
+  const [locationLoading, setLocationLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
+
+  function normalizeValue(value: string) {
+    return value.trim().replace(/\s+/g, ' ')
+  }
+
+  function validateAddressStep() {
+    const street = normalizeValue(address.street)
+    const suburb = normalizeValue(address.suburb)
+    const city = normalizeValue(address.city)
+    const province = normalizeValue(address.province)
+    const postalCode = address.postalCode.trim()
+
+    if (!street || !suburb || !city || !province) {
+      return 'Please complete the full service address before continuing.'
+    }
+
+    if (!SA_PROVINCES.includes(province)) {
+      return 'Please select a valid South African province.'
+    }
+
+    if (postalCode && !/^\d{4}$/.test(postalCode)) {
+      return 'Postal code must be 4 digits if you include it.'
+    }
+
+    return null
+  }
+
+  function validateDescriptionStep() {
+    const normalizedTitle = normalizeValue(title)
+    if (normalizedTitle.length < 6) {
+      return 'Please enter a short job title so the provider can identify the work clearly.'
+    }
+    if (normalizedTitle.length > 120) {
+      return 'Job title is too long. Please keep it under 120 characters.'
+    }
+    if (description.trim().length > 1200) {
+      return 'Job details are too long. Please keep them under 1200 characters.'
+    }
+    return null
+  }
+
+  async function handleUseMyLocation() {
+    setError(null)
+
+    if (!navigator.geolocation) {
+      setError('Location services are not available in this browser.')
+      return
+    }
+
+    setLocationLoading(true)
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000,
+        })
+      })
+
+      const params = new URLSearchParams({
+        lat: String(position.coords.latitude),
+        lng: String(position.coords.longitude),
+      })
+      const res = await fetch(`/api/customer/location-reverse?${params}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Could not use your location')
+      }
+
+      const data = await res.json() as {
+        street?: string | null
+        suburb?: string | null
+        city?: string | null
+        province?: string | null
+        postalCode?: string | null
+      }
+
+      setAddress((current) => ({
+        street: data.street ?? current.street,
+        suburb: data.suburb ?? current.suburb,
+        city: data.city ?? current.city,
+        province: data.province ?? current.province,
+        postalCode: data.postalCode ?? current.postalCode,
+      }))
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'We could not read your location. Please enter the address manually.',
+      )
+    } finally {
+      setLocationLoading(false)
+    }
+  }
 
   // ── Step 1: Address submit ──────────────────────────────────────────────────
 
   function handleAddressSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    const validationError = validateAddressStep()
+    if (validationError) {
+      setError(validationError)
+      return
+    }
     setError(null)
     setStep('description')
   }
@@ -81,6 +182,11 @@ export function BookingFlow({
 
   function handleDescriptionSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    const validationError = validateDescriptionStep()
+    if (validationError) {
+      setError(validationError)
+      return
+    }
     setError(null)
     setStep('confirm')
   }
@@ -88,35 +194,47 @@ export function BookingFlow({
   // ── Step 3: Confirm — create job request ───────────────────────────────────
 
   async function handleConfirm() {
+    if (loading) return
     setError(null)
     setLoading(true)
 
     try {
+      const addressError = validateAddressStep()
+      if (addressError) throw new Error(addressError)
+
+      const descriptionError = validateDescriptionStep()
+      if (descriptionError) throw new Error(descriptionError)
+
       const res = await fetch('/api/customer/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           category: category.slug,
-          title,
-          description,
-          street: address.street,
-          suburb: address.suburb,
-          city: address.city,
-          province: address.province,
-          postalCode: address.postalCode,
+          title: normalizeValue(title),
+          description: description.trim(),
+          street: normalizeValue(address.street),
+          suburb: normalizeValue(address.suburb),
+          city: normalizeValue(address.city),
+          province: normalizeValue(address.province),
+          postalCode: address.postalCode.trim(),
         }),
       })
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error ?? 'Request failed — please try again')
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('Your session has expired. Please sign in again before submitting your request.')
+        }
+        if (res.status === 400) {
+          throw new Error('Please review your address and job details, then try again.')
+        }
+        throw new Error('We could not submit your request right now. Please try again.')
       }
 
       const data = await res.json()
       setJobRequestId(data.jobRequestId)
       setStep('submitted')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -165,7 +283,18 @@ export function BookingFlow({
       {/* ── Step 1: Address ──────────────────────────────────────────────── */}
       {step === 'address' && (
         <form onSubmit={handleAddressSubmit} className="space-y-4">
-          <h2 className="font-medium">Service address</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-medium">Service address</h2>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={locationLoading}
+              onClick={handleUseMyLocation}
+            >
+              {locationLoading ? 'Finding address…' : 'Use my current location'}
+            </Button>
+          </div>
 
           <div className="space-y-3">
             <div className="space-y-1">
@@ -345,12 +474,17 @@ export function BookingFlow({
             </CardContent>
           </Card>
 
-          <Link
-            href="/bookings"
-            className="block text-center text-xs text-muted-foreground hover:text-foreground"
-          >
-            View my bookings
-          </Link>
+          <div className="space-y-3">
+            <Button asChild className="w-full">
+              <Link href={`/requests/${jobRequestId}`}>Track this request</Link>
+            </Button>
+            <Link
+              href="/bookings"
+              className="block text-center text-xs text-muted-foreground hover:text-foreground"
+            >
+              View my requests &amp; bookings
+            </Link>
+          </div>
         </div>
       )}
     </div>

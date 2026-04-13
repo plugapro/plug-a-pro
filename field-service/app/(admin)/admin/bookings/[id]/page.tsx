@@ -9,6 +9,7 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { cancelBookingLifecycle } from '@/lib/bookings'
 import { recordAuditLog } from '@/lib/audit'
+import { getBookingAdminMessage } from '@/lib/admin-action-messages'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -33,11 +34,15 @@ export async function generateMetadata({
 
 export default async function BookingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ message?: string }>
 }) {
   const admin = await requireAdmin()
   const { id } = await params
+  const { message } = await searchParams
+  const banner = getBookingAdminMessage(message)
 
   const booking = await db.booking.findUnique({
     where: { id },
@@ -92,7 +97,22 @@ export default async function BookingDetailPage({
   async function markPaid() {
     'use server'
     const activeAdmin = await requireAdmin()
-    const amount = booking!.quote?.amount ?? 0
+    const freshBooking = await db.booking.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        quote: { select: { amount: true } },
+        payment: { select: { status: true } },
+      },
+    })
+    if (
+      !freshBooking ||
+      freshBooking.status !== 'SCHEDULED' ||
+      freshBooking.payment?.status === 'PAID'
+    ) {
+      redirect(`/admin/bookings/${id}?message=payment_unavailable`)
+    }
+    const amount = freshBooking.quote?.amount ?? 0
     await db.payment.upsert({
       where:  { bookingId: id },
       create: {
@@ -115,7 +135,7 @@ export default async function BookingDetailPage({
         paymentStatus: 'PAID',
       },
     })
-    redirect(`/admin/bookings/${id}`)
+    redirect(`/admin/bookings/${id}?message=payment_marked`)
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -141,6 +161,12 @@ export default async function BookingDetailPage({
         </div>
         <p className="text-sm text-muted-foreground">{jobRequestTitle}</p>
       </div>
+
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
+        </div>
+      ) : null}
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

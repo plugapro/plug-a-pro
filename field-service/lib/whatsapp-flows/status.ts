@@ -263,23 +263,30 @@ async function showRequestStatus(
   }
 
   // ── Default: show status + tracking link ────────────────────────────────
-  const trackingLink = appUrl ? `\n\n🔗 ${appUrl}/requests/${jr.id}` : ''
-  log(`sending status buttons trackingLink=${trackingLink || '(none)'}`)
+  const trackingUrl = appUrl ? `${appUrl}/requests/${jr.id}` : ''
+  log(`sending status buttons trackingUrl=${trackingUrl || '(none)'}`)
 
   try {
-    await sendButtons(
-      phone,
-      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingLink}`,
-      [
-        { id: 'back_home', title: '🏠 Main Menu' },
-      ],
-      { footer: 'Reply "menu" to return to main menu' }
-    )
+    if (trackingUrl) {
+      await sendCtaUrl(
+        phone,
+        `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}\n\nOpen your request in the app to track progress. Sign in with this same phone number if prompted.`,
+        'Track Request',
+        trackingUrl
+      )
+    } else {
+      await sendButtons(
+        phone,
+        `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}`,
+        [{ id: 'back_home', title: '🏠 Main Menu' }],
+        { footer: 'Reply "menu" to return to main menu' }
+      )
+    }
   } catch (error) {
-    log(`WARN: sendButtons failed for request status — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
+    log(`WARN: status response send failed — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
     await sendText(
       phone,
-      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingLink}\n\nReply "menu" to return to the main menu.`
+      `📋 *Your request*\n\n🔧 ${jr.category}\n${statusLabel}${trackingUrl ? `\n\nOpen in the app:\n${trackingUrl}\n\nSign in with this same phone number if prompted.` : ''}\n\nReply "menu" to return to the main menu.`
     )
   }
 

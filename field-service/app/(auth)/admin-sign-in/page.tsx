@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { getSafeNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -16,10 +17,15 @@ function getSupabaseClient() {
 
 export default function AdminSignInPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const next = getSafeNextPath(
+    searchParams.get('next') ?? searchParams.get('callbackUrl'),
+    '/admin',
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -56,7 +62,7 @@ export default function AdminSignInPage() {
         })
       }
 
-      router.replace('/admin')
+      router.replace(next)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

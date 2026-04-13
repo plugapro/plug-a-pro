@@ -6,6 +6,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { processQuoteDecision } from '@/lib/quotes'
+import { getPublicQuoteDecisionError } from '@/lib/route-action-errors'
 
 type Params = { params: Promise<{ token: string }> }
 
@@ -64,7 +65,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     select: { id: true },
   })
   if (!quoteRow) {
-    return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
+    const response = getPublicQuoteDecisionError({ code: 'NOT_FOUND' })
+    return NextResponse.json({ error: response.message }, { status: response.status })
   }
 
   const result = await processQuoteDecision(quoteRow.id, body.action as 'approve' | 'decline', {
@@ -73,12 +75,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   if ('error' in result) {
     console.warn(`[quotes:${reqId}] Decision error: ${result.error}`)
-    const status =
-      result.error === 'NOT_FOUND' ? 404 :
-      result.error === 'ALREADY_ACTIONED' ? 409 :
-      result.error === 'EXPIRED' ? 410 :
-      result.error === 'MISSING_PREFERRED_DATE' ? 409 : 422
-    return NextResponse.json({ error: result.error }, { status })
+    const response = getPublicQuoteDecisionError({ code: result.error })
+    return NextResponse.json({ error: response.message }, { status: response.status })
   }
 
   console.info(`[quotes:${reqId}] Quote ${result.quoteId} ${result.action}`)

@@ -1,22 +1,19 @@
-// ─── Regression: create-job-request domain service ────────────────────────────
-// Covers WS-A (unified creation path) and WS-B (transactional intake).
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { createJobRequest } from '../../lib/job-requests/create-job-request'
 
 const {
   mockDb,
   mockMergeCategoryRequirements,
   mockDispatchLeads,
+  mockGeocodeAddress,
 } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
-    customer: { upsert: vi.fn() },
-    address: { create: vi.fn() },
-    jobRequest: { create: vi.fn() },
   },
   mockMergeCategoryRequirements: vi.fn(),
   mockDispatchLeads: vi.fn(),
+  mockGeocodeAddress: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
@@ -25,7 +22,10 @@ vi.mock('../../lib/service-category-policy', () => ({
   mergeCategoryRequirements: mockMergeCategoryRequirements,
 }))
 
-// Prevent the dynamic import inside createJobRequest from calling real matching
+vi.mock('../../lib/geocoding', () => ({
+  geocodeAddress: mockGeocodeAddress,
+}))
+
 vi.mock('../../lib/matching-engine', () => ({
   dispatchLeads: mockDispatchLeads,
 }))
@@ -34,12 +34,29 @@ const BASE_PARAMS = {
   phone: '+27821234567',
   customerName: 'Test Customer',
   category: 'plumbing',
-  title: 'Plumbing',
-  description: 'Burst pipe',
+  title: 'Fix leaking pipe',
+  description: 'Burst pipe in kitchen',
   street: '1 Main St',
   suburb: 'Randburg',
   city: 'Johannesburg',
   province: 'Gauteng',
+}
+
+function makeTx() {
+  return {
+    customer: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
+    },
+    address: {
+      create: vi.fn(),
+    },
+    jobRequest: {
+      create: vi.fn(),
+    },
+  }
 }
 
 describe('createJobRequest', () => {
@@ -52,58 +69,112 @@ describe('createJobRequest', () => {
       requiredVehicleTypes: [],
       policy: { bookingOnAssignment: false },
     })
-
-    mockDispatchLeads.mockResolvedValue({ noMatch: false, leadsDispatched: 1, candidatesFound: 1, jobRequestId: 'jr-1' })
-
-    // $transaction executes the callback immediately (synchronous mock)
-    mockDb.$transaction.mockImplementation(
-      async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb),
-    )
-
-    mockDb.customer.upsert.mockResolvedValue({ id: 'cust-1' })
-    mockDb.address.create.mockResolvedValue({ id: 'addr-1' })
-    mockDb.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockGeocodeAddress.mockResolvedValue({ lat: -26.1, lng: 27.9 })
+    mockDispatchLeads.mockResolvedValue({
+      noMatch: false,
+      leadsDispatched: 1,
+      candidatesFound: 1,
+      jobRequestId: 'jr-1',
+    })
   })
 
-  it('creates customer + address + jobRequest inside a single transaction', async () => {
+  it('creates phone-only WhatsApp customers via upsert and completes the intake transaction', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
     const result = await createJobRequest(BASE_PARAMS)
 
-    expect(mockDb.$transaction).toHaveBeenCalledOnce()
-    expect(mockDb.customer.upsert).toHaveBeenCalledOnce()
-    expect(mockDb.address.create).toHaveBeenCalledOnce()
-    expect(mockDb.jobRequest.create).toHaveBeenCalledOnce()
+    expect(tx.customer.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { phone: '+27821234567' } }),
+    )
+    expect(tx.address.create).toHaveBeenCalledOnce()
+    expect(tx.jobRequest.create).toHaveBeenCalledOnce()
     expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-1' })
   })
 
-  it('uses phone-only upsert for WhatsApp path (no userId)', async () => {
-    await createJobRequest(BASE_PARAMS)
+  it('reuses an existing web customer by userId when present', async () => {
+    const tx = makeTx()
+    tx.customer.findUnique.mockResolvedValueOnce({ id: 'cust-by-user' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
 
-    expect(mockDb.customer.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { phone: '+27821234567' } }),
-    )
-  })
+    const result = await createJobRequest({ ...BASE_PARAMS, userId: 'user-abc' })
 
-  it('uses userId upsert for web path when userId is provided', async () => {
-    await createJobRequest({ ...BASE_PARAMS, userId: 'user-abc' })
-
-    expect(mockDb.customer.upsert).toHaveBeenCalledWith(
+    expect(tx.customer.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'user-abc' } }),
     )
+    expect(tx.customer.update).not.toHaveBeenCalled()
+    expect(tx.customer.create).not.toHaveBeenCalled()
+    expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-by-user' })
+  })
+
+  it('links an existing phone customer to the authenticated web user when userId lookup misses', async () => {
+    const tx = makeTx()
+    tx.customer.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'cust-by-phone', userId: null, name: 'WhatsApp Customer' })
+    tx.customer.update.mockResolvedValue({ id: 'cust-by-phone' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({ ...BASE_PARAMS, userId: 'user-abc' })
+
+    expect(tx.customer.update).toHaveBeenCalledWith({
+      where: { id: 'cust-by-phone' },
+      data: {
+        userId: 'user-abc',
+        name: 'Test Customer',
+      },
+      select: { id: true },
+    })
+  })
+
+  it('creates a fresh linked customer when no existing userId or phone match exists', async () => {
+    const tx = makeTx()
+    tx.customer.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    tx.customer.create.mockResolvedValue({ id: 'cust-new' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({ ...BASE_PARAMS, userId: 'user-abc' })
+
+    expect(tx.customer.create).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-abc',
+        phone: '+27821234567',
+        name: 'Test Customer',
+      },
+      select: { id: true },
+    })
   })
 
   it('triggers dispatchLeads fire-and-forget after commit', async () => {
-    await createJobRequest(BASE_PARAMS)
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
 
-    // Flush microtasks so the dynamic-import chain resolves
+    await createJobRequest(BASE_PARAMS)
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
     expect(mockDispatchLeads).toHaveBeenCalledWith('jr-1')
   })
 
   it('does not throw if dispatchLeads fails — matching is non-blocking', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
     mockDispatchLeads.mockRejectedValue(new Error('Matching down'))
 
-    // Should resolve without throwing
     await expect(createJobRequest(BASE_PARAMS)).resolves.toBeDefined()
   })
 

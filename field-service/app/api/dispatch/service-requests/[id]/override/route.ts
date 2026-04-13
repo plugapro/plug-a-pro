@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { manualOverrideAssignment } from '@/lib/matching/service'
+import { getDispatchRouteError } from '@/lib/route-action-errors'
 
 export async function POST(
   request: NextRequest,
@@ -29,8 +30,7 @@ export async function POST(
     })
     return NextResponse.json(result)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to override assignment'
-    return NextResponse.json({ error: message }, { status: 422 })
+    const response = getDispatchRouteError({ action: 'override', error })
+    return NextResponse.json({ error: response.message }, { status: response.status })
   }
 }
-

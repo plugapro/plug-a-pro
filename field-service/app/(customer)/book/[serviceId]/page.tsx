@@ -26,10 +26,9 @@ export default async function RequestJobPage({
 }: {
   params: Promise<{ serviceId: string }>
 }) {
-  const session = await getSession()
-  if (!session) redirect('/sign-in')
-
   const { serviceId: category } = await params
+  const session = await getSession()
+  if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/book/${category}`)}`)
 
   const categoryInfo = CATEGORIES[category]
   if (!categoryInfo) notFound()

@@ -73,16 +73,41 @@ export async function createJobRequest(
     let customer: { id: string }
 
     if (params.userId) {
-      customer = await tx.customer.upsert({
+      const existingByUserId = await tx.customer.findUnique({
         where: { userId: params.userId },
-        create: {
-          userId: params.userId,
-          phone: params.phone,
-          name: params.customerName ?? 'Customer',
-        },
-        update: {},
         select: { id: true },
       })
+
+      if (existingByUserId) {
+        customer = existingByUserId
+      } else {
+        const existingByPhone = await tx.customer.findUnique({
+          where: { phone: params.phone },
+          select: { id: true, userId: true, name: true },
+        })
+
+        if (existingByPhone) {
+          customer = await tx.customer.update({
+            where: { id: existingByPhone.id },
+            data: {
+              userId: params.userId,
+              ...(params.customerName && existingByPhone.name === 'WhatsApp Customer'
+                ? { name: params.customerName }
+                : {}),
+            },
+            select: { id: true },
+          })
+        } else {
+          customer = await tx.customer.create({
+            data: {
+              userId: params.userId,
+              phone: params.phone,
+              name: params.customerName ?? 'Customer',
+            },
+            select: { id: true },
+          })
+        }
+      }
     } else {
       customer = await tx.customer.upsert({
         where: { phone: params.phone },

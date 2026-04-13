@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { resolveCustomerForSession } from '@/lib/customer-session'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,10 +19,9 @@ export default async function RatePage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  const session = await getSession()
-  if (!session) redirect('/sign-in')
-
   const { id } = await params
+  const session = await getSession()
+  if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}/rate`)}`)
 
   const booking = await db.booking.findUnique({
     where: { id },
@@ -30,7 +30,7 @@ export default async function RatePage({
         include: {
           jobRequest: {
             include: {
-              customer: { select: { id: true, userId: true } },
+              customer: { select: { id: true } },
             },
           },
         },
@@ -41,8 +41,9 @@ export default async function RatePage({
 
   if (!booking) notFound()
 
-  const customer = booking.match.jobRequest.customer
-  if (customer.userId !== session.id) redirect('/bookings')
+  const bookingCustomerId = booking.match.jobRequest.customer.id
+  const customer = await resolveCustomerForSession(db, session)
+  if (!customer || bookingCustomerId !== customer.id) redirect('/bookings')
   if (booking.status !== 'COMPLETED') redirect(`/bookings/${id}`)
   if (!booking.job) redirect(`/bookings/${id}`)
 
@@ -58,16 +59,32 @@ export default async function RatePage({
 
   async function submitRating(formData: FormData) {
     'use server'
+    const { getSession: getServerSession } = await import('@/lib/auth')
+    const { db: dbServer } = await import('@/lib/db')
+    const { resolveCustomerForSession: resolveCustomer } = await import('@/lib/customer-session')
+
+    const activeSession = await getServerSession()
+    if (!activeSession) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}/rate`)}`)
+
+    const activeCustomer = await resolveCustomer(dbServer, activeSession)
+    if (!activeCustomer || activeCustomer.id !== bookingCustomerId) redirect('/bookings')
+
     const score   = Number(formData.get('score'))
     const comment = String(formData.get('comment') ?? '').trim() || null
 
     if (!score || score < 1 || score > 5) return
 
-    await db.review.create({
+    const existingReview = await dbServer.review.findFirst({
+      where: { jobId, reviewerType: 'CUSTOMER' },
+      select: { id: true },
+    })
+    if (existingReview) redirect(`/bookings/${id}`)
+
+    await dbServer.review.create({
       data: {
         jobId,
         reviewerType: 'CUSTOMER',
-        customerId:   customer.id,
+        customerId:   activeCustomer.id,
         score,
         comment,
       },

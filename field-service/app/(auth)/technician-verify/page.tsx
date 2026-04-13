@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
+import { getSafeNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -17,6 +19,10 @@ function ProviderVerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const phone = searchParams.get('phone') ?? ''
+  const next = getSafeNextPath(
+    searchParams.get('next') ?? searchParams.get('callbackUrl'),
+    '/technician',
+  )
 
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
@@ -43,7 +49,7 @@ function ProviderVerifyForm() {
       })
 
       if (verifyError || !data.user) {
-        setError(verifyError?.message ?? 'Invalid or expired code.')
+        setError(getOtpVerifyErrorMessage(verifyError?.message))
         return
       }
 
@@ -67,7 +73,7 @@ function ProviderVerifyForm() {
         })
       }
 
-      router.replace('/technician')
+      router.replace(next)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

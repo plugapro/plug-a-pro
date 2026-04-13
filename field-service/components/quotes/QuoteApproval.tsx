@@ -128,17 +128,7 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string }
-        if (data.error === 'ALREADY_ACTIONED') {
-          setResult(action === 'approve' ? 'approved' : 'declined')
-          return
-        }
-        if (data.error === 'EXPIRED') {
-          throw new Error('This quote has expired. Please contact the provider to request a new one.')
-        }
-        if (data.error === 'MISSING_PREFERRED_DATE') {
-          throw new Error('This quote is missing a preferred job date. Please ask the provider to resend it with a date.')
-        }
-        throw new Error(data.error ?? 'Something went wrong')
+        throw new Error(data.error ?? 'We could not update this quote right now. Please try again.')
       }
       const data = await res.json().catch(() => ({})) as {
         status?: string

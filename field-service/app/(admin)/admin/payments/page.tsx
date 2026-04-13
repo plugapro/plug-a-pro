@@ -4,6 +4,7 @@
 export const dynamic = 'force-dynamic'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
@@ -19,6 +20,7 @@ import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { getPaymentAdminMessage } from '@/lib/admin-action-messages'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
@@ -34,13 +36,30 @@ async function issueRefundAction(formData: FormData) {
   const payment = await db.payment.findUnique({
     where: { id: paymentId },
     select: {
+      amount: true,
       bookingId: true,
       status: true,
       refundedAmount: true,
       refundedAt: true,
     },
   })
-  if (!payment) return
+  if (!payment) {
+    redirect('/admin/payments?message=refund_unavailable')
+  }
+
+  const refundedAmount = Number(payment.refundedAmount ?? 0)
+  const totalAmount = Number(payment.amount)
+  const remainingRefundable = Math.max(0, totalAmount - refundedAmount)
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    remainingRefundable <= 0 ||
+    amount > remainingRefundable ||
+    !['PAID', 'PARTIALLY_REFUNDED'].includes(payment.status)
+  ) {
+    redirect('/admin/payments?message=invalid_refund_amount')
+  }
 
   const { issueRefund } = await import('@/lib/payments')
   try {
@@ -60,12 +79,11 @@ async function issueRefundAction(formData: FormData) {
         requestedAmount: amount,
       },
     })
+    redirect('/admin/payments?message=refund_issued')
   } catch (err) {
     console.error('[admin/payments] Refund failed:', err)
+    redirect('/admin/payments?message=refund_failed')
   }
-
-  revalidatePath('/admin/payments')
-  revalidatePath('/admin')
 }
 
 async function claimPaymentAction(formData: FormData) {
@@ -138,10 +156,11 @@ const COLLECTION_LABEL: Record<PaymentCollectionMode, string> = {
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; message?: string }>
 }) {
   const admin = await requireAdmin()
-  const { status } = await searchParams
+  const { status, message } = await searchParams
+  const banner = getPaymentAdminMessage(message)
 
   const validStatuses: PaymentStatus[] = ['PENDING', 'AUTHORISED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED']
   const statusFilter = validStatuses.includes(status as PaymentStatus)
@@ -184,6 +203,12 @@ export default async function PaymentsPage({
           {payments.length} payments. Offline-recorded rows are booking trace records only until the money is actually collected and marked paid.
         </p>
       </div>
+
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
+        </div>
+      ) : null}
 
       {/* Status filter tabs */}
       <div className="flex gap-1 flex-wrap">

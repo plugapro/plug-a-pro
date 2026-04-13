@@ -15,15 +15,16 @@ type JobWithContext = Job & {
 
 interface Props {
   job: JobWithContext
+  basePath?: '/provider' | '/technician'
 }
 
-export function JobCard({ job }: Props) {
+export function JobCard({ job, basePath = '/technician' }: Props) {
   const { jobRequest } = job.booking.match
   const { customer, address } = jobRequest
 
   return (
     <Link
-      href={`/technician/jobs/${job.id}`}
+      href={`${basePath}/jobs/${job.id}`}
       className="block rounded-xl border bg-card p-4 hover:bg-accent/30 transition-colors"
     >
       <div className="flex items-start justify-between gap-3 mb-3">

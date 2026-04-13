@@ -6,8 +6,10 @@
 export const dynamic = 'force-dynamic'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin, createServiceClient } from '@/lib/auth'
+import { recordAuditLog } from '@/lib/audit'
 import { syncProviderRecord } from '@/lib/provider-record'
 import {
   findConflictingActiveProviderApplications,
@@ -34,6 +36,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { ApplicationStatus } from '@prisma/client'
+import { getApplicationsAdminMessage } from '@/lib/admin-action-messages'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
 
@@ -75,8 +78,7 @@ async function approveApplication(formData: FormData) {
       phone: app.phone,
       conflictingApplicationIds: conflictingApplications.map((candidate) => candidate.id),
     })
-    revalidatePath('/admin/applications')
-    return
+    redirect('/admin/applications?message=duplicate_active_application')
   }
 
   // Create Supabase user (phone OTP — no email/password)
@@ -132,6 +134,23 @@ async function approveApplication(formData: FormData) {
       reviewedById: session.id,
     },
   })
+  await recordAuditLog({
+    actorId: session.id,
+    actorRole: session.role,
+    action: 'provider_application.approve',
+    entityType: 'provider_application',
+    entityId: app.id,
+    before: {
+      status: app.status,
+      providerId: app.providerId,
+      reviewedById: app.reviewedById,
+    },
+    after: {
+      status: 'APPROVED',
+      providerId,
+      reviewedById: session.id,
+    },
+  })
 
   // WhatsApp notification
   const { notifyTechnicianApplicationResult } = await import('@/lib/whatsapp-bot')
@@ -178,6 +197,24 @@ async function rejectApplication(formData: FormData) {
       reviewedAt: new Date(),
       reviewedById: session.id,
       notes: reason,
+    },
+  })
+  await recordAuditLog({
+    actorId: session.id,
+    actorRole: session.role,
+    action: 'provider_application.reject',
+    entityType: 'provider_application',
+    entityId: app.id,
+    before: {
+      status: app.status,
+      providerId: app.providerId,
+      reviewedById: app.reviewedById,
+    },
+    after: {
+      status: 'REJECTED',
+      providerId: app.providerId,
+      reviewedById: session.id,
+      notes: reason ?? null,
     },
   })
 
@@ -239,8 +276,14 @@ function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 
   return 'secondary'
 }
 
-export default async function ApplicationsPage() {
+export default async function ApplicationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ message?: string }>
+}) {
   const admin = await requireAdmin()
+  const { message } = await searchParams
+  const banner = getApplicationsAdminMessage(message)
 
   const applications = await db.providerApplication.findMany({
     select: providerApplicationSelect,
@@ -265,6 +308,12 @@ export default async function ApplicationsPage() {
           Applications submitted via WhatsApp. Approving an application allows that provider to receive marketplace leads.
         </p>
       </div>
+
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
+        </div>
+      ) : null}
 
       {/* Pending */}
       <section className="space-y-3">

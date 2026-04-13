@@ -10,17 +10,21 @@ const {
   mockGetSession,
   mockDb,
   mockFetch,
+  mockHead,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockDb: {
     attachment: { findUnique: vi.fn() },
     provider: { findUnique: vi.fn() },
+    customer: { findUnique: vi.fn(), update: vi.fn() },
   },
   mockFetch: vi.fn(),
+  mockHead: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@vercel/blob', () => ({ head: mockHead }))
 vi.stubGlobal('fetch', mockFetch)
 
 // Dynamic import so mocks are set up before module loads
@@ -51,6 +55,9 @@ const ATTACHMENT_JOB_PROVIDER = {
 describe('GET /api/attachments/[id] — provider job ownership check', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockHead.mockResolvedValue({
+      downloadUrl: 'https://blob.example.com/download/att-1',
+    })
     mockFetch.mockResolvedValue({
       ok: true,
       body: null,
@@ -67,6 +74,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     const res = await GET(makeRequest(), { params: makeParams() })
 
     expect(res.status).toBe(200)
+    expect(mockHead).toHaveBeenCalledWith('https://blob.example.com/att-1')
     // Must look up provider record by userId, not trust session.id directly
     expect(mockDb.provider.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'supabase-uid' } }),
@@ -97,7 +105,23 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
   })
 
   it('allows a customer whose userId matches via the job booking chain', async () => {
-    mockGetSession.mockResolvedValue({ id: 'customer-uid', role: 'customer' })
+    mockGetSession.mockResolvedValue({ id: 'customer-uid', role: 'customer', phone: '+27821234567' })
+    mockDb.customer.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'cust-db-id',
+        userId: null,
+        phone: '+27821234567',
+        name: 'Alice',
+        email: null,
+      })
+    mockDb.customer.update.mockResolvedValue({
+      id: 'cust-db-id',
+      userId: 'customer-uid',
+      phone: '+27821234567',
+      name: 'Alice',
+      email: null,
+    })
     mockDb.attachment.findUnique.mockResolvedValue({
       ...ATTACHMENT_JOB_PROVIDER,
       job: {
@@ -105,7 +129,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
         booking: {
           match: {
             jobRequest: {
-              customer: { userId: 'customer-uid' },
+              customer: { id: 'cust-db-id' },
             },
           },
         },

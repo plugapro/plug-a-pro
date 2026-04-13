@@ -6,6 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { createExtraWork } from '@/lib/jobs'
+import { getProviderExtraWorkRouteError } from '@/lib/route-action-errors'
 
 export async function POST(
   request: NextRequest,
@@ -76,7 +77,7 @@ export async function POST(
 
     return NextResponse.json({ approvalToken })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to create extra work'
-    return NextResponse.json({ error: message }, { status: 422 })
+    const response = getProviderExtraWorkRouteError(err)
+    return NextResponse.json({ error: response.message }, { status: response.status })
   }
 }
