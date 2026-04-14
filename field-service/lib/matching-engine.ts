@@ -310,6 +310,17 @@ export async function findCandidateProviders(input: CandidateInput) {
       availableNow: true,
       skills: true,
       serviceAreas: true,
+      technicianServiceAreas: {
+        where: { active: true },
+        select: {
+          areaType: true,
+          label: true,
+          city: true,
+          locationNodeId: true,
+          regionKey: true,
+          suburbKey: true,
+        },
+      },
     },
   })
 
@@ -319,13 +330,23 @@ export async function findCandidateProviders(input: CandidateInput) {
 
   return providers.filter((provider) => {
     const providerSkills = provider.skills.map((skill) => skill.toLowerCase())
-    const areas = provider.serviceAreas.map((area) => area.toLowerCase()).filter(Boolean)
+    if (!provider.availableNow) return false
+    if (!providerSkills.includes(category)) return false
 
-    return (
-      provider.availableNow &&
-      providerSkills.includes(category) &&
-      (areas.includes(suburb) || areas.includes(city))
-    )
+    const activeStructuredAreas = provider.technicianServiceAreas
+    const hasStructuredAreas = activeStructuredAreas.length > 0
+
+    if (hasStructuredAreas) {
+      // Structured match: check suburbKey or regionKey (SUBURB_EXACT or REGION_FALLBACK)
+      const normalizedSuburb = suburb.replace(/\s+/g, '_').trim()
+      const suburbExact = activeStructuredAreas.some((a) => a.suburbKey === normalizedSuburb)
+      const regionMatch = activeStructuredAreas.some((a) => a.regionKey !== null && suburb.includes(a.regionKey))
+      return suburbExact || regionMatch
+    }
+
+    // Legacy string fallback
+    const areas = provider.serviceAreas.map((area) => area.toLowerCase()).filter(Boolean)
+    return areas.includes(suburb) || areas.includes(city)
   })
 }
 

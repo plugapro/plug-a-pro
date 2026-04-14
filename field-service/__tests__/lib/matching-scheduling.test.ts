@@ -13,6 +13,11 @@ const baseRequest = {
   estimatedDurationMinutes: 90,
   requiredSkillTags: ['plumbing'],
   requiredCertificationCodes: [],
+  requiredEquipmentTags: [],
+  requiredVehicleTypes: [],
+  customerAcceptedAmount: null,
+  customerAcceptedScope: null,
+  autoCreateBookingOnAssignment: false,
   preferredProviderId: null,
   assignmentMode: 'AUTO_ASSIGN' as const,
   status: 'OPEN' as const,
@@ -25,6 +30,8 @@ const requestAddress = {
   province: 'Gauteng',
   lat: -26.1076,
   lng: 28.0567,
+  locationNodeId: null,
+  regionKey: null,
 }
 
 describe('evaluateScheduleFit', () => {
