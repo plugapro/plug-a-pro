@@ -196,8 +196,24 @@ async function handleCollectSuburb(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'collect_address_suburb' }
   }
 
+  // Attempt silent resolution — do NOT block the flow if this fails
+  let resolvedNodeId: string | null = null
+  try {
+    const { resolveSuburbNodeId } = await import('@/lib/location-nodes')
+    resolvedNodeId = await resolveSuburbNodeId(suburb)
+  } catch {
+    // non-fatal — falls back to legacy string matching in the matching engine
+  }
+
   await sendText(ctx.phone, `✅ *${suburb}*\n\n*City:* Now type your city:\n\n_Example: Johannesburg_`)
-  return { nextStep: 'confirm_address', nextData: { addressSuburb: suburb } }
+  return {
+    nextStep: 'confirm_address',
+    nextData: {
+      addressSuburb: suburb,
+      addressRawSuburb: suburb,           // store raw text for ops review
+      addressLocationNodeId: resolvedNodeId, // null if not resolved
+    },
+  }
 }
 
 async function handleConfirmAddress(ctx: FlowContext): Promise<FlowResult> {
@@ -320,6 +336,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       suburb:   ctx.data.addressSuburb  ?? addrParts[1] ?? '',
       city:     ctx.data.addressCity    ?? addrParts[2] ?? addrParts[1] ?? '',
       province: addrParts[3] ?? '',
+      locationNodeId: ctx.data.addressLocationNodeId ?? null,
     })
 
     await sendButtons(

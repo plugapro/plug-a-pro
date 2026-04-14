@@ -46,6 +46,12 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectArea(ctx)
     case 'reg_collect_experience':
       return handleCollectExperience(ctx)
+    case 'reg_collect_city':
+      return handleCollectCity(ctx)
+    case 'reg_collect_region':
+      return handleCollectRegion(ctx)
+    case 'reg_collect_region_more':
+      return handleCollectRegionMore(ctx)
     case 'reg_collect_availability':
       return handleCollectAvailability(ctx)
     case 'reg_collect_evidence':
@@ -194,6 +200,16 @@ async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
   return promptArea(ctx)
 }
 
+// ─── Province key map ─────────────────────────────────────────────────────────
+
+const PROVINCE_KEY_MAP: Record<string, string> = {
+  'area_gauteng':       'gauteng',
+  'area_western_cape':  'western_cape',
+  'area_kwazulu_natal': 'kwazulu_natal',
+  'area_eastern_cape':  'eastern_cape',
+  'area_other':         'gauteng', // fallback to largest province
+}
+
 // ─── Experience and availability ──────────────────────────────────────────────
 
 async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
@@ -223,9 +239,45 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const areaLabel = ctx.reply.title ?? ''
+  const provinceKey = PROVINCE_KEY_MAP[ctx.reply.id ?? ''] ?? 'gauteng'
 
+  try {
+    const { getCities } = await import('@/lib/location-nodes')
+    const cities = await getCities(provinceKey)
+
+    if (cities.length === 0) {
+      // No cities seeded yet — fall through to legacy area approach
+      await sendExperiencePrompt(ctx.phone)
+      return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+    }
+
+    const rows = cities.slice(0, 10).map(c => ({
+      id: `city_${c.id}`,
+      title: c.label,
+    }))
+
+    await sendList(
+      ctx.phone,
+      '🏙 Which city do you mainly work in?',
+      [{ title: 'Cities', rows }],
+      { buttonLabel: 'Choose City' }
+    )
+    return {
+      nextStep: 'reg_collect_city',
+      nextData: { serviceAreas: [areaLabel], province: areaLabel, provinceKey },
+    }
+  } catch {
+    // DB unavailable — fall through to legacy flow
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+  }
+}
+
+// ─── Experience prompt helper ─────────────────────────────────────────────────
+
+async function sendExperiencePrompt(phone: string): Promise<void> {
   await sendList(
-    ctx.phone,
+    phone,
     '💼 How many years of experience do you have in your trade?',
     [{
       title: 'Experience',
@@ -238,7 +290,137 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
     }],
     { buttonLabel: 'Choose Experience' }
   )
-  return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+}
+
+// ─── City and region selection (structured location) ─────────────────────────
+
+async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
+  if (!ctx.reply.id?.startsWith('city_')) {
+    // Re-show city list using stored provinceKey
+    const { getCities } = await import('@/lib/location-nodes')
+    const cities = await getCities(ctx.data.provinceKey ?? 'gauteng')
+    const rows = cities.slice(0, 10).map(c => ({ id: `city_${c.id}`, title: c.label }))
+    await sendList(ctx.phone, '🏙 Please choose your city:', [{ title: 'Cities', rows }], { buttonLabel: 'Choose City' })
+    return { nextStep: 'reg_collect_city' }
+  }
+
+  const cityId = ctx.reply.id.replace('city_', '')
+  const cityLabel = ctx.reply.title ?? ''
+
+  try {
+    const { getRegions } = await import('@/lib/location-nodes')
+    const regions = await getRegions(cityId)
+
+    if (regions.length === 0) {
+      // No regions — fall through to experience
+      await sendExperiencePrompt(ctx.phone)
+      return {
+        nextStep: 'reg_collect_availability',
+        nextData: { city: cityLabel, serviceAreas: [ctx.data.province ?? cityLabel] },
+      }
+    }
+
+    const rows = regions.slice(0, 10).map(r => ({
+      id: `region_${r.id}`,
+      title: r.label,
+    }))
+
+    await sendList(
+      ctx.phone,
+      `🗺 Which area(s) of *${cityLabel}* do you work in?\n\n_(You can add multiple areas)_`,
+      [{ title: 'Areas', rows }],
+      { buttonLabel: 'Choose Area' }
+    )
+    return {
+      nextStep: 'reg_collect_region',
+      nextData: { city: cityLabel, cityId },
+    }
+  } catch {
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability', nextData: { city: cityLabel } }
+  }
+}
+
+async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
+  try {
+    const { getRegions } = await import('@/lib/location-nodes')
+    const regions = await getRegions(ctx.data.cityId ?? '')
+    if (regions.length === 0) {
+      await sendExperiencePrompt(ctx.phone)
+      return { nextStep: 'reg_collect_availability' }
+    }
+    const rows = regions.slice(0, 10).map(r => ({ id: `region_${r.id}`, title: r.label }))
+    await sendList(
+      ctx.phone,
+      '🗺 Please choose an area:',
+      [{ title: 'Areas', rows }],
+      { buttonLabel: 'Choose Area' }
+    )
+    return { nextStep: 'reg_collect_region' }
+  } catch {
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability' }
+  }
+}
+
+async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
+  // "Done" — proceed to experience
+  if (ctx.reply.id === 'region_done') {
+    const nodeIds = ctx.data.locationNodeIds ?? []
+    if (nodeIds.length === 0) {
+      // Re-show region list
+      return showRegionList(ctx)
+    }
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability' }
+  }
+
+  if (ctx.reply.id === 'region_more') {
+    return showRegionList(ctx)
+  }
+
+  if (!ctx.reply.id?.startsWith('region_')) {
+    return showRegionList(ctx)
+  }
+
+  const regionId = ctx.reply.id.replace('region_', '')
+  const regionLabel = ctx.reply.title ?? ''
+
+  const existing = ctx.data.locationNodeIds ?? []
+  if (existing.includes(regionId)) {
+    // Already selected
+    const areaList = (ctx.data.selectedRegionLabels ?? []).join(', ')
+    await sendButtons(
+      ctx.phone,
+      `✅ *${regionLabel}* is already selected.\n\nAreas: *${areaList}*\n\nAdd another or continue?`,
+      [
+        { id: 'region_more', title: '➕ Add another' },
+        { id: 'region_done', title: '✅ Done' },
+      ]
+    )
+    return { nextStep: 'reg_collect_region' }
+  }
+
+  const newNodeIds = [...existing, regionId]
+  const newLabels = [...(ctx.data.selectedRegionLabels ?? []), regionLabel]
+  const areaList = newLabels.join(', ')
+
+  await sendButtons(
+    ctx.phone,
+    `✅ *${regionLabel}* added!\n\nAreas: *${areaList}*\n\nAdd another area or continue?`,
+    [
+      { id: 'region_more', title: '➕ Add another' },
+      { id: 'region_done', title: '✅ Done' },
+    ]
+  )
+  return {
+    nextStep: 'reg_collect_region',
+    nextData: { locationNodeIds: newNodeIds, selectedRegionLabels: newLabels },
+  }
+}
+
+async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
+  return showRegionList(ctx) // re-show the region list
 }
 
 async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> {
@@ -388,10 +570,13 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       phone: normalizedPhone,
       name: ctx.data.name ?? 'Unknown',
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.serviceAreas ?? [],
+      serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
+        ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
+        : (ctx.data.serviceAreas ?? []),
       active: true,
       availableNow: true,
       verified: false,
+      locationNodeIds: ctx.data.locationNodeIds ?? [],
     })
 
     let application: { id: string }
@@ -402,7 +587,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           phone: normalizedPhone,
           name: ctx.data.name ?? 'Unknown',
           skills: ctx.data.skills ?? [],
-          serviceAreas: ctx.data.serviceAreas ?? [],
+          serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
+            ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
+            : (ctx.data.serviceAreas ?? []),
           experience: ctx.data.experience ?? null,
           availability: availLabel,
           status: 'PENDING',
@@ -454,7 +641,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       applicantName: ctx.data.name ?? 'Unknown',
       applicantPhone: ctx.phone,
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.serviceAreas ?? [],
+      serviceAreas: ctx.data.locationNodeIds?.length
+        ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
+        : (ctx.data.serviceAreas ?? []),
       applicationId: application.id,
     }).catch(() => {})
 
