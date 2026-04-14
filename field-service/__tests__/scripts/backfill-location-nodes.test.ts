@@ -36,11 +36,17 @@ describe('backfill-location-nodes main()', () => {
   })
 
   it('makes no updates when all addresses already have locationNodeId (idempotent)', async () => {
-    // locationNodeId IS NULL filter means prisma returns 0 addresses
+    // Simulates the WHERE { locationNodeId: null } filter returning 0 rows.
+    // We verify the correct filter was applied by inspecting the findMany call args.
     const prisma = makePrisma({ suburbNodes: [], addresses: [] })
 
     await main(prisma as never)
 
+    expect(prisma.address.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ locationNodeId: null }),
+      }),
+    )
     expect(prisma._transaction).not.toHaveBeenCalled()
     expect(prisma._addressUpdate).not.toHaveBeenCalled()
   })
