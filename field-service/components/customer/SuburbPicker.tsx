@@ -1,46 +1,66 @@
 'use client'
 
-// ─── Suburb Picker — 3-step city → area → suburb cascade ──────────────────────
-
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CityOption, RegionOption, SuburbOption } from '@/lib/location-nodes'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Selection = {
   suburb: string
   city: string
-  locationNodeId: string
+  locationNodeId: string | null
 }
 
 type Props = {
   initialCities: CityOption[]
+  provinceKey: string
   onSelect: (selection: Selection | null) => void
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
-export function SuburbPicker({ initialCities, onSelect }: Props) {
+export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
   const [selectedCityId, setSelectedCityId] = useState('')
   const [selectedCityLabel, setSelectedCityLabel] = useState('')
   const [selectedRegionId, setSelectedRegionId] = useState('')
   const [selectedSuburbId, setSelectedSuburbId] = useState('')
+  const [manualMode, setManualMode] = useState(false)
+  const [manualCity, setManualCity] = useState('')
+  const [manualSuburb, setManualSuburb] = useState('')
   const [regions, setRegions] = useState<RegionOption[]>([])
   const [suburbs, setSuburbs] = useState<SuburbOption[]>([])
   const [loadingRegions, setLoadingRegions] = useState(false)
   const [loadingSuburbs, setLoadingSuburbs] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
+  const filteredCities = useMemo(
+    () => initialCities.filter((city) => city.provinceKey === provinceKey),
+    [initialCities, provinceKey],
+  )
+
+  useEffect(() => {
+    setSelectedCityId('')
+    setSelectedCityLabel('')
+    setSelectedRegionId('')
+    setSelectedSuburbId('')
+    setManualMode(false)
+    setManualCity('')
+    setManualSuburb('')
+    setRegions([])
+    setSuburbs([])
+    setFetchError(null)
+    onSelect(null)
+  }, [provinceKey, onSelect])
+
   async function handleCityChange(cityId: string) {
-    const city = initialCities.find((c) => c.id === cityId)
+    const city = filteredCities.find((entry) => entry.id === cityId)
     setSelectedCityId(cityId)
     setSelectedCityLabel(city?.label ?? '')
     setSelectedRegionId('')
     setSelectedSuburbId('')
     setRegions([])
     setSuburbs([])
+    setManualMode(false)
     onSelect(null)
+
     if (!cityId) return
+
     setLoadingRegions(true)
     setFetchError(null)
     try {
@@ -55,10 +75,14 @@ export function SuburbPicker({ initialCities, onSelect }: Props) {
   }
 
   async function handleRegionChange(regionId: string) {
+    setSelectedRegionId(regionId)
     setSelectedSuburbId('')
     setSuburbs([])
+    setManualMode(false)
     onSelect(null)
+
     if (!regionId) return
+
     setLoadingSuburbs(true)
     setFetchError(null)
     try {
@@ -77,62 +101,77 @@ export function SuburbPicker({ initialCities, onSelect }: Props) {
       onSelect(null)
       return
     }
-    const suburb = suburbs.find((s) => s.id === suburbId)
-    if (suburb) {
-      onSelect({ suburb: suburb.label, city: selectedCityLabel, locationNodeId: suburb.id })
+
+    const suburb = suburbs.find((entry) => entry.id === suburbId)
+    if (!suburb) return
+
+    onSelect({
+      suburb: suburb.label,
+      city: selectedCityLabel,
+      locationNodeId: suburb.id,
+    })
+  }
+
+  function handleManualSelection(nextCity: string, nextSuburb: string) {
+    if (!nextCity.trim() || !nextSuburb.trim()) {
+      onSelect(null)
+      return
     }
+
+    onSelect({
+      city: nextCity.trim(),
+      suburb: nextSuburb.trim(),
+      locationNodeId: null,
+    })
   }
 
   return (
     <div className="space-y-3">
-      {/* City select */}
       <div className="space-y-1">
         <label htmlFor="suburb-picker-city" className="text-sm">
-          City
+          City / municipality
         </label>
         <select
           id="suburb-picker-city"
           className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-          onChange={(e) => handleCityChange(e.target.value)}
+          onChange={(event) => handleCityChange(event.target.value)}
           value={selectedCityId}
         >
           <option value="" disabled>
             Select city…
           </option>
-          {initialCities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
+          {filteredCities.map((city) => (
+            <option key={city.id} value={city.id}>
+              {city.label}
             </option>
           ))}
         </select>
       </div>
 
-      {/* Region select — only shown once a city is selected */}
       {(regions.length > 0 || loadingRegions) && (
         <div className="space-y-1">
           <label htmlFor="suburb-picker-region" className="text-sm">
-            Area
+            Region / area
           </label>
           <select
             id="suburb-picker-region"
             className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(e) => { setSelectedRegionId(e.target.value); handleRegionChange(e.target.value) }}
+            onChange={(event) => handleRegionChange(event.target.value)}
             value={selectedRegionId}
             disabled={loadingRegions}
           >
             <option value="" disabled>
               {loadingRegions ? 'Loading…' : 'Select area…'}
             </option>
-            {regions.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
+            {regions.map((region) => (
+              <option key={region.id} value={region.id}>
+                {region.label}
               </option>
             ))}
           </select>
         </div>
       )}
 
-      {/* Suburb select — only shown once an area is selected */}
       {(suburbs.length > 0 || loadingSuburbs) && (
         <div className="space-y-1">
           <label htmlFor="suburb-picker-suburb" className="text-sm">
@@ -141,16 +180,19 @@ export function SuburbPicker({ initialCities, onSelect }: Props) {
           <select
             id="suburb-picker-suburb"
             className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(e) => { setSelectedSuburbId(e.target.value); handleSuburbChange(e.target.value) }}
+            onChange={(event) => {
+              setSelectedSuburbId(event.target.value)
+              handleSuburbChange(event.target.value)
+            }}
             value={selectedSuburbId}
             disabled={loadingSuburbs}
           >
             <option value="" disabled>
               {loadingSuburbs ? 'Loading…' : 'Select suburb…'}
             </option>
-            {suburbs.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
+            {suburbs.map((suburb) => (
+              <option key={suburb.id} value={suburb.id}>
+                {suburb.label}
               </option>
             ))}
           </select>
@@ -162,6 +204,59 @@ export function SuburbPicker({ initialCities, onSelect }: Props) {
           {fetchError}
         </p>
       )}
+
+      <div className="space-y-2 rounded-xl border px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Can&apos;t find your suburb?</p>
+            <p className="text-xs text-muted-foreground">
+              Use manual entry for estates, complexes, informal addresses, or lookup gaps.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="text-xs font-medium text-primary"
+            onClick={() => {
+              const nextManualMode = !manualMode
+              setManualMode(nextManualMode)
+              if (!nextManualMode) {
+                setManualCity('')
+                setManualSuburb('')
+                onSelect(null)
+              }
+            }}
+          >
+            {manualMode ? 'Close' : 'Enter manually'}
+          </button>
+        </div>
+
+        {manualMode && (
+          <div className="grid gap-3">
+            <input
+              type="text"
+              value={manualCity}
+              onChange={(event) => {
+                const nextCity = event.target.value
+                setManualCity(nextCity)
+                handleManualSelection(nextCity, manualSuburb)
+              }}
+              placeholder="City / municipality"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <input
+              type="text"
+              value={manualSuburb}
+              onChange={(event) => {
+                const nextSuburb = event.target.value
+                setManualSuburb(nextSuburb)
+                handleManualSelection(manualCity, nextSuburb)
+              }}
+              placeholder="Suburb / estate / area"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

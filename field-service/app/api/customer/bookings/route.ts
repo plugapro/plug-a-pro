@@ -101,7 +101,10 @@ export async function POST(req: NextRequest) {
       postalCode: postalCode ?? null,
       locationNodeId: locationNodeId ?? null,
     })
-    return NextResponse.json({ jobRequestId: result.jobRequestId })
+    return NextResponse.json({
+      jobRequestId: result.jobRequestId,
+      ticketUrl: result.ticketUrl,
+    })
   } catch (err) {
     console.error('[bookings] createJobRequest failed', err)
     return NextResponse.json({ error: 'Failed to create job request' }, { status: 500 })

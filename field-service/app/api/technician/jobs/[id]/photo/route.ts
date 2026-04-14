@@ -1,6 +1,6 @@
 // POST /api/technician/jobs/[id]/photo
-// Body: multipart/form-data with `file` (image) and `label` ("before" | "after")
-// Uploads to Vercel Blob and creates an Attachment record in DB.
+// Body: multipart/form-data with `files[]` or `file`, optional `caption`, and optional `label`.
+// Uploads to Vercel Blob and creates Attachment records in DB.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
@@ -40,47 +40,68 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid form data' }, { status: 400 })
   }
 
-  const file = formData.get('file')
+  const files = formData.getAll('files')
+  const fallbackFile = formData.get('file')
   const label = formData.get('label')
+  const caption = String(formData.get('caption') ?? '').trim() || null
 
-  if (!(file instanceof File)) {
+  const uploads = files.length > 0 ? files : fallbackFile ? [fallbackFile] : []
+
+  if (uploads.length === 0) {
     return NextResponse.json({ error: 'No file provided' }, { status: 400 })
   }
 
-  if (!file.type.startsWith('image/')) {
-    return NextResponse.json(
-      { error: 'Only image files are allowed' },
-      { status: 400 }
-    )
-  }
+  for (const upload of uploads) {
+    if (!(upload instanceof File)) {
+      return NextResponse.json({ error: 'Invalid upload payload' }, { status: 400 })
+    }
 
-  if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json(
-      { error: 'File too large. Maximum size is 10MB.' },
-      { status: 400 }
-    )
+    if (!upload.type.startsWith('image/')) {
+      return NextResponse.json(
+        { error: 'Only image files are allowed' },
+        { status: 400 }
+      )
+    }
+
+    if (upload.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: 'File too large. Maximum size is 10MB.' },
+        { status: 400 }
+      )
+    }
   }
 
   const labelValue =
-    label === 'before' || label === 'after' ? label : undefined
+    label === 'before' || label === 'after' || label === 'evidence' ? label : 'evidence'
 
   try {
-    const url = await uploadJobPhoto({
-      jobId,
-      file,
-      label: labelValue,
-      uploadedBy: session.id,
-    })
+    const attachments = []
 
-    // Fetch the newly created attachment to get its id
-    const attachment = await db.attachment.findFirst({
-      where: { jobId, url },
-      select: { id: true },
-    })
+    for (const upload of uploads) {
+      const file = upload as File
+      const url = await uploadJobPhoto({
+        jobId,
+        file,
+        label: labelValue,
+        caption,
+        uploadedBy: session.id,
+      })
+
+      const attachment = await db.attachment.findFirst({
+        where: { jobId, url },
+        select: { id: true, caption: true, label: true },
+      })
+
+      attachments.push({
+        id: attachment?.id ?? null,
+        proxyUrl: attachment?.id ? `/api/attachments/${attachment.id}` : null,
+        caption: attachment?.caption ?? caption,
+        label: attachment?.label ?? labelValue,
+      })
+    }
 
     return NextResponse.json({
-      id: attachment?.id ?? null,
-      proxyUrl: attachment ? `/api/attachments/${attachment.id}` : null,
+      attachments,
     })
   } catch (err) {
     return NextResponse.json(

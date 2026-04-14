@@ -448,7 +448,7 @@ export default async function BookingDetailPage({
                     <div>
                       <p className="font-medium mb-3">Photos</p>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                        {booking.job.photos.map((photo: { id: string; url: string; label?: string | null }) => (
+                        {booking.job.photos.map((photo: { id: string; url: string; label?: string | null; caption?: string | null }) => (
                           <a
                             key={photo.id}
                             href={`/api/attachments/${photo.id}`}
@@ -459,12 +459,12 @@ export default async function BookingDetailPage({
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={`/api/attachments/${photo.id}`}
-                              alt={photo.label ?? 'Job photo'}
+                              alt={photo.caption ?? photo.label ?? 'Job photo'}
                               className="h-full w-full object-cover transition-opacity group-hover:opacity-80"
                             />
-                            {photo.label && (
+                            {(photo.caption || photo.label) && (
                               <span className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-xs px-1.5 py-0.5 text-center capitalize">
-                                {photo.label}
+                                {photo.caption ?? photo.label}
                               </span>
                             )}
                           </a>

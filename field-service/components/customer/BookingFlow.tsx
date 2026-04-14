@@ -55,6 +55,18 @@ const SA_PROVINCES = [
   'Northern Cape',
 ]
 
+const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
+  Gauteng: 'gauteng',
+  'Western Cape': 'western_cape',
+  'KwaZulu-Natal': 'kwazulu_natal',
+  'Eastern Cape': 'eastern_cape',
+  Limpopo: 'limpopo',
+  Mpumalanga: 'mpumalanga',
+  'North West': 'north_west',
+  'Free State': 'free_state',
+  'Northern Cape': 'northern_cape',
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function BookingFlow({ category, initialCities }: BookingFlowProps) {
@@ -73,24 +85,20 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   const [locationLoading, setLocationLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
+  const [ticketUrl, setTicketUrl] = useState<string | null>(null)
 
   function normalizeValue(value: string) {
     return value.trim().replace(/\s+/g, ' ')
   }
 
   function validateAddressStep() {
-    const street = normalizeValue(address.street)
     const suburb = normalizeValue(address.suburb)
     const city = normalizeValue(address.city)
     const province = normalizeValue(address.province)
     const postalCode = address.postalCode.trim()
 
-    if (!street) {
-      return 'Please enter your street address before continuing.'
-    }
-
     if (!suburb || !city) {
-      return 'Please select your suburb using the picker, or use "Use my current location".'
+      return 'Select your province, city, region, and suburb first. Use manual entry if your area is not listed.'
     }
 
     if (!province) {
@@ -103,6 +111,11 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
     if (postalCode && !/^\d{4}$/.test(postalCode)) {
       return 'Postal code must be 4 digits if you include it.'
+    }
+
+    const street = normalizeValue(address.street)
+    if (!street) {
+      return 'Enter the street address after choosing the suburb.'
     }
 
     return null
@@ -246,6 +259,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
       const data = await res.json()
       setJobRequestId(data.jobRequestId)
+      setTicketUrl(data.ticketUrl ?? null)
       setStep('submitted')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
@@ -312,21 +326,30 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="street" className="text-muted-foreground">Street address</Label>
-              <Input
-                id="street"
-                required
-                type="text"
-                value={address.street}
-                onChange={(e) => setAddress({ ...address, street: e.target.value })}
-                placeholder="12 Main Road"
-              />
+              <Label htmlFor="province" className="text-muted-foreground">Province</Label>
+              <Select
+                value={address.province}
+                onValueChange={(val) => {
+                  setAddress({ ...address, province: val, city: '', suburb: '' })
+                  setLocationNodeId(null)
+                }}
+              >
+                <SelectTrigger id="province" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SA_PROVINCES.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">Suburb</Label>
+              <Label className="text-muted-foreground">Area</Label>
               <SuburbPicker
                 initialCities={initialCities}
+                provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
                 onSelect={(selection) => {
                   if (selection) {
                     setAddress((prev) => ({ ...prev, suburb: selection.suburb, city: selection.city }))
@@ -346,20 +369,15 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="province" className="text-muted-foreground">Province</Label>
-                <Select
-                  value={address.province}
-                  onValueChange={(val) => setAddress({ ...address, province: val })}
-                >
-                  <SelectTrigger id="province" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SA_PROVINCES.map((p) => (
-                      <SelectItem key={p} value={p}>{p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="street" className="text-muted-foreground">Street address</Label>
+                <Input
+                  id="street"
+                  required
+                  type="text"
+                  value={address.street}
+                  onChange={(e) => setAddress({ ...address, street: e.target.value })}
+                  placeholder="12 Main Road, Estate name, informal directions"
+                />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="postalCode" className="text-muted-foreground">Postal code</Label>
@@ -486,7 +504,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
           <div className="space-y-3">
             <Button asChild className="w-full">
-              <Link href={`/requests/${jobRequestId}`}>Track this request</Link>
+              <Link href={ticketUrl ?? `/requests/${jobRequestId}`}>View ticket</Link>
             </Button>
             <Link
               href="/bookings"

@@ -321,6 +321,10 @@ export async function findCandidateProviders(input: CandidateInput) {
       availableNow: true,
       skills: true,
       serviceAreas: true,
+      technicianSkills: {
+        where: { active: true },
+        select: { skillTag: true },
+      },
       technicianServiceAreas: {
         where: { active: true },
         select: {
@@ -340,9 +344,13 @@ export async function findCandidateProviders(input: CandidateInput) {
   const city = input.city.trim().toLowerCase()
 
   return providers.filter((provider) => {
-    const providerSkills = provider.skills.map((skill) => skill.toLowerCase())
+    const providerSkills = new Set(
+      [...provider.skills, ...(provider.technicianSkills ?? []).map((skill) => skill.skillTag)].map((skill) =>
+        skill.toLowerCase(),
+      ),
+    )
     if (!provider.availableNow) return false
-    if (!providerSkills.includes(category)) return false
+    if (!providerSkills.has(category)) return false
 
     const activeStructuredAreas = provider.technicianServiceAreas
     const hasStructuredAreas = activeStructuredAreas.length > 0

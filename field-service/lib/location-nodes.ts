@@ -207,6 +207,10 @@ export async function resolveSuburbNodeId(
   suburb: string,
   city?: string,
 ): Promise<string | null> {
+  if (!db.locationNode?.findFirst) {
+    return null
+  }
+
   const node = await db.locationNode.findFirst({
     where: {
       label: { equals: suburb, mode: 'insensitive' },

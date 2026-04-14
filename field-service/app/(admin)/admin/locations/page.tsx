@@ -35,6 +35,16 @@ const TYPE_LABELS: Record<string, string> = {
 export default async function LocationsPage() {
   await requireAdmin()
 
+  async function submitCreateLocationNode(formData: FormData) {
+    'use server'
+    await createLocationNodeFromFormAction(formData)
+  }
+
+  async function submitLocationLabelUpdate(formData: FormData) {
+    'use server'
+    await updateLabelFromFormAction(formData)
+  }
+
   const nodes = await db.locationNode.findMany({
     orderBy: [{ nodeType: 'asc' }, { label: 'asc' }],
     select: {
@@ -86,7 +96,7 @@ export default async function LocationsPage() {
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium bg-muted/30 hover:bg-muted/50 select-none">
           Add node
         </summary>
-        <form action={createLocationNodeFromFormAction} className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <form action={submitCreateLocationNode} className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground font-medium" htmlFor="create-nodeType">Type</label>
             <select id="create-nodeType" name="nodeType" required
@@ -178,7 +188,7 @@ export default async function LocationsPage() {
                     return (
                       <TableRow key={node.id}>
                         <TableCell>
-                          <form action={updateLabelFromFormAction} className="flex items-center gap-1">
+                          <form action={submitLocationLabelUpdate} className="flex items-center gap-1">
                             <input type="hidden" name="id" value={node.id} />
                             <input
                               name="label"
