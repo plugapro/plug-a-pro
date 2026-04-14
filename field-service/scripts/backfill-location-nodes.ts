@@ -101,12 +101,10 @@ async function backfillAddresses(prisma: PrismaClient, nodeMap: Map<string, Node
 async function backfillProviderServiceAreas(prisma: PrismaClient, nodeMap: Map<string, NodeRow>) {
   console.log('\n── Phase B: Provider structured service areas ──')
 
-  // Only process providers that have legacy strings but NO structured areas yet
+  // Process ALL providers with legacy strings — upsert is idempotent so partially
+  // migrated providers are safely re-processed without creating duplicates.
   const providers = await prisma.provider.findMany({
-    where: {
-      serviceAreas: { isEmpty: false },
-      technicianServiceAreas: { none: {} },
-    },
+    where: { serviceAreas: { isEmpty: false } },
     select: { id: true, serviceAreas: true },
   })
 

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import type { CityOption, RegionOption, SuburbOption } from '@/lib/location-nodes'
+import { useEffect, useRef, useState } from 'react'
+import type { CityOption, NodeSearchResult, RegionOption, SuburbOption } from '@/lib/location-nodes'
 
 type Props = {
   initialCities: CityOption[]
@@ -12,13 +12,24 @@ type Props = {
 export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabels }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(selectedNodeIds))
   const [idToLabel, setIdToLabel] = useState<Record<string, string>>(selectedLabels)
+
+  // ── Cascade state ──────────────────────────────────────────────────────────
   const [regions, setRegions] = useState<RegionOption[]>([])
   const [suburbs, setSuburbs] = useState<SuburbOption[]>([])
   const [loadingRegions, setLoadingRegions] = useState(false)
   const [loadingSuburbs, setLoadingSuburbs] = useState(false)
   const [selectedCityId, setSelectedCityId] = useState('')
   const [selectedRegionId, setSelectedRegionId] = useState('')
-  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [cascadeError, setCascadeError] = useState<string | null>(null)
+
+  // ── Search state ───────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<NodeSearchResult[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Cascade handlers ───────────────────────────────────────────────────────
 
   async function handleCityChange(cityId: string) {
     setSelectedCityId(cityId)
@@ -29,17 +40,17 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
     if (!cityId) return
 
     setLoadingRegions(true)
-    setFetchError(null)
+    setCascadeError(null)
     try {
       const res = await fetch(`/api/locations/regions?cityId=${encodeURIComponent(cityId)}`)
       if (res.ok) {
         setRegions(await res.json())
       } else {
-        setFetchError('Failed to load areas. Please try again.')
+        setCascadeError('Failed to load areas. Please try again.')
         setRegions([])
       }
     } catch {
-      setFetchError('Failed to load areas. Please try again.')
+      setCascadeError('Failed to load areas. Please try again.')
       setRegions([])
     } finally {
       setLoadingRegions(false)
@@ -53,24 +64,61 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
     if (!regionId) return
 
     setLoadingSuburbs(true)
-    setFetchError(null)
+    setCascadeError(null)
     try {
       const res = await fetch(`/api/locations/suburbs?regionId=${encodeURIComponent(regionId)}`)
       if (res.ok) {
         setSuburbs(await res.json())
       } else {
-        setFetchError('Failed to load suburbs. Please try again.')
+        setCascadeError('Failed to load suburbs. Please try again.')
         setSuburbs([])
       }
     } catch {
-      setFetchError('Failed to load suburbs. Please try again.')
+      setCascadeError('Failed to load suburbs. Please try again.')
       setSuburbs([])
     } finally {
       setLoadingSuburbs(false)
     }
   }
 
-  function handleSuburbToggle(id: string, label: string, checked: boolean) {
+  // ── Search handler ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+
+    if (searchQuery.length < 2) {
+      setSearchResults([])
+      setSearchError(null)
+      return
+    }
+
+    debounceRef.current = setTimeout(async () => {
+      setSearchLoading(true)
+      setSearchError(null)
+      try {
+        const res = await fetch(`/api/locations/search?q=${encodeURIComponent(searchQuery)}`)
+        if (res.ok) {
+          setSearchResults(await res.json())
+        } else {
+          setSearchError('Search failed. Please try again.')
+          setSearchResults([])
+        }
+      } catch {
+        setSearchError('Search failed. Please try again.')
+        setSearchResults([])
+      } finally {
+        setSearchLoading(false)
+      }
+    }, 300)
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [searchQuery])
+
+  // ── Selection helpers ──────────────────────────────────────────────────────
+
+  function handleToggle(id: string, label: string, checked: boolean) {
     if (checked) {
       setSelectedIds(prev => { const next = new Set(prev); next.add(id); return next })
       setIdToLabel(prev => ({ ...prev, [id]: label }))
@@ -86,7 +134,7 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
   const selectedArray = Array.from(selectedIds)
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Sentinel — always present so the server action knows the picker was rendered */}
       <input type="hidden" name="serviceAreasPickerRendered" value="1" />
 
@@ -95,7 +143,59 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
         <input key={nodeId} type="hidden" name="locationNodeIds" value={nodeId} />
       ))}
 
-      {/* City selector */}
+      {/* ── Search ───────────────────────────────────────────────────────── */}
+      <div className="space-y-1">
+        <label htmlFor="area-search-input" className="text-xs text-muted-foreground font-medium">
+          Search suburbs
+        </label>
+        <input
+          id="area-search-input"
+          type="search"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Type a suburb or area name…"
+          autoComplete="off"
+          className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+        {searchLoading && (
+          <p className="text-xs text-muted-foreground">Searching…</p>
+        )}
+        {searchError && (
+          <p className="text-xs text-destructive" role="alert">{searchError}</p>
+        )}
+        {searchResults.length > 0 && (
+          <div className="rounded-md border border-input bg-background p-2 max-h-48 overflow-y-auto space-y-1.5">
+            {searchResults.map(result => (
+              <label
+                key={result.id}
+                className="flex items-center gap-2 cursor-pointer select-none hover:bg-muted/50 rounded px-1 py-0.5"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(result.id)}
+                  onChange={e => handleToggle(result.id, result.label, e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-primary"
+                />
+                <span className="text-sm">{result.label}</span>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {result.nodeType === 'SUBURB' ? 'Suburb' : 'Region'}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        {searchQuery.length >= 2 && !searchLoading && searchResults.length === 0 && !searchError && (
+          <p className="text-xs text-muted-foreground">No results for &ldquo;{searchQuery}&rdquo;</p>
+        )}
+      </div>
+
+      <div className="relative flex items-center">
+        <div className="flex-1 border-t border-border" />
+        <span className="mx-3 text-xs text-muted-foreground">or browse by area</span>
+        <div className="flex-1 border-t border-border" />
+      </div>
+
+      {/* ── Cascade ──────────────────────────────────────────────────────── */}
       <div className="space-y-1">
         <label htmlFor="area-city-select" className="text-xs text-muted-foreground font-medium">City</label>
         <select
@@ -111,7 +211,6 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
         </select>
       </div>
 
-      {/* Region selector */}
       {(selectedCityId || regions.length > 0) && (
         <div className="space-y-1">
           <label htmlFor="area-region-select" className="text-xs text-muted-foreground font-medium">Region / area</label>
@@ -134,11 +233,10 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
         </div>
       )}
 
-      {fetchError && (
-        <p className="text-sm text-destructive" role="alert">{fetchError}</p>
+      {cascadeError && (
+        <p className="text-sm text-destructive" role="alert">{cascadeError}</p>
       )}
 
-      {/* Suburb checkboxes */}
       {(selectedRegionId || suburbs.length > 0) && (
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground font-medium">Suburbs</label>
@@ -156,7 +254,7 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
                   <input
                     type="checkbox"
                     checked={selectedIds.has(suburb.id)}
-                    onChange={e => handleSuburbToggle(suburb.id, suburb.label, e.target.checked)}
+                    onChange={e => handleToggle(suburb.id, suburb.label, e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 accent-primary"
                   />
                   <span className="text-sm">{suburb.label}</span>
@@ -167,10 +265,10 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
         </div>
       )}
 
-      {/* Selected suburbs display */}
+      {/* ── Selected suburbs display ──────────────────────────────────────── */}
       {selectedArray.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium">Selected suburbs ({selectedArray.length})</p>
+          <p className="text-xs text-muted-foreground font-medium">Selected ({selectedArray.length})</p>
           <div className="flex flex-wrap gap-1.5">
             {selectedArray.map(nodeId => (
               <span
