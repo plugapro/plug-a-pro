@@ -13,6 +13,7 @@ type ProviderRecordSyncClient = {
   locationNode?: {
     findMany: (...args: any[]) => Promise<Array<{
       id: string
+      nodeType: string
       slug: string
       label: string
       provinceKey: string | null
@@ -64,6 +65,7 @@ async function upsertStructuredServiceAreas(
     where: { id: { in: locationNodeIds }, active: true },
     select: {
       id: true,
+      nodeType: true,
       slug: true,
       label: true,
       provinceKey: true,
@@ -73,7 +75,10 @@ async function upsertStructuredServiceAreas(
   })
 
   for (const node of nodes) {
-    const suburbKey = node.slug.split('__').at(-1) ?? node.slug
+    // SUBURB nodes get a suburbKey (last segment of slug); REGION nodes do not
+    const isSuburb = node.nodeType === 'SUBURB'
+    const areaType = isSuburb ? 'SUBURB' : 'REGION'
+    const suburbKey = isSuburb ? (node.slug.split('__').at(-1) ?? node.slug) : null
 
     await client.technicianServiceArea.upsert({
       where: {
@@ -85,7 +90,7 @@ async function upsertStructuredServiceAreas(
       create: {
         providerId,
         locationNodeId: node.id,
-        areaType: 'SUBURB',
+        areaType,
         label: node.label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,
@@ -94,6 +99,7 @@ async function upsertStructuredServiceAreas(
         active: true,
       },
       update: {
+        areaType,
         label: node.label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,

@@ -46,7 +46,7 @@ describe('POST /api/technician/quotes', () => {
         matchId: 'match-1',
         labourCost: 850,
         description: 'Inspection-based plumbing quote',
-        preferredDate: '2026-04-12',
+        preferredDate: '2030-01-01',
         postInspection: true,
       }),
       headers: { 'Content-Type': 'application/json' },
@@ -87,7 +87,7 @@ describe('POST /api/technician/quotes', () => {
         matchId: 'match-1',
         labourCost: 850,
         description: 'Direct plumbing quote with labour included',
-        preferredDate: '2026-04-12',
+        preferredDate: '2030-01-01',
       }),
       headers: { 'Content-Type': 'application/json' },
     })
