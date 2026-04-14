@@ -5,6 +5,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { getProviderPhotoRouteErrorMessage } from '@/lib/provider-action-errors'
 import { uploadJobPhoto } from '@/lib/storage'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -14,20 +15,20 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession()
-  if (!session || session.role !== 'technician') {
+  if (!session || session.role !== 'provider') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { id: jobId } = await params
 
-  // Verify technician owns this job
-  const technician = await db.technician.findUnique({ where: { userId: session.id } })
-  if (!technician) {
-    return NextResponse.json({ error: 'Technician not found' }, { status: 403 })
+  // Verify provider owns this job
+  const provider = await db.provider.findUnique({ where: { userId: session.id } })
+  if (!provider) {
+    return NextResponse.json({ error: 'Provider not found' }, { status: 403 })
   }
 
   const job = await db.job.findUnique({ where: { id: jobId } })
-  if (!job || job.technicianId !== technician.id) {
+  if (!job || job.providerId !== provider.id) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
@@ -77,9 +78,14 @@ export async function POST(
       select: { id: true },
     })
 
-    return NextResponse.json({ url, id: attachment?.id ?? null })
+    return NextResponse.json({
+      id: attachment?.id ?? null,
+      proxyUrl: attachment ? `/api/attachments/${attachment.id}` : null,
+    })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Upload failed'
-    return NextResponse.json({ error: message }, { status: 422 })
+    return NextResponse.json(
+      { error: getProviderPhotoRouteErrorMessage(err) },
+      { status: 422 },
+    )
   }
 }

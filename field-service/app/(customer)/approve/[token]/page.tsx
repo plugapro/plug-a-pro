@@ -30,7 +30,15 @@ export default async function ApprovalPage({ params, searchParams }: Props) {
       job: {
         include: {
           booking: {
-            include: { customer: true, service: true },
+            include: {
+              match: {
+                include: {
+                  jobRequest: {
+                    include: { customer: true },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -68,13 +76,12 @@ export default async function ApprovalPage({ params, searchParams }: Props) {
     await resolveExtraWork({
       approvalToken: token,
       approved,
-      approvedByName: extra?.job.booking?.customer.name,
+      approvedByName: extra?.job.booking?.match?.jobRequest?.customer?.name,
     })
   }
 
-  const booking = extra.job.booking
-  const customer = booking?.customer
-  const service = booking?.service
+  const customer = extra.job.booking?.match?.jobRequest?.customer
+  const category = extra.job.booking?.match?.jobRequest?.category
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 px-4">
@@ -84,7 +91,7 @@ export default async function ApprovalPage({ params, searchParams }: Props) {
           description={extra.description}
           amount={Number(extra.amount)}
           customerName={customer?.name ?? ''}
-          serviceName={service?.name ?? ''}
+          serviceName={category ?? ''}
           onAction={handleApproval}
         />
       </div>

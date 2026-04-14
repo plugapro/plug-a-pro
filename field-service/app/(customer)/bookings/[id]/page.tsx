@@ -1,5 +1,5 @@
 // ─── Customer: Booking detail ─────────────────────────────────────────────────
-// Shows tracking timeline, technician status, invoice link, and rating prompt.
+// Shows tracking timeline, provider status, invoice link, and rating prompt.
 
 export const dynamic = 'force-dynamic'
 
@@ -7,7 +7,11 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { releaseSlot } from '@/lib/slotting'
+import { resolveCustomerForSession } from '@/lib/customer-session'
+import { cancelBookingLifecycle } from '@/lib/bookings'
+import { transitionJob } from '@/lib/jobs'
+import { recordAuditLog } from '@/lib/audit'
+import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
@@ -16,12 +20,13 @@ import { Card, CardContent } from '@/components/ui/card'
 export const metadata = buildMetadata({ title: 'Booking Details' })
 
 const JOB_TIMELINE: Array<{ status: string; label: string; description: string }> = [
-  { status: 'ASSIGNED',          label: 'Technician assigned',   description: 'A technician has been assigned to your job' },
-  { status: 'EN_ROUTE',          label: 'On the way',             description: 'Your technician is travelling to you' },
-  { status: 'ARRIVED',           label: 'Arrived',                description: 'Your technician is on site' },
-  { status: 'STARTED',           label: 'Work started',           description: 'Work is in progress' },
-  { status: 'AWAITING_APPROVAL', label: 'Your approval needed',   description: 'Review additional work request' },
-  { status: 'COMPLETED',         label: 'Completed',              description: 'Your job is complete' },
+  { status: 'SCHEDULED',         label: 'Provider assigned',    description: 'A provider has been assigned to your job' },
+  { status: 'EN_ROUTE',          label: 'On the way',            description: 'Your provider is travelling to you' },
+  { status: 'ARRIVED',           label: 'Arrived',               description: 'Your provider is on site' },
+  { status: 'STARTED',           label: 'Work started',          description: 'Work is in progress' },
+  { status: 'AWAITING_APPROVAL', label: 'Your approval needed',  description: 'Review additional work request' },
+  { status: 'PENDING_COMPLETION_CONFIRMATION', label: 'Awaiting your sign-off', description: 'Review the completed work and confirm if everything is done' },
+  { status: 'COMPLETED',         label: 'Completed',             description: 'Your job is complete' },
 ]
 
 export default async function BookingDetailPage({
@@ -29,24 +34,33 @@ export default async function BookingDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  const session = await getSession()
-  if (!session) redirect('/sign-in')
-
   const { id } = await params
+  const session = await getSession()
+  if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
-      customer: true,
-      service:  true,
-      address:  true,
-      payment:  true,
-      invoice:  true,
+      match: {
+        include: {
+          jobRequest: {
+            include: {
+              customer: true,
+              address: true,
+            },
+          },
+          provider: { select: { id: true, name: true } },
+          quotes: { orderBy: { createdAt: 'desc' } },
+        },
+      },
+      quote: true,
+      payment: true,
+      invoice: true,
       job: {
         include: {
-          technician: { select: { name: true } },
           statusHistory: { orderBy: { timestamp: 'asc' } },
           extras: { where: { status: 'PENDING' } },
+          photos: true,
         },
       },
     },
@@ -54,44 +68,159 @@ export default async function BookingDetailPage({
 
   if (!booking) notFound()
 
+  const bookingCustomer = booking.match.jobRequest.customer
+  const customer = await resolveCustomerForSession(db, session)
+  const address = booking.match.jobRequest.address
+
   // Verify ownership
-  if (booking.customer.userId !== session.id) {
+  if (!customer || bookingCustomer.id !== customer.id) {
     redirect('/bookings')
   }
 
   // Check for existing rating
-  const existingRating = await db.rating.findUnique({ where: { bookingId: id } })
+  const existingRating = await db.review.findFirst({
+    where: { jobId: booking.job?.id ?? '', reviewerType: 'CUSTOMER' },
+  })
 
   const currentJobStatus = booking.job?.status
   const currentStatusIndex = JOB_TIMELINE.findIndex((s) => s.status === currentJobStatus)
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const disputes = booking.job
+    ? await db.dispute.findMany({
+        where: { jobId: booking.job.id },
+        orderBy: { createdAt: 'desc' },
+      })
+    : []
+  const hasOpenDispute = disputes.some((dispute) => ['OPEN', 'UNDER_REVIEW'].includes(dispute.status))
 
   const canCancel =
-    booking.status === 'PENDING_PAYMENT' || booking.status === 'CONFIRMED'
+    booking.status === 'SCHEDULED' || booking.status === 'RESCHEDULED'
 
   async function cancelBooking() {
     'use server'
-    const sess = await getSession()
-    if (!sess) redirect('/sign-in')
+    const { getSession: getsess } = await import('@/lib/auth')
+    const sess = await getsess()
+    if (!sess) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
     const b = await db.booking.findUnique({
       where: { id },
-      select: { customerId: true, status: true, slotId: true, customer: { select: { userId: true } } },
+      select: {
+        status: true,
+        match: {
+          select: {
+            jobRequest: { select: { customer: { select: { id: true } } } },
+          },
+        },
+      },
     })
     if (!b) notFound()
-    if (b.customer.userId !== sess.id) redirect('/bookings')
-    if (b.status !== 'PENDING_PAYMENT' && b.status !== 'CONFIRMED') redirect(`/bookings/${id}`)
+    const currentCustomer = await resolveCustomerForSession(db, sess)
+    if (!currentCustomer || b.match.jobRequest.customer?.id !== currentCustomer.id) redirect('/bookings')
+    if (b.status !== 'SCHEDULED' && b.status !== 'RESCHEDULED') redirect(`/bookings/${id}`)
 
-    await db.booking.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    await cancelBookingLifecycle({
+      bookingId: id,
+      actorId: sess.id,
+      actorRole: 'customer',
+      reason: 'Cancelled by customer from booking page',
     })
 
-    if (b.slotId) {
-      await releaseSlot(b.slotId)
+    redirect('/bookings')
+  }
+
+  async function confirmCompletion() {
+    'use server'
+    const { getSession: getActiveSession } = await import('@/lib/auth')
+    const activeSession = await getActiveSession()
+    if (!activeSession || activeSession.role !== 'customer') redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
+
+    const freshBooking = await db.booking.findUnique({
+      where: { id },
+      include: {
+        match: {
+          include: {
+            jobRequest: { include: { customer: true } },
+          },
+        },
+        job: { select: { id: true, status: true } },
+      },
+    })
+
+    if (!freshBooking || !freshBooking.job) redirect('/bookings')
+    const currentCustomer = await resolveCustomerForSession(db, activeSession)
+    if (!currentCustomer || freshBooking.match.jobRequest.customer.id !== currentCustomer.id) redirect('/bookings')
+    if (freshBooking.job.status !== 'PENDING_COMPLETION_CONFIRMATION') redirect(`/bookings/${id}`)
+
+    await transitionJob({
+      jobId: freshBooking.job.id,
+      toStatus: 'COMPLETED',
+      actorId: activeSession.id,
+      actorRole: 'customer',
+      notes: 'Customer confirmed job completion from booking page',
+    })
+
+    redirect(`/bookings/${id}`)
+  }
+
+  async function raiseDispute(formData: FormData) {
+    'use server'
+    const { getSession: getActiveSession } = await import('@/lib/auth')
+    const activeSession = await getActiveSession()
+    if (!activeSession || activeSession.role !== 'customer') redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
+
+    const freshBooking = await db.booking.findUnique({
+      where: { id },
+      include: {
+        match: {
+          include: {
+            jobRequest: { include: { customer: true } },
+          },
+        },
+        job: { select: { id: true } },
+      },
+    })
+
+    if (!freshBooking || !freshBooking.job) redirect('/bookings')
+    const currentCustomer = await resolveCustomerForSession(db, activeSession)
+    if (!currentCustomer || freshBooking.match.jobRequest.customer.id !== currentCustomer.id) redirect('/bookings')
+
+    const reason = String(formData.get('reason') ?? '').trim()
+    if (reason.length < 10) redirect(`/bookings/${id}`)
+
+    const existing = await db.dispute.findFirst({
+      where: {
+        jobId: freshBooking.job.id,
+        status: { in: ['OPEN', 'UNDER_REVIEW'] },
+      },
+      select: { id: true },
+    })
+
+    if (!existing) {
+      await db.dispute.create({
+        data: {
+          jobId: freshBooking.job.id,
+          raisedById: activeSession.id,
+          raisedByRole: 'customer',
+          reason,
+          status: 'OPEN',
+        },
+      })
+
+      await recordAuditLog({
+        actorId: activeSession.id,
+        actorRole: 'customer',
+        action: 'dispute.raise',
+        entityType: 'job',
+        entityId: freshBooking.job.id,
+        after: {
+          disputeRaised: true,
+          raisedByRole: 'customer',
+          reason,
+        },
+      })
     }
 
-    redirect('/bookings')
+    redirect(`/bookings/${id}`)
   }
 
   return (
@@ -100,9 +229,11 @@ export default async function BookingDetailPage({
       <div className="flex items-start justify-between gap-2">
         <div>
           <Link href="/bookings" className="text-xs text-muted-foreground hover:text-foreground">
-            ← My Bookings
+            ← My Requests & Bookings
           </Link>
-          <h1 className="text-xl font-semibold mt-1">{booking.service.name}</h1>
+          <h1 className="text-xl font-semibold mt-1">
+            {booking.job?.id ? `Job #${booking.id.slice(-8).toUpperCase()}` : `Booking #${booking.id.slice(-8).toUpperCase()}`}
+          </h1>
           <p className="text-sm text-muted-foreground font-mono">
             {booking.id.slice(-8).toUpperCase()}
           </p>
@@ -120,14 +251,67 @@ export default async function BookingDetailPage({
             : 'TBC'}
           {booking.scheduledWindow ? ` · ${booking.scheduledWindow}` : ''}
         </Row>
-        <Row label="Address">
-          {booking.address.street}, {booking.address.suburb}, {booking.address.city}
-        </Row>
-        {booking.job?.technician && (
-          <Row label="Technician">{booking.job.technician.name}</Row>
+        {address && (
+          <Row label="Address">
+            {address.street}, {address.suburb}, {address.city}
+          </Row>
         )}
-        <Row label="Total">R {Number(booking.totalAmount).toFixed(2)}</Row>
+        {booking.match.provider && (
+          <Row label="Provider">
+            <Link href={`/providers/${booking.match.provider.id}`} className="text-primary hover:underline">
+              {booking.match.provider.name}
+            </Link>
+          </Row>
+        )}
+        <Row label="Total">R {Number(booking.quote.amount).toFixed(2)}</Row>
       </div>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div>
+            <p className="text-sm font-medium">Quote history</p>
+            <p className="text-sm text-muted-foreground">
+              Review each quote version, customer feedback, and the accepted pricing record.
+            </p>
+          </div>
+          <QuoteHistoryTimeline
+            audience="customer"
+            quotes={booking.match.quotes.map((quote) => ({
+              id: quote.id,
+              amount: Number(quote.amount),
+              labourCost: Number(quote.labourCost),
+              materialsCost: Number(quote.materialsCost),
+              description: quote.description,
+              status: quote.status,
+              estimatedHours: quote.estimatedHours,
+              preferredDate: quote.preferredDate,
+              validUntil: quote.validUntil,
+              createdAt: quote.createdAt,
+              approvedAt: quote.approvedAt,
+              declinedAt: quote.declinedAt,
+              notes: quote.notes,
+              approvalToken: quote.approvalToken,
+            }))}
+          />
+        </CardContent>
+      </Card>
+
+      {booking.payment && (
+        <Card>
+          <CardContent className="p-4 space-y-2 text-sm">
+            <p className="font-medium">Payment record</p>
+            {booking.payment.collectionMode === 'PLATFORM_CHECKOUT' ? (
+              <p className="text-muted-foreground">
+                Plug-A-Pro created an online checkout record for this booking. Status: <span className="font-medium text-foreground">{booking.payment.status.toLowerCase().replace(/_/g, ' ')}</span>.
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                Plug-A-Pro recorded this booking without taking online payment. Payment may still be settled directly with the provider or confirmed offline through support.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Pending approval */}
       {currentJobStatus === 'AWAITING_APPROVAL' && booking.job?.extras[0] && (
@@ -144,6 +328,22 @@ export default async function BookingDetailPage({
               Review &amp; approve
             </a>
           </Button>
+        </div>
+      )}
+
+      {currentJobStatus === 'PENDING_COMPLETION_CONFIRMATION' && booking.job && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20 p-4 space-y-3">
+          <p className="font-medium text-emerald-800 dark:text-emerald-300">
+            Your provider has marked the work as complete
+          </p>
+          <p className="text-sm text-emerald-900/80 dark:text-emerald-100/80">
+            Review the job photos and details above. If the work is complete, confirm it here so we can close the job and issue the final record.
+          </p>
+          <form action={confirmCompletion}>
+            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+              Confirm completion
+            </Button>
+          </form>
         </div>
       )}
 
@@ -210,7 +410,7 @@ export default async function BookingDetailPage({
       )}
 
       {/* Rating prompt */}
-      {booking.status === 'COMPLETED' && !existingRating && (
+      {booking.status === 'COMPLETED' && !existingRating && booking.job && (
         <Link
           href={`/bookings/${booking.id}/rate`}
           className="block w-full rounded-xl border-2 border-dashed p-4 text-center text-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
@@ -222,6 +422,55 @@ export default async function BookingDetailPage({
         <div className="rounded-xl border bg-card p-4 text-center text-sm text-muted-foreground">
           You rated this {existingRating.score}/5 — thank you!
         </div>
+      )}
+
+      {booking.job && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div>
+              <p className="font-medium text-sm">Need help with this job?</p>
+              <p className="text-sm text-muted-foreground">
+                Raise an issue with Plug-A-Pro support and we&apos;ll review the quote, photos, and job history on record.
+              </p>
+            </div>
+
+            {disputes.length > 0 && (
+              <div className="space-y-2">
+                {disputes.map((dispute) => (
+                  <div key={dispute.id} className="rounded-lg border px-3 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium">Issue #{dispute.id.slice(-8).toUpperCase()}</p>
+                      <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                        {dispute.status.replaceAll('_', ' ').toLowerCase()}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-muted-foreground">{dispute.reason}</p>
+                    {dispute.resolution && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Resolution: {dispute.resolution}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!hasOpenDispute && (
+              <form action={raiseDispute} className="space-y-3">
+                <textarea
+                  name="reason"
+                  minLength={10}
+                  required
+                  placeholder="Describe the issue so support can review it."
+                  className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+                <Button type="submit" variant="outline" className="w-full">
+                  Raise an issue with support
+                </Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Cancel booking */}

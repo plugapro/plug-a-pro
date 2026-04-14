@@ -10,10 +10,10 @@ Q: What is ${siteConfig.name}?
 A: ${siteConfig.description}
 
 Q: How does pricing work?
-A: Free, Pro ($29/mo), and Enterprise (custom) plans. See /pricing.
+A: Plug-A-Pro is currently free to join during early access. We will communicate any future pricing clearly before it takes effect. See /pricing.
 
 Q: Is there a free trial?
-A: Yes — no credit card required.
+A: Early access is free right now, so there is no separate trial period.
 
 Q: How do I get support?
 A: Use the chat widget or visit /contact.

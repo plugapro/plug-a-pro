@@ -1,222 +1,466 @@
-// ─── Admin: Dispatch ──────────────────────────────────────────────────────────
-// Assign a technician to a CONFIRMED booking → creates Job → WhatsApp notification.
-// Accessible directly or via ?bookingId= from the bookings table.
-
 export const dynamic = 'force-dynamic'
 
-import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
-import { db } from '@/lib/db'
+import { redirect } from 'next/navigation'
 import { requireAdmin } from '@/lib/auth'
-import { StatusBadge } from '@/components/shared/StatusBadge'
+import { recordAuditLog } from '@/lib/audit'
+import { db } from '@/lib/db'
+import {
+  getDispatchHistory,
+  manualOverrideAssignment,
+  rankCandidatesForJobRequest,
+  runAssignmentForJobRequest,
+} from '@/lib/matching/service'
+import { getDispatchAdminMessage } from '@/lib/admin-action-messages'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  OPS_QUEUE_TYPES,
+  claimOpsQueueItem,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+  releaseOpsQueueItem,
+} from '@/lib/ops-queue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { StatusBadge } from '@/components/shared/StatusBadge'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 
-// ─── Server Action ────────────────────────────────────────────────────────────
-
-async function dispatchBooking(formData: FormData) {
-  'use server'
-  const session = await requireAdmin()
-  const bookingId    = formData.get('bookingId') as string
-  const technicianId = formData.get('technicianId') as string
-
-  if (!bookingId || !technicianId) return
-
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    include: { service: true, address: true, customer: true },
-  })
-  if (!booking || booking.status !== 'CONFIRMED') return
-
-  const technician = await db.technician.findUnique({ where: { id: technicianId } })
-  if (!technician) return
-
-  // Create Job and link technician to booking
-  await db.$transaction(async (tx) => {
-    await tx.job.create({
-      data: {
-        bookingId,
-        technicianId,
-        status: 'ASSIGNED',
-      },
-    })
-    await tx.booking.update({
-      where: { id: bookingId },
-      data: {
-        technicianId,
-        status: 'SCHEDULED',
-      },
-    })
-  })
-
-  // Notify technician via WhatsApp
-  const { notifyTechnicianNewJob } = await import('@/lib/whatsapp-bot')
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const addressStr = `${booking.address.street}, ${booking.address.suburb}, ${booking.address.city}`
-  const job = await db.job.findUnique({ where: { bookingId } })
-
-  if (job) {
-    await notifyTechnicianNewJob({
-      technicianPhone: technician.phone,
-      jobId: job.id,
-      serviceName: booking.service.name,
-      address: addressStr,
-      scheduledWindow: `${booking.scheduledDate?.toLocaleDateString('en-ZA') ?? 'TBC'} ${booking.scheduledWindow ?? ''}`.trim(),
-      customerInitial: booking.customer.name.split(' ')[0],
-      bookingId,
-    }).catch(console.error)
-  }
-
-  redirect('/admin/bookings?status=SCHEDULED')
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default async function DispatchPage({
+export default async function AdminDispatchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ bookingId?: string }>
+  searchParams: Promise<{ request?: string; message?: string }>
 }) {
-  await requireAdmin()
-  const { bookingId } = await searchParams
+  const admin = await requireAdmin()
+  const { request, message } = await searchParams
+  const banner = getDispatchAdminMessage(message)
 
-  // Load all CONFIRMED unassigned bookings
-  const pendingBookings = await db.booking.findMany({
-    where: { status: 'CONFIRMED', job: null },
+  const requests = await db.jobRequest.findMany({
+    where: {
+      status: { in: ['OPEN', 'MATCHING'] },
+    },
     include: {
-      customer: { select: { name: true, phone: true } },
-      service:  { select: { name: true } },
-      address:  { select: { street: true, suburb: true, city: true } },
+      customer: { select: { id: true, name: true, phone: true } },
+      address: true,
+      match: true,
     },
     orderBy: { createdAt: 'asc' },
+    take: 30,
   })
 
-  // Selected booking (from ?bookingId= query param)
-  const selected = bookingId
-    ? pendingBookings.find((b) => b.id === bookingId) ?? null
-    : pendingBookings[0] ?? null
+  const assignments = await listOpsQueueAssignments(
+    db,
+    OPS_QUEUE_TYPES.DISPATCH,
+    requests.map((jobRequest) => jobRequest.id),
+  )
 
-  // Available technicians for selected booking's business
-  const technicians = selected
-    ? await db.technician.findMany({
-        where: { businessId: selected.businessId, active: true },
-        orderBy: { name: 'asc' },
+  const selectedRequest = request
+    ? requests.find((jobRequest) => jobRequest.id === request) ??
+      await db.jobRequest.findUnique({
+        where: { id: request },
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          address: true,
+          match: true,
+        },
       })
+    : requests[0] ?? null
+
+  async function runAutoAssign(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    try {
+      await runAssignmentForJobRequest({
+        jobRequestId,
+        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+        mode: 'AUTO_ASSIGN',
+      })
+      await recordAuditLog({
+        actorId: activeAdmin.id,
+        actorRole: activeAdmin.role,
+        action: 'dispatch.auto_assign',
+        entityType: 'job_request',
+        entityId: jobRequestId,
+        after: { mode: 'AUTO_ASSIGN' },
+      })
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+    } catch (error) {
+      console.error('[admin/dispatch] Auto-assign failed', { jobRequestId, error })
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
+  }
+
+  async function rerankForReview(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    try {
+      await runAssignmentForJobRequest({
+        jobRequestId,
+        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+        mode: 'OPS_REVIEW',
+      })
+      await recordAuditLog({
+        actorId: activeAdmin.id,
+        actorRole: activeAdmin.role,
+        action: 'dispatch.rerank',
+        entityType: 'job_request',
+        entityId: jobRequestId,
+        after: { mode: 'OPS_REVIEW' },
+      })
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+    } catch (error) {
+      console.error('[admin/dispatch] Rerank failed', { jobRequestId, error })
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
+  }
+
+  async function overrideAssignment(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    const providerId = String(formData.get('providerId') ?? '')
+    try {
+      await manualOverrideAssignment({
+        jobRequestId,
+        providerId,
+        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+        overrideReason: 'Selected by admin from dispatch console',
+      })
+      await recordAuditLog({
+        actorId: activeAdmin.id,
+        actorRole: activeAdmin.role,
+        action: 'dispatch.override_assignment',
+        entityType: 'job_request',
+        entityId: jobRequestId,
+        after: {
+          providerId,
+          overrideReason: 'Selected by admin from dispatch console',
+        },
+      })
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+    } catch (error) {
+      console.error('[admin/dispatch] Override failed', { jobRequestId, providerId, error })
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
+  }
+
+  async function claimDispatch(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    if (!jobRequestId) return
+
+    await claimOpsQueueItem(db, {
+      queueType: OPS_QUEUE_TYPES.DISPATCH,
+      entityId: jobRequestId,
+      claimedById: activeAdmin.id,
+      claimedByRole: activeAdmin.role,
+      claimedByLabel: activeAdmin.email ?? 'admin',
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
+    })
+
+    revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
+    redirect(`/admin/dispatch?request=${jobRequestId}`)
+  }
+
+  async function releaseDispatch(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    if (!jobRequestId) return
+
+    await releaseOpsQueueItem(db, {
+      queueType: OPS_QUEUE_TYPES.DISPATCH,
+      entityId: jobRequestId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
+    })
+
+    revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
+    redirect(`/admin/dispatch?request=${jobRequestId}`)
+  }
+
+  const ranking = selectedRequest
+    ? await rankCandidatesForJobRequest(selectedRequest.id).catch(() => null)
+    : null
+  const history = selectedRequest
+    ? await getDispatchHistory(selectedRequest.id).catch(() => [])
     : []
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Dispatch</h1>
+        <h1 className="text-xl font-semibold">Dispatch Console</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Assign technicians to confirmed bookings
+          Rank technicians, inspect schedule fit, and override the selected assignee when needed.
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Booking list */}
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Awaiting dispatch ({pendingBookings.length})
-          </h2>
-          {pendingBookings.length === 0 && (
-            <p className="text-sm text-muted-foreground py-4">
-              No confirmed bookings awaiting dispatch.
-            </p>
-          )}
-          {pendingBookings.map((b) => (
-            <a
-              key={b.id}
-              href={`/admin/dispatch?bookingId=${b.id}`}
-              className={cn(
-                'block rounded-lg border p-3 hover:bg-accent transition-colors',
-                selected?.id === b.id && 'border-foreground bg-accent'
-              )}
-            >
-              <div className="flex justify-between items-start gap-2">
-                <div>
-                  <p className="font-medium text-sm">{b.service.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {b.customer.name} · {b.address.suburb}
-                  </p>
-                </div>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {b.id.slice(-6).toUpperCase()}
-                </span>
-              </div>
-              {b.scheduledDate && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {b.scheduledDate.toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' })}
-                  {b.scheduledWindow ? ` · ${b.scheduledWindow}` : ''}
-                </p>
-              )}
-            </a>
-          ))}
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
         </div>
+      ) : null}
 
-        {/* Assign form */}
-        {selected && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-              Assign technician
-            </h2>
+      <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Open service requests</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {requests.length === 0 && (
+              <p className="text-sm text-muted-foreground">No open or matching requests.</p>
+            )}
+            {requests.map((jobRequest) => {
+              const assignment = assignments.get(jobRequest.id)
 
-            <Card>
-              <CardContent className="p-4 space-y-2">
-                <p className="font-medium">{selected.service.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {selected.customer.name} · {selected.customer.phone}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {selected.address.street}, {selected.address.suburb}, {selected.address.city}
-                </p>
-                {selected.scheduledDate && (
-                  <p className="text-sm">
-                    {selected.scheduledDate.toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' })}
-                    {selected.scheduledWindow ? ` · ${selected.scheduledWindow}` : ''}
+              return (
+                <Link
+                  key={jobRequest.id}
+                  href={`/admin/dispatch?request=${jobRequest.id}`}
+                  className={`block rounded-lg border p-3 transition-colors ${
+                    selectedRequest?.id === jobRequest.id
+                      ? 'border-primary bg-primary/5'
+                      : 'hover:bg-muted/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{jobRequest.title}</p>
+                      <p className="text-xs text-muted-foreground">{jobRequest.customer.name}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={jobRequest.status} type="jobRequest" />
+                      <Badge
+                        variant={
+                          assignment?.claimedById === admin.id
+                            ? 'brand'
+                            : assignment?.claimedById
+                              ? 'warning'
+                              : 'outline'
+                        }
+                      >
+                        {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {jobRequest.address
+                      ? `${jobRequest.address.suburb}, ${jobRequest.address.city}`
+                      : 'Area unavailable'}
                   </p>
-                )}
-                <p className="text-sm font-medium">R {Number(selected.totalAmount).toFixed(2)}</p>
+                </Link>
+              )
+            })}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          {selectedRequest ? (
+            <>
+              {(() => {
+                const assignment = assignments.get(selectedRequest.id)
+                const claimedByCurrentUser = assignment?.claimedById === admin.id
+
+                return (
+              <Card>
+                <CardHeader className="space-y-1">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <CardTitle className="text-base">{selectedRequest.title}</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedRequest.category} · {selectedRequest.customer.name} ·{' '}
+                        {selectedRequest.address
+                          ? `${selectedRequest.address.suburb}, ${selectedRequest.address.city}`
+                          : 'Area unavailable'}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={
+                        claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'
+                      }
+                    >
+                      {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-3">
+                  {!claimedByCurrentUser ? (
+                    <form action={claimDispatch}>
+                      <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                      <Button type="submit" variant="outline">
+                        {assignment?.claimedById ? 'Take over dispatch' : 'Claim dispatch'}
+                      </Button>
+                    </form>
+                  ) : (
+                    <form action={releaseDispatch}>
+                      <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                      <Button type="submit" variant="outline">
+                        Release dispatch
+                      </Button>
+                    </form>
+                  )}
+                  <form action={runAutoAssign}>
+                    <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                    <Button type="submit">Auto-assign top candidate</Button>
+                  </form>
+                  <form action={rerankForReview}>
+                    <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                    <Button type="submit" variant="outline">
+                      Refresh ranked shortlist
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+                )
+              })()}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Ranked candidates</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!ranking || ranking.candidates.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No eligible technicians for this request yet.
+                    </p>
+                  ) : (
+                    ranking.candidates.map((candidate, index) => (
+                      <div key={candidate.providerId} className="rounded-lg border p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">
+                              #{index + 1} {candidate.providerName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {candidate.selectionReason}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold">{candidate.score.toFixed(3)}</p>
+                            <p className="text-xs text-muted-foreground">match score</p>
+                          </div>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-3 text-sm">
+                          <Metric label="Travel" value={`${candidate.travelMinutes} min`} />
+                          <Metric
+                            label="Schedule"
+                            value={candidate.canMeetWindow ? 'Fits window' : 'Tight window'}
+                          />
+                          <Metric
+                            label="Reliability"
+                            value={`${candidate.reliabilityIndicators.reliabilityScore.toFixed(2)}`}
+                          />
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-3 text-xs text-muted-foreground">
+                          <p>Skill: {candidate.scoreBreakdown.skillMatch.toFixed(2)}</p>
+                          <p>Schedule fit: {candidate.scoreBreakdown.scheduleFit.toFixed(2)}</p>
+                          <p>Travel efficiency: {candidate.scoreBreakdown.travelEfficiency.toFixed(2)}</p>
+                          <p>Customer preference: {candidate.scoreBreakdown.customerPreference.toFixed(2)}</p>
+                          <p>Punctuality: {candidate.reliabilityIndicators.punctualityScore.toFixed(2)}</p>
+                          <p>Complaint rate: {candidate.reliabilityIndicators.complaintRate.toFixed(2)}</p>
+                        </div>
+                        <ul className="space-y-1 text-xs text-muted-foreground">
+                          {candidate.feasibilityNotes.map((note) => (
+                            <li key={note}>• {note}</li>
+                          ))}
+                        </ul>
+                        <form action={overrideAssignment}>
+                          <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                          <input type="hidden" name="providerId" value={candidate.providerId} />
+                          <Button type="submit" variant="outline" size="sm">
+                            Override to this technician
+                          </Button>
+                        </form>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Filtered out</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {ranking?.filteredOut.length ? ranking.filteredOut.map((candidate) => (
+                    <div key={candidate.providerId} className="rounded-lg border p-3 text-sm">
+                      <p className="font-medium">{candidate.providerName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {candidate.filteredReasonCodes.join(', ')}
+                      </p>
+                    </div>
+                  )) : (
+                    <p className="text-sm text-muted-foreground">
+                      No filtered candidates were recorded for this ranking.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Dispatch history</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {history.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No dispatch history yet.</p>
+                  ) : (
+                    history.map((entry) => (
+                      <div key={entry.dispatchDecision.id} className="rounded-lg border p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-medium">{entry.dispatchDecision.mode}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {entry.dispatchDecision.status}
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Considered {entry.dispatchDecision.consideredCount} · eligible {entry.dispatchDecision.eligibleCount}
+                        </p>
+                        <ul className="space-y-1 text-xs text-muted-foreground">
+                          {entry.attempts.slice(0, 5).map((attempt) => (
+                            <li key={attempt.id}>
+                              {attempt.providerId} · {attempt.stage}
+                              {attempt.score != null ? ` · ${attempt.score.toFixed(3)}` : ''}
+                              {attempt.reasonCode ? ` · ${attempt.reasonCode}` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-sm text-muted-foreground">
+                Select a service request to inspect ranked technicians.
               </CardContent>
             </Card>
-
-            {technicians.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No active technicians. Approve applications first.
-              </p>
-            ) : (
-              <form action={dispatchBooking} className="space-y-3">
-                <input type="hidden" name="bookingId" value={selected.id} />
-
-                <div className="space-y-2">
-                  {technicians.map((tech) => (
-                    <label
-                      key={tech.id}
-                      className="flex items-center gap-3 rounded-lg border p-3 cursor-pointer hover:bg-accent has-[:checked]:border-foreground has-[:checked]:bg-accent transition-colors"
-                    >
-                      <input type="radio" name="technicianId" value={tech.id} required />
-                      <div>
-                        <p className="text-sm font-medium">{tech.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {tech.skills.join(', ') || 'General'} · {tech.serviceAreas.join(', ') || 'All areas'}
-                        </p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-
-                <Button type="submit" className="w-full">
-                  Assign & notify technician
-                </Button>
-              </form>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
+    </div>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-muted/50 p-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 font-medium">{value}</p>
     </div>
   )
 }

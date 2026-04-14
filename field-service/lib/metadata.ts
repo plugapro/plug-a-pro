@@ -17,11 +17,10 @@ export const siteConfig = {
   url: process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.plugapro.co.za',
 
   // Primary accent colour (single oklch token — used in Tailwind + meta theme-color)
-  accent: 'oklch(0.50 0.22 290)',
+  accent: '#2563eb',
 
   // WhatsApp number for customer contact (international format, no spaces or dashes)
-  // TODO: replace with real Plug-A-Pro WhatsApp number before go-live
-  whatsappNumber: '+27100000000',
+  whatsappNumber: '+27693552447',
 
   // Default timezone (used in slot display and job scheduling)
   timezone: 'Africa/Johannesburg',

@@ -4,10 +4,23 @@
 export const dynamic = 'force-dynamic'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { requireAdmin, resolveBusinessId } from '@/lib/auth'
+import { requireAdmin } from '@/lib/auth'
+import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
-import type { PaymentStatus } from '@prisma/client'
+import {
+  OPS_QUEUE_TYPES,
+  claimOpsQueueItem,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+  releaseOpsQueueItem,
+} from '@/lib/ops-queue'
+import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { getPaymentAdminMessage } from '@/lib/admin-action-messages'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
@@ -15,17 +28,38 @@ export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
 async function issueRefundAction(formData: FormData) {
   'use server'
-  await requireAdmin()
-
+  const admin = await requireAdmin()
   const paymentId = formData.get('paymentId') as string
   const amount    = Number(formData.get('amount'))
 
   // Look up the payment to get the bookingId for the lib function
   const payment = await db.payment.findUnique({
     where: { id: paymentId },
-    select: { bookingId: true },
+    select: {
+      amount: true,
+      bookingId: true,
+      status: true,
+      refundedAmount: true,
+      refundedAt: true,
+    },
   })
-  if (!payment) return
+  if (!payment) {
+    redirect('/admin/payments?message=refund_unavailable')
+  }
+
+  const refundedAmount = Number(payment.refundedAmount ?? 0)
+  const totalAmount = Number(payment.amount)
+  const remainingRefundable = Math.max(0, totalAmount - refundedAmount)
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    remainingRefundable <= 0 ||
+    amount > remainingRefundable ||
+    !['PAID', 'PARTIALLY_REFUNDED'].includes(payment.status)
+  ) {
+    redirect('/admin/payments?message=invalid_refund_amount')
+  }
 
   const { issueRefund } = await import('@/lib/payments')
   try {
@@ -33,22 +67,69 @@ async function issueRefundAction(formData: FormData) {
       bookingId:   payment.bookingId,
       amountCents: Math.round(amount * 100),
     })
+
+    await recordAuditLog({
+      actorId: admin.id,
+      actorRole: admin.role,
+      action: 'payment.refund',
+      entityType: 'payment',
+      entityId: paymentId,
+      before: payment,
+      after: {
+        requestedAmount: amount,
+      },
+    })
+    redirect('/admin/payments?message=refund_issued')
   } catch (err) {
     console.error('[admin/payments] Refund failed:', err)
+    redirect('/admin/payments?message=refund_failed')
   }
+}
+
+async function claimPaymentAction(formData: FormData) {
+  'use server'
+  const admin = await requireAdmin()
+  const paymentId = String(formData.get('paymentId') ?? '')
+  if (!paymentId) return
+
+  await claimOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    entityId: paymentId,
+    claimedById: admin.id,
+    claimedByRole: admin.role,
+    claimedByLabel: admin.email ?? 'admin',
+    actor: { actorId: admin.id, actorRole: admin.role },
+  })
 
   revalidatePath('/admin/payments')
+  revalidatePath('/admin')
+}
+
+async function releasePaymentAction(formData: FormData) {
+  'use server'
+  const admin = await requireAdmin()
+  const paymentId = String(formData.get('paymentId') ?? '')
+  if (!paymentId) return
+
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    entityId: paymentId,
+    actor: { actorId: admin.id, actorRole: admin.role },
+  })
+
+  revalidatePath('/admin/payments')
+  revalidatePath('/admin')
 }
 
 // ─── Status badge styling ─────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<PaymentStatus, string> = {
-  PENDING:            'bg-amber-100 text-amber-700',
-  AUTHORISED:         'bg-blue-100 text-blue-700',
-  PAID:               'bg-green-100 text-green-700',
-  FAILED:             'bg-red-100 text-red-700',
-  REFUNDED:           'bg-zinc-100 text-zinc-600',
-  PARTIALLY_REFUNDED: 'bg-zinc-100 text-zinc-600',
+const STATUS_STYLES: Record<PaymentStatus, 'warning' | 'info' | 'success' | 'danger' | 'neutral'> = {
+  PENDING:            'warning',
+  AUTHORISED:         'info',
+  PAID:               'success',
+  FAILED:             'danger',
+  REFUNDED:           'neutral',
+  PARTIALLY_REFUNDED: 'neutral',
 }
 
 const STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -67,16 +148,21 @@ const FILTER_OPTIONS: { value: PaymentStatus | 'ALL'; label: string }[] = [
   { value: 'FAILED',  label: 'Failed' },
 ]
 
+const COLLECTION_LABEL: Record<PaymentCollectionMode, string> = {
+  OFFLINE_RECORDED: 'Offline / recorded only',
+  PLATFORM_CHECKOUT: 'Platform checkout',
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; message?: string }>
 }) {
-  await requireAdmin()
-  const businessId = await resolveBusinessId()
-  const { status } = await searchParams
+  const admin = await requireAdmin()
+  const { status, message } = await searchParams
+  const banner = getPaymentAdminMessage(message)
 
   const validStatuses: PaymentStatus[] = ['PENDING', 'AUTHORISED', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED']
   const statusFilter = validStatuses.includes(status as PaymentStatus)
@@ -84,18 +170,20 @@ export default async function PaymentsPage({
     : undefined
 
   const payments = await db.payment.findMany({
-    where: {
-      booking: {
-        businessId,
-        ...(statusFilter ? { payment: { status: statusFilter } } : {}),
-      },
-      ...(statusFilter ? { status: statusFilter } : {}),
-    },
+    where: statusFilter ? { status: statusFilter } : undefined,
     include: {
       booking: {
         include: {
-          customer: { select: { name: true, phone: true } },
-          service:  { select: { name: true } },
+          match: {
+            include: {
+              jobRequest: {
+                select: {
+                  title: true,
+                  customer: { select: { name: true, phone: true } },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -103,12 +191,26 @@ export default async function PaymentsPage({
     take: 100,
   })
 
+  const assignments = await listOpsQueueAssignments(
+    db,
+    OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    payments.map((payment) => payment.id),
+  )
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Payments</h1>
-        <p className="text-sm text-muted-foreground mt-1">{payments.length} payments</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          {payments.length} payments. Offline-recorded rows are booking trace records only until the money is actually collected and marked paid.
+        </p>
       </div>
+
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
+        </div>
+      ) : null}
 
       {/* Status filter tabs */}
       <div className="flex gap-1 flex-wrap">
@@ -120,8 +222,8 @@ export default async function PaymentsPage({
               href={opt.value === 'ALL' ? '/admin/payments' : `/admin/payments?status=${opt.value}`}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 active
-                  ? 'bg-foreground text-background'
-                  : 'border hover:bg-accent text-muted-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(37,99,235,0.18)]'
+                  : 'border border-border/80 bg-card/70 text-muted-foreground hover:bg-accent'
               }`}
             >
               {opt.label}
@@ -137,78 +239,115 @@ export default async function PaymentsPage({
             <tr>
               <th className="text-left px-4 py-3 font-medium">Ref</th>
               <th className="text-left px-4 py-3 font-medium">Customer</th>
-              <th className="text-left px-4 py-3 font-medium">Service</th>
+              <th className="text-left px-4 py-3 font-medium">Job Request</th>
               <th className="text-left px-4 py-3 font-medium">Amount</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
+              <th className="text-left px-4 py-3 font-medium">Collection</th>
               <th className="text-left px-4 py-3 font-medium">PSP Ref</th>
               <th className="text-left px-4 py-3 font-medium">Paid At</th>
+              <th className="text-left px-4 py-3 font-medium">Owner</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {payments.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
                   No payments found
                 </td>
               </tr>
             )}
-            {payments.map((p) => (
-              <tr key={p.id} className="hover:bg-muted/30">
-                <td className="px-4 py-3 font-mono text-xs">{p.id.slice(-8).toUpperCase()}</td>
-                <td className="px-4 py-3">
-                  <p>{p.booking.customer.name}</p>
-                  <p className="text-xs text-muted-foreground">{p.booking.customer.phone}</p>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{p.booking.service.name}</td>
-                <td className="px-4 py-3 font-medium">
-                  R {Number(p.amount).toFixed(2)}
-                  {p.refundedAmount && (
-                    <p className="text-xs text-muted-foreground">
-                      Refunded: R {Number(p.refundedAmount).toFixed(2)}
-                    </p>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[p.status]}`}>
-                    {STATUS_LABEL[p.status]}
-                  </span>
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                  {p.pspReference ? p.pspReference.slice(-12) : '—'}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {p.paidAt
-                    ? p.paidAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
-                    : '—'}
-                </td>
-                <td className="px-4 py-3">
-                  {p.status === 'PAID' && (
-                    <form action={issueRefundAction} className="flex items-center gap-1">
-                      <input type="hidden" name="paymentId" value={p.id} />
-                      <input
-                        type="number"
-                        name="amount"
-                        min="0.01"
-                        max={Number(p.amount)}
-                        step="0.01"
-                        defaultValue={Number(p.amount)}
-                        className="w-24 rounded border bg-background px-2 py-1 text-xs"
-                      />
-                      <button
-                        type="submit"
-                        className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200 transition-colors"
-                        onClick={(e) => {
-                          if (!confirm('Issue refund for this payment?')) e.preventDefault()
-                        }}
-                      >
-                        Refund
-                      </button>
-                    </form>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {payments.map((p) => {
+              const customer = p.booking.match?.jobRequest.customer
+              const jobTitle = p.booking.match?.jobRequest.title ?? '—'
+              const assignment = assignments.get(p.id)
+              const claimedByCurrentUser = assignment?.claimedById === admin.id
+              return (
+                <tr key={p.id} className="hover:bg-muted/30">
+                  <td className="px-4 py-3 font-mono text-xs">{p.id.slice(-8).toUpperCase()}</td>
+                  <td className="px-4 py-3">
+                    <p>{customer?.name ?? '—'}</p>
+                    <p className="text-xs text-muted-foreground">{customer?.phone ?? ''}</p>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{jobTitle}</td>
+                  <td className="px-4 py-3 font-medium">
+                    R {Number(p.amount).toFixed(2)}
+                    {p.refundedAmount && (
+                      <p className="text-xs text-muted-foreground">
+                        Refunded: R {Number(p.refundedAmount).toFixed(2)}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={STATUS_STYLES[p.status]}>
+                      {STATUS_LABEL[p.status]}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {COLLECTION_LABEL[p.collectionMode]}
+                    {p.pspProvider && (
+                      <p className="mt-1 font-mono text-[11px] text-muted-foreground">{p.pspProvider}</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {p.pspReference ? p.pspReference.slice(-12) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {p.paidAt
+                      ? p.paidAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'}>
+                      {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!claimedByCurrentUser ? (
+                        <form action={claimPaymentAction}>
+                          <input type="hidden" name="paymentId" value={p.id} />
+                          <Button type="submit" variant="outline" size="sm">
+                            {assignment?.claimedById ? 'Take over' : 'Claim'}
+                          </Button>
+                        </form>
+                      ) : (
+                        <form action={releasePaymentAction}>
+                          <input type="hidden" name="paymentId" value={p.id} />
+                          <Button type="submit" variant="outline" size="sm">
+                            Release
+                          </Button>
+                        </form>
+                      )}
+                      {p.status === 'PAID' && (
+                        <form action={issueRefundAction} className="flex items-center gap-1">
+                          <input type="hidden" name="paymentId" value={p.id} />
+                          <Input
+                            type="number"
+                            name="amount"
+                            min="0.01"
+                            max={Number(p.amount)}
+                            step="0.01"
+                            defaultValue={Number(p.amount)}
+                            className="h-8 w-24 rounded-lg text-xs"
+                          />
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              if (!confirm('Issue refund for this payment?')) e.preventDefault()
+                            }}
+                          >
+                            Refund
+                          </Button>
+                        </form>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

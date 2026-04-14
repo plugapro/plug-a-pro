@@ -1,11 +1,11 @@
-// ─── Technician: Profile ─────────────────────────────────────────────────────
+// ─── Provider: Profile ────────────────────────────────────────────────────────
 // Editable name/email + per-day availability schedule + sign out.
 
 export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { requireTechnician } from '@/lib/auth'
+import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { SignOutButton } from '@/components/technician/SignOutButton'
 import { PushSubscribeButton } from '@/components/technician/PushSubscribeButton'
@@ -28,22 +28,22 @@ const DAYS = [
 
 async function updateProfile(formData: FormData) {
   'use server'
-  const { requireTechnician: getSession } = await import('@/lib/auth')
+  const { requireProvider: getSession } = await import('@/lib/auth')
   const session = await getSession()
 
   const { db: dbServer } = await import('@/lib/db')
-  const technician = await dbServer.technician.findUnique({
+  const provider = await dbServer.provider.findUnique({
     where: { userId: session.id },
   })
-  if (!technician) return
+  if (!provider) return
 
   const name  = (formData.get('name')  as string | null)?.trim()
   const email = (formData.get('email') as string | null)?.trim()
 
   // Update profile fields
   if (name || email !== undefined) {
-    await dbServer.technician.update({
-      where: { id: technician.id },
+    await dbServer.provider.update({
+      where: { id: provider.id },
       data: {
         ...(name  ? { name }  : {}),
         ...(email !== null && email !== undefined ? { email: email || null } : {}),
@@ -51,15 +51,15 @@ async function updateProfile(formData: FormData) {
     })
   }
 
-  // Upsert availability for each day
+  // Upsert schedule for each day
   for (const day of [0, 1, 2, 3, 4, 5, 6]) {
     const active    = formData.get(`day_${day}_active`) === 'on'
     const startTime = (formData.get(`day_${day}_start`) as string | null) ?? '08:00'
     const endTime   = (formData.get(`day_${day}_end`)   as string | null) ?? '17:00'
 
-    await dbServer.availability.upsert({
-      where: { technicianId_dayOfWeek: { technicianId: technician.id, dayOfWeek: day } },
-      create: { technicianId: technician.id, dayOfWeek: day, startTime, endTime, active },
+    await dbServer.providerSchedule.upsert({
+      where: { providerId_dayOfWeek: { providerId: provider.id, dayOfWeek: day } },
+      create: { providerId: provider.id, dayOfWeek: day, startTime, endTime, active },
       update: { startTime, endTime, active },
     })
   }
@@ -67,26 +67,63 @@ async function updateProfile(formData: FormData) {
   redirect('/technician/profile')
 }
 
-export default async function TechnicianProfilePage() {
-  const session = await requireTechnician()
+export default async function ProviderProfilePage() {
+  const session = await requireProvider()
 
-  const technician = await db.technician.findUnique({
+  const provider = await db.provider.findUnique({
     where: { userId: session.id },
-    include: { availability: { orderBy: { dayOfWeek: 'asc' } } },
+    include: { schedule: { orderBy: { dayOfWeek: 'asc' } } },
   })
 
-  if (!technician) {
+  if (!provider) {
     return (
       <div className="px-4 py-8 text-center text-muted-foreground">
-        <p>Technician account not found.</p>
+        <p>Provider account not found.</p>
       </div>
     )
   }
 
-  // Build a quick lookup: dayOfWeek → availability row
-  const availMap = Object.fromEntries(
-    technician.availability.map((a) => [a.dayOfWeek, a])
+  // Build a quick lookup: dayOfWeek → schedule row
+  const scheduleMap = Object.fromEntries(
+    provider.schedule.map((s) => [s.dayOfWeek, s])
   )
+
+  const completedJobs = await db.job.findMany({
+    where: {
+      providerId: provider.id,
+      status: 'COMPLETED',
+    },
+    include: {
+      booking: {
+        include: {
+          match: {
+            include: {
+              jobRequest: {
+                include: {
+                  customer: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { completedAt: 'desc' },
+    take: 20,
+  })
+
+  const reviews = await db.review.findMany({
+    where: {
+      reviewerType: 'CUSTOMER',
+      jobId: { in: completedJobs.map((job) => job.id) },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  const averageRating = reviews.length > 0
+    ? reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length
+    : null
+  const reviewByJobId = new Map(reviews.map((review) => [review.jobId, review]))
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
@@ -106,7 +143,7 @@ export default async function TechnicianProfilePage() {
               <Input
                 id="name"
                 name="name"
-                defaultValue={technician.name ?? ''}
+                defaultValue={provider.name ?? ''}
                 placeholder="Your name"
                 className="h-9"
               />
@@ -117,14 +154,14 @@ export default async function TechnicianProfilePage() {
                 id="email"
                 name="email"
                 type="email"
-                defaultValue={technician.email ?? ''}
+                defaultValue={provider.email ?? ''}
                 placeholder="your@email.com"
                 className="h-9"
               />
             </div>
             <div className="space-y-1 text-sm">
               <span className="text-muted-foreground text-sm">Phone</span>
-              <p className="text-sm pt-1">{technician.phone ?? '—'}</p>
+              <p className="text-sm pt-1">{provider.phone ?? '—'}</p>
             </div>
           </CardContent>
         </Card>
@@ -138,10 +175,10 @@ export default async function TechnicianProfilePage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {DAYS.map(({ value: day, label }) => {
-              const avail = availMap[day]
-              const isActive  = avail?.active  ?? (day >= 1 && day <= 5)
-              const startTime = avail?.startTime ?? '08:00'
-              const endTime   = avail?.endTime   ?? '17:00'
+              const entry     = scheduleMap[day]
+              const isActive  = entry?.active  ?? (day >= 1 && day <= 5)
+              const startTime = entry?.startTime ?? '08:00'
+              const endTime   = entry?.endTime   ?? '17:00'
 
               return (
                 <div key={day} className="flex items-center gap-3">
@@ -178,6 +215,77 @@ export default async function TechnicianProfilePage() {
 
         <Button type="submit" className="w-full">Save changes</Button>
       </form>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Rating &amp; review history
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div className="rounded-lg border px-3 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Average</p>
+              <p className="mt-1 font-semibold">
+                {averageRating ? `${averageRating.toFixed(1)} / 5` : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg border px-3 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Reviews</p>
+              <p className="mt-1 font-semibold">{reviews.length}</p>
+            </div>
+            <div className="rounded-lg border px-3 py-3 text-center">
+              <p className="text-xs text-muted-foreground">Completed jobs</p>
+              <p className="mt-1 font-semibold">{completedJobs.length}</p>
+            </div>
+          </div>
+
+          {completedJobs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Complete a few jobs and customer reviews will appear here.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {completedJobs.map((job) => {
+                const review = reviewByJobId.get(job.id)
+                return (
+                  <div key={job.id} className="rounded-lg border px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium capitalize">
+                          {job.booking.match.jobRequest.category}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {job.booking.match.jobRequest.customer.name}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {(job.completedAt ?? job.createdAt).toLocaleDateString('en-ZA', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </p>
+                    </div>
+                    {review ? (
+                      <>
+                        <p className="mt-2 text-sm">{'★'.repeat(review.score)}{'☆'.repeat(5 - review.score)}</p>
+                        {review.comment && (
+                          <p className="mt-2 text-sm text-muted-foreground">{review.comment}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        No customer review left for this job yet.
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <PushSubscribeButton />
       <SignOutButton />

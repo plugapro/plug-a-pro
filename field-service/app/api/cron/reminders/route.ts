@@ -5,14 +5,16 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasSuccessfulMessageForBooking } from '@/lib/message-events'
 import { sendBookingReminder } from '@/lib/whatsapp'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
+  const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
   // "Tomorrow" window: 20h from now → 28h from now
   const windowStart = new Date(now.getTime() + 20 * 60 * 60 * 1000)
@@ -21,40 +23,45 @@ export async function GET(request: Request) {
   const bookings = await db.booking.findMany({
     where: {
       scheduledDate: { gte: windowStart, lte: windowEnd },
-      status: { in: ['SCHEDULED', 'CONFIRMED'] },
+      status: { in: ['SCHEDULED', 'RESCHEDULED'] },
     },
     include: {
-      customer: { select: { name: true, phone: true } },
-      service:  { select: { name: true } },
-      slot:     { select: { windowStart: true, windowEnd: true } },
+      match: { include: { jobRequest: { include: { customer: { select: { name: true, phone: true } } } } } },
     },
   })
 
   let sent = 0
 
   for (const booking of bookings) {
+    const customer = booking.match.jobRequest.customer
     try {
-      const scheduledWindow =
-        booking.scheduledWindow ??
-        (booking.slot
-          ? `${booking.slot.windowStart}–${booking.slot.windowEnd}`
-          : 'Time to be confirmed')
+      const alreadySent = await hasSuccessfulMessageForBooking({
+        bookingId: booking.id,
+        templateName: 'booking_reminder',
+        since: windowStart,
+      })
+      if (alreadySent) {
+        console.info(`[cron/reminders:${reqId}] Skipping duplicate reminder for booking ${booking.id}`)
+        continue
+      }
+
+      const scheduledWindow = booking.scheduledWindow ?? 'Time to be confirmed'
 
       await sendBookingReminder({
-        businessId:      booking.businessId,
         bookingId:       booking.id,
-        customerName:    booking.customer.name,
-        customerPhone:   booking.customer.phone,
-        serviceName:     booking.service.name,
+        customerName:    customer.name,
+        customerPhone:   customer.phone,
+        serviceName:     booking.match.jobRequest.category,
         scheduledWindow,
       })
 
       sent++
-      console.log(`[cron/reminders] Sent reminder for booking ${booking.id}`)
+      console.log(`[cron/reminders:${reqId}] Sent reminder for booking ${booking.id}`)
     } catch (err) {
-      console.error(`[cron/reminders] Failed for booking ${booking.id}:`, err)
+      console.error(`[cron/reminders:${reqId}] Failed for booking ${booking.id}:`, err)
     }
   }
 
+  console.log(`[cron/reminders:${reqId}]`, { sent })
   return NextResponse.json({ sent })
 }

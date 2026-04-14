@@ -1,15 +1,28 @@
-// ─── Admin: Technician application review ─────────────────────────────────────
-// Lists all TechnicianApplications submitted via WhatsApp.
-// Approve: creates Technician + Supabase user invite + WhatsApp notification.
+// ─── Admin: Provider application review ───────────────────────────────────────
+// Lists all ProviderApplications submitted via WhatsApp.
+// Approve: creates Provider + Supabase user invite + WhatsApp notification.
 // Reject: sends rejection WhatsApp + updates status.
 
 export const dynamic = 'force-dynamic'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin, createServiceClient } from '@/lib/auth'
-import { StatusBadge } from '@/components/shared/StatusBadge'
+import { recordAuditLog } from '@/lib/audit'
+import { syncProviderRecord } from '@/lib/provider-record'
+import {
+  findConflictingActiveProviderApplications,
+  getConflictingActiveProviderApplicationIds,
+} from '@/lib/provider-applications'
 import { buildMetadata } from '@/lib/metadata'
+import {
+  OPS_QUEUE_TYPES,
+  claimOpsQueueItem,
+  formatOpsQueueOwnerLabel,
+  listOpsQueueAssignments,
+  releaseOpsQueueItem,
+} from '@/lib/ops-queue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -23,8 +36,25 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { ApplicationStatus } from '@prisma/client'
+import { getApplicationsAdminMessage } from '@/lib/admin-action-messages'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
+
+const providerApplicationSelect = {
+  id: true,
+  providerId: true,
+  phone: true,
+  name: true,
+  skills: true,
+  serviceAreas: true,
+  experience: true,
+  availability: true,
+  status: true,
+  notes: true,
+  reviewedAt: true,
+  reviewedById: true,
+  submittedAt: true,
+} as const
 
 // ─── Server Actions ───────────────────────────────────────────────────────────
 
@@ -33,16 +63,30 @@ async function approveApplication(formData: FormData) {
   const id = formData.get('id') as string
   const session = await requireAdmin()
 
-  const app = await db.technicianApplication.findUnique({ where: { id } })
+  const app = await db.providerApplication.findUnique({
+    where: { id },
+    select: providerApplicationSelect,
+  })
   if (!app || app.status !== 'PENDING') return
+
+  const conflictingApplications = await findConflictingActiveProviderApplications(db, app.phone, {
+    excludeId: app.id,
+  })
+  if (conflictingApplications.length > 0) {
+    console.warn('[applications] Approval blocked by duplicate active applications', {
+      applicationId: app.id,
+      phone: app.phone,
+      conflictingApplicationIds: conflictingApplications.map((candidate) => candidate.id),
+    })
+    redirect('/admin/applications?message=duplicate_active_application')
+  }
 
   // Create Supabase user (phone OTP — no email/password)
   const supabase = createServiceClient()
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     phone: app.phone,
     user_metadata: {
-      role: 'technician',
-      businessId: app.businessId,
+      role: 'provider',
       name: app.name,
     },
     phone_confirm: true,
@@ -50,28 +94,60 @@ async function approveApplication(formData: FormData) {
 
   if (authError || !authData.user) {
     console.error('[applications] Supabase user create failed:', authError)
-    // Still create Technician record — user can be linked later
+    // Still create Provider record — user can be linked later
   }
 
-  // Create Technician record
-  await db.technician.create({
-    data: {
-      businessId: app.businessId,
-      userId: authData?.user?.id ?? null,
-      name: app.name,
-      phone: app.phone,
-      skills: app.skills,
-      serviceAreas: app.serviceAreas,
-      active: true,
-    },
+  const providerId = await syncProviderRecord(db, {
+    userId: authData?.user?.id ?? null,
+    phone: app.phone,
+    name: app.name,
+    skills: app.skills,
+    serviceAreas: app.serviceAreas,
+    active: true,
+    availableNow: true,
+    verified: true,
   })
 
+  // Stamp providerId into user_metadata so getSession() returns it on first login.
+  // Without this, session.providerId is undefined until the user re-authenticates
+  // and triggers a metadata refresh.
+  if (authData?.user?.id) {
+    const { error: metaError } = await supabase.auth.admin.updateUserById(authData.user.id, {
+      user_metadata: {
+        role: 'provider',
+        name: app.name,
+        providerId,
+      },
+    })
+    if (metaError) {
+      console.error('[applications] Failed to stamp providerId in user_metadata:', metaError)
+    }
+  }
+
   // Update application status
-  await db.technicianApplication.update({
+  await db.providerApplication.update({
     where: { id },
     data: {
       status: 'APPROVED',
+      providerId,
       reviewedAt: new Date(),
+      reviewedById: session.id,
+    },
+  })
+  await recordAuditLog({
+    actorId: session.id,
+    actorRole: session.role,
+    action: 'provider_application.approve',
+    entityType: 'provider_application',
+    entityId: app.id,
+    before: {
+      status: app.status,
+      providerId: app.providerId,
+      reviewedById: app.reviewedById,
+    },
+    after: {
+      status: 'APPROVED',
+      providerId,
       reviewedById: session.id,
     },
   })
@@ -84,7 +160,14 @@ async function approveApplication(formData: FormData) {
     approved: true,
   }).catch(() => {})
 
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: app.id,
+    actor: { actorId: session.id, actorRole: session.role },
+  })
+
   revalidatePath('/admin/applications')
+  revalidatePath('/admin')
 }
 
 async function rejectApplication(formData: FormData) {
@@ -93,16 +176,46 @@ async function rejectApplication(formData: FormData) {
   const reason = (formData.get('reason') as string) || undefined
   const session = await requireAdmin()
 
-  const app = await db.technicianApplication.findUnique({ where: { id } })
+  const app = await db.providerApplication.findUnique({
+    where: { id },
+    select: providerApplicationSelect,
+  })
   if (!app || app.status !== 'PENDING') return
 
-  await db.technicianApplication.update({
+  await db.providerApplication.update({
     where: { id },
     data: {
       status: 'REJECTED',
+      provider: app.providerId
+        ? {
+            update: {
+              active: false,
+              availableNow: false,
+              verified: false,
+            },
+          }
+        : undefined,
       reviewedAt: new Date(),
       reviewedById: session.id,
       notes: reason,
+    },
+  })
+  await recordAuditLog({
+    actorId: session.id,
+    actorRole: session.role,
+    action: 'provider_application.reject',
+    entityType: 'provider_application',
+    entityId: app.id,
+    before: {
+      status: app.status,
+      providerId: app.providerId,
+      reviewedById: app.reviewedById,
+    },
+    after: {
+      status: 'REJECTED',
+      providerId: app.providerId,
+      reviewedById: session.id,
+      notes: reason ?? null,
     },
   })
 
@@ -114,7 +227,49 @@ async function rejectApplication(formData: FormData) {
     reason,
   }).catch(() => {})
 
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: app.id,
+    actor: { actorId: session.id, actorRole: session.role },
+  })
+
   revalidatePath('/admin/applications')
+  revalidatePath('/admin')
+}
+
+async function claimApplication(formData: FormData) {
+  'use server'
+  const admin = await requireAdmin()
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  await claimOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: id,
+    claimedById: admin.id,
+    claimedByRole: admin.role,
+    claimedByLabel: admin.email ?? 'admin',
+    actor: { actorId: admin.id, actorRole: admin.role },
+  })
+
+  revalidatePath('/admin/applications')
+  revalidatePath('/admin')
+}
+
+async function releaseApplication(formData: FormData) {
+  'use server'
+  const admin = await requireAdmin()
+  const id = String(formData.get('id') ?? '')
+  if (!id) return
+
+  await releaseOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    entityId: id,
+    actor: { actorId: admin.id, actorRole: admin.role },
+  })
+
+  revalidatePath('/admin/applications')
+  revalidatePath('/admin')
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -125,13 +280,26 @@ function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 
   return 'secondary'
 }
 
-export default async function ApplicationsPage() {
-  await requireAdmin()
+export default async function ApplicationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ message?: string }>
+}) {
+  const admin = await requireAdmin()
+  const { message } = await searchParams
+  const banner = getApplicationsAdminMessage(message)
 
-  const applications = await db.technicianApplication.findMany({
+  const applications = await db.providerApplication.findMany({
+    select: providerApplicationSelect,
     orderBy: { submittedAt: 'desc' },
     take: 100,
   })
+  const conflictingApplicationIds = getConflictingActiveProviderApplicationIds(applications)
+  const assignments = await listOpsQueueAssignments(
+    db,
+    OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+    applications.map((application) => application.id),
+  )
 
   const pending  = applications.filter((a) => a.status === 'PENDING')
   const reviewed = applications.filter((a) => a.status !== 'PENDING')
@@ -139,11 +307,17 @@ export default async function ApplicationsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Technician Applications</h1>
+        <h1 className="text-xl font-semibold">Provider Applications</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Applications submitted via WhatsApp — review and approve to onboard new technicians
+          Applications submitted via WhatsApp. Approving an application allows that provider to receive marketplace leads.
         </p>
       </div>
+
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
+        </div>
+      ) : null}
 
       {/* Pending */}
       <section className="space-y-3">
@@ -155,59 +329,105 @@ export default async function ApplicationsPage() {
           <p className="text-sm text-muted-foreground py-4">No pending applications.</p>
         )}
 
-        {pending.map((app) => (
-          <Card key={app.id}>
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-0.5">
-                  <p className="font-medium">{app.name}</p>
-                  <p className="text-sm text-muted-foreground">{app.phone}</p>
+        {pending.map((app) => {
+          const hasConflict = conflictingApplicationIds.has(app.id)
+          const assignment = assignments.get(app.id)
+          const claimedByCurrentUser = assignment?.claimedById === admin.id
+
+          return (
+            <Card key={app.id}>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <p className="font-medium">{app.name}</p>
+                    <p className="text-sm text-muted-foreground">{app.phone}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={getStatusVariant(app.status)} className="rounded-full">
+                      {app.status}
+                    </Badge>
+                    <Badge variant={claimedByCurrentUser ? 'brand' : assignment?.claimedById ? 'warning' : 'outline'}>
+                      {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </div>
                 </div>
-                <Badge variant={getStatusVariant(app.status)} className="rounded-full">
-                  {app.status}
-                </Badge>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Skills: </span>
-                  {app.skills.join(', ') || '—'}
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Skills: </span>
+                    {app.skills.join(', ') || '—'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Area: </span>
+                    {app.serviceAreas.join(', ') || '—'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Experience: </span>
+                    {app.experience || '—'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Availability: </span>
+                    {app.availability || '—'}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Area: </span>
-                  {app.serviceAreas.join(', ') || '—'}
+
+                <p className="text-xs text-muted-foreground">
+                  Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {' · '}Ref: {app.id.slice(-8).toUpperCase()}
+                </p>
+
+                {hasConflict && (
+                  <div className="rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                    Duplicate active application detected for this phone number. Reject or resolve the duplicate before approving so one provider does not end up with multiple active application records.
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  {!claimedByCurrentUser ? (
+                    <form action={claimApplication}>
+                      <input type="hidden" name="id" value={app.id} />
+                      <Button type="submit" size="sm" variant="outline">
+                        {assignment?.claimedById ? 'Take over' : 'Claim'}
+                      </Button>
+                    </form>
+                  ) : (
+                    <form action={releaseApplication}>
+                      <input type="hidden" name="id" value={app.id} />
+                      <Button type="submit" size="sm" variant="outline">
+                        Release
+                      </Button>
+                    </form>
+                  )}
+
+                  <form action={approveApplication}>
+                    <input type="hidden" name="id" value={app.id} />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={hasConflict}
+                      className="bg-green-600 hover:bg-green-700 text-white disabled:bg-muted disabled:text-muted-foreground"
+                    >
+                      Approve
+                    </Button>
+                  </form>
+
+                  <form action={rejectApplication} className="flex gap-2">
+                    <input type="hidden" name="id" value={app.id} />
+                    <Input
+                      type="text"
+                      name="reason"
+                      placeholder="Reason (optional)"
+                      className="h-8 w-48 text-sm"
+                    />
+                    <Button type="submit" size="sm" variant="outline">
+                      Reject
+                    </Button>
+                  </form>
                 </div>
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
-                {' · '}Ref: {app.id.slice(-8).toUpperCase()}
-              </p>
-
-              <div className="flex gap-2 pt-1">
-                <form action={approveApplication}>
-                  <input type="hidden" name="id" value={app.id} />
-                  <Button type="submit" size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-                    Approve
-                  </Button>
-                </form>
-
-                <form action={rejectApplication} className="flex gap-2">
-                  <input type="hidden" name="id" value={app.id} />
-                  <Input
-                    type="text"
-                    name="reason"
-                    placeholder="Reason (optional)"
-                    className="h-8 w-48 text-sm"
-                  />
-                  <Button type="submit" size="sm" variant="outline">
-                    Reject
-                  </Button>
-                </form>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          )
+        })}
       </section>
 
       {/* Reviewed */}
@@ -230,9 +450,9 @@ export default async function ApplicationsPage() {
               <TableBody>
                 {reviewed.map((app) => (
                   <TableRow key={app.id}>
-                    <TableCell>{app.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{app.phone}</TableCell>
-                    <TableCell className="text-muted-foreground">{app.skills.join(', ') || '—'}</TableCell>
+                  <TableCell>{app.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{app.phone}</TableCell>
+                  <TableCell className="text-muted-foreground">{app.skills.join(', ') || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={getStatusVariant(app.status)} className="rounded-full">
                         {app.status}

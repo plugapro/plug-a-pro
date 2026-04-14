@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requireAdmin, resolveBusinessId } from '@/lib/auth'
+import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { formatCurrency } from '@/lib/payments'
@@ -24,35 +24,78 @@ import {
 
 export const metadata = buildMetadata({ title: 'Customer', noIndex: true })
 
+async function adminToggleMarketing(customerId: string, phone: string, value: boolean) {
+  'use server'
+  const admin = await requireAdmin()
+  const { applyOptIn, applyOptOut } = await import('@/lib/whatsapp-policy')
+  if (value) {
+    await applyOptIn(phone, 'admin', { actorId: admin.id, note: 'Admin override from customer detail' })
+  } else {
+    await applyOptOut(phone, 'admin', { actorId: admin.id, note: 'Admin override from customer detail' })
+  }
+  const { redirect } = await import('next/navigation')
+  redirect(`/admin/customers/${customerId}`)
+}
+
 export default async function CustomerDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const user = await requireAdmin()
-  let businessId = user.businessId
-  if (!businessId) {
-    businessId = await resolveBusinessId()
-  }
+  const admin = await requireAdmin()
 
-  const customer = await db.customer.findFirst({
-    where: { id, businessId },
+  const customer = await db.customer.findUnique({
+    where: { id },
     include: {
-      bookings: {
+      jobRequests: {
         orderBy: { createdAt: 'desc' },
         include: {
-          service: { select: { name: true } },
-          payment: { select: { status: true, amount: true } },
+          match: {
+            include: {
+              booking: {
+                include: {
+                  payment: { select: { status: true, amount: true } },
+                },
+              },
+            },
+          },
         },
       },
-      _count: { select: { bookings: true } },
+      _count: { select: { jobRequests: true } },
+      whatsappPreferenceLogs: {
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          field: true,
+          oldValue: true,
+          newValue: true,
+          source: true,
+          createdAt: true,
+          note: true,
+        },
+      },
     },
   })
 
   if (!customer) notFound()
 
-  const lastBooking = customer.bookings[0]
+  // Flatten to a list of bookings with enough context to render the table
+  // jr typed as any to avoid Prisma Decimal vs number mismatch in render shape
+  const bookings = customer.jobRequests.flatMap((jr: any) =>
+    jr.match?.booking
+      ? [{
+          id:          jr.match.booking.id,
+          createdAt:   jr.match.booking.createdAt,
+          status:      jr.match.booking.status,
+          payment:     jr.match.booking.payment,
+          jobTitle:    jr.title,
+        }]
+      : []
+  )
+
+  const lastBooking = bookings[0]
   const channel = customer.userId ? 'PWA + WhatsApp' : 'WhatsApp only'
 
   return (
@@ -108,31 +151,103 @@ export default async function CustomerDetailPage({
         </CardContent>
       </Card>
 
+      {/* WhatsApp Preferences */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            WhatsApp Preferences
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <Row label="Service messages">
+            {customer.whatsappServiceOptIn
+              ? <Badge variant="secondary">Opted in</Badge>
+              : <Badge variant="outline">Opted out</Badge>}
+          </Row>
+          <Row label="Marketing messages">
+            {customer.whatsappMarketingOptIn
+              ? <Badge variant="secondary">Opted in</Badge>
+              : <Badge variant="outline">Opted out</Badge>}
+          </Row>
+          {customer.whatsappMarketingOptInAt && (
+            <Row label="Opted in at">
+              {customer.whatsappMarketingOptInAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </Row>
+          )}
+          {customer.whatsappMarketingOptOutAt && (
+            <Row label="Opted out at">
+              {customer.whatsappMarketingOptOutAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </Row>
+          )}
+          {customer.whatsappMarketingSource && (
+            <Row label="Last source">{customer.whatsappMarketingSource}</Row>
+          )}
+
+          {/* Admin override form */}
+          <div className="pt-2 border-t">
+            <form
+              action={adminToggleMarketing.bind(null, customer.id, customer.phone, !customer.whatsappMarketingOptIn)}
+            >
+              <button
+                type="submit"
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                {customer.whatsappMarketingOptIn ? 'Opt out (admin override)' : 'Opt in (admin override)'}
+              </button>
+            </form>
+          </div>
+
+          {/* Audit log */}
+          {customer.whatsappPreferenceLogs.length > 0 && (
+            <div className="pt-2 border-t">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Recent changes</p>
+              <div className="space-y-1">
+                {customer.whatsappPreferenceLogs.map((log) => (
+                  <div key={log.id} className="text-xs text-muted-foreground flex gap-2">
+                    <span className="w-24 flex-shrink-0">
+                      {log.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                    </span>
+                    <span>{log.field}: {String(log.oldValue)} → {String(log.newValue)}</span>
+                    <span className="ml-auto">{log.source}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Booking history */}
       <div>
         <h2 className="text-sm font-semibold mb-3">
-          Booking history ({customer._count.bookings})
+          Booking history ({customer._count?.jobRequests ?? 0})
         </h2>
         <div className="rounded-xl border overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Ref</TableHead>
-                <TableHead>Service</TableHead>
+                <TableHead>Job Request</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {customer.bookings.length === 0 && (
+              {bookings.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                     No bookings yet.
                   </TableCell>
                 </TableRow>
               )}
-              {customer.bookings.map((b) => (
+              {bookings.map((b: {
+                id: string
+                createdAt: Date
+                status: string
+                payment: { status: string; amount: number | null } | null
+                jobTitle: string
+              }) => (
                 <TableRow key={b.id} className="hover:bg-muted/30">
                   <TableCell>
                     <Link
@@ -142,7 +257,9 @@ export default async function CustomerDetailPage({
                       {b.id.slice(-8).toUpperCase()}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{b.service.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {b.jobTitle ?? '—'}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {b.createdAt.toLocaleDateString('en-ZA', {
                       day: 'numeric',
@@ -151,7 +268,7 @@ export default async function CustomerDetailPage({
                     })}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={b.status} type="booking" />
+                    <StatusBadge status={b.status as import('@prisma/client').BookingStatus} type="booking" />
                   </TableCell>
                   <TableCell className="text-right font-medium">
                     {b.payment?.amount != null

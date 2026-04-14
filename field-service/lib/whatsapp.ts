@@ -2,8 +2,12 @@
 // Direct integration — no intermediary required.
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages
 
+import { createHmac, timingSafeEqual } from 'crypto'
+import type { Prisma } from '@prisma/client'
 import { db } from './db'
+import { logOutboundMessage } from './message-events'
 import { TEMPLATES, type TemplateName } from './messaging-templates'
+import { canSend } from './whatsapp-policy'
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
@@ -23,7 +27,7 @@ function getConfig() {
 
 // ─── Core send functions ──────────────────────────────────────────────────────
 
-/** Send a template message. All business-initiated messages must use approved templates. */
+/** Send a template message. All platform-initiated messages must use approved templates. */
 export async function sendTemplate(params: {
   to: string // E.164 format: +27600000000
   template: TemplateName
@@ -72,6 +76,9 @@ export async function sendTemplate(params: {
 export async function sendText(params: {
   to: string
   text: string
+  bookingId?: string
+  templateName?: string
+  metadata?: Record<string, unknown>
 }): Promise<string> {
   const { accessToken, phoneNumberId } = getConfig()
 
@@ -99,14 +106,24 @@ export async function sendText(params: {
   }
 
   const data = await response.json()
-  return data.messages?.[0]?.id ?? ''
+  const externalId = data.messages?.[0]?.id ?? ''
+
+  await logOutboundMessage({
+    bookingId: params.bookingId,
+    to: params.to,
+    templateName: params.templateName ?? 'freeform:text',
+    body: params.text,
+    externalId,
+    metadata: params.metadata,
+  }).catch(() => {})
+
+  return externalId
 }
 
 // ─── High-level messaging functions ──────────────────────────────────────────
 // These are called from booking/job lifecycle hooks.
 
 export async function sendBookingConfirmation(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -114,6 +131,15 @@ export async function sendBookingConfirmation(params: {
   scheduledWindow: string // "Tuesday 8 April, 09:00–12:00"
   bookingUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_confirmation')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_confirmation`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_confirmation)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'booking_confirmation',
@@ -131,7 +157,6 @@ export async function sendBookingConfirmation(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'booking_confirmation',
@@ -139,14 +164,22 @@ export async function sendBookingConfirmation(params: {
   })
 }
 
-export async function sendTechnicianOnTheWay(params: {
-  businessId: string
+export async function sendProviderOnTheWay(params: {
   bookingId: string
   customerName: string
   customerPhone: string
-  technicianName: string
+  providerName: string
   eta: string // "approximately 20 minutes"
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'technician_on_the_way')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: technician_on_the_way`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: technician_on_the_way)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'technician_on_the_way',
@@ -155,7 +188,7 @@ export async function sendTechnicianOnTheWay(params: {
         type: 'body',
         parameters: [
           { type: 'text', text: params.customerName },
-          { type: 'text', text: params.technicianName },
+          { type: 'text', text: params.providerName },
           { type: 'text', text: params.eta },
         ],
       },
@@ -163,7 +196,6 @@ export async function sendTechnicianOnTheWay(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'technician_on_the_way',
@@ -172,7 +204,6 @@ export async function sendTechnicianOnTheWay(params: {
 }
 
 export async function sendExtraWorkApproval(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -180,6 +211,15 @@ export async function sendExtraWorkApproval(params: {
   amount: string // formatted: "R 450.00"
   approvalUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'extra_work_approval')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: extra_work_approval`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: extra_work_approval)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'extra_work_approval',
@@ -197,7 +237,6 @@ export async function sendExtraWorkApproval(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'extra_work_approval',
@@ -206,12 +245,20 @@ export async function sendExtraWorkApproval(params: {
 }
 
 export async function sendJobCompleted(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
   invoiceUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'job_completed')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: job_completed`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: job_completed)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'job_completed',
@@ -227,7 +274,6 @@ export async function sendJobCompleted(params: {
   })
 
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'job_completed',
@@ -235,13 +281,21 @@ export async function sendJobCompleted(params: {
   })
 }
 
-export async function sendTechnicianArrived(params: {
-  businessId: string
+export async function sendProviderArrived(params: {
   bookingId: string
   customerName: string
   customerPhone: string
-  technicianName: string
+  providerName: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'technician_arrived')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: technician_arrived`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: technician_arrived)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'technician_arrived',
@@ -250,13 +304,12 @@ export async function sendTechnicianArrived(params: {
         type: 'body',
         parameters: [
           { type: 'text', text: params.customerName },
-          { type: 'text', text: params.technicianName },
+          { type: 'text', text: params.providerName },
         ],
       },
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'technician_arrived',
@@ -265,13 +318,21 @@ export async function sendTechnicianArrived(params: {
 }
 
 export async function sendBookingReminder(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
   serviceName: string
   scheduledWindow: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_reminder')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_reminder`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_reminder)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'booking_reminder',
@@ -287,7 +348,6 @@ export async function sendBookingReminder(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'booking_reminder',
@@ -296,12 +356,20 @@ export async function sendBookingReminder(params: {
 }
 
 export async function sendFollowUp(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
   ratingUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'follow_up')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: follow_up`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: follow_up)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'follow_up',
@@ -316,7 +384,6 @@ export async function sendFollowUp(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'follow_up',
@@ -325,7 +392,6 @@ export async function sendFollowUp(params: {
 }
 
 export async function sendQuoteReady(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
@@ -333,6 +399,15 @@ export async function sendQuoteReady(params: {
   quotedPrice: string
   quoteUrl: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'quote_ready')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: quote_ready`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: quote_ready)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'quote_ready',
@@ -349,7 +424,6 @@ export async function sendQuoteReady(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'quote_ready',
@@ -358,13 +432,21 @@ export async function sendQuoteReady(params: {
 }
 
 export async function sendBookingCancelled(params: {
-  businessId: string
   bookingId: string
   customerName: string
   customerPhone: string
   serviceName: string
   refundNote?: string
 }): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_cancelled')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_cancelled`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_cancelled)`)
+    }
+    return
+  }
   const externalId = await sendTemplate({
     to: params.customerPhone,
     template: 'booking_cancelled',
@@ -380,7 +462,6 @@ export async function sendBookingCancelled(params: {
     ],
   })
   await logMessage({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     to: params.customerPhone,
     template: 'booking_cancelled',
@@ -388,7 +469,300 @@ export async function sendBookingCancelled(params: {
   })
 }
 
-/** Notify admin when a new technician application is submitted via WhatsApp.
+export async function sendPaymentReminder(params: {
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  serviceName: string
+  amount: string       // formatted: "R 350.00"
+  paymentUrl: string
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'payment_reminder')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: payment_reminder`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: payment_reminder)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'payment_reminder',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.amount },
+          { type: 'text', text: params.paymentUrl },
+        ],
+      },
+    ],
+  })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'payment_reminder', externalId })
+}
+
+export async function sendPaymentReceived(params: {
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  amount: string
+  serviceName: string
+  bookingRef: string   // last 8 chars of booking ID, uppercased
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'payment_received')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: payment_received`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: payment_received)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'payment_received',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.amount },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.bookingRef },
+        ],
+      },
+    ],
+  })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'payment_received', externalId })
+}
+
+export async function sendProviderAssigned(params: {
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  providerFirstName: string
+  serviceName: string
+  scheduledWindow: string
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'technician_assigned')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: technician_assigned`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: technician_assigned)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'technician_assigned',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.providerFirstName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.scheduledWindow },
+        ],
+      },
+    ],
+  })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'technician_assigned', externalId })
+}
+
+export async function sendBookingRescheduled(params: {
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  serviceName: string
+  oldSlot: string
+  newSlot: string
+  bookingUrl: string
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'booking_rescheduled')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: booking_rescheduled`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: booking_rescheduled)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'booking_rescheduled',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.oldSlot },
+          { type: 'text', text: params.newSlot },
+          { type: 'text', text: params.bookingUrl },
+        ],
+      },
+    ],
+  })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'booking_rescheduled', externalId })
+}
+
+export async function sendSlotAvailable(params: {
+  customerPhone: string
+  customerName: string
+  serviceName: string
+  slotLabel: string
+  bookingUrl: string
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'slot_available')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. phone=${params.customerPhone} template: slot_available`)
+    } else {
+      console.warn(`[whatsapp] blocked phone=${params.customerPhone}: ${check.reason} (template: slot_available)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'slot_available',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.slotLabel },
+          { type: 'text', text: params.bookingUrl },
+        ],
+      },
+    ],
+  })
+  await logOutboundMessage({ to: params.customerPhone, templateName: 'slot_available', externalId })
+}
+
+export async function sendNoProviderAvailable(params: {
+  bookingId: string
+  customerName: string
+  customerPhone: string
+  serviceName: string
+  originalDate: string
+  bookingUrl: string
+}): Promise<void> {
+  const check = await canSend(params.customerPhone, 'no_technician_available')
+  if (!check.allowed) {
+    if (check.reason === 'db_error') {
+      console.error(`[whatsapp] policy check failed (db_error) — suppressing send. bookingId=${params.bookingId} phone=${params.customerPhone} template: no_technician_available`)
+    } else {
+      console.warn(`[whatsapp] blocked bookingId=${params.bookingId} phone=${params.customerPhone}: ${check.reason} (template: no_technician_available)`)
+    }
+    return
+  }
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'no_technician_available',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.originalDate },
+          { type: 'text', text: params.bookingUrl },
+        ],
+      },
+    ],
+  })
+  await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'no_technician_available', externalId })
+}
+
+export async function sendJobOffer(params: {
+  providerPhone: string
+  providerFirstName: string
+  serviceName: string
+  area: string         // "Sandton, Johannesburg"
+  scheduledWindow: string
+  jobUrl: string
+  bookingId?: string   // not yet available at lead-dispatch time — optional for logging
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.providerPhone,
+    template: 'job_offer',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.providerFirstName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.area },
+          { type: 'text', text: params.scheduledWindow },
+          { type: 'text', text: params.jobUrl },
+        ],
+      },
+    ],
+  })
+  await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'job_offer', externalId })
+}
+
+export async function sendProviderJobReminder(params: {
+  providerPhone: string
+  providerFirstName: string
+  serviceName: string
+  address: string
+  scheduledWindow: string
+  jobUrl: string
+  bookingId?: string
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.providerPhone,
+    template: 'technician_job_reminder',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.providerFirstName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.address },
+          { type: 'text', text: params.scheduledWindow },
+          { type: 'text', text: params.jobUrl },
+        ],
+      },
+    ],
+  })
+  await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'technician_job_reminder', externalId })
+}
+
+export async function sendProviderPaymentReleased(params: {
+  providerPhone: string
+  providerFirstName: string
+  amount: string          // "R 280.00"
+  serviceName: string
+  arrivalEstimate: string // "1–2 business days"
+  bookingId?: string
+}): Promise<void> {
+  const externalId = await sendTemplate({
+    to: params.providerPhone,
+    template: 'technician_payment_released',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.providerFirstName },
+          { type: 'text', text: params.amount },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: params.arrivalEstimate },
+        ],
+      },
+    ],
+  })
+  await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'technician_payment_released', externalId })
+}
+
+/** Notify admin when a new provider application is submitted via WhatsApp.
  *  Admin phone is set via ADMIN_WHATSAPP_NUMBER env var.
  *  Falls back silently if not configured — non-critical. */
 export async function sendAdminNewApplication(params: {
@@ -401,7 +775,7 @@ export async function sendAdminNewApplication(params: {
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (!adminPhone) return // not configured — skip silently
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   const reviewUrl = `${appUrl}/admin/applications`
   const skillList = params.skills.join(', ') || 'Not specified'
   const areaList = params.serviceAreas.join(', ') || 'Not specified'
@@ -410,7 +784,7 @@ export async function sendAdminNewApplication(params: {
     const { sendCtaUrl } = await import('./whatsapp-interactive')
     await sendCtaUrl(
       adminPhone,
-      `📋 *New Technician Application*\n\n👤 ${params.applicantName}\n📞 ${params.applicantPhone}\n🔧 Skills: ${skillList}\n📍 Area: ${areaList}\n\nRef: *${params.applicationId.slice(-8).toUpperCase()}*`,
+      `📋 *New Provider Application*\n\n👤 ${params.applicantName}\n📞 ${params.applicantPhone}\n🔧 Skills: ${skillList}\n📍 Area: ${areaList}\n\nRef: *${params.applicationId.slice(-8).toUpperCase()}*`,
       'Review Application',
       reviewUrl,
       { footer: 'Tap to approve or reject in the admin console' }
@@ -422,6 +796,34 @@ export async function sendAdminNewApplication(params: {
 }
 
 // ─── Webhook verification ─────────────────────────────────────────────────────
+
+/**
+ * Verify the X-Hub-Signature-256 header sent by Meta on every POST webhook.
+ * The signature is HMAC-SHA256 of the raw request body, keyed with WHATSAPP_APP_SECRET.
+ *
+ * Returns false (and rejects the request) when:
+ *  - WHATSAPP_APP_SECRET is not configured
+ *  - The header is missing or malformed
+ *  - The computed HMAC does not match
+ */
+export function verifyMetaSignature(rawBody: string, signature: string): boolean {
+  const appSecret = process.env.WHATSAPP_APP_SECRET
+  if (!appSecret) {
+    console.error('[whatsapp] WHATSAPP_APP_SECRET not configured — rejecting webhook')
+    return false
+  }
+
+  const received = signature.startsWith('sha256=') ? signature.slice(7) : ''
+  if (!received) return false
+
+  const expected = createHmac('sha256', appSecret).update(rawBody).digest('hex')
+
+  try {
+    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'))
+  } catch {
+    return false
+  }
+}
 
 /** Verify the hub.verify_token during webhook setup */
 export function verifyWebhookChallenge(
@@ -436,7 +838,10 @@ export function verifyWebhookChallenge(
   return null
 }
 
-/** Process an inbound webhook payload (delivery receipts + inbound messages) */
+/**
+ * @deprecated Use app/api/webhooks/whatsapp/route.ts directly — it has deduplication,
+ * WAMID logging, and after() async processing. This function is kept only for legacy tests.
+ */
 export async function processWebhookEvent(payload: WhatsAppWebhookPayload): Promise<void> {
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -465,8 +870,46 @@ export async function processWebhookEvent(payload: WhatsAppWebhookPayload): Prom
 
       // Log inbound messages (for future two-way chat support)
       for (const message of value.messages ?? []) {
-        // TODO: route inbound messages to admin notification or automated reply
-        console.log('[WhatsApp inbound]', message.from, message.text?.body)
+        try {
+          await db.inboundWhatsAppMessage.create({
+            data: {
+              externalId: message.id,
+              phone: message.from,
+              messageType: message.type,
+              body: message.text?.body,
+              payload: message as unknown as Prisma.InputJsonValue,
+              processedAt: new Date(),
+            },
+          })
+        } catch (error: unknown) {
+          const isPrismaUnique =
+            typeof error === 'object' &&
+            error !== null &&
+            'code' in error &&
+            (error as { code: string }).code === 'P2002'
+
+          if (isPrismaUnique) {
+            await db.inboundWhatsAppMessage.update({
+              where: { externalId: message.id },
+              data: {
+                duplicateCount: { increment: 1 },
+                lastSeenAt: new Date(),
+              },
+            })
+            continue
+          }
+
+          throw error
+        }
+
+        const { processInboundMessage } = await import('./whatsapp-bot')
+        await processInboundMessage({
+          from: message.from,
+          id: message.id,
+          type: message.type,
+          text: message.text,
+          timestamp: String(Date.now()),
+        })
       }
     }
   }
@@ -475,23 +918,16 @@ export async function processWebhookEvent(payload: WhatsAppWebhookPayload): Prom
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 async function logMessage(params: {
-  businessId: string
   bookingId: string
   to: string
   template: TemplateName
   externalId: string
 }) {
-  await db.messageEvent.create({
-    data: {
-      businessId: params.businessId,
-      bookingId: params.bookingId,
-      channel: 'WHATSAPP',
-      templateName: params.template,
-      to: params.to,
-      externalId: params.externalId,
-      status: 'SENT',
-      sentAt: new Date(),
-    },
+  await logOutboundMessage({
+    bookingId: params.bookingId || undefined,
+    to: params.to,
+    templateName: params.template,
+    externalId: params.externalId,
   })
 }
 
@@ -530,4 +966,52 @@ interface WhatsAppWebhookPayload {
       field: string
     }>
   }>
+}
+
+// ─── Admin Operations Alerts ──────────────────────────────────────────────────
+// All functions check ADMIN_WHATSAPP_NUMBER env var — silently skip if unset.
+
+export async function sendAdminNoMatch(params: {
+  jobRequestId: string
+  category: string
+  area: string
+  customerName: string
+}): Promise<void> {
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
+  if (!adminPhone) return
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+
+  await sendText({
+    to: adminPhone,
+    text: `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${params.area}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed:\n${appUrl}/admin/dispatch`,
+  })
+}
+
+export async function sendAdminProviderDropped(params: {
+  providerName: string
+  jobId: string
+  category: string
+}): Promise<void> {
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
+  if (!adminPhone) return
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+
+  await sendText({
+    to: adminPhone,
+    text: `🚨 *Provider Dropped Job*\n\nProvider: ${params.providerName}\nJob: ${params.category}\nRef: ${params.jobId.slice(-8).toUpperCase()}\n\nReassignment needed:\n${appUrl}/admin/bookings`,
+  })
+}
+
+export async function sendAdminEscalation(params: {
+  reason: string
+  userPhone: string
+  context: string
+}): Promise<void> {
+  const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
+  if (!adminPhone) return
+
+  await sendText({
+    to: adminPhone,
+    text: `📣 *Escalation Alert*\n\nReason: ${params.reason}\nUser: ${params.userPhone}\nContext: ${params.context}\n\nPlease follow up directly.`,
+  })
 }

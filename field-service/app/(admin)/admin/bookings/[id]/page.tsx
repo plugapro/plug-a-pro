@@ -7,6 +7,10 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
+import { cancelBookingLifecycle } from '@/lib/bookings'
+import { recordAuditLog } from '@/lib/audit'
+import { getBookingAdminMessage } from '@/lib/admin-action-messages'
+import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -30,33 +34,45 @@ export async function generateMetadata({
 
 export default async function BookingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ message?: string }>
 }) {
-  const session = await requireAdmin()
+  const admin = await requireAdmin()
   const { id } = await params
+  const { message } = await searchParams
+  const banner = getBookingAdminMessage(message)
 
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
-      customer: { select: { name: true, phone: true, email: true } },
-      service:  { select: { name: true, basePrice: true, category: true } },
-      address:  true,
-      payment:  true,
-      invoice:  true,
-      slot:     true,
+      match: {
+        include: {
+          jobRequest: {
+            include: {
+              customer: true,
+              address:  true,
+            },
+          },
+          provider: true,
+          quotes: { orderBy: { createdAt: 'desc' } },
+        },
+      },
+      quote:   true,
+      payment: true,
+      invoice: true,
       job: {
         include: {
-          technician:    { select: { name: true, phone: true } },
-          statusHistory: { orderBy: { timestamp: 'asc' } },
-          extras:        { orderBy: { createdAt: 'asc' } },
           photos:        { orderBy: { createdAt: 'asc' } },
+          extras:        { orderBy: { createdAt: 'asc' } },
+          statusHistory: { orderBy: { timestamp: 'asc' } },
         },
       },
     },
   })
 
-  if (!booking || booking.businessId !== session.businessId) {
+  if (!booking) {
     notFound()
   }
 
@@ -68,31 +84,66 @@ export default async function BookingDetailPage({
 
   async function cancelBooking() {
     'use server'
-    await db.booking.update({ where: { id }, data: { status: 'CANCELLED' } })
-    if (booking!.slotId) {
-      const { releaseSlot } = await import('@/lib/slotting')
-      await releaseSlot(booking!.slotId)
-    }
+    const activeAdmin = await requireAdmin()
+    await cancelBookingLifecycle({
+      bookingId: id,
+      actorId: activeAdmin.id,
+      actorRole: 'admin',
+      reason: 'Cancelled by admin from booking detail',
+    })
     redirect('/admin/bookings')
   }
 
   async function markPaid() {
     'use server'
+    const activeAdmin = await requireAdmin()
+    const freshBooking = await db.booking.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        quote: { select: { amount: true } },
+        payment: { select: { status: true } },
+      },
+    })
+    if (
+      !freshBooking ||
+      freshBooking.status !== 'SCHEDULED' ||
+      freshBooking.payment?.status === 'PAID'
+    ) {
+      redirect(`/admin/bookings/${id}?message=payment_unavailable`)
+    }
+    const amount = freshBooking.quote?.amount ?? 0
     await db.payment.upsert({
       where:  { bookingId: id },
       create: {
         bookingId: id,
-        amount:    booking!.totalAmount,
+        amount,
         status:    'PAID',
         paidAt:    new Date(),
       },
       update: { status: 'PAID', paidAt: new Date() },
     })
-    await db.booking.update({ where: { id }, data: { status: 'CONFIRMED' } })
-    redirect(`/admin/bookings/${id}`)
+    await db.booking.update({ where: { id }, data: { status: 'SCHEDULED' } })
+    await recordAuditLog({
+      actorId: activeAdmin.id,
+      actorRole: activeAdmin.role,
+      action: 'payment.mark_paid',
+      entityType: 'booking',
+      entityId: id,
+      after: {
+        bookingStatus: 'SCHEDULED',
+        paymentStatus: 'PAID',
+      },
+    })
+    redirect(`/admin/bookings/${id}?message=payment_marked`)
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  const customer        = booking.match?.jobRequest?.customer
+  const address         = booking.match?.jobRequest?.address
+  const jobRequestTitle = booking.match?.jobRequest?.title ?? '—'
+  const jobRequestCategory = booking.match?.jobRequest?.category ?? '—'
 
   return (
     <div className="space-y-6">
@@ -108,8 +159,14 @@ export default async function BookingDetailPage({
           <span className="font-mono text-sm font-semibold">{ref}</span>
           <StatusBadge status={booking.status} type="booking" />
         </div>
-        <p className="text-sm text-muted-foreground">{booking.service.name}</p>
+        <p className="text-sm text-muted-foreground">{jobRequestTitle}</p>
       </div>
+
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+          {banner.text}
+        </div>
+      ) : null}
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -125,39 +182,56 @@ export default async function BookingDetailPage({
               <div className="grid grid-cols-3 gap-2">
                 <span className="text-muted-foreground font-medium">Customer</span>
                 <div className="col-span-2">
-                  <p className="font-medium">{booking.customer.name}</p>
-                  <p className="text-muted-foreground">{booking.customer.phone}</p>
-                  {booking.customer.email && (
-                    <p className="text-muted-foreground">{booking.customer.email}</p>
+                  <p className="font-medium">{customer?.name ?? '—'}</p>
+                  <p className="text-muted-foreground">{customer?.phone ?? ''}</p>
+                  {customer?.email && (
+                    <p className="text-muted-foreground">{customer.email}</p>
                   )}
                 </div>
               </div>
 
               <Separator />
 
-              {/* Service */}
+              {/* Job Request */}
               <div className="grid grid-cols-3 gap-2">
-                <span className="text-muted-foreground font-medium">Service</span>
+                <span className="text-muted-foreground font-medium">Job Request</span>
                 <div className="col-span-2">
-                  <p className="font-medium">{booking.service.name}</p>
-                  <p className="text-muted-foreground">{booking.service.category}</p>
-                  <p className="font-semibold mt-0.5">R {Number(booking.totalAmount).toFixed(2)}</p>
+                  <p className="font-medium">{jobRequestTitle}</p>
+                  <p className="text-muted-foreground">{jobRequestCategory}</p>
+                  <p className="font-semibold mt-0.5">R {Number(booking.quote?.amount ?? 0).toFixed(2)}</p>
                 </div>
               </div>
 
               <Separator />
+
+              {/* Provider */}
+              {booking.match?.provider && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <span className="text-muted-foreground font-medium">Provider</span>
+                    <div className="col-span-2">
+                      <p className="font-medium">{booking.match.provider.name}</p>
+                      <p className="text-muted-foreground">{booking.match.provider.phone}</p>
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
 
               {/* Address */}
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-muted-foreground font-medium">Address</span>
-                <div className="col-span-2">
-                  <p>{booking.address.street}</p>
-                  <p>{booking.address.suburb}, {booking.address.city}</p>
-                  <p>{booking.address.province}{booking.address.postalCode ? ` ${booking.address.postalCode}` : ''}</p>
-                </div>
-              </div>
-
-              <Separator />
+              {address && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <span className="text-muted-foreground font-medium">Address</span>
+                    <div className="col-span-2">
+                      <p>{address.street}</p>
+                      <p>{address.suburb}, {address.city}</p>
+                      <p>{address.province}{address.postalCode ? ` ${address.postalCode}` : ''}</p>
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
 
               {/* Scheduled */}
               <div className="grid grid-cols-3 gap-2">
@@ -201,7 +275,11 @@ export default async function BookingDetailPage({
                 <span className="text-muted-foreground font-medium">Payment</span>
                 <div className="col-span-2 flex items-center gap-2">
                   {booking.payment ? (
-                    <PaymentStatusBadge status={booking.payment.status} />
+                    <PaymentStatusBadge
+                      status={booking.payment.status}
+                      pspProvider={booking.payment.pspProvider}
+                      collectionMode={booking.payment.collectionMode}
+                    />
                   ) : (
                     <span className="text-muted-foreground">No payment record</span>
                   )}
@@ -230,7 +308,7 @@ export default async function BookingDetailPage({
                           href={booking.invoice.pdfUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline"
+                          className="text-xs text-primary hover:underline"
                         >
                           View PDF
                         </a>
@@ -242,6 +320,35 @@ export default async function BookingDetailPage({
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Quote History</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Full revision trail for this job, including customer feedback and the accepted quote record.
+              </p>
+              <QuoteHistoryTimeline
+                audience="provider"
+                quotes={booking.match.quotes.map((quote) => ({
+                  id: quote.id,
+                  amount: Number(quote.amount),
+                  labourCost: Number(quote.labourCost),
+                  materialsCost: Number(quote.materialsCost),
+                  description: quote.description,
+                  status: quote.status,
+                  estimatedHours: quote.estimatedHours,
+                  preferredDate: quote.preferredDate,
+                  validUntil: quote.validUntil,
+                  createdAt: quote.createdAt,
+                  approvedAt: quote.approvedAt,
+                  declinedAt: quote.declinedAt,
+                  notes: quote.notes,
+                }))}
+              />
+            </CardContent>
+          </Card>
+
           {/* Job section */}
           {booking.job && (
             <Card>
@@ -249,12 +356,12 @@ export default async function BookingDetailPage({
                 <CardTitle className="text-base">Job</CardTitle>
               </CardHeader>
               <CardContent className="space-y-5 text-sm">
-                {/* Technician + status */}
+                {/* Provider + status */}
                 <div className="flex flex-wrap items-center gap-4">
                   <div>
-                    <p className="text-muted-foreground text-xs mb-0.5">Technician</p>
-                    <p className="font-medium">{booking.job.technician.name}</p>
-                    <p className="text-muted-foreground text-xs">{booking.job.technician.phone}</p>
+                    <p className="text-muted-foreground text-xs mb-0.5">Provider</p>
+                    <p className="font-medium">{booking.match?.provider?.name}</p>
+                    <p className="text-muted-foreground text-xs">{booking.match?.provider?.phone}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground text-xs mb-0.5">Job status</p>
@@ -275,9 +382,9 @@ export default async function BookingDetailPage({
                     <div>
                       <p className="font-medium mb-3">Status History</p>
                       <ol className="space-y-2">
-                        {booking.job.statusHistory.map((event) => (
+                        {booking.job.statusHistory.map((event: { id: string; fromStatus: string | null; toStatus: string; timestamp: Date; actorRole: string; notes?: string | null }) => (
                           <li key={event.id} className="flex items-start gap-3">
-                            <span className="mt-0.5 h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600 shrink-0 translate-y-1" />
+                            <span className="mt-0.5 h-2 w-2 rounded-full bg-primary/35 shrink-0 translate-y-1" />
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                                 <span className="font-medium">
@@ -315,7 +422,7 @@ export default async function BookingDetailPage({
                     <div>
                       <p className="font-medium mb-3">Extra Work Requests</p>
                       <ul className="space-y-2">
-                        {booking.job.extras.map((extra) => (
+                        {booking.job.extras.map((extra: { id: string; description: string; amount: number | { toFixed: (n: number) => string }; status: string }) => (
                           <li
                             key={extra.id}
                             className="flex items-start justify-between gap-4 rounded-md border px-3 py-2"
@@ -341,17 +448,17 @@ export default async function BookingDetailPage({
                     <div>
                       <p className="font-medium mb-3">Photos</p>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                        {booking.job.photos.map((photo) => (
+                        {booking.job.photos.map((photo: { id: string; url: string; label?: string | null }) => (
                           <a
                             key={photo.id}
-                            href={photo.url}
+                            href={`/api/attachments/${photo.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="group relative block overflow-hidden rounded-md border aspect-square bg-muted"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={photo.url}
+                              src={`/api/attachments/${photo.id}`}
                               alt={photo.label ?? 'Job photo'}
                               className="h-full w-full object-cover transition-opacity group-hover:opacity-80"
                             />
@@ -378,17 +485,8 @@ export default async function BookingDetailPage({
               <CardTitle className="text-base">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Assign technician */}
-              {booking.status === 'CONFIRMED' && !booking.job && (
-                <Button asChild className="w-full">
-                  <Link href={`/admin/dispatch?bookingId=${booking.id}`}>
-                    Assign Technician
-                  </Link>
-                </Button>
-              )}
-
               {/* Mark as paid */}
-              {booking.status === 'PENDING_PAYMENT' && (
+              {booking.status === 'SCHEDULED' && (
                 <form action={markPaid}>
                   <Button type="submit" className="w-full" variant="default">
                     Mark as Paid
@@ -409,7 +507,7 @@ export default async function BookingDetailPage({
                 </form>
               )}
 
-              {!booking.job && booking.status !== 'CONFIRMED' && !canCancel && (
+              {!booking.job && !canCancel && (
                 <p className="text-xs text-muted-foreground text-center">No actions available</p>
               )}
             </CardContent>
@@ -437,12 +535,6 @@ export default async function BookingDetailPage({
                   <span>{booking.rescheduleCount}×</span>
                 </div>
               )}
-              {booking.depositAmount && (
-                <div className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">Deposit</span>
-                  <span>R {Number(booking.depositAmount).toFixed(2)}</span>
-                </div>
-              )}
               {booking.cancelReason && (
                 <div className="flex flex-col gap-1">
                   <span className="text-muted-foreground">Cancel reason</span>
@@ -453,6 +545,18 @@ export default async function BookingDetailPage({
                 <span className="text-muted-foreground">Booking ID</span>
                 <span className="font-mono text-xs">{ref}</span>
               </div>
+              {booking.matchId && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Match ID</span>
+                  <span className="font-mono text-xs">{booking.matchId.slice(-8).toUpperCase()}</span>
+                </div>
+              )}
+              {booking.quoteId && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Quote ID</span>
+                  <span className="font-mono text-xs">{booking.quoteId.slice(-8).toUpperCase()}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -470,33 +574,44 @@ function formatJobStatus(status: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function PaymentStatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    PENDING:            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    AUTHORISED:         'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    PAID:               'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-    FAILED:             'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-    REFUNDED:           'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
-    PARTIALLY_REFUNDED: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+function PaymentStatusBadge({
+  status,
+  pspProvider,
+  collectionMode,
+}: {
+  status: string
+  pspProvider?: string | null
+  collectionMode?: string | null
+}) {
+  const map: Record<string, 'warning' | 'info' | 'success' | 'danger' | 'neutral'> = {
+    PENDING:            'warning',
+    AUTHORISED:         'info',
+    PAID:               'success',
+    FAILED:             'danger',
+    REFUNDED:           'neutral',
+    PARTIALLY_REFUNDED: 'neutral',
   }
-  const label = status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, ' ')
+  const label =
+    status === 'PENDING' && collectionMode === 'OFFLINE_RECORDED'
+      ? 'Offline follow-through'
+      : status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, ' ')
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${map[status] ?? 'bg-zinc-100 text-zinc-600'}`}>
+    <Badge variant={map[status] ?? 'neutral'}>
       {label}
-    </span>
+    </Badge>
   )
 }
 
 function ApprovalStatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    PENDING:  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    APPROVED: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-    DECLINED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  const map: Record<string, 'warning' | 'success' | 'danger'> = {
+    PENDING:  'warning',
+    APPROVED: 'success',
+    DECLINED: 'danger',
   }
   const label = status.charAt(0) + status.slice(1).toLowerCase()
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap shrink-0 ${map[status] ?? 'bg-zinc-100 text-zinc-600'}`}>
+    <Badge variant={map[status] ?? 'neutral'}>
       {label}
-    </span>
+    </Badge>
   )
 }

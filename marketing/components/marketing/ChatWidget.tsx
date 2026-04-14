@@ -6,6 +6,7 @@ import { DefaultChatTransport } from "ai";
 import { MessageCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { analytics } from "@/lib/analytics";
 import { ChatMessages } from "./ChatMessages";
 import { WhatsAppButton } from "./WhatsAppButton";
 
@@ -24,6 +25,7 @@ export function ChatWidget() {
     const text = input.trim();
     if (!text || isDisabled) return;
     setInput("");
+    analytics.chatMessageSent();
     void sendMessage({ text });
   }
 
@@ -57,14 +59,18 @@ export function ChatWidget() {
           </form>
           {/* WhatsApp escalation — wired in Task 14 */}
           <div className="px-4 py-2 border-t border-border/40 text-xs text-muted-foreground">
-            Prefer a human? <WhatsAppButton compact />
+            Prefer a human? <WhatsAppButton compact source="chat_widget" />
           </div>
         </div>
       )}
       <Button
         size="icon"
         className="fixed bottom-4 right-4 z-50 h-12 w-12 rounded-full shadow-lg"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) analytics.chatOpen();
+        }}
         aria-label={open ? "Close chat" : "Open chat"}
       >
         {open ? <X className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />}

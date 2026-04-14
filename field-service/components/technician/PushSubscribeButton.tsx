@@ -1,23 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 export function PushSubscribeButton() {
-  const [state, setState] = useState<'idle' | 'subscribed' | 'unsupported' | 'denied'>('idle')
-
-  useEffect(() => {
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-      setState('unsupported')
-      return
-    }
-    if (Notification.permission === 'denied') {
-      setState('denied')
-      return
-    }
-    if (Notification.permission === 'granted') {
-      setState('subscribed')
-    }
-  }, [])
+  const [state, setState] = useState<'idle' | 'subscribed' | 'unsupported' | 'denied'>(() => {
+    if (typeof window === 'undefined') return 'idle'
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return 'unsupported'
+    if (Notification.permission === 'denied') return 'denied'
+    if (Notification.permission === 'granted') return 'subscribed'
+    return 'idle'
+  })
 
   async function subscribe() {
     if (!('serviceWorker' in navigator)) return

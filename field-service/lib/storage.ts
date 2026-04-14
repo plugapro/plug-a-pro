@@ -1,7 +1,7 @@
 // ─── Vercel Blob — file storage helpers ──────────────────────────────────────
 // Used for: job proof photos, quote attachments, invoice PDFs, avatars
 
-import { put, del, head, type PutBlobResult } from '@vercel/blob'
+import { put, del } from '@vercel/blob'
 import { db } from './db'
 
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -27,7 +27,10 @@ export async function uploadJobPhoto(params: {
   const key = `jobs/${params.jobId}/${Date.now()}-${params.label ?? 'photo'}.${ext}`
 
   const blob = await put(key, params.file, {
+    // Current @vercel/blob version in this repo still supports public writes only.
+    // We still randomize pathnames and force all reads back through the auth proxy.
     access: 'public',
+    addRandomSuffix: true,
     contentType: params.file.type,
   })
 
@@ -58,16 +61,17 @@ export async function uploadQuoteAttachment(params: {
 
   const blob = await put(key, params.file, {
     access: 'public',
+    addRandomSuffix: true,
     contentType: params.file.type,
   })
 
   await db.attachment.create({
     data: {
-      quoteId: params.quoteId,
       url: blob.url,
       blobKey: blob.pathname,
       mimeType: params.file.type,
       sizeBytes: params.file.size,
+      label: `quote:${params.quoteId}`,
       uploadedBy: params.uploadedBy,
     },
   })

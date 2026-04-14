@@ -22,7 +22,7 @@ export function WhatsAppButton({
       <Button
         variant="outline"
         size="icon"
-        className={`rounded-full bg-[#25D366] border-[#25D366] text-white hover:bg-[#22c55e] hover:border-[#22c55e] hover:text-white ${className}`}
+        className={`rounded-full bg-[var(--color-whatsapp)] border-[var(--color-whatsapp)] text-white hover:bg-[var(--color-whatsapp-hover)] hover:border-[var(--color-whatsapp-hover)] hover:text-white ${className}`}
         asChild
       >
         <a
@@ -40,7 +40,7 @@ export function WhatsAppButton({
   return (
     <Button
       variant="outline"
-      className={`bg-[#25D366] border-[#25D366] text-white hover:bg-[#22c55e] hover:border-[#22c55e] hover:text-white ${className}`}
+      className={`bg-[var(--color-whatsapp)] border-[var(--color-whatsapp)] text-white hover:bg-[var(--color-whatsapp-hover)] hover:border-[var(--color-whatsapp-hover)] hover:text-white ${className}`}
       asChild
     >
       <a

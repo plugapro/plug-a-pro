@@ -7,6 +7,8 @@
 //
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-messages
 
+import { logOutboundMessage } from './message-events'
+
 const API_VERSION = 'v21.0'
 
 function getConfig() {
@@ -39,14 +41,29 @@ async function post(body: object): Promise<string> {
 
 // ─── Text ─────────────────────────────────────────────────────────────────────
 
-export async function sendText(to: string, text: string): Promise<string> {
-  return post({
+export async function sendText(
+  to: string,
+  text: string,
+  context?: OutboundInteractiveContext
+): Promise<string> {
+  const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to,
     type: 'text',
     text: { body: text, preview_url: false },
   })
+  if (context) {
+    await logOutboundMessage({
+      bookingId: context.bookingId,
+      to,
+      templateName: context.templateName ?? 'interactive:text',
+      body: text,
+      externalId,
+      metadata: context.metadata,
+    }).catch(() => {})
+  }
+  return externalId
 }
 
 // ─── Buttons (max 3) ──────────────────────────────────────────────────────────
@@ -60,9 +77,10 @@ export async function sendButtons(
   to: string,
   body: string,
   buttons: QuickReply[],
-  options?: { header?: string; footer?: string }
+  options?: { header?: string; footer?: string },
+  context?: OutboundInteractiveContext
 ): Promise<string> {
-  return post({
+  const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to,
@@ -80,6 +98,17 @@ export async function sendButtons(
       },
     },
   })
+  if (context) {
+    await logOutboundMessage({
+      bookingId: context.bookingId,
+      to,
+      templateName: context.templateName ?? 'interactive:buttons',
+      body,
+      externalId,
+      metadata: context.metadata,
+    }).catch(() => {})
+  }
+  return externalId
 }
 
 // ─── List (max 10 rows, up to 10 sections) ────────────────────────────────────
@@ -99,9 +128,10 @@ export async function sendList(
   to: string,
   body: string,
   sections: ListSection[],
-  options?: { header?: string; footer?: string; buttonLabel?: string }
+  options?: { header?: string; footer?: string; buttonLabel?: string },
+  context?: OutboundInteractiveContext
 ): Promise<string> {
-  return post({
+  const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to,
@@ -117,6 +147,17 @@ export async function sendList(
       },
     },
   })
+  if (context) {
+    await logOutboundMessage({
+      bookingId: context.bookingId,
+      to,
+      templateName: context.templateName ?? 'interactive:list',
+      body,
+      externalId,
+      metadata: context.metadata,
+    }).catch(() => {})
+  }
+  return externalId
 }
 
 // ─── CTA URL button ───────────────────────────────────────────────────────────
@@ -126,9 +167,10 @@ export async function sendCtaUrl(
   body: string,
   buttonText: string,
   url: string,
-  options?: { header?: string; footer?: string }
+  options?: { header?: string; footer?: string },
+  context?: OutboundInteractiveContext
 ): Promise<string> {
-  return post({
+  const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to,
@@ -144,6 +186,21 @@ export async function sendCtaUrl(
       },
     },
   })
+  if (context) {
+    await logOutboundMessage({
+      bookingId: context.bookingId,
+      to,
+      templateName: context.templateName ?? 'interactive:cta_url',
+      body,
+      externalId,
+      metadata: {
+        ...(context.metadata ?? {}),
+        url,
+        buttonText,
+      },
+    }).catch(() => {})
+  }
+  return externalId
 }
 
 // ─── Parse inbound interactive replies ───────────────────────────────────────
@@ -153,6 +210,12 @@ export interface InboundReply {
   id?: string     // button/list row ID
   title?: string  // button/list row title
   text?: string   // raw text (for free-text steps)
+}
+
+export interface OutboundInteractiveContext {
+  bookingId?: string
+  templateName?: string
+  metadata?: Record<string, unknown>
 }
 
 export function parseInbound(message: InboundMessage): InboundReply {

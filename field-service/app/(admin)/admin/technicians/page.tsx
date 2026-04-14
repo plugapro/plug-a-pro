@@ -1,5 +1,5 @@
-// ─── Admin: Technicians ────────────────────────────────────────────────────────
-// Lists all technicians with active job count and status.
+// ─── Admin: Providers ──────────────────────────────────────────────────────────
+// Lists all providers with active job count and status.
 
 export const dynamic = 'force-dynamic'
 
@@ -17,22 +17,16 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
-export const metadata = buildMetadata({ title: 'Technicians', noIndex: true })
+export const metadata = buildMetadata({ title: 'Providers', noIndex: true })
 
-export default async function TechniciansPage() {
-  const user = await requireAdmin()
-  let businessId = user.businessId
-  if (!businessId) {
-    const { resolveBusinessId } = await import('@/lib/auth')
-    businessId = await resolveBusinessId()
-  }
+export default async function ProvidersPage() {
+  await requireAdmin()
 
-  const technicians = await db.technician.findMany({
-    where: { businessId },
+  const providers = await db.provider.findMany({
     include: {
       _count: {
         select: {
-          jobs: { where: { status: { notIn: ['COMPLETED', 'FAILED'] } } },
+          jobs: { where: { status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] } } },
         },
       },
       jobs: {
@@ -47,8 +41,8 @@ export default async function TechniciansPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Technicians</h1>
-        <p className="text-sm text-muted-foreground">{technicians.length} registered</p>
+        <h1 className="text-2xl font-bold">Providers</h1>
+        <p className="text-sm text-muted-foreground">{providers.length} registered</p>
       </div>
 
       <div className="rounded-xl border overflow-hidden">
@@ -63,41 +57,38 @@ export default async function TechniciansPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {technicians.length === 0 && (
+            {providers.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                  No technicians yet. Approve applications to add technicians.
+                  No providers yet. Approve applications to add providers.
                 </TableCell>
               </TableRow>
             )}
-            {technicians.map((tech) => {
-              const isActive  = tech.jobs.length > 0
-              const activeJob = tech.jobs[0]
+            {providers.map((provider) => {
+              const isActive  = provider.jobs.length > 0
+              const activeJob = provider.jobs[0]
 
               return (
-                <TableRow key={tech.id} className="cursor-pointer hover:bg-muted/50">
+                <TableRow key={provider.id} className="cursor-pointer hover:bg-muted/50">
                   <TableCell>
-                    <Link href={`/admin/technicians/${tech.id}`} className="block">
-                      <p className="font-medium hover:text-primary">{tech.name}</p>
-                      {tech.email && (
-                        <p className="text-xs text-muted-foreground">{tech.email}</p>
-                      )}
+                    <Link href={`/admin/providers/${provider.id}`} className="block">
+                      <p className="font-medium hover:text-primary">{provider.name}</p>
                     </Link>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell text-muted-foreground">
-                    {tech.phone}
+                    {provider.phone}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
-                    {tech.skills.length > 0 ? (
+                    {provider.skills.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
-                        {tech.skills.slice(0, 3).map((skill) => (
+                        {provider.skills.slice(0, 3).map((skill) => (
                           <Badge key={skill} variant="secondary" className="rounded-full text-xs">
                             {skill}
                           </Badge>
                         ))}
-                        {tech.skills.length > 3 && (
+                        {provider.skills.length > 3 && (
                           <span className="text-xs text-muted-foreground">
-                            +{tech.skills.length - 3}
+                            +{provider.skills.length - 3}
                           </span>
                         )}
                       </div>
@@ -117,7 +108,7 @@ export default async function TechniciansPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {tech._count.jobs}
+                    {provider._count.jobs}
                   </TableCell>
                 </TableRow>
               )

@@ -10,11 +10,11 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const technician = await db.technician.findUnique({
+  const provider = await db.provider.findUnique({
     where: { userId: session.id },
     select: { id: true },
   })
-  if (!technician) return NextResponse.json({ error: 'Not a technician' }, { status: 403 })
+  if (!provider) return NextResponse.json({ error: 'Not a provider' }, { status: 403 })
 
   const body = await req.json()
   const { endpoint, keys } = body as {
@@ -29,13 +29,13 @@ export async function POST(req: NextRequest) {
   await db.pushSubscription.upsert({
     where: { endpoint },
     create: {
-      technicianId: technician.id,
+      providerId: provider.id,
       endpoint,
       p256dh: keys.p256dh,
       auth: keys.auth,
     },
     update: {
-      technicianId: technician.id,
+      providerId: provider.id,
       p256dh: keys.p256dh,
       auth: keys.auth,
     },
@@ -48,10 +48,16 @@ export async function DELETE(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const provider = await db.provider.findUnique({
+    where: { userId: session.id },
+    select: { id: true },
+  })
+  if (!provider) return NextResponse.json({ error: 'Not a provider' }, { status: 403 })
+
   const { endpoint } = await req.json() as { endpoint: string }
   if (!endpoint) return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 })
 
-  await db.pushSubscription.deleteMany({ where: { endpoint } })
+  await db.pushSubscription.deleteMany({ where: { endpoint, providerId: provider.id } })
 
   return NextResponse.json({ ok: true })
 }

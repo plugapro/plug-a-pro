@@ -5,15 +5,14 @@ import { cache } from 'react'
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
 
-export type UserRole = 'customer' | 'technician' | 'admin' | 'owner'
+export type UserRole = 'customer' | 'provider' | 'admin' | 'owner'
 
 export interface AuthUser {
   id: string
   email: string | null
   phone: string | null
   role: UserRole
-  businessId: string
-  technicianId?: string // set when role === 'technician'
+  providerId?: string // set when role === 'provider'
 }
 
 // ─── Supabase client (server-side, per-request) ───────────────────────────────
@@ -57,27 +56,36 @@ export function createServiceClient() {
 export const getSession = cache(async (): Promise<AuthUser | null> => {
   try {
     const cookieStore = await cookies()
+    // Read the token set by POST /api/auth/session (HttpOnly cookie)
+    const token = cookieStore.get('sb-access-token')?.value
+    if (!token) return null
+
     const supabase = createServerClient()
 
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getUser(token)
 
     if (error || !user) return null
 
-    // Role and businessId are stored in user_metadata during sign-up/invite
+    // Role and providerId are stored in user_metadata during sign-up/invite
     const role = (user.user_metadata?.role ?? 'customer') as UserRole
-    const businessId = user.user_metadata?.businessId ?? ''
-    const technicianId = user.user_metadata?.technicianId
+    const providerId = user.user_metadata?.providerId
+
+    // Supabase stores phone without the '+' prefix (e.g. "27823035070").
+    // Normalise to E.164 so comparisons downstream are consistent.
+    const rawPhone = user.phone ?? null
+    const phone = rawPhone
+      ? rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`
+      : null
 
     return {
       id: user.id,
       email: user.email ?? null,
-      phone: user.phone ?? null,
+      phone,
       role,
-      businessId,
-      technicianId,
+      providerId,
     }
   } catch {
     return null
@@ -96,12 +104,12 @@ export async function requireAdmin(): Promise<AuthUser> {
   return session
 }
 
-/** Call in technician route layouts — redirects to /technician-sign-in if not technician */
-export async function requireTechnician(): Promise<AuthUser> {
+/** Call in provider route layouts — redirects to /provider-sign-in if not provider */
+export async function requireProvider(): Promise<AuthUser> {
   const session = await getSession()
-  if (!session) redirect('/technician-sign-in')
-  if (session.role !== 'technician') {
-    redirect('/technician-sign-in?error=unauthorized')
+  if (!session) redirect('/provider-sign-in')
+  if (session.role !== 'provider') {
+    redirect('/provider-sign-in?error=unauthorized')
   }
   return session
 }
@@ -121,7 +129,6 @@ export async function getCustomerSession(): Promise<AuthUser | null> {
 export async function linkCustomerAccount(params: {
   userId: string
   phone: string     // E.164 format, e.g. "+27821234567"
-  businessId: string
   name?: string     // Optionally update name if it's still the WhatsApp placeholder
 }): Promise<{ id: string; isNew: boolean }> {
   const { db } = await import('./db')
@@ -133,9 +140,9 @@ export async function linkCustomerAccount(params: {
   })
   if (alreadyLinked) return { id: alreadyLinked.id, isNew: false }
 
-  // Find existing WhatsApp-created customer by phone within this business
+  // Find existing WhatsApp-created customer by phone
   const existing = await db.customer.findUnique({
-    where: { businessId_phone: { businessId: params.businessId, phone: params.phone } },
+    where: { phone: params.phone },
   })
 
   if (existing) {
@@ -155,41 +162,10 @@ export async function linkCustomerAccount(params: {
   // No prior WhatsApp record — create fresh customer linked from the start
   const created = await db.customer.create({
     data: {
-      businessId: params.businessId,
       userId: params.userId,
       phone: params.phone,
       name: params.name ?? 'Customer',
-      active: true,
     },
   })
   return { id: created.id, isNew: true }
-}
-
-// ─── Business context ─────────────────────────────────────────────────────────
-
-/**
- * Resolves the current business ID.
- *
- * Single-tenant mode: returns BUSINESS_SLUG from env (after DB lookup)
- * Multi-tenant mode: resolves from subdomain (set in proxy.ts request headers)
- * Authenticated user: returns user.businessId
- */
-export async function resolveBusinessId(): Promise<string> {
-  const session = await getSession()
-  if (session?.businessId) return session.businessId
-
-  // In single-tenant mode, business is identified by env var
-  const slug = process.env.BUSINESS_SLUG
-  if (!slug) {
-    throw new Error(
-      'Unable to resolve business context. Set BUSINESS_SLUG or ensure user is authenticated.'
-    )
-  }
-
-  // TODO: cache this DB lookup
-  const { db } = await import('./db')
-  const business = await db.business.findUnique({ where: { slug } })
-  if (!business) throw new Error(`Business not found for slug: ${slug}`)
-
-  return business.id
 }

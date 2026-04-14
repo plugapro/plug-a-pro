@@ -21,6 +21,7 @@ export function ApprovalCard({
 }: Props) {
   const [pending, setPending] = useState<'approve' | 'decline' | null>(null)
   const [done, setDone] = useState<'approved' | 'declined' | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   if (done) {
     return (
@@ -61,10 +62,16 @@ export function ApprovalCard({
       <form
         action={async (fd) => {
           const action = fd.get('action') as 'approve' | 'decline'
+          setError(null)
           setPending(action)
-          await onAction(fd)
-          setDone(action === 'approve' ? 'approved' : 'declined')
-          setPending(null)
+          try {
+            await onAction(fd)
+            setDone(action === 'approve' ? 'approved' : 'declined')
+          } catch {
+            setError('We could not save your decision right now. Please try again.')
+          } finally {
+            setPending(null)
+          }
         }}
         className="flex gap-3"
       >
@@ -87,6 +94,10 @@ export function ApprovalCard({
           {pending === 'decline' ? 'Declining…' : 'Decline'}
         </button>
       </form>
+
+      {error ? (
+        <p className="mt-3 text-sm text-destructive">{error}</p>
+      ) : null}
     </div>
   )
 }

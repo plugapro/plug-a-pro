@@ -1,15 +1,12 @@
 'use client'
 
-// ─── Admin / Owner sign-in — email + password ─────────────────────────────────
-// Internal team only. Email usage is reserved for admin/owner roles.
-// Customers and technicians authenticate via phone OTP.
-
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { getSafeNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -20,10 +17,15 @@ function getSupabaseClient() {
 
 export default function AdminSignInPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const next = getSafeNextPath(
+    searchParams.get('next') ?? searchParams.get('callbackUrl'),
+    '/admin',
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -49,7 +51,18 @@ export default function AdminSignInPage() {
         return
       }
 
-      router.replace('/admin')
+      if (data.session?.access_token) {
+        await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: data.session.access_token,
+            expiresIn: data.session.expires_in ?? 3600,
+          }),
+        })
+      }
+
+      router.replace(next)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
@@ -58,39 +71,35 @@ export default function AdminSignInPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="text-center space-y-2">
-        <p className="text-xs font-semibold tracking-widest uppercase text-zinc-500">
+      <div className="space-y-1 text-center">
+        <p className="app-kicker">
           Admin Portal
         </p>
-        <h1 className="text-2xl font-semibold text-white">Sign in</h1>
-        <p className="text-sm text-zinc-400">Internal team access only</p>
+        <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
+        <p className="text-sm text-muted-foreground">Internal team access only</p>
       </div>
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="email" className="text-zinc-300">
-            Email
-          </Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-foreground">Email</Label>
           <Input
             id="email"
             type="email"
             autoComplete="email"
-            placeholder="you@company.com"
+            placeholder="you@plugapro.co.za"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             disabled={loading}
-            className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20 h-11"
+            className="h-11"
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="password" className="text-zinc-300">
-            Password
-          </Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-foreground">Password</Label>
           <Input
             id="password"
             type="password"
@@ -100,11 +109,11 @@ export default function AdminSignInPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             disabled={loading}
-            className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 focus-visible:border-zinc-500 focus-visible:ring-zinc-500/20 h-11"
+            className="h-11"
           />
         </div>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         <Button
           type="submit"

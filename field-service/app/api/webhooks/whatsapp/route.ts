@@ -6,8 +6,9 @@
 // Security: GET uses verify_token; POST must be validated by checking Meta's IP range
 // or by verifying the payload signature (if using the optional app-level signature).
 
-import { type NextRequest, NextResponse } from 'next/server'
-import { verifyWebhookChallenge } from '@/lib/whatsapp'
+import type { Prisma } from '@prisma/client'
+import { type NextRequest, NextResponse, after } from 'next/server'
+import { verifyWebhookChallenge, verifyMetaSignature } from '@/lib/whatsapp'
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
 
@@ -30,18 +31,25 @@ export function GET(request: NextRequest) {
 
 // POST — inbound events (delivery receipts, status updates, inbound messages)
 export async function POST(request: NextRequest) {
+  // Read raw body first — needed for signature verification
+  const rawBody = await request.text()
+
+  const reqId = crypto.randomUUID().slice(0, 8)
+
+  // Verify the request is genuinely from Meta before touching any data
+  const signature = request.headers.get('x-hub-signature-256') ?? ''
+  if (!verifyMetaSignature(rawBody, signature)) {
+    console.warn(`[webhook/whatsapp:${reqId}] Rejected: invalid or missing X-Hub-Signature-256`)
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   try {
-    const payload = await request.json()
+    const payload = JSON.parse(rawBody)
 
     // Validate it's from WhatsApp
     if (payload.object !== 'whatsapp_business_account') {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
-
-    // Resolve business from env (single-tenant) or WABA ID (multi-tenant)
-    const businessSlug = process.env.BUSINESS_SLUG ?? ''
-    const business = await db.business.findUnique({ where: { slug: businessSlug } })
-    const businessId = business?.id ?? ''
 
     // Process async — acknowledge immediately to avoid Meta timeouts/retries
     for (const entry of payload.entry ?? []) {
@@ -49,27 +57,85 @@ export async function POST(request: NextRequest) {
         const value = change.value
 
         // Route inbound messages to conversation bot
+        // Conversation is now unique on phone only — no businessId
         for (const message of value.messages ?? []) {
-          processInboundMessage(message, businessId).catch((err) => {
-            console.error('[webhook/whatsapp] Bot error:', err)
-          })
+          after(
+            (async () => {
+              // Atomic WAMID dedupe — unique constraint on inbound_whatsapp_messages.externalId
+              // prevents duplicate processing even under concurrent Meta retry deliveries
+              try {
+                await db.inboundWhatsAppMessage.create({
+                  data: {
+                    externalId: message.id,
+                    phone:       message.from,
+                    messageType: message.type,
+                    body:        message.text?.body ?? null,
+                    payload:     message as unknown as Prisma.InputJsonValue,
+                  },
+                })
+              } catch (createErr: unknown) {
+                const isPrismaUnique =
+                  typeof createErr === 'object' &&
+                  createErr !== null &&
+                  'code' in createErr &&
+                  (createErr as { code: string }).code === 'P2002'
+
+                if (isPrismaUnique) {
+                  // Duplicate WAMID — Meta retried a message we already logged
+                  await db.inboundWhatsAppMessage
+                    .update({
+                      where: { externalId: message.id },
+                      data:  { duplicateCount: { increment: 1 }, lastSeenAt: new Date() },
+                    })
+                    .catch(() => {})
+                  console.warn(
+                    `[webhook/whatsapp:${reqId}] Duplicate WAMID ${message.id} from ${message.from} — skipping`
+                  )
+                  return
+                }
+                // Non-unique DB error — log but still attempt processing
+                console.error(`[webhook/whatsapp:${reqId}] WAMID log error (will still process):`, createErr)
+              }
+
+              await processInboundMessage(message)
+
+              // Mark as successfully processed for audit trail
+              await db.inboundWhatsAppMessage
+                .update({
+                  where: { externalId: message.id },
+                  data:  { processedAt: new Date() },
+                })
+                .catch(() => {})
+            })().catch((err: unknown) => {
+              console.error(`[webhook/whatsapp:${reqId}] Bot error:`, err)
+              return db.inboundWhatsAppMessage.update({
+                where: { externalId: message.id },
+                data: {
+                  failureReason: err instanceof Error ? err.message : String(err),
+                  lastSeenAt: new Date(),
+                },
+              }).catch(() => {})
+            })
+          )
         }
 
         // Update delivery receipts on MessageEvent records
         for (const status of value.statuses ?? []) {
-          db.messageEvent.updateMany({
-            where: { externalId: status.id },
-            data: {
-              status:
-                status.status === 'delivered' ? 'DELIVERED'
-                : status.status === 'read' ? 'READ'
-                : status.status === 'failed' ? 'FAILED'
-                : undefined,
-              deliveredAt: status.status === 'delivered' ? new Date() : undefined,
-              readAt: status.status === 'read' ? new Date() : undefined,
-              failureReason: status.errors?.[0]?.message,
-            },
-          }).catch(() => {})
+          after(
+            db.messageEvent.updateMany({
+              where: { externalId: status.id },
+              data: {
+                status:
+                  status.status === 'delivered' ? 'DELIVERED'
+                  : status.status === 'read' ? 'READ'
+                  : status.status === 'failed' ? 'FAILED'
+                  : undefined,
+                deliveredAt: status.status === 'delivered' ? new Date() : undefined,
+                readAt: status.status === 'read' ? new Date() : undefined,
+                failureReason: status.errors?.[0]?.message,
+              },
+            }).catch(() => {})
+          )
         }
       }
     }
@@ -77,7 +143,7 @@ export async function POST(request: NextRequest) {
     // Must return 200 quickly to prevent Meta from retrying
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
-    console.error('[webhook/whatsapp] Parse error:', err)
+    console.error(`[webhook/whatsapp:${reqId}] Parse error:`, err)
     return NextResponse.json({ error: 'Bad request' }, { status: 400 })
   }
 }

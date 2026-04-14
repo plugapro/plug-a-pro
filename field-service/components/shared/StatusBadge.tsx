@@ -1,24 +1,55 @@
-import type { JobStatus, BookingStatus } from '@prisma/client'
+import type { ComponentProps } from 'react'
+import type { JobStatus, BookingStatus, MatchStatus, JobRequestStatus, QuoteStatus } from '@prisma/client'
+import { Badge } from '@/components/ui/badge'
 
-const JOB_CONFIG: Record<JobStatus, { label: string; className: string }> = {
-  ASSIGNED: { label: 'Assigned', className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' },
-  EN_ROUTE: { label: 'En Route', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  ARRIVED: { label: 'Arrived', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
-  STARTED: { label: 'In Progress', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-  PAUSED: { label: 'Paused', className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' },
-  AWAITING_APPROVAL: { label: 'Awaiting Approval', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
-  COMPLETED: { label: 'Completed', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
-  FAILED: { label: 'Failed', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-  CALLBACK_REQUIRED: { label: 'Callback Required', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+type BadgeVariant = NonNullable<ComponentProps<typeof Badge>['variant']>
+
+const JOB_CONFIG: Record<JobStatus, { label: string; variant: BadgeVariant }> = {
+  SCHEDULED: { label: 'Scheduled', variant: 'neutral' },
+  EN_ROUTE: { label: 'En Route', variant: 'info' },
+  ARRIVED: { label: 'Arrived', variant: 'brand' },
+  STARTED: { label: 'In Progress', variant: 'warning' },
+  PAUSED: { label: 'Paused', variant: 'neutral' },
+  AWAITING_APPROVAL: { label: 'Awaiting Approval', variant: 'warning' },
+  PENDING_COMPLETION_CONFIRMATION: { label: 'Pending Confirmation', variant: 'brand' },
+  COMPLETED: { label: 'Completed', variant: 'success' },
+  CANCELLED: { label: 'Cancelled', variant: 'danger' },
+  FAILED: { label: 'Failed', variant: 'danger' },
+  CALLBACK_REQUIRED: { label: 'Callback Required', variant: 'danger' },
 }
 
-const BOOKING_CONFIG: Record<BookingStatus, { label: string; className: string }> = {
-  PENDING_PAYMENT: { label: 'Pending Payment', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-  CONFIRMED: { label: 'Confirmed', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  SCHEDULED: { label: 'Scheduled', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
-  RESCHEDULED: { label: 'Rescheduled', className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' },
-  CANCELLED: { label: 'Cancelled', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-  COMPLETED: { label: 'Completed', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+const BOOKING_CONFIG: Record<BookingStatus, { label: string; variant: BadgeVariant }> = {
+  SCHEDULED: { label: 'Scheduled', variant: 'brand' },
+  RESCHEDULED: { label: 'Rescheduled', variant: 'neutral' },
+  CANCELLED: { label: 'Cancelled', variant: 'danger' },
+  COMPLETED: { label: 'Completed', variant: 'success' },
+}
+
+const MATCH_CONFIG: Record<MatchStatus, { label: string; variant: BadgeVariant }> = {
+  MATCHED: { label: 'Matched', variant: 'info' },
+  INSPECTION_SCHEDULED: { label: 'Inspection Scheduled', variant: 'brand' },
+  INSPECTION_COMPLETE: { label: 'Inspection Complete', variant: 'neutral' },
+  QUOTED: { label: 'Quoted', variant: 'warning' },
+  QUOTE_APPROVED: { label: 'Quote Approved', variant: 'success' },
+  QUOTE_DECLINED: { label: 'Quote Declined', variant: 'danger' },
+  CANCELLED: { label: 'Cancelled', variant: 'danger' },
+}
+
+const JOB_REQUEST_CONFIG: Record<JobRequestStatus, { label: string; variant: BadgeVariant }> = {
+  PENDING_VALIDATION: { label: 'Pending Validation', variant: 'neutral' },
+  OPEN: { label: 'Open', variant: 'info' },
+  MATCHING: { label: 'Matching', variant: 'brand' },
+  MATCHED: { label: 'Matched', variant: 'success' },
+  EXPIRED: { label: 'Expired', variant: 'neutral' },
+  CANCELLED: { label: 'Cancelled', variant: 'danger' },
+}
+
+const QUOTE_CONFIG: Record<QuoteStatus, { label: string; variant: BadgeVariant }> = {
+  PENDING: { label: 'Pending', variant: 'warning' },
+  APPROVED: { label: 'Approved', variant: 'success' },
+  DECLINED: { label: 'Declined', variant: 'danger' },
+  EXPIRED: { label: 'Expired', variant: 'neutral' },
+  REVISED: { label: 'Revised', variant: 'info' },
 }
 
 interface JobBadgeProps {
@@ -31,21 +62,48 @@ interface BookingBadgeProps {
   type: 'booking'
 }
 
-type Props = JobBadgeProps | BookingBadgeProps
+interface MatchBadgeProps {
+  status: MatchStatus
+  type: 'match'
+}
+
+interface JobRequestBadgeProps {
+  status: JobRequestStatus
+  type: 'jobRequest'
+}
+
+interface QuoteBadgeProps {
+  status: QuoteStatus
+  type: 'quote'
+}
+
+type Props =
+  | JobBadgeProps
+  | BookingBadgeProps
+  | MatchBadgeProps
+  | JobRequestBadgeProps
+  | QuoteBadgeProps
 
 export function StatusBadge({ status, type }: Props) {
-  const config =
-    type === 'job'
-      ? JOB_CONFIG[status as JobStatus]
-      : BOOKING_CONFIG[status as BookingStatus]
+  let config: { label: string; variant: BadgeVariant } | undefined
+
+  if (type === 'job') {
+    config = JOB_CONFIG[status as JobStatus]
+  } else if (type === 'booking') {
+    config = BOOKING_CONFIG[status as BookingStatus]
+  } else if (type === 'match') {
+    config = MATCH_CONFIG[status as MatchStatus]
+  } else if (type === 'jobRequest') {
+    config = JOB_REQUEST_CONFIG[status as JobRequestStatus]
+  } else {
+    config = QUOTE_CONFIG[status as QuoteStatus]
+  }
 
   if (!config) return null
 
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${config.className}`}
-    >
+    <Badge variant={config.variant}>
       {config.label}
-    </span>
+    </Badge>
   )
 }

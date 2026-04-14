@@ -1,0 +1,134 @@
+// GET /api/attachments/[id]
+// Authenticated proxy for job attachments.
+// New uploads default to private blob access, while legacy public blobs may
+// still exist. This route acts as the only supported retrieval path so that
+// attachment access remains tied to a verified session.
+//
+// Access rules:
+//   - admin: can access any attachment
+//   - provider: can access attachments for jobs they own
+//   - customer: can access attachments on their own job requests / jobs
+
+import { type NextRequest, NextResponse } from 'next/server'
+import { head } from '@vercel/blob'
+import { getSession } from '@/lib/auth'
+import { db } from '@/lib/db'
+import { resolveCustomerForSession } from '@/lib/customer-session'
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const reqId = crypto.randomUUID().slice(0, 8)
+
+  const session = await getSession()
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { id } = await params
+
+  const attachment = await db.attachment.findUnique({
+    where: { id },
+    include: {
+      job: {
+        select: {
+          providerId: true,
+          booking: {
+            select: {
+              match: {
+                select: {
+                  jobRequest: {
+                    select: {
+                      customer: { select: { id: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      jobRequest: {
+        select: {
+          customer: { select: { id: true } },
+        },
+      },
+    },
+  })
+
+  if (!attachment) {
+    console.warn(`[attachments:${reqId}] Not found: ${id}`)
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // Access check
+  if (session.role !== 'admin') {
+    // For provider role we need the Provider.id (DB row) to compare against job.providerId.
+    // session.id is the Supabase userId, not the Provider PK.
+    let providerDbId: string | null = null
+    if (session.role === 'provider') {
+      const providerRecord = await db.provider.findUnique({
+        where: { userId: session.id },
+        select: { id: true },
+      })
+      providerDbId = providerRecord?.id ?? null
+    }
+    const customerRecord =
+      session.role === 'customer'
+        ? await resolveCustomerForSession(db, session)
+        : null
+
+    const allowed = (() => {
+      if (session.role === 'provider') {
+        return providerDbId != null && attachment.job?.providerId === providerDbId
+      }
+      if (session.role === 'customer') {
+        const customerViaJob =
+          attachment.job?.booking?.match?.jobRequest?.customer?.id === customerRecord?.id
+        const customerViaRequest = attachment.jobRequest?.customer?.id === customerRecord?.id
+        return customerViaJob || customerViaRequest
+      }
+      return false
+    })()
+
+    if (!allowed) {
+      console.warn(`[attachments:${reqId}] Forbidden: user=${session.id} role=${session.role} attachment=${id}`)
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
+  // Resolve a server-side download URL first so private blobs stay opaque to clients.
+  let upstreamUrl = attachment.url
+  try {
+    const blob = await head(attachment.url)
+    upstreamUrl = blob.downloadUrl
+  } catch (err) {
+    console.warn(`[attachments:${reqId}] Metadata lookup fallback for ${id}:`, err)
+  }
+
+  // Proxy the blob — fetch server-side and stream to client
+  let upstream: Response
+  try {
+    upstream = await fetch(upstreamUrl)
+  } catch (err) {
+    console.error(`[attachments:${reqId}] Fetch error for ${id}:`, err)
+    return NextResponse.json({ error: 'Could not retrieve file' }, { status: 502 })
+  }
+
+  if (!upstream.ok) {
+    console.error(`[attachments:${reqId}] Blob not found for ${id}: ${upstream.status}`)
+    return NextResponse.json({ error: 'File not found in storage' }, { status: 404 })
+  }
+
+  console.info(`[attachments:${reqId}] Served ${id} to user=${session.id}`)
+
+  const headers = new Headers()
+  headers.set('Content-Type', attachment.mimeType)
+  headers.set('Cache-Control', 'private, max-age=300')
+  const disposition = attachment.mimeType.startsWith('image/') ? 'inline' : 'attachment'
+  const filename = attachment.blobKey.split('/').pop() ?? 'file'
+  headers.set('Content-Disposition', `${disposition}; filename="${filename}"`)
+
+  return new Response(upstream.body, { status: 200, headers })
+}

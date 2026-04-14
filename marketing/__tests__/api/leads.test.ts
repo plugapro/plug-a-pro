@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/leads/route";
 
-// Mock the supabase module
+const { marketingInsertMock, intakeInsertMock, fromMock } = vi.hoisted(() => ({
+  marketingInsertMock: vi.fn().mockResolvedValue({ error: null }),
+  intakeInsertMock: vi.fn().mockResolvedValue({ error: null }),
+  fromMock: vi.fn((table: string) => ({
+    insert: table === "onboarding_intakes" ? intakeInsertMock : marketingInsertMock,
+  })),
+}));
+
 vi.mock("@/lib/supabase", () => ({
   supabase: {
-    from: vi.fn().mockReturnValue({
-      insert: vi.fn().mockResolvedValue({ error: null }),
-    }),
+    from: fromMock,
   },
 }));
 
@@ -24,6 +29,8 @@ function makeRequest(body: unknown, ip = "127.0.0.1"): Request {
 describe("POST /api/leads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    marketingInsertMock.mockResolvedValue({ error: null });
+    intakeInsertMock.mockResolvedValue({ error: null });
   });
 
   it("returns 200 for valid waitlist submission", async () => {
@@ -61,5 +68,59 @@ describe("POST /api/leads", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
+  });
+
+  it("returns a WhatsApp handoff URL for minimal onboarding submission", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      phone: "+27821234567",
+      journey: "customer",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.whatsappUrl).toContain("wa.me");
+    expect(fromMock).toHaveBeenCalledWith("marketing_leads");
+    expect(fromMock).toHaveBeenCalledWith("onboarding_intakes");
+  });
+
+  it("returns correct prefill message for provider journey", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      phone: "+27821234567",
+      journey: "provider",
+    });
+    const res = await POST(req);
+    const json = await res.json();
+    expect(json.whatsappUrl).toContain("service+provider");
+  });
+
+  it("accepts SA local format phone number", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      phone: "0821234567",
+      journey: "customer",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects onboarding submissions without a phone number", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      journey: "customer",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects onboarding submissions without a journey", async () => {
+    const req = makeRequest({
+      type: "onboarding",
+      phone: "+27821234567",
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
   });
 });

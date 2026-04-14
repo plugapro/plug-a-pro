@@ -2,23 +2,27 @@
 // Enforces valid status transitions for jobs.
 // All status changes go through this module to ensure:
 // - Immutable audit trail (JobStatusEvent)
-// - Side effects (messaging, invoice, slot release)
+// - Side effects (messaging, invoice)
 
+import { randomUUID } from 'crypto'
 import { db } from './db'
 import type { JobStatus } from '@prisma/client'
+import { recordAuditLog } from './audit'
 
 // ─── Valid transitions ────────────────────────────────────────────────────────
 
 const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
-  ASSIGNED: ['EN_ROUTE', 'CALLBACK_REQUIRED'],
-  EN_ROUTE: ['ARRIVED', 'CALLBACK_REQUIRED'],
-  ARRIVED: ['STARTED', 'CALLBACK_REQUIRED'],
-  STARTED: ['PAUSED', 'AWAITING_APPROVAL', 'COMPLETED', 'FAILED'],
-  PAUSED: ['STARTED', 'AWAITING_APPROVAL', 'FAILED'],
-  AWAITING_APPROVAL: ['STARTED', 'COMPLETED', 'FAILED'],
+  SCHEDULED: ['EN_ROUTE', 'CALLBACK_REQUIRED', 'CANCELLED'],
+  EN_ROUTE: ['ARRIVED', 'CALLBACK_REQUIRED', 'CANCELLED'],
+  ARRIVED: ['STARTED', 'CALLBACK_REQUIRED', 'CANCELLED'],
+  STARTED: ['PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION', 'FAILED', 'CANCELLED'],
+  PAUSED: ['STARTED', 'AWAITING_APPROVAL', 'FAILED', 'CANCELLED'],
+  AWAITING_APPROVAL: ['STARTED', 'PENDING_COMPLETION_CONFIRMATION', 'FAILED', 'CANCELLED'],
+  PENDING_COMPLETION_CONFIRMATION: ['COMPLETED', 'STARTED'],
   COMPLETED: [], // terminal
-  FAILED: ['CALLBACK_REQUIRED'],
-  CALLBACK_REQUIRED: ['ASSIGNED'], // admin can reassign
+  CANCELLED: [], // terminal
+  FAILED: ['CALLBACK_REQUIRED', 'CANCELLED'],
+  CALLBACK_REQUIRED: ['SCHEDULED'], // admin can reassign
 }
 
 // ─── State machine ────────────────────────────────────────────────────────────
@@ -27,7 +31,7 @@ export async function transitionJob(params: {
   jobId: string
   toStatus: JobStatus
   actorId: string
-  actorRole: 'technician' | 'admin' | 'system'
+  actorRole: 'provider' | 'customer' | 'admin' | 'system'
   notes?: string
 }): Promise<void> {
   const { jobId, toStatus, actorId, actorRole, notes } = params
@@ -36,9 +40,11 @@ export async function transitionJob(params: {
     where: { id: jobId },
     include: {
       booking: {
-        include: { customer: true, service: true, address: true },
+        include: {
+          match: { include: { jobRequest: { include: { customer: true, address: true } } } },
+        },
       },
-      technician: { select: { name: true } },
+      provider: { select: { name: true } },
     },
   })
 
@@ -58,6 +64,7 @@ export async function transitionJob(params: {
     if (toStatus === 'ARRIVED') updates.arrivedAt = new Date()
     if (toStatus === 'STARTED') updates.startedAt = new Date()
     if (toStatus === 'COMPLETED') updates.completedAt = new Date()
+    if (toStatus === 'CANCELLED') updates.failureReason = notes ?? 'Cancelled'
 
     await tx.job.update({ where: { id: jobId }, data: updates })
 
@@ -72,6 +79,40 @@ export async function transitionJob(params: {
         notes,
       },
     })
+
+    await recordAuditLog(
+      {
+        actorId,
+        actorRole,
+        action: 'job.status_transition',
+        entityType: 'job',
+        entityId: jobId,
+        before: { status: job.status },
+        after: { status: toStatus, notes: notes ?? null },
+      },
+      tx
+    )
+
+    // Booking completion + invoice are atomic with the job transition
+    if (toStatus === 'COMPLETED') {
+      await tx.booking.update({
+        where: { id: job.bookingId },
+        data: { status: 'COMPLETED' },
+      })
+      const bookingRecord = await tx.booking.findUnique({
+        where: { id: job.bookingId },
+        include: { quote: { select: { amount: true } } },
+      })
+      await tx.invoice.create({
+        data: {
+          bookingId:   job.bookingId,
+          number:      `INV-${Date.now()}-${randomUUID().slice(0, 6).toUpperCase()}`,
+          totalAmount: bookingRecord?.quote?.amount ?? 0,
+          pdfUrl:      null,
+          createdAt:   new Date(),
+        },
+      })
+    }
   })
 
   // Trigger side effects outside the transaction
@@ -82,78 +123,74 @@ export async function transitionJob(params: {
 
 async function triggerSideEffects(params: {
   job: Awaited<ReturnType<typeof db.job.findUnique>> & {
-    booking: { businessId: string; customer: { phone: string; name: string }; service: { name: string } } | null
-    technician: { name: string } | null
+    booking: {
+      match: {
+        jobRequest: { customer: { phone: string; name: string }; category: string }
+      }
+    } | null
+    provider: { name: string } | null
   }
   toStatus: JobStatus
 }): Promise<void> {
   const { job, toStatus } = params
   if (!job?.booking) return
 
-  const technicianName = job.technician?.name ?? 'Your technician'
+  const providerName = job.provider?.name ?? 'Your provider'
 
-  const { customer, service } = job.booking
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const customer = job.booking.match.jobRequest.customer
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   try {
-    const { sendTechnicianOnTheWay, sendJobCompleted } = await import('./whatsapp')
+    const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
 
     if (toStatus === 'EN_ROUTE') {
-      await sendTechnicianOnTheWay({
-        businessId: job.booking.businessId,
+      await sendProviderOnTheWay({
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
-        technicianName,
+        providerName,
         eta: 'approximately 20 minutes',
       })
     }
 
     if (toStatus === 'ARRIVED') {
-      const { sendTechnicianArrived } = await import('./whatsapp')
-      await sendTechnicianArrived({
-        businessId: job.booking.businessId,
+      const { sendProviderArrived } = await import('./whatsapp')
+      await sendProviderArrived({
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
-        technicianName,
+        providerName,
+      })
+    }
+
+    if (toStatus === 'STARTED') {
+      const bookingUrl = `${appUrl}/bookings/${job.bookingId}`
+      await sendText({
+        to: customer.phone,
+        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\nTrack it here: ${bookingUrl}`,
+        bookingId: job.bookingId,
+        templateName: 'freeform:job_started',
+      })
+    }
+
+    if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
+      const bookingUrl = `${appUrl}/bookings/${job.bookingId}`
+      await sendText({
+        to: customer.phone,
+        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nPlease confirm completion here: ${bookingUrl}`,
+        bookingId: job.bookingId,
+        templateName: 'freeform:completion_confirmation_request',
       })
     }
 
     if (toStatus === 'COMPLETED') {
-      // Update parent booking status
-      await db.booking.update({
-        where: { id: job.bookingId },
-        data: { status: 'COMPLETED' },
-      })
-
-      const invoiceUrl = `${appUrl}/bookings/${job.bookingId}/invoice`
+      const invoiceUrl = `${appUrl}/bookings/${job.bookingId}`
       await sendJobCompleted({
-        businessId: job.booking.businessId,
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
         invoiceUrl,
       })
-
-      // Create invoice record (PDF generation is out of scope — pdfUrl set later)
-      try {
-        const bookingRecord = await db.booking.findUnique({
-          where: { id: job.bookingId },
-          select: { totalAmount: true },
-        })
-        await db.invoice.create({
-          data: {
-            bookingId:   job.bookingId,
-            number:      `INV-${Date.now()}`,
-            totalAmount: bookingRecord?.totalAmount ?? 0,
-            pdfUrl:      null,
-            createdAt:   new Date(),
-          },
-        })
-      } catch (invoiceErr) {
-        console.error('[jobs] Invoice creation failed:', invoiceErr)
-      }
     }
   } catch (err) {
     // Log but don't fail the status transition on messaging errors
@@ -163,7 +200,7 @@ async function triggerSideEffects(params: {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export async function getTodaysJobs(technicianId: string) {
+export async function getProviderJobs(providerId: string) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today)
@@ -171,15 +208,17 @@ export async function getTodaysJobs(technicianId: string) {
 
   return db.job.findMany({
     where: {
-      technicianId,
-      status: { notIn: ['COMPLETED', 'FAILED'] },
+      providerId,
+      status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] },
       booking: {
         scheduledDate: { gte: today, lt: tomorrow },
       },
     },
     include: {
       booking: {
-        include: { customer: true, service: true, address: true },
+        include: {
+          match: { include: { jobRequest: { include: { customer: true, address: true } } } },
+        },
       },
     },
     orderBy: { booking: { scheduledDate: 'asc' } },
@@ -192,13 +231,11 @@ export async function getJobWithFullContext(jobId: string) {
     include: {
       booking: {
         include: {
-          customer: true,
-          service: true,
-          address: true,
+          match: { include: { jobRequest: { include: { customer: true, address: true } } } },
           payment: true,
         },
       },
-      technician: true,
+      provider: true,
       photos: true,
       extras: true,
       statusHistory: { orderBy: { timestamp: 'asc' } },
@@ -212,11 +249,18 @@ export async function createExtraWork(params: {
   jobId: string
   description: string
   amountRand: number
-  businessId: string
   customerPhone: string
   customerName: string
   bookingId: string
 }): Promise<string> {
+  // Idempotency guard: return existing token if there is already a PENDING extra-work
+  // request for this job (prevents duplicate creation on provider double-tap or message retry)
+  const existingPending = await db.extraWork.findFirst({
+    where: { jobId: params.jobId, status: 'PENDING' },
+    select: { approvalToken: true },
+  })
+  if (existingPending) return existingPending.approvalToken
+
   const extra = await db.extraWork.create({
     data: {
       jobId: params.jobId,
@@ -237,10 +281,9 @@ export async function createExtraWork(params: {
 
   // Send approval request via WhatsApp
   const { sendExtraWorkApproval } = await import('./whatsapp')
-  const approvalUrl = `${process.env.NEXT_PUBLIC_APP_URL}/approve/${extra.approvalToken}`
+  const approvalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? '').trim()}/approve/${extra.approvalToken}`
 
   await sendExtraWorkApproval({
-    businessId: params.businessId,
     bookingId: params.bookingId,
     customerName: params.customerName,
     customerPhone: params.customerPhone,

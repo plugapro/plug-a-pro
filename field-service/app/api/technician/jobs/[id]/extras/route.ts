@@ -6,22 +6,23 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { createExtraWork } from '@/lib/jobs'
+import { getProviderExtraWorkRouteError } from '@/lib/route-action-errors'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession()
-  if (!session || session.role !== 'technician') {
+  if (!session || session.role !== 'provider') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { id: jobId } = await params
 
-  // Verify technician owns this job
-  const technician = await db.technician.findUnique({ where: { userId: session.id } })
-  if (!technician) {
-    return NextResponse.json({ error: 'Technician not found' }, { status: 403 })
+  // Verify provider owns this job
+  const provider = await db.provider.findUnique({ where: { userId: session.id } })
+  if (!provider) {
+    return NextResponse.json({ error: 'Provider not found' }, { status: 403 })
   }
 
   // Load full job context needed for createExtraWork
@@ -30,13 +31,13 @@ export async function POST(
     include: {
       booking: {
         include: {
-          customer: { select: { name: true, phone: true } },
+          match: { include: { jobRequest: { include: { customer: { select: { name: true, phone: true } } } } } },
         },
       },
     },
   })
 
-  if (!job || job.technicianId !== technician.id) {
+  if (!job || job.providerId !== provider.id) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
@@ -62,20 +63,21 @@ export async function POST(
     return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
   }
 
+  const customer = booking.match.jobRequest.customer
+
   try {
     const approvalToken = await createExtraWork({
       jobId,
       description: description.trim(),
       amountRand,
-      businessId: booking.businessId,
-      customerPhone: booking.customer.phone,
-      customerName: booking.customer.name,
+      customerPhone: customer.phone,
+      customerName: customer.name,
       bookingId: job.bookingId,
     })
 
     return NextResponse.json({ approvalToken })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to create extra work'
-    return NextResponse.json({ error: message }, { status: 422 })
+    const response = getProviderExtraWorkRouteError(err)
+    return NextResponse.json({ error: response.message }, { status: response.status })
   }
 }

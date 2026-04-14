@@ -1,370 +1,613 @@
-// ─── Seed — field-service framework ───────────────────────────────────────────
+// ─── Seed — field-service marketplace schema ──────────────────────────────────
 // Run: pnpm db:seed
 //
-// Creates a complete, demo-ready dataset for local development:
-//   • 1 business (configured via BUSINESS_SLUG env)
-//   • 4 service categories, 8 services
-//   • 6 service areas (Joburg + Cape Town)
-//   • 2 technicians (pre-approved)
-//   • 2 weeks of time slots (Mon–Fri, 3 windows/day)
-//   • 1 sample customer
-//   • 1 sample booking in CONFIRMED status (ready to dispatch)
+// Creates a complete, demo-ready dataset:
+//   • 4 customers across SA cities
+//   • 10 providers spread across all 8 service categories
+//   • 2 provider applications (1 PENDING, 1 APPROVED)
+//   • 4 job requests in different statuses
+//   • 1 full pipeline: match → quote → booking → completed job + review
+//   • Conversation records per customer phone
 //
-// Safe to re-run — uses upsert throughout.
+// Safe to re-run — uses upsert / findFirst guards throughout.
 
-import { PrismaClient, PricingType } from '@prisma/client'
+import {
+  PrismaClient,
+  LocationNodeType,
+  JobRequestStatus,
+  MatchStatus,
+  QuoteStatus,
+  BookingStatus,
+  JobStatus,
+  ReviewerType,
+  ApplicationStatus,
+} from '@prisma/client'
+import { SA_PROVINCES, REGION_CITY_MAP, PROVINCE_CITIES } from '../lib/service-areas/south-africa'
 
 const prisma = new PrismaClient()
 
-async function main() {
-  const slug = process.env.BUSINESS_SLUG ?? 'plug-a-pro'
+// ─── Service categories (must match JOB_CATEGORIES in job-request.ts) ─────────
+// Plumbing | Painting | Garden & Landscaping | Handyman
+// Appliances | Electrical | DIY & Assembly | Roofing
 
-  // ── Business ───────────────────────────────────────────────────────────────
-  const business = await prisma.business.upsert({
-    where: { slug },
-    create: {
-      slug,
-      name:     'Plug a Pro',
-      phone:    '+27600000000',
-      email:    'hello@plugapro.co.za',
-      address:  'Johannesburg, Gauteng',
-      timezone: 'Africa/Johannesburg',
-      currency: 'ZAR',
-      active:   true,
-      settings: {},
-    },
-    update: { name: 'Plug a Pro' },
-  })
-  console.log(`✔ Business: ${business.name} (${business.id})`)
+// ─── Location nodes ───────────────────────────────────────────────────────────
 
-  // ── Services ───────────────────────────────────────────────────────────────
-  const serviceData = [
-    {
-      name: 'Plumbing — Leak Repair',
-      slug: 'plumbing-leak-repair',
-      category: 'Plumbing',
-      description: 'Fix dripping taps, burst pipes, and geyser leaks.',
-      pricingType: PricingType.FIXED,
-      basePrice: 650,
-      callOutFee: 150,
-      duration: 120,
-      bufferTime: 30,
-      sortOrder: 1,
-    },
-    {
-      name: 'Plumbing — Drain Unblocking',
-      slug: 'plumbing-drain-unblocking',
-      category: 'Plumbing',
-      description: 'Clear blocked sinks, toilets, and stormwater drains.',
-      pricingType: PricingType.FIXED,
-      basePrice: 550,
-      callOutFee: 150,
-      duration: 90,
-      bufferTime: 30,
-      sortOrder: 2,
-    },
-    {
-      name: 'Electrical — Fault Finding',
-      slug: 'electrical-fault-finding',
-      category: 'Electrical',
-      description: 'Diagnose and fix tripping breakers, dead sockets, and wiring faults.',
-      pricingType: PricingType.FIXED,
-      basePrice: 750,
-      callOutFee: 200,
-      duration: 120,
-      bufferTime: 45,
-      sortOrder: 3,
-    },
-    {
-      name: 'Electrical — DB Board Inspection',
-      slug: 'electrical-db-inspection',
-      category: 'Electrical',
-      description: 'Full distribution board inspection and compliance check.',
-      pricingType: PricingType.QUOTE_REQUIRED,
-      basePrice: null,
-      callOutFee: 200,
-      duration: 90,
-      bufferTime: 45,
-      sortOrder: 4,
-    },
-    {
-      name: 'Cleaning — Deep Clean',
-      slug: 'cleaning-deep-clean',
-      category: 'Cleaning',
-      description: 'Full home deep clean including kitchen, bathrooms, and bedrooms.',
-      pricingType: PricingType.FIXED,
-      basePrice: 900,
-      callOutFee: 0,
-      duration: 240,
-      bufferTime: 30,
-      sortOrder: 5,
-    },
-    {
-      name: 'Cleaning — Regular Weekly',
-      slug: 'cleaning-regular-weekly',
-      category: 'Cleaning',
-      description: 'Weekly home maintenance clean.',
-      pricingType: PricingType.FIXED,
-      basePrice: 450,
-      callOutFee: 0,
-      duration: 180,
-      bufferTime: 30,
-      sortOrder: 6,
-    },
-    {
-      name: 'Painting — Interior Room',
-      slug: 'painting-interior-room',
-      category: 'Painting',
-      description: 'Single room interior painting, walls and ceiling.',
-      pricingType: PricingType.QUOTE_REQUIRED,
-      basePrice: null,
-      callOutFee: 0,
-      duration: 480,
-      bufferTime: 60,
-      sortOrder: 7,
-    },
-    {
-      name: 'Painting — Touch-up & Repairs',
-      slug: 'painting-touchup',
-      category: 'Painting',
-      description: 'Small area touch-ups, crack filling, and repaint.',
-      pricingType: PricingType.FIXED,
-      basePrice: 600,
-      callOutFee: 0,
-      duration: 180,
-      bufferTime: 30,
-      sortOrder: 8,
-    },
-  ]
-
-  const services: Record<string, string> = {}
-  for (const s of serviceData) {
-    const svc = await prisma.service.upsert({
-      where: { businessId_slug: { businessId: business.id, slug: s.slug } },
-      create: { ...s, businessId: business.id, active: true, metadata: {} },
-      update: { name: s.name, basePrice: s.basePrice },
-    })
-    services[s.slug] = svc.id
+async function seedLocationNodes() {
+  // Validate that every regionKey present in SA_PROVINCES exists in REGION_CITY_MAP
+  const missingRegions = Object.entries(SA_PROVINCES).flatMap(([, p]) =>
+    Object.keys(p.regions).filter(rk => !REGION_CITY_MAP[rk])
+  )
+  if (missingRegions.length > 0) {
+    throw new Error(`REGION_CITY_MAP is missing entries for: ${missingRegions.join(', ')}`)
   }
-  console.log(`✔ Services: ${serviceData.length} upserted`)
 
-  // ── Service areas ──────────────────────────────────────────────────────────
-  const areas = [
-    { suburb: 'Sandton',       city: 'Johannesburg', province: 'Gauteng',      postalCode: '2196' },
-    { suburb: 'Randburg',      city: 'Johannesburg', province: 'Gauteng',      postalCode: '2194' },
-    { suburb: 'Midrand',       city: 'Johannesburg', province: 'Gauteng',      postalCode: '1685' },
-    { suburb: 'Centurion',     city: 'Pretoria',     province: 'Gauteng',      postalCode: '0157' },
-    { suburb: 'Bellville',     city: 'Cape Town',    province: 'Western Cape', postalCode: '7530' },
-    { suburb: 'Claremont',     city: 'Cape Town',    province: 'Western Cape', postalCode: '7708' },
-  ]
+  let provinceCount = 0
+  let cityCount = 0
+  let regionCount = 0
+  let suburbCount = 0
 
-  // Attach all areas to each service
-  for (const serviceSlug of Object.keys(services)) {
-    const serviceId = services[serviceSlug]
-    // Remove old areas first to avoid duplicates on re-seed
-    await prisma.serviceArea.deleteMany({ where: { serviceId } })
-    await prisma.serviceArea.createMany({
-      data: areas.map((a) => ({ ...a, serviceId })),
+  // ── Phase 1: Province nodes ──────────────────────────────────────────────────
+  const provinceNodes: Record<string, { id: string }> = {}
+
+  for (const [provinceKey, province] of Object.entries(SA_PROVINCES)) {
+    const node = await prisma.locationNode.upsert({
+      where:  { slug: provinceKey },
+      create: {
+        slug:        provinceKey,
+        nodeType:    LocationNodeType.PROVINCE,
+        label:       province.name,
+        parentId:    null,
+        provinceKey: provinceKey,
+        cityKey:     null,
+        regionKey:   null,
+        lat:         null,
+        lng:         null,
+        radiusKm:    null,
+        active:      true,
+        updatedAt:   new Date(),
+      },
+      update: {
+        label:    province.name,
+        lat:      null,
+        lng:      null,
+        radiusKm: null,
+        active:   true,
+      },
     })
+    provinceNodes[provinceKey] = node
+    provinceCount++
   }
-  console.log(`✔ Service areas: ${areas.length} per service`)
 
-  // ── Technicians ────────────────────────────────────────────────────────────
-  const techData = [
-    {
-      name:         'Sipho Dlamini',
-      phone:        '+27711234567',
-      skills:       ['Plumbing', 'General Maintenance'],
-      serviceAreas: ['Sandton', 'Randburg', 'Midrand'],
-    },
-    {
-      name:         'Thabo Mokoena',
-      phone:        '+27722345678',
-      skills:       ['Electrical', 'Painting'],
-      serviceAreas: ['Sandton', 'Centurion', 'Midrand'],
-    },
-  ]
+  // ── Phase 2: City nodes ──────────────────────────────────────────────────────
+  const cityNodes: Record<string, { id: string }> = {}
 
-  for (const t of techData) {
-    await prisma.technician.upsert({
-      where: { businessId_phone: { businessId: business.id, phone: t.phone } } as never,
-      create: { ...t, businessId: business.id, active: true },
-      update: { name: t.name, skills: t.skills, serviceAreas: t.serviceAreas },
-    })
-  }
-  console.log(`✔ Technicians: ${techData.length} upserted`)
+  for (const [provinceKey, cities] of Object.entries(PROVINCE_CITIES)) {
+    const provinceNode = provinceNodes[provinceKey]
+    if (!provinceNode) continue
 
-  // Wait to get technician IDs
-  const [tech1, tech2] = await Promise.all(
-    techData.map((t) =>
-      prisma.technician.findFirstOrThrow({
-        where: { businessId: business.id, phone: t.phone },
+    for (const city of cities) {
+      const slug = `${provinceKey}__${city.key}`
+      const node = await prisma.locationNode.upsert({
+        where:  { slug },
+        create: {
+          slug:        slug,
+          nodeType:    LocationNodeType.CITY,
+          label:       city.label,
+          parentId:    provinceNode.id,
+          provinceKey: provinceKey,
+          cityKey:     city.key,
+          regionKey:   null,
+          lat:         null,
+          lng:         null,
+          radiusKm:    null,
+          active:      true,
+          updatedAt:   new Date(),
+        },
+        update: {
+          label:    city.label,
+          lat:      null,
+          lng:      null,
+          radiusKm: null,
+          active:   true,
+        },
       })
-    )
+      // Key by "provinceKey__cityKey" to allow multiple provinces to have same cityKey
+      cityNodes[`${provinceKey}__${city.key}`] = node
+      cityCount++
+    }
+  }
+
+  // ── Phase 3 & 4: Region and suburb nodes ────────────────────────────────────
+  for (const [provinceKey, province] of Object.entries(SA_PROVINCES)) {
+    for (const [regionKey, region] of Object.entries(province.regions)) {
+      const cityMapping = REGION_CITY_MAP[regionKey]
+      const cityKey = cityMapping.cityKey
+      const cityNodeKey = `${provinceKey}__${cityKey}`
+      const cityNode = cityNodes[cityNodeKey]
+      if (!cityNode) continue
+
+      // Phase 3 — Region node
+      const regionSlug = `${provinceKey}__${cityKey}__${regionKey}`
+      const regionNode = await prisma.locationNode.upsert({
+        where:  { slug: regionSlug },
+        create: {
+          slug:        regionSlug,
+          nodeType:    LocationNodeType.REGION,
+          label:       region.name,
+          parentId:    cityNode.id,
+          provinceKey: provinceKey,
+          cityKey:     cityKey,
+          regionKey:   regionKey,
+          lat:         region.center.lat,
+          lng:         region.center.lng,
+          radiusKm:    region.radiusKm,
+          active:      true,
+          updatedAt:   new Date(),
+        },
+        update: {
+          label:    region.name,
+          lat:      region.center.lat,
+          lng:      region.center.lng,
+          radiusKm: region.radiusKm,
+          active:   true,
+        },
+      })
+      regionCount++
+
+      // Phase 4 — Suburb nodes
+      for (const [suburbLabel, coord] of Object.entries(region.suburbs)) {
+        const suburbKey = suburbLabel.toLowerCase().replace(/\s+/g, '_')
+        const suburbSlug = `${provinceKey}__${cityKey}__${regionKey}__${suburbKey}`
+        await prisma.locationNode.upsert({
+          where:  { slug: suburbSlug },
+          create: {
+            slug:        suburbSlug,
+            nodeType:    LocationNodeType.SUBURB,
+            label:       suburbLabel,
+            parentId:    regionNode.id,
+            provinceKey: provinceKey,
+            cityKey:     cityKey,
+            regionKey:   regionKey,
+            lat:         coord.lat,
+            lng:         coord.lng,
+            radiusKm:    null,
+            active:      true,
+            updatedAt:   new Date(),
+          },
+          update: {
+            label:    suburbLabel,
+            lat:      coord.lat,
+            lng:      coord.lng,
+            radiusKm: null,
+            active:   true,
+          },
+        })
+        suburbCount++
+      }
+    }
+  }
+
+  console.log(`✔ LocationNodes: ${provinceCount} provinces, ${cityCount} cities, ${regionCount} regions, ${suburbCount} suburbs`)
+}
+
+async function main() {
+  await seedLocationNodes()
+
+  // ── Customers ────────────────────────────────────────────────────────────────
+  const customerData = [
+    {
+      phone: '+27831000001',
+      name:  'Zanele Khumalo',
+      email: 'zanele.khumalo@example.co.za',
+      address: { street: '12 Acacia Avenue', suburb: 'Sandton',    city: 'Johannesburg', province: 'Gauteng' },
+    },
+    {
+      phone: '+27831000002',
+      name:  'Lerato Molefe',
+      email: 'lerato.molefe@example.co.za',
+      address: { street: '7 Protea Road',    suburb: 'Claremont',  city: 'Cape Town',     province: 'Western Cape' },
+    },
+    {
+      phone: '+27831000003',
+      name:  'Siphamandla Dube',
+      email: 'siphamandla.dube@example.co.za',
+      address: { street: '3 Umgeni Road',    suburb: 'Morningside', city: 'Durban',        province: 'KwaZulu-Natal' },
+    },
+    {
+      phone: '+27831000004',
+      name:  'Boitumelo Sithole',
+      email: 'boitumelo.sithole@example.co.za',
+      address: { street: '21 Jacaranda Street', suburb: 'Arcadia', city: 'Pretoria',      province: 'Gauteng' },
+    },
+  ]
+
+  const customers: Record<string, any> = {}
+  const addresses: Record<string, any> = {}
+
+  for (const c of customerData) {
+    const customer = await prisma.customer.upsert({
+      where:  { phone: c.phone },
+      create: { phone: c.phone, name: c.name, email: c.email },
+      update: { name: c.name },
+    })
+    customers[c.phone] = customer
+
+    const existing = await prisma.address.findFirst({ where: { customerId: customer.id } })
+    addresses[c.phone] = existing ?? await prisma.address.create({
+      data: { customerId: customer.id, ...c.address },
+    })
+  }
+
+  console.log(`✔ Customers: ${customerData.map((c) => c.name).join(', ')}`)
+
+  // ── Providers — one or two per category, all 8 covered ────────────────────────
+  // All 10 providers are in Gauteng, spread across 10 distinct regions.
+  // Each provider's lat/lng is their home region centre — radius defines
+  // how far they are willing to travel from that centre.
+  const providerData = [
+    // ── Plumbing — JHB North / Randburg
+    {
+      phone:        '+27711000001',
+      name:         'Thabo Nkosi',
+      skills:       ['Plumbing'],
+      serviceAreas: ['Randburg', 'Northcliff', 'Florida', 'Linden', 'Greenside'],
+      equipmentTags: ['plumbing-kit', 'pipe-threader'],
+      vehicleTypes: ['bakkie'],
+      lat: -26.0940, lng: 27.9997, radiusKm: 20,
+    },
+    // ── Electrical — Centurion / Midrand
+    {
+      phone:        '+27711000002',
+      name:         'Kagiso Sithole',
+      skills:       ['Electrical'],
+      serviceAreas: ['Midrand', 'Centurion', 'Halfway House', 'Waterfall', 'Noordwyk'],
+      equipmentTags: ['multimeter', 'cable-tester', 'ladder'],
+      vehicleTypes: ['van'],
+      lat: -25.9006, lng: 28.1277, radiusKm: 25,
+    },
+    // ── Painting — JHB South / Soweto
+    {
+      phone:        '+27711000003',
+      name:         'Nomsa Dlamini',
+      skills:       ['Painting'],
+      serviceAreas: ['Soweto', 'Lenasia', 'Johannesburg South', 'Eldorado Park', 'Ennerdale'],
+      equipmentTags: ['roller-set', 'spray-gun', 'scaffold'],
+      vehicleTypes: ['van'],
+      lat: -26.2674, lng: 27.8588, radiusKm: 20,
+    },
+    // ── Garden & Landscaping — East Rand / Kempton Park
+    {
+      phone:        '+27711000004',
+      name:         'Sibusiso Mthembu',
+      skills:       ['Garden & Landscaping'],
+      serviceAreas: ['Kempton Park', 'Tembisa', 'Boksburg', 'Benoni', 'Isando'],
+      equipmentTags: ['lawnmower', 'hedge-trimmer', 'chainsaw'],
+      vehicleTypes: ['bakkie'],
+      lat: -26.0991, lng: 28.2281, radiusKm: 22,
+    },
+    // ── Handyman (multi-skill) — Pretoria CBD
+    {
+      phone:        '+27711000005',
+      name:         'Fatima Cassim',
+      skills:       ['Handyman', 'Plumbing', 'Painting'],
+      serviceAreas: ['Arcadia', 'Hatfield', 'Sunnyside', 'Brooklyn', 'Muckleneuk'],
+      equipmentTags: ['basic-toolkit', 'drill', 'sander'],
+      vehicleTypes: ['hatchback'],
+      lat: -25.7462, lng: 28.1882, radiusKm: 15,
+    },
+    // ── Appliances — JHB East / Edenvale
+    {
+      phone:        '+27711000006',
+      name:         'Bongani Zulu',
+      skills:       ['Appliances'],
+      serviceAreas: ['Edenvale', 'Bedfordview', 'Eastgate', 'Sandringham', 'Highlands North'],
+      equipmentTags: ['appliance-toolkit', 'multimeter', 'soldering-iron'],
+      vehicleTypes: ['sedan'],
+      lat: -26.1310, lng: 28.1619, radiusKm: 18,
+    },
+    // ── DIY & Assembly — JHB CBD / Braamfontein
+    {
+      phone:        '+27711000007',
+      name:         'Ayanda Mokoena',
+      skills:       ['DIY & Assembly', 'Handyman'],
+      serviceAreas: ['Johannesburg CBD', 'Braamfontein', 'Melville', 'Auckland Park', 'Westdene'],
+      equipmentTags: ['power-drill', 'level', 'furniture-kit'],
+      vehicleTypes: ['hatchback'],
+      lat: -26.2041, lng: 28.0473, radiusKm: 15,
+    },
+    // ── Roofing — Pretoria East / Menlyn
+    {
+      phone:        '+27711000008',
+      name:         'Petrus van Wyk',
+      skills:       ['Roofing'],
+      serviceAreas: ['Menlyn', 'Lynnwood', 'Garsfontein', 'Faerie Glen', 'Moreleta Park'],
+      equipmentTags: ['roofing-nailer', 'safety-harness', 'scaffold'],
+      vehicleTypes: ['bakkie'],
+      lat: -25.7900, lng: 28.2766, radiusKm: 20,
+    },
+    // ── Electrical + DIY — Sandton / JHB North
+    {
+      phone:        '+27711000009',
+      name:         'Thandeka Nxumalo',
+      skills:       ['Electrical', 'DIY & Assembly'],
+      serviceAreas: ['Sandton', 'Fourways', 'Bryanston', 'Rivonia', 'Morningside'],
+      equipmentTags: ['multimeter', 'conduit-bender', 'power-drill'],
+      vehicleTypes: ['van'],
+      lat: -26.1076, lng: 28.0567, radiusKm: 20,
+    },
+    // ── Painting + Roofing — Pretoria North
+    {
+      phone:        '+27711000010',
+      name:         'Musa Khumalo',
+      skills:       ['Painting', 'Roofing'],
+      serviceAreas: ['Pretoria North', 'Wonderboom', 'Akasia', 'Rosslyn', 'Soshanguve'],
+      equipmentTags: ['roller-set', 'roofing-nailer', 'scaffold'],
+      vehicleTypes: ['bakkie'],
+      lat: -25.6714, lng: 28.1847, radiusKm: 20,
+    },
+  ]
+
+  for (const p of providerData) {
+    await prisma.provider.upsert({
+      where:  { phone: p.phone },
+      create: {
+        phone:          p.phone,
+        name:           p.name,
+        skills:         p.skills,
+        serviceAreas:   p.serviceAreas,
+        equipmentTags:  p.equipmentTags,
+        vehicleTypes:   p.vehicleTypes,
+        active:         true,
+        verified:       true,
+        availableNow:   true,
+        averageRating:  +(4.2 + Math.random() * 0.7).toFixed(1),
+        reliabilityScore: +(0.80 + Math.random() * 0.15).toFixed(2),
+        completedJobsCount: Math.floor(5 + Math.random() * 30),
+        onTimeRate:     +(0.85 + Math.random() * 0.12).toFixed(2),
+        acceptanceRate: +(0.80 + Math.random() * 0.18).toFixed(2),
+      },
+      update: { name: p.name, skills: p.skills, active: true, verified: true, availableNow: true },
+    })
+  }
+
+  const providers = await Promise.all(
+    providerData.map((p) => prisma.provider.findFirstOrThrow({ where: { phone: p.phone } }))
   )
 
-  // ── Availability ───────────────────────────────────────────────────────────
-  // Mon–Fri 08:00–17:00 for both technicians
-  for (const tech of [tech1, tech2]) {
-    await prisma.availability.deleteMany({ where: { technicianId: tech.id } })
-    await prisma.availability.createMany({
+  // Skills, service areas, schedules
+  for (let i = 0; i < providers.length; i++) {
+    const provider = providers[i]
+    const p = providerData[i]
+
+    await prisma.technicianSkill.deleteMany({ where: { providerId: provider.id } })
+    await prisma.technicianServiceArea.deleteMany({ where: { providerId: provider.id } })
+    await prisma.technicianAvailability.deleteMany({ where: { providerId: provider.id } })
+    await prisma.providerSchedule.deleteMany({ where: { providerId: provider.id } })
+
+    await prisma.technicianSkill.createMany({
+      data: p.skills.map((skillTag) => ({ providerId: provider.id, skillTag, active: true })),
+    })
+
+    await prisma.technicianServiceArea.createMany({
+      data: p.serviceAreas.map((label) => ({
+        providerId: provider.id,
+        label,
+        areaType: 'SUBURB',
+        active: true,
+      })),
+    })
+
+    await prisma.technicianServiceArea.create({
+      data: {
+        providerId: provider.id,
+        label:      `${provider.name} radius`,
+        city:       p.serviceAreas[0] ?? null,
+        areaType:   'RADIUS',
+        lat:        p.lat,
+        lng:        p.lng,
+        radiusKm:   p.radiusKm,
+        active:     true,
+      },
+    })
+
+    await prisma.technicianAvailability.create({
+      data: { providerId: provider.id, availabilityState: 'AVAILABLE' },
+    })
+
+    // Mon–Fri 07:00–17:00
+    await prisma.providerSchedule.createMany({
       data: [1, 2, 3, 4, 5].map((day) => ({
-        technicianId: tech.id,
-        dayOfWeek:   day,
-        startTime:   '08:00',
-        endTime:     '17:00',
-        active:      true,
+        providerId: provider.id,
+        dayOfWeek:  day,
+        startTime:  '07:00',
+        endTime:    '17:00',
       })),
     })
   }
-  console.log('✔ Availability: Mon–Fri 08:00–17:00 for all technicians')
 
-  // ── Slots — 2 weeks from today ─────────────────────────────────────────────
-  const WINDOWS = [
-    { start: '08:00', end: '10:00' },
-    { start: '10:00', end: '13:00' },
-    { start: '14:00', end: '17:00' },
+  console.log(`✔ Providers (${providers.length}): ${providerData.map((p) => p.name).join(', ')}`)
+
+  // ── Provider applications ─────────────────────────────────────────────────────
+  const appData = [
+    {
+      phone:        '+27799000001',
+      name:         'Dimpho Radebe',
+      skills:       ['Garden & Landscaping', 'Handyman'],
+      serviceAreas: ['Soweto', 'Orlando', 'Meadowlands'],
+      status:       ApplicationStatus.PENDING,
+    },
+    {
+      phone:        '+27799000002',
+      name:         'Lebo Mahlangu',
+      skills:       ['Appliances', 'DIY & Assembly'],
+      serviceAreas: ['Centurion', 'Pretoria North'],
+      status:       ApplicationStatus.APPROVED,
+    },
   ]
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const slotDates: Date[] = []
-
-  for (let i = 1; i <= 14; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
-    if (d.getDay() !== 0 && d.getDay() !== 6) slotDates.push(d) // Mon–Fri only
+  for (const app of appData) {
+    const existing = await prisma.providerApplication.findFirst({ where: { phone: app.phone } })
+    if (!existing) {
+      await prisma.providerApplication.create({ data: app })
+      console.log(`✔ ProviderApplication: ${app.name} (${app.status})`)
+    }
   }
 
-  // Clear old future slots then recreate
-  await prisma.slot.deleteMany({
-    where: { businessId: business.id, date: { gte: today } },
+  // ── Job request 1: Full pipeline — Zanele, Plumbing, COMPLETED ────────────────
+  const zanele = customers['+27831000001']
+  const zaneleAddr = addresses['+27831000001']
+  const thabo = providers[0] // Thabo Nkosi — Plumbing
+
+  const existingCompleted = await prisma.job.findFirst({
+    where: { status: JobStatus.COMPLETED, booking: { match: { jobRequest: { customerId: zanele.id } } } },
   })
 
-  const slotRecords = slotDates.flatMap((date) =>
-    WINDOWS.map((w) => ({
-      businessId:  business.id,
-      date,
-      windowStart: w.start,
-      windowEnd:   w.end,
-      capacity:    3,
-      booked:      0,
-      blocked:     false,
-    }))
-  )
-
-  await prisma.slot.createMany({ data: slotRecords })
-  console.log(`✔ Slots: ${slotRecords.length} created (${slotDates.length} days × ${WINDOWS.length} windows)`)
-
-  // ── Sample customer ────────────────────────────────────────────────────────
-  const customer = await prisma.customer.upsert({
-    where: { businessId_phone: { businessId: business.id, phone: '+27831234567' } },
-    create: {
-      businessId: business.id,
-      phone:      '+27831234567',
-      name:       'Zanele Khumalo',
-      active:     true,
-    },
-    update: { name: 'Zanele Khumalo' },
-  })
-  console.log(`✔ Customer: ${customer.name}`)
-
-  // ── Sample address ─────────────────────────────────────────────────────────
-  const address = await prisma.address.create({
-    data: {
-      customerId: customer.id,
-      label:      'Home',
-      street:     '12 Acacia Avenue',
-      suburb:     'Sandton',
-      city:       'Johannesburg',
-      province:   'Gauteng',
-      postalCode: '2196',
-      isDefault:  true,
-    },
-  }).catch(async () =>
-    // If address already exists (re-seed), find the first one
-    prisma.address.findFirstOrThrow({ where: { customerId: customer.id } })
-  )
-
-  // ── Sample booking (CONFIRMED — ready to dispatch) ─────────────────────────
-  const firstSlot = await prisma.slot.findFirst({
-    where: { businessId: business.id, blocked: false, booked: 0 },
-    orderBy: { date: 'asc' },
-  })
-
-  const firstServiceId = services['plumbing-leak-repair']
-
-  // Only create if no existing CONFIRMED booking for this customer
-  const existingBooking = await prisma.booking.findFirst({
-    where: { customerId: customer.id, status: { in: ['CONFIRMED', 'SCHEDULED'] } },
-  })
-
-  if (!existingBooking && firstSlot) {
-    const booking = await prisma.booking.create({
+  if (!existingCompleted) {
+    const jr1 = await prisma.jobRequest.create({
       data: {
-        businessId:      business.id,
-        customerId:      customer.id,
-        serviceId:       firstServiceId,
-        addressId:       address.id,
-        slotId:          firstSlot.id,
-        status:          'CONFIRMED',
-        totalAmount:     800,
-        depositAmount:   0,
-        scheduledDate:   firstSlot.date,
-        scheduledWindow: `${firstSlot.windowStart}–${firstSlot.windowEnd}`,
-        notes:           'Seed booking — ready to dispatch via /admin/dispatch',
+        customerId:  zanele.id,
+        addressId:   zaneleAddr.id,
+        category:    'Plumbing',
+        title:       'Leaking tap in kitchen',
+        description: 'Kitchen cold-water tap has been dripping for a week. Needs washer replacement or full tap.',
+        status:      JobRequestStatus.MATCHED,
       },
     })
 
-    // Mark slot as booked
-    await prisma.slot.update({
-      where: { id: firstSlot.id },
-      data: { booked: { increment: 1 } },
-    })
-
-    // Create a payment record (simulated PAID)
-    await prisma.payment.create({
+    const match1 = await prisma.match.create({
       data: {
-        bookingId:    booking.id,
-        status:       'PAID',
-        amount:       800,
-        currency:     'ZAR',
-        pspProvider:  'seed',
-        pspReference: 'SEED-0001',
-        paidAt:       new Date(),
-        metadata:     { note: 'Seeded payment for dev testing' },
+        jobRequestId:     jr1.id,
+        providerId:       thabo.id,
+        status:           MatchStatus.QUOTE_APPROVED,
+        inspectionNeeded: false,
       },
     })
 
-    console.log(`✔ Booking: ${booking.id.slice(-8).toUpperCase()} (CONFIRMED, ready to dispatch)`)
-  } else {
-    console.log('✔ Booking: skipped (one already exists for this customer)')
+    const quote1 = await prisma.quote.create({
+      data: {
+        matchId:       match1.id,
+        amount:        650,
+        labourCost:    500,
+        materialsCost: 150,
+        description:   'Replace kitchen tap washers and re-seal. Includes call-out fee.',
+        status:        QuoteStatus.APPROVED,
+        approvalToken: 'seed-quote-token-001',
+      },
+    })
+
+    const booking1 = await prisma.booking.create({
+      data: {
+        matchId:       match1.id,
+        quoteId:       quote1.id,
+        status:        BookingStatus.COMPLETED,
+        scheduledDate: new Date('2026-04-10T09:00:00.000Z'),
+      },
+    })
+
+    const job1 = await prisma.job.create({
+      data: {
+        bookingId:  booking1.id,
+        providerId: thabo.id,
+        status:     JobStatus.COMPLETED,
+      },
+    })
+
+    await prisma.review.create({
+      data: {
+        jobId:        job1.id,
+        reviewerType: ReviewerType.CUSTOMER,
+        customerId:   zanele.id,
+        score:        5,
+        comment:      'Thabo was on time, professional, and fixed the issue cleanly. Will book again.',
+      },
+    })
+
+    console.log('✔ Job pipeline 1: Zanele / Plumbing → COMPLETED + Review')
   }
 
-  // ── TechnicianApplication (PENDING — to test applications page) ────────────
-  const existingApp = await prisma.technicianApplication.findFirst({
-    where: { businessId: business.id, phone: '+27799887766' },
+  // ── Job request 2: Lerato, Electrical, OPEN ──────────────────────────────────
+  const lerato = customers['+27831000002']
+  const leratoAddr = addresses['+27831000002']
+
+  const existingOpen = await prisma.jobRequest.findFirst({
+    where: { customerId: lerato.id, category: 'Electrical' },
   })
 
-  if (!existingApp) {
-    await prisma.technicianApplication.create({
+  if (!existingOpen) {
+    await prisma.jobRequest.create({
       data: {
-        businessId:   business.id,
-        phone:        '+27799887766',
-        name:         'Bongani Nkosi',
-        skills:       ['Plumbing', 'Tiling'],
-        serviceAreas: ['Randburg'],
-        status:       'PENDING',
+        customerId:  lerato.id,
+        addressId:   leratoAddr.id,
+        category:    'Electrical',
+        title:       'No power to lounge plug points',
+        description: 'Three plug points in the lounge stopped working after load-shedding. Breaker trips when reset.',
+        status:      JobRequestStatus.OPEN,
       },
     })
-    console.log('✔ TechnicianApplication: Bongani Nkosi (PENDING)')
+    console.log('✔ Job request 2: Lerato / Electrical → OPEN')
   }
 
+  // ── Job request 3: Siphamandla, Garden & Landscaping, MATCHING ────────────────
+  const siphamandla = customers['+27831000003']
+  const siphamandlaAddr = addresses['+27831000003']
+
+  const existingMatching = await prisma.jobRequest.findFirst({
+    where: { customerId: siphamandla.id, category: 'Garden & Landscaping' },
+  })
+
+  if (!existingMatching) {
+    await prisma.jobRequest.create({
+      data: {
+        customerId:  siphamandla.id,
+        addressId:   siphamandlaAddr.id,
+        category:    'Garden & Landscaping',
+        title:       'Overgrown back garden — full clearance',
+        description: 'Large back garden with overgrown lawn, hedges and tree branches overhanging the fence.',
+        status:      JobRequestStatus.MATCHING,
+      },
+    })
+    console.log('✔ Job request 3: Siphamandla / Garden & Landscaping → MATCHING')
+  }
+
+  // ── Job request 4: Boitumelo, Roofing, PENDING_VALIDATION ────────────────────
+  const boitumelo = customers['+27831000004']
+  const boitumeloAddr = addresses['+27831000004']
+
+  const existingPending = await prisma.jobRequest.findFirst({
+    where: { customerId: boitumelo.id, category: 'Roofing' },
+  })
+
+  if (!existingPending) {
+    await prisma.jobRequest.create({
+      data: {
+        customerId:  boitumelo.id,
+        addressId:   boitumeloAddr.id,
+        category:    'Roofing',
+        title:       'Roof leaking after recent storms',
+        description: 'Water coming through ceiling in master bedroom after the last two rain storms.',
+        status:      JobRequestStatus.PENDING_VALIDATION,
+      },
+    })
+    console.log('✔ Job request 4: Boitumelo / Roofing → PENDING_VALIDATION')
+  }
+
+  // ── Conversations ─────────────────────────────────────────────────────────────
+  const convExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000)
+
+  for (const c of customerData) {
+    await prisma.conversation.upsert({
+      where:  { phone: c.phone },
+      create: { phone: c.phone, flow: 'job_request', step: 'welcome', data: {}, expiresAt: convExpiry },
+      update: { expiresAt: convExpiry },
+    })
+  }
+
+  console.log('✔ Conversations: 4 upserted')
   console.log('\n✅ Seed complete.')
-  console.log(`   Business slug: ${slug}`)
-  console.log(`   Admin URL:     /admin`)
-  console.log(`   Dispatch:      /admin/dispatch (1 booking ready)`)
-  console.log(`   Applications:  /admin/applications (1 pending)`)
+  console.log('   Providers:    10 active + verified across all 8 categories')
+  console.log('   Customers:    4 across Johannesburg, Cape Town, Durban, Pretoria')
+  console.log('   Job requests: COMPLETED · OPEN · MATCHING · PENDING_VALIDATION')
+  console.log('   Applications: 1 PENDING · 1 APPROVED')
 }
 
 main()

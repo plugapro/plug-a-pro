@@ -20,21 +20,15 @@ import {
 export const metadata = buildMetadata({ title: 'Customers', noIndex: true })
 
 export default async function CustomersPage() {
-  const user = await requireAdmin()
-  let businessId = user.businessId
-  if (!businessId) {
-    const { resolveBusinessId } = await import('@/lib/auth')
-    businessId = await resolveBusinessId()
-  }
+  await requireAdmin()
 
   const customers = await db.customer.findMany({
-    where: { businessId },
     include: {
-      _count: { select: { bookings: true } },
-      bookings: {
+      _count: { select: { jobRequests: true } },
+      jobRequests: {
         orderBy: { createdAt: 'desc' },
         take: 1,
-        select: { createdAt: true, status: true },
+        select: { createdAt: true },
       },
     },
     orderBy: { createdAt: 'desc' },
@@ -67,7 +61,7 @@ export default async function CustomersPage() {
               </TableRow>
             )}
             {customers.map((c) => {
-              const lastBooking = c.bookings[0]
+              const lastJobRequest = c.jobRequests[0]
               // If userId is set, they've authenticated via PWA; otherwise WhatsApp-only
               const channel = c.userId ? 'PWA + WhatsApp' : 'WhatsApp'
 
@@ -93,11 +87,11 @@ export default async function CustomersPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {c._count.bookings}
+                    {c._count?.jobRequests ?? 0}
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground hidden lg:table-cell">
-                    {lastBooking
-                      ? lastBooking.createdAt.toLocaleDateString('en-ZA', {
+                    {lastJobRequest
+                      ? lastJobRequest.createdAt.toLocaleDateString('en-ZA', {
                           day: 'numeric',
                           month: 'short',
                           year: 'numeric',

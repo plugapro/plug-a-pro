@@ -1,5 +1,5 @@
-// ─── Admin: Technician Profile ────────────────────────────────────────────────
-// Full profile view for a single technician: stats, recent jobs, toggle active.
+// ─── Admin: Provider Profile ───────────────────────────────────────────────────
+// Full profile view for a single provider: stats, recent jobs, toggle active.
 
 export const dynamic = 'force-dynamic'
 
@@ -7,6 +7,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,7 @@ import { format } from 'date-fns'
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
-export const metadata = buildMetadata({ title: 'Technician Profile', noIndex: true })
+export const metadata = buildMetadata({ title: 'Provider Profile', noIndex: true })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ function jobStatusVariant(
     case 'FAILED':
     case 'CALLBACK_REQUIRED':
       return 'destructive'
-    case 'ASSIGNED':
+    case 'SCHEDULED':
       return 'outline'
     default:
       return 'secondary'
@@ -51,13 +52,23 @@ function formatJobStatus(status: string): string {
 
 // ─── Server action ────────────────────────────────────────────────────────────
 
-async function toggleActive(technicianId: string, currentActive: boolean) {
+async function toggleActive(providerId: string, currentActive: boolean) {
   'use server'
-  await db.technician.update({
-    where: { id: technicianId },
+  const admin = await requireAdmin()
+  await db.provider.update({
+    where: { id: providerId },
     data: { active: !currentActive },
   })
-  redirect(`/admin/technicians/${technicianId}`)
+  await recordAuditLog({
+    actorId: admin.id,
+    actorRole: admin.role,
+    action: 'provider.active_toggle',
+    entityType: 'provider',
+    entityId: providerId,
+    before: { active: currentActive },
+    after: { active: !currentActive },
+  })
+  redirect(`/admin/providers/${providerId}`)
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -66,18 +77,13 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
-export default async function TechnicianProfilePage({ params }: Props) {
+export default async function ProviderProfilePage({ params }: Props) {
   const { id } = await params
 
-  const user = await requireAdmin()
-  let businessId = user.businessId
-  if (!businessId) {
-    const { resolveBusinessId } = await import('@/lib/auth')
-    businessId = await resolveBusinessId()
-  }
+  await requireAdmin()
 
-  const technician = await db.technician.findFirst({
-    where: { id, businessId },
+  const provider = await db.provider.findFirst({
+    where: { id },
     include: {
       jobs: {
         orderBy: { createdAt: 'desc' },
@@ -85,12 +91,16 @@ export default async function TechnicianProfilePage({ params }: Props) {
         include: {
           booking: {
             include: {
-              service: { select: { name: true } },
+              match: {
+                include: {
+                  jobRequest: { select: { title: true, category: true } },
+                },
+              },
             },
           },
         },
       },
-      availability: {
+      schedule: {
         orderBy: { dayOfWeek: 'asc' },
       },
       _count: {
@@ -101,45 +111,43 @@ export default async function TechnicianProfilePage({ params }: Props) {
     },
   })
 
-  if (!technician) notFound()
+  if (!provider) notFound()
 
   // Stats
-  const totalJobs = technician._count.jobs
-  const completedJobs = technician.jobs.filter((j) => j.status === 'COMPLETED').length
-  // Completion rate is based on the full set — fetch completed count separately
+  const totalJobs = provider._count.jobs
   const completedTotal = await db.job.count({
-    where: { technicianId: id, status: 'COMPLETED' },
+    where: { providerId: id, status: 'COMPLETED' },
   })
   const completionRate =
     totalJobs > 0 ? Math.round((completedTotal / totalJobs) * 100) : 0
 
   // Current activity: any non-terminal active job
-  const activeJob = technician.jobs.find((j) =>
+  const activeJob = provider.jobs.find((j) =>
     ['EN_ROUTE', 'ARRIVED', 'STARTED', 'AWAITING_APPROVAL'].includes(j.status)
   )
 
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-  // Bind the server action for this specific technician
-  const toggleActiveForTech = toggleActive.bind(null, technician.id, technician.active)
+  // Bind the server action for this specific provider
+  const toggleActiveForProvider = toggleActive.bind(null, provider.id, provider.active)
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/admin/technicians">
+          <Link href="/admin/providers">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold truncate">{technician.name}</h1>
+            <h1 className="text-2xl font-bold truncate">{provider.name}</h1>
             {activeJob ? (
               <Badge variant="default" className="rounded-full capitalize shrink-0">
                 {formatJobStatus(activeJob.status)}
               </Badge>
-            ) : technician.active ? (
+            ) : provider.active ? (
               <Badge variant="outline" className="rounded-full shrink-0">
                 available
               </Badge>
@@ -149,15 +157,15 @@ export default async function TechnicianProfilePage({ params }: Props) {
               </Badge>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">Technician profile</p>
+          <p className="text-sm text-muted-foreground">Provider profile</p>
         </div>
-        <form action={toggleActiveForTech}>
+        <form action={toggleActiveForProvider}>
           <Button
             type="submit"
-            variant={technician.active ? 'destructive' : 'default'}
+            variant={provider.active ? 'destructive' : 'default'}
             size="sm"
           >
-            {technician.active ? 'Deactivate' : 'Activate'}
+            {provider.active ? 'Deactivate' : 'Activate'}
           </Button>
         </form>
       </div>
@@ -172,31 +180,37 @@ export default async function TechnicianProfilePage({ params }: Props) {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">Name</p>
-                <p className="font-medium">{technician.name}</p>
+                <p className="font-medium">{provider.name}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Phone</p>
-                <p className="font-medium">{technician.phone}</p>
+                <p className="font-medium">{provider.phone}</p>
               </div>
-              {technician.email && (
-                <div>
-                  <p className="text-muted-foreground">Email</p>
-                  <p className="font-medium">{technician.email}</p>
-                </div>
-              )}
               <div>
                 <p className="text-muted-foreground">Status</p>
-                <p className="font-medium">{technician.active ? 'Active' : 'Inactive'}</p>
+                <p className="font-medium">{provider.active ? 'Active' : 'Inactive'}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Experience</p>
+                <p className="font-medium">{provider.experience ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Approved for matching</p>
+                <p className="font-medium">{provider.verified ? 'Yes' : 'No'}</p>
               </div>
             </div>
 
-            {technician.skills.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Skills and service areas are supplied by the provider. This flag only controls whether the application passed Plug-A-Pro&apos;s marketplace review for lead eligibility.
+            </p>
+
+            {provider.skills.length > 0 && (
               <>
                 <Separator />
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">Skills</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {technician.skills.map((skill) => (
+                    {provider.skills.map((skill) => (
                       <Badge key={skill} variant="secondary" className="rounded-full text-xs">
                         {skill}
                       </Badge>
@@ -206,16 +220,51 @@ export default async function TechnicianProfilePage({ params }: Props) {
               </>
             )}
 
-            {technician.serviceAreas.length > 0 && (
+            {provider.serviceAreas.length > 0 && (
               <>
                 <Separator />
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">Service Areas</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {technician.serviceAreas.map((area) => (
+                    {provider.serviceAreas.map((area) => (
                       <Badge key={area} variant="outline" className="rounded-full text-xs">
                         {area}
                       </Badge>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {provider.evidenceNote && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Provider-shared evidence note</p>
+                  <p className="text-sm">{provider.evidenceNote}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    This note is supplied by the provider. It does not become a verified claim unless Plug-A-Pro reviews a specific item and labels it as such.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {provider.portfolioUrls.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Portfolio links</p>
+                  <div className="space-y-2">
+                    {provider.portfolioUrls.map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block break-all text-sm text-primary hover:underline"
+                      >
+                        {url}
+                      </a>
                     ))}
                   </div>
                 </div>
@@ -247,15 +296,15 @@ export default async function TechnicianProfilePage({ params }: Props) {
             </CardContent>
           </Card>
 
-          {/* Availability */}
-          {technician.availability.length > 0 && (
+          {/* Schedule */}
+          {provider.schedule.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Availability</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-1.5 text-sm">
-                  {technician.availability
+                  {provider.schedule
                     .filter((a) => a.active)
                     .map((a) => (
                       <div key={a.id} className="flex justify-between">
@@ -283,13 +332,13 @@ export default async function TechnicianProfilePage({ params }: Props) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Service</TableHead>
-                  <TableHead className="hidden sm:table-cell">Customer</TableHead>
+                  <TableHead>Job Request</TableHead>
+                  <TableHead className="hidden sm:table-cell">Category</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {technician.jobs.length === 0 && (
+                {provider.jobs.length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={4}
@@ -299,17 +348,16 @@ export default async function TechnicianProfilePage({ params }: Props) {
                     </TableCell>
                   </TableRow>
                 )}
-                {technician.jobs.map((job) => (
+                {provider.jobs.map((job) => (
                   <TableRow key={job.id}>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {format(new Date(job.createdAt), 'd MMM yyyy')}
                     </TableCell>
                     <TableCell className="font-medium text-sm">
-                      {job.booking.service.name}
+                      {job.booking.match?.jobRequest.title ?? '—'}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                      {/* Customer name available via booking relation if needed */}
-                      —
+                      {job.booking.match?.jobRequest.category ?? '—'}
                     </TableCell>
                     <TableCell>
                       <Badge

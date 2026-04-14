@@ -8,22 +8,25 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { JobStatus } from '@prisma/client'
 import { Button } from '@/components/ui/button'
+import { getProviderActionClientErrorMessage } from '@/lib/provider-action-errors'
 
 type ButtonVariant = 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
 
 const TRANSITIONS: Record<JobStatus, { label: string; next: JobStatus; variant: ButtonVariant }[]> = {
-  ASSIGNED:          [{ label: "I'm on my way",  next: 'EN_ROUTE',   variant: 'default' }],
-  EN_ROUTE:          [{ label: "I've arrived",   next: 'ARRIVED',    variant: 'default' }],
-  ARRIVED:           [{ label: 'Start job',        next: 'STARTED',    variant: 'default' }],
+  SCHEDULED:                        [{ label: "I'm on my way",       next: 'EN_ROUTE',                        variant: 'default' }],
+  EN_ROUTE:                         [{ label: "I've arrived",         next: 'ARRIVED',                         variant: 'default' }],
+  ARRIVED:                          [{ label: 'Start job',             next: 'STARTED',                         variant: 'default' }],
   STARTED: [
-    { label: 'Complete job',  next: 'COMPLETED', variant: 'default' },
-    { label: 'Pause',         next: 'PAUSED',    variant: 'outline' },
+    { label: 'Mark complete',        next: 'PENDING_COMPLETION_CONFIRMATION', variant: 'default' },
+    { label: 'Pause',                next: 'PAUSED',                          variant: 'outline' },
   ],
-  PAUSED:            [{ label: 'Resume',           next: 'STARTED',    variant: 'default' }],
-  AWAITING_APPROVAL: [],
-  COMPLETED:         [],
-  FAILED:            [],
-  CALLBACK_REQUIRED: [],
+  PAUSED:                           [{ label: 'Resume',               next: 'STARTED',                         variant: 'default' }],
+  AWAITING_APPROVAL:                [],
+  PENDING_COMPLETION_CONFIRMATION:  [],
+  COMPLETED:                        [],
+  CANCELLED:                        [],
+  FAILED:                           [],
+  CALLBACK_REQUIRED:                [],
 }
 
 interface Props {
@@ -41,17 +44,32 @@ export function JobStatusControls({ jobId, currentStatus }: Props) {
 
   async function transition(toStatus: JobStatus) {
     setError(null)
-    const res = await fetch(`/api/technician/jobs/${jobId}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toStatus }),
-    })
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      setError(data.error ?? 'Failed to update status. Please try again.')
-      return
+    try {
+      const res = await fetch(`/api/technician/jobs/${jobId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toStatus }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        setError(
+          getProviderActionClientErrorMessage({
+            action: 'status',
+            status: res.status,
+            error: data.error ?? null,
+          }),
+        )
+        return
+      }
+
+      startTransition(() => router.refresh())
+    } catch {
+      setError(
+        getProviderActionClientErrorMessage({
+          action: 'status',
+        }),
+      )
     }
-    startTransition(() => router.refresh())
   }
 
   return (

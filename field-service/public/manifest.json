@@ -1,11 +1,11 @@
 {
   "name": "Plug-A-Pro",
   "short_name": "PlugAPro",
-  "description": "Book home services via WhatsApp",
+  "description": "Request, track, and manage trusted field service jobs with Plug-A-Pro.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "background_color": "#f4f7fb",
+  "theme_color": "#2563eb",
   "orientation": "portrait",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },

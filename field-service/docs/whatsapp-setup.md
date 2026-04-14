@@ -291,7 +291,7 @@ Hi {{1}}, we hope your {{2}} went smoothly!
 
 We'd love to hear your feedback. It only takes 30 seconds: {{3}}
 
-Your review helps us improve and helps other customers find trusted professionals.
+Your review helps us improve and helps other customers compare providers using recent platform feedback.
 ```
 
 **Variable samples**:

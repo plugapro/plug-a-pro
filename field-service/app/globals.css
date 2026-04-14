@@ -1,67 +1,203 @@
 @import "tailwindcss";
+@source "../**/*.{js,ts,jsx,tsx,mdx}";
 
 @layer base {
   :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.141 0.005 285.75);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.141 0.005 285.75);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.141 0.005 285.75);
-    --primary: oklch(0.21 0.006 285.885);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.705 0.015 286.067);
-    --radius: 0.5rem;
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
+    --color-whatsapp: #25d366;
+    --color-whatsapp-hover: #1fb85a;
+    --brand-blue: #2563eb;
+    --brand-blue-strong: #1d4ed8;
+    --brand-magenta: #e64691;
+    --brand-violet: #7c3aed;
+    --brand-sky: #0ea5e9;
+    --background: #f4f7fb;
+    --foreground: #152235;
+    --card: rgba(255, 255, 255, 0.94);
+    --card-foreground: #152235;
+    --popover: rgba(255, 255, 255, 0.98);
+    --popover-foreground: #152235;
+    --primary: #2563eb;
+    --primary-foreground: #f8fbff;
+    --secondary: #eaf1ff;
+    --secondary-foreground: #214275;
+    --muted: #e9eef6;
+    --muted-foreground: #62718a;
+    --accent: #eff4ff;
+    --accent-foreground: #193154;
+    --destructive: #d64242;
+    --border: #d6dfeb;
+    --input: #cad6e6;
+    --ring: #69a5ff;
+    --radius: 0.875rem;
+    --chart-1: #2563eb;
+    --chart-2: #0ea5e9;
+    --chart-3: #e64691;
+    --chart-4: #14b8a6;
+    --chart-5: #f59e0b;
+    --surface-subtle: rgba(255, 255, 255, 0.74);
+    --surface-raised: rgba(255, 255, 255, 0.92);
+    --surface-hero: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(236, 244, 255, 0.98));
+    --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.08), 0 18px 40px rgba(37, 99, 235, 0.08);
+    --shadow-float: 0 16px 44px rgba(15, 23, 42, 0.14);
+    --tone-neutral-bg: #eef3fa;
+    --tone-neutral-border: #d5dfeb;
+    --tone-neutral-fg: #48617f;
+    --tone-info-bg: #eaf4ff;
+    --tone-info-border: #bfdbfe;
+    --tone-info-fg: #1d4ed8;
+    --tone-success-bg: #ebfaf3;
+    --tone-success-border: #b8ebca;
+    --tone-success-fg: #167a47;
+    --tone-warning-bg: #fff5dd;
+    --tone-warning-border: #f4d283;
+    --tone-warning-fg: #a16207;
+    --tone-danger-bg: #fff0ee;
+    --tone-danger-border: #f3b5b0;
+    --tone-danger-fg: #b83232;
+    --tone-brand-bg: #f8ebf4;
+    --tone-brand-border: #f0bfd9;
+    --tone-brand-fg: #b72f73;
   }
 
   .dark {
-    --background: oklch(0.141 0.005 285.75);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.006 285.885);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.006 285.885);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.92 0.004 286.32);
-    --primary-foreground: oklch(0.21 0.006 285.885);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
-    --accent: oklch(0.274 0.006 286.033);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.552 0.016 285.938);
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
+    --background: #0b1220;
+    --foreground: #e7eef9;
+    --card: rgba(14, 24, 42, 0.92);
+    --card-foreground: #edf4ff;
+    --popover: rgba(11, 18, 32, 0.98);
+    --popover-foreground: #edf4ff;
+    --primary: #69a5ff;
+    --primary-foreground: #08111f;
+    --secondary: #14243d;
+    --secondary-foreground: #e7eef9;
+    --muted: #112034;
+    --muted-foreground: #99a9c2;
+    --accent: #172944;
+    --accent-foreground: #edf4ff;
+    --destructive: #ef7373;
+    --border: rgba(164, 184, 214, 0.18);
+    --input: rgba(164, 184, 214, 0.22);
+    --ring: #7cb3ff;
+    --chart-1: #69a5ff;
+    --chart-2: #27c0ff;
+    --chart-3: #ff6fae;
+    --chart-4: #34d399;
+    --chart-5: #fbbf24;
+    --surface-subtle: rgba(17, 31, 51, 0.74);
+    --surface-raised: rgba(15, 24, 42, 0.9);
+    --surface-hero: linear-gradient(135deg, rgba(12, 21, 37, 0.96), rgba(17, 41, 74, 0.92));
+    --shadow-soft: 0 1px 3px rgba(2, 6, 23, 0.38), 0 18px 44px rgba(2, 6, 23, 0.42);
+    --shadow-float: 0 22px 56px rgba(2, 6, 23, 0.58);
+    --tone-neutral-bg: rgba(82, 107, 138, 0.18);
+    --tone-neutral-border: rgba(148, 163, 184, 0.22);
+    --tone-neutral-fg: #c5d3e8;
+    --tone-info-bg: rgba(37, 99, 235, 0.18);
+    --tone-info-border: rgba(96, 165, 250, 0.3);
+    --tone-info-fg: #9cc4ff;
+    --tone-success-bg: rgba(16, 185, 129, 0.16);
+    --tone-success-border: rgba(52, 211, 153, 0.26);
+    --tone-success-fg: #8ee6bd;
+    --tone-warning-bg: rgba(245, 158, 11, 0.18);
+    --tone-warning-border: rgba(251, 191, 36, 0.28);
+    --tone-warning-fg: #f8cf69;
+    --tone-danger-bg: rgba(239, 115, 115, 0.16);
+    --tone-danger-border: rgba(248, 113, 113, 0.26);
+    --tone-danger-fg: #ffb4ae;
+    --tone-brand-bg: rgba(230, 70, 145, 0.18);
+    --tone-brand-border: rgba(236, 72, 153, 0.28);
+    --tone-brand-fg: #ffb3d5;
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--border);
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--background);
+    color: var(--foreground);
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-image:
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.1), transparent 28%),
+      radial-gradient(circle at top right, rgba(230, 70, 145, 0.08), transparent 24%);
+  }
+}
+
+@layer components {
+  .app-shell {
+    min-height: 100vh;
+    background: transparent;
+  }
+
+  .app-shell-header {
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+    backdrop-filter: blur(18px);
+  }
+
+  .app-shell-panel {
+    border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .app-shell-subtle {
+    background: var(--surface-subtle);
+  }
+
+  .app-hero-surface {
+    background: var(--surface-hero);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .app-kicker {
+    color: var(--brand-blue-strong);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  .app-bottom-nav {
+    border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+    background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+    backdrop-filter: blur(18px);
+  }
+
+  .tone-neutral {
+    border-color: var(--tone-neutral-border);
+    background: var(--tone-neutral-bg);
+    color: var(--tone-neutral-fg);
+  }
+
+  .tone-info {
+    border-color: var(--tone-info-border);
+    background: var(--tone-info-bg);
+    color: var(--tone-info-fg);
+  }
+
+  .tone-success {
+    border-color: var(--tone-success-border);
+    background: var(--tone-success-bg);
+    color: var(--tone-success-fg);
+  }
+
+  .tone-warning {
+    border-color: var(--tone-warning-border);
+    background: var(--tone-warning-bg);
+    color: var(--tone-warning-fg);
+  }
+
+  .tone-danger {
+    border-color: var(--tone-danger-border);
+    background: var(--tone-danger-bg);
+    color: var(--tone-danger-fg);
+  }
+
+  .tone-brand {
+    border-color: var(--tone-brand-border);
+    background: var(--tone-brand-bg);
+    color: var(--tone-brand-fg);
   }
 }
 

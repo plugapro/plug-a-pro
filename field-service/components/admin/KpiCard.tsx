@@ -14,7 +14,7 @@ export function KpiCard({ label, value, description, href, highlight }: KpiCardP
   const content = (
     <Card className={cn(
       'transition-colors',
-      highlight && 'border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20',
+      highlight && 'tone-warning',
       href && 'hover:bg-muted/50 cursor-pointer'
     )}>
       <CardHeader className="pb-2">
