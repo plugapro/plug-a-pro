@@ -149,14 +149,7 @@ export default async function AdminDashboardPage() {
   const weekAgo = new Date(now)
   weekAgo.setDate(weekAgo.getDate() - 7)
 
-  const [
-    validationQueue,
-    validationCount,
-    dispatchQueue,
-    dispatchCount,
-    pendingQuotes,
-    quoteCount,
-  ] = await Promise.all([
+  const queueGroupResult = await Promise.all([
     db.jobRequest.findMany({
       where: { status: 'PENDING_VALIDATION' },
       select: jobRequestSummarySelect,
@@ -194,7 +187,17 @@ export default async function AdminDashboardPage() {
     db.quote.count({
       where: { status: { in: ['PENDING', 'REVISED'] } },
     }),
-  ])
+  ]).catch(() => null)
+
+  const queueGroupError = queueGroupResult === null
+  const [
+    validationQueue,
+    validationCount,
+    dispatchQueue,
+    dispatchCount,
+    pendingQuotes,
+    quoteCount,
+  ] = queueGroupResult ?? [[], 0, [], 0, [], 0]
 
   const [validationAssignments, dispatchAssignments, quoteAssignments] = await Promise.all([
     listOpsQueueAssignments(
@@ -212,14 +215,8 @@ export default async function AdminDashboardPage() {
       OPS_QUEUE_TYPES.QUOTE_APPROVAL,
       pendingQuotes.map((quote) => quote.id),
     ),
-  ])
-  const [
-    activeFieldCount,
-    fieldExceptions,
-    fieldExceptionCount,
-    financeFollowUp,
-    paymentExceptionCount,
-  ] = await Promise.all([
+  ]).catch(() => [new Map(), new Map(), new Map()])
+  const fieldGroupResult = await Promise.all([
     db.job.count({
       where: { status: { in: ACTIVE_FIELD_STATUSES } },
     }),
@@ -241,18 +238,18 @@ export default async function AdminDashboardPage() {
     db.payment.count({
       where: { status: { in: PAYMENT_EXCEPTION_STATUSES } },
     }),
-  ])
+  ]).catch(() => null)
 
+  const fieldGroupError = fieldGroupResult === null
   const [
-    openDisputes,
-    disputeCount,
-    providerOnboarding,
-    providerReviewCount,
-    weekRequests,
-    weekMatches,
-    weekQuotes,
-    weekBookings,
-  ] = await Promise.all([
+    activeFieldCount,
+    fieldExceptions,
+    fieldExceptionCount,
+    financeFollowUp,
+    paymentExceptionCount,
+  ] = fieldGroupResult ?? [0, [], 0, [], 0]
+
+  const trustSupplyGroupResult = await Promise.all([
     db.dispute.findMany({
       where: { status: { in: OPEN_DISPUTE_STATUSES } },
       select: disputeSummarySelect,
@@ -283,7 +280,19 @@ export default async function AdminDashboardPage() {
     db.booking.count({
       where: { createdAt: { gte: weekAgo } },
     }),
-  ])
+  ]).catch(() => null)
+
+  const trustSupplyGroupError = trustSupplyGroupResult === null
+  const [
+    openDisputes,
+    disputeCount,
+    providerOnboarding,
+    providerReviewCount,
+    weekRequests,
+    weekMatches,
+    weekQuotes,
+    weekBookings,
+  ] = trustSupplyGroupResult ?? [[], 0, [], 0, 0, 0, 0, 0]
 
   const [fieldExceptionAssignments, disputeAssignments, paymentAssignments, providerAssignments] = await Promise.all([
     listOpsQueueAssignments(
@@ -358,7 +367,7 @@ export default async function AdminDashboardPage() {
     (application) => application.submittedAt,
   )
 
-  const [weekCompleted, weekPaid, weekRevenue] = await Promise.all([
+  const revenueGroupResult = await Promise.all([
     db.job.count({
       where: {
         status: 'COMPLETED',
@@ -378,26 +387,37 @@ export default async function AdminDashboardPage() {
       },
       _sum: { amount: true },
     }),
-  ])
+  ]).catch(() => null)
+
+  const revenueGroupError = revenueGroupResult === null
+  const [weekCompleted, weekPaid, weekRevenue] = revenueGroupResult ?? [
+    0,
+    0,
+    { _sum: { amount: null } },
+  ]
 
   const heroStats = [
     {
       label: 'Requests needing validation',
+      description: 'Job requests submitted but not yet cleared for matching. Target: triage inside 15 min.',
       value: validationCount,
       tone: heroToneClass(queueHealthHeroTone(validationHealth)),
     },
     {
       label: 'Dispatch queue',
+      description: 'Open or matching requests without a confirmed provider. Target: assign inside 20 min.',
       value: dispatchCount,
       tone: heroToneClass(queueHealthHeroTone(dispatchHealth)),
     },
     {
       label: 'Jobs in field',
+      description: 'Active jobs currently in EN_ROUTE, ARRIVED, STARTED, PAUSED, AWAITING_APPROVAL, or PENDING_COMPLETION_CONFIRMATION.',
       value: activeFieldCount,
       tone: heroToneClass(activeFieldCount > 0 ? 'info' : 'default'),
     },
     {
       label: 'Operational exceptions',
+      description: `Field exceptions (${fieldExceptionCount}) + payment exceptions (${paymentExceptionCount}) + open disputes (${disputeCount}). Any non-zero value needs an owner.`,
       value: fieldExceptionCount + paymentExceptionCount + disputeCount,
       tone: heroToneClass(
         fieldExceptionCount + paymentExceptionCount + disputeCount > 0 ? 'danger' : 'default'
@@ -484,9 +504,21 @@ export default async function AdminDashboardPage() {
         <Card className="app-hero-surface border-border/70">
           <CardHeader className="gap-4">
             <div className="space-y-2">
-              <Badge variant="brand">
-                Control Tower
-              </Badge>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge variant="brand">Control Tower</Badge>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    Refreshed at{' '}
+                    {now.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <a
+                    href="/admin"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Refresh
+                  </a>
+                </div>
+              </div>
               <div className="space-y-2">
                 <h1 className="text-2xl font-semibold tracking-tight">Operations Dashboard</h1>
                 <p className="max-w-2xl text-sm text-muted-foreground">
@@ -507,7 +539,13 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {heroStats.map((stat) => (
-              <HeroStat key={stat.label} label={stat.label} value={stat.value} tone={stat.tone} />
+              <HeroStat
+                key={stat.label}
+                label={stat.label}
+                description={stat.description}
+                value={stat.value}
+                tone={stat.tone}
+              />
             ))}
           </CardContent>
         </Card>
@@ -562,6 +600,10 @@ export default async function AdminDashboardPage() {
           </CardContent>
         </Card>
       </section>
+
+      {(queueGroupError || fieldGroupError) && (
+        <SectionErrorBanner message="Queue data could not be loaded. Counts shown are stale or zero. Retry to reload." />
+      )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {queueCards.map((card) => (
@@ -883,6 +925,10 @@ export default async function AdminDashboardPage() {
         </Card>
       </section>
 
+      {trustSupplyGroupError && (
+        <SectionErrorBanner message="Trust, supply, and funnel data could not be loaded. Retry to reload." />
+      )}
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -945,25 +991,34 @@ export default async function AdminDashboardPage() {
             <CardTitle className="text-base">7-day funnel snapshot</CardTitle>
             <p className="text-sm text-muted-foreground">
               Weekly operational conversion from demand capture to paid completion.
+              Counts requests, matches, quotes, bookings, completions, and payments created in the last 7 days.
             </p>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <FunnelMetric label="Requests" value={weekRequests} note="Demand entering ops" />
-            <FunnelMetric label="Matches" value={weekMatches} note={ratioLabel(weekMatches, weekRequests)} />
-            <FunnelMetric label="Quotes" value={weekQuotes} note={ratioLabel(weekQuotes, weekMatches)} />
-            <FunnelMetric label="Bookings" value={weekBookings} note={ratioLabel(weekBookings, weekQuotes)} />
-            <FunnelMetric
-              label="Completed jobs"
-              value={weekCompleted}
-              note={ratioLabel(weekCompleted, weekBookings)}
-            />
-            <FunnelMetric label="Paid" value={weekPaid} note={ratioLabel(weekPaid, weekCompleted)} />
-            <div className="tone-info rounded-xl border p-4 sm:col-span-2 xl:col-span-3">
-              <p className="text-sm font-medium">7-day revenue collected</p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                {formatCurrency(Number(weekRevenue._sum.amount ?? 0))}
-              </p>
-            </div>
+            {revenueGroupError || trustSupplyGroupError ? (
+              <div className="sm:col-span-2 xl:col-span-3">
+                <SectionErrorBanner message="Funnel data could not be loaded. Retry to reload." />
+              </div>
+            ) : (
+              <>
+                <FunnelMetric label="Requests" value={weekRequests} note="Demand entering ops" />
+                <FunnelMetric label="Matches" value={weekMatches} note={ratioLabel(weekMatches, weekRequests)} />
+                <FunnelMetric label="Quotes" value={weekQuotes} note={ratioLabel(weekQuotes, weekMatches)} />
+                <FunnelMetric label="Bookings" value={weekBookings} note={ratioLabel(weekBookings, weekQuotes)} />
+                <FunnelMetric
+                  label="Completed jobs"
+                  value={weekCompleted}
+                  note={ratioLabel(weekCompleted, weekBookings)}
+                />
+                <FunnelMetric label="Paid" value={weekPaid} note={ratioLabel(weekPaid, weekCompleted)} />
+                <div className="tone-info rounded-xl border p-4 sm:col-span-2 xl:col-span-3">
+                  <p className="text-sm font-medium">7-day revenue collected</p>
+                  <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+                    {formatCurrency(Number(weekRevenue._sum.amount ?? 0))}
+                  </p>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </section>
@@ -1018,17 +1073,20 @@ function QueueCard({
 
 function HeroStat({
   label,
+  description,
   value,
   tone,
 }: {
   label: string
+  description: string
   value: number
   tone: string
 }) {
   return (
-    <div className={cn('rounded-2xl border p-4', tone)}>
+    <div className={cn('rounded-2xl border p-4', tone)} title={description}>
       <p className="text-xs uppercase tracking-[0.16em] text-current/80">{label}</p>
       <p className="mt-3 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+      <p className="mt-2 text-xs text-current/60 leading-snug">{description}</p>
     </div>
   )
 }
@@ -1054,6 +1112,14 @@ function FunnelMetric({
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+      {message}
+    </div>
+  )
+}
+
+function SectionErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
       {message}
     </div>
   )
