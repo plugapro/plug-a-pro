@@ -28,6 +28,7 @@ const PUBLIC_PATHS = [
   '/api/webhooks',
   '/api/auth/session',     // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',        // called client-side after OTP — no session cookie yet
+  '/api/health',           // monitoring probe — must be reachable without a session cookie
 ]
 
 // Routes that require provider role

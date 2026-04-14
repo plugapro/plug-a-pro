@@ -16,7 +16,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { deactivateLocationNodeAction, deleteLocationNodeAction } from './actions'
+import {
+  createLocationNodeFromFormAction,
+  deactivateLocationNodeAction,
+  deleteLocationNodeAction,
+  updateLabelFromFormAction,
+} from './actions'
 
 export const metadata = buildMetadata({ title: 'Location Taxonomy', noIndex: true })
 
@@ -66,13 +71,70 @@ export default async function LocationsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Location Taxonomy</h1>
-        <p className="text-sm text-muted-foreground">
-          {nodes.length} nodes total &mdash; {totalCities} cities, {totalRegions} regions,{' '}
-          {totalSuburbs} suburbs, {totalAddresses} addresses
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Location Taxonomy</h1>
+          <p className="text-sm text-muted-foreground">
+            {nodes.length} nodes total &mdash; {totalCities} cities, {totalRegions} regions,{' '}
+            {totalSuburbs} suburbs, {totalAddresses} addresses
+          </p>
+        </div>
       </div>
+
+      {/* ── Add node form ──────────────────────────────────────────────────── */}
+      <details className="mb-8 rounded-xl border overflow-hidden">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium bg-muted/30 hover:bg-muted/50 select-none">
+          Add node
+        </summary>
+        <form action={createLocationNodeFromFormAction} className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium" htmlFor="create-nodeType">Type</label>
+            <select id="create-nodeType" name="nodeType" required
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+              <option value="">Select type…</option>
+              <option value="PROVINCE">Province</option>
+              <option value="CITY">City</option>
+              <option value="REGION">Region</option>
+              <option value="SUBURB">Suburb</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium" htmlFor="create-label">Label</label>
+            <input id="create-label" name="label" required placeholder="Cape Town"
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium" htmlFor="create-slug">Slug</label>
+            <input id="create-slug" name="slug" required placeholder="cape_town"
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium" htmlFor="create-parentId">Parent node ID</label>
+            <select id="create-parentId" name="parentId"
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+              <option value="">None (Province)</option>
+              {nodes.map((n) => (
+                <option key={n.id} value={n.id}>
+                  [{n.nodeType}] {n.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium" htmlFor="create-lat">Lat (optional)</label>
+            <input id="create-lat" name="lat" type="number" step="any" placeholder="-33.9249"
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium" htmlFor="create-lng">Lng (optional)</label>
+            <input id="create-lng" name="lng" type="number" step="any" placeholder="18.4241"
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
+            <Button type="submit" size="sm">Add node</Button>
+          </div>
+        </form>
+      </details>
 
       {(Object.keys(byType) as Array<keyof typeof byType>).map((type) => {
         const group = byType[type]
@@ -116,8 +178,16 @@ export default async function LocationsPage() {
                     return (
                       <TableRow key={node.id}>
                         <TableCell>
-                          <p className="font-medium">{node.label}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{node.id.slice(0, 8)}&hellip;</p>
+                          <form action={updateLabelFromFormAction} className="flex items-center gap-1">
+                            <input type="hidden" name="id" value={node.id} />
+                            <input
+                              name="label"
+                              defaultValue={node.label}
+                              className="font-medium bg-transparent border-b border-transparent hover:border-input focus:border-ring focus:outline-none text-sm w-full min-w-0"
+                            />
+                            <button type="submit" className="shrink-0 text-xs text-muted-foreground hover:text-foreground px-1">✓</button>
+                          </form>
+                          <p className="text-xs text-muted-foreground font-mono mt-0.5">{node.id.slice(0, 8)}&hellip;</p>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell text-muted-foreground font-mono text-xs">
                           {node.slug}

@@ -29,7 +29,16 @@ export default async function CustomerLayout({
   children: React.ReactNode
 }) {
   const session = await getSession()
-  const customer = session ? await resolveCustomerForSession(db, session) : null
+  // DB lookup is best-effort — a backend outage must not crash the public shell.
+  // Fall back to session-only display data if the query fails.
+  let customer = null
+  if (session) {
+    try {
+      customer = await resolveCustomerForSession(db, session)
+    } catch {
+      // intentionally swallowed — shell renders with session phone/null label
+    }
+  }
   const rawPhone = session?.phone ?? customer?.phone ?? null
   const customerLabel =
     customer?.name?.trim() ||
