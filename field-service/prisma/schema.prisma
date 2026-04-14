@@ -64,6 +64,7 @@ model Address {
   jobRequests JobRequest[]
   locationNode LocationNode? @relation(fields: [locationNodeId], references: [id])
 
+  @@index([locationNodeId])
   @@map("addresses")
 }
 
@@ -99,7 +100,7 @@ model LocationNode {
   @@index([nodeType, active])
   @@index([provinceKey, nodeType])
   @@index([cityKey, nodeType])
-  @@index([regionKey])
+  @@index([regionKey, nodeType])
   @@map("location_nodes")
 }
 
@@ -548,6 +549,7 @@ model TechnicianServiceArea {
   city           String?
   province       String?
   locationNodeId String?
+  provinceKey    String?
   cityKey        String?
   regionKey      String?
   suburbKey      String?
@@ -564,6 +566,8 @@ model TechnicianServiceArea {
 
   @@index([providerId, active])
   @@index([locationNodeId])
+  @@index([provinceKey])
+  @@index([suburbKey])
   @@map("technician_service_areas")
 }
 
