@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
+import { getCities } from '@/lib/location-nodes'
 import { SignOutButton } from '@/components/technician/SignOutButton'
 import { PushSubscribeButton } from '@/components/technician/PushSubscribeButton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
+import { ServiceAreaPicker } from '@/components/provider/ServiceAreaPicker'
 
 export const metadata = buildMetadata({ title: 'My Profile', noIndex: true })
 
@@ -45,13 +47,8 @@ async function updateProfile(formData: FormData) {
   const experience = (formData.get('experience') as string | null)?.trim()
   const evidenceNote = (formData.get('evidenceNote') as string | null)?.trim()
   const skillsInput = (formData.get('skills') as string | null)?.trim() ?? ''
-  const serviceAreasInput = (formData.get('serviceAreas') as string | null)?.trim() ?? ''
   const portfolioUrlsInput = (formData.get('portfolioUrls') as string | null)?.trim() ?? ''
   const skills = skillsInput
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-  const serviceAreas = serviceAreasInput
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
@@ -68,7 +65,6 @@ async function updateProfile(formData: FormData) {
     experience !== undefined ||
     evidenceNote !== undefined ||
     skillsInput !== undefined ||
-    serviceAreasInput !== undefined ||
     portfolioUrlsInput !== undefined
   ) {
     await dbServer.provider.update({
@@ -80,10 +76,76 @@ async function updateProfile(formData: FormData) {
         experience: experience || null,
         evidenceNote: evidenceNote || null,
         skills,
-        serviceAreas,
         portfolioUrls,
       },
     })
+  }
+
+  // Sync structured service areas from picker
+  if (formData.get('serviceAreasPickerRendered') === '1') {
+    const locationNodeIds = formData.getAll('locationNodeIds') as string[]
+
+    // Deactivate structured areas that are no longer in the submitted selection.
+    // When locationNodeIds is empty, this deactivates ALL node-linked areas (correct: provider deselected all).
+    await dbServer.technicianServiceArea.updateMany({
+      where: {
+        providerId: provider.id,
+        locationNodeId: { not: null },
+        ...(locationNodeIds.length > 0 ? { locationNodeId: { notIn: locationNodeIds } } : {}),
+      },
+      data: { active: false },
+    })
+
+    // Upsert submitted service areas
+    if (locationNodeIds.length > 0) {
+      // Load all node data
+      const nodes = await dbServer.locationNode.findMany({
+        where: { id: { in: locationNodeIds }, active: true },
+        select: { id: true, slug: true, label: true, provinceKey: true, cityKey: true, regionKey: true },
+      })
+
+      // Find which IDs already have a row
+      const existingAreas = await dbServer.technicianServiceArea.findMany({
+        where: {
+          providerId: provider.id,
+          locationNodeId: { in: locationNodeIds },
+        },
+        select: { locationNodeId: true },
+      })
+      const existingNodeIds = new Set(existingAreas.map(a => a.locationNodeId).filter(Boolean))
+
+      const toCreate = nodes.filter(n => !existingNodeIds.has(n.id))
+      const toUpdate = nodes.filter(n => existingNodeIds.has(n.id))
+
+      // Reactivate existing rows in bulk
+      if (toUpdate.length > 0) {
+        await dbServer.technicianServiceArea.updateMany({
+          where: {
+            providerId: provider.id,
+            locationNodeId: { in: toUpdate.map(n => n.id) },
+          },
+          data: { active: true },
+        })
+      }
+
+      // Create new rows in bulk
+      if (toCreate.length > 0) {
+        await dbServer.technicianServiceArea.createMany({
+          data: toCreate.map(node => ({
+            providerId: provider.id,
+            locationNodeId: node.id,
+            areaType: 'SUBURB' as const,
+            label: node.label,
+            provinceKey: node.provinceKey,
+            cityKey: node.cityKey,
+            regionKey: node.regionKey,
+            suburbKey: node.slug.split('__').at(-1) ?? node.slug,
+            active: true,
+          })),
+          skipDuplicates: true,
+        })
+      }
+    }
   }
 
   // Upsert schedule for each day
@@ -105,10 +167,19 @@ async function updateProfile(formData: FormData) {
 export default async function ProviderProfilePage() {
   const session = await requireProvider()
 
-  const provider = await db.provider.findUnique({
-    where: { userId: session.id },
-    include: { schedule: { orderBy: { dayOfWeek: 'asc' } } },
-  })
+  const [provider, cities] = await Promise.all([
+    db.provider.findUnique({
+      where: { userId: session.id },
+      include: {
+        schedule: { orderBy: { dayOfWeek: 'asc' } },
+        technicianServiceAreas: {
+          where: { active: true, locationNodeId: { not: null } },
+          select: { locationNodeId: true, label: true },
+        },
+      },
+    }),
+    getCities(),
+  ])
 
   if (!provider) {
     return (
@@ -121,6 +192,17 @@ export default async function ProviderProfilePage() {
   // Build a quick lookup: dayOfWeek → schedule row
   const scheduleMap = Object.fromEntries(
     provider.schedule.map((s) => [s.dayOfWeek, s])
+  )
+
+  // Build selected node IDs and label map for ServiceAreaPicker
+  const selectedNodeIds = provider.technicianServiceAreas
+    .map(a => a.locationNodeId)
+    .filter((id): id is string => id != null)
+
+  const selectedLabels = Object.fromEntries(
+    provider.technicianServiceAreas
+      .filter((a): a is typeof a & { locationNodeId: string } => a.locationNodeId != null)
+      .map(a => [a.locationNodeId, a.label])
   )
 
   const completedJobs = await db.job.findMany({
@@ -239,13 +321,14 @@ export default async function ProviderProfilePage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="serviceAreas" className="text-sm">Service areas</Label>
-              <Textarea
-                id="serviceAreas"
-                name="serviceAreas"
-                defaultValue={provider.serviceAreas.join(', ')}
-                rows={2}
-                placeholder="Comma-separated, for example: Soweto, Roodepoort"
+              <Label className="text-sm">Service areas</Label>
+              <p className="text-xs text-muted-foreground">
+                Select the suburbs where you offer services.
+              </p>
+              <ServiceAreaPicker
+                initialCities={cities}
+                selectedNodeIds={selectedNodeIds}
+                selectedLabels={selectedLabels}
               />
             </div>
             <div className="space-y-1.5">
