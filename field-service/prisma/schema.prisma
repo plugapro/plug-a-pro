@@ -53,16 +53,54 @@ model Address {
   suburb     String
   city       String
   province   String
-  postalCode String?
-  lat        Float?
-  lng        Float?
-  isDefault  Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  postalCode     String?
+  locationNodeId String?
+  lat            Float?
+  lng            Float?
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
 
   customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   jobRequests JobRequest[]
+  locationNode LocationNode? @relation(fields: [locationNodeId], references: [id])
 
   @@map("addresses")
+}
+
+// ─── Location hierarchy ───────────────────────────────────────────────────────
+// Four-level tree: PROVINCE → CITY → REGION → SUBURB
+// Seeded from lib/service-areas/south-africa.ts. Admin-manageable at runtime.
+// postcode support: deferred — add postalCode String? to SUBURB nodes when needed.
+
+model LocationNode {
+  id          String           @id @default(cuid())
+  nodeType    LocationNodeType
+  // slug is the canonical key — e.g. "gauteng", "gauteng__johannesburg", "gauteng__johannesburg__jhb_north", "gauteng__johannesburg__jhb_north__sandton"
+  slug        String           @unique
+  label       String
+  parentId    String?
+  lat         Float?
+  lng         Float?
+  radiusKm    Float?
+  // Denormalised for fast matching without tree-walk joins
+  provinceKey String?          // set on CITY, REGION, SUBURB nodes
+  cityKey     String?          // set on REGION and SUBURB nodes
+  regionKey   String?          // set on SUBURB nodes only
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  parent   LocationNode?  @relation("LocationNodeChildren", fields: [parentId], references: [id])
+  children LocationNode[] @relation("LocationNodeChildren")
+
+  technicianServiceAreas TechnicianServiceArea[]
+  addresses              Address[]
+
+  @@index([nodeType, active])
+  @@index([provinceKey, nodeType])
+  @@index([cityKey, nodeType])
+  @@index([regionKey])
+  @@map("location_nodes")
 }
 
 // ─── Providers (independent workers) ─────────────────────────────────────────
@@ -507,19 +545,25 @@ model TechnicianServiceArea {
   providerId  String
   areaType    TechnicianServiceAreaType @default(SUBURB)
   label       String
-  city        String?
-  province    String?
-  lat         Float?
-  lng         Float?
-  radiusKm    Float?
-  priority    Int      @default(0)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  city           String?
+  province       String?
+  locationNodeId String?
+  cityKey        String?
+  regionKey      String?
+  suburbKey      String?
+  lat            Float?
+  lng            Float?
+  radiusKm       Float?
+  priority       Int      @default(0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  provider     Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  locationNode LocationNode? @relation(fields: [locationNodeId], references: [id])
 
   @@index([providerId, active])
+  @@index([locationNodeId])
   @@map("technician_service_areas")
 }
 
@@ -924,9 +968,17 @@ enum TechnicianCertificationStatus {
   EXPIRED
 }
 
+enum LocationNodeType {
+  PROVINCE
+  CITY
+  REGION
+  SUBURB
+}
+
 enum TechnicianServiceAreaType {
   SUBURB
   CITY
+  REGION
   RADIUS
   CUSTOM
 }

@@ -414,3 +414,49 @@ export function getProvinceRegions(province: 'gauteng' | 'western_cape' | 'kwazu
     suburbCount: Object.keys(r.suburbs).length,
   }))
 }
+
+/**
+ * Maps each regionKey to the city/metro it belongs to.
+ * Used by the seed script to build the 4-level Province → City → Region → Suburb hierarchy.
+ * NOT for UI use — UI reads from DB via lib/location-nodes.ts.
+ */
+export const REGION_CITY_MAP: Record<string, { cityKey: string; cityLabel: string }> = {
+  // Gauteng
+  jhb_north:         { cityKey: 'johannesburg',      cityLabel: 'Johannesburg' },
+  jhb_cbd:           { cityKey: 'johannesburg',      cityLabel: 'Johannesburg' },
+  jhb_south:         { cityKey: 'johannesburg',      cityLabel: 'Johannesburg' },
+  jhb_east:          { cityKey: 'johannesburg',      cityLabel: 'Johannesburg' },
+  jhb_west:          { cityKey: 'johannesburg',      cityLabel: 'Johannesburg' },
+  east_rand:         { cityKey: 'east_rand',         cityLabel: 'East Rand / Ekurhuleni' },
+  centurion_midrand: { cityKey: 'centurion_midrand', cityLabel: 'Centurion / Midrand' },
+  pretoria_east:     { cityKey: 'pretoria',          cityLabel: 'Pretoria' },
+  pretoria_cbd:      { cityKey: 'pretoria',          cityLabel: 'Pretoria' },
+  pretoria_north:    { cityKey: 'pretoria',          cityLabel: 'Pretoria' },
+  // Western Cape
+  cape_town_north:   { cityKey: 'cape_town',         cityLabel: 'Cape Town' },
+  cape_town_south:   { cityKey: 'cape_town',         cityLabel: 'Cape Town' },
+  cape_town_cbd:     { cityKey: 'cape_town',         cityLabel: 'Cape Town' },
+  // KwaZulu-Natal
+  durban_north:      { cityKey: 'durban',            cityLabel: 'Durban' },
+  durban_cbd:        { cityKey: 'durban',            cityLabel: 'Durban' },
+}
+
+/**
+ * Maps provinceKey to the cities/metros within that province.
+ * Used by the seed script only.
+ * NOT for UI use — UI reads from DB via lib/location-nodes.ts.
+ */
+export const PROVINCE_CITIES: Record<string, Array<{ key: string; label: string }>> = {
+  gauteng: [
+    { key: 'johannesburg',      label: 'Johannesburg' },
+    { key: 'east_rand',         label: 'East Rand / Ekurhuleni' },
+    { key: 'centurion_midrand', label: 'Centurion / Midrand' },
+    { key: 'pretoria',          label: 'Pretoria' },
+  ],
+  western_cape: [
+    { key: 'cape_town', label: 'Cape Town' },
+  ],
+  kwazulu_natal: [
+    { key: 'durban', label: 'Durban' },
+  ],
+}
