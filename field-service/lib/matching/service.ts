@@ -423,12 +423,12 @@ function buildScoreBreakdown(params: {
     params.coverageTier === 'REGION_FALLBACK' ? MATCHING_CONFIG.regionFallbackPenalty : 0
 
   const total =
-    skillMatch * weights.skillMatch +
-    scheduleFit * weights.scheduleFit +
-    travelEfficiency * weights.travelEfficiency +
-    reliability * weights.reliability +
-    customerPreference * weights.customerPreference +
-    marginEfficiency * weights.marginEfficiency
+    (skillMatch * weights.skillMatch +
+      scheduleFit * weights.scheduleFit +
+      travelEfficiency * weights.travelEfficiency +
+      reliability * weights.reliability +
+      customerPreference * weights.customerPreference +
+      marginEfficiency * weights.marginEfficiency)
     - geographicPenalty
 
   const reasons = [
@@ -523,12 +523,8 @@ async function loadMatchingContext(jobRequestId: string) {
     lat: number | null
     lng: number | null
     radiusKm: number | null
-    // NEW structured fields:
     locationNodeId: string | null
-    provinceKey: string | null
-    cityKey: string | null
     regionKey: string | null
-    suburbKey: string | null
   }
   type AvailabilityRow = {
     providerId: string
@@ -612,10 +608,7 @@ async function loadMatchingContext(jobRequestId: string) {
               lng: true,
               radiusKm: true,
               locationNodeId: true,
-              provinceKey: true,
-              cityKey: true,
               regionKey: true,
-              suburbKey: true,
             },
           }) ?? Promise.resolve([]),
         [] as ServiceAreaRow[],
@@ -769,6 +762,8 @@ async function loadMatchingContext(jobRequestId: string) {
         lat?: number | null
         lng?: number | null
         radiusKm?: number | null
+        locationNodeId?: string | null
+        regionKey?: string | null
       }[]
       technicianAvailability?: {
         availabilityState: string

@@ -18,6 +18,7 @@ export interface CandidateInput {
   category: string
   suburb: string
   city: string
+  regionKey?: string | null
 }
 
 export interface DispatchResult {
@@ -34,7 +35,11 @@ type LegacyDispatchJobRequest = {
   title: string
   description: string
   customer: { name: string } | null
-  address: { suburb: string | null; city: string | null } | null
+  address: {
+    suburb: string | null
+    city: string | null
+    locationNode: { regionKey: string | null } | null
+  } | null
 }
 
 
@@ -65,6 +70,11 @@ async function loadLegacyDispatchJobRequest(jobRequestId: string): Promise<Legac
         select: {
           suburb: true,
           city: true,
+          locationNode: {
+            select: {
+              regionKey: true,
+            },
+          },
         },
       },
     },
@@ -83,6 +93,7 @@ async function dispatchLeadsLegacy(jobRequestId: string): Promise<DispatchResult
     category: jobRequest.category,
     suburb,
     city,
+    regionKey: jobRequest.address?.locationNode?.regionKey ?? null,
   })
 
   if (candidates.length === 0) {
@@ -340,11 +351,14 @@ export async function findCandidateProviders(input: CandidateInput) {
       // Structured match: check suburbKey or regionKey (SUBURB_EXACT or REGION_FALLBACK)
       const normalizedSuburb = suburb.replace(/\s+/g, '_').trim()
       const suburbExact = activeStructuredAreas.some((a) => a.suburbKey === normalizedSuburb)
-      const regionMatch = activeStructuredAreas.some((a) => a.regionKey !== null && suburb.includes(a.regionKey))
+      const regionMatch = input.regionKey != null
+        ? activeStructuredAreas.some((a) => a.regionKey === input.regionKey)
+        : false
       return suburbExact || regionMatch
     }
 
-    // Legacy string fallback
+    // Legacy string fallback (migration window only)
+    if (!MATCHING_CONFIG.allowLegacyStringFallback) return false
     const areas = provider.serviceAreas.map((area) => area.toLowerCase()).filter(Boolean)
     return areas.includes(suburb) || areas.includes(city)
   })
