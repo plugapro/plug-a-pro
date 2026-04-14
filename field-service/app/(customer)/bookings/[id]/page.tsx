@@ -382,6 +382,45 @@ export default async function BookingDetailPage({
         </div>
       )}
 
+      {booking.job && (
+        <Card>
+          <CardContent className="space-y-3 px-4 py-4">
+            <div>
+              <p className="text-sm font-medium">Work evidence</p>
+              <p className="text-sm text-muted-foreground">
+                Photos uploaded from site help confirm what was done.
+              </p>
+            </div>
+
+            {booking.job.photos.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {booking.job.photos.map((photo) => (
+                  <div key={photo.id} className="space-y-1">
+                    <a href={`/api/attachments/${photo.id}`} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/attachments/${photo.id}`}
+                        alt={photo.caption ?? photo.label ?? 'Work evidence'}
+                        className="h-40 w-full rounded-lg object-cover"
+                      />
+                    </a>
+                    {(photo.caption || photo.label) && (
+                      <p className="text-xs text-muted-foreground">
+                        {photo.caption ?? photo.label}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No work photos have been uploaded yet.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Invoice */}
       {booking.invoice && (
         <Card>

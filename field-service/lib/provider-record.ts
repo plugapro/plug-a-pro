@@ -1,4 +1,5 @@
 import { normalizePhone } from './utils'
+import { syncProviderSkills } from './provider-skills'
 
 type ProviderRecordSyncClient = {
   provider: {
@@ -7,6 +8,10 @@ type ProviderRecordSyncClient = {
     createMany: (...args: any[]) => Promise<unknown>
   }
   technicianServiceArea?: {
+    upsert: (...args: any[]) => Promise<unknown>
+    updateMany: (...args: any[]) => Promise<unknown>
+  }
+  technicianSkill?: {
     upsert: (...args: any[]) => Promise<unknown>
     updateMany: (...args: any[]) => Promise<unknown>
   }
@@ -140,6 +145,12 @@ export async function syncProviderRecord(
       data,
     })
 
+    try {
+      await syncProviderSkills(client, existing.id, input.skills)
+    } catch (err) {
+      console.error('[provider-record] syncProviderSkills failed for provider', existing.id, err)
+    }
+
     if (input.locationNodeIds && input.locationNodeIds.length > 0) {
       try {
         await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
@@ -187,6 +198,12 @@ export async function syncProviderRecord(
         verified: input.verified,
       },
     })
+  }
+
+  try {
+    await syncProviderSkills(client, id, input.skills)
+  } catch (err) {
+    console.error('[provider-record] syncProviderSkills failed for provider', id, err)
   }
 
   if (input.locationNodeIds && input.locationNodeIds.length > 0) {

@@ -6,6 +6,7 @@
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { db } from '../db'
+import { getJobRequestAccessUrl } from '../job-request-access'
 import type { FlowContext, FlowResult } from './types'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
@@ -264,7 +265,7 @@ async function showRequestStatus(
 
   // ── Default: show status + direct ticket link ────────────────────────────
   const ticketRef = jr.id.slice(-6).toUpperCase()
-  const trackingUrl = appUrl ? `${appUrl}/requests/${jr.id}` : ''
+  const trackingUrl = appUrl ? await getJobRequestAccessUrl(jr.id) : ''
   log(`sending status CTA trackingUrl=${trackingUrl || '(none)'} ticketRef=${ticketRef}`)
 
   try {

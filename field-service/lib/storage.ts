@@ -19,6 +19,7 @@ export async function uploadJobPhoto(params: {
   jobId: string
   file: File
   label?: 'before' | 'after' | 'evidence' | string
+  caption?: string | null
   uploadedBy: string
 }): Promise<string> {
   validateFile(params.file)
@@ -42,6 +43,7 @@ export async function uploadJobPhoto(params: {
       mimeType: params.file.type,
       sizeBytes: params.file.size,
       label: params.label,
+      caption: params.caption ?? null,
       uploadedBy: params.uploadedBy,
     },
   })

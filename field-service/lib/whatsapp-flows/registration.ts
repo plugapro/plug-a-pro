@@ -7,19 +7,13 @@ import { db } from '../db'
 import { syncProviderRecord } from '../provider-record'
 import { normalizePhone } from '../utils'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
+import {
+  SERVICE_CATEGORY_OPTIONS,
+  getServiceCategorySelectionSummary,
+  labelsFromServiceCategoryTags,
+  normalizeServiceCategorySelections,
+} from '../service-categories'
 import type { FlowContext, FlowResult } from './types'
-
-// Static category list — mirrors job-request.ts
-const SKILL_CATEGORIES = [
-  'Plumbing',
-  'Painting',
-  'Garden & Landscaping',
-  'Handyman',
-  'Appliances',
-  'Electrical',
-  'DIY & Assembly',
-  'Roofing',
-]
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
 export const REGISTRATION_TRIGGERS = [
@@ -125,55 +119,31 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills' }
   }
 
-  await sendSkillList(ctx.phone, `Nice to meet you, *${name}*! 👋\n\nWhat type of work do you do?\n_(You can add multiple skills)_`)
+  await sendSkillPrompt(ctx.phone, `Nice to meet you, *${name}*! 👋`)
   return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
-  // Handle "done selecting skills"
-  if (ctx.reply.id === 'skills_done') {
-    const skills = ctx.data.skills ?? []
-    if (skills.length === 0) {
-      await sendSkillList(ctx.phone, 'Please select at least one skill.')
-      return { nextStep: 'reg_collect_skills_more' }
-    }
-    return promptArea(ctx)
-  }
+  const rawInput = ctx.reply.text?.trim() ?? ctx.reply.title?.trim() ?? ''
+  const skills = parseSkillSelections(rawInput)
 
-  if (!ctx.reply.id?.startsWith('skill_')) {
-    await sendSkillList(ctx.phone, 'Please choose from the list, or tap *Done* to continue.')
-    return { nextStep: 'reg_collect_skills_more' }
-  }
-
-  const newSkill = ctx.reply.title ?? ''
-  const existing = ctx.data.skills ?? []
-
-  // Prevent duplicate selections
-  if (existing.includes(newSkill)) {
-    const skillList = existing.join(', ')
-    await sendButtons(
+  if (skills.length === 0) {
+    await sendSkillPrompt(
       ctx.phone,
-      `✅ *${newSkill}* is already in your list.\n\nSelected: *${skillList}*\n\nAdd another skill or continue?`,
-      [
-        { id: 'skills_more', title: '➕ Add another' },
-        { id: 'skills_done', title: '✅ Done' },
-      ]
+      'Please choose at least one valid skill. Reply with numbers or a comma-separated list.',
     )
     return { nextStep: 'reg_collect_skills_more' }
   }
 
-  const skills = [...existing, newSkill]
-  const skillList = skills.join(', ')
-
   await sendButtons(
     ctx.phone,
-    `✅ *${newSkill}* added!\n\nYour skills so far: *${skillList}*\n\nAdd another skill or continue?`,
+    `✅ Selected skills: *${skills.join(', ')}*\n\nUse these skills for your application, or replace them before continuing.`,
     [
-      { id: 'skills_more', title: '➕ Add another' },
-      { id: 'skills_done', title: '✅ Done' },
+      { id: 'skills_done', title: '✅ Continue' },
+      { id: 'edit_skills', title: '✏️ Change skills' },
     ]
   )
-  return { nextStep: 'reg_collect_skills_more', nextData: { skills } }
+  return { nextStep: 'reg_collect_area', nextData: { skills } }
 }
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
@@ -195,8 +165,19 @@ async function promptArea(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
-  // This step is no longer reached directly — area is handled after skills_done via promptArea
-  // Kept for backwards compat if a session was in this step before the update
+  if (ctx.reply.id === 'edit_skills') {
+    await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+  }
+
+  if (ctx.reply.id === 'skills_done') {
+    const skills = ctx.data.skills ?? []
+    if (skills.length === 0) {
+      await sendSkillPrompt(ctx.phone, 'Please choose at least one skill before continuing.')
+      return { nextStep: 'reg_collect_skills_more' }
+    }
+  }
+
   return promptArea(ctx)
 }
 
@@ -213,12 +194,6 @@ const PROVINCE_KEY_MAP: Record<string, string> = {
 // ─── Experience and availability ──────────────────────────────────────────────
 
 async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
-  // Handle "add more skills" request (from skills_more button after area prompt)
-  if (ctx.reply.id === 'skills_more') {
-    await sendSkillList(ctx.phone, 'Choose another skill:')
-    return { nextStep: 'reg_collect_skills_more' }
-  }
-
   if (!ctx.reply.id?.startsWith('area_')) {
     await sendList(
       ctx.phone,
@@ -693,7 +668,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_skills' }   // handleCollectSkills reads the text as the new name
 
     case 'edit_skills':
-      await sendSkillList(ctx.phone, 'Choose your skills. Tap *Done* when finished.\n\n_Your previous selection will be replaced._')
+      await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
       return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
 
     case 'edit_area':
@@ -744,15 +719,35 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function sendSkillList(phone: string, bodyText: string): Promise<void> {
-  const rows = SKILL_CATEGORIES.map((cat) => ({
-    id: `skill_${cat.toLowerCase().replace(/[\s&/]+/g, '_')}`,
-    title: cat,
-  }))
-  await sendList(
+async function sendSkillPrompt(phone: string, intro: string): Promise<void> {
+  const numberedList = SERVICE_CATEGORY_OPTIONS.map(
+    (option, index) => `${index + 1}. ${option.label}`,
+  ).join('\n')
+
+  await sendText(
     phone,
-    bodyText,
-    [{ title: 'Skills', rows }],
-    { buttonLabel: 'Choose Skill', footer: 'Select each skill then tap Done' }
+    `${intro}\n\n🔧 *Choose your skills in one reply.*\nReply with numbers separated by commas.\nExample: *1,3,5*\n\n${numberedList}`,
   )
+}
+
+function parseSkillSelections(input: string): string[] {
+  if (!input.trim()) return []
+
+  const tokens = input
+    .split(/[,\n]/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+
+  if (tokens.length === 0) return []
+
+  const numericSelections = tokens.every((token) => /^\d+$/.test(token))
+  if (numericSelections) {
+    const tags = tokens
+      .map((token) => Number(token))
+      .map((index) => SERVICE_CATEGORY_OPTIONS[index - 1]?.tag)
+      .filter((value): value is string => Boolean(value))
+    return labelsFromServiceCategoryTags(tags)
+  }
+
+  return labelsFromServiceCategoryTags(normalizeServiceCategorySelections(tokens))
 }

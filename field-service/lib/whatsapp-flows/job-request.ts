@@ -6,14 +6,13 @@ import {
   sendText,
   sendButtons,
   sendList,
+  sendCtaUrl,
   type InboundReply,
 } from '../whatsapp-interactive'
 import { db } from '../db'
 import { getCategoryPolicy } from '../service-category-policy'
 import { createJobRequest } from '../job-requests/create-job-request'
 import type { FlowContext, FlowResult } from './types'
-
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
 // Static category list — replaces db.service queries
 const JOB_CATEGORIES = [
@@ -339,14 +338,20 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       locationNodeId: ctx.data.addressLocationNodeId ?? null,
     })
 
-    await sendButtons(
-      ctx.phone,
-      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.${categoryPolicy.bookingOnAssignment ? '\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._' : ''}`,
-      [
-        { id: 'status', title: '📋 Track My Request' },
-        { id: 'back_home', title: '🏠 Main Menu' },
-      ]
-    )
+    const successMessage = `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.${categoryPolicy.bookingOnAssignment ? '\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._' : ''}`
+
+    if (result.ticketUrl) {
+      await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
+    } else {
+      await sendButtons(
+        ctx.phone,
+        successMessage,
+        [
+          { id: 'status', title: '📋 Track My Request' },
+          { id: 'back_home', title: '🏠 Main Menu' },
+        ]
+      )
+    }
 
     return { nextStep: 'done', nextData: { jobRequestId: result.jobRequestId, customerId: result.customerId } }
   } catch (err) {

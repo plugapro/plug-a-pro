@@ -24,10 +24,12 @@ const PUBLIC_PATHS = [
   '/technician-verify',    // legacy — kept for backward compat
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
+  '/requests/access',      // signed single-ticket links are scoped to one request
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET
   '/api/webhooks',
   '/api/auth/session',     // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',        // called client-side after OTP — no session cookie yet
+  '/api/health',           // monitoring probe — must be reachable without a session cookie
 ]
 
 // Routes that require provider role

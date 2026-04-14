@@ -58,9 +58,23 @@ export default async function AdminLayout({
             ))}
           </ul>
         </nav>
-        <div className="border-t border-border/70 p-4">
+        <div className="border-t border-border/70 p-4 space-y-2">
           <p className="app-kicker">Signed in</p>
           <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+          <form
+            action={async () => {
+              'use server'
+              const { cookies } = await import('next/headers')
+              ;(await cookies()).set('sb-access-token', '', { maxAge: 0, path: '/' })
+            }}
+          >
+            <button
+              type="submit"
+              className="w-full rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
 

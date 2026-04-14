@@ -11,6 +11,7 @@ const {
   mockDb,
   mockFetch,
   mockHead,
+  mockResolveJobRequestAccessScope,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockDb: {
@@ -20,11 +21,15 @@ const {
   },
   mockFetch: vi.fn(),
   mockHead: vi.fn(),
+  mockResolveJobRequestAccessScope: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@vercel/blob', () => ({ head: mockHead }))
+vi.mock('@/lib/job-request-access', () => ({
+  resolveJobRequestAccessScope: mockResolveJobRequestAccessScope,
+}))
 vi.stubGlobal('fetch', mockFetch)
 
 // Dynamic import so mocks are set up before module loads
@@ -35,6 +40,9 @@ async function getHandler() {
 
 const makeRequest = () =>
   new NextRequest('http://localhost/api/attachments/att-1')
+
+const makeTokenRequest = (token: string) =>
+  new NextRequest(`http://localhost/api/attachments/att-1?token=${token}`)
 
 const makeParams = () =>
   Promise.resolve({ id: 'att-1' }) as Promise<{ id: string }>
@@ -62,6 +70,10 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
       ok: true,
       body: null,
       status: 200,
+    })
+    mockResolveJobRequestAccessScope.mockResolvedValue({
+      status: 'invalid',
+      jobRequestId: null,
     })
   })
 
@@ -150,6 +162,89 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
 
     const GET = await getHandler()
     const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(401)
+  })
+
+  it('allows an unauthenticated request with a valid ticket token for the same job request', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveJobRequestAccessScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-1',
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: {
+        providerId: 'provider-db-id',
+        booking: {
+          match: {
+            jobRequest: {
+              id: 'jr-1',
+              customer: { id: 'cust-db-id' },
+            },
+          },
+        },
+      },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeTokenRequest('token-123'), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    expect(mockResolveJobRequestAccessScope).toHaveBeenCalledWith('token-123')
+    expect(mockHead).toHaveBeenCalledWith('https://blob.example.com/att-1')
+  })
+
+  it('denies an unauthenticated request when the ticket token does not match the attachment job request', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveJobRequestAccessScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-2',
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: {
+        providerId: 'provider-db-id',
+        booking: {
+          match: {
+            jobRequest: {
+              id: 'jr-1',
+              customer: { id: 'cust-db-id' },
+            },
+          },
+        },
+      },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeTokenRequest('token-123'), { params: makeParams() })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('denies an unauthenticated request with an expired ticket token', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveJobRequestAccessScope.mockResolvedValue({
+      status: 'expired',
+      jobRequestId: 'jr-1',
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: {
+        providerId: 'provider-db-id',
+        booking: {
+          match: {
+            jobRequest: {
+              id: 'jr-1',
+              customer: { id: 'cust-db-id' },
+            },
+          },
+        },
+      },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeTokenRequest('token-123'), { params: makeParams() })
 
     expect(res.status).toBe(401)
   })

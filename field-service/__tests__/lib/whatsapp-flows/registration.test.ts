@@ -267,6 +267,41 @@ describe('registration flow — duplicate prevention', () => {
   })
 })
 
+describe('registration flow — single-step skill multi-select', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('prompts for one-message skill selection after collecting the provider name', async () => {
+    const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('Reply with numbers separated by commas'),
+    )
+    expect(result.nextStep).toBe('reg_collect_skills_more')
+  })
+
+  it('parses numeric multi-select skill input in one message', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, '1,3,5', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('Plumbing, Garden & Landscaping, Appliances'),
+      expect.any(Array),
+    )
+    expect(result.nextStep).toBe('reg_collect_area')
+    expect(result.nextData).toMatchObject({
+      skills: ['Plumbing', 'Garden & Landscaping', 'Appliances'],
+    })
+  })
+})
+
 // ─── syncProviderRecord phone normalization ───────────────────────────────────
 
 describe('syncProviderRecord — phone normalization', () => {

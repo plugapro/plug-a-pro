@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ServiceAreaPicker } from '@/components/provider/ServiceAreaPicker'
+import { SkillPicker } from '@/components/provider/SkillPicker'
 
 export const metadata = buildMetadata({ title: 'My Profile', noIndex: true })
 
@@ -46,12 +47,8 @@ async function updateProfile(formData: FormData) {
   const bio = (formData.get('bio') as string | null)?.trim()
   const experience = (formData.get('experience') as string | null)?.trim()
   const evidenceNote = (formData.get('evidenceNote') as string | null)?.trim()
-  const skillsInput = (formData.get('skills') as string | null)?.trim() ?? ''
+  const skillTags = formData.getAll('skillTags').map(String)
   const portfolioUrlsInput = (formData.get('portfolioUrls') as string | null)?.trim() ?? ''
-  const skills = skillsInput
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
   const portfolioUrls = portfolioUrlsInput
     .split('\n')
     .map((value) => value.trim())
@@ -64,9 +61,15 @@ async function updateProfile(formData: FormData) {
     bio !== undefined ||
     experience !== undefined ||
     evidenceNote !== undefined ||
-    skillsInput !== undefined ||
+    skillTags.length >= 0 ||
     portfolioUrlsInput !== undefined
   ) {
+    const { syncProviderSkills } = await import('@/lib/provider-skills')
+
+    if (skillTags.length === 0) {
+      redirect('/provider/profile?error=skills_required')
+    }
+
     await dbServer.provider.update({
       where: { id: provider.id },
       data: {
@@ -75,10 +78,11 @@ async function updateProfile(formData: FormData) {
         bio: bio || null,
         experience: experience || null,
         evidenceNote: evidenceNote || null,
-        skills,
         portfolioUrls,
       },
     })
+
+    await syncProviderSkills(dbServer, provider.id, skillTags)
   }
 
   // Sync structured service areas from picker
@@ -164,8 +168,13 @@ async function updateProfile(formData: FormData) {
   redirect('/provider/profile')
 }
 
-export default async function ProviderProfilePage() {
+export default async function ProviderProfilePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ error?: string }>
+}) {
   const session = await requireProvider()
+  const resolvedSearchParams = searchParams ? await searchParams : {}
 
   const [provider, cities] = await Promise.all([
     db.provider.findUnique({
@@ -246,6 +255,12 @@ export default async function ProviderProfilePage() {
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
       <h1 className="text-xl font-semibold">My Profile</h1>
 
+      {resolvedSearchParams.error === 'skills_required' && (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Select at least one skill before saving your profile.
+        </div>
+      )}
+
       <form action={updateProfile} className="space-y-6">
         {/* Contact info */}
         <Card>
@@ -311,14 +326,11 @@ export default async function ProviderProfilePage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="skills" className="text-sm">Skills</Label>
-              <Textarea
-                id="skills"
-                name="skills"
-                defaultValue={provider.skills.join(', ')}
-                rows={2}
-                placeholder="Comma-separated, for example: Plumbing, Handyman"
-              />
+              <Label className="text-sm">Skills</Label>
+              <p className="text-xs text-muted-foreground">
+                Select all the services you want to receive jobs for.
+              </p>
+              <SkillPicker initialSkillLabels={provider.skills} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">Service areas</Label>

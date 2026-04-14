@@ -239,6 +239,9 @@ model JobRequest {
   customerAcceptedAmount Decimal? @db.Decimal(10, 2)
   customerAcceptedScope String?
   autoCreateBookingOnAssignment Boolean @default(false)
+  customerAccessToken String?   @unique
+  customerAccessTokenExpiresAt DateTime?
+  customerAccessTokenRevokedAt DateTime?
   latestDispatchDecisionId String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt   DateTime?        // if no match within window, mark EXPIRED
@@ -451,6 +454,7 @@ model Attachment {
   mimeType         String
   sizeBytes        Int
   label            String?  // "before", "after", "inspection", "receipt"
+  caption          String?
   uploadedBy       String   // user ID
   createdAt        DateTime @default(now())
 
