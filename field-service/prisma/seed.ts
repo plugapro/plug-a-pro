@@ -13,6 +13,7 @@
 
 import {
   PrismaClient,
+  LocationNodeType,
   JobRequestStatus,
   MatchStatus,
   QuoteStatus,
@@ -21,6 +22,7 @@ import {
   ReviewerType,
   ApplicationStatus,
 } from '@prisma/client'
+import { SA_PROVINCES, REGION_CITY_MAP, PROVINCE_CITIES } from '../lib/service-areas/south-africa'
 
 const prisma = new PrismaClient()
 
@@ -28,7 +30,169 @@ const prisma = new PrismaClient()
 // Plumbing | Painting | Garden & Landscaping | Handyman
 // Appliances | Electrical | DIY & Assembly | Roofing
 
+// ─── Location nodes ───────────────────────────────────────────────────────────
+
+async function seedLocationNodes() {
+  // Validate that every regionKey present in SA_PROVINCES exists in REGION_CITY_MAP
+  const missingRegions = Object.entries(SA_PROVINCES).flatMap(([, p]) =>
+    Object.keys(p.regions).filter(rk => !REGION_CITY_MAP[rk])
+  )
+  if (missingRegions.length > 0) {
+    throw new Error(`REGION_CITY_MAP is missing entries for: ${missingRegions.join(', ')}`)
+  }
+
+  let provinceCount = 0
+  let cityCount = 0
+  let regionCount = 0
+  let suburbCount = 0
+
+  // ── Phase 1: Province nodes ──────────────────────────────────────────────────
+  const provinceNodes: Record<string, { id: string }> = {}
+
+  for (const [provinceKey, province] of Object.entries(SA_PROVINCES)) {
+    const node = await prisma.locationNode.upsert({
+      where:  { slug: provinceKey },
+      create: {
+        slug:        provinceKey,
+        nodeType:    LocationNodeType.PROVINCE,
+        label:       province.name,
+        parentId:    null,
+        provinceKey: provinceKey,
+        cityKey:     null,
+        regionKey:   null,
+        lat:         null,
+        lng:         null,
+        radiusKm:    null,
+        active:      true,
+        updatedAt:   new Date(),
+      },
+      update: {
+        label:    province.name,
+        lat:      null,
+        lng:      null,
+        radiusKm: null,
+        active:   true,
+      },
+    })
+    provinceNodes[provinceKey] = node
+    provinceCount++
+  }
+
+  // ── Phase 2: City nodes ──────────────────────────────────────────────────────
+  const cityNodes: Record<string, { id: string }> = {}
+
+  for (const [provinceKey, cities] of Object.entries(PROVINCE_CITIES)) {
+    const provinceNode = provinceNodes[provinceKey]
+    if (!provinceNode) continue
+
+    for (const city of cities) {
+      const slug = `${provinceKey}__${city.key}`
+      const node = await prisma.locationNode.upsert({
+        where:  { slug },
+        create: {
+          slug:        slug,
+          nodeType:    LocationNodeType.CITY,
+          label:       city.label,
+          parentId:    provinceNode.id,
+          provinceKey: provinceKey,
+          cityKey:     city.key,
+          regionKey:   null,
+          lat:         null,
+          lng:         null,
+          radiusKm:    null,
+          active:      true,
+          updatedAt:   new Date(),
+        },
+        update: {
+          label:    city.label,
+          lat:      null,
+          lng:      null,
+          radiusKm: null,
+          active:   true,
+        },
+      })
+      // Key by "provinceKey__cityKey" to allow multiple provinces to have same cityKey
+      cityNodes[`${provinceKey}__${city.key}`] = node
+      cityCount++
+    }
+  }
+
+  // ── Phase 3 & 4: Region and suburb nodes ────────────────────────────────────
+  for (const [provinceKey, province] of Object.entries(SA_PROVINCES)) {
+    for (const [regionKey, region] of Object.entries(province.regions)) {
+      const cityMapping = REGION_CITY_MAP[regionKey]
+      const cityKey = cityMapping.cityKey
+      const cityNodeKey = `${provinceKey}__${cityKey}`
+      const cityNode = cityNodes[cityNodeKey]
+      if (!cityNode) continue
+
+      // Phase 3 — Region node
+      const regionSlug = `${provinceKey}__${cityKey}__${regionKey}`
+      const regionNode = await prisma.locationNode.upsert({
+        where:  { slug: regionSlug },
+        create: {
+          slug:        regionSlug,
+          nodeType:    LocationNodeType.REGION,
+          label:       region.name,
+          parentId:    cityNode.id,
+          provinceKey: provinceKey,
+          cityKey:     cityKey,
+          regionKey:   regionKey,
+          lat:         region.center.lat,
+          lng:         region.center.lng,
+          radiusKm:    region.radiusKm,
+          active:      true,
+          updatedAt:   new Date(),
+        },
+        update: {
+          label:    region.name,
+          lat:      region.center.lat,
+          lng:      region.center.lng,
+          radiusKm: region.radiusKm,
+          active:   true,
+        },
+      })
+      regionCount++
+
+      // Phase 4 — Suburb nodes
+      for (const [suburbLabel, coord] of Object.entries(region.suburbs)) {
+        const suburbKey = suburbLabel.toLowerCase().replace(/\s+/g, '_')
+        const suburbSlug = `${provinceKey}__${cityKey}__${regionKey}__${suburbKey}`
+        await prisma.locationNode.upsert({
+          where:  { slug: suburbSlug },
+          create: {
+            slug:        suburbSlug,
+            nodeType:    LocationNodeType.SUBURB,
+            label:       suburbLabel,
+            parentId:    regionNode.id,
+            provinceKey: provinceKey,
+            cityKey:     cityKey,
+            regionKey:   regionKey,
+            lat:         coord.lat,
+            lng:         coord.lng,
+            radiusKm:    null,
+            active:      true,
+            updatedAt:   new Date(),
+          },
+          update: {
+            label:    suburbLabel,
+            lat:      coord.lat,
+            lng:      coord.lng,
+            radiusKm: null,
+            active:   true,
+          },
+        })
+        suburbCount++
+      }
+    }
+  }
+
+  console.log(`✔ LocationNodes: ${provinceCount} provinces, ${cityCount} cities, ${regionCount} regions, ${suburbCount} suburbs`)
+}
+
 async function main() {
+  await seedLocationNodes()
+
   // ── Customers ────────────────────────────────────────────────────────────────
   const customerData = [
     {
