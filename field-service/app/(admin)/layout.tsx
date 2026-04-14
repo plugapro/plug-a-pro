@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: '/admin/providers',    label: 'Providers',   icon: 'users' as const },
   { href: '/admin/customers',    label: 'Customers',   icon: 'users' as const },
   { href: '/admin/categories',   label: 'Categories',  icon: 'categories' as const },
+  { href: '/admin/locations',    label: 'Locations',   icon: 'categories' as const },
   { href: '/admin/disputes',     label: 'Disputes',    icon: 'disputes' as const },
   { href: '/admin/payments',     label: 'Payments',    icon: 'payments' as const },
   { href: '/admin/reports',      label: 'Reports',     icon: 'reports' as const },
