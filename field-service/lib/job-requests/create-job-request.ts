@@ -41,6 +41,7 @@ export interface CreateJobRequestParams {
   city: string
   province: string
   postalCode?: string | null
+  locationNodeId?: string | null   // SUBURB node ID — null for legacy/WhatsApp paths
 }
 
 export interface CreateJobRequestResult {
@@ -130,6 +131,7 @@ export async function createJobRequest(
         postalCode: params.postalCode ?? null,
         lat:        geo?.lat ?? null,
         lng:        geo?.lng ?? null,
+        locationNodeId: params.locationNodeId ?? null,   // ADD THIS LINE
       },
       select: { id: true },
     })

@@ -6,6 +6,20 @@ type ProviderRecordSyncClient = {
     updateMany: (...args: any[]) => Promise<unknown>
     createMany: (...args: any[]) => Promise<unknown>
   }
+  technicianServiceArea?: {
+    upsert: (...args: any[]) => Promise<unknown>
+    updateMany: (...args: any[]) => Promise<unknown>
+  }
+  locationNode?: {
+    findMany: (...args: any[]) => Promise<Array<{
+      id: string
+      slug: string
+      label: string
+      provinceKey: string | null
+      cityKey: string | null
+      regionKey: string | null
+    }>>
+  }
   $executeRawUnsafe?: (query: string, ...values: unknown[]) => Promise<unknown>
 }
 
@@ -35,6 +49,60 @@ type SyncProviderRecordInput = {
   active: boolean
   availableNow: boolean
   verified: boolean
+  locationNodeIds?: string[]   // ADD: SUBURB node IDs for structured service areas
+}
+
+async function upsertStructuredServiceAreas(
+  client: ProviderRecordSyncClient,
+  providerId: string,
+  locationNodeIds: string[],
+) {
+  if (!client.technicianServiceArea || !client.locationNode) return
+  if (locationNodeIds.length === 0) return
+
+  const nodes = await client.locationNode.findMany({
+    where: { id: { in: locationNodeIds }, active: true },
+    select: {
+      id: true,
+      slug: true,
+      label: true,
+      provinceKey: true,
+      cityKey: true,
+      regionKey: true,
+    },
+  })
+
+  for (const node of nodes) {
+    const suburbKey = node.slug.split('__').at(-1) ?? node.slug
+
+    await client.technicianServiceArea.upsert({
+      where: {
+        providerId_locationNodeId: {
+          providerId,
+          locationNodeId: node.id,
+        },
+      },
+      create: {
+        providerId,
+        locationNodeId: node.id,
+        areaType: 'SUBURB',
+        label: node.label,
+        provinceKey: node.provinceKey,
+        cityKey: node.cityKey,
+        regionKey: node.regionKey,
+        suburbKey,
+        active: true,
+      },
+      update: {
+        label: node.label,
+        provinceKey: node.provinceKey,
+        cityKey: node.cityKey,
+        regionKey: node.regionKey,
+        suburbKey,
+        active: true,
+      },
+    })
+  }
 }
 
 export async function syncProviderRecord(
@@ -65,6 +133,14 @@ export async function syncProviderRecord(
       where: { id: existing.id },
       data,
     })
+
+    if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+      try {
+        await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
+      } catch (err) {
+        console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
+      }
+    }
 
     return existing.id
   }
@@ -105,6 +181,14 @@ export async function syncProviderRecord(
         verified: input.verified,
       },
     })
+  }
+
+  if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+    try {
+      await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
+    } catch (err) {
+      console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
+    }
   }
 
   return id

@@ -564,6 +564,7 @@ model TechnicianServiceArea {
   provider     Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
   locationNode LocationNode? @relation(fields: [locationNodeId], references: [id])
 
+  @@unique([providerId, locationNodeId])
   @@index([providerId, active])
   @@index([locationNodeId])
   @@index([provinceKey])
