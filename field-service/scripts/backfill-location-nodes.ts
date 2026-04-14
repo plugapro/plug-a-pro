@@ -15,9 +15,7 @@
 
 import { PrismaClient } from '@prisma/client'
 
-const prisma = new PrismaClient()
-
-async function main() {
+export async function main(prisma: PrismaClient) {
   console.log('Backfill: Address.locationNodeId\n')
 
   // ── 1. Load all active SUBURB nodes into a lookup map ────────────────────
@@ -104,9 +102,13 @@ async function main() {
   console.log('\nDone.')
 }
 
-main()
-  .catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
-  .finally(() => prisma.$disconnect())
+// Run directly: pnpm db:backfill
+if (require.main === module) {
+  const client = new PrismaClient()
+  main(client)
+    .catch((err) => {
+      console.error(err)
+      process.exit(1)
+    })
+    .finally(() => client.$disconnect())
+}
