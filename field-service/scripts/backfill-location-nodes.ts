@@ -108,7 +108,7 @@ async function backfillProviderServiceAreas(prisma: PrismaClient, nodeMap: Map<s
     select: { id: true, serviceAreas: true },
   })
 
-  console.log(`  ${providers.length} providers without structured service areas`)
+  console.log(`  ${providers.length} providers with legacy serviceAreas[] to process`)
 
   const allNodes = [...nodeMap.values()]
   const { byLabelCity, byLabelOnly } = buildLookupMaps(allNodes)
