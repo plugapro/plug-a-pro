@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     assignmentMode?: 'AUTO_ASSIGN' | 'OPS_REVIEW'
     customerAcceptedAmount?: number
     customerAcceptedScope?: string
+    locationNodeId?: string | null
   }
 
   try {
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
     assignmentMode,
     customerAcceptedAmount,
     customerAcceptedScope,
+    locationNodeId,
   } = body
 
   if (!category || !title || !description || !street || !suburb || !city || !province) {
@@ -97,6 +99,7 @@ export async function POST(req: NextRequest) {
       city,
       province,
       postalCode: postalCode ?? null,
+      locationNodeId: locationNodeId ?? null,
     })
     return NextResponse.json({ jobRequestId: result.jobRequestId })
   } catch (err) {

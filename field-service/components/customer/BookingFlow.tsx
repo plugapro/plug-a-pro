@@ -17,6 +17,8 @@ import {
   SelectItem,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
+import { SuburbPicker } from './SuburbPicker'
+import type { CityOption } from '@/lib/location-nodes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,11 @@ interface CategoryData {
   slug: string
   name: string
   description: string | null
+}
+
+interface BookingFlowProps {
+  category: CategoryData
+  initialCities: CityOption[]
 }
 
 interface Address {
@@ -50,11 +57,7 @@ const SA_PROVINCES = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BookingFlow({
-  category,
-}: {
-  category: CategoryData
-}) {
+export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
     street: '',
@@ -65,6 +68,7 @@ export function BookingFlow({
   })
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [locationNodeId, setLocationNodeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [locationLoading, setLocationLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -81,7 +85,15 @@ export function BookingFlow({
     const province = normalizeValue(address.province)
     const postalCode = address.postalCode.trim()
 
-    if (!street || !suburb || !city || !province) {
+    if (!street) {
+      return 'Please enter your street address before continuing.'
+    }
+
+    if (!suburb || !city) {
+      return 'Please select your suburb using the picker, or use "Use my current location".'
+    }
+
+    if (!province) {
       return 'Please complete the full service address before continuing.'
     }
 
@@ -154,6 +166,7 @@ export function BookingFlow({
         province: data.province ?? current.province,
         postalCode: data.postalCode ?? current.postalCode,
       }))
+      setLocationNodeId(null)
     } catch (err) {
       setError(
         err instanceof Error
@@ -217,6 +230,7 @@ export function BookingFlow({
           city: normalizeValue(address.city),
           province: normalizeValue(address.province),
           postalCode: address.postalCode.trim(),
+          locationNodeId: locationNodeId ?? undefined,
         }),
       })
 
@@ -309,29 +323,25 @@ export function BookingFlow({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="suburb" className="text-muted-foreground">Suburb</Label>
-                <Input
-                  id="suburb"
-                  required
-                  type="text"
-                  value={address.suburb}
-                  onChange={(e) => setAddress({ ...address, suburb: e.target.value })}
-                  placeholder="Sandton"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="city" className="text-muted-foreground">City</Label>
-                <Input
-                  id="city"
-                  required
-                  type="text"
-                  value={address.city}
-                  onChange={(e) => setAddress({ ...address, city: e.target.value })}
-                  placeholder="Johannesburg"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">Suburb</Label>
+              <SuburbPicker
+                initialCities={initialCities}
+                onSelect={(selection) => {
+                  if (selection) {
+                    setAddress((prev) => ({ ...prev, suburb: selection.suburb, city: selection.city }))
+                    setLocationNodeId(selection.locationNodeId)
+                  } else {
+                    setAddress((prev) => ({ ...prev, suburb: '', city: '' }))
+                    setLocationNodeId(null)
+                  }
+                }}
+              />
+              {address.suburb && (
+                <p className="text-xs text-muted-foreground">
+                  {address.suburb}, {address.city}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
