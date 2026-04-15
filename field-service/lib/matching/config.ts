@@ -20,6 +20,8 @@ export const MATCHING_CONFIG = {
     customerPreference: 0.1,
     marginEfficiency: 0.05,
   },
+  regionFallbackPenalty: 0.12,   // score penalty when provider covers the region but not the exact suburb
+  allowLegacyStringFallback: true, // migration window: allow string-match fallback for providers without structured areas. Set to false post-backfill.
 } as const
 
 export type MatchingWeights = typeof MATCHING_CONFIG.weights

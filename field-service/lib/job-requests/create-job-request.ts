@@ -7,6 +7,8 @@
 import { db } from '../db'
 import { mergeCategoryRequirements } from '../service-category-policy'
 import { geocodeAddress } from '../geocoding'
+import { resolveSuburbNodeId } from '../location-nodes'
+import { getJobRequestAccessUrl } from '../job-request-access'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -41,11 +43,13 @@ export interface CreateJobRequestParams {
   city: string
   province: string
   postalCode?: string | null
+  locationNodeId?: string | null   // SUBURB node ID — null for legacy/WhatsApp paths
 }
 
 export interface CreateJobRequestResult {
   jobRequestId: string
   customerId: string
+  ticketUrl: string | null
 }
 
 export async function createJobRequest(
@@ -65,6 +69,8 @@ export async function createJobRequest(
     city:     params.city,
     province: params.province,
   })
+  const resolvedLocationNodeId =
+    params.locationNodeId ?? (await resolveSuburbNodeId(params.suburb, params.city))
 
   // Atomic: customer upsert + address + jobRequest in one transaction
   const result = await db.$transaction(async (tx) => {
@@ -130,6 +136,7 @@ export async function createJobRequest(
         postalCode: params.postalCode ?? null,
         lat:        geo?.lat ?? null,
         lng:        geo?.lng ?? null,
+        locationNodeId: resolvedLocationNodeId ?? null,
       },
       select: { id: true },
     })
@@ -182,5 +189,10 @@ export async function createJobRequest(
     })
     .catch((err) => console.error('[create-job-request] Matching error:', err))
 
-  return result
+  const ticketUrl = await getJobRequestAccessUrl(result.jobRequestId)
+
+  return {
+    ...result,
+    ticketUrl,
+  }
 }

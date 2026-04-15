@@ -41,6 +41,8 @@ export type MatchingAddress = {
   province: string
   lat: number | null
   lng: number | null
+  locationNodeId: string | null   // SUBURB node id — null for legacy addresses
+  regionKey: string | null         // denormalised from the linked LocationNode
 }
 
 export type MatchingProvider = Pick<
@@ -79,6 +81,13 @@ export type MatchingProvider = Pick<
   scheduleItems: TechnicianScheduleItem[]
 }
 
+export type CoverageTier =
+  | 'RADIUS'
+  | 'SUBURB_EXACT'
+  | 'REGION_FALLBACK'
+  | 'LEGACY_STRING'
+  | 'NO_MATCH'
+
 export type FilteredCandidate = {
   providerId: string
   providerName: string
@@ -92,6 +101,7 @@ export type ScoreBreakdown = {
   reliability: number
   customerPreference: number
   marginEfficiency: number
+  geographicPenalty: number   // 0.0 normally; regionFallbackPenalty when tier = REGION_FALLBACK
   total: number
   reasons: string[]
 }

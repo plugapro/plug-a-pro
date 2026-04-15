@@ -9,6 +9,10 @@ function makeClient() {
       updateMany: vi.fn(),
       createMany: vi.fn(),
     },
+    technicianSkill: {
+      updateMany: vi.fn(),
+      upsert: vi.fn(),
+    },
     providerApplication: {
       findMany: vi.fn(),
       updateMany: vi.fn(),
@@ -193,5 +197,44 @@ describe('syncProviderRecord — phone normalization', () => {
       data: expect.objectContaining({ verified: true, name: 'Sipho Khumalo Updated' }),
     })
     expect(client.provider.createMany).not.toHaveBeenCalled()
+  })
+
+  it('syncs normalized technician skill tags while keeping provider skill labels', async () => {
+    const client = {
+      provider: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'prov_exists' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        createMany: vi.fn(),
+      },
+      technicianSkill: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+    }
+
+    await syncProviderRecord(client as never, {
+      phone: '+27821234567',
+      name: 'Sipho Khumalo',
+      skills: ['Electrical', 'Garden & Landscaping', 'DIY & Assembly'],
+      serviceAreas: ['Centurion'],
+      active: true,
+      availableNow: true,
+      verified: false,
+    })
+
+    expect(client.technicianSkill.updateMany).toHaveBeenCalledWith({
+      where: {
+        providerId: 'prov_exists',
+        skillTag: { notIn: ['electrical', 'garden', 'diy'] },
+      },
+      data: { active: false },
+    })
+    expect(client.technicianSkill.upsert).toHaveBeenCalledTimes(3)
+    expect(client.provider.updateMany).toHaveBeenCalledWith({
+      where: { id: 'prov_exists' },
+      data: expect.objectContaining({
+        skills: ['Electrical', 'Garden & Landscaping', 'DIY & Assembly'],
+      }),
+    })
   })
 })

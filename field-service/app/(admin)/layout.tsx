@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: '/admin/providers',    label: 'Providers',   icon: 'users' as const },
   { href: '/admin/customers',    label: 'Customers',   icon: 'users' as const },
   { href: '/admin/categories',   label: 'Categories',  icon: 'categories' as const },
+  { href: '/admin/locations',    label: 'Locations',   icon: 'categories' as const },
   { href: '/admin/disputes',     label: 'Disputes',    icon: 'disputes' as const },
   { href: '/admin/payments',     label: 'Payments',    icon: 'payments' as const },
   { href: '/admin/reports',      label: 'Reports',     icon: 'reports' as const },
@@ -57,9 +58,23 @@ export default async function AdminLayout({
             ))}
           </ul>
         </nav>
-        <div className="border-t border-border/70 p-4">
+        <div className="border-t border-border/70 p-4 space-y-2">
           <p className="app-kicker">Signed in</p>
           <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+          <form
+            action={async () => {
+              'use server'
+              const { cookies } = await import('next/headers')
+              ;(await cookies()).set('sb-access-token', '', { maxAge: 0, path: '/' })
+            }}
+          >
+            <button
+              type="submit"
+              className="w-full rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
 

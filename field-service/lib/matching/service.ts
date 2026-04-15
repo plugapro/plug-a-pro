@@ -15,6 +15,7 @@ import { isLocationStale, pointFallsWithinRadius } from './geography'
 import { createBookingArtifactsForApprovedQuote } from '../quotes'
 import { initializeBookingPayment } from '../payments'
 import type {
+  CoverageTier,
   DispatchActor,
   DispatchHistoryResult,
   DispatchRunResult,
@@ -80,7 +81,16 @@ function buildMatchingJobRequest(record: {
   autoCreateBookingOnAssignment: boolean
   status: MatchingJobRequest['status']
   customer?: { id: string; name: string; phone: string } | null
-  address?: { street: string; suburb: string; city: string; province: string; lat: number | null; lng: number | null } | null
+  address?: {
+    street: string
+    suburb: string
+    city: string
+    province: string
+    lat: number | null
+    lng: number | null
+    locationNodeId: string | null
+    locationNode: { regionKey: string | null } | null
+  } | null
 }) {
   return {
     id: record.id,
@@ -103,7 +113,18 @@ function buildMatchingJobRequest(record: {
     autoCreateBookingOnAssignment: record.autoCreateBookingOnAssignment,
     status: record.status,
     customer: record.customer ?? { id: record.customerId, name: 'Customer', phone: '' },
-    address: record.address ?? null,
+    address: record.address
+      ? {
+          street: record.address.street,
+          suburb: record.address.suburb,
+          city: record.address.city,
+          province: record.address.province,
+          lat: record.address.lat,
+          lng: record.address.lng,
+          locationNodeId: record.address.locationNodeId ?? null,
+          regionKey: record.address.locationNode?.regionKey ?? null,
+        }
+      : null,
   }
 }
 
@@ -145,6 +166,10 @@ async function loadMatchingJobRequest(client: any, jobRequestId: string) {
           province: true,
           lat: true,
           lng: true,
+          locationNodeId: true,
+          locationNode: {
+            select: { regionKey: true },
+          },
         },
       },
     },
@@ -304,38 +329,69 @@ function hasRequiredVehicleTypes(jobRequest: MatchingJobRequest, provider: Match
     .some((vehicleType) => providerVehicles.has(vehicleType))
 }
 
-function providerCoversAddress(provider: MatchingProvider, address: MatchingAddress) {
+function providerCoversAddress(
+  provider: MatchingProvider,
+  address: MatchingAddress,
+): { covers: boolean; tier: CoverageTier } {
+  const activeAreas = provider.technicianServiceAreas.filter((a) => a.active)
+
+  // Tier 1 — RADIUS: haversine check (unchanged from existing logic)
   if (address.lat != null && address.lng != null) {
-    const radiusAreas = provider.technicianServiceAreas.filter(
+    const radiusAreas = activeAreas.filter(
       (area) =>
-        area.active &&
         area.areaType === 'RADIUS' &&
+        area.lat != null &&
+        area.lng != null &&
+        area.radiusKm != null &&
         pointFallsWithinRadius({
-          center: { lat: area.lat, lng: area.lng },
-          point: { lat: address.lat, lng: address.lng },
-          radiusKm: area.radiusKm,
+          center: { lat: area.lat!, lng: area.lng! },
+          point: { lat: address.lat!, lng: address.lng! },
+          radiusKm: area.radiusKm!,
         }),
     )
-
-    if (radiusAreas.length > 0) return true
+    if (radiusAreas.length > 0) return { covers: true, tier: 'RADIUS' }
   }
 
-  const addressTerms = [
-    address.suburb,
-    address.city,
-  ].map((value) => normalizeTag(value ?? '')).filter(Boolean)
+  // Tier 2 — structured path (only when address has a locationNodeId)
+  if (address.locationNodeId != null) {
+    // Tier 2a — SUBURB_EXACT: provider has a row with matching locationNodeId
+    const exactMatch = activeAreas.some(
+      (area) => area.locationNodeId === address.locationNodeId,
+    )
+    if (exactMatch) return { covers: true, tier: 'SUBURB_EXACT' }
 
-  const serviceAreas = new Set(
-    [
-      ...provider.serviceAreas,
-      ...provider.technicianServiceAreas.filter((area) => area.active).map((area) => area.label),
-      ...provider.technicianServiceAreas
-        .filter((area) => area.active && area.city)
-        .map((area) => area.city as string),
-    ].map(normalizeTag),
-  )
+    // Tier 2b — REGION_FALLBACK: provider covers the same region
+    if (address.regionKey != null) {
+      const regionMatch = activeAreas.some(
+        (area) => area.regionKey === address.regionKey,
+      )
+      if (regionMatch) return { covers: true, tier: 'REGION_FALLBACK' }
+    }
 
-  return addressTerms.some((term) => serviceAreas.has(term))
+    // Structured address but no match found — do NOT fall through to string matching
+    return { covers: false, tier: 'NO_MATCH' }
+  }
+
+  // Tier 3 — LEGACY_STRING: fallback for providers/addresses without structured areas
+  // Only active during migration window (controlled by config flag)
+  if (!MATCHING_CONFIG.allowLegacyStringFallback) {
+    return { covers: false, tier: 'NO_MATCH' }
+  }
+
+  const addressTerms = [address.suburb, address.city]
+    .map((value) => normalizeTag(value ?? ''))
+    .filter(Boolean)
+
+  const providerAreaTerms = [
+    ...provider.serviceAreas,
+    ...activeAreas.map((a) => a.label),
+    ...activeAreas.map((a) => a.city).filter(Boolean),
+  ].map((v) => normalizeTag(v ?? '')).filter(Boolean)
+
+  const hasStringMatch = addressTerms.some((term) => providerAreaTerms.includes(term))
+  if (hasStringMatch) return { covers: true, tier: 'LEGACY_STRING' }
+
+  return { covers: false, tier: 'NO_MATCH' }
 }
 
 function buildScoreBreakdown(params: {
@@ -344,6 +400,7 @@ function buildScoreBreakdown(params: {
   scheduleFitScore: number
   travelMinutes: number
   canMeetWindow: boolean
+  coverageTier: CoverageTier  // NEW
   weights?: MatchingWeights
 }) {
   const weights = params.weights ?? MATCHING_CONFIG.weights
@@ -362,13 +419,17 @@ function buildScoreBreakdown(params: {
     Math.min(1, (params.provider.maxTravelMinutes - params.travelMinutes) / Math.max(params.provider.maxTravelMinutes, 1)),
   )
 
+  const geographicPenalty =
+    params.coverageTier === 'REGION_FALLBACK' ? MATCHING_CONFIG.regionFallbackPenalty : 0
+
   const total =
-    skillMatch * weights.skillMatch +
-    scheduleFit * weights.scheduleFit +
-    travelEfficiency * weights.travelEfficiency +
-    reliability * weights.reliability +
-    customerPreference * weights.customerPreference +
-    marginEfficiency * weights.marginEfficiency
+    (skillMatch * weights.skillMatch +
+      scheduleFit * weights.scheduleFit +
+      travelEfficiency * weights.travelEfficiency +
+      reliability * weights.reliability +
+      customerPreference * weights.customerPreference +
+      marginEfficiency * weights.marginEfficiency)
+    - geographicPenalty
 
   const reasons = [
     skillMatch === 1 ? 'Required skills matched' : 'Missing required skill coverage',
@@ -389,6 +450,13 @@ function buildScoreBreakdown(params: {
     reasons.push('Preferred or repeat technician')
   }
 
+  if (params.coverageTier === 'REGION_FALLBACK') {
+    reasons.push('Matched on region — provider may not cover this exact suburb')
+  }
+  if (params.coverageTier === 'LEGACY_STRING') {
+    reasons.push('Service area matched by name (legacy — structured areas not yet configured)')
+  }
+
   reasons.push(
     params.provider.verified
       ? 'Marketplace-reviewed profile'
@@ -402,6 +470,7 @@ function buildScoreBreakdown(params: {
     reliability,
     customerPreference,
     marginEfficiency,
+    geographicPenalty,
     total,
     reasons,
   } satisfies ScoreBreakdown
@@ -454,6 +523,8 @@ async function loadMatchingContext(jobRequestId: string) {
     lat: number | null
     lng: number | null
     radiusKm: number | null
+    locationNodeId: string | null
+    regionKey: string | null
   }
   type AvailabilityRow = {
     providerId: string
@@ -536,6 +607,8 @@ async function loadMatchingContext(jobRequestId: string) {
               lat: true,
               lng: true,
               radiusKm: true,
+              locationNodeId: true,
+              regionKey: true,
             },
           }) ?? Promise.resolve([]),
         [] as ServiceAreaRow[],
@@ -689,6 +762,8 @@ async function loadMatchingContext(jobRequestId: string) {
         lat?: number | null
         lng?: number | null
         radiusKm?: number | null
+        locationNodeId?: string | null
+        regionKey?: string | null
       }[]
       technicianAvailability?: {
         availabilityState: string
@@ -802,7 +877,8 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
     if (provider.technicianAvailability?.availabilityState === 'OFFLINE') {
       filteredReasonCodes.push('TECHNICIAN_OFFLINE')
     }
-    if (!providerCoversAddress(provider, address)) {
+    const areaCoverage = providerCoversAddress(provider, address)
+    if (!areaCoverage.covers) {
       filteredReasonCodes.push('OUTSIDE_SERVICE_AREA')
     }
     if (!hasRequiredSkills(jobRequest, provider)) {
@@ -875,6 +951,7 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
       scheduleFitScore: scheduleFit.score,
       travelMinutes: scheduleFit.travelMinutes,
       canMeetWindow: scheduleFit.canMeetWindow,
+      coverageTier: areaCoverage.tier,
     })
 
     candidates.push({

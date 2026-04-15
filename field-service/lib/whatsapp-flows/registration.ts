@@ -7,19 +7,13 @@ import { db } from '../db'
 import { syncProviderRecord } from '../provider-record'
 import { normalizePhone } from '../utils'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
+import {
+  SERVICE_CATEGORY_OPTIONS,
+  getServiceCategorySelectionSummary,
+  labelsFromServiceCategoryTags,
+  normalizeServiceCategorySelections,
+} from '../service-categories'
 import type { FlowContext, FlowResult } from './types'
-
-// Static category list — mirrors job-request.ts
-const SKILL_CATEGORIES = [
-  'Plumbing',
-  'Painting',
-  'Garden & Landscaping',
-  'Handyman',
-  'Appliances',
-  'Electrical',
-  'DIY & Assembly',
-  'Roofing',
-]
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
 export const REGISTRATION_TRIGGERS = [
@@ -46,6 +40,12 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectArea(ctx)
     case 'reg_collect_experience':
       return handleCollectExperience(ctx)
+    case 'reg_collect_city':
+      return handleCollectCity(ctx)
+    case 'reg_collect_region':
+      return handleCollectRegion(ctx)
+    case 'reg_collect_region_more':
+      return handleCollectRegionMore(ctx)
     case 'reg_collect_availability':
       return handleCollectAvailability(ctx)
     case 'reg_collect_evidence':
@@ -119,55 +119,31 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills' }
   }
 
-  await sendSkillList(ctx.phone, `Nice to meet you, *${name}*! 👋\n\nWhat type of work do you do?\n_(You can add multiple skills)_`)
+  await sendSkillPrompt(ctx.phone, `Nice to meet you, *${name}*! 👋`)
   return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
-  // Handle "done selecting skills"
-  if (ctx.reply.id === 'skills_done') {
-    const skills = ctx.data.skills ?? []
-    if (skills.length === 0) {
-      await sendSkillList(ctx.phone, 'Please select at least one skill.')
-      return { nextStep: 'reg_collect_skills_more' }
-    }
-    return promptArea(ctx)
-  }
+  const rawInput = ctx.reply.text?.trim() ?? ctx.reply.title?.trim() ?? ''
+  const skills = parseSkillSelections(rawInput)
 
-  if (!ctx.reply.id?.startsWith('skill_')) {
-    await sendSkillList(ctx.phone, 'Please choose from the list, or tap *Done* to continue.')
-    return { nextStep: 'reg_collect_skills_more' }
-  }
-
-  const newSkill = ctx.reply.title ?? ''
-  const existing = ctx.data.skills ?? []
-
-  // Prevent duplicate selections
-  if (existing.includes(newSkill)) {
-    const skillList = existing.join(', ')
-    await sendButtons(
+  if (skills.length === 0) {
+    await sendSkillPrompt(
       ctx.phone,
-      `✅ *${newSkill}* is already in your list.\n\nSelected: *${skillList}*\n\nAdd another skill or continue?`,
-      [
-        { id: 'skills_more', title: '➕ Add another' },
-        { id: 'skills_done', title: '✅ Done' },
-      ]
+      'Please choose at least one valid skill. Reply with numbers or a comma-separated list.',
     )
     return { nextStep: 'reg_collect_skills_more' }
   }
 
-  const skills = [...existing, newSkill]
-  const skillList = skills.join(', ')
-
   await sendButtons(
     ctx.phone,
-    `✅ *${newSkill}* added!\n\nYour skills so far: *${skillList}*\n\nAdd another skill or continue?`,
+    `✅ Selected skills: *${skills.join(', ')}*\n\nUse these skills for your application, or replace them before continuing.`,
     [
-      { id: 'skills_more', title: '➕ Add another' },
-      { id: 'skills_done', title: '✅ Done' },
+      { id: 'skills_done', title: '✅ Continue' },
+      { id: 'edit_skills', title: '✏️ Change skills' },
     ]
   )
-  return { nextStep: 'reg_collect_skills_more', nextData: { skills } }
+  return { nextStep: 'reg_collect_area', nextData: { skills } }
 }
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
@@ -189,20 +165,35 @@ async function promptArea(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
-  // This step is no longer reached directly — area is handled after skills_done via promptArea
-  // Kept for backwards compat if a session was in this step before the update
+  if (ctx.reply.id === 'edit_skills') {
+    await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+  }
+
+  if (ctx.reply.id === 'skills_done') {
+    const skills = ctx.data.skills ?? []
+    if (skills.length === 0) {
+      await sendSkillPrompt(ctx.phone, 'Please choose at least one skill before continuing.')
+      return { nextStep: 'reg_collect_skills_more' }
+    }
+  }
+
   return promptArea(ctx)
+}
+
+// ─── Province key map ─────────────────────────────────────────────────────────
+
+const PROVINCE_KEY_MAP: Record<string, string> = {
+  'area_gauteng':       'gauteng',
+  'area_western_cape':  'western_cape',
+  'area_kwazulu_natal': 'kwazulu_natal',
+  'area_eastern_cape':  'eastern_cape',
+  'area_other':         'gauteng', // fallback to largest province
 }
 
 // ─── Experience and availability ──────────────────────────────────────────────
 
 async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
-  // Handle "add more skills" request (from skills_more button after area prompt)
-  if (ctx.reply.id === 'skills_more') {
-    await sendSkillList(ctx.phone, 'Choose another skill:')
-    return { nextStep: 'reg_collect_skills_more' }
-  }
-
   if (!ctx.reply.id?.startsWith('area_')) {
     await sendList(
       ctx.phone,
@@ -223,9 +214,45 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const areaLabel = ctx.reply.title ?? ''
+  const provinceKey = PROVINCE_KEY_MAP[ctx.reply.id ?? ''] ?? 'gauteng'
 
+  try {
+    const { getCities } = await import('@/lib/location-nodes')
+    const cities = await getCities(provinceKey)
+
+    if (cities.length === 0) {
+      // No cities seeded yet — fall through to legacy area approach
+      await sendExperiencePrompt(ctx.phone)
+      return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+    }
+
+    const rows = cities.slice(0, 10).map(c => ({
+      id: `city_${c.id}`,
+      title: c.label,
+    }))
+
+    await sendList(
+      ctx.phone,
+      '🏙 Which city do you mainly work in?',
+      [{ title: 'Cities', rows }],
+      { buttonLabel: 'Choose City' }
+    )
+    return {
+      nextStep: 'reg_collect_city',
+      nextData: { serviceAreas: [areaLabel], province: areaLabel, provinceKey },
+    }
+  } catch {
+    // DB unavailable — fall through to legacy flow
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+  }
+}
+
+// ─── Experience prompt helper ─────────────────────────────────────────────────
+
+async function sendExperiencePrompt(phone: string): Promise<void> {
   await sendList(
-    ctx.phone,
+    phone,
     '💼 How many years of experience do you have in your trade?',
     [{
       title: 'Experience',
@@ -238,7 +265,137 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
     }],
     { buttonLabel: 'Choose Experience' }
   )
-  return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+}
+
+// ─── City and region selection (structured location) ─────────────────────────
+
+async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
+  if (!ctx.reply.id?.startsWith('city_')) {
+    // Re-show city list using stored provinceKey
+    const { getCities } = await import('@/lib/location-nodes')
+    const cities = await getCities(ctx.data.provinceKey ?? 'gauteng')
+    const rows = cities.slice(0, 10).map(c => ({ id: `city_${c.id}`, title: c.label }))
+    await sendList(ctx.phone, '🏙 Please choose your city:', [{ title: 'Cities', rows }], { buttonLabel: 'Choose City' })
+    return { nextStep: 'reg_collect_city' }
+  }
+
+  const cityId = ctx.reply.id.replace('city_', '')
+  const cityLabel = ctx.reply.title ?? ''
+
+  try {
+    const { getRegions } = await import('@/lib/location-nodes')
+    const regions = await getRegions(cityId)
+
+    if (regions.length === 0) {
+      // No regions — fall through to experience
+      await sendExperiencePrompt(ctx.phone)
+      return {
+        nextStep: 'reg_collect_availability',
+        nextData: { city: cityLabel, serviceAreas: [ctx.data.province ?? cityLabel] },
+      }
+    }
+
+    const rows = regions.slice(0, 10).map(r => ({
+      id: `region_${r.id}`,
+      title: r.label,
+    }))
+
+    await sendList(
+      ctx.phone,
+      `🗺 Which area(s) of *${cityLabel}* do you work in?\n\n_(You can add multiple areas)_`,
+      [{ title: 'Areas', rows }],
+      { buttonLabel: 'Choose Area' }
+    )
+    return {
+      nextStep: 'reg_collect_region',
+      nextData: { city: cityLabel, cityId },
+    }
+  } catch {
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability', nextData: { city: cityLabel } }
+  }
+}
+
+async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
+  try {
+    const { getRegions } = await import('@/lib/location-nodes')
+    const regions = await getRegions(ctx.data.cityId ?? '')
+    if (regions.length === 0) {
+      await sendExperiencePrompt(ctx.phone)
+      return { nextStep: 'reg_collect_availability' }
+    }
+    const rows = regions.slice(0, 10).map(r => ({ id: `region_${r.id}`, title: r.label }))
+    await sendList(
+      ctx.phone,
+      '🗺 Please choose an area:',
+      [{ title: 'Areas', rows }],
+      { buttonLabel: 'Choose Area' }
+    )
+    return { nextStep: 'reg_collect_region' }
+  } catch {
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability' }
+  }
+}
+
+async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
+  // "Done" — proceed to experience
+  if (ctx.reply.id === 'region_done') {
+    const nodeIds = ctx.data.locationNodeIds ?? []
+    if (nodeIds.length === 0) {
+      // Re-show region list
+      return showRegionList(ctx)
+    }
+    await sendExperiencePrompt(ctx.phone)
+    return { nextStep: 'reg_collect_availability' }
+  }
+
+  if (ctx.reply.id === 'region_more') {
+    return showRegionList(ctx)
+  }
+
+  if (!ctx.reply.id?.startsWith('region_')) {
+    return showRegionList(ctx)
+  }
+
+  const regionId = ctx.reply.id.replace('region_', '')
+  const regionLabel = ctx.reply.title ?? ''
+
+  const existing = ctx.data.locationNodeIds ?? []
+  if (existing.includes(regionId)) {
+    // Already selected
+    const areaList = (ctx.data.selectedRegionLabels ?? []).join(', ')
+    await sendButtons(
+      ctx.phone,
+      `✅ *${regionLabel}* is already selected.\n\nAreas: *${areaList}*\n\nAdd another or continue?`,
+      [
+        { id: 'region_more', title: '➕ Add another' },
+        { id: 'region_done', title: '✅ Done' },
+      ]
+    )
+    return { nextStep: 'reg_collect_region' }
+  }
+
+  const newNodeIds = [...existing, regionId]
+  const newLabels = [...(ctx.data.selectedRegionLabels ?? []), regionLabel]
+  const areaList = newLabels.join(', ')
+
+  await sendButtons(
+    ctx.phone,
+    `✅ *${regionLabel}* added!\n\nAreas: *${areaList}*\n\nAdd another area or continue?`,
+    [
+      { id: 'region_more', title: '➕ Add another' },
+      { id: 'region_done', title: '✅ Done' },
+    ]
+  )
+  return {
+    nextStep: 'reg_collect_region',
+    nextData: { locationNodeIds: newNodeIds, selectedRegionLabels: newLabels },
+  }
+}
+
+async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
+  return showRegionList(ctx) // re-show the region list
 }
 
 async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> {
@@ -388,10 +545,13 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       phone: normalizedPhone,
       name: ctx.data.name ?? 'Unknown',
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.serviceAreas ?? [],
+      serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
+        ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
+        : (ctx.data.serviceAreas ?? []),
       active: true,
       availableNow: true,
       verified: false,
+      locationNodeIds: ctx.data.locationNodeIds ?? [],
     })
 
     let application: { id: string }
@@ -402,7 +562,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           phone: normalizedPhone,
           name: ctx.data.name ?? 'Unknown',
           skills: ctx.data.skills ?? [],
-          serviceAreas: ctx.data.serviceAreas ?? [],
+          serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
+            ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
+            : (ctx.data.serviceAreas ?? []),
           experience: ctx.data.experience ?? null,
           availability: availLabel,
           status: 'PENDING',
@@ -454,7 +616,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       applicantName: ctx.data.name ?? 'Unknown',
       applicantPhone: ctx.phone,
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.serviceAreas ?? [],
+      serviceAreas: ctx.data.locationNodeIds?.length
+        ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
+        : (ctx.data.serviceAreas ?? []),
       applicationId: application.id,
     }).catch(() => {})
 
@@ -504,7 +668,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_skills' }   // handleCollectSkills reads the text as the new name
 
     case 'edit_skills':
-      await sendSkillList(ctx.phone, 'Choose your skills. Tap *Done* when finished.\n\n_Your previous selection will be replaced._')
+      await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
       return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
 
     case 'edit_area':
@@ -555,15 +719,35 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function sendSkillList(phone: string, bodyText: string): Promise<void> {
-  const rows = SKILL_CATEGORIES.map((cat) => ({
-    id: `skill_${cat.toLowerCase().replace(/[\s&/]+/g, '_')}`,
-    title: cat,
-  }))
-  await sendList(
+async function sendSkillPrompt(phone: string, intro: string): Promise<void> {
+  const numberedList = SERVICE_CATEGORY_OPTIONS.map(
+    (option, index) => `${index + 1}. ${option.label}`,
+  ).join('\n')
+
+  await sendText(
     phone,
-    bodyText,
-    [{ title: 'Skills', rows }],
-    { buttonLabel: 'Choose Skill', footer: 'Select each skill then tap Done' }
+    `${intro}\n\n🔧 *Choose your skills in one reply.*\nReply with numbers separated by commas.\nExample: *1,3,5*\n\n${numberedList}`,
   )
+}
+
+function parseSkillSelections(input: string): string[] {
+  if (!input.trim()) return []
+
+  const tokens = input
+    .split(/[,\n]/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+
+  if (tokens.length === 0) return []
+
+  const numericSelections = tokens.every((token) => /^\d+$/.test(token))
+  if (numericSelections) {
+    const tags = tokens
+      .map((token) => Number(token))
+      .map((index) => SERVICE_CATEGORY_OPTIONS[index - 1]?.tag)
+      .filter((value): value is string => Boolean(value))
+    return labelsFromServiceCategoryTags(tags)
+  }
+
+  return labelsFromServiceCategoryTags(normalizeServiceCategorySelections(tokens))
 }

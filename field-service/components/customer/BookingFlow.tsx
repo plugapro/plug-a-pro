@@ -17,6 +17,8 @@ import {
   SelectItem,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
+import { SuburbPicker } from './SuburbPicker'
+import type { CityOption } from '@/lib/location-nodes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,11 @@ interface CategoryData {
   slug: string
   name: string
   description: string | null
+}
+
+interface BookingFlowProps {
+  category: CategoryData
+  initialCities: CityOption[]
 }
 
 interface Address {
@@ -48,13 +55,21 @@ const SA_PROVINCES = [
   'Northern Cape',
 ]
 
+const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
+  Gauteng: 'gauteng',
+  'Western Cape': 'western_cape',
+  'KwaZulu-Natal': 'kwazulu_natal',
+  'Eastern Cape': 'eastern_cape',
+  Limpopo: 'limpopo',
+  Mpumalanga: 'mpumalanga',
+  'North West': 'north_west',
+  'Free State': 'free_state',
+  'Northern Cape': 'northern_cape',
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BookingFlow({
-  category,
-}: {
-  category: CategoryData
-}) {
+export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
     street: '',
@@ -65,23 +80,28 @@ export function BookingFlow({
   })
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [locationNodeId, setLocationNodeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [locationLoading, setLocationLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
+  const [ticketUrl, setTicketUrl] = useState<string | null>(null)
 
   function normalizeValue(value: string) {
     return value.trim().replace(/\s+/g, ' ')
   }
 
   function validateAddressStep() {
-    const street = normalizeValue(address.street)
     const suburb = normalizeValue(address.suburb)
     const city = normalizeValue(address.city)
     const province = normalizeValue(address.province)
     const postalCode = address.postalCode.trim()
 
-    if (!street || !suburb || !city || !province) {
+    if (!suburb || !city) {
+      return 'Select your province, city, region, and suburb first. Use manual entry if your area is not listed.'
+    }
+
+    if (!province) {
       return 'Please complete the full service address before continuing.'
     }
 
@@ -91,6 +111,11 @@ export function BookingFlow({
 
     if (postalCode && !/^\d{4}$/.test(postalCode)) {
       return 'Postal code must be 4 digits if you include it.'
+    }
+
+    const street = normalizeValue(address.street)
+    if (!street) {
+      return 'Enter the street address after choosing the suburb.'
     }
 
     return null
@@ -154,6 +179,7 @@ export function BookingFlow({
         province: data.province ?? current.province,
         postalCode: data.postalCode ?? current.postalCode,
       }))
+      setLocationNodeId(null)
     } catch (err) {
       setError(
         err instanceof Error
@@ -217,6 +243,7 @@ export function BookingFlow({
           city: normalizeValue(address.city),
           province: normalizeValue(address.province),
           postalCode: address.postalCode.trim(),
+          locationNodeId: locationNodeId ?? undefined,
         }),
       })
 
@@ -232,6 +259,7 @@ export function BookingFlow({
 
       const data = await res.json()
       setJobRequestId(data.jobRequestId)
+      setTicketUrl(data.ticketUrl ?? null)
       setStep('submitted')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
@@ -298,58 +326,58 @@ export function BookingFlow({
 
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label htmlFor="street" className="text-muted-foreground">Street address</Label>
-              <Input
-                id="street"
-                required
-                type="text"
-                value={address.street}
-                onChange={(e) => setAddress({ ...address, street: e.target.value })}
-                placeholder="12 Main Road"
+              <Label htmlFor="province" className="text-muted-foreground">Province</Label>
+              <Select
+                value={address.province}
+                onValueChange={(val) => {
+                  setAddress({ ...address, province: val, city: '', suburb: '' })
+                  setLocationNodeId(null)
+                }}
+              >
+                <SelectTrigger id="province" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SA_PROVINCES.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">Area</Label>
+              <SuburbPicker
+                initialCities={initialCities}
+                provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
+                onSelect={(selection) => {
+                  if (selection) {
+                    setAddress((prev) => ({ ...prev, suburb: selection.suburb, city: selection.city }))
+                    setLocationNodeId(selection.locationNodeId)
+                  } else {
+                    setAddress((prev) => ({ ...prev, suburb: '', city: '' }))
+                    setLocationNodeId(null)
+                  }
+                }}
               />
+              {address.suburb && (
+                <p className="text-xs text-muted-foreground">
+                  {address.suburb}, {address.city}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="suburb" className="text-muted-foreground">Suburb</Label>
+                <Label htmlFor="street" className="text-muted-foreground">Street address</Label>
                 <Input
-                  id="suburb"
+                  id="street"
                   required
                   type="text"
-                  value={address.suburb}
-                  onChange={(e) => setAddress({ ...address, suburb: e.target.value })}
-                  placeholder="Sandton"
+                  value={address.street}
+                  onChange={(e) => setAddress({ ...address, street: e.target.value })}
+                  placeholder="12 Main Road, Estate name, informal directions"
                 />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="city" className="text-muted-foreground">City</Label>
-                <Input
-                  id="city"
-                  required
-                  type="text"
-                  value={address.city}
-                  onChange={(e) => setAddress({ ...address, city: e.target.value })}
-                  placeholder="Johannesburg"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="province" className="text-muted-foreground">Province</Label>
-                <Select
-                  value={address.province}
-                  onValueChange={(val) => setAddress({ ...address, province: val })}
-                >
-                  <SelectTrigger id="province" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SA_PROVINCES.map((p) => (
-                      <SelectItem key={p} value={p}>{p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="postalCode" className="text-muted-foreground">Postal code</Label>
@@ -476,7 +504,7 @@ export function BookingFlow({
 
           <div className="space-y-3">
             <Button asChild className="w-full">
-              <Link href={`/requests/${jobRequestId}`}>Track this request</Link>
+              <Link href={ticketUrl ?? `/requests/${jobRequestId}`}>View ticket</Link>
             </Button>
             <Link
               href="/bookings"

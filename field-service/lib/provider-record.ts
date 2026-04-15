@@ -1,10 +1,30 @@
 import { normalizePhone } from './utils'
+import { syncProviderSkills } from './provider-skills'
 
 type ProviderRecordSyncClient = {
   provider: {
     findUnique: (...args: any[]) => Promise<{ id: string } | null>
     updateMany: (...args: any[]) => Promise<unknown>
     createMany: (...args: any[]) => Promise<unknown>
+  }
+  technicianServiceArea?: {
+    upsert: (...args: any[]) => Promise<unknown>
+    updateMany: (...args: any[]) => Promise<unknown>
+  }
+  technicianSkill?: {
+    upsert: (...args: any[]) => Promise<unknown>
+    updateMany: (...args: any[]) => Promise<unknown>
+  }
+  locationNode?: {
+    findMany: (...args: any[]) => Promise<Array<{
+      id: string
+      nodeType: string
+      slug: string
+      label: string
+      provinceKey: string | null
+      cityKey: string | null
+      regionKey: string | null
+    }>>
   }
   $executeRawUnsafe?: (query: string, ...values: unknown[]) => Promise<unknown>
 }
@@ -35,6 +55,65 @@ type SyncProviderRecordInput = {
   active: boolean
   availableNow: boolean
   verified: boolean
+  locationNodeIds?: string[]   // ADD: SUBURB node IDs for structured service areas
+}
+
+async function upsertStructuredServiceAreas(
+  client: ProviderRecordSyncClient,
+  providerId: string,
+  locationNodeIds: string[],
+) {
+  if (!client.technicianServiceArea || !client.locationNode) return
+  if (locationNodeIds.length === 0) return
+
+  const nodes = await client.locationNode.findMany({
+    where: { id: { in: locationNodeIds }, active: true },
+    select: {
+      id: true,
+      nodeType: true,
+      slug: true,
+      label: true,
+      provinceKey: true,
+      cityKey: true,
+      regionKey: true,
+    },
+  })
+
+  for (const node of nodes) {
+    // SUBURB nodes get a suburbKey (last segment of slug); REGION nodes do not
+    const isSuburb = node.nodeType === 'SUBURB'
+    const areaType = isSuburb ? 'SUBURB' : 'REGION'
+    const suburbKey = isSuburb ? (node.slug.split('__').at(-1) ?? node.slug) : null
+
+    await client.technicianServiceArea.upsert({
+      where: {
+        providerId_locationNodeId: {
+          providerId,
+          locationNodeId: node.id,
+        },
+      },
+      create: {
+        providerId,
+        locationNodeId: node.id,
+        areaType,
+        label: node.label,
+        provinceKey: node.provinceKey,
+        cityKey: node.cityKey,
+        regionKey: node.regionKey,
+        suburbKey,
+        active: true,
+      },
+      update: {
+        areaType,
+        label: node.label,
+        provinceKey: node.provinceKey,
+        cityKey: node.cityKey,
+        regionKey: node.regionKey,
+        suburbKey,
+        active: true,
+      },
+    })
+  }
 }
 
 export async function syncProviderRecord(
@@ -65,6 +144,20 @@ export async function syncProviderRecord(
       where: { id: existing.id },
       data,
     })
+
+    try {
+      await syncProviderSkills(client, existing.id, input.skills)
+    } catch (err) {
+      console.error('[provider-record] syncProviderSkills failed for provider', existing.id, err)
+    }
+
+    if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+      try {
+        await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
+      } catch (err) {
+        console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
+      }
+    }
 
     return existing.id
   }
@@ -105,6 +198,20 @@ export async function syncProviderRecord(
         verified: input.verified,
       },
     })
+  }
+
+  try {
+    await syncProviderSkills(client, id, input.skills)
+  } catch (err) {
+    console.error('[provider-record] syncProviderSkills failed for provider', id, err)
+  }
+
+  if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+    try {
+      await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
+    } catch (err) {
+      console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
+    }
   }
 
   return id

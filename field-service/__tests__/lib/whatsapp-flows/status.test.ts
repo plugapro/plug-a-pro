@@ -15,6 +15,10 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendCtaUrl:  vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('@/lib/job-request-access', () => ({
+  getJobRequestAccessUrl: vi.fn(async (jobRequestId: string) => `https://app.plugapro.co.za/requests/access/${jobRequestId}`),
+}))
+
 import { handleStatusFlow } from '@/lib/whatsapp-flows/status'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
@@ -114,7 +118,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
       PHONE,
       expect.stringContaining('Plumbing'),
       'View Ticket',
-      `${APP_URL}/requests/jr_abc123`
+      `${APP_URL}/requests/access/jr_abc123`
     )
     expect(result.nextStep).toBe('done')
   })
@@ -264,9 +268,8 @@ describe('handleStatusFlow — multiple active requests', () => {
     ] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(latest as never)
     vi.mocked(wa.sendList).mockRejectedValueOnce(new Error('Meta rejected list payload'))
-    vi.mocked(wa.sendButtons)
-      .mockRejectedValueOnce(new Error('Meta rejected button payload'))
-      .mockResolvedValue(undefined)
+    ;(wa.sendButtons as any).mockRejectedValueOnce(new Error('Meta rejected button payload'))
+    ;(wa.sendButtons as any).mockResolvedValue(undefined)
 
     const result = await handleStatusFlow(makeCtx())
 
@@ -278,7 +281,7 @@ describe('handleStatusFlow — multiple active requests', () => {
       PHONE,
       expect.stringContaining('Painting'),
       'View Ticket',
-      `${APP_URL}/requests/jr_1`
+      `${APP_URL}/requests/access/jr_1`
     )
     expect(result.nextStep).toBe('done')
   })
@@ -306,7 +309,7 @@ describe('handleStatusFlow — status_pick step', () => {
       PHONE,
       expect.stringContaining('Electrical'),
       'View Ticket',
-      `${APP_URL}/requests/jr_2`
+      `${APP_URL}/requests/access/jr_2`
     )
     expect(result.nextStep).toBe('done')
   })

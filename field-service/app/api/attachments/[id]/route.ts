@@ -14,17 +14,16 @@ import { head } from '@vercel/blob'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
+import { resolveJobRequestAccessScope } from '@/lib/job-request-access'
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const reqId = crypto.randomUUID().slice(0, 8)
+  const token = request.nextUrl.searchParams.get('token')?.trim() || null
 
   const session = await getSession()
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
 
   const { id } = await params
 
@@ -40,6 +39,7 @@ export async function GET(
                 select: {
                   jobRequest: {
                     select: {
+                      id: true,
                       customer: { select: { id: true } },
                     },
                   },
@@ -51,6 +51,7 @@ export async function GET(
       },
       jobRequest: {
         select: {
+          id: true,
           customer: { select: { id: true } },
         },
       },
@@ -62,8 +63,21 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // Access check
-  if (session.role !== 'admin') {
+  const tokenScope = token ? await resolveJobRequestAccessScope(token) : null
+  const attachmentJobRequestId =
+    attachment.jobRequest?.id ??
+    attachment.job?.booking?.match?.jobRequest?.id ??
+    null
+  const tokenAllowsAttachment =
+    tokenScope?.status === 'active' &&
+    attachmentJobRequestId != null &&
+    tokenScope.jobRequestId === attachmentJobRequestId
+
+  let sessionAllowsAttachment = false
+
+  if (session?.role === 'admin') {
+    sessionAllowsAttachment = true
+  } else if (session) {
     // For provider role we need the Provider.id (DB row) to compare against job.providerId.
     // session.id is the Supabase userId, not the Provider PK.
     let providerDbId: string | null = null
@@ -94,8 +108,26 @@ export async function GET(
 
     if (!allowed) {
       console.warn(`[attachments:${reqId}] Forbidden: user=${session.id} role=${session.role} attachment=${id}`)
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    sessionAllowsAttachment = allowed
+  }
+
+  if (!sessionAllowsAttachment && !tokenAllowsAttachment) {
+    if (!session && tokenScope?.status) {
+      const error = tokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired ticket token'
+      const status = tokenScope.status === 'active' ? 403 : 401
+      console.warn(
+        `[attachments:${reqId}] Token denied: tokenStatus=${tokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'}`,
+      )
+      return NextResponse.json({ error }, { status })
+    }
+
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   // Resolve a server-side download URL first so private blobs stay opaque to clients.
@@ -121,7 +153,8 @@ export async function GET(
     return NextResponse.json({ error: 'File not found in storage' }, { status: 404 })
   }
 
-  console.info(`[attachments:${reqId}] Served ${id} to user=${session.id}`)
+  const servedTo = session?.id ?? `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`
+  console.info(`[attachments:${reqId}] Served ${id} to ${servedTo}`)
 
   const headers = new Headers()
   headers.set('Content-Type', attachment.mimeType)

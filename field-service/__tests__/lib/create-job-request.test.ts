@@ -92,7 +92,7 @@ describe('createJobRequest', () => {
     )
     expect(tx.address.create).toHaveBeenCalledOnce()
     expect(tx.jobRequest.create).toHaveBeenCalledOnce()
-    expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-1' })
+    expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-1', ticketUrl: null })
   })
 
   it('reuses an existing web customer by userId when present', async () => {
@@ -109,7 +109,7 @@ describe('createJobRequest', () => {
     )
     expect(tx.customer.update).not.toHaveBeenCalled()
     expect(tx.customer.create).not.toHaveBeenCalled()
-    expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-by-user' })
+    expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-by-user', ticketUrl: null })
   })
 
   it('links an existing phone customer to the authenticated web user when userId lookup misses', async () => {

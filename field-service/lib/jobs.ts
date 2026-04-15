@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto'
 import { db } from './db'
 import type { JobStatus } from '@prisma/client'
 import { recordAuditLog } from './audit'
+import { getJobRequestAccessUrl } from './job-request-access'
 
 // ─── Valid transitions ────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ async function triggerSideEffects(params: {
   job: Awaited<ReturnType<typeof db.job.findUnique>> & {
     booking: {
       match: {
-        jobRequest: { customer: { phone: string; name: string }; category: string }
+        jobRequest: { id: string; customer: { phone: string; name: string }; category: string }
       }
     } | null
     provider: { name: string } | null
@@ -139,6 +140,7 @@ async function triggerSideEffects(params: {
 
   const customer = job.booking.match.jobRequest.customer
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const ticketUrl = appUrl ? await getJobRequestAccessUrl(job.booking.match.jobRequest.id) : null
 
   try {
     const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
@@ -164,32 +166,29 @@ async function triggerSideEffects(params: {
     }
 
     if (toStatus === 'STARTED') {
-      const bookingUrl = `${appUrl}/bookings/${job.bookingId}`
       await sendText({
         to: customer.phone,
-        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\nTrack it here: ${bookingUrl}`,
+        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\nTrack it here: ${ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`}`,
         bookingId: job.bookingId,
         templateName: 'freeform:job_started',
       })
     }
 
     if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
-      const bookingUrl = `${appUrl}/bookings/${job.bookingId}`
       await sendText({
         to: customer.phone,
-        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nPlease confirm completion here: ${bookingUrl}`,
+        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nPlease confirm completion here: ${ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`}`,
         bookingId: job.bookingId,
         templateName: 'freeform:completion_confirmation_request',
       })
     }
 
     if (toStatus === 'COMPLETED') {
-      const invoiceUrl = `${appUrl}/bookings/${job.bookingId}`
       await sendJobCompleted({
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
-        invoiceUrl,
+        invoiceUrl: ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`,
       })
     }
   } catch (err) {

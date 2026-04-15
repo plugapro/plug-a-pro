@@ -12,7 +12,7 @@ import { recordAuditLog } from '@/lib/audit'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { JobStatusControls } from '@/components/technician/StatusControls'
-import { PhotoUpload } from '@/components/technician/PhotoUpload'
+import { EvidenceUploader } from '@/components/technician/EvidenceUploader'
 import { ExtraWorkForm } from '@/components/technician/ExtraWorkForm'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -205,9 +205,9 @@ export default async function JobDetailPage({
                     alt={photo.label ?? 'Job photo'}
                     className="rounded-lg object-cover w-full h-40"
                   />
-                  {photo.label && (
+                  {(photo.caption || photo.label) && (
                     <p className="text-xs text-muted-foreground capitalize text-center">
-                      {photo.label}
+                      {photo.caption ?? photo.label}
                     </p>
                   )}
                 </div>
@@ -217,26 +217,7 @@ export default async function JobDetailPage({
 
           {/* Upload controls — only when job is not yet completed */}
           {!['COMPLETED', 'CANCELLED'].includes(job.status) && (
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground font-medium">Before</p>
-                <PhotoUpload
-                  jobId={job.id}
-                  label="before"
-                  existingUrl={job.photos.find((p) => p.label === 'before') ? `/api/attachments/${job.photos.find((p) => p.label === 'before')!.id}` : undefined}
-                  onUploaded={() => {}}
-                />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground font-medium">After</p>
-                <PhotoUpload
-                  jobId={job.id}
-                  label="after"
-                  existingUrl={job.photos.find((p) => p.label === 'after') ? `/api/attachments/${job.photos.find((p) => p.label === 'after')!.id}` : undefined}
-                  onUploaded={() => {}}
-                />
-              </div>
-            </div>
+            <EvidenceUploader jobId={job.id} />
           )}
         </div>
       )}

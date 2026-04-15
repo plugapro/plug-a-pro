@@ -18,6 +18,7 @@ export interface CandidateInput {
   category: string
   suburb: string
   city: string
+  regionKey?: string | null
 }
 
 export interface DispatchResult {
@@ -34,7 +35,11 @@ type LegacyDispatchJobRequest = {
   title: string
   description: string
   customer: { name: string } | null
-  address: { suburb: string | null; city: string | null } | null
+  address: {
+    suburb: string | null
+    city: string | null
+    locationNode: { regionKey: string | null } | null
+  } | null
 }
 
 
@@ -65,6 +70,11 @@ async function loadLegacyDispatchJobRequest(jobRequestId: string): Promise<Legac
         select: {
           suburb: true,
           city: true,
+          locationNode: {
+            select: {
+              regionKey: true,
+            },
+          },
         },
       },
     },
@@ -83,6 +93,7 @@ async function dispatchLeadsLegacy(jobRequestId: string): Promise<DispatchResult
     category: jobRequest.category,
     suburb,
     city,
+    regionKey: jobRequest.address?.locationNode?.regionKey ?? null,
   })
 
   if (candidates.length === 0) {
@@ -310,6 +321,21 @@ export async function findCandidateProviders(input: CandidateInput) {
       availableNow: true,
       skills: true,
       serviceAreas: true,
+      technicianSkills: {
+        where: { active: true },
+        select: { skillTag: true },
+      },
+      technicianServiceAreas: {
+        where: { active: true },
+        select: {
+          areaType: true,
+          label: true,
+          city: true,
+          locationNodeId: true,
+          regionKey: true,
+          suburbKey: true,
+        },
+      },
     },
   })
 
@@ -318,14 +344,31 @@ export async function findCandidateProviders(input: CandidateInput) {
   const city = input.city.trim().toLowerCase()
 
   return providers.filter((provider) => {
-    const providerSkills = provider.skills.map((skill) => skill.toLowerCase())
-    const areas = provider.serviceAreas.map((area) => area.toLowerCase()).filter(Boolean)
-
-    return (
-      provider.availableNow &&
-      providerSkills.includes(category) &&
-      (areas.includes(suburb) || areas.includes(city))
+    const providerSkills = new Set(
+      [...provider.skills, ...(provider.technicianSkills ?? []).map((skill) => skill.skillTag)].map((skill) =>
+        skill.toLowerCase(),
+      ),
     )
+    if (!provider.availableNow) return false
+    if (!providerSkills.has(category)) return false
+
+    const activeStructuredAreas = provider.technicianServiceAreas
+    const hasStructuredAreas = activeStructuredAreas.length > 0
+
+    if (hasStructuredAreas) {
+      // Structured match: check suburbKey or regionKey (SUBURB_EXACT or REGION_FALLBACK)
+      const normalizedSuburb = suburb.replace(/\s+/g, '_').trim()
+      const suburbExact = activeStructuredAreas.some((a) => a.suburbKey === normalizedSuburb)
+      const regionMatch = input.regionKey != null
+        ? activeStructuredAreas.some((a) => a.regionKey === input.regionKey)
+        : false
+      return suburbExact || regionMatch
+    }
+
+    // Legacy string fallback (migration window only)
+    if (!MATCHING_CONFIG.allowLegacyStringFallback) return false
+    const areas = provider.serviceAreas.map((area) => area.toLowerCase()).filter(Boolean)
+    return areas.includes(suburb) || areas.includes(city)
   })
 }
 

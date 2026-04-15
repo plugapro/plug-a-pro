@@ -7,6 +7,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { BookingFlow } from '@/components/customer/BookingFlow'
+import { getCities } from '@/lib/location-nodes'
 
 export const metadata = buildMetadata({ title: 'Request a Job' })
 
@@ -39,5 +40,7 @@ export default async function RequestJobPage({
     description: categoryInfo.description,
   }
 
-  return <BookingFlow category={categoryData} />
+  const initialCities = await getCities()
+
+  return <BookingFlow category={categoryData} initialCities={initialCities} />
 }
