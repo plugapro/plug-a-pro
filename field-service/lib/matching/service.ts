@@ -1191,6 +1191,7 @@ async function createOfferForAttempt(params: {
   const provider = await loadProviderOfferContact(db, params.providerId)
 
   const { notifyProviderNewJob } = await import('../whatsapp-bot')
+  let interactiveDelivered = false
   await notifyProviderNewJob({
     providerPhone: provider.phone,
     leadId: lead.id,
@@ -1199,27 +1200,31 @@ async function createOfferForAttempt(params: {
     description: jobRequest.title || jobRequest.description || jobRequest.category,
     customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
     expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
+  }).then(() => {
+    interactiveDelivered = true
   }).catch((error) => {
     console.error('[matching] Failed to notify provider of assignment offer:', error)
   })
 
-  // Template fallback — delivers even when provider is outside the 24h interactive session window.
-  // The interactive message above is preferred (richer UX); this ensures delivery for out-of-session providers.
-  const { sendJobOffer } = await import('../whatsapp')
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
-  const scheduledWindow = requestWindow.startAt.toLocaleDateString('en-ZA', {
-    weekday: 'short', day: 'numeric', month: 'short',
-  })
-  sendJobOffer({
-    providerPhone: provider.phone,
-    providerFirstName: provider.name.split(' ')[0] ?? provider.name,
-    serviceName: jobRequest.category,
-    area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
-    scheduledWindow,
-    jobUrl: `${appUrl}/provider/jobs/${lead.id}`,
-  }).catch((error) => {
-    console.error('[matching] Failed to send job_offer template to provider:', error)
-  })
+  // Template fallback — only fires when the interactive CTA message fails (e.g. provider outside 24h session window).
+  // Sending both would duplicate the notification; the interactive message is always preferred.
+  if (!interactiveDelivered) {
+    const { sendJobOffer } = await import('../whatsapp')
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+    const scheduledWindow = requestWindow.startAt.toLocaleDateString('en-ZA', {
+      weekday: 'short', day: 'numeric', month: 'short',
+    })
+    sendJobOffer({
+      providerPhone: provider.phone,
+      providerFirstName: provider.name.split(' ')[0] ?? provider.name,
+      serviceName: jobRequest.category,
+      area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
+      scheduledWindow,
+      jobUrl: `${appUrl}/provider/leads/${lead.id}`,
+    }).catch((error) => {
+      console.error('[matching] Failed to send job_offer template to provider:', error)
+    })
+  }
 
   return { hold, lead }
 }

@@ -429,3 +429,56 @@ export async function expireStaleLeads(): Promise<number> {
   const result = await processPendingAssignmentWorkflows()
   return result.expiredOffers
 }
+
+// ─── Lead reminder: 1-hour nudge for SENT/VIEWED leads with no response ───────
+
+export async function sendLeadReminders(): Promise<number> {
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+
+  const pendingLeads = await db.lead.findMany({
+    where: {
+      status: { in: ['SENT', 'VIEWED'] },
+      sentAt: { lte: oneHourAgo },
+      reminderSentAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    select: {
+      id: true,
+      expiresAt: true,
+      provider: { select: { phone: true } },
+      jobRequest: { select: { category: true, address: { select: { suburb: true, city: true } } } },
+    },
+    take: 50,
+  })
+
+  let sent = 0
+
+  for (const lead of pendingLeads) {
+    const area = lead.jobRequest.address
+      ? [lead.jobRequest.address.suburb, lead.jobRequest.address.city].filter(Boolean).join(', ')
+      : 'your area'
+    const ref = lead.id.slice(-8).toUpperCase()
+    const minutesLeft = lead.expiresAt
+      ? Math.max(0, Math.round((lead.expiresAt.getTime() - Date.now()) / 60_000))
+      : null
+    const expiryNote = minutesLeft != null ? ` · ${minutesLeft} min left` : ''
+
+    try {
+      const { sendCtaUrl } = await import('./whatsapp-interactive')
+      await sendCtaUrl(
+        lead.provider.phone,
+        `⏰ *Reminder — Lead Still Available*\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
+        'View Lead',
+        `${appUrl}/provider/leads/${lead.id}`,
+        { footer: 'Accept, inspect, or decline from the lead page' },
+      )
+      await db.lead.update({ where: { id: lead.id }, data: { reminderSentAt: new Date() } })
+      sent++
+    } catch (err) {
+      console.error(`[matching] Failed to send lead reminder for lead ${lead.id}:`, err)
+    }
+  }
+
+  return sent
+}

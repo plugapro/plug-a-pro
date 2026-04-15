@@ -277,6 +277,7 @@ model Lead {
   sentAt       DateTime   @default(now())
   respondedAt  DateTime?
   expiresAt    DateTime?  // provider must respond within this window
+  reminderSentAt DateTime? // set once when the 1-hour reminder WhatsApp is sent
 
   jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
   provider   Provider   @relation(fields: [providerId], references: [id])
