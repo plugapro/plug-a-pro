@@ -335,14 +335,14 @@ model Quote {
   id             String      @id @default(cuid())
   matchId        String
   amount         Decimal     @db.Decimal(10, 2)
-  labourCost     Decimal     @db.Decimal(10, 2) @default(0) @map("labour_cost")
-  materialsCost  Decimal     @db.Decimal(10, 2) @default(0) @map("materials_cost")
-  estimatedHours Float?      @map("estimated_hours")
+  labourCost     Decimal     @db.Decimal(10, 2) @default(0)
+  materialsCost  Decimal     @db.Decimal(10, 2) @default(0)
+  estimatedHours Float?
   description    String      // what is included in the quoted price
   validUntil     DateTime?
-  preferredDate  DateTime?   @map("preferred_date")
-  postInspection Boolean     @default(false) @map("post_inspection")
-  approvalToken  String      @unique @map("approval_token")
+  preferredDate  DateTime?
+  postInspection Boolean     @default(false)
+  approvalToken  String      @unique
   status         QuoteStatus @default(PENDING)
   approvedAt     DateTime?
   declinedAt     DateTime?
