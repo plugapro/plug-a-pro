@@ -792,27 +792,14 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
   }
 
   if (buttonId.startsWith('match_inspect_')) {
-    const { acceptLead } = await import('./matching-engine')
-    const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: true })
-
-    if (!result.ok) {
-      const message =
-        result.reason === 'TAKEN'
-          ? '⚠️ Another provider has already accepted this job.'
-          : result.reason === 'EXPIRED'
-          ? '⏰ This lead expired before you responded.'
-          : '⚠️ This lead is no longer available.'
-      await sendText(phone, message)
-      return
-    }
-
-    const quoteUrl = `${appUrl}/technician/quotes/${result.matchId}`
+    // Send a link to the lead detail page so the provider can review and decide
+    const leadUrl = `${appUrl}/provider/leads/${leadId}`
     await sendCtaUrl(
       phone,
-      `🔍 *Inspection first — understood.*\n\nContact the customer to arrange a visit. Once you've assessed the job, return here to submit your quote.`,
-      'Submit Quote',
-      quoteUrl,
-      { footer: 'Come back here after the site visit to complete your quote' }
+      `🔍 *View Lead Details*\n\nOpen the link below to review the full job details, then choose to accept, request an inspection, or decline.`,
+      'View Lead',
+      leadUrl,
+      { footer: 'Tap to open your provider app' }
     )
     return
   }
