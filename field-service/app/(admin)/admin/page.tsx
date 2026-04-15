@@ -8,7 +8,8 @@ import { buildMetadata } from '@/lib/metadata'
 import { cn } from '@/lib/utils'
 import { getOpsDashboardSnapshot } from '@/lib/ops-dashboard/service'
 import { getQueueSlaConfig } from '@/lib/ops-dashboard/sla'
-import type { AssignmentRecord, OpsDashboardQueueCard } from '@/lib/ops-dashboard/types'
+import type { AssignmentRecord, OpsDashboardQueueCard, OpsDashboardRangePreset } from '@/lib/ops-dashboard/types'
+import { TrendChart } from '@/components/admin/dashboard/TrendChart'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,9 +17,21 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const metadata = buildMetadata({ title: 'Operations Dashboard', noIndex: true })
 
-export default async function AdminDashboardPage() {
+const RANGE_PRESETS: { label: string; value: OpsDashboardRangePreset }[] = [
+  { label: 'Today', value: 'today' },
+  { label: '7 days', value: '7d' },
+  { label: '14 days', value: '14d' },
+  { label: '30 days', value: '30d' },
+]
+
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   const admin = await requireAdmin()
-  const snapshot = await getOpsDashboardSnapshot({ client: db, actorId: admin.id })
+  const resolvedParams = await searchParams
+  const snapshot = await getOpsDashboardSnapshot({ client: db, actorId: admin.id, searchParams: resolvedParams })
 
   const now = new Date()
   const heroMetrics = snapshot.hero.data?.metrics ?? []
@@ -44,6 +57,7 @@ export default async function AdminDashboardPage() {
       href: card.href,
       note: card.description,
       detail: queueHealthDetail(card),
+      health: card.health,
       tone,
     }
   })
@@ -78,6 +92,9 @@ export default async function AdminDashboardPage() {
 
   const revenueFunnel = funnelMetrics.find((m) => m.key === 'revenue')
   const coreFunnel = funnelMetrics.filter((m) => m.key !== 'revenue')
+
+  const trendSeries = snapshot.trends.data?.series ?? []
+  const activePreset = snapshot.range.preset
 
   return (
     <div className="space-y-8">
@@ -195,7 +212,12 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {validationQueue.length === 0 ? (
-              <EmptyState message="No requests are waiting on validation." />
+              <EmptyState
+                title="Validation queue is clear"
+                message="No requests are waiting on validation right now."
+                actionHref="/admin/validation"
+                actionLabel="Open validation queue"
+              />
             ) : (
               validationQueue.map((request) => (
                 <div key={request.id} className="rounded-xl border p-4">
@@ -243,7 +265,12 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {dispatchQueue.length === 0 ? (
-              <EmptyState message="No open or matching requests need dispatch attention." />
+              <EmptyState
+                title="Dispatch queue is clear"
+                message="No open or matching requests need dispatch attention right now."
+                actionHref="/admin/dispatch"
+                actionLabel="Open dispatch console"
+              />
             ) : (
               dispatchQueue.map((request) => (
                 <div key={request.id} className="rounded-xl border p-4">
@@ -300,7 +327,12 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {pendingQuotes.length === 0 ? (
-              <EmptyState message="No quotes are waiting on approval right now." />
+              <EmptyState
+                title="Quote queue is clear"
+                message="No quotes are waiting on approval right now."
+                actionHref="/admin/quotes"
+                actionLabel="Open quote queue"
+              />
             ) : (
               pendingQuotes.map((quote) => (
                 <div key={quote.id} className="rounded-xl border p-4">
@@ -350,7 +382,12 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {fieldExceptions.length === 0 ? (
-              <EmptyState message="No field exceptions are open right now." />
+              <EmptyState
+                title="Field exceptions are clear"
+                message="No field exceptions are open right now."
+                actionHref="/admin/field-exceptions"
+                actionLabel="Open field exceptions queue"
+              />
             ) : (
               fieldExceptions.map((job) => (
                 <div key={job.id} className="rounded-xl border p-4">
@@ -403,7 +440,12 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {financeFollowUp.length === 0 ? (
-              <EmptyState message="No payments are awaiting manual finance follow-up." />
+              <EmptyState
+                title="Finance follow-up is clear"
+                message="No payments are awaiting manual finance follow-up."
+                actionHref="/admin/payments"
+                actionLabel="Open payments queue"
+              />
             ) : (
               financeFollowUp.map((payment) => (
                 <div key={payment.id} className="rounded-xl border p-4">
@@ -446,7 +488,12 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {openDisputes.length === 0 ? (
-              <EmptyState message="No open disputes are on the board." />
+              <EmptyState
+                title="Trust recovery is clear"
+                message="No open disputes are on the board."
+                actionHref="/admin/disputes"
+                actionLabel="Open disputes queue"
+              />
             ) : (
               openDisputes.map((dispute) => (
                 <div key={dispute.id} className="rounded-xl border p-4">
@@ -489,7 +536,12 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {providerOnboarding.length === 0 ? (
-              <EmptyState message="No provider applications are waiting for review." />
+              <EmptyState
+                title="Provider onboarding is clear"
+                message="No provider applications are waiting for review."
+                actionHref="/admin/applications"
+                actionLabel="Open provider queue"
+              />
             ) : (
               providerOnboarding.map((application) => (
                 <div key={application.id} className="rounded-xl border p-4">
@@ -531,26 +583,63 @@ export default async function AdminDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{snapshot.range.label} funnel snapshot</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Operational conversion from demand capture to paid completion.
-            </p>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {coreFunnel.map((m) => (
-              <FunnelMetric key={m.key} label={m.label} value={m.value} note={m.note} />
-            ))}
-            {revenueFunnel && (
-              <div className="tone-info rounded-xl border p-4 sm:col-span-2 xl:col-span-3">
-                <p className="text-sm font-medium">Revenue collected</p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                  {formatCurrency(revenueFunnel.value)}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="text-base">Operational trends — {snapshot.range.label}</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Daily demand, bookings, and completions over the selected window.
                 </p>
+              </div>
+              <RangePresets active={activePreset} />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {snapshot.trends.ok ? (
+              <>
+                <TrendChart series={trendSeries} />
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {coreFunnel.map((m) => (
+                    <FunnelMetric key={m.key} label={m.label} value={m.value} note={m.note} />
+                  ))}
+                  {revenueFunnel && (
+                    <div className="tone-info rounded-xl border p-4 sm:col-span-2 xl:col-span-3">
+                      <p className="text-sm font-medium">Revenue collected</p>
+                      <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+                        {formatCurrency(revenueFunnel.value)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+                Trend data unavailable — {snapshot.trends.error?.message ?? 'unknown error'}
               </div>
             )}
           </CardContent>
         </Card>
       </section>
+    </div>
+  )
+}
+
+function RangePresets({ active }: { active: OpsDashboardRangePreset }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {RANGE_PRESETS.map((preset) => (
+        <Link
+          key={preset.value}
+          href={`?range=${preset.value}`}
+          className={cn(
+            'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+            active === preset.value
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground hover:bg-muted/70',
+          )}
+        >
+          {preset.label}
+        </Link>
+      ))}
     </div>
   )
 }
@@ -563,6 +652,7 @@ function QueueCard({
   href,
   note,
   detail,
+  health,
   tone,
 }: {
   lane: string
@@ -572,6 +662,7 @@ function QueueCard({
   href: string
   note: string
   detail: string
+  health: OpsDashboardQueueCard['health']
   tone: 'default' | 'warning' | 'danger'
 }) {
   return (
@@ -587,14 +678,38 @@ function QueueCard({
           <p className="text-xs text-muted-foreground">{detail}</p>
         </div>
       </CardHeader>
-      <CardContent className="flex items-center justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-3xl font-semibold tracking-tight">{count}</p>
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{target}</p>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-3xl font-semibold tracking-tight">{count}</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{target}</p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href={href}>Open queue</Link>
+          </Button>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href={href}>Open</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={health.overdueCount > 0 ? 'danger' : 'outline'}>
+            {health.overdueCount} overdue
+          </Badge>
+          <Badge variant={health.unclaimedCount > 0 ? 'warning' : 'outline'}>
+            {health.unclaimedCount} unclaimed
+          </Badge>
+          <Badge variant={health.claimedByYouCount > 0 ? 'brand' : 'outline'}>
+            {health.claimedByYouCount} yours
+          </Badge>
+          <Badge variant="outline">
+            Oldest {formatAgeMinutes(health.oldestAgeMinutes)}
+          </Badge>
+        </div>
+        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+          <div className="rounded-lg border border-border/60 px-3 py-2">
+            SLA target: {target}
+          </div>
+          <div className="rounded-lg border border-border/60 px-3 py-2">
+            Queue health: {detail}
+          </div>
+        </div>
       </CardContent>
     </Card>
   )
@@ -635,10 +750,28 @@ function FunnelMetric({
   )
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({
+  title,
+  message,
+  actionHref,
+  actionLabel,
+}: {
+  title: string
+  message: string
+  actionHref: string
+  actionLabel: string
+}) {
   return (
-    <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-      {message}
+    <div className="rounded-xl border border-dashed p-6">
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{title}</p>
+          <p className="text-sm text-muted-foreground">{message}</p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href={actionHref}>{actionLabel}</Link>
+        </Button>
+      </div>
     </div>
   )
 }
@@ -681,6 +814,13 @@ function formatCurrency(amount: number) {
 
 function formatShortDate(date: Date) {
   return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
+}
+
+function formatAgeMinutes(minutes: number | null) {
+  if (minutes == null) return 'n/a'
+  if (minutes < 60) return `${minutes}m`
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`
+  return `${Math.floor(minutes / 1440)}d`
 }
 
 function laneBadgeClass(lane: string): 'neutral' | 'info' | 'success' | 'danger' | 'warning' | 'brand' {

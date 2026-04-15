@@ -613,6 +613,35 @@ async function loadQueueSection(
   }
 }
 
+type DailyCountRow = { day: Date; count: bigint }
+
+function toDayString(d: Date) {
+  return d.toISOString().slice(0, 10)
+}
+
+function buildDailyPoints(
+  rows: DailyCountRow[],
+  from: Date,
+  to: Date,
+): import('./types').OpsDashboardTrendPoint[] {
+  const byDay = new Map(rows.map((r) => [toDayString(r.day), Number(r.count)]))
+
+  // Walk every calendar day in the range so missing days appear as 0
+  const points: import('./types').OpsDashboardTrendPoint[] = []
+  const cursor = new Date(from)
+  cursor.setHours(0, 0, 0, 0)
+  const end = new Date(to)
+  end.setHours(0, 0, 0, 0)
+
+  while (cursor <= end) {
+    const date = toDayString(cursor)
+    points.push({ date, value: byDay.get(date) ?? 0 })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return points
+}
+
 async function loadTrendSection(
   client: DashboardClient,
   range: OpsDashboardRange,
@@ -620,7 +649,8 @@ async function loadTrendSection(
   try {
     const { from, to } = range
 
-    const [requests, matches, quotes, bookings, completed, paid, revenue] = await Promise.all([
+    const [requests, matches, quotes, bookings, completed, paid, revenue,
+           reqByDay, bookingsByDay, completedByDay] = await Promise.all([
       client.jobRequest.count({ where: { createdAt: { gte: from, lte: to } } }),
       client.match.count({ where: { createdAt: { gte: from, lte: to } } }),
       client.quote.count({ where: { createdAt: { gte: from, lte: to } } }),
@@ -631,6 +661,25 @@ async function loadTrendSection(
         where: { status: 'PAID', paidAt: { gte: from, lte: to } },
         _sum: { amount: true },
       }),
+      // Daily series — only for ranges that benefit from a chart (>1 day)
+      client.$queryRaw<DailyCountRow[]>`
+        SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*)::bigint AS count
+        FROM "job_requests"
+        WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}
+        GROUP BY day ORDER BY day ASC
+      `,
+      client.$queryRaw<DailyCountRow[]>`
+        SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*)::bigint AS count
+        FROM "bookings"
+        WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}
+        GROUP BY day ORDER BY day ASC
+      `,
+      client.$queryRaw<DailyCountRow[]>`
+        SELECT DATE_TRUNC('day', "completedAt") AS day, COUNT(*)::bigint AS count
+        FROM "jobs"
+        WHERE status = 'COMPLETED' AND "completedAt" >= ${from} AND "completedAt" <= ${to}
+        GROUP BY day ORDER BY day ASC
+      `,
     ])
 
     const ratio = (n: number, d: number) =>
@@ -653,7 +702,11 @@ async function loadTrendSection(
             note: `${range.label} total`,
           },
         ],
-        series: [],  // Phase 3: daily trend series
+        series: [
+          { key: 'requests', label: 'Requests', points: buildDailyPoints(reqByDay, from, to) },
+          { key: 'bookings', label: 'Bookings', points: buildDailyPoints(bookingsByDay, from, to) },
+          { key: 'completedJobs', label: 'Completed', points: buildDailyPoints(completedByDay, from, to) },
+        ],
       },
       error: null,
     }
