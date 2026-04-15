@@ -505,19 +505,19 @@ export async function notifyProviderNewJob(params: {
   customerInitial: string  // first name only
   expiresInMinutes?: number
 }): Promise<void> {
-  const { sendButtons } = await import('./whatsapp-interactive')
+  const { sendCtaUrl } = await import('./whatsapp-interactive')
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const ref = params.leadId.slice(-8).toUpperCase()
   const expiryLabel = params.expiresInMinutes
-    ? `${params.expiresInMinutes} minutes`
+    ? `${params.expiresInMinutes} min`
     : '4 hours'
 
-  await sendButtons(
+  await sendCtaUrl(
     params.providerPhone,
-    `🔔 *New Lead — ${params.category}*\n📍 ${params.area}  |  👤 ${params.customerInitial}\n📋 ${params.description}\n\n_Expires in ${expiryLabel}. Ref: ${params.leadId.slice(-8).toUpperCase()}_`,
-    [
-      { id: `match_accept_${params.leadId}`, title: '✅ Accept & Quote' },
-      { id: `match_inspect_${params.leadId}`, title: '🔍 View Details' },
-      { id: `match_decline_${params.leadId}`, title: '❌ Decline' },
-    ]
+    `🔔 *New Lead Available*\n\n*${params.category}* · ${params.area}\nRef: ${ref} · Expires in ${expiryLabel}\n\nTap below to view the full job details and respond.`,
+    'View Lead',
+    `${appUrl}/provider/leads/${params.leadId}`,
+    { footer: 'Accept, inspect, or decline from the lead page' },
   )
 }
 
