@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils'
 import { getOpsDashboardSnapshot } from '@/lib/ops-dashboard/service'
 import { getQueueSlaConfig } from '@/lib/ops-dashboard/sla'
 import type { AssignmentRecord, OpsDashboardQueueCard, OpsDashboardRangePreset } from '@/lib/ops-dashboard/types'
+import { IncidentBar } from '@/components/admin/dashboard/IncidentBar'
+import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { TrendChart } from '@/components/admin/dashboard/TrendChart'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
@@ -32,11 +34,26 @@ export default async function AdminDashboardPage({
   const admin = await requireAdmin()
   const resolvedParams = await searchParams
   const snapshot = await getOpsDashboardSnapshot({ client: db, actorId: admin.id, searchParams: resolvedParams })
+  const refreshSearch = new URLSearchParams()
+  for (const [key, value] of Object.entries(resolvedParams)) {
+    if (typeof value === 'string') {
+      refreshSearch.set(key, value)
+      continue
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        refreshSearch.append(key, entry)
+      }
+    }
+  }
+  const refreshHref = refreshSearch.toString() ? `/admin?${refreshSearch.toString()}` : '/admin'
 
   const now = new Date()
   const heroMetrics = snapshot.hero.data?.metrics ?? []
   const queueData = snapshot.queues.data
   const funnelMetrics = snapshot.trends.data?.funnel ?? []
+  const queueIncidents = snapshot.incidents.filter((incident) => incident.queueKey)
+  const hasPartialFailure = !snapshot.hero.ok || !snapshot.queues.ok || !snapshot.trends.ok || !snapshot.exceptions.ok
 
   const heroStats = heroMetrics.map((m) => ({
     label: m.label,
@@ -98,15 +115,8 @@ export default async function AdminDashboardPage({
 
   return (
     <div className="space-y-8">
-      {snapshot.incidents.length > 0 && (
-        <div className="space-y-2">
-          {snapshot.incidents.map((incident) => (
-            <div key={incident.id} className="rounded-xl border border-warning/50 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
-              {incident.message}
-            </div>
-          ))}
-        </div>
-      )}
+      {hasPartialFailure ? <StaleBanner refreshHref={refreshHref} /> : null}
+      <IncidentBar incidents={queueIncidents} />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,0.9fr)]">
         <Card className="app-hero-surface border-border/70">

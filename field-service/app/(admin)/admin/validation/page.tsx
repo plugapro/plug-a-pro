@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
+import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import { dispatchLeads } from '@/lib/matching-engine'
 import {
   OPS_QUEUE_TYPES,
@@ -15,6 +16,7 @@ import {
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,6 +25,8 @@ export const metadata = buildMetadata({ title: 'Validation Queue', noIndex: true
 
 export default async function AdminValidationQueuePage() {
   const admin = await requireAdmin()
+  const now = new Date()
+  const pageWarnings: string[] = []
 
   const requests = await db.jobRequest.findMany({
     where: { status: 'PENDING_VALIDATION' },
@@ -60,12 +64,20 @@ export default async function AdminValidationQueuePage() {
   const requestIds = requests.map((request) => request.id)
 
   const [assignments, rawAuditLogs] = await Promise.all([
-    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.VALIDATION, requestIds),
+    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.VALIDATION, requestIds).catch((error) => {
+      console.error('[admin/validation] Failed to load queue assignments', error)
+      pageWarnings.push('Assignment ownership data is temporarily unavailable.')
+      return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
+    }),
     db.auditLog.findMany({
       where: { entityId: { in: requestIds }, entityType: 'job_request' },
       select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
       orderBy: { timestamp: 'desc' },
       take: requestIds.length * 5 + 10,
+    }).catch((error) => {
+      console.error('[admin/validation] Failed to load audit logs', error)
+      pageWarnings.push('Recent activity failed to load.')
+      return [] as Array<{ id: string; entityId: string | null; action: string; actorRole: string; timestamp: Date }>
     }),
   ])
 
@@ -195,6 +207,7 @@ export default async function AdminValidationQueuePage() {
 
   return (
     <div className="space-y-6">
+      {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/validation" /> : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-semibold">Validation Queue</h1>
@@ -241,7 +254,9 @@ export default async function AdminValidationQueuePage() {
                   <p className="text-sm text-muted-foreground">{request.description || 'No additional detail provided.'}</p>
 
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline">Age {formatAge(request.createdAt)}</Badge>
+                    <Badge variant={slaToneVariant(getQueueAgeTone('validation', ageMinutes(request.createdAt, now)))}>
+                      Age {formatAge(request.createdAt)}
+                    </Badge>
                     <Badge variant="outline">Phone {request.customer.phone}</Badge>
                     <Badge variant="outline">{request._count.attachments} attachments</Badge>
                     {request.address ? (
@@ -321,4 +336,14 @@ function formatAge(date: Date) {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h`
   return `${Math.floor(hours / 24)}d`
+}
+
+function ageMinutes(from: Date, to: Date) {
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 60000))
+}
+
+function slaToneVariant(tone: 'default' | 'warning' | 'danger') {
+  if (tone === 'danger') return 'danger' as const
+  if (tone === 'warning') return 'warning' as const
+  return 'outline' as const
 }

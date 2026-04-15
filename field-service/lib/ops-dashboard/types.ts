@@ -120,6 +120,18 @@ export type OpsDashboardIncident = {
   section: OpsDashboardSectionKey
   severity: OpsDashboardTone
   message: string
+  queueKey?: OpsDashboardQueueKey
+  label?: string
+  overdueCount?: number
+  oldestAgeMinutes?: number
+}
+
+export type QueueBreachResult = {
+  queueKey: OpsDashboardQueueKey
+  label: string
+  overdueCount: number
+  oldestAgeMinutes: number
+  severity: 'warn' | 'breach'
 }
 
 export type OpsDashboardHeroSection = {

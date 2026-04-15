@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
   OPS_QUEUE_TYPES,
   claimOpsQueueItem,
@@ -13,6 +14,7 @@ import {
   listOpsQueueAssignments,
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
+import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,6 +32,7 @@ const FIELD_EXCEPTION_STATUSES: JobStatus[] = [
 export default async function AdminFieldExceptionsPage() {
   const admin = await requireAdmin()
   const now = new Date()
+  const pageWarnings: string[] = []
 
   const jobs = await db.job.findMany({
     where: { status: { in: FIELD_EXCEPTION_STATUSES } },
@@ -84,12 +87,20 @@ export default async function AdminFieldExceptionsPage() {
   const jobIds = jobs.map((job) => job.id)
 
   const [assignments, rawAuditLogs] = await Promise.all([
-    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.FIELD_EXCEPTION, jobIds),
+    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.FIELD_EXCEPTION, jobIds).catch((error) => {
+      console.error('[admin/field-exceptions] Failed to load queue assignments', error)
+      pageWarnings.push('Assignment ownership data is temporarily unavailable.')
+      return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
+    }),
     db.auditLog.findMany({
       where: { entityId: { in: jobIds }, entityType: 'job' },
       select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
       orderBy: { timestamp: 'desc' },
       take: jobIds.length * 5 + 10,
+    }).catch((error) => {
+      console.error('[admin/field-exceptions] Failed to load audit logs', error)
+      pageWarnings.push('Recent field activity failed to load.')
+      return [] as Array<{ id: string; entityId: string | null; action: string; actorRole: string; timestamp: Date }>
     }),
   ])
 
@@ -138,6 +149,7 @@ export default async function AdminFieldExceptionsPage() {
 
   return (
     <div className="space-y-6">
+      {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/field-exceptions" /> : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-semibold">Field Exceptions</h1>
@@ -182,7 +194,7 @@ export default async function AdminFieldExceptionsPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <Badge variant={slaToneVariant(getSlaTone(job.updatedAt, now, 60))}>
+                    <Badge variant={slaToneVariant(getQueueAgeTone('fieldExceptions', ageMinutes(job.updatedAt, now)))}>
                       Last update {formatAge(job.updatedAt, now)}
                     </Badge>
                     <Badge variant="outline">{formatBookingWindow(job.booking.scheduledDate, job.booking.scheduledWindow)}</Badge>
@@ -256,17 +268,14 @@ function formatAge(from: Date, to: Date) {
   return `${Math.floor(hours / 24)}d`
 }
 
-function getSlaTone(updatedAt: Date, now: Date, targetMinutes: number) {
-  const ageMinutes = (now.getTime() - updatedAt.getTime()) / 60000
-  if (ageMinutes > targetMinutes) return 'danger' as const
-  if (ageMinutes > targetMinutes * 0.6) return 'warning' as const
-  return 'default' as const
+function ageMinutes(from: Date, to: Date) {
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 60000))
 }
 
 function slaToneVariant(tone: 'default' | 'warning' | 'danger') {
   if (tone === 'danger') return 'danger' as const
   if (tone === 'warning') return 'warning' as const
-  return 'neutral' as const
+  return 'outline' as const
 }
 
 function formatBookingWindow(scheduledDate: Date, scheduledWindow: string | null) {

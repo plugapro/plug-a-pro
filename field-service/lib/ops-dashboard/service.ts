@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { listOpsQueueAssignments, OPS_QUEUE_TYPES } from '@/lib/ops-queue'
-import { OPS_DASHBOARD_QUEUE_SLA, computeOldestAgeMinutes, countOverdueAges, getSlaTone } from './sla'
+import { detectQueueBreaches } from './alerts'
+import { OPS_DASHBOARD_QUEUE_SLA, computeOldestAgeMinutes } from './sla'
 import type {
   AssignmentRecord,
   JobExceptionPreview,
@@ -744,7 +745,25 @@ async function loadExceptionSection(
 
 // ─── Incident layer ───────────────────────────────────────────────────────────
 
-function buildIncidents(snapshot: OpsDashboardSnapshot): OpsDashboardIncident[] {
+async function loadIncidentSection(client: DashboardClient): Promise<OpsDashboardIncident[]> {
+  const breaches = await detectQueueBreaches(client).catch((error) => {
+    console.error('[ops-dashboard] Failed to detect queue breaches', error)
+    return []
+  })
+
+  return breaches.map((breach) => ({
+    id: `incident:${breach.queueKey}:${breach.severity}`,
+    section: 'queues',
+    severity: breach.severity === 'breach' ? 'danger' : 'warning',
+    queueKey: breach.queueKey,
+    label: breach.label,
+    overdueCount: breach.overdueCount,
+    oldestAgeMinutes: breach.oldestAgeMinutes,
+    message: `${breach.label}: ${breach.overdueCount} item${breach.overdueCount === 1 ? '' : 's'} overdue (oldest ${formatIncidentAge(breach.oldestAgeMinutes)})`,
+  }))
+}
+
+function buildSectionFailureIncidents(snapshot: OpsDashboardSnapshot): OpsDashboardIncident[] {
   const sections: Array<[OpsDashboardIncident['section'], SectionResult<unknown>]> = [
     ['hero', snapshot.hero],
     ['queues', snapshot.queues],
@@ -776,15 +795,22 @@ export async function getOpsDashboardSnapshot(params?: {
   const actorId = params?.actorId ?? ''
   const range = parseOpsDashboardRange(params?.searchParams)
 
-  const [hero, queues, trends, exceptions] = await Promise.all([
+  const [hero, queues, trends, exceptions, incidents] = await Promise.all([
     loadHeroSection(client),
     loadQueueSection(client, actorId),
     loadTrendSection(client, range),
     loadExceptionSection(client),
+    loadIncidentSection(client),
   ])
 
-  const snapshot: OpsDashboardSnapshot = { range, hero, queues, trends, exceptions, incidents: [] }
-  snapshot.incidents = buildIncidents(snapshot)
+  const snapshot: OpsDashboardSnapshot = {
+    range,
+    hero,
+    queues,
+    trends,
+    exceptions,
+    incidents: [...incidents, ...buildSectionFailureIncidents({ range, hero, queues, trends, exceptions, incidents: [] })],
+  }
 
   return snapshot
 }
@@ -828,4 +854,14 @@ function queueKeyToHref(key: OpsDashboardQueueKey): string {
     providerOnboarding: '/admin/applications',
   }
   return hrefs[key]
+}
+
+function formatIncidentAge(ageMinutes: number) {
+  if (ageMinutes < 60) return `${ageMinutes}m`
+  const hours = Math.floor(ageMinutes / 60)
+  const minutes = ageMinutes % 60
+  if (hours < 24) return `${hours}h ${minutes}m`
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return `${days}d ${remainingHours}h`
 }

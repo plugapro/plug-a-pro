@@ -1,6 +1,7 @@
 import type { OpsQueueType } from '@prisma/client'
 import type { OpsDashboardQueueKey, OpsDashboardTone } from './types'
 import { OPS_QUEUE_TYPES } from '@/lib/ops-queue'
+import { getQueueSlaConfig as getAlertSlaConfig } from './alerts'
 
 export type QueueSlaConfig = {
   key: OpsDashboardQueueKey
@@ -15,49 +16,49 @@ export const OPS_DASHBOARD_QUEUE_SLA: Record<OpsDashboardQueueKey, QueueSlaConfi
     key: 'validation',
     queueType: OPS_QUEUE_TYPES.VALIDATION,
     title: 'Validation queue',
-    targetMinutes: 15,
-    targetLabel: 'Triage inside 15 min',
+    targetMinutes: getAlertSlaConfig('validation').breachAtMinutes,
+    targetLabel: 'Triage inside 30 min',
   },
   dispatch: {
     key: 'dispatch',
     queueType: OPS_QUEUE_TYPES.DISPATCH,
     title: 'Dispatch pressure',
-    targetMinutes: 20,
-    targetLabel: 'Assign inside 20 min',
+    targetMinutes: getAlertSlaConfig('dispatch').breachAtMinutes,
+    targetLabel: 'Assign inside 15 min',
   },
   quoteApprovals: {
     key: 'quoteApprovals',
     queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
     title: 'Quote approvals',
-    targetMinutes: 240,
-    targetLabel: 'Chase inside 4 hours',
+    targetMinutes: getAlertSlaConfig('quoteApprovals').breachAtMinutes,
+    targetLabel: 'Chase inside 1 hour',
   },
   fieldExceptions: {
     key: 'fieldExceptions',
     queueType: OPS_QUEUE_TYPES.FIELD_EXCEPTION,
     title: 'Field exceptions',
-    targetMinutes: 60,
+    targetMinutes: getAlertSlaConfig('fieldExceptions').breachAtMinutes,
     targetLabel: 'Triage inside 1 hour',
   },
   financeFollowUp: {
     key: 'financeFollowUp',
     queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
     title: 'Finance follow-up',
-    targetMinutes: 1440,
+    targetMinutes: getAlertSlaConfig('financeFollowUp').breachAtMinutes,
     targetLabel: 'Resolve inside 1 day',
   },
   trustRecovery: {
     key: 'trustRecovery',
     queueType: OPS_QUEUE_TYPES.DISPUTE,
     title: 'Trust recovery',
-    targetMinutes: 120,
+    targetMinutes: getAlertSlaConfig('trustRecovery').breachAtMinutes,
     targetLabel: 'Acknowledge inside 2 hours',
   },
   providerOnboarding: {
     key: 'providerOnboarding',
     queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
     title: 'Provider onboarding',
-    targetMinutes: 1440,
+    targetMinutes: getAlertSlaConfig('providerOnboarding').breachAtMinutes,
     targetLabel: 'Review inside 1 day',
   },
 }
@@ -68,8 +69,8 @@ export function getQueueSlaConfig(queueKey: OpsDashboardQueueKey) {
 
 export function getSlaTone(ageMinutes: number | null, targetMinutes: number): OpsDashboardTone {
   if (ageMinutes == null) return 'default'
-  if (ageMinutes >= targetMinutes * 2) return 'danger'
-  if (ageMinutes >= targetMinutes) return 'warning'
+  if (ageMinutes >= targetMinutes) return 'danger'
+  if (ageMinutes >= Math.floor(targetMinutes * 0.8)) return 'warning'
   return 'default'
 }
 

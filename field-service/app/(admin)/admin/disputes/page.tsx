@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
+import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
   OPS_QUEUE_TYPES,
   claimOpsQueueItem,
@@ -13,6 +14,7 @@ import {
   listOpsQueueAssignments,
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
+import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -122,6 +124,8 @@ async function releaseDisputeAction(formData: FormData) {
 
 export default async function AdminDisputesPage() {
   const admin = await requireAdmin()
+  const now = new Date()
+  const pageWarnings: string[] = []
 
   const disputes = await db.dispute.findMany({
     orderBy: { createdAt: 'desc' },
@@ -152,7 +156,11 @@ export default async function AdminDisputesPage() {
     db,
     OPS_QUEUE_TYPES.DISPUTE,
     disputes.map((dispute) => dispute.id),
-  )
+  ).catch((error) => {
+    console.error('[admin/disputes] Failed to load queue assignments', error)
+    pageWarnings.push('Assignment ownership data is temporarily unavailable.')
+    return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
+  })
 
   const jobById = new Map(jobs.map((job) => [job.id, job]))
   const openCount = disputes.filter((dispute) => dispute.status === 'OPEN').length
@@ -160,6 +168,7 @@ export default async function AdminDisputesPage() {
 
   return (
     <div className="space-y-6">
+      {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/disputes" /> : null}
       <div>
         <h1 className="text-xl font-semibold">Disputes</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -184,6 +193,7 @@ export default async function AdminDisputesPage() {
             const customer = booking?.match.jobRequest.customer
             const assignment = assignments.get(dispute.id)
             const claimedByCurrentUser = assignment?.claimedById === admin.id
+            const isActiveDispute = dispute.status === 'OPEN' || dispute.status === 'UNDER_REVIEW'
             return (
               <div key={dispute.id} className="rounded-xl border bg-card p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
@@ -209,6 +219,12 @@ export default async function AdminDisputesPage() {
                 </div>
 
                 <p className="text-sm">{dispute.reason}</p>
+
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <Badge variant={isActiveDispute ? slaToneVariant(getQueueAgeTone('trustRecovery', ageMinutes(dispute.createdAt, now))) : 'outline'}>
+                    Age {formatAge(dispute.createdAt, now)}
+                  </Badge>
+                </div>
 
                 <div className="grid gap-3 text-sm md:grid-cols-3">
                   <div>
@@ -307,6 +323,24 @@ export default async function AdminDisputesPage() {
       )}
     </div>
   )
+}
+
+function formatAge(from: Date, to: Date) {
+  const minutes = ageMinutes(from, to)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
+}
+
+function ageMinutes(from: Date, to: Date) {
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 60000))
+}
+
+function slaToneVariant(tone: 'default' | 'warning' | 'danger') {
+  if (tone === 'danger') return 'danger' as const
+  if (tone === 'warning') return 'warning' as const
+  return 'outline' as const
 }
 
 function SummaryCard({ label, value }: { label: string; value: number }) {
