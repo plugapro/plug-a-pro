@@ -57,11 +57,25 @@ export default async function AdminValidationQueuePage() {
     take: 100,
   })
 
-  const assignments = await listOpsQueueAssignments(
-    db,
-    OPS_QUEUE_TYPES.VALIDATION,
-    requests.map((request) => request.id),
-  )
+  const requestIds = requests.map((request) => request.id)
+
+  const [assignments, rawAuditLogs] = await Promise.all([
+    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.VALIDATION, requestIds),
+    db.auditLog.findMany({
+      where: { entityId: { in: requestIds }, entityType: 'job_request' },
+      select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
+      orderBy: { timestamp: 'desc' },
+      take: requestIds.length * 5 + 10,
+    }),
+  ])
+
+  const auditByRequest = new Map<string, typeof rawAuditLogs>()
+  for (const log of rawAuditLogs) {
+    if (!log.entityId) continue
+    const list = auditByRequest.get(log.entityId) ?? []
+    list.push(log)
+    auditByRequest.set(log.entityId, list)
+  }
 
   async function claimValidation(formData: FormData) {
     'use server'
@@ -272,6 +286,23 @@ export default async function AdminValidationQueuePage() {
                       <Link href={`/admin/customers/${request.customer.id}`}>Open customer</Link>
                     </Button>
                   </div>
+
+                  {(() => {
+                    const trail = auditByRequest.get(request.id) ?? []
+                    if (trail.length === 0) return null
+                    return (
+                      <div className="border-t pt-3 space-y-1.5">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Activity</p>
+                        {trail.slice(0, 4).map((entry) => (
+                          <div key={entry.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="shrink-0 tabular-nums">{formatAge(entry.timestamp)}</span>
+                            <span className="font-medium text-foreground/70">{entry.action.replace(/\./g, ' · ')}</span>
+                            <span className="ml-auto shrink-0">{entry.actorRole}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             )

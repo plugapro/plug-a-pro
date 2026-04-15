@@ -197,6 +197,14 @@ export default async function AdminDispatchPage({
   const history = selectedRequest
     ? await getDispatchHistory(selectedRequest.id).catch(() => [])
     : []
+  const requestAuditTrail = selectedRequest
+    ? await db.auditLog.findMany({
+        where: { entityId: selectedRequest.id, entityType: 'job_request' },
+        select: { id: true, action: true, actorRole: true, timestamp: true },
+        orderBy: { timestamp: 'desc' },
+        take: 10,
+      }).catch(() => [])
+    : []
 
   return (
     <div className="space-y-6">
@@ -442,6 +450,23 @@ export default async function AdminDispatchPage({
                   )}
                 </CardContent>
               </Card>
+
+              {requestAuditTrail.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Audit trail</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {requestAuditTrail.map((entry) => (
+                      <div key={entry.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="shrink-0 tabular-nums">{formatDispatchAge(entry.timestamp)}</span>
+                        <span className="font-medium text-foreground/70">{entry.action.replace(/\./g, ' · ')}</span>
+                        <span className="ml-auto shrink-0">{entry.actorRole}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
             </>
           ) : (
             <Card>
@@ -454,6 +479,15 @@ export default async function AdminDispatchPage({
       </div>
     </div>
   )
+}
+
+function formatDispatchAge(date: Date) {
+  const diffMs = Date.now() - date.getTime()
+  const minutes = Math.max(0, Math.floor(diffMs / 60000))
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

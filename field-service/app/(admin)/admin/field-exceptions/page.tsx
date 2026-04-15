@@ -81,11 +81,25 @@ export default async function AdminFieldExceptionsPage() {
     take: 100,
   })
 
-  const assignments = await listOpsQueueAssignments(
-    db,
-    OPS_QUEUE_TYPES.FIELD_EXCEPTION,
-    jobs.map((job) => job.id),
-  )
+  const jobIds = jobs.map((job) => job.id)
+
+  const [assignments, rawAuditLogs] = await Promise.all([
+    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.FIELD_EXCEPTION, jobIds),
+    db.auditLog.findMany({
+      where: { entityId: { in: jobIds }, entityType: 'job' },
+      select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
+      orderBy: { timestamp: 'desc' },
+      take: jobIds.length * 5 + 10,
+    }),
+  ])
+
+  const auditByJob = new Map<string, typeof rawAuditLogs>()
+  for (const log of rawAuditLogs) {
+    if (!log.entityId) continue
+    const list = auditByJob.get(log.entityId) ?? []
+    list.push(log)
+    auditByJob.set(log.entityId, list)
+  }
 
   async function claimFieldException(formData: FormData) {
     'use server'
@@ -203,6 +217,23 @@ export default async function AdminFieldExceptionsPage() {
                       <Link href={`/admin/providers/${job.provider.id}`}>Open provider</Link>
                     </Button>
                   </div>
+
+                  {(() => {
+                    const trail = auditByJob.get(job.id) ?? []
+                    if (trail.length === 0) return null
+                    return (
+                      <div className="border-t pt-3 space-y-1.5">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Activity</p>
+                        {trail.slice(0, 4).map((entry) => (
+                          <div key={entry.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="shrink-0 tabular-nums">{formatAge(entry.timestamp, now)}</span>
+                            <span className="font-medium text-foreground/70">{entry.action.replace(/\./g, ' · ')}</span>
+                            <span className="ml-auto shrink-0">{entry.actorRole}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             )

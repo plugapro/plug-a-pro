@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { revalidatePath } from 'next/cache'
 import type { QuoteStatus } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -73,11 +74,25 @@ export default async function AdminQuoteQueuePage() {
     take: 100,
   })
 
-  const assignments = await listOpsQueueAssignments(
-    db,
-    OPS_QUEUE_TYPES.QUOTE_APPROVAL,
-    quotes.map((quote) => quote.id),
-  )
+  const quoteIds = quotes.map((quote) => quote.id)
+
+  const [assignments, rawAuditLogs] = await Promise.all([
+    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.QUOTE_APPROVAL, quoteIds),
+    db.auditLog.findMany({
+      where: { entityId: { in: quoteIds }, entityType: 'quote' },
+      select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
+      orderBy: { timestamp: 'desc' },
+      take: quoteIds.length * 5 + 10,
+    }),
+  ])
+
+  const auditByQuote = new Map<string, typeof rawAuditLogs>()
+  for (const log of rawAuditLogs) {
+    if (!log.entityId) continue
+    const list = auditByQuote.get(log.entityId) ?? []
+    list.push(log)
+    auditByQuote.set(log.entityId, list)
+  }
 
   async function claimQuote(formData: FormData) {
     'use server'
@@ -93,6 +108,9 @@ export default async function AdminQuoteQueuePage() {
       claimedByLabel: activeAdmin.email ?? 'admin',
       actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
+
+    revalidatePath('/admin/quotes')
+    revalidatePath('/admin')
   }
 
   async function releaseQuote(formData: FormData) {
@@ -106,6 +124,9 @@ export default async function AdminQuoteQueuePage() {
       entityId: quoteId,
       actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
+
+    revalidatePath('/admin/quotes')
+    revalidatePath('/admin')
   }
 
   const expiredCount = quotes.filter((quote) => quote.validUntil && quote.validUntil < now).length
@@ -209,6 +230,23 @@ export default async function AdminQuoteQueuePage() {
                       <Link href={`/admin/providers/${quote.match.provider.id}`}>Open provider</Link>
                     </Button>
                   </div>
+
+                  {(() => {
+                    const trail = auditByQuote.get(quote.id) ?? []
+                    if (trail.length === 0) return null
+                    return (
+                      <div className="border-t pt-3 space-y-1.5">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Activity</p>
+                        {trail.slice(0, 4).map((entry) => (
+                          <div key={entry.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="shrink-0 tabular-nums">{formatAge(entry.timestamp, now)}</span>
+                            <span className="font-medium text-foreground/70">{entry.action.replace(/\./g, ' · ')}</span>
+                            <span className="ml-auto shrink-0">{entry.actorRole}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             )
