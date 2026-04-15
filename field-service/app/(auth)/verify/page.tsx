@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { OtpInput } from '@/components/ui/otp-input'
 import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
 import { getSafeNextPath } from '@/lib/safe-redirect'
 
@@ -28,6 +27,7 @@ function VerifyForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resendCooldown, setResendCooldown] = useState(30)
+  const submitRef = useRef(false)
 
   useEffect(() => {
     if (resendCooldown <= 0) return
@@ -35,8 +35,17 @@ function VerifyForm() {
     return () => clearTimeout(t)
   }, [resendCooldown])
 
-  async function handleVerify(e: React.FormEvent) {
-    e.preventDefault()
+  // Auto-submit when all 6 digits are entered
+  useEffect(() => {
+    if (otp.length === 6 && !loading && !submitRef.current) {
+      submitRef.current = true
+      handleVerifyOtp(otp)
+    }
+    if (otp.length < 6) submitRef.current = false
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp])
+
+  async function handleVerifyOtp(code: string) {
     setError(null)
     setLoading(true)
 
@@ -44,7 +53,7 @@ function VerifyForm() {
       const supabase = getSupabaseClient()
       const { data, error: verifyError } = await supabase.auth.verifyOtp({
         phone,
-        token: otp.trim(),
+        token: code.trim(),
         type: 'sms',
       })
 
@@ -84,6 +93,11 @@ function VerifyForm() {
     }
   }
 
+  function handleVerify(e: React.FormEvent) {
+    e.preventDefault()
+    if (otp.length === 6) handleVerifyOtp(otp)
+  }
+
   async function handleResend() {
     if (resendCooldown > 0) return
     const supabase = getSupabaseClient()
@@ -110,25 +124,13 @@ function VerifyForm() {
 
       {/* Form */}
       <form onSubmit={handleVerify} className="space-y-4">
-        <Input
-          type="text"
-          inputMode="numeric"
-          pattern="\d{6}"
-          maxLength={6}
-          placeholder="123456"
-          value={otp}
-          onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-          required
-          autoFocus
-          disabled={loading}
-          className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
-        />
+        <OtpInput value={otp} onChange={setOtp} disabled={loading} />
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-sm text-destructive text-center">{error}</p>}
 
-        <Button type="submit" size="lg" disabled={loading || otp.length < 6} className="w-full">
-          {loading ? 'Verifying…' : 'Confirm'}
-        </Button>
+        {loading && (
+          <p className="text-sm text-muted-foreground text-center">Verifying…</p>
+        )}
       </form>
 
       {/* Resend + back */}
