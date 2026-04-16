@@ -15,35 +15,35 @@ type FlowDef = {
 const PLATFORM_OVERVIEW = `
 flowchart TB
   subgraph Customer Surfaces
-    CS1[PWA<br/>/sign-in -> /services -> /book/:serviceId]
-    CS2[WhatsApp<br/>job request / status / help]
-    CS3[Public links<br/>/requests/access/:token<br/>/quotes/:token<br/>/approve/:token]
+    CS1["PWA routes: sign-in to services to book"]
+    CS2["WhatsApp: job request, status, help"]
+    CS3["Public links: request access, quote approval, extra work approval"]
   end
 
   subgraph Provider Surfaces
-    PS1[WhatsApp registration<br/>and provider journey]
-    PS2[PWA<br/>/provider, /provider/leads,<br/>/provider/quotes/:matchId,<br/>/provider/jobs/:id]
+    PS1["WhatsApp registration and provider journey"]
+    PS2["Provider PWA: dashboard, leads, quotes, jobs"]
   end
 
   subgraph Admin Surfaces
-    AS1[/admin dashboard]
-    AS2[Queues<br/>validation, dispatch, quotes,<br/>field exceptions, disputes]
-    AS3[Internal tools<br/>applications, bookings, providers,<br/>payments, locations, reports]
+    AS1["Admin dashboard"]
+    AS2["Queues: validation, dispatch, quotes, field exceptions, disputes"]
+    AS3["Internal tools: applications, bookings, providers, payments, locations, reports"]
   end
 
   subgraph Platform Core
-    API[Next.js routes + Server Actions]
-    BOT[WhatsApp state machine]
-    MATCH[Matching + dispatch engine]
-    TOKEN[Tokenized access layer]
-    OPS[Ops dashboard + queue services]
+    API["Next.js routes and Server Actions"]
+    BOT["WhatsApp state machine"]
+    MATCH["Matching and dispatch engine"]
+    TOKEN["Tokenized access layer"]
+    OPS["Ops dashboard and queue services"]
   end
 
   subgraph Runtime Services
-    DB[(Supabase Postgres via Prisma)]
-    BLOB[(Vercel Blob)]
-    CRON[Vercel cron jobs]
-    WEBHOOKS[WhatsApp + payment webhooks]
+    DB["Supabase Postgres via Prisma"]
+    BLOB["Vercel Blob"]
+    CRON["Vercel cron jobs"]
+    WEBHOOKS["WhatsApp and payment webhooks"]
   end
 
   CS1 --> API
@@ -70,39 +70,39 @@ flowchart TB
 
 const CUSTOMER_PWA_JOURNEY = `
 flowchart TD
-  A([Customer on mobile]) --> B[/sign-in]
-  B --> C[/verify phone OTP]
-  C --> D[/services]
-  D --> E[/book/:serviceId]
+  A["Customer on mobile"] --> B["Sign in"]
+  B --> C["Verify phone OTP"]
+  C --> D["Services"]
+  D --> E["Book service"]
 
   E --> F[Choose province -> region/suburb]
   F --> G[Enter street address after suburb]
   G --> H[Add title + job details]
   H --> I[Submit request]
 
-  I --> J[(JobRequest created)]
-  J --> K[Signed ticket URL returned]
-  K --> L[/requests/access/:token]
+  I --> J["JobRequest created"]
+  J --> K["Signed ticket URL returned"]
+  K --> L["Scoped ticket page"]
 
   J --> M[Matching engine dispatches providers]
   M --> N{Provider accepts?}
   N -->|No| O[Request stays matching / escalates]
-  N -->|Yes| P[(Match created)]
+  N -->|Yes| P["Match created"]
 
   P --> Q{Inspection required?}
   Q -->|Yes| R[Inspection completed]
   Q -->|No| S[Provider submits quote]
   R --> S
 
-  S --> T[/quotes/:token approval page]
+  S --> T["Scoped quote approval page"]
   T --> U{Approve?}
   U -->|Decline| V[Provider revises quote]
   V --> S
-  U -->|Approve| W[(Booking + Job created)]
+  U -->|Approve| W["Booking and job created"]
 
-  W --> X[/bookings/:id]
+  W --> X["Booking detail"]
   X --> Y[Track status + photos + extras]
-  Y --> Z[/bookings/:id/rate]
+  Y --> Z["Rate booking"]
 
   style A fill:#1d4ed8,color:#fff
   style L fill:#1e293b,color:#94a3b8
@@ -113,7 +113,7 @@ flowchart TD
 
 const CUSTOMER_WHATSAPP_JOURNEY = `
 flowchart TD
-  A([Customer on WhatsApp]) --> B[Send greeting or service intent]
+  A["Customer on WhatsApp"] --> B["Send greeting or service intent"]
   B --> C[Welcome menu]
   C --> D{Choice}
 
@@ -121,8 +121,8 @@ flowchart TD
   E --> F[Street address after location]
   F --> G[Availability / confirmation]
   G --> H[(JobRequest created)]
-  H --> I[Direct ticket link sent]
-  I --> J[/requests/access/:token]
+  H --> I["Direct ticket link sent"]
+  I --> J["Scoped ticket page"]
 
   D -->|Track booking| K[Status flow]
   D -->|Help| L[FAQ / support flow]
@@ -132,8 +132,8 @@ flowchart TD
   N --> O[Customer later receives quote link or booking updates]
 
   O --> P{Needs action?}
-  P -->|Quote decision| Q[/quotes/:token]
-  P -->|Extra work| R[/approve/:token]
+  P -->|Quote decision| Q["Scoped quote approval page"]
+  P -->|Extra work| R["Scoped extra work approval page"]
   P -->|Ticket view only| J
 
   style A fill:#25d366,color:#000
@@ -145,41 +145,41 @@ flowchart TD
 
 const PROVIDER_JOURNEY = `
 flowchart TD
-  A([Worker / provider]) --> B{Entry path}
+  A["Worker or provider"] --> B{Entry path}
   B -->|WhatsApp| C[Registration flow]
-  B -->|Approved account| D[/provider-sign-in -> /provider-verify]
+  B -->|Approved account| D["Provider sign in and verify"]
 
   C --> E[Name]
   E --> F[Multi-select skills]
   F --> G[Coverage area by province / city / region]
   G --> H[Experience + availability + evidence note]
-  H --> I[(ProviderApplication pending)]
-  I --> J[/admin/applications review]
+  H --> I["ProviderApplication pending"]
+  I --> J["Admin applications review"]
   J -->|Approved| D
   J -->|Rejected| K[Application stays closed / pending follow-up]
 
-  D --> L[/provider]
+  D --> L["Provider dashboard"]
   L --> M[See active and upcoming jobs]
-  L --> N[/provider/leads]
-  N --> O[/provider/leads/:leadId]
+  L --> N["Provider leads"]
+  N --> O["Lead detail"]
   O --> P{Accept lead?}
   P -->|Decline| N
-  P -->|Accept| Q[/provider/quotes/:matchId]
+  P -->|Accept| Q["Provider quote builder"]
 
   Q --> R{Inspection flow or direct quote}
   R --> S[Submit quote]
-  S --> T[Customer approves via token link]
-  T --> U[(Booking + Job exist)]
+  S --> T["Customer approves via token link"]
+  T --> U["Booking and job exist"]
 
-  U --> V[/provider/jobs/:id]
+  U --> V["Provider job detail"]
   V --> W[Status updates]
   W --> X[Upload work photos]
   X --> Y[Optional extra work request]
   Y --> Z[Customer confirms completion]
 
-  L --> AA[/provider/profile]
+  L --> AA["Provider profile"]
   AA --> AB[Skills + service areas + schedule]
-  L --> AC[/provider/earnings]
+  L --> AC["Provider earnings"]
 
   style A fill:#7c3aed,color:#fff
   style I fill:#1e293b,color:#94a3b8
@@ -189,8 +189,8 @@ flowchart TD
 
 const ADMIN_OPS_JOURNEY = `
 flowchart TD
-  A([Owner / Admin]) --> B[admin.plugapro.co.za/sign-in]
-  B --> C[/admin]
+  A["Owner or Admin"] --> B["Admin sign in"]
+  B --> C["Admin home"]
   C --> D[Operations dashboard]
 
   D --> E[Validation queue]
@@ -204,22 +204,22 @@ flowchart TD
   G --> L[Claim / release / audit trail]
   H --> M[Review job issues / audit trail]
 
-  C --> N[/admin/applications]
+  C --> N["Applications"]
   N --> O[Approve / reject provider applications]
 
-  C --> P[/admin/bookings]
+  C --> P["Bookings"]
   P --> Q[Inspect booking, payment, job, attachments]
 
-  C --> R[/admin/disputes]
+  C --> R["Disputes"]
   R --> S[Resolve or close disputes]
 
-  C --> T[/admin/payments]
+  C --> T["Payments"]
   T --> U[Refunds / payment follow-up]
 
-  C --> V[/admin/locations]
+  C --> V["Locations"]
   V --> W[Maintain taxonomy]
 
-  C --> X[/admin/reports]
+  C --> X["Reports"]
   X --> Y[Operational summaries]
 
   style A fill:#123524,color:#fff
@@ -230,17 +230,17 @@ flowchart TD
 const TOKENIZED_ACCESS = `
 flowchart LR
   A[Scoped public link created] --> B{Link type}
-  B -->|Ticket| C[/requests/access/:token]
-  B -->|Quote approval| D[/quotes/:token]
-  B -->|Extra work approval| E[/approve/:token]
+  B -->|Ticket| C["Scoped ticket page"]
+  B -->|Quote approval| D["Scoped quote approval page"]
+  B -->|Extra work approval| E["Scoped extra work approval page"]
 
   C --> F[Resolve token -> one job request only]
   F --> G[Render request, provider, quote, booking, photos]
-  G --> H[/api/attachments/:id?token=...]
+  G --> H["Attachment proxy with token"]
 
-  D --> I[Resolve approvalToken -> one quote only]
+  D --> I["Resolve approval token to one quote"]
   I --> J[Approve or decline]
-  J --> K[(Booking + Job creation on approval)]
+  J --> K["Booking and job creation on approval"]
 
   E --> L[Resolve extra-work token]
   L --> M[Approve or decline extra work]
@@ -257,15 +257,15 @@ flowchart LR
 
 const AUTOMATIONS_AND_SIGNALS = `
 flowchart TD
-  A[(JobRequest / Match / Booking changes)] --> B[Matching engine]
+  A["JobRequest, Match, Booking changes"] --> B[Matching engine]
   B --> C[Lead dispatch]
   C --> D[WhatsApp / push notifications]
 
-  E[Vercel cron] --> F[/api/cron/match-leads]
-  E --> G[/api/cron/reminders]
-  E --> H[/api/cron/follow-up]
-  E --> I[/api/cron/session-timeout]
-  E --> J[/api/cron/ops-alerts]
+  E["Vercel cron"] --> F["Match leads cron"]
+  E --> G["Reminders cron"]
+  E --> H["Follow-up cron"]
+  E --> I["Session timeout cron"]
+  E --> J["Ops alerts cron"]
 
   F --> K[Retry dispatch / reconcile applications]
   G --> L[Booking reminder messages]
@@ -274,8 +274,8 @@ flowchart TD
   J --> O[Queue breach detection]
   O --> P[Ops WhatsApp alert]
 
-  Q[Inbound webhooks] --> R[/api/webhooks/whatsapp]
-  Q --> S[/api/webhooks/payments]
+  Q["Inbound webhooks"] --> R["WhatsApp webhook"]
+  Q --> S["Payments webhook"]
   R --> T[Conversation routing + dedupe]
   S --> U[Payment state sync]
 
@@ -287,34 +287,34 @@ flowchart TD
 
 const REQUEST_LIFECYCLE = `
 flowchart TD
-  A[(JobRequest OPEN)] --> B[(JobRequest MATCHING)]
+  A["JobRequest OPEN"] --> B["JobRequest MATCHING"]
   B --> C{Lead accepted?}
-  C -->|No| D[(JobRequest EXPIRED or OPS review)]
-  C -->|Yes| E[(Match MATCHED)]
+  C -->|No| D["JobRequest EXPIRED or OPS review"]
+  C -->|Yes| E["Match MATCHED"]
 
   E --> F{Inspection needed?}
-  F -->|Yes| G[(INSPECTION_SCHEDULED)]
-  G --> H[(INSPECTION_COMPLETE)]
-  H --> I[(Match QUOTED)]
+  F -->|Yes| G["INSPECTION_SCHEDULED"]
+  G --> H["INSPECTION_COMPLETE"]
+  H --> I["Match QUOTED"]
   F -->|No| I
 
   I --> J{Customer decision}
-  J -->|Decline| K[(QUOTE_DECLINED)]
+  J -->|Decline| K["QUOTE_DECLINED"]
   K --> I
-  J -->|Approve| L[(Booking SCHEDULED)]
+  J -->|Approve| L["Booking SCHEDULED"]
 
-  L --> M[(Job SCHEDULED)]
-  M --> N[(EN_ROUTE)]
-  N --> O[(ARRIVED)]
-  O --> P[(STARTED)]
-  P --> Q[(PAUSED / AWAITING_APPROVAL optional)]
+  L --> M["Job SCHEDULED"]
+  M --> N["EN_ROUTE"]
+  N --> O["ARRIVED"]
+  O --> P["STARTED"]
+  P --> Q["PAUSED or AWAITING_APPROVAL"]
   Q --> P
-  P --> R[(PENDING_COMPLETION_CONFIRMATION)]
-  R --> S[(COMPLETED)]
+  P --> R["PENDING_COMPLETION_CONFIRMATION"]
+  R --> S["COMPLETED"]
 
-  P --> T[(Dispute OPEN)]
+  P --> T["Dispute OPEN"]
   R --> T
-  T --> U[(Dispute resolved / booking outcome managed)]
+  T --> U["Dispute resolved or booking outcome managed"]
 
   style A fill:#1e293b,color:#94a3b8
   style E fill:#1e293b,color:#94a3b8
