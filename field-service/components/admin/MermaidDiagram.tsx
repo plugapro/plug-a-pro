@@ -21,24 +21,26 @@ export function MermaidDiagram({ chart, className }: MermaidDiagramProps) {
 
       mermaid.initialize({
         startOnLoad: false,
-        theme: 'dark',
+        theme: 'base',
+        look: 'handDrawn',
         themeVariables: {
-          primaryColor: '#1d4ed8',
-          primaryTextColor: '#f8fafc',
-          primaryBorderColor: '#3b82f6',
-          lineColor: '#64748b',
-          secondaryColor: '#1e293b',
-          tertiaryColor: '#0f172a',
-          background: '#0f172a',
-          mainBkg: '#1e293b',
-          nodeBorder: '#3b82f6',
-          clusterBkg: '#0f172a',
-          titleColor: '#f8fafc',
-          edgeLabelBackground: '#1e293b',
-          fontFamily: 'Geist, ui-sans-serif, system-ui',
-          fontSize: '13px',
+          primaryColor: '#f8f2e8',
+          primaryTextColor: '#201a14',
+          primaryBorderColor: '#5f584f',
+          lineColor: '#5f584f',
+          secondaryColor: '#f4ede2',
+          tertiaryColor: '#fcfaf6',
+          background: '#fcfaf6',
+          mainBkg: '#fcfaf6',
+          nodeBorder: '#5f584f',
+          clusterBkg: '#f9f4eb',
+          clusterBorder: '#7a7266',
+          titleColor: '#201a14',
+          edgeLabelBackground: '#fcfaf6',
+          fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif',
+          fontSize: '14px',
         },
-        flowchart: { curve: 'basis', padding: 16, useMaxWidth: true },
+        flowchart: { curve: 'linear', padding: 20, useMaxWidth: true, htmlLabels: false },
       })
 
       if (cancelled) return
@@ -68,13 +70,21 @@ export function MermaidDiagram({ chart, className }: MermaidDiagramProps) {
   }, [chart, id])
 
   if (error) {
-    return <pre className={`text-xs text-destructive p-4 ${className ?? ''}`}>{error}</pre>
+    return (
+      <pre
+        className={`rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-700 ${className ?? ''}`}
+      >
+        {error}
+      </pre>
+    )
   }
 
   return (
-    <div className={`relative ${className ?? ''}`}>
+    <div
+      className={`relative overflow-hidden rounded-[28px] border border-stone-300 bg-[#fcfaf6] p-4 shadow-[0_14px_34px_rgba(38,26,12,0.08)] ${className ?? ''}`}
+    >
       {loading && (
-        <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center p-8 text-sm italic text-stone-500">
           Rendering diagram…
         </div>
       )}

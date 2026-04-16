@@ -451,19 +451,31 @@ const FLOWS: FlowDef[] = [
 
 export function FlowsClient() {
   return (
-    <div>
-      <div className="mb-6 space-y-1">
-        <h1 className="text-2xl font-bold">Current User Journey Flows</h1>
-        <p className="text-sm text-muted-foreground">
-          Regenerated from the implemented routes, token access paths, WhatsApp handlers, admin queues,
-          and request lifecycle in the current codebase.
-        </p>
+    <div className="space-y-6">
+      <div className="rounded-[30px] border border-stone-300 bg-[#fcfaf6] px-6 py-5 shadow-[0_14px_34px_rgba(38,26,12,0.08)]">
+        <div className="mb-4 h-px w-full bg-stone-300" />
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-stone-500">
+            Platform Narrative
+          </p>
+          <h1 className="font-serif text-3xl tracking-tight text-stone-900">
+            Current User Journey Flows
+          </h1>
+          <p className="max-w-3xl text-sm leading-6 text-stone-600">
+            Regenerated from the implemented routes, token access paths, WhatsApp handlers, admin queues,
+            and request lifecycle in the current codebase.
+          </p>
+        </div>
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList className="mb-6 flex-wrap h-auto gap-1">
+        <TabsList className="h-auto flex-wrap gap-2 rounded-[24px] border border-stone-300 bg-[#f7f1e8] p-2 shadow-[0_8px_20px_rgba(38,26,12,0.05)]">
           {FLOWS.map((flow) => (
-            <TabsTrigger key={flow.id} value={flow.id} className="text-xs">
+            <TabsTrigger
+              key={flow.id}
+              value={flow.id}
+              className="rounded-full border border-transparent px-4 py-2 text-xs font-medium text-stone-600 data-[state=active]:border-stone-400 data-[state=active]:bg-[#fcfaf6] data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
+            >
               {flow.label}
             </TabsTrigger>
           ))}
@@ -471,37 +483,42 @@ export function FlowsClient() {
 
         {FLOWS.map((flow) => (
           <TabsContent key={flow.id} value={flow.id} className="space-y-4">
-            <div className="rounded-lg border bg-card">
-              <div className="border-b px-5 py-3">
-                <h2 className="font-semibold">{flow.label}</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">{flow.description}</p>
+            <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-[#fcfaf6] shadow-[0_18px_40px_rgba(38,26,12,0.08)]">
+              <div className="border-b border-stone-200 px-6 py-5">
+                <div className="mb-3 h-px w-full bg-stone-200" />
+                <h2 className="font-serif text-2xl text-stone-900">{flow.label}</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-stone-600">{flow.description}</p>
               </div>
 
-              <div className="grid gap-4 border-b px-5 py-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Entry Points
-                  </h3>
-                  <ul className="space-y-1 text-sm text-muted-foreground">
-                    {flow.entryPoints.map((item) => (
-                      <li key={item}>- {item}</li>
-                    ))}
-                  </ul>
+              <div className="grid gap-4 border-b border-stone-200 px-6 py-5 md:grid-cols-2">
+                <div className="rounded-[24px] border border-stone-200 bg-[#f9f3ea] p-4">
+                  <div className="space-y-2">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
+                      Entry Points
+                    </h3>
+                    <ul className="space-y-1.5 text-sm leading-6 text-stone-700">
+                      {flow.entryPoints.map((item) => (
+                        <li key={item}>• {item}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Why This Matters
-                  </h3>
-                  <ul className="space-y-1 text-sm text-muted-foreground">
-                    {flow.outcomes.map((item) => (
-                      <li key={item}>- {item}</li>
-                    ))}
-                  </ul>
+                <div className="rounded-[24px] border border-stone-200 bg-[#f9f3ea] p-4">
+                  <div className="space-y-2">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
+                      Why This Matters
+                    </h3>
+                    <ul className="space-y-1.5 text-sm leading-6 text-stone-700">
+                      {flow.outcomes.map((item) => (
+                        <li key={item}>• {item}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               </div>
 
-              <div className="overflow-x-auto p-4">
+              <div className="bg-[#f5efe6] p-5">
                 <MermaidDiagram chart={flow.chart} />
               </div>
             </div>
