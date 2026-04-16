@@ -317,4 +317,10 @@ describe('syncProviderRecord — phone normalization', () => {
     expect(normalizePhone('+27 82 123 4567')).toBe('+27821234567')
     expect(normalizePhone('+27-82-123-4567')).toBe('+27821234567')
   })
+
+  it('normalizePhone: handles WhatsApp-delivered format without + prefix', () => {
+    // WhatsApp delivers SA numbers as 27xxxxxxxxx (no + prefix)
+    expect(normalizePhone('27821234567')).toBe('+27821234567')
+    expect(normalizePhone('27823035070')).toBe('+27823035070')
+  })
 })
