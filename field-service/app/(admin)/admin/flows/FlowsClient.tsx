@@ -8,6 +8,7 @@ type FlowDef = {
   label: string
   description: string
   chart: string
+  compact?: boolean
   entryPoints: string[]
   outcomes: string[]
 }
@@ -330,6 +331,7 @@ const FLOWS: FlowDef[] = [
     label: 'Platform Overview',
     description: 'Current channels, internal surfaces, and platform services.',
     chart: PLATFORM_OVERVIEW,
+    compact: true,
     entryPoints: [
       'Customer PWA routes under /(customer)',
       'WhatsApp inbound webhook and bot state machine',
@@ -346,6 +348,7 @@ const FLOWS: FlowDef[] = [
     label: 'Customer PWA Journey',
     description: 'Phone-authenticated customer path from service selection to rating.',
     chart: CUSTOMER_PWA_JOURNEY,
+    compact: true,
     entryPoints: [
       '/sign-in and /verify',
       '/services and /book/:serviceId',
@@ -376,6 +379,7 @@ const FLOWS: FlowDef[] = [
     label: 'Provider Journey',
     description: 'From application through lead response, job execution, and profile maintenance.',
     chart: PROVIDER_JOURNEY,
+    compact: true,
     entryPoints: [
       'WhatsApp provider registration flow',
       '/provider-sign-in and /provider-verify',
@@ -391,6 +395,7 @@ const FLOWS: FlowDef[] = [
     label: 'Admin Operations Journey',
     description: 'What the operations team actually does inside the platform today.',
     chart: ADMIN_OPS_JOURNEY,
+    compact: true,
     entryPoints: [
       'admin.plugapro.co.za/sign-in',
       '/admin dashboard',
@@ -422,6 +427,7 @@ const FLOWS: FlowDef[] = [
     label: 'Request Lifecycle',
     description: 'How JobRequest, Match, Booking, Job, and Dispute states connect.',
     chart: REQUEST_LIFECYCLE,
+    compact: true,
     entryPoints: [
       'Job request creation',
       'Matching and quote handling',
@@ -437,6 +443,7 @@ const FLOWS: FlowDef[] = [
     label: 'Automations and Signals',
     description: 'Cron, webhooks, notifications, and operational alerts.',
     chart: AUTOMATIONS_AND_SIGNALS,
+    compact: true,
     entryPoints: [
       'Vercel cron routes',
       'WhatsApp and payment webhooks',
@@ -504,7 +511,7 @@ export function FlowsClient() {
             <div className="grid xl:grid-cols-[minmax(0,1.45fr)_320px]">
               {/* Diagram */}
               <div className="border-b p-5 xl:border-b-0 xl:border-r">
-                <MermaidDiagram chart={flow.chart} />
+                <MermaidDiagram chart={flow.chart} compact={flow.compact} />
               </div>
 
               {/* Metadata */}
