@@ -4,9 +4,12 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CityOption, RegionOption, SuburbOption } from '@/lib/location-nodes'
 
 type Selection = {
+  province: string
+  region: string
   suburb: string
   city: string
-  locationNodeId: string | null
+  postalCode: string
+  locationNodeId: string
 }
 
 type Props = {
@@ -17,12 +20,8 @@ type Props = {
 
 export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
   const [selectedCityId, setSelectedCityId] = useState('')
-  const [selectedCityLabel, setSelectedCityLabel] = useState('')
   const [selectedRegionId, setSelectedRegionId] = useState('')
   const [selectedSuburbId, setSelectedSuburbId] = useState('')
-  const [manualMode, setManualMode] = useState(false)
-  const [manualCity, setManualCity] = useState('')
-  const [manualSuburb, setManualSuburb] = useState('')
   const [regions, setRegions] = useState<RegionOption[]>([])
   const [suburbs, setSuburbs] = useState<SuburbOption[]>([])
   const [loadingRegions, setLoadingRegions] = useState(false)
@@ -36,12 +35,8 @@ export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
 
   useEffect(() => {
     setSelectedCityId('')
-    setSelectedCityLabel('')
     setSelectedRegionId('')
     setSelectedSuburbId('')
-    setManualMode(false)
-    setManualCity('')
-    setManualSuburb('')
     setRegions([])
     setSuburbs([])
     setFetchError(null)
@@ -49,14 +44,11 @@ export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
   }, [provinceKey, onSelect])
 
   async function handleCityChange(cityId: string) {
-    const city = filteredCities.find((entry) => entry.id === cityId)
     setSelectedCityId(cityId)
-    setSelectedCityLabel(city?.label ?? '')
     setSelectedRegionId('')
     setSelectedSuburbId('')
     setRegions([])
     setSuburbs([])
-    setManualMode(false)
     onSelect(null)
 
     if (!cityId) return
@@ -78,7 +70,6 @@ export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
     setSelectedRegionId(regionId)
     setSelectedSuburbId('')
     setSuburbs([])
-    setManualMode(false)
     onSelect(null)
 
     if (!regionId) return
@@ -106,22 +97,12 @@ export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
     if (!suburb) return
 
     onSelect({
+      province: suburb.provinceLabel,
+      region: suburb.regionLabel,
       suburb: suburb.label,
-      city: selectedCityLabel,
+      city: suburb.cityLabel,
+      postalCode: suburb.postalCode,
       locationNodeId: suburb.id,
-    })
-  }
-
-  function handleManualSelection(nextCity: string, nextSuburb: string) {
-    if (!nextCity.trim() || !nextSuburb.trim()) {
-      onSelect(null)
-      return
-    }
-
-    onSelect({
-      city: nextCity.trim(),
-      suburb: nextSuburb.trim(),
-      locationNodeId: null,
     })
   }
 
@@ -204,59 +185,6 @@ export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
           {fetchError}
         </p>
       )}
-
-      <div className="space-y-2 rounded-xl border px-3 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium">Can&apos;t find your suburb?</p>
-            <p className="text-xs text-muted-foreground">
-              Use manual entry for estates, complexes, informal addresses, or lookup gaps.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="text-xs font-medium text-primary"
-            onClick={() => {
-              const nextManualMode = !manualMode
-              setManualMode(nextManualMode)
-              if (!nextManualMode) {
-                setManualCity('')
-                setManualSuburb('')
-                onSelect(null)
-              }
-            }}
-          >
-            {manualMode ? 'Close' : 'Enter manually'}
-          </button>
-        </div>
-
-        {manualMode && (
-          <div className="grid gap-3">
-            <input
-              type="text"
-              value={manualCity}
-              onChange={(event) => {
-                const nextCity = event.target.value
-                setManualCity(nextCity)
-                handleManualSelection(nextCity, manualSuburb)
-              }}
-              placeholder="City / municipality"
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            />
-            <input
-              type="text"
-              value={manualSuburb}
-              onChange={(event) => {
-                const nextSuburb = event.target.value
-                setManualSuburb(nextSuburb)
-                handleManualSelection(manualCity, nextSuburb)
-              }}
-              placeholder="Suburb / estate / area"
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            />
-          </div>
-        )}
-      </div>
     </div>
   )
 }

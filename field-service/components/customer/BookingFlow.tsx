@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker } from './SuburbPicker'
+import { buildLegacyStreetAddress } from '@/lib/address-format'
 import type { CityOption } from '@/lib/location-nodes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,8 +35,12 @@ interface BookingFlowProps {
 }
 
 interface Address {
-  street: string
+  addressLine1: string
+  addressLine2: string
+  complexName: string
+  unitNumber: string
   suburb: string
+  region: string
   city: string
   province: string
   postalCode: string
@@ -72,8 +77,12 @@ const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
 export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
-    street: '',
+    addressLine1: '',
+    addressLine2: '',
+    complexName: '',
+    unitNumber: '',
     suburb: '',
+    region: '',
     city: '',
     province: 'Gauteng',
     postalCode: '',
@@ -92,16 +101,17 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   }
 
   function validateAddressStep() {
+    if (!locationNodeId) {
+      return 'Select your province, city, region, and suburb from the available address list before continuing.'
+    }
+
     const suburb = normalizeValue(address.suburb)
     const city = normalizeValue(address.city)
     const province = normalizeValue(address.province)
+    const region = normalizeValue(address.region)
     const postalCode = address.postalCode.trim()
 
-    if (!suburb || !city) {
-      return 'Select your province, city, region, and suburb first. Use manual entry if your area is not listed.'
-    }
-
-    if (!province) {
+    if (!suburb || !city || !region || !province || !postalCode) {
       return 'Please complete the full service address before continuing.'
     }
 
@@ -109,12 +119,12 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       return 'Please select a valid South African province.'
     }
 
-    if (postalCode && !/^\d{4}$/.test(postalCode)) {
-      return 'Postal code must be 4 digits if you include it.'
+    if (!/^\d{4}$/.test(postalCode)) {
+      return 'Postal code must come from the selected suburb.'
     }
 
-    const street = normalizeValue(address.street)
-    if (!street) {
+    const addressLine1 = normalizeValue(address.addressLine1)
+    if (!addressLine1) {
       return 'Enter the street address after choosing the suburb.'
     }
 
@@ -166,20 +176,34 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
       const data = await res.json() as {
         street?: string | null
-        suburb?: string | null
-        city?: string | null
-        province?: string | null
-        postalCode?: string | null
+        selection?: {
+          locationNodeId: string
+          suburb: string
+          region: string
+          city: string
+          province: string
+          postalCode: string
+        } | null
       }
 
       setAddress((current) => ({
-        street: data.street ?? current.street,
-        suburb: data.suburb ?? current.suburb,
-        city: data.city ?? current.city,
-        province: data.province ?? current.province,
-        postalCode: data.postalCode ?? current.postalCode,
+        ...current,
+        addressLine1: data.street ?? current.addressLine1,
+        ...(data.selection
+          ? {
+              suburb: data.selection.suburb,
+              region: data.selection.region,
+              city: data.selection.city,
+              province: data.selection.province,
+              postalCode: data.selection.postalCode,
+            }
+          : {}),
       }))
-      setLocationNodeId(null)
+      if (data.selection) {
+        setLocationNodeId(data.selection.locationNodeId)
+      } else {
+        setError('We found your street, but could not match the suburb exactly. Select province, city, region, and suburb from the list.')
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -238,12 +262,11 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
           category: category.slug,
           title: normalizeValue(title),
           description: description.trim(),
-          street: normalizeValue(address.street),
-          suburb: normalizeValue(address.suburb),
-          city: normalizeValue(address.city),
-          province: normalizeValue(address.province),
-          postalCode: address.postalCode.trim(),
-          locationNodeId: locationNodeId ?? undefined,
+          addressLine1: normalizeValue(address.addressLine1),
+          addressLine2: normalizeValue(address.addressLine2),
+          complexName: normalizeValue(address.complexName),
+          unitNumber: normalizeValue(address.unitNumber),
+          locationNodeId,
         }),
       })
 
