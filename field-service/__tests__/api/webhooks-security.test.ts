@@ -16,6 +16,7 @@ vi.mock('@/lib/db', () => ({
       update: vi.fn().mockResolvedValue({}),
     },
     payment: {
+      findUnique: vi.fn(),
       update: vi.fn().mockResolvedValue({}),
     },
     messageEvent: {
@@ -164,22 +165,21 @@ describe('POST /api/webhooks/payments — idempotency', () => {
 
   it('sends WhatsApp confirmation on first delivery (booking not yet SCHEDULED)', async () => {
     const { db } = await import('@/lib/db')
-    ;(db.booking.findUnique as any)
-      // First call: idempotency check — not yet SCHEDULED
-      .mockResolvedValueOnce({ status: 'PENDING' })
-      // Second call: full booking for WhatsApp message
-      .mockResolvedValueOnce({
-        id: 'booking-001',
-        status: 'SCHEDULED',
-        scheduledDate: new Date('2026-05-01'),
-        scheduledWindow: '09:00–12:00',
-        match: {
-          jobRequest: {
-            category: 'Plumbing',
-            customer: { name: 'Alice', phone: '+27821234567' },
-          },
+    // Idempotency check — payment not yet PAID (first delivery)
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
+    // Full booking for WhatsApp message
+    ;(db.booking.findUnique as any).mockResolvedValueOnce({
+      id: 'booking-001',
+      status: 'SCHEDULED',
+      scheduledDate: new Date('2026-05-01'),
+      scheduledWindow: '09:00–12:00',
+      match: {
+        jobRequest: {
+          category: 'Plumbing',
+          customer: { name: 'Alice', phone: '+27821234567' },
         },
-      })
+      },
+    })
 
     const { POST } = await import('../../app/api/webhooks/payments/route')
     const req = new NextRequest('http://localhost/api/webhooks/payments', {
@@ -197,8 +197,8 @@ describe('POST /api/webhooks/payments — idempotency', () => {
 
   it('skips WhatsApp confirmation on duplicate delivery (booking already SCHEDULED)', async () => {
     const { db } = await import('@/lib/db')
-    // Idempotency check — already SCHEDULED from a prior webhook delivery
-    ;(db.booking.findUnique as any).mockResolvedValueOnce({ status: 'SCHEDULED' })
+    // Idempotency check — payment already PAID from a prior webhook delivery
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PAID' })
 
     const { POST } = await import('../../app/api/webhooks/payments/route')
     const req = new NextRequest('http://localhost/api/webhooks/payments', {
@@ -219,7 +219,7 @@ describe('POST /api/webhooks/payments — idempotency', () => {
     ;(handlePaymentSuccess as any).mockRejectedValueOnce(new Error('database timeout: internal stack'))
 
     const { db } = await import('@/lib/db')
-    ;(db.booking.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
+    ;(db.payment.findUnique as any).mockResolvedValueOnce({ status: 'PENDING' })
 
     const { POST } = await import('../../app/api/webhooks/payments/route')
     const req = new NextRequest('http://localhost/api/webhooks/payments', {

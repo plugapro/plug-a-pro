@@ -67,7 +67,10 @@ export async function transitionJob(params: {
     if (toStatus === 'COMPLETED') updates.completedAt = new Date()
     if (toStatus === 'CANCELLED') updates.failureReason = notes ?? 'Cancelled'
 
-    await tx.job.update({ where: { id: jobId }, data: updates })
+    const updated = await tx.job.updateMany({ where: { id: jobId, status: job.status }, data: updates })
+    if (updated.count === 0) {
+      throw new Error(`Concurrent modification: job ${jobId} status changed before transaction committed`)
+    }
 
     // Record status event
     await tx.jobStatusEvent.create({

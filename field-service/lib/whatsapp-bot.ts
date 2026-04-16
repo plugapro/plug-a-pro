@@ -1081,10 +1081,15 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
       'View Job',
       `${appUrl}/technician`
     ).catch(() => {})
-    await sendText(
-      phone,
-      `✅ *Booking confirmed!*\n\n*${result.provider.name}* is scheduled for *${dateStr}*. We'll send you a reminder the day before.\n\nQuestions? Reply here anytime.`
-    )
+    const { sendProviderAssigned } = await import('./whatsapp')
+    await sendProviderAssigned({
+      bookingId: result.bookingId,
+      customerName: result.customer.name,
+      customerPhone: phone,
+      providerFirstName: result.provider.name.split(' ')[0],
+      serviceName: result.category,
+      scheduledWindow: dateStr,
+    }).catch(() => {})
   } else {
     await sendText(
       result.provider.phone,

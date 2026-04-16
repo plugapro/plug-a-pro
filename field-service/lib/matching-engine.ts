@@ -11,7 +11,6 @@ import {
   rejectAssignmentOffer,
   runAssignmentForJobRequest,
 } from './matching/service'
-import { reconcileProviderRecordsFromApplications } from './provider-record'
 import { notifyProviderNewJob } from './whatsapp-bot'
 
 export interface CandidateInput {
@@ -177,66 +176,70 @@ async function acceptLeadLegacy(params: {
   if (lead.providerId !== params.providerId) return { ok: false, reason: 'FORBIDDEN' }
   if (lead.status === 'EXPIRED') return { ok: false, reason: 'EXPIRED' }
 
-  const existingMatch = await db.match.findUnique({
-    where: { jobRequestId: lead.jobRequestId },
-    select: { id: true },
-  })
-  if (existingMatch) return { ok: false, reason: 'TAKEN' }
-
-  const accepted = await db.lead.updateMany({
-    where: {
-      id: lead.id,
-      providerId: params.providerId,
-      status: { in: ['SENT', 'VIEWED'] },
-    },
-    data: {
-      status: 'ACCEPTED',
-      respondedAt: new Date(),
-    },
-  })
-
-  if (accepted.count === 0) {
-    const match = await db.match.findUnique({
-      where: { jobRequestId: lead.jobRequestId },
-      select: { id: true },
-    })
-    return match ? { ok: false, reason: 'TAKEN' } : { ok: false, reason: 'EXPIRED' }
-  }
-
   try {
-    const match = await db.match.create({
-      data: {
-        jobRequestId: lead.jobRequestId,
-        providerId: params.providerId,
-        status: 'MATCHED',
+    return await db.$transaction(async (tx) => {
+      const existingMatch = await tx.match.findUnique({
+        where: { jobRequestId: lead.jobRequestId },
+        select: { id: true },
+      })
+      if (existingMatch) return { ok: false as const, reason: 'TAKEN' as const }
+
+      const accepted = await tx.lead.updateMany({
+        where: {
+          id: lead.id,
+          providerId: params.providerId,
+          status: { in: ['SENT', 'VIEWED'] },
+        },
+        data: {
+          status: 'ACCEPTED',
+          respondedAt: new Date(),
+        },
+      })
+
+      if (accepted.count === 0) {
+        const match = await tx.match.findUnique({
+          where: { jobRequestId: lead.jobRequestId },
+          select: { id: true },
+        })
+        return match
+          ? { ok: false as const, reason: 'TAKEN' as const }
+          : { ok: false as const, reason: 'EXPIRED' as const }
+      }
+
+      const match = await tx.match.create({
+        data: {
+          jobRequestId: lead.jobRequestId,
+          providerId: params.providerId,
+          status: 'MATCHED',
+          inspectionNeeded: params.inspectionNeeded === true,
+        },
+        select: { id: true },
+      })
+
+      await tx.jobRequest.updateMany({
+        where: { id: lead.jobRequestId },
+        data: { status: 'MATCHED' },
+      })
+
+      await tx.lead.updateMany({
+        where: {
+          jobRequestId: lead.jobRequestId,
+          id: { not: lead.id },
+          status: { in: ['SENT', 'VIEWED'] },
+        },
+        data: {
+          status: 'EXPIRED',
+          respondedAt: new Date(),
+        },
+      })
+
+      return {
+        ok: true as const,
+        leadId: params.leadId,
+        matchId: match.id,
         inspectionNeeded: params.inspectionNeeded === true,
-      },
-      select: { id: true },
+      }
     })
-
-    await db.jobRequest.updateMany({
-      where: { id: lead.jobRequestId },
-      data: { status: 'MATCHED' },
-    })
-
-    await db.lead.updateMany({
-      where: {
-        jobRequestId: lead.jobRequestId,
-        id: { not: lead.id },
-        status: { in: ['SENT', 'VIEWED'] },
-      },
-      data: {
-        status: 'EXPIRED',
-        respondedAt: new Date(),
-      },
-    })
-
-    return {
-      ok: true,
-      leadId: params.leadId,
-      matchId: match.id,
-      inspectionNeeded: params.inspectionNeeded === true,
-    }
   } catch (error) {
     if (
       error != null &&
@@ -314,7 +317,7 @@ export type LeadAcceptanceResult = LeadAccepted | LeadRejected
 
 export async function findCandidateProviders(input: CandidateInput) {
   const providers = await db.provider.findMany({
-    where: { active: true },
+    where: { active: true, verified: true },
     select: {
       id: true,
       phone: true,
@@ -373,8 +376,6 @@ export async function findCandidateProviders(input: CandidateInput) {
 }
 
 export async function dispatchLeads(jobRequestId: string): Promise<DispatchResult> {
-  await reconcileProviderRecordsFromApplications(db)
-
   const jobRequest = await db.jobRequest.findUnique({
     where: { id: jobRequestId },
     select: { id: true, status: true },

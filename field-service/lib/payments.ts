@@ -452,15 +452,8 @@ export async function initializeBookingPayment(params: {
 }
 
 export function verifyWebhookSignature(rawBody: string, signature: string): boolean {
-  const secret = process.env.PEACH_WEBHOOK_SECRET
-  if (!secret) return false
-  const crypto = require('crypto')
-  const computed = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
   try {
-    const a = Buffer.from(computed, 'hex')
-    const b = Buffer.from(signature, 'hex')
-    if (a.length !== b.length) return false
-    return crypto.timingSafeEqual(a, b)
+    return getProvider().verifyWebhook(rawBody, signature)
   } catch {
     return false
   }
@@ -472,6 +465,12 @@ export function parseWebhookEvent(rawBody: string): PaymentEvent {
 
 export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
   await db.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({
+      where: { bookingId: event.bookingId },
+      select: { status: true },
+    })
+    if (payment?.status === 'REFUNDED' || payment?.status === 'PARTIALLY_REFUNDED') return
+
     await tx.payment.update({
       where: { bookingId: event.bookingId },
       data: {

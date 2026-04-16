@@ -24,6 +24,7 @@ export async function GET(request: Request) {
 
   const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
+  const LOCK_SENTINEL = new Date(0)
 
   // Lower bound: 23 hours ago — sessions older than this are outside the WhatsApp
   // 24h session window; sendText would fail, so skip them
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
       // ── Atomic claim — only one cron instance wins per conversation ────────
       const claimed = await db.conversation.updateMany({
         where: { id: conv.id, timeoutNotifiedAt: null },
-        data:  { timeoutNotifiedAt: now },
+        data:  { timeoutNotifiedAt: LOCK_SENTINEL },
       })
 
       if (claimed.count === 0) {
@@ -75,6 +76,10 @@ export async function GET(request: Request) {
 
       if (customer && !customer.whatsappServiceOptIn) {
         console.info(`[cron/session-timeout:${reqId}] service-opted-out phone=${conv.phone} — skipping send`)
+        await db.conversation.updateMany({
+          where: { id: conv.id, timeoutNotifiedAt: LOCK_SENTINEL },
+          data:  { timeoutNotifiedAt: now },
+        }).catch(() => {})
         skipped++
         continue
       }
@@ -85,6 +90,12 @@ export async function GET(request: Request) {
         `Please reply to this message when you're ready to continue, and we'll help you pick up from there.`
 
       await sendText(conv.phone, message)
+
+      // ── Write real timestamp only after confirmed send ─────────────────────
+      await db.conversation.updateMany({
+        where: { id: conv.id, timeoutNotifiedAt: LOCK_SENTINEL },
+        data:  { timeoutNotifiedAt: now },
+      }).catch(() => {})
 
       sent++
       console.log(

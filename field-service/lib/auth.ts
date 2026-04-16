@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { NextResponse } from 'next/server'
 import { cache } from 'react'
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
@@ -102,6 +103,15 @@ export async function requireAdmin(): Promise<AuthUser> {
     redirect('/admin-sign-in?error=unauthorized')
   }
   return session
+}
+
+/** Call in API route handlers — returns 401 JSON if not admin/owner, null if authorised */
+export async function requireAdminApi(): Promise<NextResponse | null> {
+  const session = await getSession()
+  if (!session || (session.role !== 'admin' && session.role !== 'owner')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  return null
 }
 
 /** Call in provider route layouts — redirects to /provider-sign-in if not provider */

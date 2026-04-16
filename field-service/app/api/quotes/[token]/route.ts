@@ -95,6 +95,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
 async function notifyAfterDecision(result: {
   action: 'approved' | 'declined'
+  bookingId?: string
   provider: { phone: string; name: string }
   customer: { phone: string; name: string }
   category: string
@@ -107,7 +108,7 @@ async function notifyAfterDecision(result: {
   const customerPhone = result.customer.phone
   const category = result.category
 
-  if (result.action === 'approved' && result.scheduledDate) {
+  if (result.action === 'approved' && result.scheduledDate && result.bookingId) {
     const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
       weekday: 'short', day: 'numeric', month: 'short',
     })
@@ -118,10 +119,15 @@ async function notifyAfterDecision(result: {
       `${appUrl}/technician`,
       { footer: 'Navigate and update job status from the app' }
     ).catch(() => {})
-    await sendText(
+    const { sendBookingConfirmation } = await import('@/lib/whatsapp')
+    await sendBookingConfirmation({
+      bookingId: result.bookingId,
+      customerName: result.customer.name,
       customerPhone,
-      `✅ *Booking Confirmed!*\n\n${result.provider.name} will arrive on ${dateStr}.\n\nYou'll receive a reminder the day before.`
-    ).catch(() => {})
+      serviceName: category,
+      scheduledWindow: dateStr,
+      bookingUrl: `${appUrl}/bookings/${result.bookingId}`,
+    }).catch(() => {})
   } else {
     await sendText(
       providerPhone,
