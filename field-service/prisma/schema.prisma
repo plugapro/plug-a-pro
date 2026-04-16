@@ -50,7 +50,12 @@ model Address {
   customerId String
   label      String?  // "Home", "Office"
   street     String
+  addressLine1 String?
+  addressLine2 String?
+  complexName String?
+  unitNumber  String?
   suburb     String
+  region     String?
   city       String
   province   String
   postalCode     String?
@@ -71,7 +76,8 @@ model Address {
 // ─── Location hierarchy ───────────────────────────────────────────────────────
 // Four-level tree: PROVINCE → CITY → REGION → SUBURB
 // Seeded from lib/service-areas/south-africa.ts. Admin-manageable at runtime.
-// postcode support: deferred — add postalCode String? to SUBURB nodes when needed.
+// For customer capture, SUBURB nodes act as the canonical structured address anchor.
+// postalCode is populated only on SUBURB nodes that are valid for new structured capture.
 
 model LocationNode {
   id          String           @id @default(cuid())
@@ -83,6 +89,7 @@ model LocationNode {
   lat         Float?
   lng         Float?
   radiusKm    Float?
+  postalCode  String?
   // Denormalised for fast matching without tree-walk joins
   provinceKey String?          // set on CITY, REGION, SUBURB nodes
   cityKey     String?          // set on REGION and SUBURB nodes
