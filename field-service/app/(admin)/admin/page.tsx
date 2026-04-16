@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { cn } from '@/lib/utils'
+import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import { getOpsDashboardSnapshot } from '@/lib/ops-dashboard/service'
 import { getQueueSlaConfig } from '@/lib/ops-dashboard/sla'
 import type { AssignmentRecord, OpsDashboardQueueCard, OpsDashboardRangePreset } from '@/lib/ops-dashboard/types'
@@ -246,9 +247,11 @@ export default async function AdminDashboardPage({
                       </Badge>
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span>Age {formatAge(request.createdAt, now)}</span>
-                    <span>Phone {request.customer.phone}</span>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Badge variant={slaBadgeClass(getQueueAgeTone('validation', Math.floor((now.getTime() - request.createdAt.getTime()) / 60000)))}>
+                      Age {formatAge(request.createdAt, now)}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">Phone {request.customer.phone}</span>
                   </div>
                   <div className="mt-3">
                     <Button asChild variant="outline" size="sm">

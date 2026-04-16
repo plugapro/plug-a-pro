@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,6 @@ function getSupabaseClient() {
 }
 
 export default function AdminSignInPage() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -52,7 +51,7 @@ export default function AdminSignInPage() {
       }
 
       if (data.session?.access_token) {
-        await fetch('/api/auth/session', {
+        const sessionRes = await fetch('/api/auth/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -60,9 +59,16 @@ export default function AdminSignInPage() {
             expiresIn: data.session.expires_in ?? 3600,
           }),
         })
+        if (!sessionRes.ok) {
+          setError('Failed to establish session. Please try again.')
+          return
+        }
       }
 
-      router.replace(next)
+      // Hard navigation so the browser sends the newly-set HttpOnly cookie
+      // with the initial request to /admin (soft router.replace fires before
+      // the Set-Cookie header is committed by the browser).
+      window.location.assign(next)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
