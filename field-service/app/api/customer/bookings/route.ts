@@ -11,6 +11,7 @@ import {
   InvalidStructuredAddressError,
   resolveStructuredAddressCapture,
 } from '@/lib/structured-address'
+import { isInActiveServiceArea, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -85,6 +86,20 @@ export async function POST(req: NextRequest) {
       unitNumber,
       locationNodeId,
     })
+
+    // Service area gate — capture out-of-area contacts on the waitlist
+    if (!isInActiveServiceArea(resolvedAddress.city)) {
+      await addToServiceAreaWaitlist({
+        phone: session.phone!,
+        city: resolvedAddress.city,
+        province: resolvedAddress.province,
+        suburb: resolvedAddress.suburb,
+        category,
+        source: 'pwa',
+      }).catch((err) => console.error('[bookings] waitlist upsert failed:', err))
+
+      return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
+    }
 
     const result = await createJobRequest({
       userId: session.id,

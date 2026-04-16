@@ -46,7 +46,7 @@ interface Address {
   postalCode: string
 }
 
-type Step = 'address' | 'description' | 'confirm' | 'submitted'
+type Step = 'address' | 'description' | 'confirm' | 'submitted' | 'waitlisted'
 
 const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
   Gauteng: 'gauteng',
@@ -91,6 +91,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   const [error, setError] = useState<string | null>(null)
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
   const [ticketUrl, setTicketUrl] = useState<string | null>(null)
+  const [waitlistedCity, setWaitlistedCity] = useState<string | null>(null)
   const streetSummary = buildLegacyStreetAddress(address)
 
   function normalizeValue(value: string) {
@@ -278,6 +279,13 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       }
 
       const data = await res.json()
+
+      if (data.waitlisted) {
+        setWaitlistedCity(data.city ?? address.city)
+        setStep('waitlisted')
+        return
+      }
+
       setJobRequestId(data.jobRequestId)
       setTicketUrl(data.ticketUrl ?? null)
       setStep('submitted')
@@ -301,7 +309,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
         )}
       </div>
 
-      {/* Step indicator */}
+      {/* Step indicator — hidden on waitlisted screen */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {(['address', 'description', 'confirm', 'submitted'] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
@@ -566,6 +574,25 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* ── Waitlisted: outside service area ─────────────────────────────── */}
+      {step === 'waitlisted' && (
+        <Card>
+          <CardContent className="px-4 py-6 space-y-3 text-center">
+            <p className="text-2xl">📍</p>
+            <p className="font-semibold text-base">Not in your area yet</p>
+            <p className="text-sm text-muted-foreground">
+              We&apos;re not in <strong>{waitlistedCity}</strong> just yet, but we&apos;re growing fast.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              We&apos;ve saved your contact and will reach out the moment Plug a Pro goes live in your area. No action needed from you.
+            </p>
+            <p className="text-xs text-muted-foreground pt-2">
+              Currently serving: <strong>Johannesburg</strong>
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* ── Step 4: Submitted ────────────────────────────────────────────── */}

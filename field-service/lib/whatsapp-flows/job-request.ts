@@ -12,6 +12,7 @@ import {
 import { db } from '../db'
 import { getCategoryPolicy } from '../service-category-policy'
 import { createJobRequest } from '../job-requests/create-job-request'
+import { isInActiveServiceArea, addToServiceAreaWaitlist } from '../service-area-guard'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
@@ -221,6 +222,29 @@ async function handleConfirmAddress(ctx: FlowContext): Promise<FlowResult> {
     await sendText(ctx.phone, '❗ Please type your *city*.\n\n_Example: Johannesburg_')
     return { nextStep: 'confirm_address' }
   }
+
+  // ── Service area gate ────────────────────────────────────────────────────────
+  if (!isInActiveServiceArea(city)) {
+    // Capture the lead and send a warm holding message
+    await addToServiceAreaWaitlist({
+      phone: ctx.phone,
+      name: ctx.data.customerName ?? null,
+      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+      suburb: ctx.data.addressSuburb ?? null,
+      city,
+      source: 'whatsapp',
+    }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+
+    await sendText(
+      ctx.phone,
+      `Thank you for reaching out! 🙏\n\n` +
+      `We're not in *${city}* just yet, but we're expanding fast.\n\n` +
+      `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
+      `No action needed from you. 🚀`,
+    )
+    return { nextStep: 'done' }
+  }
+  // ────────────────────────────────────────────────────────────────────────────
 
   const street = ctx.data.addressStreet ?? ''
   const suburb = ctx.data.addressSuburb ?? ''
