@@ -40,6 +40,7 @@ export type FlowStep =
   | 'reg_collect_city'         // city selection within chosen province
   | 'reg_collect_region'       // first region selection within chosen city
   | 'reg_collect_region_more'  // select additional regions
+  | 'reg_collect_suburb_text'  // free-text suburb fallback when location_nodes has no data
   | 'reg_collect_evidence'
   | 'reg_confirm'
   | 'reg_pending'

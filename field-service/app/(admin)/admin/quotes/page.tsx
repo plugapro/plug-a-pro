@@ -75,6 +75,10 @@ export default async function AdminQuoteQueuePage() {
     },
     orderBy: { createdAt: 'asc' },
     take: 100,
+  }).catch((error) => {
+    console.error('[admin/quotes] Failed to load quote queue', error)
+    pageWarnings.push('Quote queue data is temporarily unavailable.')
+    return []
   })
 
   const quoteIds = quotes.map((quote) => quote.id)

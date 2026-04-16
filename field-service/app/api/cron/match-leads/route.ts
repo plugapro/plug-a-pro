@@ -69,6 +69,16 @@ export async function GET(request: Request) {
     })
     if (activeLead) continue
 
+    // Skip re-dispatch: if any leads already expired or were declined, this job has
+    // already been offered to providers. Re-broadcasting every 30 min creates spam.
+    // The job stays OPEN for admin review; manual re-dispatch is available in the
+    // dispatch console (/admin/dispatch).
+    const priorLead = await db.lead.findFirst({
+      where: { jobRequestId: jr.id, status: { in: ['EXPIRED', 'DECLINED'] } },
+      select: { id: true },
+    })
+    if (priorLead) continue
+
     try {
       const result = await dispatchLeads(jr.id)
       if (result.leadsDispatched > 0) {

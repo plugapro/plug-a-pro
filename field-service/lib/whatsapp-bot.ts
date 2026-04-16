@@ -516,7 +516,7 @@ export async function notifyProviderNewJob(params: {
     params.providerPhone,
     `🔔 *New Lead Available*\n\n*${params.category}* · ${params.area}\nRef: ${ref} · Expires in ${expiryLabel}\n\nTap below to view the full job details and respond.`,
     'View Lead',
-    `${appUrl}/provider/leads/${params.leadId}`,
+    `${appUrl}/leads/${params.leadId}`,
     { footer: 'Accept, inspect, or decline from the lead page' },
   )
 }
@@ -793,7 +793,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
   if (buttonId.startsWith('match_inspect_')) {
     // Send a link to the lead detail page so the provider can review and decide
-    const leadUrl = `${appUrl}/provider/leads/${leadId}`
+    const leadUrl = `${appUrl}/leads/${leadId}`
     await sendCtaUrl(
       phone,
       `🔍 *View Lead Details*\n\nOpen the link below to review the full job details, then choose to accept, request an inspection, or decline.`,

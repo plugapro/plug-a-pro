@@ -35,6 +35,13 @@ export default async function MatchesModerationPage() {
         },
       },
       quotes: {
+        select: {
+          id: true,
+          status: true,
+          amount: true,
+          notes: true,
+          createdAt: true,
+        },
         orderBy: { createdAt: 'desc' },
       },
       booking: {
@@ -45,6 +52,9 @@ export default async function MatchesModerationPage() {
     },
     orderBy: { updatedAt: 'desc' },
     take: 200,
+  }).catch((error) => {
+    console.error('[admin/matches] Failed to load matches', error)
+    return []
   })
 
   const pendingInspection = matches.filter((match) => match.status === 'INSPECTION_SCHEDULED').length

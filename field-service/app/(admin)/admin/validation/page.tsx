@@ -59,6 +59,10 @@ export default async function AdminValidationQueuePage() {
     },
     orderBy: { createdAt: 'asc' },
     take: 100,
+  }).catch((error) => {
+    console.error('[admin/validation] Failed to load validation queue', error)
+    pageWarnings.push('Validation queue data is temporarily unavailable.')
+    return []
   })
 
   const requestIds = requests.map((request) => request.id)
