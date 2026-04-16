@@ -4,11 +4,10 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 interface MermaidDiagramProps {
   chart: string
-  compact?: boolean
   className?: string
 }
 
-export function MermaidDiagram({ chart, compact, className }: MermaidDiagramProps) {
+export function MermaidDiagram({ chart, className }: MermaidDiagramProps) {
   const id = useId().replace(/:/g, '')
   const containerRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(true)
@@ -52,8 +51,20 @@ export function MermaidDiagram({ chart, compact, className }: MermaidDiagramProp
         const parser = new DOMParser()
         const doc = parser.parseFromString(result.svg, 'image/svg+xml')
         const svgEl = doc.documentElement as unknown as SVGElement
-        svgEl.style.maxWidth = compact ? '50%' : '100%'
+
+        // Derive viewBox from pixel dimensions before stripping them,
+        // so the diagram scales proportionally at any container width.
+        if (!svgEl.getAttribute('viewBox')) {
+          const w = svgEl.getAttribute('width')
+          const h = svgEl.getAttribute('height')
+          if (w && h) svgEl.setAttribute('viewBox', `0 0 ${parseFloat(w)} ${parseFloat(h)}`)
+        }
+        svgEl.removeAttribute('width')
+        svgEl.removeAttribute('height')
+        svgEl.setAttribute('width', '100%')
         svgEl.style.height = 'auto'
+        svgEl.style.display = 'block'
+
         containerRef.current.replaceChildren(svgEl)
         setLoading(false)
       } catch (err) {
