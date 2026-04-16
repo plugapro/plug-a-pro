@@ -48,18 +48,6 @@ interface Address {
 
 type Step = 'address' | 'description' | 'confirm' | 'submitted'
 
-const SA_PROVINCES = [
-  'Gauteng',
-  'Western Cape',
-  'KwaZulu-Natal',
-  'Eastern Cape',
-  'Limpopo',
-  'Mpumalanga',
-  'North West',
-  'Free State',
-  'Northern Cape',
-]
-
 const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
   Gauteng: 'gauteng',
   'Western Cape': 'western_cape',
@@ -72,9 +60,17 @@ const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
   'Northern Cape': 'northern_cape',
 }
 
+const PROVINCE_LABEL_BY_KEY = Object.fromEntries(
+  Object.entries(PROVINCE_KEY_BY_LABEL).map(([label, key]) => [key, label]),
+) as Record<string, string>
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function BookingFlow({ category, initialCities }: BookingFlowProps) {
+  const availableProvinces = Array.from(
+    new Set(initialCities.map((city) => PROVINCE_LABEL_BY_KEY[city.provinceKey]).filter(Boolean)),
+  )
+  const defaultProvince = availableProvinces[0] ?? 'Gauteng'
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
     addressLine1: '',
@@ -84,7 +80,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
     suburb: '',
     region: '',
     city: '',
-    province: 'Gauteng',
+    province: defaultProvince,
     postalCode: '',
   })
   const [title, setTitle] = useState('')
@@ -116,7 +112,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       return 'Please complete the full service address before continuing.'
     }
 
-    if (!SA_PROVINCES.includes(province)) {
+    if (!availableProvinces.includes(province)) {
       return 'Please select a valid South African province.'
     }
 
@@ -369,7 +365,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SA_PROVINCES.map((p) => (
+                  {availableProvinces.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
                   ))}
                 </SelectContent>

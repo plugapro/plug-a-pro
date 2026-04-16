@@ -199,6 +199,25 @@ describe('getSuburbs', () => {
       },
     ])
   })
+
+  it('excludes broad alias nodes from structured suburb capture', async () => {
+    mockDb.locationNode.findMany.mockResolvedValue([])
+
+    await getSuburbs('region-1')
+
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          slug: expect.objectContaining({
+            notIn: expect.arrayContaining([
+              'gauteng__johannesburg__jhb_cbd__johannesburg',
+              'western_cape__cape_town__cape_town_cbd__cape_town',
+            ]),
+          }),
+        }),
+      }),
+    )
+  })
 })
 
 describe('searchNodes', () => {

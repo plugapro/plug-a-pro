@@ -1,6 +1,7 @@
 // Provider: Lead detail — view job info + accept/decline
 export const dynamic = 'force-dynamic'
 
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
@@ -168,9 +169,9 @@ export default async function LeadDetailPage({
 
       {/* Back */}
       <div className="pt-2">
-        <a href="/provider/leads" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <Link href="/provider/leads" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
           ← Back to leads
-        </a>
+        </Link>
       </div>
     </div>
   )

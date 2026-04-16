@@ -129,6 +129,12 @@ export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
         </select>
       </div>
 
+      {filteredCities.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No mapped cities are available for this province yet.
+        </p>
+      )}
+
       {(regions.length > 0 || loadingRegions) && (
         <div className="space-y-1">
           <label htmlFor="suburb-picker-region" className="text-sm">

@@ -3,26 +3,23 @@
 // Blocks desktop viewport access to the customer PWA.
 // Renders children on mobile; shows a redirect message on wider screens.
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { AppLogo } from './app-logo'
 
 const MOBILE_BREAKPOINT = 768
 
+function subscribe(onStoreChange: () => void) {
+  const mq = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`)
+  mq.addEventListener('change', onStoreChange)
+  return () => mq.removeEventListener('change', onStoreChange)
+}
+
+function getSnapshot() {
+  return window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`).matches
+}
+
 export function MobileGate({ children }: { children: React.ReactNode }) {
-  const [isDesktop, setIsDesktop] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-    const mq = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`)
-    setIsDesktop(mq.matches)
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
-  // Don't block on SSR — only apply once JS hydrates
-  if (!mounted) return <>{children}</>
+  const isDesktop = useSyncExternalStore(subscribe, getSnapshot, () => false)
 
   if (isDesktop) {
     return (

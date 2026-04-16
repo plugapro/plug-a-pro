@@ -65,6 +65,24 @@ export class LocationNodeInUseError extends Error {
   }
 }
 
+const STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS = [
+  'gauteng__east_rand__east_rand__ekurhuleni',
+  'gauteng__johannesburg__jhb_cbd__joburg_cbd',
+  'gauteng__johannesburg__jhb_cbd__johannesburg',
+  'gauteng__johannesburg__jhb_cbd__johannesburg_cbd',
+  'gauteng__johannesburg__jhb_south__joburg_south',
+  'gauteng__johannesburg__jhb_south__johannesburg_south',
+  'gauteng__johannesburg__jhb_west__joburg_west',
+  'gauteng__johannesburg__jhb_west__johannesburg_west',
+  'gauteng__pretoria__pretoria_cbd__pretoria',
+  'gauteng__pretoria__pretoria_cbd__pretoria_cbd',
+  'gauteng__pretoria__pretoria_east__pretoria_east',
+  'kwazulu_natal__durban__durban_cbd__durban',
+  'kwazulu_natal__durban__durban_cbd__durban_cbd',
+  'western_cape__cape_town__cape_town_cbd__cape_town',
+  'western_cape__cape_town__cape_town_cbd__cape_town_cbd',
+] as const
+
 // Re-export Prisma types for consumers
 export type { LocationNode, LocationNodeType }
 
@@ -150,6 +168,7 @@ export async function getSuburbs(regionId: string): Promise<SuburbOption[]> {
       active: true,
       parentId: regionId,
       postalCode: { not: null },
+      slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
     },
     orderBy: { label: 'asc' },
     select: {
@@ -265,6 +284,7 @@ export async function getStructuredAddressSelection(
       nodeType: 'SUBURB',
       active: true,
       postalCode: { not: null },
+      slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
     },
     select: {
       id: true,
@@ -316,6 +336,7 @@ export async function resolveStructuredAddressByLabels(input: {
       nodeType: 'SUBURB',
       active: true,
       postalCode: { not: null },
+      slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
       label: { equals: input.suburb.trim(), mode: 'insensitive' },
     },
     select: {
