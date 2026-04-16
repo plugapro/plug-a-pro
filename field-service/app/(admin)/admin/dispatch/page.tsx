@@ -47,11 +47,15 @@ export default async function AdminDispatchPage({
     },
     include: {
       customer: { select: { id: true, name: true, phone: true } },
-      address: true,
+      address: { select: { id: true, street: true, suburb: true, city: true, province: true, lat: true, lng: true } },
       match: true,
     },
     orderBy: { createdAt: 'asc' },
     take: 30,
+  }).catch((error) => {
+    console.error('[admin/dispatch] Failed to load job requests', error)
+    pageWarnings.push('Service request data is temporarily unavailable.')
+    return []
   })
 
   const assignments = await listOpsQueueAssignments(
@@ -70,7 +74,7 @@ export default async function AdminDispatchPage({
         where: { id: request },
         include: {
           customer: { select: { id: true, name: true, phone: true } },
-          address: true,
+          address: { select: { id: true, street: true, suburb: true, city: true, province: true, lat: true, lng: true } },
           match: true,
         },
       })
