@@ -180,6 +180,12 @@ export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
         </div>
       )}
 
+      {selectedRegionId && !loadingSuburbs && suburbs.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No mapped suburbs are available for this area yet. Choose a different region.
+        </p>
+      )}
+
       {fetchError && (
         <p className="text-sm text-destructive" role="alert">
           {fetchError}
