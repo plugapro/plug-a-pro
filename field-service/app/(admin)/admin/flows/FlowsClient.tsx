@@ -1,6 +1,5 @@
 'use client'
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MermaidDiagram } from '@/components/admin/MermaidDiagram'
 
 type FlowDef = {
@@ -452,79 +451,87 @@ const FLOWS: FlowDef[] = [
 export function FlowsClient() {
   return (
     <div className="space-y-6">
-      <div className="rounded-[30px] border border-stone-300 bg-[#fcfaf6] px-6 py-5 shadow-[0_14px_34px_rgba(38,26,12,0.08)]">
-        <div className="mb-4 h-px w-full bg-stone-300" />
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-stone-500">
-            Platform Narrative
-          </p>
-          <h1 className="font-serif text-3xl tracking-tight text-stone-900">
-            Current User Journey Flows
-          </h1>
-          <p className="max-w-3xl text-sm leading-6 text-stone-600">
-            Regenerated from the implemented routes, token access paths, WhatsApp handlers, admin queues,
-            and request lifecycle in the current codebase.
-          </p>
+      <div className="border border-zinc-400 bg-[#fbfbf9] px-6 py-6">
+        <div className="mb-5 h-px w-full bg-zinc-400" />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-zinc-500">
+              Platform Narrative
+            </p>
+            <h1 className="font-serif text-4xl tracking-tight text-zinc-950">Current User Journey Flows</h1>
+            <p className="max-w-3xl text-sm leading-7 text-zinc-600">
+              Regenerated from the implemented routes, token access paths, WhatsApp handlers, admin queues,
+              and request lifecycle in the current codebase.
+            </p>
+          </div>
+
+          <div className="border border-zinc-300 bg-white p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+              Included Boards
+            </p>
+            <ol className="mt-3 space-y-2 font-serif text-sm text-zinc-700">
+              {FLOWS.map((flow, index) => (
+                <li key={flow.id} className="flex gap-3">
+                  <span className="w-5 shrink-0 text-zinc-400">{String(index + 1).padStart(2, '0')}</span>
+                  <span>{flow.label}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
-        <TabsList className="h-auto flex-wrap gap-2 rounded-[24px] border border-stone-300 bg-[#f7f1e8] p-2 shadow-[0_8px_20px_rgba(38,26,12,0.05)]">
-          {FLOWS.map((flow) => (
-            <TabsTrigger
-              key={flow.id}
-              value={flow.id}
-              className="rounded-full border border-transparent px-4 py-2 text-xs font-medium text-stone-600 data-[state=active]:border-stone-400 data-[state=active]:bg-[#fcfaf6] data-[state=active]:text-stone-900 data-[state=active]:shadow-sm"
-            >
-              {flow.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        {FLOWS.map((flow) => (
-          <TabsContent key={flow.id} value={flow.id} className="space-y-4">
-            <div className="overflow-hidden rounded-[30px] border border-stone-300 bg-[#fcfaf6] shadow-[0_18px_40px_rgba(38,26,12,0.08)]">
-              <div className="border-b border-stone-200 px-6 py-5">
-                <div className="mb-3 h-px w-full bg-stone-200" />
-                <h2 className="font-serif text-2xl text-stone-900">{flow.label}</h2>
-                <p className="mt-1 max-w-3xl text-sm leading-6 text-stone-600">{flow.description}</p>
-              </div>
-
-              <div className="grid gap-4 border-b border-stone-200 px-6 py-5 md:grid-cols-2">
-                <div className="rounded-[24px] border border-stone-200 bg-[#f9f3ea] p-4">
-                  <div className="space-y-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
-                      Entry Points
-                    </h3>
-                    <ul className="space-y-1.5 text-sm leading-6 text-stone-700">
-                      {flow.entryPoints.map((item) => (
-                        <li key={item}>• {item}</li>
-                      ))}
-                    </ul>
+      <div className="space-y-8">
+        {FLOWS.map((flow, index) => (
+          <section key={flow.id} className="border border-zinc-400 bg-[#fbfbf9]">
+            <div className="grid gap-0 xl:grid-cols-[minmax(0,1.45fr)_360px]">
+              <div className="border-b border-zinc-300 p-5 xl:border-b-0 xl:border-r">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-500">
+                      Board {String(index + 1).padStart(2, '0')}
+                    </p>
+                    <h2 className="font-serif text-3xl leading-tight text-zinc-950">{flow.label}</h2>
+                  </div>
+                  <div className="border border-zinc-300 bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+                    Journey
                   </div>
                 </div>
-
-                <div className="rounded-[24px] border border-stone-200 bg-[#f9f3ea] p-4">
-                  <div className="space-y-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
-                      Why This Matters
-                    </h3>
-                    <ul className="space-y-1.5 text-sm leading-6 text-stone-700">
-                      {flow.outcomes.map((item) => (
-                        <li key={item}>• {item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-[#f5efe6] p-5">
+                <p className="mb-5 max-w-3xl text-sm leading-7 text-zinc-600">{flow.description}</p>
                 <MermaidDiagram chart={flow.chart} />
               </div>
+
+              <div className="grid gap-0 md:grid-cols-2 xl:grid-cols-1">
+                <div className="border-b border-zinc-300 p-5 md:border-r xl:border-r-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                    Entry Points
+                  </p>
+                  <ul className="mt-4 space-y-3 text-sm leading-7 text-zinc-700">
+                    {flow.entryPoints.map((item) => (
+                      <li key={item} className="border-b border-zinc-200 pb-3 last:border-b-0 last:pb-0">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="p-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                    Annotation
+                  </p>
+                  <ul className="mt-4 space-y-3 text-sm leading-7 text-zinc-700">
+                    {flow.outcomes.map((item) => (
+                      <li key={item} className="border-b border-zinc-200 pb-3 last:border-b-0 last:pb-0">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             </div>
-          </TabsContent>
+          </section>
         ))}
-      </Tabs>
+      </div>
     </div>
   )
 }

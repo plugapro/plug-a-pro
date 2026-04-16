@@ -24,19 +24,19 @@ export function MermaidDiagram({ chart, className }: MermaidDiagramProps) {
         theme: 'base',
         look: 'handDrawn',
         themeVariables: {
-          primaryColor: '#f8f2e8',
-          primaryTextColor: '#201a14',
-          primaryBorderColor: '#5f584f',
-          lineColor: '#5f584f',
-          secondaryColor: '#f4ede2',
-          tertiaryColor: '#fcfaf6',
-          background: '#fcfaf6',
-          mainBkg: '#fcfaf6',
-          nodeBorder: '#5f584f',
-          clusterBkg: '#f9f4eb',
-          clusterBorder: '#7a7266',
-          titleColor: '#201a14',
-          edgeLabelBackground: '#fcfaf6',
+          primaryColor: '#f8f8f6',
+          primaryTextColor: '#111111',
+          primaryBorderColor: '#444444',
+          lineColor: '#444444',
+          secondaryColor: '#f1f1ef',
+          tertiaryColor: '#fbfbf9',
+          background: '#fbfbf9',
+          mainBkg: '#fbfbf9',
+          nodeBorder: '#444444',
+          clusterBkg: '#f4f4f1',
+          clusterBorder: '#666666',
+          titleColor: '#111111',
+          edgeLabelBackground: '#fbfbf9',
           fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif',
           fontSize: '14px',
         },
@@ -72,7 +72,7 @@ export function MermaidDiagram({ chart, className }: MermaidDiagramProps) {
   if (error) {
     return (
       <pre
-        className={`rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-700 ${className ?? ''}`}
+        className={`rounded-none border border-zinc-400 bg-white p-4 text-xs text-zinc-800 ${className ?? ''}`}
       >
         {error}
       </pre>
@@ -81,10 +81,10 @@ export function MermaidDiagram({ chart, className }: MermaidDiagramProps) {
 
   return (
     <div
-      className={`relative overflow-hidden rounded-[28px] border border-stone-300 bg-[#fcfaf6] p-4 shadow-[0_14px_34px_rgba(38,26,12,0.08)] ${className ?? ''}`}
+      className={`relative overflow-hidden border border-zinc-400 bg-[#fbfbf9] p-4 ${className ?? ''}`}
     >
       {loading && (
-        <div className="flex items-center justify-center p-8 text-sm italic text-stone-500">
+        <div className="flex items-center justify-center p-8 text-sm italic text-zinc-500">
           Rendering diagram…
         </div>
       )}
