@@ -40,7 +40,12 @@ export interface CreateJobRequestParams {
 
   // Address
   street: string
+  addressLine1?: string | null
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
   suburb: string
+  region?: string | null
   city: string
   province: string
   postalCode?: string | null
@@ -137,7 +142,12 @@ export async function createJobRequest(
       data: {
         customerId: customer.id,
         street:     params.street,
+        addressLine1: params.addressLine1?.trim() || null,
+        addressLine2: params.addressLine2?.trim() || null,
+        complexName: params.complexName?.trim() || null,
+        unitNumber: params.unitNumber?.trim() || null,
         suburb:     params.suburb,
+        region:     params.region?.trim() || null,
         city:       params.city,
         province:   params.province,
         postalCode: params.postalCode ?? null,

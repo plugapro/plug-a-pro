@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { reverseGeocodeCoordinates } from '@/lib/geocoding'
+import { resolveStructuredAddressByLabels } from '@/lib/location-nodes'
 
 export async function GET(req: NextRequest) {
   const session = await getSession()
@@ -21,5 +22,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Could not resolve address from location' }, { status: 404 })
   }
 
-  return NextResponse.json(result)
+  const selection =
+    result.suburb
+      ? await resolveStructuredAddressByLabels({
+          suburb: result.suburb,
+          city: result.city,
+          province: result.province,
+        })
+      : null
+
+  return NextResponse.json({
+    street: result.street,
+    selection,
+  })
 }

@@ -95,6 +95,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   const [error, setError] = useState<string | null>(null)
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
   const [ticketUrl, setTicketUrl] = useState<string | null>(null)
+  const streetSummary = buildLegacyStreetAddress(address)
 
   function normalizeValue(value: string) {
     return value.trim().replace(/\s+/g, ' ')
@@ -353,7 +354,14 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
               <Select
                 value={address.province}
                 onValueChange={(val) => {
-                  setAddress({ ...address, province: val, city: '', suburb: '' })
+                  setAddress((current) => ({
+                    ...current,
+                    province: val,
+                    city: '',
+                    region: '',
+                    suburb: '',
+                    postalCode: '',
+                  }))
                   setLocationNodeId(null)
                 }}
               >
@@ -375,42 +383,94 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                 provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
                 onSelect={(selection) => {
                   if (selection) {
-                    setAddress((prev) => ({ ...prev, suburb: selection.suburb, city: selection.city }))
+                    setAddress((prev) => ({
+                      ...prev,
+                      suburb: selection.suburb,
+                      region: selection.region,
+                      city: selection.city,
+                      province: selection.province,
+                      postalCode: selection.postalCode,
+                    }))
                     setLocationNodeId(selection.locationNodeId)
                   } else {
-                    setAddress((prev) => ({ ...prev, suburb: '', city: '' }))
+                    setAddress((prev) => ({
+                      ...prev,
+                      suburb: '',
+                      region: '',
+                      city: '',
+                      postalCode: '',
+                    }))
                     setLocationNodeId(null)
                   }
                 }}
               />
               {address.suburb && (
                 <p className="text-xs text-muted-foreground">
-                  {address.suburb}, {address.city}
+                  {address.suburb}, {address.region}, {address.city}, {address.postalCode}
                 </p>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="street" className="text-muted-foreground">Street address</Label>
+                <Label htmlFor="unitNumber" className="text-muted-foreground">
+                  Unit number <span className="text-muted-foreground/60">(optional)</span>
+                </Label>
                 <Input
-                  id="street"
-                  required
+                  id="unitNumber"
                   type="text"
-                  value={address.street}
-                  onChange={(e) => setAddress({ ...address, street: e.target.value })}
-                  placeholder="12 Main Road, Estate name, informal directions"
+                  value={address.unitNumber}
+                  onChange={(e) => setAddress({ ...address, unitNumber: e.target.value })}
+                  placeholder="12B"
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="postalCode" className="text-muted-foreground">Postal code</Label>
+                <Label htmlFor="complexName" className="text-muted-foreground">
+                  Complex name <span className="text-muted-foreground/60">(optional)</span>
+                </Label>
                 <Input
-                  id="postalCode"
+                  id="complexName"
                   type="text"
-                  value={address.postalCode}
-                  onChange={(e) => setAddress({ ...address, postalCode: e.target.value })}
-                  placeholder="2196"
+                  value={address.complexName}
+                  onChange={(e) => setAddress({ ...address, complexName: e.target.value })}
+                  placeholder="Acacia Mews"
                 />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="addressLine1" className="text-muted-foreground">Street address line 1</Label>
+              <Input
+                id="addressLine1"
+                required
+                type="text"
+                value={address.addressLine1}
+                onChange={(e) => setAddress({ ...address, addressLine1: e.target.value })}
+                placeholder="12 Main Road"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="addressLine2" className="text-muted-foreground">
+                Street address line 2 <span className="text-muted-foreground/60">(optional)</span>
+              </Label>
+              <Input
+                id="addressLine2"
+                type="text"
+                value={address.addressLine2}
+                onChange={(e) => setAddress({ ...address, addressLine2: e.target.value })}
+                placeholder="Building entrance, floor, landmark"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="region" className="text-muted-foreground">Region / area</Label>
+                <Input id="region" value={address.region} readOnly disabled />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="postalCode" className="text-muted-foreground">Postal code</Label>
+                <Input id="postalCode" value={address.postalCode} readOnly disabled />
               </div>
             </div>
           </div>
@@ -484,7 +544,9 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
               <Row label="Job">{title}</Row>
               {description && <Row label="Details">{description}</Row>}
               <Row label="Address">
-                {address.street}, {address.suburb}, {address.city}
+                {[streetSummary, address.suburb, address.region, address.city, address.province, address.postalCode]
+                  .filter(Boolean)
+                  .join(', ')}
               </Row>
             </CardContent>
           </Card>

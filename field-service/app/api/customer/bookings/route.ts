@@ -7,6 +7,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createJobRequest } from '@/lib/job-requests/create-job-request'
+import {
+  InvalidStructuredAddressError,
+  resolveStructuredAddressCapture,
+} from '@/lib/structured-address'
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -21,11 +25,10 @@ export async function POST(req: NextRequest) {
     category: string
     title: string
     description: string
-    street: string
-    suburb: string
-    city: string
-    province: string
-    postalCode?: string
+    addressLine1: string
+    addressLine2?: string
+    complexName?: string
+    unitNumber?: string
     requestedWindowStart?: string
     requestedWindowEnd?: string
     requestedArrivalLatest?: string
@@ -38,7 +41,7 @@ export async function POST(req: NextRequest) {
     assignmentMode?: 'AUTO_ASSIGN' | 'OPS_REVIEW'
     customerAcceptedAmount?: number
     customerAcceptedScope?: string
-    locationNodeId?: string | null
+    locationNodeId: string
   }
 
   try {
@@ -51,11 +54,10 @@ export async function POST(req: NextRequest) {
     category,
     title,
     description,
-    street,
-    suburb,
-    city,
-    province,
-    postalCode,
+    addressLine1,
+    addressLine2,
+    complexName,
+    unitNumber,
     requestedWindowStart,
     requestedWindowEnd,
     requestedArrivalLatest,
@@ -71,11 +73,19 @@ export async function POST(req: NextRequest) {
     locationNodeId,
   } = body
 
-  if (!category || !title || !description || !street || !suburb || !city || !province) {
+  if (!category || !title || !addressLine1 || !locationNodeId) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
   try {
+    const resolvedAddress = await resolveStructuredAddressCapture({
+      addressLine1,
+      addressLine2,
+      complexName,
+      unitNumber,
+      locationNodeId,
+    })
+
     const result = await createJobRequest({
       userId: session.id,
       phone: session.phone!,
@@ -94,18 +104,26 @@ export async function POST(req: NextRequest) {
       requiredCertificationCodes,
       requiredEquipmentTags,
       requiredVehicleTypes,
-      street,
-      suburb,
-      city,
-      province,
-      postalCode: postalCode ?? null,
-      locationNodeId: locationNodeId ?? null,
+      street: resolvedAddress.street,
+      addressLine1: resolvedAddress.addressLine1,
+      addressLine2: resolvedAddress.addressLine2,
+      complexName: resolvedAddress.complexName,
+      unitNumber: resolvedAddress.unitNumber,
+      suburb: resolvedAddress.suburb,
+      region: resolvedAddress.region,
+      city: resolvedAddress.city,
+      province: resolvedAddress.province,
+      postalCode: resolvedAddress.postalCode,
+      locationNodeId: resolvedAddress.locationNodeId,
     })
     return NextResponse.json({
       jobRequestId: result.jobRequestId,
       ticketUrl: result.ticketUrl,
     })
   } catch (err) {
+    if (err instanceof InvalidStructuredAddressError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
     console.error('[bookings] createJobRequest failed', err)
     return NextResponse.json({ error: 'Failed to create job request' }, { status: 500 })
   }
