@@ -1,0 +1,179 @@
+<svg width="1600" height="1120" viewBox="0 0 1600 1120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Plug-A-Pro deployment workflow</title>
+  <desc id="desc">A visual workflow showing how a Plug-A-Pro feature moves from local development to production deployment, data rollout, verification, and live release.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="1120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F4EA"/>
+      <stop offset="1" stop-color="#F4EFE2"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="72" y1="72" x2="1528" y2="240" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#123524"/>
+      <stop offset="1" stop-color="#1E5A3E"/>
+    </linearGradient>
+    <linearGradient id="card1" x1="0" y1="0" x2="220" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF9EE"/>
+      <stop offset="1" stop-color="#F5EBD3"/>
+    </linearGradient>
+    <linearGradient id="card2" x1="0" y1="0" x2="220" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EEF7F0"/>
+      <stop offset="1" stop-color="#D9EFDE"/>
+    </linearGradient>
+    <linearGradient id="card3" x1="0" y1="0" x2="220" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EFF6FB"/>
+      <stop offset="1" stop-color="#DDECF8"/>
+    </linearGradient>
+    <linearGradient id="card4" x1="0" y1="0" x2="220" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF3ED"/>
+      <stop offset="1" stop-color="#FFE2D5"/>
+    </linearGradient>
+    <linearGradient id="card5" x1="0" y1="0" x2="220" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4F1FB"/>
+      <stop offset="1" stop-color="#E8DFF8"/>
+    </linearGradient>
+    <linearGradient id="card6" x1="0" y1="0" x2="220" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EDF8F8"/>
+      <stop offset="1" stop-color="#D9F0F0"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 14 14" refX="10" refY="7" markerWidth="10" markerHeight="10" orient="auto-start-reverse">
+      <path d="M1 1L11 7L1 13V1Z" fill="#1B4332"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%" filterUnits="objectBoundingBox">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0E2217" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1120" fill="url(#bg)"/>
+
+  <rect x="72" y="64" width="1456" height="160" rx="28" fill="url(#hero)" filter="url(#shadow)"/>
+  <text x="120" y="132" fill="#F9F5EC" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700">Plug-A-Pro deployment workflow</text>
+  <text x="120" y="174" fill="#D9E8DE" font-family="Arial, Helvetica, sans-serif" font-size="20">From local development to a live customer-facing feature in production</text>
+
+  <g transform="translate(120 246)">
+    <rect width="133" height="36" rx="18" fill="#E7F3EA"/>
+    <text x="20" y="24" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700">Stack</text>
+    <text x="148" y="24" fill="#E7F3EA" font-family="Arial, Helvetica, sans-serif" font-size="16">Next.js • Prisma • Supabase • Vercel • WhatsApp Cloud API</text>
+  </g>
+
+  <!-- Step cards -->
+  <g transform="translate(96 344)" filter="url(#shadow)">
+    <rect width="220" height="300" rx="26" fill="url(#card1)"/>
+    <circle cx="42" cy="42" r="22" fill="#123524"/>
+    <text x="35" y="50" fill="#FFF8EE" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">1</text>
+    <text x="32" y="92" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Local dev</text>
+    <text x="32" y="122" fill="#425348" font-family="Arial, Helvetica, sans-serif" font-size="16">Build and verify the feature locally.</text>
+    <text x="32" y="164" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm dev</text>
+    <text x="32" y="190" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm db:migrate</text>
+    <text x="32" y="216" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm db:seed</text>
+    <text x="32" y="242" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm exec tsc --noEmit</text>
+    <text x="32" y="268" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm test</text>
+  </g>
+
+  <g transform="translate(344 344)" filter="url(#shadow)">
+    <rect width="220" height="300" rx="26" fill="url(#card2)"/>
+    <circle cx="42" cy="42" r="22" fill="#123524"/>
+    <text x="35" y="50" fill="#FFF8EE" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">2</text>
+    <text x="32" y="92" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Branch + PR</text>
+    <text x="32" y="122" fill="#425348" font-family="Arial, Helvetica, sans-serif" font-size="16">Push the feature branch and get it reviewed.</text>
+    <text x="32" y="164" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• Push feature branch</text>
+    <text x="32" y="190" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• Open PR on GitHub</text>
+    <text x="32" y="216" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• Review fixes land here</text>
+    <text x="32" y="242" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• Merge to <tspan font-weight="700">main</tspan></text>
+  </g>
+
+  <g transform="translate(592 344)" filter="url(#shadow)">
+    <rect width="220" height="300" rx="26" fill="url(#card3)"/>
+    <circle cx="42" cy="42" r="22" fill="#123524"/>
+    <text x="35" y="50" fill="#FFF8EE" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">3</text>
+    <text x="32" y="92" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">App deploy</text>
+    <text x="32" y="122" fill="#425348" font-family="Arial, Helvetica, sans-serif" font-size="16">Vercel builds and publishes the Next.js app.</text>
+    <text x="32" y="164" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• Triggered by merge to main</text>
+    <text x="32" y="190" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• <tspan font-family="Courier New, monospace">prisma generate</tspan> in build</text>
+    <text x="32" y="216" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• <tspan font-family="Courier New, monospace">next build</tspan></text>
+    <text x="32" y="242" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• Production URL goes live</text>
+    <text x="32" y="268" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="16">• Uses <tspan font-family="Courier New, monospace">NEXT_PUBLIC_APP_URL</tspan></text>
+  </g>
+
+  <g transform="translate(840 344)" filter="url(#shadow)">
+    <rect width="220" height="300" rx="26" fill="url(#card4)"/>
+    <circle cx="42" cy="42" r="22" fill="#123524"/>
+    <text x="35" y="50" fill="#FFF8EE" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">4</text>
+    <text x="32" y="92" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Data rollout</text>
+    <text x="32" y="122" fill="#425348" font-family="Arial, Helvetica, sans-serif" font-size="16">Apply schema, seed required data, then repair old records.</text>
+    <text x="32" y="164" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm db:migrate:prod</text>
+    <text x="32" y="190" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm db:seed</text>
+    <text x="32" y="216" fill="#123524" font-family="Courier New, monospace" font-size="15">pnpm db:backfill</text>
+    <text x="32" y="250" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">Re-run backfill once to confirm idempotency.</text>
+  </g>
+
+  <g transform="translate(1088 344)" filter="url(#shadow)">
+    <rect width="220" height="300" rx="26" fill="url(#card5)"/>
+    <circle cx="42" cy="42" r="22" fill="#123524"/>
+    <text x="35" y="50" fill="#FFF8EE" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">5</text>
+    <text x="32" y="92" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Verify</text>
+    <text x="32" y="122" fill="#425348" font-family="Arial, Helvetica, sans-serif" font-size="16">Run the post-deploy checks against the live app.</text>
+    <text x="32" y="164" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Public/auth routes</text>
+    <text x="32" y="190" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Signed ticket flow</text>
+    <text x="32" y="216" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Attachment proxy token path</text>
+    <text x="32" y="242" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Evidence upload + completion gate</text>
+    <text x="32" y="268" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Skills, address, locations</text>
+  </g>
+
+  <g transform="translate(1336 344)" filter="url(#shadow)">
+    <rect width="168" height="300" rx="26" fill="url(#card6)"/>
+    <circle cx="42" cy="42" r="22" fill="#123524"/>
+    <text x="35" y="50" fill="#FFF8EE" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">6</text>
+    <text x="28" y="92" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Live</text>
+    <text x="28" y="122" fill="#425348" font-family="Arial, Helvetica, sans-serif" font-size="16">Feature is usable in production.</text>
+    <text x="28" y="164" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">Keep legacy string fallback on for this deploy.</text>
+    <text x="28" y="212" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">Disable it only in a later release after backfill review.</text>
+  </g>
+
+  <!-- Arrows -->
+  <path d="M316 494H344" stroke="#1B4332" stroke-width="6" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M564 494H592" stroke="#1B4332" stroke-width="6" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M812 494H840" stroke="#1B4332" stroke-width="6" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M1060 494H1088" stroke="#1B4332" stroke-width="6" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M1308 494H1336" stroke="#1B4332" stroke-width="6" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <!-- Verification detail band -->
+  <rect x="96" y="700" width="1408" height="312" rx="28" fill="#FFF9F0" stroke="#DCCEB1" stroke-width="2"/>
+  <text x="128" y="748" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">Verification and release gates</text>
+  <text x="128" y="780" fill="#55665B" font-family="Arial, Helvetica, sans-serif" font-size="18">These are the checks that stand between a successful deploy and a feature considered safe to use.</text>
+
+  <g transform="translate(128 818)">
+    <rect width="292" height="154" rx="22" fill="#FFFFFF" stroke="#D7CCB7"/>
+    <text x="24" y="38" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">Public and access paths</text>
+    <text x="24" y="70" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• /requests/access/:token is public</text>
+    <text x="24" y="96" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• /api/health returns 200</text>
+    <text x="24" y="122" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• /admin and /provider still gate behind auth</text>
+  </g>
+
+  <g transform="translate(448 818)">
+    <rect width="292" height="154" rx="22" fill="#FFFFFF" stroke="#D7CCB7"/>
+    <text x="24" y="38" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">Signed ticket proof</text>
+    <text x="24" y="70" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• customerAccessToken present</text>
+    <text x="24" y="96" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Photos load through /api/attachments?id+token</text>
+    <text x="24" y="122" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Invalid, expired, revoked tokens fail safely</text>
+  </g>
+
+  <g transform="translate(768 818)">
+    <rect width="292" height="154" rx="22" fill="#FFFFFF" stroke="#D7CCB7"/>
+    <text x="24" y="38" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">Operational data checks</text>
+    <text x="24" y="70" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Backfill rerun produces 0 updates</text>
+    <text x="24" y="96" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Address.locationNodeId spot checks</text>
+    <text x="24" y="122" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• TechnicianServiceArea rows and types match</text>
+  </g>
+
+  <g transform="translate(1088 818)">
+    <rect width="392" height="154" rx="22" fill="#FFFFFF" stroke="#D7CCB7"/>
+    <text x="24" y="38" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">Customer/provider workflow proof</text>
+    <text x="24" y="70" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Evidence uploads accept one or many images, captions persist</text>
+    <text x="24" y="96" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Job completion is blocked without work photos</text>
+    <text x="24" y="122" fill="#123524" font-family="Arial, Helvetica, sans-serif" font-size="15">• Skill picker rehydrates from persisted rows after reload</text>
+  </g>
+
+  <!-- Footer -->
+  <line x1="96" y1="1050" x2="1504" y2="1050" stroke="#CDBEA1" stroke-width="2"/>
+  <text x="96" y="1084" fill="#5C6D63" font-family="Arial, Helvetica, sans-serif" font-size="16">Reference commands: pnpm db:migrate:prod • pnpm db:seed • pnpm db:backfill • post-deploy verification checklist</text>
+  <text x="1200" y="1084" fill="#5C6D63" font-family="Arial, Helvetica, sans-serif" font-size="16">field-service/docs/deployment-workflow.svg</text>
+</svg>
