@@ -1,0 +1,630 @@
+// ─── WhatsApp customer job-request flow — structured address tests ─────────────
+// Covers:
+//  1. Province selection: list-based, rejects typed text
+//  2. City selection: filtered by province, out-of-area waitlists immediately
+//  3. Region selection: filtered by city
+//  4. Suburb selection: filtered by region, derives postalCode + locationNodeId
+//  5. Submission: uses resolveStructuredAddressCapture, passes all fields to createJobRequest
+//  6. Returning customer with structured address can reuse it
+//  7. Returning customer with legacy address is forced through new structured flow
+//  8. Pagination: lists > 10 rows are paged correctly
+//  9. Typed replies on structured steps are rejected, list is resent
+// 10. No new flow path relies on resolveSuburbNodeId or manual suburb/city capture
+
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/lib/db', () => ({
+  db: {
+    customer: {
+      findUnique: vi.fn(),
+      updateMany: vi.fn(),
+      upsert: vi.fn(),
+    },
+    address: {
+      findFirst: vi.fn(),
+    },
+  },
+}))
+
+vi.mock('@/lib/location-nodes', () => ({
+  getProvinces: vi.fn(),
+  getCities: vi.fn(),
+  getRegions: vi.fn(),
+  getSuburbs: vi.fn(),
+  getStructuredAddressSelection: vi.fn(),
+  resolveSuburbNodeId: vi.fn(), // should NOT be called by new flow
+}))
+
+vi.mock('@/lib/whatsapp-interactive', () => ({
+  sendText: vi.fn().mockResolvedValue('msg-1'),
+  sendButtons: vi.fn().mockResolvedValue('msg-2'),
+  sendList: vi.fn().mockResolvedValue('msg-3'),
+  sendCtaUrl: vi.fn().mockResolvedValue('msg-4'),
+}))
+
+vi.mock('@/lib/service-area-guard', () => ({
+  isInActiveServiceArea: vi.fn(),
+  addToServiceAreaWaitlist: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/job-requests/create-job-request', () => ({
+  createJobRequest: vi.fn(),
+}))
+
+vi.mock('@/lib/structured-address', () => ({
+  resolveStructuredAddressCapture: vi.fn(),
+  InvalidStructuredAddressError: class InvalidStructuredAddressError extends Error {
+    constructor(msg: string) { super(msg); this.name = 'InvalidStructuredAddressError' }
+  },
+}))
+
+vi.mock('@/lib/service-category-policy', () => ({
+  getCategoryPolicy: vi.fn().mockReturnValue({ bookingOnAssignment: false }),
+}))
+
+import { handleJobRequestFlow } from '@/lib/whatsapp-flows/job-request'
+import * as locationNodes from '@/lib/location-nodes'
+import * as wa from '@/lib/whatsapp-interactive'
+import * as serviceAreaGuard from '@/lib/service-area-guard'
+import * as structuredAddress from '@/lib/structured-address'
+import * as createJobRequestModule from '@/lib/job-requests/create-job-request'
+import { db } from '@/lib/db'
+
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+const PHONE = '+27821234567'
+
+const PROVINCES = [
+  { id: 'prov_gauteng', slug: 'gauteng', label: 'Gauteng' },
+  { id: 'prov_wc', slug: 'western_cape', label: 'Western Cape' },
+]
+
+const CITIES_GAUTENG = [
+  { id: 'city_jhb', slug: 'gauteng__johannesburg', label: 'Johannesburg', provinceKey: 'gauteng', cityKey: 'johannesburg' },
+  { id: 'city_pta', slug: 'gauteng__pretoria', label: 'Pretoria', provinceKey: 'gauteng', cityKey: 'pretoria' },
+]
+
+const CITIES_WC = [
+  { id: 'city_cpt', slug: 'western_cape__cape_town', label: 'Cape Town', provinceKey: 'western_cape', cityKey: 'cape_town' },
+]
+
+const REGIONS_JHB = [
+  { id: 'rgn_north', slug: 'gauteng__johannesburg__jhb_north', label: 'JHB North', provinceKey: 'gauteng', cityKey: 'johannesburg', regionKey: 'jhb_north', lat: null, lng: null, radiusKm: null },
+  { id: 'rgn_south', slug: 'gauteng__johannesburg__jhb_south', label: 'JHB South', provinceKey: 'gauteng', cityKey: 'johannesburg', regionKey: 'jhb_south', lat: null, lng: null, radiusKm: null },
+]
+
+const SUBURBS_JHB_NORTH = [
+  { id: 'sub_sandton', slug: '...sandton', label: 'Sandton', regionLabel: 'JHB North', cityLabel: 'Johannesburg', provinceLabel: 'Gauteng', postalCode: '2196', provinceKey: 'gauteng', cityKey: 'johannesburg', regionKey: 'jhb_north', lat: null, lng: null },
+  { id: 'sub_fourways', slug: '...fourways', label: 'Fourways', regionLabel: 'JHB North', cityLabel: 'Johannesburg', provinceLabel: 'Gauteng', postalCode: '2068', provinceKey: 'gauteng', cityKey: 'johannesburg', regionKey: 'jhb_north', lat: null, lng: null },
+]
+
+const SANDTON_SELECTION = {
+  locationNodeId: 'sub_sandton',
+  suburb: 'Sandton',
+  region: 'JHB North',
+  city: 'Johannesburg',
+  province: 'Gauteng',
+  postalCode: '2196',
+}
+
+function makeCtx(
+  step: string,
+  replyId?: string,
+  replyText?: string,
+  data: object = {},
+) {
+  return {
+    phone: PHONE,
+    step: step as any,
+    data: data as any,
+    flow: 'job_request' as const,
+    reply: {
+      type: (replyId ? 'list_reply' : 'text') as any,
+      id: replyId,
+      text: replyText,
+      title: replyId,
+    },
+  }
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe('WhatsApp job-request flow — structured address', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(locationNodes.getProvinces as any).mockResolvedValue(PROVINCES)
+    ;(locationNodes.getCities as any).mockResolvedValue(CITIES_GAUTENG)
+    ;(locationNodes.getRegions as any).mockResolvedValue(REGIONS_JHB)
+    ;(locationNodes.getSuburbs as any).mockResolvedValue(SUBURBS_JHB_NORTH)
+    ;(locationNodes.getStructuredAddressSelection as any).mockResolvedValue(SANDTON_SELECTION)
+    ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(true)
+  })
+
+  // ── 1. Province selection ──────────────────────────────────────────────────
+
+  describe('collect_address_street → addr_select_province', () => {
+    it('transitions to addr_select_province after street capture', async () => {
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '14 Main Road'))
+
+      expect(result.nextStep).toBe('addr_select_province')
+      expect(result.nextData).toMatchObject({ addressLine1: '14 Main Road', addressStreet: '14 Main Road', addrPage: 0 })
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('province'),
+        expect.arrayContaining([expect.objectContaining({ rows: expect.any(Array) })]),
+        expect.any(Object),
+      )
+    })
+  })
+
+  describe('addr_select_province', () => {
+    it('rejects typed text and resends province list', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_province', undefined, 'Gauteng'))
+
+      expect(result.nextStep).toBe('addr_select_province')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
+      // Province list must be resent
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('province'),
+        expect.any(Array),
+        expect.any(Object),
+      )
+    })
+
+    it('accepts a valid province selection and shows city list', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__gauteng'))
+
+      expect(result.nextStep).toBe('addr_select_city')
+      expect(result.nextData).toMatchObject({ addrProvinceKey: 'gauteng', addrProvinceLabel: 'Gauteng', addrPage: 0 })
+      expect(locationNodes.getCities).toHaveBeenCalledWith('gauteng')
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Gauteng'),
+        expect.any(Array),
+        expect.any(Object),
+      )
+    })
+
+    it('rejects an unknown province ID and resends province list', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_province', 'prov__unknown_province'))
+
+      expect(result.nextStep).toBe('addr_select_province')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
+    })
+  })
+
+  // ── 2. City selection filtered by province ────────────────────────────────
+
+  describe('addr_select_city', () => {
+    const baseData = { addrProvinceKey: 'gauteng', addrProvinceLabel: 'Gauteng', addrPage: 0 }
+
+    it('shows cities filtered by the selected province', async () => {
+      await handleJobRequestFlow(makeCtx('addr_select_city', 'city__city_jhb', undefined, baseData))
+
+      expect(locationNodes.getCities).toHaveBeenCalledWith('gauteng')
+    })
+
+    it('rejects typed text and resends city list', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_city', undefined, 'Johannesburg', baseData))
+
+      expect(result.nextStep).toBe('addr_select_city')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
+      expect(wa.sendList).toHaveBeenCalledWith(PHONE, expect.stringContaining('Gauteng'), expect.any(Array), expect.any(Object))
+    })
+
+    it('waitlists and returns done for an out-of-area city', async () => {
+      ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(false)
+      ;(locationNodes.getCities as any).mockResolvedValue(CITIES_WC)
+
+      const result = await handleJobRequestFlow(
+        makeCtx('addr_select_city', 'city__city_cpt', undefined, {
+          addrProvinceKey: 'western_cape',
+          addrProvinceLabel: 'Western Cape',
+          addrPage: 0,
+          customerName: 'Sipho',
+          selectedCategory: 'Plumbing',
+        })
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalledWith(
+        expect.objectContaining({ phone: PHONE, city: 'Cape Town', province: 'Western Cape' })
+      )
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Cape Town'))
+    })
+
+    it('shows region list for an active city', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_city', 'city__city_jhb', undefined, baseData))
+
+      expect(result.nextStep).toBe('addr_select_region')
+      expect(result.nextData).toMatchObject({ addrCityId: 'city_jhb', addrCityLabel: 'Johannesburg', addrPage: 0 })
+      expect(locationNodes.getRegions).toHaveBeenCalledWith('city_jhb')
+    })
+  })
+
+  // ── 3. Region selection filtered by city ─────────────────────────────────
+
+  describe('addr_select_region', () => {
+    const baseData = { addrCityId: 'city_jhb', addrCityLabel: 'Johannesburg', addrPage: 0 }
+
+    it('shows regions filtered by city', async () => {
+      await handleJobRequestFlow(makeCtx('addr_select_region', 'rgn__rgn_north', undefined, baseData))
+
+      expect(locationNodes.getRegions).toHaveBeenCalledWith('city_jhb')
+    })
+
+    it('rejects typed text and resends region list', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_region', undefined, 'JHB North', baseData))
+
+      expect(result.nextStep).toBe('addr_select_region')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
+      expect(wa.sendList).toHaveBeenCalledWith(PHONE, expect.stringContaining('Johannesburg'), expect.any(Array), expect.any(Object))
+    })
+
+    it('transitions to addr_select_suburb on valid region selection', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_region', 'rgn__rgn_north', undefined, baseData))
+
+      expect(result.nextStep).toBe('addr_select_suburb')
+      expect(result.nextData).toMatchObject({ addrRegionId: 'rgn_north', addrRegionLabel: 'JHB North', addrPage: 0 })
+    })
+  })
+
+  // ── 4. Suburb selection — derives postalCode + locationNodeId ─────────────
+
+  describe('addr_select_suburb', () => {
+    const baseData = {
+      addrRegionId: 'rgn_north',
+      addrRegionLabel: 'JHB North',
+      addrPage: 0,
+      addressLine1: '14 Main Road',
+    }
+
+    it('resolves the selected suburb by node ID (filtered by region context)', async () => {
+      await handleJobRequestFlow(makeCtx('addr_select_suburb', 'sub__sub_sandton', undefined, baseData))
+
+      // On selection we resolve by node ID (not by re-fetching the full list)
+      expect(locationNodes.getStructuredAddressSelection).toHaveBeenCalledWith('sub_sandton')
+    })
+
+    it('rejects typed text and resends suburb list', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_suburb', undefined, 'Sandton', baseData))
+
+      expect(result.nextStep).toBe('addr_select_suburb')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
+      expect(wa.sendList).toHaveBeenCalledWith(PHONE, expect.stringContaining('JHB North'), expect.any(Array), expect.any(Object))
+    })
+
+    it('derives postalCode and locationNodeId from the suburb node, never from typed input', async () => {
+      const result = await handleJobRequestFlow(makeCtx('addr_select_suburb', 'sub__sub_sandton', undefined, baseData))
+
+      expect(result.nextStep).toBe('addr_confirm')
+      expect(result.nextData).toMatchObject({
+        addrLocationNodeId: 'sub_sandton',
+        addrSuburbLabel: 'Sandton',
+        addrPostalCode: '2196',
+        addrCityLabel: 'Johannesburg',
+        addrProvinceLabel: 'Gauteng',
+      })
+      // Confirmation message must show derived postalCode, not any typed value
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('2196'),
+        expect.any(Array),
+      )
+    })
+
+    it('shows full address confirmation after suburb selection', async () => {
+      await handleJobRequestFlow(makeCtx('addr_select_suburb', 'sub__sub_sandton', undefined, baseData))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('14 Main Road'),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'addr_yes' }),
+          expect.objectContaining({ id: 'addr_no' }),
+        ]),
+      )
+    })
+  })
+
+  // ── 5. Submission uses resolveStructuredAddressCapture ────────────────────
+
+  describe('job_request_submitted — structured path', () => {
+    const structuredData = {
+      addrLocationNodeId: 'sub_sandton',
+      addressLine1: '14 Main Road',
+      customerName: 'Thabo',
+      selectedCategory: 'Plumbing',
+      category: 'Plumbing',
+      availabilityNote: 'As soon as possible',
+      address: '14 Main Road, Sandton, JHB North, Johannesburg',
+    }
+
+    const resolvedAddr = {
+      street: '14 Main Road',
+      addressLine1: '14 Main Road',
+      addressLine2: null,
+      complexName: null,
+      unitNumber: null,
+      suburb: 'Sandton',
+      region: 'JHB North',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+      postalCode: '2196',
+      locationNodeId: 'sub_sandton',
+    }
+
+    beforeEach(() => {
+      ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue(resolvedAddr)
+      ;(createJobRequestModule.createJobRequest as any).mockResolvedValue({
+        jobRequestId: 'jr_test123456',
+        customerId: 'cust_001',
+        ticketUrl: null,
+      })
+    })
+
+    it('calls resolveStructuredAddressCapture with addressLine1 and locationNodeId', async () => {
+      await handleJobRequestFlow(makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData))
+
+      expect(structuredAddress.resolveStructuredAddressCapture).toHaveBeenCalledWith(
+        expect.objectContaining({ addressLine1: '14 Main Road', locationNodeId: 'sub_sandton' })
+      )
+    })
+
+    it('passes all structured fields to createJobRequest', async () => {
+      await handleJobRequestFlow(makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData))
+
+      expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          street: '14 Main Road',
+          addressLine1: '14 Main Road',
+          suburb: 'Sandton',
+          region: 'JHB North',
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: '2196',
+          locationNodeId: 'sub_sandton',
+        })
+      )
+    })
+
+    it('falls back to re-entering address when resolveStructuredAddressCapture throws InvalidStructuredAddressError', async () => {
+      ;(structuredAddress.resolveStructuredAddressCapture as any).mockRejectedValue(
+        new (structuredAddress as any).InvalidStructuredAddressError('invalid node'),
+      )
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(result.nextStep).toBe('collect_address_street')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('could not validate'))
+    })
+
+    it('does NOT call resolveSuburbNodeId anywhere in the new flow', async () => {
+      await handleJobRequestFlow(makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData))
+
+      expect(locationNodes.resolveSuburbNodeId).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── 6. Returning customer with structured address can reuse it ────────────
+
+  describe('returning customer — structured saved address', () => {
+    beforeEach(() => {
+      ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust_1', name: 'Zanele' })
+      ;(db.address.findFirst as any).mockResolvedValue({
+        id: 'addr_1',
+        street: '14 Main Road, Sandton',
+        addressLine1: '14 Main Road',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        locationNodeId: 'sub_sandton',
+      })
+    })
+
+    it('offers Same address button when locationNodeId is set', async () => {
+      const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
+
+      expect(locationNodes.getStructuredAddressSelection).toHaveBeenCalledWith('sub_sandton')
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Last used'),
+        expect.arrayContaining([expect.objectContaining({ id: 'addr_same' })]),
+      )
+      expect(result.nextStep).toBe('collect_address')
+      expect(result.nextData).toMatchObject({ addrLocationNodeId: 'sub_sandton' })
+    })
+
+    it('carries addrLocationNodeId through addr_same → availability', async () => {
+      const result = await handleJobRequestFlow(
+        makeCtx('collect_address', 'addr_same', undefined, {
+          addrLocationNodeId: 'sub_sandton',
+          address: '14 Main Road, Sandton, Johannesburg',
+        })
+      )
+
+      // Should jump straight to availability (nextStep: confirm_job_request)
+      expect(result.nextStep).toBe('confirm_job_request')
+    })
+  })
+
+  // ── 7. Returning customer with legacy address → forced new structured flow ─
+
+  describe('returning customer — legacy address (no locationNodeId)', () => {
+    beforeEach(() => {
+      ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust_2', name: 'Sipho' })
+      ;(db.address.findFirst as any).mockResolvedValue({
+        id: 'addr_old',
+        street: 'Old Street, Soweto',
+        suburb: 'Soweto',
+        city: 'Johannesburg',
+        locationNodeId: null,   // legacy — no structured node
+      })
+    })
+
+    it('does NOT offer Same address and goes straight to street entry', async () => {
+      const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_handyman'))
+
+      expect(wa.sendButtons).not.toHaveBeenCalled()
+      expect(result.nextStep).toBe('collect_address_street')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Street address'))
+    })
+  })
+
+  // ── 8. Pagination works for lists > 10 rows ───────────────────────────────
+
+  describe('pagination', () => {
+    it('shows 8 items + Next on page 0 when suburb list > 10', async () => {
+      const manySuburbs = Array.from({ length: 12 }, (_, i) => ({
+        id: `sub_${i}`,
+        slug: `slug_${i}`,
+        label: `Suburb ${i}`,
+        regionLabel: 'JHB North',
+        cityLabel: 'Johannesburg',
+        provinceLabel: 'Gauteng',
+        postalCode: `200${i}`,
+        provinceKey: 'gauteng',
+        cityKey: 'johannesburg',
+        regionKey: 'jhb_north',
+        lat: null,
+        lng: null,
+      }))
+      ;(locationNodes.getSuburbs as any).mockResolvedValue(manySuburbs)
+
+      await handleJobRequestFlow(
+        makeCtx('addr_select_suburb', undefined, 'suburb', {
+          addrRegionId: 'rgn_north',
+          addrRegionLabel: 'JHB North',
+          addrPage: 0,
+        })
+      )
+
+      // Rejection text + resend with paged list
+      const listCall = (wa.sendList as any).mock.calls.find((call: any[]) =>
+        call[1]?.includes('JHB North')
+      )
+      expect(listCall).toBeDefined()
+      const rows = listCall[2][0].rows
+      // 8 data rows + 1 next nav = 9 total
+      expect(rows).toHaveLength(9)
+      expect(rows[rows.length - 1].id).toBe('sub_next')
+    })
+
+    it('shows remaining items + Previous on last page', async () => {
+      const manySuburbs = Array.from({ length: 12 }, (_, i) => ({
+        id: `sub_${i}`,
+        slug: `slug_${i}`,
+        label: `Suburb ${i}`,
+        regionLabel: 'JHB North',
+        cityLabel: 'Johannesburg',
+        provinceLabel: 'Gauteng',
+        postalCode: `200${i}`,
+        provinceKey: 'gauteng',
+        cityKey: 'johannesburg',
+        regionKey: 'jhb_north',
+        lat: null,
+        lng: null,
+      }))
+      ;(locationNodes.getSuburbs as any).mockResolvedValue(manySuburbs)
+
+      await handleJobRequestFlow(
+        makeCtx('addr_select_suburb', 'sub_next', undefined, {
+          addrRegionId: 'rgn_north',
+          addrRegionLabel: 'JHB North',
+          addrPage: 0,
+        })
+      )
+
+      const listCall = (wa.sendList as any).mock.calls.find((call: any[]) =>
+        call[1]?.includes('JHB North')
+      )
+      const rows = listCall[2][0].rows
+      // 4 data rows (items 8-11) + 1 prev nav = 5 total
+      expect(rows).toHaveLength(5)
+      expect(rows[rows.length - 1].id).toBe('sub_prev')
+    })
+
+    it('paginates city list when cities > 10', async () => {
+      const manyCities = Array.from({ length: 11 }, (_, i) => ({
+        id: `city_${i}`,
+        slug: `gauteng__city_${i}`,
+        label: `City ${i}`,
+        provinceKey: 'gauteng',
+        cityKey: `city_${i}`,
+      }))
+      ;(locationNodes.getCities as any).mockResolvedValue(manyCities)
+
+      // Simulate city_next tap on page 0
+      await handleJobRequestFlow(
+        makeCtx('addr_select_city', 'city_next', undefined, {
+          addrProvinceKey: 'gauteng',
+          addrProvinceLabel: 'Gauteng',
+          addrPage: 0,
+        })
+      )
+
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Gauteng'),
+        expect.any(Array),
+        expect.any(Object),
+      )
+    })
+  })
+
+  // ── 9. Typed replies during structured steps are rejected ─────────────────
+
+  describe('typed reply rejection on all structured steps', () => {
+    it.each([
+      ['addr_select_province', { addrPage: 0 }],
+      ['addr_select_city', { addrProvinceKey: 'gauteng', addrProvinceLabel: 'Gauteng', addrPage: 0 }],
+      ['addr_select_region', { addrCityId: 'city_jhb', addrCityLabel: 'Johannesburg', addrPage: 0 }],
+      ['addr_select_suburb', { addrRegionId: 'rgn_north', addrRegionLabel: 'JHB North', addrPage: 0, addressLine1: '14 Main Road' }],
+    ])('step %s rejects typed text and stays on same step', async (step, data) => {
+      const result = await handleJobRequestFlow(makeCtx(step, undefined, 'some typed text', data))
+
+      expect(result.nextStep).toBe(step)
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('choose from the list'))
+      // List must be resent
+      expect(wa.sendList).toHaveBeenCalled()
+    })
+  })
+
+  // ── Legacy steps redirect to new flow ─────────────────────────────────────
+
+  describe('legacy steps', () => {
+    it('collect_address_suburb redirects to addr_select_province', async () => {
+      const result = await handleJobRequestFlow(makeCtx('collect_address_suburb', undefined, 'Sandton'))
+
+      expect(result.nextStep).toBe('addr_select_province')
+      expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('updated'))
+      expect(wa.sendList).toHaveBeenCalled()
+    })
+
+    it('confirm_address for out-of-area city still waitlists via legacy handler', async () => {
+      ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(false)
+
+      const result = await handleJobRequestFlow(
+        makeCtx('confirm_address', undefined, 'Cape Town', {
+          customerName: 'Sipho',
+          addressSuburb: 'Sea Point',
+        })
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(serviceAreaGuard.addToServiceAreaWaitlist).toHaveBeenCalled()
+    })
+
+    it('confirm_address for active city redirects to addr_select_province', async () => {
+      ;(serviceAreaGuard.isInActiveServiceArea as any).mockReturnValue(true)
+
+      const result = await handleJobRequestFlow(
+        makeCtx('confirm_address', undefined, 'Johannesburg', { addressSuburb: 'Sandton' })
+      )
+
+      expect(result.nextStep).toBe('addr_select_province')
+    })
+  })
+})

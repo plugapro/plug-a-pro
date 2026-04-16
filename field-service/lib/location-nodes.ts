@@ -3,6 +3,12 @@ import { LocationNodeType, LocationNode } from '@prisma/client'
 
 // ─── Exported Types ────────────────────────────────────────────────────────────
 
+export type ProvinceOption = {
+  id: string
+  slug: string
+  label: string
+}
+
 export type CityOption = {
   id: string
   slug: string
@@ -87,6 +93,19 @@ const STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS = [
 export type { LocationNode, LocationNodeType }
 
 // ─── Read Functions ────────────────────────────────────────────────────────────
+
+/**
+ * Returns all active PROVINCE nodes, ordered by label.
+ * Use the node slug as the provinceKey when filtering cities.
+ */
+export async function getProvinces(): Promise<ProvinceOption[]> {
+  const nodes = await db.locationNode.findMany({
+    where: { nodeType: 'PROVINCE', active: true },
+    orderBy: { label: 'asc' },
+    select: { id: true, slug: true, label: true },
+  })
+  return nodes.map((n) => ({ id: n.id, slug: n.slug, label: n.label }))
+}
 
 /**
  * Returns all active CITY nodes, optionally filtered by provinceKey.

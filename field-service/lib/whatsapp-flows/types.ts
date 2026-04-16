@@ -22,9 +22,16 @@ export type FlowStep =
   | 'browse_categories'
   | 'collect_name'              // captures name on first job request
   | 'collect_address'           // addr_same / addr_new decision for returning customers
-  | 'collect_address_street'    // structured: street / unit
-  | 'collect_address_suburb'    // structured: suburb → then prompts city
-  | 'confirm_address'           // receives city text, assembles + confirms full address
+  | 'collect_address_street'    // captures free-text street / unit (addressLine1)
+  // Structured location selection — replaces old suburb/city free-text steps
+  | 'addr_select_province'      // list-based province selection
+  | 'addr_select_city'          // list-based city selection (filtered by province)
+  | 'addr_select_region'        // list-based region selection (filtered by city)
+  | 'addr_select_suburb'        // list-based suburb selection (filtered by region, derives postalCode)
+  | 'addr_confirm'              // show full derived address + yes/no confirmation
+  // Legacy steps — kept only for in-flight conversations at deploy time
+  | 'collect_address_suburb'    // LEGACY: typed suburb → then prompts city
+  | 'confirm_address'           // LEGACY: receives typed city, assembles + confirms full address
   | 'collect_availability'
   | 'confirm_job_request'
   | 'job_request_submitted'
@@ -82,18 +89,32 @@ export interface ConversationData {
 
   // Job request
   selectedCategory?: string
-  address?: string              // assembled display string (set after all 3 parts entered)
-  addressStreet?: string        // structured part 1
-  addressSuburb?: string        // structured part 2
-  addressCity?: string          // structured part 3
+  address?: string              // assembled display string (set once full structured address is confirmed)
+  // Legacy free-text address parts (kept for old in-flight conversations)
+  addressStreet?: string        // legacy: free-text street
+  addressSuburb?: string        // legacy: free-text suburb
+  addressCity?: string          // legacy: free-text city
   hasSavedAddress?: boolean     // true = a previous address was offered to reuse
   availabilityNote?: string     // free-text preferred availability from customer
   jobRequestId?: string
   matchId?: string
   category?: string
 
-  // Structured address (job request)
-  addressLocationNodeId?: string | null  // SUBURB node ID, resolved from free-text suburb
+  // Structured address — new customer job-request flow
+  addressLine1?: string              // street address captured as free text
+  addrProvinceKey?: string           // province slug (used to query cities)
+  addrProvinceLabel?: string         // display label, e.g. "Gauteng"
+  addrCityId?: string                // LocationNode ID of selected city
+  addrCityLabel?: string             // display label, e.g. "Johannesburg"
+  addrRegionId?: string              // LocationNode ID of selected region
+  addrRegionLabel?: string           // display label, e.g. "JHB North"
+  addrLocationNodeId?: string | null // selected SUBURB node ID (from list selection)
+  addrSuburbLabel?: string           // display label of selected suburb
+  addrPostalCode?: string            // derived from suburb node, never typed
+  addrPage?: number                  // current page index for paged lists (reset on step transition)
+
+  // Legacy structured address fields (old path — do not populate from new flow)
+  addressLocationNodeId?: string | null  // SUBURB node ID resolved from free-text suburb
   addressRawSuburb?: string | null       // quarantined raw text, kept for ops review
 
   // Reschedule

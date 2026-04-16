@@ -1,18 +1,33 @@
 // ─── Customer job request flow via WhatsApp ───────────────────────────────────
-// Full journey: browse categories → address → availability → confirm → submitted
-// Designed for lowest LSM: plain language, clear options, no dead ends
+// Full journey: browse categories → name → street → province → city → region
+//               → suburb → confirm address → availability → confirm → submitted
+//
+// Province/city/region/suburb are always selected from controlled lists.
+// Only street-level fields (addressLine1) remain free text.
+// Postal code is derived from the selected suburb node, never typed.
 
 import {
   sendText,
   sendButtons,
   sendList,
   sendCtaUrl,
-  type InboundReply,
+  type ListRow,
 } from '../whatsapp-interactive'
 import { db } from '../db'
 import { getCategoryPolicy } from '../service-category-policy'
 import { createJobRequest } from '../job-requests/create-job-request'
 import { isInActiveServiceArea, addToServiceAreaWaitlist } from '../service-area-guard'
+import {
+  getProvinces,
+  getCities,
+  getRegions,
+  getSuburbs,
+  getStructuredAddressSelection,
+} from '../location-nodes'
+import {
+  resolveStructuredAddressCapture,
+  InvalidStructuredAddressError,
+} from '../structured-address'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
@@ -26,6 +41,116 @@ const JOB_CATEGORIES = [
   { id: 'cat_diy',         label: 'DIY & Assembly' },
   { id: 'cat_roofing',     label: 'Roofing' },
 ]
+
+// WhatsApp list cap is 10 rows total per message.
+// When paging is needed we use 8 item rows + up to 2 nav rows.
+const PAGE_SIZE = 8
+
+// ─── Paging helper ────────────────────────────────────────────────────────────
+
+/**
+ * Slices an item list for one WhatsApp list page and appends navigation rows.
+ * When items.length <= 10 no paging is applied.
+ */
+function buildPagedRows<T extends { id: string; label: string }>(
+  items: T[],
+  page: number,
+  idPrefix: string,
+): { rows: ListRow[]; totalPages: number } {
+  if (items.length <= 10) {
+    return {
+      rows: items.map((item) => ({ id: `${idPrefix}__${item.id}`, title: item.label.slice(0, 24) })),
+      totalPages: 1,
+    }
+  }
+
+  const totalPages = Math.ceil(items.length / PAGE_SIZE)
+  const clampedPage = Math.max(0, Math.min(page, totalPages - 1))
+  const start = clampedPage * PAGE_SIZE
+  const pageItems = items.slice(start, start + PAGE_SIZE)
+  const hasNext = start + PAGE_SIZE < items.length
+  const hasPrev = clampedPage > 0
+
+  const rows: ListRow[] = pageItems.map((item) => ({
+    id: `${idPrefix}__${item.id}`,
+    title: item.label.slice(0, 24),
+  }))
+
+  if (hasPrev) rows.push({ id: `${idPrefix}_prev`, title: '← Previous' })
+  if (hasNext) rows.push({ id: `${idPrefix}_next`, title: 'Next →' })
+
+  return { rows, totalPages }
+}
+
+// ─── List-render helpers ──────────────────────────────────────────────────────
+
+async function renderProvinceList(phone: string): Promise<void> {
+  const provinces = await getProvinces()
+  const rows = provinces.map((p) => ({ id: `prov__${p.slug}`, title: p.label.slice(0, 24) }))
+  await sendList(
+    phone,
+    '🏙 *Select your province:*',
+    [{ rows }],
+    { buttonLabel: 'Choose Province' },
+  )
+}
+
+async function renderCityList(
+  phone: string,
+  provinceKey: string,
+  provinceLabel: string,
+  page: number,
+): Promise<boolean> {
+  const cities = await getCities(provinceKey)
+  if (cities.length === 0) return false
+  const { rows, totalPages } = buildPagedRows(cities, page, 'city')
+  const pageNote = totalPages > 1 ? ` (${page + 1}/${totalPages})` : ''
+  await sendList(
+    phone,
+    `📍 *Select your city* in ${provinceLabel}${pageNote}:`,
+    [{ rows }],
+    { buttonLabel: 'Choose City' },
+  )
+  return true
+}
+
+async function renderRegionList(
+  phone: string,
+  cityId: string,
+  cityLabel: string,
+  page: number,
+): Promise<boolean> {
+  const regions = await getRegions(cityId)
+  if (regions.length === 0) return false
+  const { rows, totalPages } = buildPagedRows(regions, page, 'rgn')
+  const pageNote = totalPages > 1 ? ` (${page + 1}/${totalPages})` : ''
+  await sendList(
+    phone,
+    `🗺 *Select your area* in ${cityLabel}${pageNote}:`,
+    [{ rows }],
+    { buttonLabel: 'Choose Area' },
+  )
+  return true
+}
+
+async function renderSuburbList(
+  phone: string,
+  regionId: string,
+  regionLabel: string,
+  page: number,
+): Promise<boolean> {
+  const suburbs = await getSuburbs(regionId)
+  if (suburbs.length === 0) return false
+  const { rows, totalPages } = buildPagedRows(suburbs, page, 'sub')
+  const pageNote = totalPages > 1 ? ` (${page + 1}/${totalPages})` : ''
+  await sendList(
+    phone,
+    `🏘 *Select your suburb* in ${regionLabel}${pageNote}:`,
+    [{ rows }],
+    { buttonLabel: 'Choose Suburb' },
+  )
+  return true
+}
 
 // ─── Flow entry point ─────────────────────────────────────────────────────────
 
@@ -41,10 +166,22 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleCollectAddress(ctx)
     case 'collect_address_street':
       return handleCollectStreet(ctx)
+    // Structured location selection
+    case 'addr_select_province':
+      return handleAddrSelectProvince(ctx)
+    case 'addr_select_city':
+      return handleAddrSelectCity(ctx)
+    case 'addr_select_region':
+      return handleAddrSelectRegion(ctx)
+    case 'addr_select_suburb':
+      return handleAddrSelectSuburb(ctx)
+    case 'addr_confirm':
+      return handleAddrConfirm(ctx)
+    // Legacy steps — handled only for in-flight conversations at deploy time
     case 'collect_address_suburb':
-      return handleCollectSuburb(ctx)
+      return handleLegacyCollectSuburb(ctx)
     case 'confirm_address':
-      return handleConfirmAddress(ctx)
+      return handleLegacyConfirmAddress(ctx)
     case 'collect_availability':
       return handleCollectAvailability(ctx)
     case 'confirm_job_request':
@@ -85,15 +222,13 @@ async function handleBrowseCategories(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'browse_categories' }
 }
 
-// ─── Name capture (first-time customers only) ─────────────────────────────────
+// ─── Name capture ─────────────────────────────────────────────────────────────
 
 async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
-  // If they just selected a category, save it and decide whether to ask for name
   if (ctx.reply.id?.startsWith('cat_')) {
     const categoryEntry = JOB_CATEGORIES.find((c) => c.id === ctx.reply.id)
     const category = categoryEntry?.label ?? ctx.reply.title ?? ''
 
-    // Check if this customer already has a name on record
     const existingCustomer = await db.customer.findUnique({
       where: { phone: ctx.phone },
       select: { name: true, id: true },
@@ -101,39 +236,55 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     const isFirstBooking = !existingCustomer || existingCustomer.name === 'WhatsApp Customer'
 
     if (!isFirstBooking) {
-      // Returning customer — offer last-used address to save re-entry
       const lastAddress = await db.address.findFirst({
         where: { customerId: existingCustomer!.id },
         orderBy: { createdAt: 'desc' },
       })
 
-      const baseData = { selectedCategory: category, category, customerName: existingCustomer?.name, isFirstBooking: false }
+      const baseData = {
+        selectedCategory: category,
+        category,
+        customerName: existingCustomer?.name,
+        isFirstBooking: false,
+      }
 
-      if (lastAddress) {
-        const display = [lastAddress.street, lastAddress.suburb, lastAddress.city].filter(Boolean).join(', ')
-        await sendButtons(
-          ctx.phone,
-          `📍 *Where do you need the ${category} work done?*\n\nLast used:\n_${display}_`,
-          [
-            { id: 'addr_same', title: '📍 Same address' },
-            { id: 'addr_new',  title: '✏️ Different address' },
-          ]
-        )
-        return {
-          nextStep: 'collect_address',
-          nextData: {
-            ...baseData,
-            addressStreet: lastAddress.street,
-            addressSuburb: lastAddress.suburb,
-            addressCity: lastAddress.city,
-            address: display,
-            hasSavedAddress: true,
-          },
+      if (lastAddress?.locationNodeId) {
+        // Structured saved address — verify it's still valid and offer reuse
+        const selection = await getStructuredAddressSelection(lastAddress.locationNodeId)
+        if (selection) {
+          const streetLine = lastAddress.addressLine1 ?? lastAddress.street
+          const display = [streetLine, selection.suburb, selection.city].filter(Boolean).join(', ')
+          await sendButtons(
+            ctx.phone,
+            `📍 *Where do you need the ${category} work done?*\n\nLast used:\n_${display}_`,
+            [
+              { id: 'addr_same', title: '📍 Same address' },
+              { id: 'addr_new', title: '✏️ New address' },
+            ]
+          )
+          return {
+            nextStep: 'collect_address',
+            nextData: {
+              ...baseData,
+              addressLine1: streetLine,
+              addrLocationNodeId: lastAddress.locationNodeId,
+              addrCityLabel: selection.city,
+              addrSuburbLabel: selection.suburb,
+              addrRegionLabel: selection.region,
+              addrProvinceLabel: selection.province,
+              addrPostalCode: selection.postalCode,
+              address: display,
+              hasSavedAddress: true,
+            },
+          }
         }
       }
 
-      // No saved address — go straight to street prompt
-      await sendText(ctx.phone, `📍 *Where do you need the ${category} work done?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`)
+      // Legacy address (no locationNodeId) or unresolvable node — force new entry
+      await sendText(
+        ctx.phone,
+        `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+      )
       return { nextStep: 'collect_address_street', nextData: baseData }
     }
 
@@ -151,13 +302,15 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'collect_name' }
   }
 
-  // Name captured — update customer record
   await db.customer.updateMany({
     where: { phone: ctx.phone, name: 'WhatsApp Customer' },
     data: { name: text },
   })
 
-  await sendText(ctx.phone, `Nice to meet you, *${text}*! 👋\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`)
+  await sendText(
+    ctx.phone,
+    `Nice to meet you, *${text}*! 👋\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+  )
   return { nextStep: 'collect_address_street', nextData: { customerName: text } }
 }
 
@@ -165,15 +318,15 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'addr_same') {
-    // Reuse last address — jump straight to availability
+    // addrLocationNodeId + addressLine1 are already in ctx.data — go to availability
     return handleCollectAvailability(ctx)
   }
 
-  // addr_new or any other reply — start structured address entry
+  // addr_new or any other reply — start new structured address entry
   const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
   await sendText(
     ctx.phone,
-    `📍 *Where do you need the ${category} work done?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
+    `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
   )
   return { nextStep: 'collect_address_street' }
 }
@@ -181,84 +334,235 @@ async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
 async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
   const street = ctx.reply.text?.trim()
   if (!street || street.length < 3) {
-    await sendText(ctx.phone, '❗ Please type your *street address*.\n\n_Example: 14 Main Street, Flat 3_')
+    await sendText(ctx.phone, '❗ Please type your *street address*.\n\n_Example: 14 Main Street_')
     return { nextStep: 'collect_address_street' }
   }
 
-  await sendText(ctx.phone, `✅ *${street}*\n\n*Suburb:* Now type your suburb:\n\n_Example: Sandton_`)
-  return { nextStep: 'collect_address_suburb', nextData: { addressStreet: street } }
-}
-
-async function handleCollectSuburb(ctx: FlowContext): Promise<FlowResult> {
-  const suburb = ctx.reply.text?.trim()
-  if (!suburb || suburb.length < 2) {
-    await sendText(ctx.phone, '❗ Please type your *suburb*.\n\n_Example: Sandton_')
-    return { nextStep: 'collect_address_suburb' }
-  }
-
-  // Attempt silent resolution — do NOT block the flow if this fails
-  let resolvedNodeId: string | null = null
-  try {
-    const { resolveSuburbNodeId } = await import('@/lib/location-nodes')
-    resolvedNodeId = await resolveSuburbNodeId(suburb)
-  } catch {
-    // non-fatal — falls back to legacy string matching in the matching engine
-  }
-
-  await sendText(ctx.phone, `✅ *${suburb}*\n\n*City:* Now type your city:\n\n_Example: Johannesburg_`)
+  await renderProvinceList(ctx.phone)
   return {
-    nextStep: 'confirm_address',
-    nextData: {
-      addressSuburb: suburb,
-      addressRawSuburb: suburb,           // store raw text for ops review
-      addressLocationNodeId: resolvedNodeId, // null if not resolved
-    },
+    nextStep: 'addr_select_province',
+    nextData: { addressLine1: street, addressStreet: street, addrPage: 0 },
   }
 }
 
-async function handleConfirmAddress(ctx: FlowContext): Promise<FlowResult> {
-  const city = ctx.reply.text?.trim()
-  if (!city || city.length < 2) {
-    await sendText(ctx.phone, '❗ Please type your *city*.\n\n_Example: Johannesburg_')
-    return { nextStep: 'confirm_address' }
+// ─── Structured province / city / region / suburb selection ───────────────────
+
+async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id?.startsWith('prov__')) {
+    const provinceSlug = ctx.reply.id.slice(6) // strip 'prov__'
+    const provinces = await getProvinces()
+    const selected = provinces.find((p) => p.slug === provinceSlug)
+
+    if (!selected) {
+      await sendText(ctx.phone, '❗ Please *choose from the list* above.')
+      await renderProvinceList(ctx.phone)
+      return { nextStep: 'addr_select_province' }
+    }
+
+    const ok = await renderCityList(ctx.phone, provinceSlug, selected.label, 0)
+    if (!ok) {
+      await sendText(ctx.phone, `😔 No cities available in *${selected.label}* yet. Please choose a different province.`)
+      await renderProvinceList(ctx.phone)
+      return { nextStep: 'addr_select_province' }
+    }
+
+    return {
+      nextStep: 'addr_select_city',
+      nextData: { addrProvinceKey: provinceSlug, addrProvinceLabel: selected.label, addrPage: 0 },
+    }
   }
 
-  // ── Service area gate ────────────────────────────────────────────────────────
-  if (!isInActiveServiceArea(city)) {
-    // Capture the lead and send a warm holding message
-    await addToServiceAreaWaitlist({
-      phone: ctx.phone,
-      name: ctx.data.customerName ?? null,
-      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
-      suburb: ctx.data.addressSuburb ?? null,
-      city,
-      source: 'whatsapp',
-    }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+  // Text reply or unknown button — reject
+  await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for province selection.')
+  await renderProvinceList(ctx.phone)
+  return { nextStep: 'addr_select_province' }
+}
 
+async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
+  const provinceKey = ctx.data.addrProvinceKey ?? ''
+  const provinceLabel = ctx.data.addrProvinceLabel ?? ''
+
+  // Page navigation
+  if (ctx.reply.id === 'city_prev' || ctx.reply.id === 'city_next') {
+    const currentPage = ctx.data.addrPage ?? 0
+    const newPage = ctx.reply.id === 'city_next' ? currentPage + 1 : Math.max(0, currentPage - 1)
+    await renderCityList(ctx.phone, provinceKey, provinceLabel, newPage)
+    return { nextStep: 'addr_select_city', nextData: { addrPage: newPage } }
+  }
+
+  if (ctx.reply.id?.startsWith('city__')) {
+    const cityId = ctx.reply.id.slice(6) // strip 'city__'
+    const cities = await getCities(provinceKey)
+    const selected = cities.find((c) => c.id === cityId)
+
+    if (!selected) {
+      await sendText(ctx.phone, '❗ Please *choose from the list* above.')
+      await renderCityList(ctx.phone, provinceKey, provinceLabel, ctx.data.addrPage ?? 0)
+      return { nextStep: 'addr_select_city' }
+    }
+
+    // ── Service area gate ────────────────────────────────────────────────────
+    if (!isInActiveServiceArea(selected.label)) {
+      await addToServiceAreaWaitlist({
+        phone: ctx.phone,
+        name: ctx.data.customerName ?? null,
+        category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+        city: selected.label,
+        province: provinceLabel,
+        source: 'whatsapp',
+      }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+
+      await sendText(
+        ctx.phone,
+        `Thank you for reaching out! 🙏\n\n` +
+        `We're not in *${selected.label}* just yet, but we're expanding fast.\n\n` +
+        `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
+        `No action needed from you. 🚀`,
+      )
+      return { nextStep: 'done' }
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
+    const ok = await renderRegionList(ctx.phone, selected.id, selected.label, 0)
+    if (!ok) {
+      await sendText(ctx.phone, `😔 No areas available in *${selected.label}* yet. Please choose a different city.`)
+      await renderCityList(ctx.phone, provinceKey, provinceLabel, 0)
+      return { nextStep: 'addr_select_city', nextData: { addrPage: 0 } }
+    }
+
+    return {
+      nextStep: 'addr_select_region',
+      nextData: { addrCityId: selected.id, addrCityLabel: selected.label, addrPage: 0 },
+    }
+  }
+
+  // Text reply or unknown button — reject
+  await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for city selection.')
+  await renderCityList(ctx.phone, provinceKey, provinceLabel, ctx.data.addrPage ?? 0)
+  return { nextStep: 'addr_select_city' }
+}
+
+async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
+  const cityId = ctx.data.addrCityId ?? ''
+  const cityLabel = ctx.data.addrCityLabel ?? ''
+
+  // Page navigation
+  if (ctx.reply.id === 'rgn_prev' || ctx.reply.id === 'rgn_next') {
+    const currentPage = ctx.data.addrPage ?? 0
+    const newPage = ctx.reply.id === 'rgn_next' ? currentPage + 1 : Math.max(0, currentPage - 1)
+    await renderRegionList(ctx.phone, cityId, cityLabel, newPage)
+    return { nextStep: 'addr_select_region', nextData: { addrPage: newPage } }
+  }
+
+  if (ctx.reply.id?.startsWith('rgn__')) {
+    const regionId = ctx.reply.id.slice(5) // strip 'rgn__'
+    const regions = await getRegions(cityId)
+    const selected = regions.find((r) => r.id === regionId)
+
+    if (!selected) {
+      await sendText(ctx.phone, '❗ Please *choose from the list* above.')
+      await renderRegionList(ctx.phone, cityId, cityLabel, ctx.data.addrPage ?? 0)
+      return { nextStep: 'addr_select_region' }
+    }
+
+    const ok = await renderSuburbList(ctx.phone, selected.id, selected.label, 0)
+    if (!ok) {
+      await sendText(ctx.phone, `😔 No suburbs available in *${selected.label}* yet. Please choose a different area.`)
+      await renderRegionList(ctx.phone, cityId, cityLabel, 0)
+      return { nextStep: 'addr_select_region', nextData: { addrPage: 0 } }
+    }
+
+    return {
+      nextStep: 'addr_select_suburb',
+      nextData: { addrRegionId: selected.id, addrRegionLabel: selected.label, addrPage: 0 },
+    }
+  }
+
+  // Text reply or unknown button — reject
+  await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for area selection.')
+  await renderRegionList(ctx.phone, cityId, cityLabel, ctx.data.addrPage ?? 0)
+  return { nextStep: 'addr_select_region' }
+}
+
+async function handleAddrSelectSuburb(ctx: FlowContext): Promise<FlowResult> {
+  const regionId = ctx.data.addrRegionId ?? ''
+  const regionLabel = ctx.data.addrRegionLabel ?? ''
+
+  // Page navigation
+  if (ctx.reply.id === 'sub_prev' || ctx.reply.id === 'sub_next') {
+    const currentPage = ctx.data.addrPage ?? 0
+    const newPage = ctx.reply.id === 'sub_next' ? currentPage + 1 : Math.max(0, currentPage - 1)
+    await renderSuburbList(ctx.phone, regionId, regionLabel, newPage)
+    return { nextStep: 'addr_select_suburb', nextData: { addrPage: newPage } }
+  }
+
+  if (ctx.reply.id?.startsWith('sub__')) {
+    const suburbId = ctx.reply.id.slice(5) // strip 'sub__'
+    const selection = await getStructuredAddressSelection(suburbId)
+
+    if (!selection) {
+      await sendText(ctx.phone, '❗ Please *choose from the list* above.')
+      await renderSuburbList(ctx.phone, regionId, regionLabel, ctx.data.addrPage ?? 0)
+      return { nextStep: 'addr_select_suburb' }
+    }
+
+    const streetLine = ctx.data.addressLine1 ?? ctx.data.addressStreet ?? ''
+    const addressDisplay = [streetLine, selection.suburb, selection.region, selection.city].filter(Boolean).join(', ')
+
+    await sendButtons(
+      ctx.phone,
+      `📍 *Your address:*\n\n🏠 ${streetLine}\n🏘 ${selection.suburb}, ${selection.region}\n🏙 ${selection.city}, ${selection.province} ${selection.postalCode}\n\nIs this correct?`,
+      [
+        { id: 'addr_yes', title: '✅ Yes, correct' },
+        { id: 'addr_no', title: '✏️ Re-enter' },
+      ]
+    )
+
+    return {
+      nextStep: 'addr_confirm',
+      nextData: {
+        addrLocationNodeId: selection.locationNodeId,
+        addrSuburbLabel: selection.suburb,
+        addrRegionLabel: selection.region,
+        addrCityLabel: selection.city,
+        addrProvinceLabel: selection.province,
+        addrPostalCode: selection.postalCode,
+        address: addressDisplay,
+      },
+    }
+  }
+
+  // Text reply or unknown button — reject
+  await sendText(ctx.phone, '❗ Please *choose from the list* above. Typed text is not accepted for suburb selection.')
+  await renderSuburbList(ctx.phone, regionId, regionLabel, ctx.data.addrPage ?? 0)
+  return { nextStep: 'addr_select_suburb' }
+}
+
+async function handleAddrConfirm(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id === 'addr_no') {
+    const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
     await sendText(
       ctx.phone,
-      `Thank you for reaching out! 🙏\n\n` +
-      `We're not in *${city}* just yet, but we're expanding fast.\n\n` +
-      `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
-      `No action needed from you. 🚀`,
+      `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
     )
-    return { nextStep: 'done' }
+    return { nextStep: 'collect_address_street' }
   }
-  // ────────────────────────────────────────────────────────────────────────────
 
-  const street = ctx.data.addressStreet ?? ''
-  const suburb = ctx.data.addressSuburb ?? ''
-  const address = [street, suburb, city].filter(Boolean).join(', ')
+  if (ctx.reply.id === 'addr_yes') {
+    return handleCollectAvailability(ctx)
+  }
 
+  // Unknown reply — resend confirmation
+  const streetLine = ctx.data.addressLine1 ?? ctx.data.addressStreet ?? ''
   await sendButtons(
     ctx.phone,
-    `📍 Your address:\n\n*${address}*\n\nIs this correct?`,
+    `📍 *Your address:*\n\n🏠 ${streetLine}\n🏘 ${ctx.data.addrSuburbLabel}, ${ctx.data.addrRegionLabel}\n🏙 ${ctx.data.addrCityLabel}, ${ctx.data.addrProvinceLabel} ${ctx.data.addrPostalCode}\n\nIs this correct?`,
     [
       { id: 'addr_yes', title: '✅ Yes, correct' },
       { id: 'addr_no', title: '✏️ Re-enter' },
     ]
   )
-  return { nextStep: 'collect_availability', nextData: { addressCity: city, address } }
+  return { nextStep: 'addr_confirm' }
 }
 
 // ─── Availability ─────────────────────────────────────────────────────────────
@@ -268,12 +572,11 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
     const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
     await sendText(
       ctx.phone,
-      `📍 *Where do you need the ${category} work done?*\n\n*Street:* Type your street address:\n\n_Example: 14 Main Street, Flat 3_`
+      `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
     )
     return { nextStep: 'collect_address_street' }
   }
 
-  // addr_yes — ask for availability preference
   await sendList(
     ctx.phone,
     '🗓 When are you available for the worker to visit?',
@@ -310,7 +613,6 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id?.startsWith('avail_')) {
     availabilityNote = availLabels[ctx.reply.id] ?? ctx.reply.title ?? ''
   } else if (!availabilityNote) {
-    // Not yet selected — re-prompt
     return handleCollectAvailability(ctx)
   }
 
@@ -344,25 +646,74 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
     const categoryPolicy = getCategoryPolicy(category)
 
-    // Prefer structured address fields; fall back to splitting the composite string
-    const addrParts = (ctx.data.address ?? '').split(',').map((p: string) => p.trim())
+    let result: Awaited<ReturnType<typeof createJobRequest>>
 
-    const result = await createJobRequest({
-      phone: ctx.phone,
-      customerName: ctx.data.customerName ?? 'WhatsApp Customer',
-      category,
-      title: ctx.data.selectedCategory ?? category,
-      description: ctx.data.availabilityNote
-        ? `Preferred availability: ${ctx.data.availabilityNote}`
-        : '',
-      street:   ctx.data.addressStreet  ?? addrParts[0] ?? '',
-      suburb:   ctx.data.addressSuburb  ?? addrParts[1] ?? '',
-      city:     ctx.data.addressCity    ?? addrParts[2] ?? addrParts[1] ?? '',
-      province: addrParts[3] ?? '',
-      locationNodeId: ctx.data.addressLocationNodeId ?? null,
-    })
+    if (ctx.data.addrLocationNodeId) {
+      // ── New structured path ────────────────────────────────────────────────
+      const addressLine1 = ctx.data.addressLine1 ?? ctx.data.addressStreet ?? ''
 
-    const successMessage = `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\nWe're finding you a nearby worker — you'll get a WhatsApp update when matched.${categoryPolicy.bookingOnAssignment ? '\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._' : ''}`
+      let resolvedAddr
+      try {
+        resolvedAddr = await resolveStructuredAddressCapture({
+          addressLine1,
+          locationNodeId: ctx.data.addrLocationNodeId,
+        })
+      } catch (err) {
+        if (err instanceof InvalidStructuredAddressError) {
+          await sendText(
+            ctx.phone,
+            '❗ We could not validate your address. Please enter it again.',
+          )
+          return { nextStep: 'collect_address_street' }
+        }
+        throw err
+      }
+
+      result = await createJobRequest({
+        phone: ctx.phone,
+        customerName: ctx.data.customerName ?? 'WhatsApp Customer',
+        category,
+        title: ctx.data.selectedCategory ?? category,
+        description: ctx.data.availabilityNote
+          ? `Preferred availability: ${ctx.data.availabilityNote}`
+          : '',
+        street: resolvedAddr.street,
+        addressLine1: resolvedAddr.addressLine1,
+        addressLine2: resolvedAddr.addressLine2,
+        complexName: resolvedAddr.complexName,
+        unitNumber: resolvedAddr.unitNumber,
+        suburb: resolvedAddr.suburb,
+        region: resolvedAddr.region,
+        city: resolvedAddr.city,
+        province: resolvedAddr.province,
+        postalCode: resolvedAddr.postalCode,
+        locationNodeId: resolvedAddr.locationNodeId,
+      })
+    } else {
+      // ── Legacy path — old in-flight conversations only ────────────────────
+      const addrParts = (ctx.data.address ?? '').split(',').map((p: string) => p.trim())
+      result = await createJobRequest({
+        phone: ctx.phone,
+        customerName: ctx.data.customerName ?? 'WhatsApp Customer',
+        category,
+        title: ctx.data.selectedCategory ?? category,
+        description: ctx.data.availabilityNote
+          ? `Preferred availability: ${ctx.data.availabilityNote}`
+          : '',
+        street:   ctx.data.addressStreet ?? addrParts[0] ?? '',
+        suburb:   ctx.data.addressSuburb ?? addrParts[1] ?? '',
+        city:     ctx.data.addressCity   ?? addrParts[2] ?? addrParts[1] ?? '',
+        province: addrParts[3] ?? '',
+        locationNodeId: ctx.data.addressLocationNodeId ?? null,
+      })
+    }
+
+    const successMessage =
+      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\n` +
+      `We're finding you a nearby worker — you'll get a WhatsApp update when matched.` +
+      (categoryPolicy.bookingOnAssignment
+        ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
+        : '')
 
     if (result.ticketUrl) {
       await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
@@ -388,6 +739,52 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
   }
 }
 
+// ─── Legacy handlers — in-flight conversations only ──────────────────────────
+// These steps are no longer entered from new flows. They handle any conversation
+// that was mid-flow at deploy time. They redirect to the new structured flow.
+
+async function handleLegacyCollectSuburb(ctx: FlowContext): Promise<FlowResult> {
+  await sendText(
+    ctx.phone,
+    "We've updated our address selection. Let's re-enter your address using our new area picker.",
+  )
+  await renderProvinceList(ctx.phone)
+  return { nextStep: 'addr_select_province', nextData: { addrPage: 0 } }
+}
+
+async function handleLegacyConfirmAddress(ctx: FlowContext): Promise<FlowResult> {
+  // Service area check for old conversations that typed their city
+  const city = ctx.reply.text?.trim() ?? ctx.data.addressCity ?? ''
+
+  if (city && !isInActiveServiceArea(city)) {
+    await addToServiceAreaWaitlist({
+      phone: ctx.phone,
+      name: ctx.data.customerName ?? null,
+      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+      suburb: ctx.data.addressSuburb ?? null,
+      city,
+      source: 'whatsapp',
+    }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+
+    await sendText(
+      ctx.phone,
+      `Thank you for reaching out! 🙏\n\n` +
+      `We're not in *${city}* just yet, but we're expanding fast.\n\n` +
+      `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
+      `No action needed from you. 🚀`,
+    )
+    return { nextStep: 'done' }
+  }
+
+  // City was valid or unknown — redirect to new structured flow
+  await sendText(
+    ctx.phone,
+    "We've updated our address selection. Let's re-enter your address using our new area picker.",
+  )
+  await renderProvinceList(ctx.phone)
+  return { nextStep: 'addr_select_province', nextData: { addrPage: 0 } }
+}
+
 // ─── Notify Me (no providers in area) ─────────────────────────────────────────
 
 async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
@@ -397,7 +794,7 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'notify_me' || ctx.step === 'notify_me') {
-    const customer = await db.customer.upsert({
+    await db.customer.upsert({
       where: { phone: ctx.phone },
       create: {
         phone: ctx.phone,
@@ -411,7 +808,7 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
       `✅ Got it! We'll notify you as soon as a worker is available for *${ctx.data.selectedCategory ?? 'your service'}* in your area.\n\nYou'll receive a WhatsApp message when we have a match. 🔔`
     )
 
-    return { nextStep: 'done', nextData: { customerId: customer.id } }
+    return { nextStep: 'done' }
   }
 
   return { nextStep: 'notify_me' }
