@@ -3,6 +3,12 @@ import { LocationNodeType, LocationNode } from '@prisma/client'
 
 // ─── Exported Types ────────────────────────────────────────────────────────────
 
+export type ProvinceOption = {
+  id: string
+  slug: string
+  label: string
+}
+
 export type CityOption = {
   id: string
   slug: string
@@ -28,11 +34,24 @@ export type SuburbOption = {
   id: string
   slug: string
   label: string
+  regionLabel: string
+  cityLabel: string
+  provinceLabel: string
+  postalCode: string
   provinceKey: string
   cityKey: string
   regionKey: string
   lat: number | null
   lng: number | null
+}
+
+export type StructuredAddressSelection = {
+  locationNodeId: string
+  suburb: string
+  region: string
+  city: string
+  province: string
+  postalCode: string
 }
 
 export type NodeSearchResult = {
@@ -52,10 +71,41 @@ export class LocationNodeInUseError extends Error {
   }
 }
 
+const STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS = [
+  'gauteng__east_rand__east_rand__ekurhuleni',
+  'gauteng__johannesburg__jhb_cbd__joburg_cbd',
+  'gauteng__johannesburg__jhb_cbd__johannesburg',
+  'gauteng__johannesburg__jhb_cbd__johannesburg_cbd',
+  'gauteng__johannesburg__jhb_south__joburg_south',
+  'gauteng__johannesburg__jhb_south__johannesburg_south',
+  'gauteng__johannesburg__jhb_west__joburg_west',
+  'gauteng__johannesburg__jhb_west__johannesburg_west',
+  'gauteng__pretoria__pretoria_cbd__pretoria',
+  'gauteng__pretoria__pretoria_cbd__pretoria_cbd',
+  'gauteng__pretoria__pretoria_east__pretoria_east',
+  'kwazulu_natal__durban__durban_cbd__durban',
+  'kwazulu_natal__durban__durban_cbd__durban_cbd',
+  'western_cape__cape_town__cape_town_cbd__cape_town',
+  'western_cape__cape_town__cape_town_cbd__cape_town_cbd',
+] as const
+
 // Re-export Prisma types for consumers
 export type { LocationNode, LocationNodeType }
 
 // ─── Read Functions ────────────────────────────────────────────────────────────
+
+/**
+ * Returns all active PROVINCE nodes, ordered by label.
+ * Use the node slug as the provinceKey when filtering cities.
+ */
+export async function getProvinces(): Promise<ProvinceOption[]> {
+  const nodes = await db.locationNode.findMany({
+    where: { nodeType: 'PROVINCE', active: true },
+    orderBy: { label: 'asc' },
+    select: { id: true, slug: true, label: true },
+  })
+  return nodes.map((n) => ({ id: n.id, slug: n.slug, label: n.label }))
+}
 
 /**
  * Returns all active CITY nodes, optionally filtered by provinceKey.
@@ -136,17 +186,33 @@ export async function getSuburbs(regionId: string): Promise<SuburbOption[]> {
       nodeType: 'SUBURB',
       active: true,
       parentId: regionId,
+      postalCode: { not: null },
+      slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
     },
     orderBy: { label: 'asc' },
     select: {
       id: true,
       slug: true,
       label: true,
+      postalCode: true,
       provinceKey: true,
       cityKey: true,
       regionKey: true,
       lat: true,
       lng: true,
+      parent: {
+        select: {
+          label: true,
+          parent: {
+            select: {
+              label: true,
+              parent: {
+                select: { label: true },
+              },
+            },
+          },
+        },
+      },
     },
   })
 
@@ -154,6 +220,10 @@ export async function getSuburbs(regionId: string): Promise<SuburbOption[]> {
     id: n.id,
     slug: n.slug,
     label: n.label,
+    regionLabel: n.parent?.label ?? '',
+    cityLabel: n.parent?.parent?.label ?? '',
+    provinceLabel: n.parent?.parent?.parent?.label ?? '',
+    postalCode: n.postalCode ?? '',
     provinceKey: n.provinceKey ?? '',
     cityKey: n.cityKey ?? '',
     regionKey: n.regionKey ?? '',
@@ -222,6 +292,120 @@ export async function resolveSuburbNodeId(
   })
 
   return node?.id ?? null
+}
+
+export async function getStructuredAddressSelection(
+  locationNodeId: string,
+): Promise<StructuredAddressSelection | null> {
+  const node = await db.locationNode.findFirst({
+    where: {
+      id: locationNodeId,
+      nodeType: 'SUBURB',
+      active: true,
+      postalCode: { not: null },
+      slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
+    },
+    select: {
+      id: true,
+      label: true,
+      postalCode: true,
+      parent: {
+        select: {
+          label: true,
+          parent: {
+            select: {
+              label: true,
+              parent: {
+                select: { label: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (
+    !node ||
+    !node.postalCode ||
+    !node.parent?.label ||
+    !node.parent.parent?.label ||
+    !node.parent.parent.parent?.label
+  ) {
+    return null
+  }
+
+  return {
+    locationNodeId: node.id,
+    suburb: node.label,
+    region: node.parent.label,
+    city: node.parent.parent.label,
+    province: node.parent.parent.parent.label,
+    postalCode: node.postalCode,
+  }
+}
+
+export async function resolveStructuredAddressByLabels(input: {
+  suburb: string
+  city?: string | null
+  province?: string | null
+}): Promise<StructuredAddressSelection | null> {
+  const nodes = await db.locationNode.findMany({
+    where: {
+      nodeType: 'SUBURB',
+      active: true,
+      postalCode: { not: null },
+      slug: { notIn: [...STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS] },
+      label: { equals: input.suburb.trim(), mode: 'insensitive' },
+    },
+    select: {
+      id: true,
+      label: true,
+      postalCode: true,
+      parent: {
+        select: {
+          label: true,
+          parent: {
+            select: {
+              label: true,
+              parent: {
+                select: { label: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  const node = nodes.find((candidate) => {
+    const matchesCity = input.city
+      ? candidate.parent?.parent?.label?.toLowerCase() === input.city.trim().toLowerCase()
+      : true
+    const matchesProvince = input.province
+      ? candidate.parent?.parent?.parent?.label?.toLowerCase() === input.province.trim().toLowerCase()
+      : true
+    return matchesCity && matchesProvince
+  }) ?? null
+
+  if (
+    !node ||
+    !node.postalCode ||
+    !node.parent?.label ||
+    !node.parent.parent?.label ||
+    !node.parent.parent.parent?.label
+  ) {
+    return null
+  }
+
+  return {
+    locationNodeId: node.id,
+    suburb: node.label,
+    region: node.parent.label,
+    city: node.parent.parent.label,
+    province: node.parent.parent.parent.label,
+    postalCode: node.postalCode,
+  }
 }
 
 /**

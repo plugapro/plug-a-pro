@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker } from './SuburbPicker'
+import { buildLegacyStreetAddress } from '@/lib/address-format'
 import type { CityOption } from '@/lib/location-nodes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,26 +35,18 @@ interface BookingFlowProps {
 }
 
 interface Address {
-  street: string
+  addressLine1: string
+  addressLine2: string
+  complexName: string
+  unitNumber: string
   suburb: string
+  region: string
   city: string
   province: string
   postalCode: string
 }
 
-type Step = 'address' | 'description' | 'confirm' | 'submitted'
-
-const SA_PROVINCES = [
-  'Gauteng',
-  'Western Cape',
-  'KwaZulu-Natal',
-  'Eastern Cape',
-  'Limpopo',
-  'Mpumalanga',
-  'North West',
-  'Free State',
-  'Northern Cape',
-]
+type Step = 'address' | 'description' | 'confirm' | 'submitted' | 'waitlisted'
 
 const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
   Gauteng: 'gauteng',
@@ -67,15 +60,27 @@ const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
   'Northern Cape': 'northern_cape',
 }
 
+const PROVINCE_LABEL_BY_KEY = Object.fromEntries(
+  Object.entries(PROVINCE_KEY_BY_LABEL).map(([label, key]) => [key, label]),
+) as Record<string, string>
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function BookingFlow({ category, initialCities }: BookingFlowProps) {
+  const availableProvinces = Array.from(
+    new Set(initialCities.map((city) => PROVINCE_LABEL_BY_KEY[city.provinceKey]).filter(Boolean)),
+  )
+  const defaultProvince = availableProvinces[0] ?? 'Gauteng'
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
-    street: '',
+    addressLine1: '',
+    addressLine2: '',
+    complexName: '',
+    unitNumber: '',
     suburb: '',
+    region: '',
     city: '',
-    province: 'Gauteng',
+    province: defaultProvince,
     postalCode: '',
   })
   const [title, setTitle] = useState('')
@@ -86,35 +91,38 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   const [error, setError] = useState<string | null>(null)
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
   const [ticketUrl, setTicketUrl] = useState<string | null>(null)
+  const [waitlistedCity, setWaitlistedCity] = useState<string | null>(null)
+  const streetSummary = buildLegacyStreetAddress(address)
 
   function normalizeValue(value: string) {
     return value.trim().replace(/\s+/g, ' ')
   }
 
   function validateAddressStep() {
+    if (!locationNodeId) {
+      return 'Select your province, city, region, and suburb from the available address list before continuing.'
+    }
+
     const suburb = normalizeValue(address.suburb)
     const city = normalizeValue(address.city)
     const province = normalizeValue(address.province)
+    const region = normalizeValue(address.region)
     const postalCode = address.postalCode.trim()
 
-    if (!suburb || !city) {
-      return 'Select your province, city, region, and suburb first. Use manual entry if your area is not listed.'
-    }
-
-    if (!province) {
+    if (!suburb || !city || !region || !province || !postalCode) {
       return 'Please complete the full service address before continuing.'
     }
 
-    if (!SA_PROVINCES.includes(province)) {
+    if (!availableProvinces.includes(province)) {
       return 'Please select a valid South African province.'
     }
 
-    if (postalCode && !/^\d{4}$/.test(postalCode)) {
-      return 'Postal code must be 4 digits if you include it.'
+    if (!/^\d{4}$/.test(postalCode)) {
+      return 'Postal code must come from the selected suburb.'
     }
 
-    const street = normalizeValue(address.street)
-    if (!street) {
+    const addressLine1 = normalizeValue(address.addressLine1)
+    if (!addressLine1) {
       return 'Enter the street address after choosing the suburb.'
     }
 
@@ -166,20 +174,34 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
       const data = await res.json() as {
         street?: string | null
-        suburb?: string | null
-        city?: string | null
-        province?: string | null
-        postalCode?: string | null
+        selection?: {
+          locationNodeId: string
+          suburb: string
+          region: string
+          city: string
+          province: string
+          postalCode: string
+        } | null
       }
 
       setAddress((current) => ({
-        street: data.street ?? current.street,
-        suburb: data.suburb ?? current.suburb,
-        city: data.city ?? current.city,
-        province: data.province ?? current.province,
-        postalCode: data.postalCode ?? current.postalCode,
+        ...current,
+        addressLine1: data.street ?? current.addressLine1,
+        ...(data.selection
+          ? {
+              suburb: data.selection.suburb,
+              region: data.selection.region,
+              city: data.selection.city,
+              province: data.selection.province,
+              postalCode: data.selection.postalCode,
+            }
+          : {}),
       }))
-      setLocationNodeId(null)
+      if (data.selection) {
+        setLocationNodeId(data.selection.locationNodeId)
+      } else {
+        setError('We found your street, but could not match the suburb exactly. Select province, city, region, and suburb from the list.')
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -238,12 +260,11 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
           category: category.slug,
           title: normalizeValue(title),
           description: description.trim(),
-          street: normalizeValue(address.street),
-          suburb: normalizeValue(address.suburb),
-          city: normalizeValue(address.city),
-          province: normalizeValue(address.province),
-          postalCode: address.postalCode.trim(),
-          locationNodeId: locationNodeId ?? undefined,
+          addressLine1: normalizeValue(address.addressLine1),
+          addressLine2: normalizeValue(address.addressLine2),
+          complexName: normalizeValue(address.complexName),
+          unitNumber: normalizeValue(address.unitNumber),
+          locationNodeId,
         }),
       })
 
@@ -258,6 +279,13 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       }
 
       const data = await res.json()
+
+      if (data.waitlisted) {
+        setWaitlistedCity(data.city ?? address.city)
+        setStep('waitlisted')
+        return
+      }
+
       setJobRequestId(data.jobRequestId)
       setTicketUrl(data.ticketUrl ?? null)
       setStep('submitted')
@@ -281,7 +309,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
         )}
       </div>
 
-      {/* Step indicator */}
+      {/* Step indicator — hidden on waitlisted screen */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {(['address', 'description', 'confirm', 'submitted'] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
@@ -330,7 +358,14 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
               <Select
                 value={address.province}
                 onValueChange={(val) => {
-                  setAddress({ ...address, province: val, city: '', suburb: '' })
+                  setAddress((current) => ({
+                    ...current,
+                    province: val,
+                    city: '',
+                    region: '',
+                    suburb: '',
+                    postalCode: '',
+                  }))
                   setLocationNodeId(null)
                 }}
               >
@@ -338,7 +373,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SA_PROVINCES.map((p) => (
+                  {availableProvinces.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
                   ))}
                 </SelectContent>
@@ -352,42 +387,94 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                 provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
                 onSelect={(selection) => {
                   if (selection) {
-                    setAddress((prev) => ({ ...prev, suburb: selection.suburb, city: selection.city }))
+                    setAddress((prev) => ({
+                      ...prev,
+                      suburb: selection.suburb,
+                      region: selection.region,
+                      city: selection.city,
+                      province: selection.province,
+                      postalCode: selection.postalCode,
+                    }))
                     setLocationNodeId(selection.locationNodeId)
                   } else {
-                    setAddress((prev) => ({ ...prev, suburb: '', city: '' }))
+                    setAddress((prev) => ({
+                      ...prev,
+                      suburb: '',
+                      region: '',
+                      city: '',
+                      postalCode: '',
+                    }))
                     setLocationNodeId(null)
                   }
                 }}
               />
               {address.suburb && (
                 <p className="text-xs text-muted-foreground">
-                  {address.suburb}, {address.city}
+                  {address.suburb}, {address.region}, {address.city}, {address.postalCode}
                 </p>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="street" className="text-muted-foreground">Street address</Label>
+                <Label htmlFor="unitNumber" className="text-muted-foreground">
+                  Unit number <span className="text-muted-foreground/60">(optional)</span>
+                </Label>
                 <Input
-                  id="street"
-                  required
+                  id="unitNumber"
                   type="text"
-                  value={address.street}
-                  onChange={(e) => setAddress({ ...address, street: e.target.value })}
-                  placeholder="12 Main Road, Estate name, informal directions"
+                  value={address.unitNumber}
+                  onChange={(e) => setAddress({ ...address, unitNumber: e.target.value })}
+                  placeholder="12B"
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="postalCode" className="text-muted-foreground">Postal code</Label>
+                <Label htmlFor="complexName" className="text-muted-foreground">
+                  Complex name <span className="text-muted-foreground/60">(optional)</span>
+                </Label>
                 <Input
-                  id="postalCode"
+                  id="complexName"
                   type="text"
-                  value={address.postalCode}
-                  onChange={(e) => setAddress({ ...address, postalCode: e.target.value })}
-                  placeholder="2196"
+                  value={address.complexName}
+                  onChange={(e) => setAddress({ ...address, complexName: e.target.value })}
+                  placeholder="Acacia Mews"
                 />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="addressLine1" className="text-muted-foreground">Street address line 1</Label>
+              <Input
+                id="addressLine1"
+                required
+                type="text"
+                value={address.addressLine1}
+                onChange={(e) => setAddress({ ...address, addressLine1: e.target.value })}
+                placeholder="12 Main Road"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="addressLine2" className="text-muted-foreground">
+                Street address line 2 <span className="text-muted-foreground/60">(optional)</span>
+              </Label>
+              <Input
+                id="addressLine2"
+                type="text"
+                value={address.addressLine2}
+                onChange={(e) => setAddress({ ...address, addressLine2: e.target.value })}
+                placeholder="Building entrance, floor, landmark"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="region" className="text-muted-foreground">Region / area</Label>
+                <Input id="region" value={address.region} readOnly disabled />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="postalCode" className="text-muted-foreground">Postal code</Label>
+                <Input id="postalCode" value={address.postalCode} readOnly disabled />
               </div>
             </div>
           </div>
@@ -461,7 +548,9 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
               <Row label="Job">{title}</Row>
               {description && <Row label="Details">{description}</Row>}
               <Row label="Address">
-                {address.street}, {address.suburb}, {address.city}
+                {[streetSummary, address.suburb, address.region, address.city, address.province, address.postalCode]
+                  .filter(Boolean)
+                  .join(', ')}
               </Row>
             </CardContent>
           </Card>
@@ -485,6 +574,25 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* ── Waitlisted: outside service area ─────────────────────────────── */}
+      {step === 'waitlisted' && (
+        <Card>
+          <CardContent className="px-4 py-6 space-y-3 text-center">
+            <p className="text-2xl">📍</p>
+            <p className="font-semibold text-base">Not in your area yet</p>
+            <p className="text-sm text-muted-foreground">
+              We&apos;re not in <strong>{waitlistedCity}</strong> just yet, but we&apos;re growing fast.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              We&apos;ve saved your contact and will reach out the moment Plug a Pro goes live in your area. No action needed from you.
+            </p>
+            <p className="text-xs text-muted-foreground pt-2">
+              Currently serving: <strong>Johannesburg</strong>
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* ── Step 4: Submitted ────────────────────────────────────────────── */}

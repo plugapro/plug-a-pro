@@ -36,6 +36,7 @@ export default async function ProvidersPage() {
       },
     },
     orderBy: { name: 'asc' },
+    take: 500,
   })
 
   return (

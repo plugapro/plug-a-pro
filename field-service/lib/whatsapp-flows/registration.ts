@@ -46,6 +46,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectRegion(ctx)
     case 'reg_collect_region_more':
       return handleCollectRegionMore(ctx)
+    case 'reg_collect_suburb_text':
+      return handleCollectSuburbText(ctx)
     case 'reg_collect_availability':
       return handleCollectAvailability(ctx)
     case 'reg_collect_evidence':
@@ -221,9 +223,12 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
     const cities = await getCities(provinceKey)
 
     if (cities.length === 0) {
-      // No cities seeded yet — fall through to legacy area approach
-      await sendExperiencePrompt(ctx.phone)
-      return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+      // No cities seeded yet — ask provider to type their suburb for finer granularity
+      await sendText(
+        ctx.phone,
+        `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
+      )
+      return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey } }
     }
 
     const rows = cities.slice(0, 10).map(c => ({
@@ -242,9 +247,12 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       nextData: { serviceAreas: [areaLabel], province: areaLabel, provinceKey },
     }
   } catch {
-    // DB unavailable — fall through to legacy flow
-    await sendExperiencePrompt(ctx.phone)
-    return { nextStep: 'reg_collect_availability', nextData: { serviceAreas: [areaLabel] } }
+    // DB unavailable — ask provider to type their suburb
+    await sendText(
+      ctx.phone,
+      `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
+    )
+    return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey } }
   }
 }
 
@@ -287,11 +295,14 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
     const regions = await getRegions(cityId)
 
     if (regions.length === 0) {
-      // No regions — fall through to experience
-      await sendExperiencePrompt(ctx.phone)
+      // No regions for this city — ask provider to type their suburb
+      await sendText(
+        ctx.phone,
+        `📍 Which suburb or area of *${cityLabel}* do you mainly work in?\n\nType the suburb name (e.g. *Allen's Nek*, *Fourways*, *Rondebosch*):`,
+      )
       return {
-        nextStep: 'reg_collect_availability',
-        nextData: { city: cityLabel, serviceAreas: [ctx.data.province ?? cityLabel] },
+        nextStep: 'reg_collect_suburb_text',
+        nextData: { city: cityLabel, cityId },
       }
     }
 
@@ -396,6 +407,29 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
   return showRegionList(ctx) // re-show the region list
+}
+
+// ─── Suburb free-text fallback (when location_nodes DB has no region data) ────
+
+async function handleCollectSuburbText(ctx: FlowContext): Promise<FlowResult> {
+  const typed = ctx.reply.text?.trim() ?? ''
+  if (!typed || typed.length < 2) {
+    await sendText(
+      ctx.phone,
+      `📍 Please type your main working suburb or area (e.g. *Randburg*, *Allen's Nek*):`,
+    )
+    return { nextStep: 'reg_collect_suburb_text' }
+  }
+
+  const suburbLabel = typed.charAt(0).toUpperCase() + typed.slice(1)
+  const city = ctx.data.city ?? ''
+  const area = city ? `${suburbLabel}, ${city}` : suburbLabel
+
+  await sendExperiencePrompt(ctx.phone)
+  return {
+    nextStep: 'reg_collect_availability',
+    nextData: { serviceAreas: [area] },
+  }
 }
 
 async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> {

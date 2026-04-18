@@ -14,6 +14,7 @@ import {
 } from '@/lib/matching/service'
 import { getDispatchAdminMessage } from '@/lib/admin-action-messages'
 import { buildMetadata } from '@/lib/metadata'
+import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
   OPS_QUEUE_TYPES,
   claimOpsQueueItem,
@@ -21,6 +22,7 @@ import {
   listOpsQueueAssignments,
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
+import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,6 +38,8 @@ export default async function AdminDispatchPage({
   const admin = await requireAdmin()
   const { request, message } = await searchParams
   const banner = getDispatchAdminMessage(message)
+  const now = new Date()
+  const pageWarnings: string[] = []
 
   const requests = await db.jobRequest.findMany({
     where: {
@@ -43,18 +47,26 @@ export default async function AdminDispatchPage({
     },
     include: {
       customer: { select: { id: true, name: true, phone: true } },
-      address: true,
+      address: { select: { id: true, street: true, suburb: true, city: true, province: true, lat: true, lng: true } },
       match: true,
     },
     orderBy: { createdAt: 'asc' },
     take: 30,
+  }).catch((error) => {
+    console.error('[admin/dispatch] Failed to load job requests', error)
+    pageWarnings.push('Service request data is temporarily unavailable.')
+    return []
   })
 
   const assignments = await listOpsQueueAssignments(
     db,
     OPS_QUEUE_TYPES.DISPATCH,
     requests.map((jobRequest) => jobRequest.id),
-  )
+  ).catch((error) => {
+    console.error('[admin/dispatch] Failed to load queue assignments', error)
+    pageWarnings.push('Assignment ownership data is temporarily unavailable.')
+    return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
+  })
 
   const selectedRequest = request
     ? requests.find((jobRequest) => jobRequest.id === request) ??
@@ -62,7 +74,7 @@ export default async function AdminDispatchPage({
         where: { id: request },
         include: {
           customer: { select: { id: true, name: true, phone: true } },
-          address: true,
+          address: { select: { id: true, street: true, suburb: true, city: true, province: true, lat: true, lng: true } },
           match: true,
         },
       })
@@ -192,14 +204,35 @@ export default async function AdminDispatchPage({
   }
 
   const ranking = selectedRequest
-    ? await rankCandidatesForJobRequest(selectedRequest.id).catch(() => null)
+    ? await rankCandidatesForJobRequest(selectedRequest.id).catch((error) => {
+        console.error('[admin/dispatch] Failed to load ranked candidates', error)
+        pageWarnings.push('Ranked candidates failed to load.')
+        return null
+      })
     : null
   const history = selectedRequest
-    ? await getDispatchHistory(selectedRequest.id).catch(() => [])
+    ? await getDispatchHistory(selectedRequest.id).catch((error) => {
+        console.error('[admin/dispatch] Failed to load dispatch history', error)
+        pageWarnings.push('Dispatch history failed to load.')
+        return []
+      })
+    : []
+  const requestAuditTrail = selectedRequest
+    ? await db.auditLog.findMany({
+        where: { entityId: selectedRequest.id, entityType: 'job_request' },
+        select: { id: true, action: true, actorRole: true, timestamp: true },
+        orderBy: { timestamp: 'desc' },
+        take: 10,
+      }).catch((error) => {
+        console.error('[admin/dispatch] Failed to load audit trail', error)
+        pageWarnings.push('Recent dispatch activity failed to load.')
+        return []
+      })
     : []
 
   return (
     <div className="space-y-6">
+      {pageWarnings.length > 0 ? <StaleBanner refreshHref={`/admin/dispatch${request ? `?request=${request}` : ''}`} /> : null}
       <div>
         <h1 className="text-xl font-semibold">Dispatch Console</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -260,6 +293,11 @@ export default async function AdminDispatchPage({
                       ? `${jobRequest.address.suburb}, ${jobRequest.address.city}`
                       : 'Area unavailable'}
                   </p>
+                  <div className="mt-2">
+                    <Badge variant={slaToneVariant(getQueueAgeTone('dispatch', ageMinutes(jobRequest.createdAt, now)))}>
+                      Age {formatDispatchAge(jobRequest.createdAt)}
+                    </Badge>
+                  </div>
                 </Link>
               )
             })}
@@ -292,6 +330,11 @@ export default async function AdminDispatchPage({
                       }
                     >
                       {formatOpsQueueOwnerLabel(assignment, admin.id)}
+                    </Badge>
+                  </div>
+                  <div className="pt-1">
+                    <Badge variant={slaToneVariant(getQueueAgeTone('dispatch', ageMinutes(selectedRequest.createdAt, now)))}>
+                      Age {formatDispatchAge(selectedRequest.createdAt)}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -442,6 +485,23 @@ export default async function AdminDispatchPage({
                   )}
                 </CardContent>
               </Card>
+
+              {requestAuditTrail.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Audit trail</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {requestAuditTrail.map((entry) => (
+                      <div key={entry.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="shrink-0 tabular-nums">{formatDispatchAge(entry.timestamp)}</span>
+                        <span className="font-medium text-foreground/70">{entry.action.replace(/\./g, ' · ')}</span>
+                        <span className="ml-auto shrink-0">{entry.actorRole}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
             </>
           ) : (
             <Card>
@@ -454,6 +514,25 @@ export default async function AdminDispatchPage({
       </div>
     </div>
   )
+}
+
+function formatDispatchAge(date: Date) {
+  const diffMs = Date.now() - date.getTime()
+  const minutes = Math.max(0, Math.floor(diffMs / 60000))
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
+}
+
+function ageMinutes(from: Date, to: Date) {
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 60000))
+}
+
+function slaToneVariant(tone: 'default' | 'warning' | 'danger') {
+  if (tone === 'danger') return 'danger' as const
+  if (tone === 'warning') return 'warning' as const
+  return 'outline' as const
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

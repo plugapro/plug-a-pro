@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getCities,
   getRegions,
+  getSuburbs,
+  getStructuredAddressSelection,
+  resolveStructuredAddressByLabels,
   searchNodes,
   resolveSuburbNodeId,
   createLocationNode,
@@ -141,6 +144,82 @@ describe('getRegions', () => {
   })
 })
 
+describe('getSuburbs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns only structured-capture-ready suburbs with parent labels and postal code', async () => {
+    mockDb.locationNode.findMany.mockResolvedValue([
+      {
+        id: 'suburb-1',
+        slug: 'gauteng__johannesburg__jhb_north__sandton',
+        label: 'Sandton',
+        postalCode: '2196',
+        provinceKey: 'gauteng',
+        cityKey: 'johannesburg',
+        regionKey: 'jhb_north',
+        lat: -26.1,
+        lng: 28.0,
+        parent: {
+          label: 'JHB North / Sandton',
+          parent: {
+            label: 'Johannesburg',
+            parent: { label: 'Gauteng' },
+          },
+        },
+      },
+    ])
+
+    const result = await getSuburbs('region-1')
+
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          nodeType: 'SUBURB',
+          parentId: 'region-1',
+          postalCode: { not: null },
+        }),
+      }),
+    )
+    expect(result).toEqual([
+      {
+        id: 'suburb-1',
+        slug: 'gauteng__johannesburg__jhb_north__sandton',
+        label: 'Sandton',
+        regionLabel: 'JHB North / Sandton',
+        cityLabel: 'Johannesburg',
+        provinceLabel: 'Gauteng',
+        postalCode: '2196',
+        provinceKey: 'gauteng',
+        cityKey: 'johannesburg',
+        regionKey: 'jhb_north',
+        lat: -26.1,
+        lng: 28.0,
+      },
+    ])
+  })
+
+  it('excludes broad alias nodes from structured suburb capture', async () => {
+    mockDb.locationNode.findMany.mockResolvedValue([])
+
+    await getSuburbs('region-1')
+
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          slug: expect.objectContaining({
+            notIn: expect.arrayContaining([
+              'gauteng__johannesburg__jhb_cbd__johannesburg',
+              'western_cape__cape_town__cape_town_cbd__cape_town',
+            ]),
+          }),
+        }),
+      }),
+    )
+  })
+})
+
 describe('searchNodes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -220,6 +299,89 @@ describe('resolveSuburbNodeId', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           cityKey: { equals: 'johannesburg', mode: 'insensitive' },
+        }),
+      }),
+    )
+  })
+})
+
+describe('getStructuredAddressSelection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns structured suburb selection when node is valid for capture', async () => {
+    mockDb.locationNode.findFirst.mockResolvedValue({
+      id: 'suburb-1',
+      label: 'Sandton',
+      postalCode: '2196',
+      parent: {
+        label: 'JHB North / Sandton',
+        parent: {
+          label: 'Johannesburg',
+          parent: { label: 'Gauteng' },
+        },
+      },
+    })
+
+    const result = await getStructuredAddressSelection('suburb-1')
+
+    expect(result).toEqual({
+      locationNodeId: 'suburb-1',
+      suburb: 'Sandton',
+      region: 'JHB North / Sandton',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+      postalCode: '2196',
+    })
+  })
+})
+
+describe('resolveStructuredAddressByLabels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('filters exact suburb label matches by city and province', async () => {
+    mockDb.locationNode.findMany.mockResolvedValue([
+      {
+        id: 'suburb-1',
+        label: 'Morningside',
+        postalCode: '2196',
+        parent: {
+          label: 'JHB North / Sandton',
+          parent: {
+            label: 'Johannesburg',
+            parent: { label: 'Gauteng' },
+          },
+        },
+      },
+      {
+        id: 'suburb-2',
+        label: 'Morningside',
+        postalCode: '4001',
+        parent: {
+          label: 'Durban CBD',
+          parent: {
+            label: 'Durban',
+            parent: { label: 'KwaZulu-Natal' },
+          },
+        },
+      },
+    ])
+
+    const result = await resolveStructuredAddressByLabels({
+      suburb: 'Morningside',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+    })
+
+    expect(result?.locationNodeId).toBe('suburb-1')
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          label: { equals: 'Morningside', mode: 'insensitive' },
+          postalCode: { not: null },
         }),
       }),
     )

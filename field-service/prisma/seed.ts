@@ -23,6 +23,7 @@ import {
   ApplicationStatus,
 } from '@prisma/client'
 import { SA_PROVINCES, REGION_CITY_MAP, PROVINCE_CITIES } from '../lib/service-areas/south-africa'
+import { SUBURB_POSTAL_CODES } from '../lib/service-areas/postal-codes'
 
 const prisma = new PrismaClient()
 
@@ -158,6 +159,7 @@ async function seedLocationNodes() {
       for (const [suburbLabel, coord] of Object.entries(region.suburbs)) {
         const suburbKey = suburbLabel.toLowerCase().replace(/\s+/g, '_')
         const suburbSlug = `${provinceKey}__${cityKey}__${regionKey}__${suburbKey}`
+        const postalCode = SUBURB_POSTAL_CODES[suburbSlug] ?? null
         await prisma.locationNode.upsert({
           where:  { slug: suburbSlug },
           create: {
@@ -165,6 +167,7 @@ async function seedLocationNodes() {
             nodeType:    LocationNodeType.SUBURB,
             label:       suburbLabel,
             parentId:    regionNode.id,
+            postalCode:  postalCode,
             provinceKey: provinceKey,
             cityKey:     cityKey,
             regionKey:   regionKey,
@@ -176,6 +179,7 @@ async function seedLocationNodes() {
           },
           update: {
             label:    suburbLabel,
+            postalCode: postalCode,
             lat:      coord.lat,
             lng:      coord.lng,
             radiusKm: null,

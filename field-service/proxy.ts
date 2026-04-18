@@ -38,20 +38,55 @@ const PROVIDER_PATHS = ['/provider', '/technician']
 // Routes that require admin or owner role
 const ADMIN_PATHS = ['/admin']
 
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
-  const response = NextResponse.next()
+// admin.plugapro.co.za uses clean paths — map them to internal /admin/* routes
+// /          → /admin
+// /sign-in   → /admin-sign-in
+// /dispatch  → /admin/dispatch  (and so on for all sub-pages)
+function toAdminInternalPath(pathname: string): string {
+  if (pathname === '/') return '/admin'
+  if (pathname === '/sign-in') return '/admin-sign-in'
+  if (
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/admin')
+  ) return pathname
+  return `/admin${pathname}`
+}
 
-  // Allow public paths
+export async function proxy(request: NextRequest) {
+  const originalPathname = request.nextUrl.pathname
+  const host = request.headers.get('host') ?? ''
+  const isAdminDomain = host === 'admin.plugapro.co.za'
+
+  // Compute the internal path (rewritten for admin domain, unchanged otherwise)
+  const pathname = isAdminDomain ? toAdminInternalPath(originalPathname) : originalPathname
+
+  // Build the final response — rewrite URL when on admin domain, pass-through otherwise
+  const buildResponse = (extraHeaders?: Record<string, string>) => {
+    let res: NextResponse
+    if (isAdminDomain && pathname !== originalPathname) {
+      const target = request.nextUrl.clone()
+      target.pathname = pathname
+      res = NextResponse.rewrite(target)
+    } else {
+      res = NextResponse.next()
+    }
+    if (extraHeaders) {
+      Object.entries(extraHeaders).forEach(([k, v]) => res.headers.set(k, v))
+    }
+    return res
+  }
+
+  // Allow public paths (checked against the internal path)
   if (isPublicPath(pathname)) {
-    return response
+    return buildResponse()
   }
 
   // Read auth token from cookie
   const token = request.cookies.get('sb-access-token')?.value
 
   if (!token) {
-    return redirectToSignIn(request)
+    return redirectToSignIn(request, pathname, isAdminDomain)
   }
 
   // Verify token and extract user metadata
@@ -67,7 +102,7 @@ export async function proxy(request: NextRequest) {
       error,
     } = await supabase.auth.getUser(token)
 
-    if (error || !user) return redirectToSignIn(request)
+    if (error || !user) return redirectToSignIn(request, pathname, isAdminDomain)
 
     const role = user.user_metadata?.role ?? 'customer'
 
@@ -81,17 +116,16 @@ export async function proxy(request: NextRequest) {
     // Enforce admin-only routes
     if (ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
       if (role !== 'admin' && role !== 'owner') {
-        return NextResponse.redirect(new URL('/admin-sign-in', request.url))
+        // On admin domain redirect to /sign-in (maps back to /admin-sign-in internally)
+        const dest = isAdminDomain ? '/sign-in' : '/admin-sign-in'
+        return NextResponse.redirect(new URL(dest, request.url))
       }
     }
 
     // Inject user context into headers for downstream use
-    response.headers.set('x-user-id', user.id)
-    response.headers.set('x-user-role', role)
-
-    return response
+    return buildResponse({ 'x-user-id': user.id, 'x-user-role': role })
   } catch {
-    return redirectToSignIn(request)
+    return redirectToSignIn(request, pathname, isAdminDomain)
   }
 }
 
@@ -102,15 +136,22 @@ function isPublicPath(pathname: string): boolean {
   })
 }
 
-function redirectToSignIn(request: NextRequest): NextResponse {
-  // Route unauthenticated requests to the correct sign-in page based on path prefix
-  const { pathname, search } = request.nextUrl
-  let destination = '/sign-in' // default: customer
-  if (pathname.startsWith('/provider') || pathname.startsWith('/technician')) destination = '/provider-sign-in'
-  if (pathname.startsWith('/admin')) destination = '/admin-sign-in'
+function redirectToSignIn(
+  request: NextRequest,
+  effectivePath: string,
+  isAdminDomain = false,
+): NextResponse {
+  let destination = '/sign-in'
+  if (effectivePath.startsWith('/provider') || effectivePath.startsWith('/technician')) destination = '/provider-sign-in'
+  if (effectivePath.startsWith('/admin')) {
+    // On admin domain keep URLs clean; on regular domain use full path
+    destination = isAdminDomain ? '/sign-in' : '/admin-sign-in'
+  }
 
+  const { search } = request.nextUrl
+  // callbackUrl uses original (clean) pathname so the post-login redirect is correct
+  const callbackPath = `${request.nextUrl.pathname}${search}`
   const url = new URL(destination, request.url)
-  const callbackPath = `${pathname}${search}`
   url.searchParams.set('callbackUrl', callbackPath)
   url.searchParams.set('next', callbackPath)
   return NextResponse.redirect(url)

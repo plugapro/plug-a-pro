@@ -505,19 +505,19 @@ export async function notifyProviderNewJob(params: {
   customerInitial: string  // first name only
   expiresInMinutes?: number
 }): Promise<void> {
-  const { sendButtons } = await import('./whatsapp-interactive')
+  const { sendCtaUrl } = await import('./whatsapp-interactive')
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const ref = params.leadId.slice(-8).toUpperCase()
   const expiryLabel = params.expiresInMinutes
-    ? `${params.expiresInMinutes} minutes`
+    ? `${params.expiresInMinutes} min`
     : '4 hours'
 
-  await sendButtons(
+  await sendCtaUrl(
     params.providerPhone,
-    `🔔 *New Lead — ${params.category}*\n📍 ${params.area}  |  👤 ${params.customerInitial}\n📋 ${params.description}\n\n_Expires in ${expiryLabel}. Ref: ${params.leadId.slice(-8).toUpperCase()}_`,
-    [
-      { id: `match_accept_${params.leadId}`, title: '✅ Accept & Quote' },
-      { id: `match_inspect_${params.leadId}`, title: '🔍 View Details' },
-      { id: `match_decline_${params.leadId}`, title: '❌ Decline' },
-    ]
+    `🔔 *New Lead Available*\n\n*${params.category}* · ${params.area}\nRef: ${ref} · Expires in ${expiryLabel}\n\nTap below to view the full job details and respond.`,
+    'View Lead',
+    `${appUrl}/leads/${params.leadId}`,
+    { footer: 'Accept, inspect, or decline from the lead page' },
   )
 }
 
@@ -792,27 +792,14 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
   }
 
   if (buttonId.startsWith('match_inspect_')) {
-    const { acceptLead } = await import('./matching-engine')
-    const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: true })
-
-    if (!result.ok) {
-      const message =
-        result.reason === 'TAKEN'
-          ? '⚠️ Another provider has already accepted this job.'
-          : result.reason === 'EXPIRED'
-          ? '⏰ This lead expired before you responded.'
-          : '⚠️ This lead is no longer available.'
-      await sendText(phone, message)
-      return
-    }
-
-    const quoteUrl = `${appUrl}/technician/quotes/${result.matchId}`
+    // Send a link to the lead detail page so the provider can review and decide
+    const leadUrl = `${appUrl}/leads/${leadId}`
     await sendCtaUrl(
       phone,
-      `🔍 *Inspection first — understood.*\n\nContact the customer to arrange a visit. Once you've assessed the job, return here to submit your quote.`,
-      'Submit Quote',
-      quoteUrl,
-      { footer: 'Come back here after the site visit to complete your quote' }
+      `🔍 *View Lead Details*\n\nOpen the link below to review the full job details, then choose to accept, request an inspection, or decline.`,
+      'View Lead',
+      leadUrl,
+      { footer: 'Tap to open your provider app' }
     )
     return
   }
@@ -1094,10 +1081,15 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
       'View Job',
       `${appUrl}/technician`
     ).catch(() => {})
-    await sendText(
-      phone,
-      `✅ *Booking confirmed!*\n\n*${result.provider.name}* is scheduled for *${dateStr}*. We'll send you a reminder the day before.\n\nQuestions? Reply here anytime.`
-    )
+    const { sendProviderAssigned } = await import('./whatsapp')
+    await sendProviderAssigned({
+      bookingId: result.bookingId,
+      customerName: result.customer.name,
+      customerPhone: phone,
+      providerFirstName: result.provider.name.split(' ')[0],
+      serviceName: result.category,
+      scheduledWindow: dateStr,
+    }).catch(() => {})
   } else {
     await sendText(
       result.provider.phone,

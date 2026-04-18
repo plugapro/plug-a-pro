@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/auth'
+import { requireAdminApi, getSession } from '@/lib/auth'
 import { manualOverrideAssignment } from '@/lib/matching/service'
 import { getDispatchRouteError } from '@/lib/route-action-errors'
 
@@ -7,7 +7,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const admin = await requireAdmin()
+  const authError = await requireAdminApi()
+  if (authError) return authError
+  const admin = (await getSession())!
   const { id } = await params
   const body = await request.json().catch(() => ({})) as {
     providerId?: string

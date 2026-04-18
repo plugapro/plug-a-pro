@@ -157,7 +157,7 @@ describe('POST /api/technician/quotes', () => {
         matchId: 'match-1',
         labourCost: 950,
         description: 'Revised quote after reassessing materials and labour',
-        preferredDate: '2026-04-14',
+        preferredDate: '2030-04-14',
       }),
       headers: { 'Content-Type': 'application/json' },
     })

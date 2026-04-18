@@ -2,12 +2,12 @@ name: field-service CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, migration/from-vdp]
     paths:
       - 'field-service/**'
       - '.github/workflows/field-service-ci.yml'
   pull_request:
-    branches: [main]
+    branches: [main, migration/from-vdp]
     paths:
       - 'field-service/**'
       - '.github/workflows/field-service-ci.yml'
@@ -25,20 +25,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: field-service/package-lock.json
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: npm run lint
+        run: pnpm lint
 
       - name: Test
-        run: npm run test
+        run: pnpm test
 
   build:
     name: Build
@@ -54,14 +58,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: field-service/package-lock.json
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
         working-directory: field-service
 
       - name: Generate Prisma client
@@ -72,7 +80,7 @@ jobs:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
 
       - name: Build
-        run: npm run build
+        run: pnpm build
         working-directory: field-service
         env:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci

@@ -21,6 +21,10 @@ export function normalizePhone(raw: string): string {
   if (stripped.startsWith('0') && stripped.length === 10) {
     return `+27${stripped.slice(1)}`
   }
+  // WhatsApp delivers SA numbers without + prefix: 27xxxxxxxxx (11 digits)
+  if (stripped.startsWith('27') && stripped.length === 11) {
+    return `+${stripped}`
+  }
   // Fallback: return stripped (caller should validate E.164 separately)
   return stripped
 }

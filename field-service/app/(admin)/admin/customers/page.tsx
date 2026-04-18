@@ -32,6 +32,7 @@ export default async function CustomersPage() {
       },
     },
     orderBy: { createdAt: 'desc' },
+    take: 500,
   })
 
   return (

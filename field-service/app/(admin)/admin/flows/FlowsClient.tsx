@@ -1,423 +1,552 @@
 'use client'
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
 import { MermaidDiagram } from '@/components/admin/MermaidDiagram'
 
-// ─── Diagram definitions ──────────────────────────────────────────────────────
+type FlowDef = {
+  id: string
+  label: string
+  description: string
+  chart: string
+  entryPoints: string[]
+  outcomes: string[]
+}
 
-const CUSTOMER_JOURNEY = `
+const PLATFORM_OVERVIEW = `
+flowchart TB
+  subgraph Customer Surfaces
+    CS1["PWA routes: sign-in to services to book"]
+    CS2["WhatsApp: job request, status, help"]
+    CS3["Public links: request access, quote approval, extra work approval"]
+  end
+
+  subgraph Provider Surfaces
+    PS1["WhatsApp registration and provider journey"]
+    PS2["Provider PWA: dashboard, leads, quotes, jobs"]
+  end
+
+  subgraph Admin Surfaces
+    AS1["Admin dashboard"]
+    AS2["Queues: validation, dispatch, quotes, field exceptions, disputes"]
+    AS3["Internal tools: applications, bookings, providers, payments, locations, reports"]
+  end
+
+  subgraph Platform Core
+    API["Next.js routes and Server Actions"]
+    BOT["WhatsApp state machine"]
+    MATCH["Matching and dispatch engine"]
+    TOKEN["Tokenized access layer"]
+    OPS["Ops dashboard and queue services"]
+  end
+
+  subgraph Runtime Services
+    DB["Supabase Postgres via Prisma"]
+    BLOB["Vercel Blob"]
+    CRON["Vercel cron jobs"]
+    WEBHOOKS["WhatsApp and payment webhooks"]
+  end
+
+  CS1 --> API
+  CS2 --> WEBHOOKS --> BOT --> API
+  CS3 --> TOKEN --> API
+  PS1 --> WEBHOOKS
+  PS2 --> API
+  AS1 --> OPS --> API
+  AS2 --> OPS
+  AS3 --> API
+
+  API --> DB
+  API --> BLOB
+  MATCH --> DB
+  OPS --> DB
+  CRON --> API
+  WEBHOOKS --> API
+
+  style DB fill:#1e293b,color:#94a3b8
+  style BLOB fill:#1e293b,color:#94a3b8
+  style CS3 fill:#1d4ed8,color:#fff
+  style AS1 fill:#123524,color:#fff
+`
+
+const CUSTOMER_PWA_JOURNEY = `
 flowchart TD
-  A([Customer]) --> B{Channel?}
+  A["Customer on mobile"] --> B["Sign in"]
+  B --> C["Verify phone OTP"]
+  C --> D["Services"]
+  D --> E["Book service"]
 
-  B -->|WhatsApp| C[Text 'Hi' or service keyword]
-  B -->|PWA| D[Open app.plugapro.co.za]
+  E --> F[Choose province -> region/suburb]
+  F --> G[Enter street address after suburb]
+  G --> H[Add title + job details]
+  H --> I[Submit request]
 
-  C --> E[Bot: Welcome menu]
-  D --> F[Sign in with phone OTP]
+  I --> J["JobRequest created"]
+  J --> K["Signed ticket URL returned"]
+  K --> L["Scoped ticket page"]
 
-  E --> G[Select: Request a job]
-  F --> G
+  J --> M[Matching engine dispatches providers]
+  M --> N{Provider accepts?}
+  N -->|No| O[Request stays matching / escalates]
+  N -->|Yes| P["Match created"]
 
-  G --> H[Choose service category\ne.g. Plumbing, Electrical]
-  H --> I[Describe the problem\nfree-text input]
-  I --> J[Confirm address\nsuburb / GPS]
-  J --> K[Note availability\ne.g. weekday mornings]
-  K --> L[(JobRequest created\nstatus: OPEN)]
+  P --> Q{Inspection required?}
+  Q -->|Yes| R[Inspection completed]
+  Q -->|No| S[Provider submits quote]
+  R --> S
 
-  L --> M{Auto-match\nengine}
+  S --> T["Scoped quote approval page"]
+  T --> U{Approve?}
+  U -->|Decline| V[Provider revises quote]
+  V --> S
+  U -->|Approve| W["Booking and job created"]
 
-  M -->|No match found| N[Notify customer:\nwe'll reach out shortly]
-  M -->|Match found| O[(Lead sent to provider\nstatus: SENT)]
-
-  O --> P{Provider responds}
-  P -->|Declines| Q[Try next provider]
-  Q --> O
-  P -->|Accepts| R[(Match created\nstatus: MATCHED)]
-
-  R --> S{Inspection\nneeded?}
-  S -->|Yes| T[Provider proposes\ninspection slot]
-  T --> U[Customer confirms slot]
-  U --> V[Inspection completed\nphotos uploaded]
-  V --> W[Provider submits Quote]
-  S -->|No| W
-
-  W --> X[Quote sent to customer\nvia WhatsApp link]
-  X --> Y{Customer decision}
-  Y -->|Declines / asks revision| Z[Provider revises quote]
-  Z --> X
-  Y -->|Approves| AA[(Booking created\nstatus: SCHEDULED)]
-
-  AA --> AB{Collection mode}
-  AB -->|Launch mode bypass| AC[(Payment recorded only\nstatus: PENDING\noffline follow-through)]
-  AB -->|Checkout enabled| AD[Payment link sent\nPeach / Yoco checkout]
-  AD --> AE{Payment}
-  AE -->|Failed| AF[Retry or contact support]
-  AE -->|Paid| AG[(Payment PAID)]
-
-  AC --> AH[Provider executes job\nsee Provider Journey]
-  AG --> AH
-  AH --> AI{Job outcome}
-  AI -->|Issue raised| AJ[(Dispute opened)]
-  AJ --> AK[Admin mediates]
-  AK --> AL[Resolved]
-  AI -->|Completed OK| AM[Customer confirms\ncompletion]
-
-  AM --> AN[Leave a review\n1–5 stars + comment]
-  AN --> AO([Journey complete])
+  W --> X["Booking detail"]
+  X --> Y[Track status + photos + extras]
+  Y --> Z["Rate booking"]
 
   style A fill:#1d4ed8,color:#fff
-  style AO fill:#16a34a,color:#fff
-  style AJ fill:#dc2626,color:#fff
   style L fill:#1e293b,color:#94a3b8
-  style O fill:#1e293b,color:#94a3b8
-  style R fill:#1e293b,color:#94a3b8
-  style AA fill:#1e293b,color:#94a3b8
-  style AC fill:#1e293b,color:#94a3b8
-  style AG fill:#1e293b,color:#94a3b8
+  style T fill:#1e293b,color:#94a3b8
+  style W fill:#1e293b,color:#94a3b8
+  style Z fill:#16a34a,color:#fff
+`
+
+const CUSTOMER_WHATSAPP_JOURNEY = `
+flowchart TD
+  A["Customer on WhatsApp"] --> B["Send greeting or service intent"]
+  B --> C[Welcome menu]
+  C --> D{Choice}
+
+  D -->|Request a job| E[Category -> name -> suburb/location]
+  E --> F[Street address after location]
+  F --> G[Availability / confirmation]
+  G --> H[(JobRequest created)]
+  H --> I["Direct ticket link sent"]
+  I --> J["Scoped ticket page"]
+
+  D -->|Track booking| K[Status flow]
+  D -->|Help| L[FAQ / support flow]
+
+  H --> M[Matching engine]
+  M --> N[Provider lead broadcast]
+  N --> O[Customer later receives quote link or booking updates]
+
+  O --> P{Needs action?}
+  P -->|Quote decision| Q["Scoped quote approval page"]
+  P -->|Extra work| R["Scoped extra work approval page"]
+  P -->|Ticket view only| J
+
+  style A fill:#25d366,color:#000
+  style H fill:#1e293b,color:#94a3b8
+  style J fill:#1d4ed8,color:#fff
+  style Q fill:#1d4ed8,color:#fff
+  style R fill:#1d4ed8,color:#fff
 `
 
 const PROVIDER_JOURNEY = `
 flowchart TD
-  A([Provider]) --> B[Text WhatsApp\nregistration keyword]
-  B --> C[Bot: Registration flow]
+  A["Worker or provider"] --> B{Entry path}
+  B -->|WhatsApp| C[Registration flow]
+  B -->|Approved account| D["Provider sign in and verify"]
 
-  C --> D[Enter name]
-  D --> E[Select skills\ne.g. Plumbing, Electrical]
-  E --> F[Enter service areas\ne.g. Sandton, Randburg]
-  F --> G[Years of experience]
-  G --> H[Available days & hours]
-  H --> I[(ProviderApplication\nstatus: PENDING)]
+  C --> E[Name]
+  E --> F[Multi-select skills]
+  F --> G[Coverage area by province / city / region]
+  G --> H[Experience + availability + evidence note]
+  H --> I["ProviderApplication pending"]
+  I --> J["Admin applications review"]
+  J -->|Approved| D
+  J -->|Rejected| K[Application stays closed / pending follow-up]
 
-  I --> J{Admin review}
-  J -->|Rejected| K[WhatsApp: Application declined]
-  J -->|Approved| L[(Provider account created\nactive + verified)]
+  D --> L["Provider dashboard"]
+  L --> M[See active and upcoming jobs]
+  L --> N["Provider leads"]
+  N --> O["Lead detail"]
+  O --> P{Accept lead?}
+  P -->|Decline| N
+  P -->|Accept| Q["Provider quote builder"]
 
-  L --> M[Receive job lead\nvia WhatsApp]
-  M --> N[View: title, location,\ndescription, category]
-  N --> O{Decision}
-  O -->|Decline| P[Lead marked DECLINED\nnext provider tried]
-  O -->|Accept| Q[(Match created\nstatus: MATCHED)]
+  Q --> R{Inspection flow or direct quote}
+  R --> S[Submit quote]
+  S --> T["Customer approves via token link"]
+  T --> U["Booking and job exist"]
 
-  Q --> R{Inspection\nrequired?}
-  R -->|Yes| S[Propose inspection slot\ndate + time window]
-  S --> T[Customer confirms]
-  T --> U[Conduct site visit\nupload photos]
-  U --> V[Submit formal Quote\namount + description]
-  R -->|No| V
+  U --> V["Provider job detail"]
+  V --> W[Status updates]
+  W --> X[Upload work photos]
+  X --> Y[Optional extra work request]
+  Y --> Z[Customer confirms completion]
 
-  V --> W[Await customer\napproval]
-  W --> X{Quote approved?}
-  X -->|Revision requested| Y[Update quote]
-  Y --> W
-  X -->|Approved| Z[(Booking confirmed\nsee it in /technician/jobs)]
-
-  Z --> AA[Job day arrives]
-  AA --> AB[Update status: EN_ROUTE]
-  AB --> AC[Arrive on site\nstatus: ARRIVED]
-  AC --> AD[Start work\nstatus: STARTED]
-  AD --> AE{Extra work\nneeded?}
-  AE -->|Yes| AF[Create extra work request\ncustomer approves via link]
-  AF --> AG{Customer approves?}
-  AG -->|No| AH[Proceed without extras]
-  AG -->|Yes| AI[Extras added to invoice]
-  AH --> AJ[Complete job\nupload before/after photos]
-  AI --> AJ
-  AE -->|No| AJ
-
-  AJ --> AK[(Job: PENDING_COMPLETION_CONFIRMATION)]
-  AK --> AL[Customer confirms\ncompletion]
-  AL --> AM[(Payment record updated\nlaunch mode or checkout)]
-  AM --> AN[Job archived with\nreview history]
-  AN --> AO([Journey complete])
+  L --> AA["Provider profile"]
+  AA --> AB[Skills + service areas + schedule]
+  L --> AC["Provider earnings"]
 
   style A fill:#7c3aed,color:#fff
-  style AO fill:#16a34a,color:#fff
   style I fill:#1e293b,color:#94a3b8
-  style L fill:#1e293b,color:#94a3b8
-  style Q fill:#1e293b,color:#94a3b8
-  style Z fill:#1e293b,color:#94a3b8
-  style AK fill:#1e293b,color:#94a3b8
-  style AM fill:#1e293b,color:#94a3b8
+  style U fill:#1e293b,color:#94a3b8
+  style Z fill:#16a34a,color:#fff
 `
 
-const WHATSAPP_BOT = `
+const ADMIN_OPS_JOURNEY = `
 flowchart TD
-  IN([Inbound WhatsApp message]) --> LOAD[Load conversation state\nphone → flow + step + data]
-  LOAD --> KW{Reset keyword?\nhi · hello · menu · start}
-  KW -->|Yes| WELCOME[Send welcome menu]
-  WELCOME --> SAVE[Save: flow=idle step=welcome]
+  A["Owner or Admin"] --> B["Admin sign in"]
+  B --> C["Admin home"]
+  C --> D[Operations dashboard]
 
-  KW -->|No| DISPATCH{Route to active flow}
+  D --> E[Validation queue]
+  D --> F[Dispatch queue]
+  D --> G[Quote approvals]
+  D --> H[Field exceptions]
+  D --> I[Incidents bar / SLA signals]
 
-  DISPATCH -->|flow=idle| IDLE{Menu selection}
-  IDLE -->|Request a job| JR_CAT[Send category list]
-  IDLE -->|Track my booking| ST_SHOW[Show booking status]
-  IDLE -->|Become a provider| REG_NAME[Ask for name]
-  IDLE -->|Help| HELP_MENU[Send FAQ menu]
+  E --> J[Claim / release / mark ready]
+  F --> K[Review candidates / rerank / override]
+  G --> L[Claim / release / audit trail]
+  H --> M[Review job issues / audit trail]
 
-  JR_CAT --> JR_DESC[Ask: describe the problem]
-  JR_DESC --> JR_ADDR[Ask: confirm address]
-  JR_ADDR --> JR_AVAIL[Ask: availability note]
-  JR_AVAIL --> JR_CONFIRM[Send confirmation summary\nwith Confirm / Edit buttons]
-  JR_CONFIRM -->|Confirm| JR_SUBMIT[(Create JobRequest\nNotify matching engine)]
-  JR_CONFIRM -->|Edit| JR_CAT
-  JR_SUBMIT --> JR_DONE[Message: request received\nwe'll match you shortly]
+  C --> N["Applications"]
+  N --> O[Approve / reject provider applications]
 
-  REG_NAME --> REG_SKILLS[Send skills list\nmulti-select]
-  REG_SKILLS --> REG_AREA[Ask: service areas]
-  REG_AREA --> REG_EXP[Ask: years experience]
-  REG_EXP --> REG_AVAIL[Ask: available days]
-  REG_AVAIL --> REG_CONFIRM[Send application summary]
-  REG_CONFIRM -->|Confirm| REG_SUBMIT[(Create ProviderApplication\nstatus: PENDING)]
-  REG_SUBMIT --> REG_DONE[Message: application received\nadmin will review within 24h]
+  C --> P["Bookings"]
+  P --> Q[Inspect booking, payment, job, attachments]
 
-  DISPATCH -->|flow=provider_job| PROV{Provider job step}
-  PROV -->|tech_job_view| PROV_ACTION{Accept or Decline?}
-  PROV_ACTION -->|Accept| PROV_ACCEPT[(Lead ACCEPTED\nMatch created)]
-  PROV_ACTION -->|Decline| PROV_DECLINE[(Lead DECLINED)]
-  PROV_ACCEPT --> PROV_NOTIFY[Notify customer of match]
-  PROV_ACCEPT --> PROV_QUOTE[Share app link for inspection or quote flow]
+  C --> R["Disputes"]
+  R --> S[Resolve or close disputes]
 
-  DISPATCH -->|flow=reschedule| RESC_REASON[Ask: reason for reschedule]
-  RESC_REASON --> RESC_SLOT[Propose new slot]
-  RESC_SLOT --> RESC_CONFIRM[Confirm reschedule]
-  RESC_CONFIRM --> RESC_DONE[(Booking updated)]
+  C --> T["Payments"]
+  T --> U[Refunds / payment follow-up]
 
-  DISPATCH -->|flow=cancel| CANCEL_CONFIRM{Confirm cancel?}
-  CANCEL_CONFIRM -->|Yes| CANCEL_DONE[(Booking CANCELLED)]
-  CANCEL_CONFIRM -->|No| CANCEL_ABORT[Keep booking as-is]
+  C --> V["Locations"]
+  V --> W[Maintain taxonomy]
 
-  JR_DONE --> SAVE2[Save conversation state]
-  REG_DONE --> SAVE2
-  PROV_NOTIFY --> SAVE2
-  PROV_QUOTE --> SAVE2
-  RESC_DONE --> SAVE2
-  CANCEL_DONE --> SAVE2
-  ST_SHOW --> SAVE2
-  SAVE2 --> OUT([Reply sent])
+  C --> X["Reports"]
+  X --> Y[Operational summaries]
 
-  style IN fill:#25d366,color:#000
-  style OUT fill:#25d366,color:#000
-  style JR_SUBMIT fill:#1e293b,color:#94a3b8
-  style REG_SUBMIT fill:#1e293b,color:#94a3b8
-  style PROV_ACCEPT fill:#1e293b,color:#94a3b8
-  style PROV_DECLINE fill:#dc2626,color:#fff
-  style CANCEL_DONE fill:#dc2626,color:#fff
-  style RESC_DONE fill:#1e293b,color:#94a3b8
-`
-
-const JOB_STATE_MACHINE = `
-stateDiagram-v2
-  [*] --> OPEN : JobRequest created
-
-  OPEN --> MATCHING : matching engine triggered
-  MATCHING --> MATCHED : provider accepts lead
-  MATCHING --> EXPIRED : no provider found
-
-  MATCHED --> INSPECTION_SCHEDULED : provider proposes slot
-  MATCHED --> QUOTED : skip inspection
-  INSPECTION_SCHEDULED --> INSPECTION_COMPLETE : inspection done
-  INSPECTION_COMPLETE --> QUOTED : provider submits quote
-
-  QUOTED --> QUOTE_APPROVED : customer approves
-  QUOTED --> QUOTE_DECLINED : customer declines
-  QUOTE_DECLINED --> QUOTED : provider revises
-
-  QUOTE_APPROVED --> SCHEDULED : booking created
-
-  SCHEDULED --> EN_ROUTE : provider en route
-  EN_ROUTE --> ARRIVED : provider on site
-  ARRIVED --> STARTED : work started
-  STARTED --> PAUSED : waiting for materials
-  PAUSED --> STARTED : materials arrived
-  STARTED --> AWAITING_APPROVAL : extra work requested
-  AWAITING_APPROVAL --> STARTED : customer approves
-  AWAITING_APPROVAL --> STARTED : customer declines
-  STARTED --> PENDING_COMPLETION_CONFIRMATION : provider marks done
-  PENDING_COMPLETION_CONFIRMATION --> COMPLETED : customer confirms
-  PENDING_COMPLETION_CONFIRMATION --> FAILED : dispute raised
-  COMPLETED --> [*]
-  FAILED --> [*]
-  EXPIRED --> [*]
-  CANCELLED --> [*]
-
-  MATCHED --> CANCELLED : customer or provider cancels
-  QUOTED --> CANCELLED : customer cancels
-  SCHEDULED --> CANCELLED : customer cancels
-`
-
-const PAYMENT_FLOW = `
-flowchart LR
-  A([Customer approves quote]) --> B[(Booking created\nstatus: SCHEDULED)]
-  B --> C{PAYMENT_COLLECTION_MODE}
-  C -->|bypass| D[(Payment\nstatus: PENDING\ncollectionMode: OFFLINE_RECORDED)]
-  C -->|checkout| E[Platform generates\npayment link]
-  E --> F{PSP Provider\nPeach Payments / Yoco}
-
-  F -->|Customer pays| G[(Payment\nstatus: AUTHORISED)]
-  F -->|Payment fails| H[Retry / contact support]
-  H --> F
-
-  G --> I[PSP webhook fires\nPOST /api/webhooks/payments]
-  I --> J{Verify webhook\nsignature}
-  J -->|Invalid| K[Reject — log security event]
-  J -->|Valid| L[(Payment status → PAID\npaidAt recorded)]
-
-  D --> M[Booking continues in\nlaunch adoption mode]
-  L --> M
-  M --> N[Provider completes job]
-  N --> O[Admin / offline settlement\naccording to launch ops]
-  O --> P([Collection flow complete])
-
-  style A fill:#1d4ed8,color:#fff
-  style P fill:#16a34a,color:#fff
-  style K fill:#dc2626,color:#fff
+  style A fill:#123524,color:#fff
   style D fill:#1e293b,color:#94a3b8
+  style I fill:#dc2626,color:#fff
+`
+
+const TOKENIZED_ACCESS = `
+flowchart LR
+  A[Scoped public link created] --> B{Link type}
+  B -->|Ticket| C["Scoped ticket page"]
+  B -->|Quote approval| D["Scoped quote approval page"]
+  B -->|Extra work approval| E["Scoped extra work approval page"]
+
+  C --> F[Resolve token -> one job request only]
+  F --> G[Render request, provider, quote, booking, photos]
+  G --> H["Attachment proxy with token"]
+
+  D --> I["Resolve approval token to one quote"]
+  I --> J[Approve or decline]
+  J --> K["Booking and job creation on approval"]
+
+  E --> L[Resolve extra-work token]
+  L --> M[Approve or decline extra work]
+
+  H --> N{Session or token scope}
+  N -->|Valid| O[Serve attachment]
+  N -->|Invalid / expired| P[Reject safely]
+
+  style C fill:#1d4ed8,color:#fff
+  style D fill:#1d4ed8,color:#fff
+  style E fill:#1d4ed8,color:#fff
+  style P fill:#dc2626,color:#fff
+`
+
+const AUTOMATIONS_AND_SIGNALS = `
+flowchart TD
+  A["JobRequest, Match, Booking changes"] --> B[Matching engine]
+  B --> C[Lead dispatch]
+  C --> D[WhatsApp / push notifications]
+
+  E["Vercel cron"] --> F["Match leads cron"]
+  E --> G["Reminders cron"]
+  E --> H["Follow-up cron"]
+  E --> I["Session timeout cron"]
+  E --> J["Ops alerts cron"]
+
+  F --> K[Retry dispatch / reconcile applications]
+  G --> L[Booking reminder messages]
+  H --> M[Follow-up messages]
+  I --> N[Reset stale WhatsApp sessions]
+  J --> O[Queue breach detection]
+  O --> P[Ops WhatsApp alert]
+
+  Q["Inbound webhooks"] --> R["WhatsApp webhook"]
+  Q --> S["Payments webhook"]
+  R --> T[Conversation routing + dedupe]
+  S --> U[Payment state sync]
+
+  style E fill:#123524,color:#fff
+  style P fill:#dc2626,color:#fff
+  style R fill:#25d366,color:#000
+  style S fill:#f59e0b,color:#000
+`
+
+const REQUEST_LIFECYCLE = `
+flowchart TD
+  A["JobRequest OPEN"] --> B["JobRequest MATCHING"]
+  B --> C{Lead accepted?}
+  C -->|No| D["JobRequest EXPIRED or OPS review"]
+  C -->|Yes| E["Match MATCHED"]
+
+  E --> F{Inspection needed?}
+  F -->|Yes| G["INSPECTION_SCHEDULED"]
+  G --> H["INSPECTION_COMPLETE"]
+  H --> I["Match QUOTED"]
+  F -->|No| I
+
+  I --> J{Customer decision}
+  J -->|Decline| K["QUOTE_DECLINED"]
+  K --> I
+  J -->|Approve| L["Booking SCHEDULED"]
+
+  L --> M["Job SCHEDULED"]
+  M --> N["EN_ROUTE"]
+  N --> O["ARRIVED"]
+  O --> P["STARTED"]
+  P --> Q["PAUSED or AWAITING_APPROVAL"]
+  Q --> P
+  P --> R["PENDING_COMPLETION_CONFIRMATION"]
+  R --> S["COMPLETED"]
+
+  P --> T["Dispute OPEN"]
+  R --> T
+  T --> U["Dispute resolved or booking outcome managed"]
+
+  style A fill:#1e293b,color:#94a3b8
+  style E fill:#1e293b,color:#94a3b8
   style L fill:#1e293b,color:#94a3b8
+  style M fill:#1e293b,color:#94a3b8
+  style S fill:#16a34a,color:#fff
+  style T fill:#dc2626,color:#fff
 `
 
-const PLATFORM_OVERVIEW = `
-flowchart TB
-  subgraph Customers
-    CW[WhatsApp]
-    CP[PWA — app.plugapro.co.za]
-  end
-
-  subgraph Providers
-    PW[WhatsApp]
-    PP[PWA — /technician]
-  end
-
-  subgraph Admin
-    AP[Admin dashboard\n/admin]
-  end
-
-  subgraph Platform Core
-    WH[Webhook handler\n/api/webhooks/whatsapp]
-    BOT[WhatsApp Bot\nConversation state machine]
-    MATCH[Matching engine\nskills × service area]
-    NOTIF[Notifications\nWhatsApp templates + Push]
-    CRON[Cron jobs\nreminders · follow-ups]
-  end
-
-  subgraph Data
-    DB[(Supabase / Postgres\nPrisma ORM)]
-    BLOB[(Vercel Blob\nPhotos + attachments)]
-  end
-
-  subgraph Payments
-    PSP[Peach Payments\nYoco]
-    PWEB[Payment webhook\n/api/webhooks/payments]
-  end
-
-  CW -->|Inbound message| WH
-  WH --> BOT
-  BOT --> DB
-  BOT -->|Outbound message| CW
-
-  CP -->|API calls| DB
-  CP -->|Job request| MATCH
-  PP -->|Status updates\nPhoto uploads| DB
-  PP -->|Photo uploads| BLOB
-  PW -->|Lead accept / decline| WH
-
-  MATCH -->|Lead broadcast| NOTIF
-  NOTIF -->|WhatsApp template| PW
-  NOTIF -->|Push notification| CP
-
-  AP -->|Approve providers\nDispatch\nMonitor| DB
-  AP -->|Manual payout| PSP
-
-  DB -->|Booking confirmed| PSP
-  PSP -->|Payment event| PWEB
-  PWEB --> DB
-
-  CRON -->|Reminders| NOTIF
-  CRON -->|Slot management| DB
-
-  style CW fill:#25d366,color:#000
-  style PW fill:#25d366,color:#000
-  style DB fill:#1e293b,color:#94a3b8
-  style BLOB fill:#1e293b,color:#94a3b8
-  style PSP fill:#f59e0b,color:#000
-`
-
-// ─── Tab config ───────────────────────────────────────────────────────────────
-
-const FLOWS = [
+const FLOWS: FlowDef[] = [
   {
     id: 'overview',
     label: 'Platform Overview',
-    description: 'How all actors and systems connect',
+    description: 'Current channels, internal surfaces, and platform services.',
     chart: PLATFORM_OVERVIEW,
+
+    entryPoints: [
+      'Customer PWA routes under /(customer)',
+      'WhatsApp inbound webhook and bot state machine',
+      'Provider PWA routes under /provider and /technician',
+      'Admin operations routes under /admin',
+    ],
+    outcomes: [
+      'Shows how public links, WhatsApp, admin tools, and cron all meet at the same application core.',
+      'Reflects the current queue-first operations model rather than the older generic marketplace story.',
+    ],
   },
   {
-    id: 'customer',
-    label: 'Customer Journey',
-    description: 'From first message through job completion and review',
-    chart: CUSTOMER_JOURNEY,
+    id: 'customer-pwa',
+    label: 'Customer PWA Journey',
+    description: 'Phone-authenticated customer path from service selection to rating.',
+    chart: CUSTOMER_PWA_JOURNEY,
+
+    entryPoints: [
+      '/sign-in and /verify',
+      '/services and /book/:serviceId',
+      '/requests/:id and /bookings/:id',
+    ],
+    outcomes: [
+      'Captures the progressive address flow and signed ticket handoff after request creation.',
+      'Shows the current quote approval and booking transition path.',
+    ],
+  },
+  {
+    id: 'customer-whatsapp',
+    label: 'Customer WhatsApp Journey',
+    description: 'Request, status, and help flows handled directly in WhatsApp.',
+    chart: CUSTOMER_WHATSAPP_JOURNEY,
+    entryPoints: [
+      'Inbound WhatsApp messages',
+      'Job request flow',
+      'Status and help flows',
+    ],
+    outcomes: [
+      'Shows the no-login request path and the tokenized ticket, quote, and extra-work links.',
+      'Matches the current conversation router instead of the earlier simplified bot diagram.',
+    ],
   },
   {
     id: 'provider',
     label: 'Provider Journey',
-    description: 'From application and onboarding through job execution and payout',
+    description: 'From application through lead response, job execution, and profile maintenance.',
     chart: PROVIDER_JOURNEY,
+
+    entryPoints: [
+      'WhatsApp provider registration flow',
+      '/provider-sign-in and /provider-verify',
+      '/provider, /provider/leads, /provider/quotes/:matchId, /provider/jobs/:id',
+    ],
+    outcomes: [
+      'Reflects current single-step skill selection and structured service-area capture.',
+      'Shows evidence-of-work and extra-work handling on the live provider job path.',
+    ],
   },
   {
-    id: 'whatsapp',
-    label: 'WhatsApp Bot',
-    description: 'Conversation state machine — all flows and transitions',
-    chart: WHATSAPP_BOT,
+    id: 'admin',
+    label: 'Admin Operations Journey',
+    description: 'What the operations team actually does inside the platform today.',
+    chart: ADMIN_OPS_JOURNEY,
+
+    entryPoints: [
+      'admin.plugapro.co.za/sign-in',
+      '/admin dashboard',
+      'queue pages and internal admin modules',
+    ],
+    outcomes: [
+      'Focuses on operational queues, applications, disputes, payments, locations, and reports.',
+      'Matches the current control-tower model instead of a generic back-office view.',
+    ],
   },
   {
-    id: 'job-states',
-    label: 'Job State Machine',
-    description: 'Every status a job can hold and how it transitions',
-    chart: JOB_STATE_MACHINE,
+    id: 'tokens',
+    label: 'Public Token Access',
+    description: 'Secure single-entity customer access without a full login hop.',
+    chart: TOKENIZED_ACCESS,
+    entryPoints: [
+      '/requests/access/:token',
+      '/quotes/:token',
+      '/approve/:token',
+      '/api/attachments/:id?token=...',
+    ],
+    outcomes: [
+      'Shows the current secure deep-link architecture and the scoped attachment proxy.',
+      'Makes the token model explicit for support and ops teams.',
+    ],
   },
   {
-    id: 'payments',
-    label: 'Payment Flow',
-    description: 'Launch-mode collection behavior with optional checkout path',
-    chart: PAYMENT_FLOW,
+    id: 'lifecycle',
+    label: 'Request Lifecycle',
+    description: 'How JobRequest, Match, Booking, Job, and Dispute states connect.',
+    chart: REQUEST_LIFECYCLE,
+
+    entryPoints: [
+      'Job request creation',
+      'Matching and quote handling',
+      'Booking and field execution',
+    ],
+    outcomes: [
+      'Reflects the current multi-model lifecycle rather than only a single state machine.',
+      'Useful for ops/debugging when a request appears stuck between stages.',
+    ],
+  },
+  {
+    id: 'automation',
+    label: 'Automations and Signals',
+    description: 'Cron, webhooks, notifications, and operational alerts.',
+    chart: AUTOMATIONS_AND_SIGNALS,
+
+    entryPoints: [
+      'Vercel cron routes',
+      'WhatsApp and payment webhooks',
+      'Ops alerting and reminders',
+    ],
+    outcomes: [
+      'Shows the current scheduled and event-driven behavior that supports the marketplace.',
+      'Makes background operational dependencies visible to admins.',
+    ],
   },
 ]
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export function FlowsClient() {
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">User Journey Flows</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Visual diagrams of every journey through the Plug-A-Pro marketplace
-        </p>
+    <div className="space-y-6">
+      {/* Page header */}
+      <div className="rounded-lg border bg-card p-6">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">User Journey Flows</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Regenerated from the implemented routes, token access paths, WhatsApp handlers, admin queues, and request lifecycle.
+            </p>
+          </div>
+
+          <div className="shrink-0 rounded-lg border bg-muted/40 p-4 lg:w-72">
+            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {FLOWS.length} boards on this page
+            </p>
+            <ol className="space-y-1.5">
+              {FLOWS.map((flow, index) => (
+                <li key={flow.id} className="flex items-center gap-2.5 text-sm">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <a href={`#flow-${flow.id}`} className="text-foreground/80 hover:text-foreground hover:underline">
+                    {flow.label}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
       </div>
 
-      <Tabs defaultValue="overview">
-        <TabsList className="mb-6 flex-wrap h-auto gap-1">
-          {FLOWS.map((f) => (
-            <TabsTrigger key={f.id} value={f.id} className="text-xs">
-              {f.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        {FLOWS.map((f) => (
-          <TabsContent key={f.id} value={f.id}>
-            <div className="rounded-lg border bg-card">
-              <div className="border-b px-5 py-3">
-                <h2 className="font-semibold">{f.label}</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">{f.description}</p>
+      {/* Flow boards */}
+      <div className="space-y-6">
+        {FLOWS.map((flow, index) => (
+          <section key={flow.id} id={`flow-${flow.id}`} className="rounded-lg border bg-card overflow-hidden">
+            {/* Board header */}
+            <div className="flex items-center justify-between gap-4 border-b px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+                  {index + 1}
+                </span>
+                <div>
+                  <h2 className="text-base font-semibold leading-tight">{flow.label}</h2>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{flow.description}</p>
+                </div>
               </div>
-              <div className="p-4 overflow-x-auto">
-                <MermaidDiagram chart={f.chart} />
+              <Badge variant="neutral" className="shrink-0">Journey</Badge>
+            </div>
+
+            {/* Board body */}
+            <div className="grid xl:grid-cols-[minmax(0,1.45fr)_320px]">
+              {/* Diagram */}
+              <div className="border-b p-5 xl:border-b-0 xl:border-r">
+                <MermaidDiagram chart={flow.chart} />
+              </div>
+
+              {/* Metadata */}
+              <div className="divide-y">
+                <div className="p-5">
+                  <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Entry Points
+                  </p>
+                  <ul className="space-y-2">
+                    {flow.entryPoints.map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-foreground/80">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="p-5">
+                  <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Notes
+                  </p>
+                  <ul className="space-y-2">
+                    {flow.outcomes.map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-foreground/80">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             </div>
-          </TabsContent>
+          </section>
         ))}
-      </Tabs>
+      </div>
     </div>
   )
 }

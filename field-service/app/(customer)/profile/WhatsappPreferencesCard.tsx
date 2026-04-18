@@ -16,8 +16,8 @@ export function WhatsappPreferencesCard() {
 
   useEffect(() => {
     fetch('/api/customer/preferences')
-      .then((r) => r.json())
-      .then((d: Prefs) => setPrefs(d))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: Prefs | null) => { if (d) setPrefs(d) })
       .catch(() => {/* fail silently — non-critical */})
   }, [])
 

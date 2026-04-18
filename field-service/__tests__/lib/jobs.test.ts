@@ -40,7 +40,7 @@ vi.mock('@/lib/db', () => ({
       create: vi.fn().mockResolvedValue({}),
     },
     $transaction: vi.fn().mockImplementation(async (fn) => fn({
-      job: { update: vi.fn().mockResolvedValue(mockJob) },
+      job: { update: vi.fn().mockResolvedValue(mockJob), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       jobStatusEvent: { create: vi.fn().mockResolvedValue({}) },
       auditLog: { create: vi.fn().mockResolvedValue({}) },
     })),
@@ -136,7 +136,7 @@ describe('transitionJob', () => {
 
     ;(db.$transaction as ReturnType<typeof vi.fn>).mockImplementationOnce(async (fn) =>
       fn({
-        job: { update: txJobUpdate },
+        job: { update: txJobUpdate, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         jobStatusEvent: { create: txEventCreate },
         auditLog: { create: txAuditCreate },
       })

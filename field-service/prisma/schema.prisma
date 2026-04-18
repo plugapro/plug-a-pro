@@ -50,7 +50,12 @@ model Address {
   customerId String
   label      String?  // "Home", "Office"
   street     String
+  addressLine1 String?
+  addressLine2 String?
+  complexName String?
+  unitNumber  String?
   suburb     String
+  region     String?
   city       String
   province   String
   postalCode     String?
@@ -68,10 +73,31 @@ model Address {
   @@map("addresses")
 }
 
+// ─── Service area waitlist ────────────────────────────────────────────────────
+// Captures contact details for customers/providers outside active service areas.
+// Notified automatically when the platform expands to their city.
+
+model ServiceAreaWaitlist {
+  id        String   @id @default(cuid())
+  phone     String
+  name      String?
+  category  String?
+  suburb    String?
+  city      String
+  province  String?
+  source    String   // 'whatsapp' | 'pwa'
+  createdAt DateTime @default(now())
+
+  @@unique([phone, city])
+  @@index([city])
+  @@map("service_area_waitlist")
+}
+
 // ─── Location hierarchy ───────────────────────────────────────────────────────
 // Four-level tree: PROVINCE → CITY → REGION → SUBURB
 // Seeded from lib/service-areas/south-africa.ts. Admin-manageable at runtime.
-// postcode support: deferred — add postalCode String? to SUBURB nodes when needed.
+// For customer capture, SUBURB nodes act as the canonical structured address anchor.
+// postalCode is populated only on SUBURB nodes that are valid for new structured capture.
 
 model LocationNode {
   id          String           @id @default(cuid())
@@ -83,6 +109,7 @@ model LocationNode {
   lat         Float?
   lng         Float?
   radiusKm    Float?
+  postalCode  String?
   // Denormalised for fast matching without tree-walk joins
   provinceKey String?          // set on CITY, REGION, SUBURB nodes
   cityKey     String?          // set on REGION and SUBURB nodes
@@ -277,6 +304,7 @@ model Lead {
   sentAt       DateTime   @default(now())
   respondedAt  DateTime?
   expiresAt    DateTime?  // provider must respond within this window
+  reminderSentAt DateTime? // set once when the 1-hour reminder WhatsApp is sent
 
   jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
   provider   Provider   @relation(fields: [providerId], references: [id])

@@ -33,22 +33,20 @@ export async function POST(request: NextRequest) {
     event = parseWebhookEvent(rawBody)
   } catch (err) {
     console.error(`[webhook/payments:${reqId}] Parse error:`, err)
-    return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    return NextResponse.json({ status: 'ignored' })
   }
 
   try {
     if (event.type === 'payment.success') {
-      // Idempotency guard: check status BEFORE applying the payment success handler.
-      // If the booking is already SCHEDULED, the confirmation was already sent on a
-      // previous delivery of this webhook — do not send it again.
-      const existingBooking = await db.booking.findUnique({
-        where: { id: event.bookingId },
+      // Idempotency guard: check payment status BEFORE applying the handler.
+      // If already PAID, the confirmation was sent on a prior delivery — skip.
+      const existingPayment = await db.payment.findUnique({
+        where: { bookingId: event.bookingId },
         select: { status: true },
       })
 
       // Early-return BEFORE handlePaymentSuccess to prevent any duplicate DB writes.
-      // handlePaymentSuccess is idempotent in isolation, but we still avoid the write.
-      if (existingBooking?.status === 'SCHEDULED') {
+      if (existingPayment?.status === 'PAID') {
         console.info(
           `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} — already processed`,
         )

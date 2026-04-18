@@ -9,6 +9,7 @@ import { mergeCategoryRequirements } from '../service-category-policy'
 import { geocodeAddress } from '../geocoding'
 import { resolveSuburbNodeId } from '../location-nodes'
 import { getJobRequestAccessUrl } from '../job-request-access'
+import { normalizePhone } from '../utils'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -39,7 +40,12 @@ export interface CreateJobRequestParams {
 
   // Address
   street: string
+  addressLine1?: string | null
+  addressLine2?: string | null
+  complexName?: string | null
+  unitNumber?: string | null
   suburb: string
+  region?: string | null
   city: string
   province: string
   postalCode?: string | null
@@ -55,6 +61,12 @@ export interface CreateJobRequestResult {
 export async function createJobRequest(
   params: CreateJobRequestParams,
 ): Promise<CreateJobRequestResult> {
+  // Normalise phone to E.164 once at the boundary — WhatsApp delivers numbers
+  // without the + prefix (e.g. 27821234567) while the PWA session always has
+  // +27…. A mismatch causes linkCustomerAccount to miss existing records.
+  const phone = normalizePhone(params.phone)
+  params = { ...params, phone }
+
   const categoryRequirements = mergeCategoryRequirements({
     category: params.category,
     requiredCertificationCodes: params.requiredCertificationCodes,
@@ -130,7 +142,12 @@ export async function createJobRequest(
       data: {
         customerId: customer.id,
         street:     params.street,
+        addressLine1: params.addressLine1?.trim() || null,
+        addressLine2: params.addressLine2?.trim() || null,
+        complexName: params.complexName?.trim() || null,
+        unitNumber: params.unitNumber?.trim() || null,
         suburb:     params.suburb,
+        region:     params.region?.trim() || null,
         city:       params.city,
         province:   params.province,
         postalCode: params.postalCode ?? null,

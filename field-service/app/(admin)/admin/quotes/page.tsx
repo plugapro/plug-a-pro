@@ -1,10 +1,12 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { revalidatePath } from 'next/cache'
 import type { QuoteStatus } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
   OPS_QUEUE_TYPES,
   claimOpsQueueItem,
@@ -12,6 +14,7 @@ import {
   listOpsQueueAssignments,
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
+import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,6 +27,7 @@ const QUOTE_QUEUE_STATUSES: QuoteStatus[] = ['PENDING', 'REVISED']
 export default async function AdminQuoteQueuePage() {
   const admin = await requireAdmin()
   const now = new Date()
+  const pageWarnings: string[] = []
 
   const quotes = await db.quote.findMany({
     where: { status: { in: QUOTE_QUEUE_STATUSES } },
@@ -71,13 +75,39 @@ export default async function AdminQuoteQueuePage() {
     },
     orderBy: { createdAt: 'asc' },
     take: 100,
+  }).catch((error) => {
+    console.error('[admin/quotes] Failed to load quote queue', error)
+    pageWarnings.push('Quote queue data is temporarily unavailable.')
+    return []
   })
 
-  const assignments = await listOpsQueueAssignments(
-    db,
-    OPS_QUEUE_TYPES.QUOTE_APPROVAL,
-    quotes.map((quote) => quote.id),
-  )
+  const quoteIds = quotes.map((quote) => quote.id)
+
+  const [assignments, rawAuditLogs] = await Promise.all([
+    listOpsQueueAssignments(db, OPS_QUEUE_TYPES.QUOTE_APPROVAL, quoteIds).catch((error) => {
+      console.error('[admin/quotes] Failed to load queue assignments', error)
+      pageWarnings.push('Assignment ownership data is temporarily unavailable.')
+      return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
+    }),
+    db.auditLog.findMany({
+      where: { entityId: { in: quoteIds }, entityType: 'quote' },
+      select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
+      orderBy: { timestamp: 'desc' },
+      take: quoteIds.length * 5 + 10,
+    }).catch((error) => {
+      console.error('[admin/quotes] Failed to load audit logs', error)
+      pageWarnings.push('Recent quote activity failed to load.')
+      return [] as Array<{ id: string; entityId: string | null; action: string; actorRole: string; timestamp: Date }>
+    }),
+  ])
+
+  const auditByQuote = new Map<string, typeof rawAuditLogs>()
+  for (const log of rawAuditLogs) {
+    if (!log.entityId) continue
+    const list = auditByQuote.get(log.entityId) ?? []
+    list.push(log)
+    auditByQuote.set(log.entityId, list)
+  }
 
   async function claimQuote(formData: FormData) {
     'use server'
@@ -93,6 +123,9 @@ export default async function AdminQuoteQueuePage() {
       claimedByLabel: activeAdmin.email ?? 'admin',
       actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
+
+    revalidatePath('/admin/quotes')
+    revalidatePath('/admin')
   }
 
   async function releaseQuote(formData: FormData) {
@@ -106,12 +139,16 @@ export default async function AdminQuoteQueuePage() {
       entityId: quoteId,
       actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
     })
+
+    revalidatePath('/admin/quotes')
+    revalidatePath('/admin')
   }
 
   const expiredCount = quotes.filter((quote) => quote.validUntil && quote.validUntil < now).length
 
   return (
     <div className="space-y-6">
+      {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/quotes" /> : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-semibold">Quote Approvals Queue</h1>
@@ -163,7 +200,9 @@ export default async function AdminQuoteQueuePage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline">Age {formatAge(quote.createdAt, now)}</Badge>
+                    <Badge variant={slaToneVariant(getQueueAgeTone('quoteApprovals', ageMinutes(quote.createdAt, now)))}>
+                      Age {formatAge(quote.createdAt, now)}
+                    </Badge>
                     <Badge variant="outline">Amount {formatCurrency(Number(quote.amount))}</Badge>
                     {quote.validUntil ? (
                       <Badge variant={expired ? 'danger' : 'outline'}>
@@ -209,6 +248,23 @@ export default async function AdminQuoteQueuePage() {
                       <Link href={`/admin/providers/${quote.match.provider.id}`}>Open provider</Link>
                     </Button>
                   </div>
+
+                  {(() => {
+                    const trail = auditByQuote.get(quote.id) ?? []
+                    if (trail.length === 0) return null
+                    return (
+                      <div className="border-t pt-3 space-y-1.5">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Activity</p>
+                        {trail.slice(0, 4).map((entry) => (
+                          <div key={entry.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="shrink-0 tabular-nums">{formatAge(entry.timestamp, now)}</span>
+                            <span className="font-medium text-foreground/70">{entry.action.replace(/\./g, ' · ')}</span>
+                            <span className="ml-auto shrink-0">{entry.actorRole}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             )
@@ -234,6 +290,16 @@ function formatCurrency(amount: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   })}`
+}
+
+function ageMinutes(from: Date, to: Date) {
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 60000))
+}
+
+function slaToneVariant(tone: 'default' | 'warning' | 'danger') {
+  if (tone === 'danger') return 'danger' as const
+  if (tone === 'warning') return 'warning' as const
+  return 'outline' as const
 }
 
 function formatDateTime(date: Date) {

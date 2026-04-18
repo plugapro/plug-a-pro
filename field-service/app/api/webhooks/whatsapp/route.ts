@@ -48,7 +48,8 @@ export async function POST(request: NextRequest) {
 
     // Validate it's from WhatsApp
     if (payload.object !== 'whatsapp_business_account') {
-      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
+      console.warn(`[webhook/whatsapp:${reqId}] Unexpected object type — ignoring`)
+      return NextResponse.json({ status: 'ignored' })
     }
 
     // Process async — acknowledge immediately to avoid Meta timeouts/retries
@@ -144,6 +145,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
     console.error(`[webhook/whatsapp:${reqId}] Parse error:`, err)
-    return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    return NextResponse.json({ status: 'ignored' })
   }
 }

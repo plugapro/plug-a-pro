@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/auth'
+import { requireAdminApi } from '@/lib/auth'
 import { rankCandidatesForJobRequest } from '@/lib/matching/service'
 import { getDispatchRouteError } from '@/lib/route-action-errors'
 
@@ -7,7 +7,8 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  await requireAdmin()
+  const authError = await requireAdminApi()
+  if (authError) return authError
   const { id } = await params
 
   try {
