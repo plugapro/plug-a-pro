@@ -66,6 +66,21 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
 // ─── Step handlers ────────────────────────────────────────────────────────────
 
 async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
+  // Block customers from registering as providers with the same number.
+  const { normalizePhone } = await import('../utils')
+  const normalizedPhone = normalizePhone(ctx.phone)
+  const existingCustomer = await db.customer.findFirst({
+    where: { phone: normalizedPhone },
+    select: { id: true },
+  })
+  if (existingCustomer) {
+    await sendText(
+      ctx.phone,
+      `⚠️ *Provider registration unavailable*\n\nThis number is already registered as a customer on Plug a Pro.\n\nTo join as a service provider, please use a *different phone number* and restart with *join*.`
+    )
+    return { nextStep: 'done' }
+  }
+
   // Existing active applications own the provider identity for this phone number.
   const existing = await findLatestActiveProviderApplicationByPhone(db, ctx.phone)
 
@@ -313,7 +328,7 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
 
     await sendList(
       ctx.phone,
-      `🗺 Which area(s) of *${cityLabel}* do you work in?\n\n_(You can add multiple areas)_`,
+      `🗺 Which area of *${cityLabel}* do you mainly work in?`,
       [{ title: 'Areas', rows }],
       { buttonLabel: 'Choose Area' }
     )
@@ -350,11 +365,10 @@ async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
-  // "Done" — proceed to experience
+  // Fallback "Done" — used if the user somehow re-enters this step
   if (ctx.reply.id === 'region_done') {
     const nodeIds = ctx.data.locationNodeIds ?? []
     if (nodeIds.length === 0) {
-      // Re-show region list
       return showRegionList(ctx)
     }
     await sendExperiencePrompt(ctx.phone)
@@ -372,36 +386,11 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   const regionId = ctx.reply.id.replace('region_', '')
   const regionLabel = ctx.reply.title ?? ''
 
-  const existing = ctx.data.locationNodeIds ?? []
-  if (existing.includes(regionId)) {
-    // Already selected
-    const areaList = (ctx.data.selectedRegionLabels ?? []).join(', ')
-    await sendButtons(
-      ctx.phone,
-      `✅ *${regionLabel}* is already selected.\n\nAreas: *${areaList}*\n\nAdd another or continue?`,
-      [
-        { id: 'region_more', title: '➕ Add another' },
-        { id: 'region_done', title: '✅ Done' },
-      ]
-    )
-    return { nextStep: 'reg_collect_region' }
-  }
-
-  const newNodeIds = [...existing, regionId]
-  const newLabels = [...(ctx.data.selectedRegionLabels ?? []), regionLabel]
-  const areaList = newLabels.join(', ')
-
-  await sendButtons(
-    ctx.phone,
-    `✅ *${regionLabel}* added!\n\nAreas: *${areaList}*\n\nAdd another area or continue?`,
-    [
-      { id: 'region_more', title: '➕ Add another' },
-      { id: 'region_done', title: '✅ Done' },
-    ]
-  )
+  // Proceed immediately — providers are limited to one service area
+  await sendExperiencePrompt(ctx.phone)
   return {
-    nextStep: 'reg_collect_region',
-    nextData: { locationNodeIds: newNodeIds, selectedRegionLabels: newLabels },
+    nextStep: 'reg_collect_availability',
+    nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel] },
   }
 }
 

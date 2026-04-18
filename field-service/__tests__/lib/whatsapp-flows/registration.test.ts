@@ -13,6 +13,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // ── DB mock ───────────────────────────────────────────────────────────────────
 vi.mock('@/lib/db', () => ({
   db: {
+    customer: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     providerApplication: {
       findFirst: vi.fn(),
       create: vi.fn(),

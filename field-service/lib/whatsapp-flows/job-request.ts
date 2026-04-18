@@ -38,14 +38,20 @@ import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
 const JOB_CATEGORIES = [
-  { id: 'cat_plumbing',    label: 'Plumbing' },
-  { id: 'cat_painting',    label: 'Painting' },
-  { id: 'cat_garden',      label: 'Garden & Landscaping' },
-  { id: 'cat_handyman',    label: 'Handyman' },
-  { id: 'cat_appliances',  label: 'Appliances' },
-  { id: 'cat_electrical',  label: 'Electrical' },
-  { id: 'cat_diy',         label: 'DIY & Assembly' },
-  { id: 'cat_roofing',     label: 'Roofing' },
+  { id: 'cat_plumbing',       label: 'Plumbing' },
+  { id: 'cat_painting',       label: 'Painting' },
+  { id: 'cat_garden',         label: 'Garden & Landscaping' },
+  { id: 'cat_handyman',       label: 'Handyman' },
+  { id: 'cat_appliances',     label: 'Appliances' },
+  { id: 'cat_electrical',     label: 'Electrical' },
+  { id: 'cat_diy',            label: 'DIY & Assembly' },
+  { id: 'cat_roofing',        label: 'Roofing' },
+  { id: 'cat_cleaning',       label: 'Cleaning' },
+  { id: 'cat_tiling',         label: 'Tiling' },
+  { id: 'cat_pest_control',   label: 'Pest Control' },
+  { id: 'cat_carpentry',      label: 'Carpentry' },
+  { id: 'cat_waterproofing',  label: 'Waterproofing' },
+  { id: 'cat_air_conditioning', label: 'Air Conditioning' },
 ]
 
 // WhatsApp list cap is 10 rows total per message.
