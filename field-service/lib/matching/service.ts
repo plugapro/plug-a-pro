@@ -1220,7 +1220,7 @@ async function createOfferForAttempt(params: {
       serviceName: jobRequest.category,
       area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
       scheduledWindow,
-      jobUrl: `${appUrl}/provider/leads/${lead.id}`,
+      jobUrl: `${appUrl}/leads/${lead.id}`,
     }).catch((error) => {
       console.error('[matching] Failed to send job_offer template to provider:', error)
     })
@@ -1359,7 +1359,7 @@ async function offerNextRankedCandidate(params: {
     })
     await db.jobRequest.update({
       where: { id: params.jobRequestId },
-      data: { status: 'OPEN' },
+      data: { status: 'EXPIRED' },
     })
     return { nextOfferedProviderId: null, assignmentHoldId: null }
   }
@@ -1757,6 +1757,7 @@ export async function expireAssignmentOffer(params: {
       matchAttemptId: true,
       dispatchDecisionId: true,
       jobRequestId: true,
+      providerId: true,
     },
   })
 
@@ -1801,6 +1802,27 @@ export async function expireAssignmentOffer(params: {
     jobRequestId: hold.jobRequestId,
     dispatchDecisionId: hold.dispatchDecisionId,
   })
+
+  // When all candidates exhausted the job is now EXPIRED — notify the last provider
+  if (!next.nextOfferedProviderId) {
+    const [provider, jobRequest] = await Promise.all([
+      db.provider.findUnique({ where: { id: hold.providerId }, select: { phone: true } }),
+      db.jobRequest.findUnique({
+        where: { id: hold.jobRequestId },
+        select: { id: true, category: true },
+      }),
+    ])
+    if (provider?.phone && jobRequest) {
+      const ref = jobRequest.id.slice(-8).toUpperCase()
+      const { sendText } = await import('../whatsapp-interactive')
+      await sendText(
+        provider.phone,
+        `⏰ *Lead Expired*\n\n*${jobRequest.category}* · Ref: ${ref}\n\nThis lead expired without a response and the service request has been closed. No action needed.`,
+      ).catch((err) => {
+        console.error('[matching] Failed to send lead-expired notification:', err)
+      })
+    }
+  }
 
   return { expired: true, nextOfferedProviderId: next.nextOfferedProviderId }
 }

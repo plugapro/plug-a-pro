@@ -99,7 +99,7 @@ async function renderProvinceList(phone: string): Promise<void> {
   await sendList(
     phone,
     '🏙 *Select your province:*',
-    [{ rows }, { rows: [AREA_NOT_LISTED_ROW] }],
+    [{ title: 'Available now', rows }, { title: 'Coming soon', rows: [AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose Province' },
   )
 }
@@ -118,7 +118,7 @@ async function renderCityList(
   await sendList(
     phone,
     `📍 *Select your city* in ${provinceLabel}${pageNote}:`,
-    [{ rows }, { rows: [AREA_NOT_LISTED_ROW] }],
+    [{ title: 'Available now', rows }, { title: 'Coming soon', rows: [AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose City' },
   )
   return true
@@ -138,7 +138,7 @@ async function renderRegionList(
   await sendList(
     phone,
     `🗺 *Select your area* in ${cityLabel}${pageNote}:`,
-    [{ rows }, { rows: [AREA_NOT_LISTED_ROW] }],
+    [{ title: 'Available now', rows }, { title: 'Coming soon', rows: [AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose Area' },
   )
   return true
