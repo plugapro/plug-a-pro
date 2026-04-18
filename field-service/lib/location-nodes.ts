@@ -92,6 +92,13 @@ const STRUCTURED_ADDRESS_EXCLUDED_SUBURB_SLUGS = [
 // Re-export Prisma types for consumers
 export type { LocationNode, LocationNodeType }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────────
+
+/** Capitalises the first letter of each word (e.g. "little falls" → "Little Falls"). */
+function toTitleCase(str: string): string {
+  return str.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 // ─── Read Functions ────────────────────────────────────────────────────────────
 
 /**
@@ -104,7 +111,7 @@ export async function getProvinces(): Promise<ProvinceOption[]> {
     orderBy: { label: 'asc' },
     select: { id: true, slug: true, label: true },
   })
-  return nodes.map((n) => ({ id: n.id, slug: n.slug, label: n.label }))
+  return nodes.map((n) => ({ id: n.id, slug: n.slug, label: toTitleCase(n.label) }))
 }
 
 /**
@@ -124,7 +131,7 @@ export async function getCities(provinceKey?: string): Promise<CityOption[]> {
   return nodes.map((n) => ({
     id: n.id,
     slug: n.slug,
-    label: n.label,
+    label: toTitleCase(n.label),
     provinceKey: n.provinceKey ?? '',
     cityKey: n.cityKey ?? '',
   }))
@@ -166,7 +173,7 @@ export async function getRegions(cityId: string): Promise<RegionOption[]> {
   return nodes.map((n) => ({
     id: n.id,
     slug: n.slug,
-    label: n.label,
+    label: toTitleCase(n.label),
     provinceKey: n.provinceKey ?? '',
     cityKey: n.cityKey ?? '',
     regionKey: n.regionKey ?? '',
@@ -219,10 +226,10 @@ export async function getSuburbs(regionId: string): Promise<SuburbOption[]> {
   return nodes.map((n) => ({
     id: n.id,
     slug: n.slug,
-    label: n.label,
-    regionLabel: n.parent?.label ?? '',
-    cityLabel: n.parent?.parent?.label ?? '',
-    provinceLabel: n.parent?.parent?.parent?.label ?? '',
+    label: toTitleCase(n.label),
+    regionLabel: toTitleCase(n.parent?.label ?? ''),
+    cityLabel: toTitleCase(n.parent?.parent?.label ?? ''),
+    provinceLabel: toTitleCase(n.parent?.parent?.parent?.label ?? ''),
     postalCode: n.postalCode ?? '',
     provinceKey: n.provinceKey ?? '',
     cityKey: n.cityKey ?? '',

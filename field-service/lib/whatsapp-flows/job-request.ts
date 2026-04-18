@@ -16,7 +16,13 @@ import {
 import { db } from '../db'
 import { getCategoryPolicy } from '../service-category-policy'
 import { createJobRequest } from '../job-requests/create-job-request'
-import { isInActiveServiceArea, addToServiceAreaWaitlist } from '../service-area-guard'
+import {
+  isInActiveServiceArea,
+  isActiveProvince,
+  isActiveCity,
+  isActiveRegion,
+  addToServiceAreaWaitlist,
+} from '../service-area-guard'
 import {
   getProvinces,
   getCities,
@@ -84,13 +90,16 @@ function buildPagedRows<T extends { id: string; label: string }>(
 
 // ─── List-render helpers ──────────────────────────────────────────────────────
 
+const AREA_NOT_LISTED_ROW = { id: 'area_not_listed', title: '🔔 My area isn\'t listed' }
+
 async function renderProvinceList(phone: string): Promise<void> {
   const provinces = await getProvinces()
-  const rows = provinces.map((p) => ({ id: `prov__${p.slug}`, title: p.label.slice(0, 24) }))
+  const active = provinces.filter((p) => isActiveProvince(p.slug))
+  const rows = active.map((p) => ({ id: `prov__${p.slug}`, title: p.label.slice(0, 24) }))
   await sendList(
     phone,
     '🏙 *Select your province:*',
-    [{ rows }],
+    [{ rows }, { rows: [AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose Province' },
   )
 }
@@ -102,13 +111,14 @@ async function renderCityList(
   page: number,
 ): Promise<boolean> {
   const cities = await getCities(provinceKey)
-  if (cities.length === 0) return false
-  const { rows, totalPages } = buildPagedRows(cities, page, 'city')
+  const active = cities.filter((c) => isActiveCity(c.cityKey))
+  if (active.length === 0) return false
+  const { rows, totalPages } = buildPagedRows(active, page, 'city')
   const pageNote = totalPages > 1 ? ` (${page + 1}/${totalPages})` : ''
   await sendList(
     phone,
     `📍 *Select your city* in ${provinceLabel}${pageNote}:`,
-    [{ rows }],
+    [{ rows }, { rows: [AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose City' },
   )
   return true
@@ -121,13 +131,14 @@ async function renderRegionList(
   page: number,
 ): Promise<boolean> {
   const regions = await getRegions(cityId)
-  if (regions.length === 0) return false
-  const { rows, totalPages } = buildPagedRows(regions, page, 'rgn')
+  const active = regions.filter((r) => isActiveRegion(r.regionKey))
+  if (active.length === 0) return false
+  const { rows, totalPages } = buildPagedRows(active, page, 'rgn')
   const pageNote = totalPages > 1 ? ` (${page + 1}/${totalPages})` : ''
   await sendList(
     phone,
     `🗺 *Select your area* in ${cityLabel}${pageNote}:`,
-    [{ rows }],
+    [{ rows }, { rows: [AREA_NOT_LISTED_ROW] }],
     { buttonLabel: 'Choose Area' },
   )
   return true
@@ -288,7 +299,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_address_street', nextData: baseData }
     }
 
-    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Zanele")_')
+    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Annah")_')
     return {
       nextStep: 'collect_name',
       nextData: { selectedCategory: category, category, isFirstBooking: true },
@@ -298,7 +309,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
   // They sent their name as text
   const text = ctx.reply.text?.trim()
   if (!text || text.length < 2) {
-    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Zanele")_')
+    await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Annah")_')
     return { nextStep: 'collect_name' }
   }
 
@@ -348,6 +359,23 @@ async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
 // ─── Structured province / city / region / suburb selection ───────────────────
 
 async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id === 'area_not_listed') {
+    await addToServiceAreaWaitlist({
+      phone: ctx.phone,
+      name: ctx.data.customerName ?? null,
+      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+      city: 'Outside Gauteng',
+      source: 'whatsapp',
+    }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+    await sendText(
+      ctx.phone,
+      `Thanks for your interest! 🙏\n\n` +
+      `Plug a Pro is currently only available in *Gauteng*, but we're expanding fast.\n\n` +
+      `We've noted your details and will send you a WhatsApp the moment we go live in your area. No action needed from you! 🚀`,
+    )
+    return { nextStep: 'done' }
+  }
+
   if (ctx.reply.id?.startsWith('prov__')) {
     const provinceSlug = ctx.reply.id.slice(6) // strip 'prov__'
     const provinces = await getProvinces()
@@ -381,6 +409,24 @@ async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
 async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
   const provinceKey = ctx.data.addrProvinceKey ?? ''
   const provinceLabel = ctx.data.addrProvinceLabel ?? ''
+
+  if (ctx.reply.id === 'area_not_listed') {
+    await addToServiceAreaWaitlist({
+      phone: ctx.phone,
+      name: ctx.data.customerName ?? null,
+      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+      city: `${provinceLabel} - other`,
+      province: provinceLabel,
+      source: 'whatsapp',
+    }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+    await sendText(
+      ctx.phone,
+      `Thanks for your interest! 🙏\n\n` +
+      `We're currently only serving *Johannesburg* in ${provinceLabel}, but we're expanding soon.\n\n` +
+      `We've saved your details and will send you a WhatsApp the moment we activate your city. No action needed! 🚀`,
+    )
+    return { nextStep: 'done' }
+  }
 
   // Page navigation
   if (ctx.reply.id === 'city_prev' || ctx.reply.id === 'city_next') {
@@ -445,6 +491,24 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
 async function handleAddrSelectRegion(ctx: FlowContext): Promise<FlowResult> {
   const cityId = ctx.data.addrCityId ?? ''
   const cityLabel = ctx.data.addrCityLabel ?? ''
+
+  if (ctx.reply.id === 'area_not_listed') {
+    await addToServiceAreaWaitlist({
+      phone: ctx.phone,
+      name: ctx.data.customerName ?? null,
+      category: ctx.data.selectedCategory ?? ctx.data.category ?? null,
+      city: cityLabel,
+      province: ctx.data.addrProvinceLabel ?? null,
+      source: 'whatsapp',
+    }).catch((err) => console.error('[job-request] waitlist upsert failed:', err))
+    await sendText(
+      ctx.phone,
+      `Thanks for your interest! 🙏\n\n` +
+      `We're currently only serving *JHB West* (Roodepoort, Florida, Little Falls and surrounding areas) in ${cityLabel}.\n\n` +
+      `We're expanding to more ${cityLabel} areas soon — we've saved your details and will notify you via WhatsApp when your area goes live! 🚀`,
+    )
+    return { nextStep: 'done' }
+  }
 
   // Page navigation
   if (ctx.reply.id === 'rgn_prev' || ctx.reply.id === 'rgn_next') {

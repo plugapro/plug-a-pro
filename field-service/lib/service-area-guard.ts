@@ -4,14 +4,43 @@
 
 import { db } from './db'
 
-// Normalised city keys currently accepting new job requests.
-// Add city keys here when the platform expands to new areas.
+// ─── Active area gates ─────────────────────────────────────────────────────────
+// Expand these sets as the platform rolls out to new areas.
+// Province slug must match the locationNode slug for the province.
+// City/region keys must match the cityKey/regionKey stored on location nodes.
+
+export const ACTIVE_PROVINCE_SLUGS = new Set([
+  'gauteng',
+])
+
+export const ACTIVE_CITY_NODE_KEYS = new Set([
+  'johannesburg',
+])
+
+export const ACTIVE_REGION_KEYS_SET = new Set([
+  'jhb_west',
+])
+
+// Normalised city keys currently accepting new job requests (legacy guard — kept
+// for the `handleCollectAddress` fallback path that checks city label free-text).
 export const ACTIVE_CITY_KEYS = new Set([
   'johannesburg',
   'jhb',
   'joburg',
   'johanesburg', // common misspelling
 ])
+
+export function isActiveProvince(slug: string): boolean {
+  return ACTIVE_PROVINCE_SLUGS.has(slug.toLowerCase())
+}
+
+export function isActiveCity(cityKey: string): boolean {
+  return ACTIVE_CITY_NODE_KEYS.has(cityKey.toLowerCase())
+}
+
+export function isActiveRegion(regionKey: string): boolean {
+  return ACTIVE_REGION_KEYS_SET.has(regionKey.toLowerCase())
+}
 
 export class OutsideServiceAreaError extends Error {
   constructor(public readonly city: string) {
