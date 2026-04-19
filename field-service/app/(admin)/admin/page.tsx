@@ -13,6 +13,9 @@ import type { AssignmentRecord, OpsDashboardQueueCard, OpsDashboardRangePreset }
 import { IncidentBar } from '@/components/admin/dashboard/IncidentBar'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { TrendChart } from '@/components/admin/dashboard/TrendChart'
+import { BreachBanner } from '@/components/admin/case/BreachBanner'
+import { getBreachedCases } from '@/lib/cases'
+import { isEnabled } from '@/lib/flags'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +53,10 @@ export default async function AdminDashboardPage({
   const refreshHref = refreshSearch.toString() ? `/admin?${refreshSearch.toString()}` : '/admin'
 
   const now = new Date()
+  const showBreachBanner = await isEnabled('ops.v2.breachBanner')
+  const breachedCases = showBreachBanner ? await getBreachedCases().catch(() => null) : null
+  const breachCount = breachedCases?.total ?? 0
+
   const heroMetrics = snapshot.hero.data?.metrics ?? []
   const queueData = snapshot.queues.data
   const funnelMetrics = snapshot.trends.data?.funnel ?? []
@@ -58,8 +65,13 @@ export default async function AdminDashboardPage({
 
   const heroStats = heroMetrics.map((m) => ({
     label: m.label,
-    value: m.value,
-    tone: heroToneClass(m.tone),
+    // When breach banner is enabled, show live breach count for "Operational exceptions"
+    value: (showBreachBanner && m.key === 'operationalExceptions') ? breachCount : m.value,
+    tone: heroToneClass(
+      showBreachBanner && m.key === 'operationalExceptions'
+        ? (breachCount > 0 ? 'danger' : 'default')
+        : m.tone
+    ),
   }))
 
   const queueCards = (queueData?.cards ?? []).map((card) => {
@@ -117,6 +129,7 @@ export default async function AdminDashboardPage({
   return (
     <div className="space-y-8">
       {hasPartialFailure ? <StaleBanner refreshHref={refreshHref} /> : null}
+      {showBreachBanner && breachCount > 0 ? <BreachBanner count={breachCount} /> : null}
       <IncidentBar incidents={queueIncidents} />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,0.9fr)]">

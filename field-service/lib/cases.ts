@@ -264,6 +264,46 @@ export async function addEvent(params: AddEventParams) {
 
 // ─── Breach detection ────────────────────────────────────────────────────────
 
+// ─── Breach queries ───────────────────────────────────────────────────────────
+
+export interface BreachedCaseSummary {
+  total: number
+  byQueue: Array<{ queueType: OpsQueueType; count: number }>
+  oldest: Array<{
+    id: string
+    queueType: OpsQueueType
+    entityType: CaseEntityType
+    entityId: string
+    slaDueAt: Date
+    ownerUserId: string | null
+  }>
+}
+
+/** Returns all open/in-progress cases that have blown their SLA target. */
+export async function getBreachedCases(): Promise<BreachedCaseSummary> {
+  const now = new Date()
+  const ACTIVE_STATES: CaseState[] = ['OPEN', 'IN_PROGRESS', 'REOPENED']
+
+  const [raw, byQueueRaw] = await Promise.all([
+    db.case.findMany({
+      where: { slaDueAt: { lt: now }, state: { in: ACTIVE_STATES } },
+      select: { id: true, queueType: true, entityType: true, entityId: true, slaDueAt: true, ownerUserId: true },
+      orderBy: { slaDueAt: 'asc' },
+      take: 20,
+    }),
+    db.case.groupBy({
+      by: ['queueType'],
+      where: { slaDueAt: { lt: now }, state: { in: ACTIVE_STATES } },
+      _count: { _all: true },
+    }),
+  ])
+
+  const total = byQueueRaw.reduce((s, r) => s + r._count._all, 0)
+  const byQueue = byQueueRaw.map((r) => ({ queueType: r.queueType, count: r._count._all }))
+
+  return { total, byQueue, oldest: raw }
+}
+
 /** Marks a case as breached and fires a BREACH_DETECTED event. Idempotent. */
 export async function markBreach(caseId: string) {
   const c = await db.case.findUniqueOrThrow({
