@@ -1151,3 +1151,106 @@ enum DisputeStatus {
   RESOLVED_SPLIT    // partial refund / split resolution
   CLOSED
 }
+
+// ─── Feature flags ────────────────────────────────────────────────────────────
+
+model FeatureFlag {
+  key              String   @id          // e.g. "ops.v2.closeOut"
+  enabled          Boolean  @default(false)
+  enabledForUsers  String[] @default([]) // Supabase user IDs for per-user rollout
+  description      String?
+  updatedAt        DateTime @updatedAt
+
+  @@map("feature_flags")
+}
+
+// ─── Case lifecycle ───────────────────────────────────────────────────────────
+// A Case is a polymorphic wrapper around any ops-queue entity (JobRequest,
+// Match, Booking, Dispute, Payment, ProviderApplication). It tracks state,
+// ownership, SLA deadline, resolution outcome, and a complete event timeline.
+
+enum CaseState {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+  REOPENED
+}
+
+enum CaseEntityType {
+  JOB_REQUEST
+  MATCH
+  BOOKING
+  PAYMENT
+  DISPUTE
+  APPLICATION
+}
+
+enum CaseEventType {
+  STATE_CHANGE
+  SYSTEM_EVENT
+  OPS_ACTION
+  NOTE_ADDED
+  ATTACHMENT_ADDED
+  ASSIGNMENT_CHANGE
+  CUSTOMER_CONTACTED
+  ESCALATION
+  BREACH_DETECTED
+}
+
+enum CaseNoteVisibility {
+  INTERNAL_ONLY
+}
+
+model Case {
+  id           String         @id @default(cuid())
+  queueType    OpsQueueType
+  entityType   CaseEntityType
+  entityId     String         // polymorphic — not a DB FK; indexed for fast lookup
+  state        CaseState      @default(OPEN)
+  outcome      String?        // freeform outcome label, set on resolve
+  reasonCode   String?        // from reason-codes registry, set on resolve
+  ownerUserId  String?        // Supabase user ID of claiming ops agent
+  slaDueAt     DateTime       // computed at open from lib/sla.ts
+  resolvedAt   DateTime?
+  resolvedBy   String?        // Supabase user ID
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  events CaseEvent[]
+  notes  CaseNote[]
+
+  @@unique([entityType, entityId, queueType]) // one open Case per entity per queue
+  @@index([queueType, state, slaDueAt])       // breach query
+  @@index([ownerUserId, state])               // "my queue" filter
+  @@index([entityId])                         // entity drill-down
+  @@map("cases")
+}
+
+model CaseEvent {
+  id          String        @id @default(cuid())
+  caseId      String
+  type        CaseEventType
+  payload     Json          @default("{}")
+  actorUserId String?       // null for system-generated events
+  createdAt   DateTime      @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@map("case_events")
+}
+
+model CaseNote {
+  id           String             @id @default(cuid())
+  caseId       String
+  authorUserId String
+  body         String             @db.Text
+  visibility   CaseNoteVisibility @default(INTERNAL_ONLY)
+  createdAt    DateTime           @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@map("case_notes")
+}
