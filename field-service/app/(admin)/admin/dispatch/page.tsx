@@ -26,7 +26,14 @@ import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { CaseActivityTimeline } from '@/components/admin/case/CaseActivityTimeline'
+import { CaseNotesPanel } from '@/components/admin/case/CaseNotesPanel'
+import { ResolveCaseForm } from '@/components/admin/case/ResolveCaseForm'
+import { isEnabled } from '@/lib/flags'
+import { getReasonCodesForQueue } from '@/lib/reason-codes'
+import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase } from '@/lib/cases'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 
@@ -201,6 +208,60 @@ export default async function AdminDispatchPage({
     revalidatePath('/admin/dispatch')
     revalidatePath('/admin')
     redirect(`/admin/dispatch?request=${jobRequestId}`)
+  }
+
+  const showCloseOut = await isEnabled('ops.v2.closeOut')
+  const dispatchCase = selectedRequest
+    ? await getCaseByEntity('DISPATCH', 'JOB_REQUEST', selectedRequest.id).catch(() => null)
+    : null
+  const dispatchCaseFull = dispatchCase
+    ? await getCase(dispatchCase.id).catch(() => null)
+    : null
+  const dispatchReasonCodes = getReasonCodesForQueue('DISPATCH')
+
+  async function closeCaseAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = String(formData.get('caseId') ?? '')
+    const reasonCode = String(formData.get('reasonCode') ?? '')
+    const note = String(formData.get('note') ?? '') || undefined
+    if (!caseId || !reasonCode) return
+    await resolveCase({ caseId, resolvedBy: activeAdmin.id, reasonCode, note })
+    revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
+  }
+
+  async function reopenCaseAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = String(formData.get('caseId') ?? '')
+    if (!caseId) return
+    await reopenCase(caseId, activeAdmin.id)
+    revalidatePath('/admin/dispatch')
+  }
+
+  async function claimCaseAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = String(formData.get('caseId') ?? '')
+    const release = formData.get('release') === '1'
+    if (!caseId) return
+    if (release) {
+      await releaseCase(caseId, activeAdmin.id)
+    } else {
+      await claimCase({ caseId, userId: activeAdmin.id })
+    }
+    revalidatePath('/admin/dispatch')
+  }
+
+  async function addNoteAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = dispatchCaseFull?.id
+    const body = String(formData.get('body') ?? '').trim()
+    if (!caseId || !body) return
+    await addNote({ caseId, authorUserId: activeAdmin.id, body })
+    revalidatePath('/admin/dispatch')
   }
 
   const ranking = selectedRequest
@@ -499,6 +560,37 @@ export default async function AdminDispatchPage({
                         <span className="ml-auto shrink-0">{entry.actorRole}</span>
                       </div>
                     ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {showCloseOut && dispatchCaseFull && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Case</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ResolveCaseForm
+                      caseId={dispatchCaseFull.id}
+                      queueType="DISPATCH"
+                      isResolved={['RESOLVED', 'CANCELLED'].includes(dispatchCaseFull.state)}
+                      reasonCodes={dispatchReasonCodes}
+                      resolveAction={closeCaseAction}
+                      reopenAction={reopenCaseAction}
+                      claimAction={claimCaseAction}
+                      ownerUserId={dispatchCaseFull.ownerUserId}
+                      currentUserId={admin.id}
+                    />
+                    <Separator />
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                      <CaseNotesPanel notes={dispatchCaseFull.notes} addNoteAction={addNoteAction} />
+                    </div>
+                    <Separator />
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Activity</p>
+                      <CaseActivityTimeline events={dispatchCaseFull.events} />
+                    </div>
                   </CardContent>
                 </Card>
               )}

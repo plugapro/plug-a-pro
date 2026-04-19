@@ -44,8 +44,8 @@ import {
   markBreach,
 } from '@/lib/cases'
 
-const mockCase     = db.case     as ReturnType<typeof vi.fn> & { findUnique: ReturnType<typeof vi.fn>; findUniqueOrThrow: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> }
-const mockCaseNote = db.caseNote as ReturnType<typeof vi.fn> & { create: ReturnType<typeof vi.fn> }
+const mockCase     = db.case     as unknown as { findUnique: ReturnType<typeof vi.fn>; findUniqueOrThrow: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> }
+const mockCaseNote = db.caseNote as unknown as { create: ReturnType<typeof vi.fn> }
 const mockNoteReq  = noteRequiredForCode as ReturnType<typeof vi.fn>
 
 beforeEach(() => {

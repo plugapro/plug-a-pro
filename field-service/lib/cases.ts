@@ -256,7 +256,7 @@ export async function addEvent(params: AddEventParams) {
     data: {
       caseId:      params.caseId,
       type:        params.type,
-      payload:     params.payload ?? {},
+      payload:     (params.payload ?? {}) as object,
       actorUserId: params.actorUserId ?? null,
     },
   })
