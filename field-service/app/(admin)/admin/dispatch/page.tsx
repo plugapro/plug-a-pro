@@ -146,12 +146,13 @@ export default async function AdminDispatchPage({
     const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
     const providerId = String(formData.get('providerId') ?? '')
+    const reasonCode = String(formData.get('reasonCode') || 'FORCE_ASSIGNED_COVERAGE_EXTENSION')
     try {
       await manualOverrideAssignment({
         jobRequestId,
         providerId,
         actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-        overrideReason: 'Selected by admin from dispatch console',
+        overrideReason: reasonCode,
       })
       await recordAuditLog({
         actorId: activeAdmin.id,
@@ -159,11 +160,18 @@ export default async function AdminDispatchPage({
         action: 'dispatch.override_assignment',
         entityType: 'job_request',
         entityId: jobRequestId,
-        after: {
-          providerId,
-          overrideReason: 'Selected by admin from dispatch console',
-        },
+        after: { providerId, reasonCode },
       })
+      // Record OPS_ACTION on the dispatch case
+      const dispCase = await getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId).catch(() => null)
+      if (dispCase) {
+        await addEvent({
+          caseId: dispCase.id,
+          type: 'OPS_ACTION',
+          payload: { action: 'force_assign', providerId, reasonCode },
+          actorUserId: activeAdmin.id,
+        }).catch(() => {})
+      }
       revalidatePath('/admin/dispatch')
       revalidatePath('/admin')
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
@@ -171,6 +179,47 @@ export default async function AdminDispatchPage({
       console.error('[admin/dispatch] Override failed', { jobRequestId, providerId, error })
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
     }
+  }
+
+  async function redispatchAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    if (!jobRequestId) return
+    const { dispatchLeads } = await import('@/lib/matching-engine')
+    await dispatchLeads(jobRequestId).catch(() => {})
+    const dispCase = await getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId).catch(() => null)
+    if (dispCase) {
+      await addEvent({
+        caseId: dispCase.id,
+        type: 'OPS_ACTION',
+        payload: { action: 'redispatch_triggered', triggeredBy: activeAdmin.id },
+        actorUserId: activeAdmin.id,
+      }).catch(() => {})
+    }
+    revalidatePath('/admin/dispatch')
+    redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+  }
+
+  async function escalateToSupplyAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    const reason = String(formData.get('reason') || 'No providers available — needs supply expansion')
+    if (!jobRequestId) return
+    const dispCase = await getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId).catch(() => null)
+    if (dispCase) {
+      await addEvent({
+        caseId: dispCase.id,
+        type: 'ESCALATION',
+        payload: { reason, escalatedTo: 'SUPPLY', escalatedBy: activeAdmin.id },
+        actorUserId: activeAdmin.id,
+      }).catch(() => {})
+    }
+    // Note: a full Supply escalation ticket would require a dedicated entity type.
+    // For now, the ESCALATION event on the dispatch case is the operational record.
+    revalidatePath('/admin/dispatch')
+    redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
   }
 
   async function claimDispatch(formData: FormData) {
@@ -425,6 +474,18 @@ export default async function AdminDispatchPage({
                       Refresh ranked shortlist
                     </Button>
                   </form>
+                  <form action={redispatchAction}>
+                    <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                    <Button type="submit" variant="outline">
+                      Re-dispatch (retry leads)
+                    </Button>
+                  </form>
+                  <form action={escalateToSupplyAction}>
+                    <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                    <Button type="submit" variant="outline" className="border-destructive/40 text-destructive hover:bg-destructive/5">
+                      Escalate to Supply
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
                 )
@@ -483,8 +544,9 @@ export default async function AdminDispatchPage({
                         <form action={overrideAssignment}>
                           <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
                           <input type="hidden" name="providerId" value={candidate.providerId} />
+                          <input type="hidden" name="reasonCode" value="FORCE_ASSIGNED_COVERAGE_EXTENSION" />
                           <Button type="submit" variant="outline" size="sm">
-                            Override to this technician
+                            Force assign
                           </Button>
                         </form>
                       </div>
