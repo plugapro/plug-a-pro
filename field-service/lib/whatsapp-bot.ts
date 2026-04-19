@@ -100,9 +100,14 @@ export async function processInboundMessage(
       return
     }
 
-    // Drop reactions, images, voice notes, stickers, documents — nothing actionable.
+    // Drop reactions, voice notes, stickers — nothing actionable.
+    // image/document are allowed through for evidence collection in the registration flow.
     // Must be checked BEFORE flow dispatch so mid-flow reactions don't retrigger menus.
     if (reply.type === 'other') return
+    if ((reply.type === 'image' || reply.type === 'document') &&
+        !(conversation.flow === 'registration' && conversation.step === 'reg_collect_evidence')) {
+      return
+    }
 
     const isReset = RESET_KEYWORDS.some((k) => rawText === k || rawText.startsWith(k + ' '))
     const isStatus = STATUS_KEYWORDS.some((k) => rawText.includes(k))

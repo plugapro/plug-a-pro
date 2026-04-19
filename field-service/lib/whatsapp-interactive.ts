@@ -206,10 +206,12 @@ export async function sendCtaUrl(
 // ─── Parse inbound interactive replies ───────────────────────────────────────
 
 export interface InboundReply {
-  type: 'button_reply' | 'list_reply' | 'text' | 'other'
-  id?: string     // button/list row ID
-  title?: string  // button/list row title
-  text?: string   // raw text (for free-text steps)
+  type: 'button_reply' | 'list_reply' | 'text' | 'image' | 'document' | 'other'
+  id?: string      // button/list row ID
+  title?: string   // button/list row title
+  text?: string    // raw text (for free-text steps)
+  mediaId?: string // WhatsApp media ID (for image/document)
+  mimeType?: string
 }
 
 export interface OutboundInteractiveContext {
@@ -239,6 +241,12 @@ export function parseInbound(message: InboundMessage): InboundReply {
   if (message.type === 'text') {
     return { type: 'text', text: message.text?.body?.trim() }
   }
+  if (message.type === 'image' && message.image?.id) {
+    return { type: 'image', mediaId: message.image.id, mimeType: message.image.mime_type, text: message.image.caption }
+  }
+  if (message.type === 'document' && message.document?.id) {
+    return { type: 'document', mediaId: message.document.id, mimeType: message.document.mime_type, text: message.document.caption }
+  }
   return { type: 'other' }
 }
 
@@ -254,5 +262,7 @@ export interface InboundMessage {
     button_reply?: { id: string; title: string }
     list_reply?: { id: string; title: string; description?: string }
   }
+  image?: { id: string; mime_type: string; caption?: string }
+  document?: { id: string; mime_type: string; filename?: string; caption?: string }
   timestamp: string
 }

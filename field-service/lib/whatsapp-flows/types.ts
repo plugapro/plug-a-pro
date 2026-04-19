@@ -129,6 +129,7 @@ export interface ConversationData {
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"
   availability?: string[]       // ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
   evidenceNote?: string
+  evidenceFileUrls?: string[]       // blob URLs of uploaded proof images/documents
 
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider

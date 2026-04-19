@@ -229,8 +229,9 @@ model ProviderApplication {
   serviceAreas String[]          @default([])
   experience   String?           // e.g. "3–5 years" — set on application submit
   availability String?           // e.g. "Any day" or "Mon–Sat" — set on application submit
-  evidenceNote String?
-  idNumber     String?           // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
+  evidenceNote     String?
+  evidenceFileUrls String[]          @default([])
+  idNumber         String?           // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
   status       ApplicationStatus @default(PENDING)
   notes        String?           // admin review notes
   reviewedAt   DateTime?

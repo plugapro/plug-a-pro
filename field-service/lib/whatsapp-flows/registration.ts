@@ -616,7 +616,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'evidence_add') {
     await sendText(
       ctx.phone,
-      '🧾 Share a short note about any past work, references, or certificate names you want customers to see later.\n\nReply with your note, or type *skip* to continue without one.'
+      '🧾 Share your proof — you can send:\n• A text note (past jobs, references, certificate names)\n• A photo or PDF of a certificate or work sample\n\nOr type *skip* to continue without one.'
     )
     return { nextStep: 'reg_collect_evidence' }
   }
@@ -625,9 +625,45 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     return showRegistrationSummary(ctx, { evidenceNote: '' })
   }
 
+  // ── Media upload (image or document) ──────────────────────────────────────
+  if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one.")
+      return { nextStep: 'reg_collect_evidence' }
+    }
+    try {
+      const { downloadAndStoreWhatsAppMedia } = await import('../whatsapp-media')
+      const blobUrl = await downloadAndStoreWhatsAppMedia(ctx.reply.mediaId, 'evidence')
+      const existing = ctx.data.evidenceFileUrls ?? []
+      const updated = [...existing, blobUrl]
+      await sendButtons(
+        ctx.phone,
+        `✅ File received (${updated.length} total). Add another or continue?`,
+        [
+          { id: 'evidence_done', title: '✅ Continue' },
+          { id: 'evidence_add_more', title: '📎 Add another' },
+        ]
+      )
+      return { nextStep: 'reg_collect_evidence', nextData: { evidenceFileUrls: updated } }
+    } catch (err) {
+      console.error('[registration:handleCollectEvidence] media upload failed:', err)
+      await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one.")
+      return { nextStep: 'reg_collect_evidence' }
+    }
+  }
+
+  if (ctx.reply.id === 'evidence_done') {
+    return showRegistrationSummary(ctx, {})
+  }
+
+  if (ctx.reply.id === 'evidence_add_more') {
+    await sendText(ctx.phone, '📎 Send your next file, or type *skip* to finish.')
+    return { nextStep: 'reg_collect_evidence' }
+  }
+
   const evidenceNote = ctx.reply.text?.trim()
   if (!evidenceNote) {
-    await sendText(ctx.phone, 'Reply with your proof note, or type *skip* if you do not want to add one now.')
+    await sendText(ctx.phone, 'Reply with your proof note or send a file, or type *skip* if you do not want to add one now.')
     return { nextStep: 'reg_collect_evidence' }
   }
 
@@ -644,16 +680,17 @@ async function showRegistrationSummary(
     : 'Weekdays only'
 
   const merged = { ...ctx.data, ...overrides }
-  const { name, skills, serviceAreas, experience, evidenceNote } = merged
+  const { name, skills, serviceAreas, experience, evidenceNote, evidenceFileUrls } = merged
   const skillList = (skills ?? []).join(', ')
   // Prefer suburb-level labels if the provider drilled down, else fall back to region/area labels
   const suburbLabels = merged.selectedSuburbLabels as string[] | undefined
   const regionLabels = merged.selectedRegionLabels as string[] | undefined
   const areaList = (suburbLabels?.length ? suburbLabels : regionLabels?.length ? regionLabels : serviceAreas ?? []).join(', ')
+  const fileCount = (evidenceFileUrls as string[] | undefined)?.length ?? 0
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}\nShall I submit your application?`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\nShall I submit your application?`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -728,6 +765,16 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       locationNodeIds: ctx.data.locationNodeIds ?? [],
     })
 
+    const evidenceFileUrls = (ctx.data.evidenceFileUrls as string[] | undefined) ?? []
+
+    // Backfill portfolioUrls on Provider if files were uploaded
+    if (evidenceFileUrls.length > 0) {
+      await db.provider.update({
+        where: { id: providerId },
+        data: { portfolioUrls: evidenceFileUrls },
+      }).catch(() => {}) // non-blocking — provider may not exist yet in edge cases
+    }
+
     let application: { id: string }
     try {
       application = await db.providerApplication.create({
@@ -739,6 +786,8 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           serviceAreas: resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
           availability: availLabel,
+          evidenceNote: ctx.data.evidenceNote ?? null,
+          evidenceFileUrls,
           status: 'PENDING',
         },
       })
