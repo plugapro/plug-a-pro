@@ -10,6 +10,7 @@ import { geocodeAddress } from '../geocoding'
 import { resolveSuburbNodeId } from '../location-nodes'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { normalizePhone } from '../utils'
+import { openCase } from '../cases'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -192,6 +193,10 @@ export async function createJobRequest(
 
     return { jobRequestId: jobRequest.id, customerId: customer.id }
   })
+
+  // Open a DISPATCH case for the new job request (fire and forget — cron can backfill on failure).
+  openCase({ queueType: 'DISPATCH', entityType: 'JOB_REQUEST', entityId: result.jobRequestId })
+    .catch((err) => console.error('[create-job-request] openCase failed:', err))
 
   // Trigger matching outside the transaction — fire and forget.
   // The cron job will retry on the next cycle if this fails.
