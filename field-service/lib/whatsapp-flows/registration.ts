@@ -3,6 +3,7 @@
 // No direct connection given to customer — all mediated through Plug-a-Pro
 
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
+import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import { db } from '../db'
 import { syncProviderRecord } from '../provider-record'
 import { normalizePhone } from '../utils'
@@ -631,11 +632,15 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       await sendText(ctx.phone, "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one.")
       return { nextStep: 'reg_collect_evidence' }
     }
+    // providerApplicationId is not yet created — attachment starts with null FK.
+    // handlePending backfills the FK once the ProviderApplication row exists.
     try {
-      const { downloadAndStoreWhatsAppMedia } = await import('../whatsapp-media')
-      const blobUrl = await downloadAndStoreWhatsAppMedia(ctx.reply.mediaId, 'evidence')
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        // no providerApplicationId yet — backfilled at submission
+      })
       const existing = ctx.data.evidenceFileUrls ?? []
-      const updated = [...existing, blobUrl]
+      const updated = [...existing, attachmentId]
       await sendButtons(
         ctx.phone,
         `✅ File received (${updated.length} total). Add another or continue?`,
@@ -646,7 +651,10 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       )
       return { nextStep: 'reg_collect_evidence', nextData: { evidenceFileUrls: updated } }
     } catch (err) {
-      console.error('[registration:handleCollectEvidence] media upload failed:', err)
+      console.error(
+        `[registration:handleCollectEvidence] media upload failed — mediaId=${ctx.reply.mediaId} mimeType=${ctx.reply.mimeType ?? 'unknown'}:`,
+        err
+      )
       await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one.")
       return { nextStep: 'reg_collect_evidence' }
     }
@@ -686,7 +694,7 @@ async function showRegistrationSummary(
   const suburbLabels = merged.selectedSuburbLabels as string[] | undefined
   const regionLabels = merged.selectedRegionLabels as string[] | undefined
   const areaList = (suburbLabels?.length ? suburbLabels : regionLabels?.length ? regionLabels : serviceAreas ?? []).join(', ')
-  const fileCount = (evidenceFileUrls as string[] | undefined)?.length ?? 0
+  const fileCount = evidenceFileUrls?.length ?? 0
 
   await sendButtons(
     ctx.phone,
@@ -765,15 +773,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       locationNodeIds: ctx.data.locationNodeIds ?? [],
     })
 
-    const evidenceFileUrls = (ctx.data.evidenceFileUrls as string[] | undefined) ?? []
-
-    // Backfill portfolioUrls on Provider if files were uploaded
-    if (evidenceFileUrls.length > 0) {
-      await db.provider.update({
-        where: { id: providerId },
-        data: { portfolioUrls: evidenceFileUrls },
-      }).catch(() => {}) // non-blocking — provider may not exist yet in edge cases
-    }
+    // evidenceFileUrls holds Attachment IDs (not blob URLs) — created during evidence collection
+    // with providerApplicationId=null; we backfill the FK below after the application is created.
+    const evidenceAttachmentIds = ctx.data.evidenceFileUrls ?? []
 
     let application: { id: string }
     try {
@@ -787,7 +789,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           experience: ctx.data.experience ?? null,
           availability: availLabel,
           evidenceNote: ctx.data.evidenceNote ?? null,
-          evidenceFileUrls,
+          evidenceFileUrls: evidenceAttachmentIds,
           status: 'PENDING',
         },
       })
@@ -812,6 +814,17 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     }
 
     const ref = application.id.slice(-8).toUpperCase()
+
+    // Backfill providerApplicationId on any evidence Attachments created during the flow.
+    // They were created with providerApplicationId=null (no app row existed yet).
+    if (evidenceAttachmentIds.length > 0) {
+      await db.attachment.updateMany({
+        where: { id: { in: evidenceAttachmentIds }, providerApplicationId: null },
+        data: { providerApplicationId: application.id },
+      }).catch((err: unknown) => {
+        console.error(`[registration-flow:handlePending] evidence attachment backfill failed for app ${application.id}:`, err)
+      })
+    }
 
     await sendText(
       ctx.phone,

@@ -239,7 +239,8 @@ model ProviderApplication {
   submittedAt  DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  provider Provider? @relation(fields: [providerId], references: [id])
+  provider    Provider?    @relation(fields: [providerId], references: [id])
+  attachments Attachment[]
 
   @@map("provider_applications")
 }
@@ -474,22 +475,24 @@ model ExtraWork {
 // ─── Attachments ──────────────────────────────────────────────────────────────
 
 model Attachment {
-  id               String   @id @default(cuid())
-  jobId            String?
-  inspectionSlotId String?
-  jobRequestId     String?
-  url              String
-  blobKey          String   // Vercel Blob key for deletion
-  mimeType         String
-  sizeBytes        Int
-  label            String?  // "before", "after", "inspection", "receipt"
-  caption          String?
-  uploadedBy       String   // user ID
-  createdAt        DateTime @default(now())
+  id                    String   @id @default(cuid())
+  jobId                 String?
+  inspectionSlotId      String?
+  jobRequestId          String?
+  providerApplicationId String?  // set for evidence files uploaded during WA registration
+  url                   String
+  blobKey               String   // Vercel Blob key for deletion
+  mimeType              String
+  sizeBytes             Int
+  label                 String?  // "before", "after", "inspection", "receipt", "evidence"
+  caption               String?
+  uploadedBy            String   // user ID or "system:whatsapp" for bot uploads
+  createdAt             DateTime @default(now())
 
-  job            Job?            @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  inspectionSlot InspectionSlot? @relation(fields: [inspectionSlotId], references: [id], onDelete: Cascade)
-  jobRequest     JobRequest?     @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  job                 Job?                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  inspectionSlot      InspectionSlot?      @relation(fields: [inspectionSlotId], references: [id], onDelete: Cascade)
+  jobRequest          JobRequest?          @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  providerApplication ProviderApplication? @relation(fields: [providerApplicationId], references: [id], onDelete: SetNull)
 
   @@map("attachments")
 }
