@@ -46,6 +46,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectRegion(ctx)
     case 'reg_collect_region_more':
       return handleCollectRegionMore(ctx)
+    case 'reg_collect_suburb_select':
+      return handleCollectSuburbSelect(ctx)
     case 'reg_collect_suburb_text':
       return handleCollectSuburbText(ctx)
     case 'reg_collect_availability':
@@ -386,16 +388,158 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   const regionId = ctx.reply.id.replace('region_', '')
   const regionLabel = ctx.reply.title ?? ''
 
-  // Proceed immediately — providers are limited to one service area
-  await sendExperiencePrompt(ctx.phone)
-  return {
-    nextStep: 'reg_collect_availability',
-    nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel] },
-  }
+  // Drill down to suburb selection within this region
+  return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, [])
 }
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
   return showRegionList(ctx) // re-show the region list
+}
+
+// ─── Suburb multi-select within a region ──────────────────────────────────────
+
+const SUBURB_PAGE_SIZE = 10
+
+async function showSuburbSelectPrompt(
+  phone: string,
+  regionId: string,
+  regionLabel: string,
+  alreadySelected: string[],
+  pageOffset = 0,
+): Promise<FlowResult> {
+  try {
+    const { getSuburbs } = await import('@/lib/location-nodes')
+    const suburbs = await getSuburbs(regionId)
+
+    if (suburbs.length === 0) {
+      // No suburbs seeded — skip drill-down, proceed to experience
+      await sendExperiencePrompt(phone)
+      return {
+        nextStep: 'reg_collect_availability',
+        nextData: {
+          locationNodeIds: [regionId],
+          selectedRegionLabels: [regionLabel],
+        },
+      }
+    }
+
+    const page = suburbs.slice(pageOffset, pageOffset + SUBURB_PAGE_SIZE)
+    const hasMore = suburbs.length > pageOffset + SUBURB_PAGE_SIZE
+
+    const numberedList = page
+      .map((s, i) => `${pageOffset + i + 1}. ${s.label}`)
+      .join('\n')
+
+    const selectedSummary = alreadySelected.length > 0
+      ? `\n\n✅ Selected so far: *${alreadySelected.join(', ')}*`
+      : ''
+
+    const moreNote = hasMore
+      ? `\n\nType *more* to see more suburbs, or *done* when finished.`
+      : `\n\nType the numbers of your suburbs, then *done* when finished.`
+
+    await sendText(
+      phone,
+      `📍 *Which suburbs in ${regionLabel} do you work in?*\n\nReply with numbers separated by commas (e.g. *1,3*).${selectedSummary}${moreNote}\n\n${numberedList}`,
+    )
+
+    return {
+      nextStep: 'reg_collect_suburb_select',
+      nextData: {
+        regionId,
+        regionLabel,
+        suburbPage: pageOffset,
+        suburbPageTotal: suburbs.length,
+        // Preserve suburb options so we can resolve numbers to IDs
+        suburbOptions: suburbs.map(s => ({ id: s.id, label: s.label })),
+      },
+    }
+  } catch {
+    await sendExperiencePrompt(phone)
+    return {
+      nextStep: 'reg_collect_availability',
+      nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel] },
+    }
+  }
+}
+
+async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> {
+  const regionId = ctx.data.regionId as string ?? ''
+  const regionLabel = ctx.data.regionLabel as string ?? ''
+  const suburbOptions = (ctx.data.suburbOptions ?? []) as Array<{ id: string; label: string }>
+  const suburbPage = (ctx.data.suburbPage as number) ?? 0
+  const existingIds: string[] = (ctx.data.locationNodeIds as string[]) ?? []
+  const existingLabels: string[] = (ctx.data.selectedSuburbLabels as string[]) ?? []
+
+  const input = ctx.reply.text?.trim().toLowerCase() ?? ''
+
+  // "done" — proceed if at least one suburb selected
+  if (input === 'done' || ctx.reply.id === 'suburb_done') {
+    if (existingIds.length === 0) {
+      await sendText(ctx.phone, 'Please select at least one suburb, or type *done* to use the whole region.')
+      return { nextStep: 'reg_collect_suburb_select' }
+    }
+    await sendExperiencePrompt(ctx.phone)
+    return {
+      nextStep: 'reg_collect_availability',
+      nextData: {
+        locationNodeIds: existingIds,
+        selectedRegionLabels: [regionLabel],
+        selectedSuburbLabels: existingLabels,
+      },
+    }
+  }
+
+  // "more" — next page
+  if (input === 'more' || ctx.reply.id === 'suburb_more') {
+    const nextOffset = suburbPage + SUBURB_PAGE_SIZE
+    return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, nextOffset)
+  }
+
+  // Parse number selections
+  const tokens = input.split(/[,\s]+/).filter(Boolean)
+  const numbers = tokens.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n >= 1)
+
+  if (numbers.length === 0) {
+    await sendText(ctx.phone, 'Reply with the numbers of your suburbs (e.g. *1,3*), or type *done* when finished.')
+    return { nextStep: 'reg_collect_suburb_select' }
+  }
+
+  const newIds = [...existingIds]
+  const newLabels = [...existingLabels]
+
+  for (const n of numbers) {
+    const suburb = suburbOptions[n - 1]
+    if (suburb && !newIds.includes(suburb.id)) {
+      newIds.push(suburb.id)
+      newLabels.push(suburb.label)
+    }
+  }
+
+  const summary = newLabels.join(', ')
+  const hasMore = (ctx.data.suburbPageTotal as number ?? 0) > suburbPage + SUBURB_PAGE_SIZE
+
+  await sendButtons(
+    ctx.phone,
+    `✅ *Suburbs selected:* ${summary}\n\n${hasMore ? 'Add more suburbs, or continue to the next step.' : 'Continue to the next step, or change your selection.'}`,
+    [
+      { id: 'suburb_done', title: '✅ Continue' },
+      { id: 'suburb_more', title: '➕ Add more' },
+    ],
+  )
+
+  return {
+    nextStep: 'reg_collect_suburb_select',
+    nextData: {
+      regionId,
+      regionLabel,
+      suburbPage,
+      suburbPageTotal: ctx.data.suburbPageTotal,
+      suburbOptions,
+      locationNodeIds: newIds,
+      selectedSuburbLabels: newLabels,
+    },
+  }
 }
 
 // ─── Suburb free-text fallback (when location_nodes DB has no region data) ────
@@ -502,7 +646,10 @@ async function showRegistrationSummary(
   const merged = { ...ctx.data, ...overrides }
   const { name, skills, serviceAreas, experience, evidenceNote } = merged
   const skillList = (skills ?? []).join(', ')
-  const areaList = (serviceAreas ?? []).join(', ')
+  // Prefer suburb-level labels if the provider drilled down, else fall back to region/area labels
+  const suburbLabels = merged.selectedSuburbLabels as string[] | undefined
+  const regionLabels = merged.selectedRegionLabels as string[] | undefined
+  const areaList = (suburbLabels?.length ? suburbLabels : regionLabels?.length ? regionLabels : serviceAreas ?? []).join(', ')
 
   await sendButtons(
     ctx.phone,
@@ -564,13 +711,17 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'done' }
     }
 
+    const resolvedAreaLabels = ctx.data.locationNodeIds && (ctx.data.locationNodeIds as string[]).length > 0
+      ? ((ctx.data.selectedSuburbLabels as string[] | undefined)?.length
+          ? (ctx.data.selectedSuburbLabels as string[])
+          : (ctx.data.selectedRegionLabels as string[] | undefined) ?? ctx.data.serviceAreas ?? [])
+      : (ctx.data.serviceAreas ?? [])
+
     const providerId = await syncProviderRecord(db, {
       phone: normalizedPhone,
       name: ctx.data.name ?? 'Unknown',
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
-        ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
-        : (ctx.data.serviceAreas ?? []),
+      serviceAreas: resolvedAreaLabels,
       active: true,
       availableNow: true,
       verified: false,
@@ -585,9 +736,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           phone: normalizedPhone,
           name: ctx.data.name ?? 'Unknown',
           skills: ctx.data.skills ?? [],
-          serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
-            ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
-            : (ctx.data.serviceAreas ?? []),
+          serviceAreas: resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
           availability: availLabel,
           status: 'PENDING',
