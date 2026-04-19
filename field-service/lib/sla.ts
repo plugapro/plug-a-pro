@@ -29,7 +29,8 @@ const QUEUE_TYPE_TO_KEY: Record<OpsQueueType, OpsDashboardQueueKey | null> = {
 export function slaFor(queueType: OpsQueueType): SlaSpec {
   const key = QUEUE_TYPE_TO_KEY[queueType]
   if (!key) {
-    // SUPPLY queue introduced by WS5 — default to 1 business day
+    // TODO(WS-SUPPLY): SUPPLY is not yet in OpsQueueType enum — this branch is unreachable
+    // until the SUPPLY migration is applied. Default to 1 business day when it lands.
     return { targetMinutes: 8 * 60, warningAtMinutes: Math.floor(8 * 60 * 0.8), targetLabel: 'Resolve inside 1 day' }
   }
   const config = OPS_DASHBOARD_QUEUE_SLA[key]

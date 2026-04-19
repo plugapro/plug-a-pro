@@ -67,6 +67,9 @@ export const FINANCE_REASON_CODES: ReasonCode[] = [
   { code: 'OTHER',                label: 'Other',                   requiresNote: true  },
 ]
 
+// TODO(WS-SUPPLY): SUPPLY queue not yet in OpsQueueType enum — add migration + enum member
+// before registering this in QUEUE_REASON_CODES. Exported here so it can be imported
+// directly when the SUPPLY queue page is built.
 export const SUPPLY_REASON_CODES: ReasonCode[] = [
   { code: 'PROVIDER_RECRUITED',   label: 'New provider recruited',  requiresNote: false },
   { code: 'AREA_DEPRIORITISED',   label: 'Area deprioritised',      requiresNote: true  },

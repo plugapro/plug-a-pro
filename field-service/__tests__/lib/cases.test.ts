@@ -10,7 +10,7 @@ vi.mock('@/lib/db', () => {
     update:           vi.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: 'case_1', ...data })),
   })
 
-  const txMock = vi.fn().mockImplementation(async (fns: Array<Promise<unknown>>) => fns)
+  const txMock = vi.fn().mockImplementation((fns: Array<Promise<unknown>>) => Promise.all(fns))
 
   return {
     db: {
@@ -176,6 +176,26 @@ describe('resolveCase', () => {
     const updateCall = mockCase.update.mock.calls[0][0]
     expect(updateCall.data.notes).toBeUndefined()
   })
+
+  it('throws when case is already RESOLVED (state guard)', async () => {
+    mockCase.findUniqueOrThrow.mockResolvedValue({
+      id: 'case_1', state: 'RESOLVED', queueType: 'DISPATCH',
+      entityType: 'JOB_REQUEST', entityId: 'jr_1', events: [],
+    })
+    await expect(
+      resolveCase({ caseId: 'case_1', resolvedBy: 'user_1', reasonCode: 'COVERAGE_GAP' }),
+    ).rejects.toThrow('cannot be resolved from state')
+  })
+
+  it('throws when case is CANCELLED (state guard)', async () => {
+    mockCase.findUniqueOrThrow.mockResolvedValue({
+      id: 'case_1', state: 'CANCELLED', queueType: 'DISPATCH',
+      entityType: 'JOB_REQUEST', entityId: 'jr_1', events: [],
+    })
+    await expect(
+      resolveCase({ caseId: 'case_1', resolvedBy: 'user_1', reasonCode: 'COVERAGE_GAP' }),
+    ).rejects.toThrow('cannot be resolved from state')
+  })
 })
 
 // ─── reopenCase ───────────────────────────────────────────────────────────────
@@ -207,6 +227,19 @@ describe('addNote', () => {
     const noteCall = mockCaseNote.create.mock.calls[0][0]
     expect(noteCall.data.body).toBe('called customer')
     expect(noteCall.data.authorUserId).toBe('user_1')
+  })
+
+  it('returns the resolved note (not a Promise)', async () => {
+    const result = await addNote({ caseId: 'case_1', authorUserId: 'user_1', body: 'test' })
+    expect(result).toEqual({ id: 'note_1' })
+    expect(result).not.toBeInstanceOf(Promise)
+  })
+
+  it('NOTE_ADDED event payload contains body preview', async () => {
+    await addNote({ caseId: 'case_1', authorUserId: 'user_1', body: 'short note' })
+    const updateCall = mockCase.update.mock.calls[0][0]
+    expect(updateCall.data.events.create.type).toBe('NOTE_ADDED')
+    expect(updateCall.data.events.create.payload.preview).toBe('short note')
   })
 })
 

@@ -28,3 +28,14 @@ export function normalizePhone(raw: string): string {
   // Fallback: return stripped (caller should validate E.164 separately)
   return stripped
 }
+
+/** Returns a short human-readable age string relative to now ("3m ago", "2h ago", "5d ago"). */
+export function relativeTime(date: Date): string {
+  const diff = Date.now() - date.getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}

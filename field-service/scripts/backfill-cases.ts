@@ -110,7 +110,7 @@ async function main() {
     select: { id: true, createdAt: true },
   })
   for (const q of pendingQuotes) {
-    await upsertCase({ queueType: 'QUOTE_APPROVAL', entityType: 'MATCH', entityId: q.id, createdAt: q.createdAt })
+    await upsertCase({ queueType: 'QUOTE_APPROVAL', entityType: 'QUOTE', entityId: q.id, createdAt: q.createdAt })
   }
   console.log(`quote_approval queue: ${pendingQuotes.length} records scanned`)
 

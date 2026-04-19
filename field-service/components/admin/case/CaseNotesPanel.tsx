@@ -8,16 +8,7 @@ import type { CaseNote } from '@prisma/client'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
-
-function relativeTime(date: Date): string {
-  const diff = Date.now() - date.getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
-}
+import { relativeTime } from '@/lib/utils'
 
 export function CaseNotesPanel({
   notes,

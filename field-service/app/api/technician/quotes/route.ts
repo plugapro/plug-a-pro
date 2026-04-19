@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     data: { status: 'QUOTED' },
   })
 
-  openCase({ queueType: 'QUOTE_APPROVAL', entityType: 'MATCH', entityId: quote.id })
+  openCase({ queueType: 'QUOTE_APPROVAL', entityType: 'QUOTE', entityId: quote.id })
     .catch((err) => console.error(`[quotes] openCase QUOTE_APPROVAL failed for ${quote.id}:`, err))
 
   const customerPhone = match.jobRequest.customer.phone

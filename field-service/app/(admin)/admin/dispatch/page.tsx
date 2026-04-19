@@ -33,7 +33,7 @@ import { CaseNotesPanel } from '@/components/admin/case/CaseNotesPanel'
 import { ResolveCaseForm } from '@/components/admin/case/ResolveCaseForm'
 import { isEnabled } from '@/lib/flags'
 import { getReasonCodesForQueue } from '@/lib/reason-codes'
-import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase } from '@/lib/cases'
+import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase, addEvent } from '@/lib/cases'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 

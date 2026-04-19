@@ -164,11 +164,15 @@ export async function reassignCase(caseId: string, toUserId: string, actorUserId
 // ─── Resolution ───────────────────────────────────────────────────────────────
 
 export async function resolveCase(params: ResolveParams) {
-  if (noteRequiredForCode(
-    // queueType lookup required — read case first
-    (await db.case.findUniqueOrThrow({ where: { id: params.caseId } })).queueType,
-    params.reasonCode,
-  ) && !params.note?.trim()) {
+  const RESOLVABLE: CaseState[] = ['OPEN', 'IN_PROGRESS', 'REOPENED']
+
+  const c = await db.case.findUniqueOrThrow({ where: { id: params.caseId } })
+
+  if (!RESOLVABLE.includes(c.state)) {
+    throw new Error(`Case ${params.caseId} cannot be resolved from state "${c.state}"`)
+  }
+
+  if (noteRequiredForCode(c.queueType, params.reasonCode) && !params.note?.trim()) {
     throw new Error(`A note is required for reason code "${params.reasonCode}"`)
   }
 

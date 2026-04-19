@@ -1184,6 +1184,7 @@ enum CaseEntityType {
   PAYMENT
   DISPUTE
   APPLICATION
+  QUOTE
 }
 
 enum CaseEventType {

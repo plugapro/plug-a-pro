@@ -4,17 +4,18 @@
 // Append-only — no edit/delete UI.
 
 import type { CaseEvent } from '@prisma/client'
+import { relativeTime } from '@/lib/utils'
 
 const EVENT_ICONS: Record<string, string> = {
-  STATE_CHANGE:         '🔄',
-  SYSTEM_EVENT:         '⚙️',
-  OPS_ACTION:           '🛠',
-  NOTE_ADDED:           '📝',
-  ATTACHMENT_ADDED:     '📎',
-  ASSIGNMENT_CHANGE:    '👤',
-  CUSTOMER_CONTACTED:   '📞',
-  ESCALATION:           '🚨',
-  BREACH_DETECTED:      '⏰',
+  STATE_CHANGE:         '~',
+  SYSTEM_EVENT:         '*',
+  OPS_ACTION:           '>',
+  NOTE_ADDED:           '#',
+  ATTACHMENT_ADDED:     '+',
+  ASSIGNMENT_CHANGE:    '@',
+  CUSTOMER_CONTACTED:   'c',
+  ESCALATION:           '!',
+  BREACH_DETECTED:      '!',
 }
 
 function humanSummary(event: CaseEvent): string {
@@ -40,16 +41,6 @@ function humanSummary(event: CaseEvent): string {
   }
 }
 
-function relativeTime(date: Date): string {
-  const diff = Date.now() - date.getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
-}
 
 function dayLabel(date: Date): string {
   const today = new Date()
