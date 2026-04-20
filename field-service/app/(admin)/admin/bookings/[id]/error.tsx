@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import Link from 'next/link'
 
 export default function BookingDetailError({
@@ -9,15 +10,21 @@ export default function BookingDetailError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  React.useEffect(() => {
+    console.error('[admin error boundary] booking detail', error)
+  }, [error])
+
   return (
     <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-8 text-sm">
       <p className="font-semibold text-destructive mb-1">Could not load booking</p>
-      <p className="text-muted-foreground mb-4">
+      <p className="text-muted-foreground mb-2">
         An unexpected error occurred while loading this booking detail.
-        {error.digest ? (
-          <> Reference: <span className="font-mono">{error.digest}</span></>
-        ) : null}
       </p>
+      {error.digest && (
+        <p className="font-mono text-xs mb-4">
+          Reference: <span className="rounded bg-background px-1 border">{error.digest}</span>
+        </p>
+      )}
       <div className="flex gap-3">
         <button
           onClick={reset}

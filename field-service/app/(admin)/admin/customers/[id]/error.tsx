@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 
-export default function ProviderDetailError({
+export default function CustomerDetailError({
   error,
   reset,
 }: {
@@ -11,14 +11,14 @@ export default function ProviderDetailError({
   reset: () => void
 }) {
   React.useEffect(() => {
-    console.error('[admin error boundary] provider detail', error)
+    console.error('[admin error boundary] customer detail', error)
   }, [error])
 
   return (
     <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-8 text-sm">
-      <p className="font-semibold text-destructive mb-1">Could not load provider profile</p>
+      <p className="font-semibold text-destructive mb-1">Could not load customer</p>
       <p className="text-muted-foreground mb-2">
-        An unexpected error occurred while loading this provider detail.
+        An unexpected error occurred while loading this customer detail.
       </p>
       {error.digest && (
         <p className="font-mono text-xs mb-4">
@@ -33,10 +33,10 @@ export default function ProviderDetailError({
           Try again
         </button>
         <Link
-          href="/admin/providers"
+          href="/admin/customers"
           className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors"
         >
-          ← Back to providers
+          ← Back to customers
         </Link>
       </div>
     </div>
