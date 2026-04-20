@@ -48,12 +48,9 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Build check runs on every push; requires secrets to be configured in repo settings.
-    # On first setup, add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
-    # as repository secrets. Build will be skipped if secrets are absent.
-    if: >
-      github.event_name == 'push' &&
-      (vars.CI_BUILD_ENABLED == 'true' || secrets.NEXT_PUBLIC_SUPABASE_URL != '')
+    # Build check runs on every push when CI_BUILD_ENABLED repo variable is set to 'true'.
+    # Set it via: GitHub repo → Settings → Variables → Actions → New repository variable.
+    if: github.event_name == 'push' && vars.CI_BUILD_ENABLED == 'true'
 
     steps:
       - uses: actions/checkout@v4
