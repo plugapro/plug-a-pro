@@ -36,11 +36,26 @@ model Customer {
   whatsappMarketingSource   String?   // "bot" | "pwa" | "admin" | "import"
   lastWhatsappPrefSyncAt    DateTime?
 
+  // Admin CRUD fields — WS-B.1
+  address         String?                // free-text address for legacy/quick reference
+  isBlocked       Boolean                @default(false)
+  blockedReason   String?
+  blockedAt       DateTime?
+  suspendedUntil  DateTime?
+  suspendedReason String?
+  internalFlags   CustomerInternalFlag[] @default([])
+  marketingOptIn  Boolean                @default(false)
+  serviceOptIn    Boolean                @default(true)
+  archivedAt      DateTime?
+  archiveReason   String?
+  channel         CustomerChannel?
+
   addresses              Address[]
   jobRequests            JobRequest[]
   ratings                Review[]
   messages               MessageEvent[]
   whatsappPreferenceLogs WhatsappPreferenceLog[]
+  customerNotes          CustomerNote[]
 
   @@map("customers")
 }
@@ -171,6 +186,16 @@ model Provider {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Admin CRUD fields — WS-B.1
+  status           ProviderStatus @default(APPLICATION_PENDING)
+  kycStatus        KycStatus      @default(NOT_STARTED)
+  payoutVerifiedAt DateTime?
+  suspendedUntil   DateTime?
+  suspendedReason  String?
+  strikes          Int            @default(0)
+  archivedAt       DateTime?
+  archiveReason    String?
+
   schedule          ProviderSchedule[]
   technicianSkills  TechnicianSkill[]
   technicianCertifications TechnicianCertification[]
@@ -187,6 +212,9 @@ model Provider {
   assignmentHolds   AssignmentHold[]
   matchAttempts     MatchAttempt[]
   selectedDispatchDecisions DispatchDecision[] @relation("DispatchDecisionSelectedProvider")
+  providerNotes     ProviderNote[]
+  adminCertifications ProviderCertification[]
+  equipment         ProviderEquipment[]
 
   @@map("providers")
 }
@@ -1146,4 +1174,167 @@ enum DisputeStatus {
   RESOLVED_PROVIDER // resolved in provider's favour
   RESOLVED_SPLIT    // partial refund / split resolution
   CLOSED
+}
+
+// ─── WS-B.1 Enums ─────────────────────────────────────────────────────────────
+
+enum Role {
+  OPS
+  FINANCE
+  TRUST
+  ADMIN
+  OWNER
+}
+
+enum CustomerInternalFlag {
+  VIP
+  FRAUD_RISK
+  DISPUTE_HISTORY
+  LATE_PAYMENT
+  WATCHLIST
+  LOYALTY_MEMBER
+}
+
+enum CustomerChannel {
+  WHATSAPP
+  PWA
+  REFERRAL
+  IMPORT
+}
+
+enum KycStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum ProviderStatus {
+  APPLICATION_PENDING
+  UNDER_REVIEW
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+  BANNED
+}
+
+// ─── WS-B.1 Models ────────────────────────────────────────────────────────────
+
+model AdminUser {
+  id          String    @id @default(cuid())
+  userId      String    @unique // Supabase auth user ID
+  email       String    @unique
+  name        String
+  role        Role      @default(OPS)
+  active      Boolean   @default(true)
+  invitedAt   DateTime  @default(now())
+  invitedById String?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  invitedBy   AdminUser?  @relation("AdminInvitedBy", fields: [invitedById], references: [id])
+  invitees    AdminUser[] @relation("AdminInvitedBy")
+  auditEvents AdminAuditEvent[]
+
+  @@map("admin_users")
+}
+
+model AdminAuditEvent {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String   // e.g. "customer.block", "provider.suspend", "flag.toggle"
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  metadata   Json     @default("{}")
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  admin AdminUser @relation(fields: [adminId], references: [id])
+
+  @@index([adminId, timestamp])
+  @@index([entityType, entityId])
+  @@map("admin_audit_events")
+}
+
+model FeatureFlag {
+  key             String   @id
+  enabled         Boolean  @default(false)
+  enabledForUsers String[] @default([])
+  description     String?
+  updatedAt       DateTime @updatedAt
+
+  @@map("feature_flags")
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  authorId   String   // admin user ID who wrote the note
+  body       String
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@map("customer_notes")
+}
+
+model ProviderNote {
+  id         String   @id @default(cuid())
+  providerId String
+  authorId   String   // admin user ID who wrote the note
+  body       String
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, createdAt])
+  @@map("provider_notes")
+}
+
+model ProviderCertification {
+  id               String    @id @default(cuid())
+  providerId       String
+  name             String
+  issuingAuthority String?
+  certNumber       String?
+  issuedAt         DateTime?
+  expiresAt        DateTime?
+  documentUrl      String?
+  verifiedAt       DateTime?
+  verifiedById     String?   // admin user ID who verified
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("provider_certifications")
+}
+
+model ProviderEquipment {
+  id           String   @id @default(cuid())
+  providerId   String
+  label        String
+  category     String?
+  serialNumber String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("provider_equipment")
 }
