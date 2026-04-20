@@ -264,7 +264,9 @@ describe('matching service', () => {
       expect.arrayContaining([
         expect.objectContaining({
           providerId: 'provider-missing-cert',
-          filteredReasonCodes: expect.arrayContaining(['MISSING_REQUIRED_CERTIFICATION']),
+          filteredReasonCodes: expect.arrayContaining([
+            'MISSING_REQUIRED_CERTIFICATION:wireman',
+          ]),
         }),
         expect.objectContaining({
           providerId: 'provider-outside-area',
@@ -335,6 +337,62 @@ describe('matching service', () => {
     )
     expect(result.candidates[0].scoreBreakdown.reasons).toContain(
       'Profile pending marketplace review',
+    )
+  })
+
+  it('emits specific equipment reason codes for missing requirements', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      id: 'jr-equip-1',
+      category: 'plumbing',
+      title: 'Blocked drain',
+      description: 'Need drain machine',
+      requestedWindowStart: new Date('2026-04-14T09:00:00.000Z'),
+      requestedWindowEnd: new Date('2026-04-14T11:00:00.000Z'),
+      requestedArrivalLatest: null,
+      estimatedDurationMinutes: 90,
+      requiredSkillTags: ['plumbing'],
+      requiredCertificationCodes: [],
+      requiredEquipmentTags: ['drain_snake'],
+      requiredVehicleTypes: [],
+      preferredProviderId: null,
+      assignmentMode: 'AUTO_ASSIGN',
+      customerAcceptedAmount: null,
+      customerAcceptedScope: null,
+      autoCreateBookingOnAssignment: false,
+      status: 'OPEN',
+      address: {
+        street: '1 Main St',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        lat: null,
+        lng: null,
+      },
+      customer: { id: 'customer-1', name: 'Alice', phone: '+27820000000' },
+    })
+    mockDb.provider.findMany.mockResolvedValue([
+      {
+        ...makeProvider('provider-missing-equipment', 'Missing Equipment Pro'),
+        skills: ['plumbing'],
+        technicianSkills: [{ skillTag: 'plumbing' }],
+        serviceAreas: ['Sandton'],
+        technicianServiceAreas: [{ label: 'Sandton', city: 'Johannesburg', active: true }],
+        equipmentTags: [],
+      },
+    ])
+
+    const result = await rankCandidatesForJobRequest('jr-equip-1')
+
+    expect(result.eligibleCount).toBe(0)
+    expect(result.filteredOut).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: 'provider-missing-equipment',
+          filteredReasonCodes: expect.arrayContaining([
+            'MISSING_REQUIRED_EQUIPMENT:drain_snake',
+          ]),
+        }),
+      ]),
     )
   })
 

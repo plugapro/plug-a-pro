@@ -3,9 +3,11 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
-import { recordAuditLog } from '@/lib/audit'
+import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import {
   getDispatchHistory,
   manualOverrideAssignment,
@@ -29,6 +31,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
+const FLAG = 'admin.crud.dispatch'
+const DISPATCH_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
+const JobRequestQueueSchema = z.object({
+  jobRequestId: z.string().min(1),
+})
+const OverrideSchema = z.object({
+  jobRequestId: z.string().min(1),
+  providerId: z.string().min(1),
+})
 
 export default async function AdminDispatchPage({
   searchParams,
@@ -40,6 +51,7 @@ export default async function AdminDispatchPage({
   const banner = getDispatchAdminMessage(message)
   const now = new Date()
   const pageWarnings: string[] = []
+  const crudEnabled = await isEnabled(FLAG, admin.id)
 
   const requests = await db.jobRequest.findMany({
     where: {
@@ -83,26 +95,31 @@ export default async function AdminDispatchPage({
   async function runAutoAssign(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
     try {
-      await runAssignmentForJobRequest({
-        jobRequestId,
-        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-        mode: 'AUTO_ASSIGN',
-      })
-      await recordAuditLog({
-        actorId: activeAdmin.id,
-        actorRole: activeAdmin.role,
+      const result = await crudAction({
+        entity: 'JobRequest',
         action: 'dispatch.auto_assign',
-        entityType: 'job_request',
-        entityId: jobRequestId,
-        after: { mode: 'AUTO_ASSIGN' },
+        requiredRole: [...DISPATCH_ROLES],
+        requiredFlag: FLAG,
+        schema: JobRequestQueueSchema,
+        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        run: async ({ jobRequestId }) => {
+          await runAssignmentForJobRequest({
+            jobRequestId,
+            actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+            mode: 'AUTO_ASSIGN',
+          })
+          return { id: jobRequestId, mode: 'AUTO_ASSIGN' }
+        },
       })
       revalidatePath('/admin/dispatch')
       revalidatePath('/admin')
-      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+      redirect(`/admin/dispatch?request=${result.data.id}&message=dispatch_updated`)
     } catch (error) {
-      console.error('[admin/dispatch] Auto-assign failed', { jobRequestId, error })
+      const jobRequestId = String(formData.get('jobRequestId') ?? '')
+      if (!(error instanceof CrudActionError)) {
+        console.error('[admin/dispatch] Auto-assign failed', { jobRequestId, error })
+      }
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
     }
   }
@@ -110,26 +127,31 @@ export default async function AdminDispatchPage({
   async function rerankForReview(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
     try {
-      await runAssignmentForJobRequest({
-        jobRequestId,
-        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-        mode: 'OPS_REVIEW',
-      })
-      await recordAuditLog({
-        actorId: activeAdmin.id,
-        actorRole: activeAdmin.role,
+      const result = await crudAction({
+        entity: 'JobRequest',
         action: 'dispatch.rerank',
-        entityType: 'job_request',
-        entityId: jobRequestId,
-        after: { mode: 'OPS_REVIEW' },
+        requiredRole: [...DISPATCH_ROLES],
+        requiredFlag: FLAG,
+        schema: JobRequestQueueSchema,
+        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        run: async ({ jobRequestId }) => {
+          await runAssignmentForJobRequest({
+            jobRequestId,
+            actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+            mode: 'OPS_REVIEW',
+          })
+          return { id: jobRequestId, mode: 'OPS_REVIEW' }
+        },
       })
       revalidatePath('/admin/dispatch')
       revalidatePath('/admin')
-      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+      redirect(`/admin/dispatch?request=${result.data.id}&message=dispatch_updated`)
     } catch (error) {
-      console.error('[admin/dispatch] Rerank failed', { jobRequestId, error })
+      const jobRequestId = String(formData.get('jobRequestId') ?? '')
+      if (!(error instanceof CrudActionError)) {
+        console.error('[admin/dispatch] Rerank failed', { jobRequestId, error })
+      }
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
     }
   }
@@ -137,30 +159,37 @@ export default async function AdminDispatchPage({
   async function overrideAssignment(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    const providerId = String(formData.get('providerId') ?? '')
     try {
-      await manualOverrideAssignment({
-        jobRequestId,
-        providerId,
-        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-        overrideReason: 'Selected by admin from dispatch console',
-      })
-      await recordAuditLog({
-        actorId: activeAdmin.id,
-        actorRole: activeAdmin.role,
+      const result = await crudAction({
+        entity: 'JobRequest',
         action: 'dispatch.override_assignment',
-        entityType: 'job_request',
-        entityId: jobRequestId,
-        after: {
-          providerId,
-          overrideReason: 'Selected by admin from dispatch console',
+        requiredRole: [...DISPATCH_ROLES],
+        requiredFlag: FLAG,
+        schema: OverrideSchema,
+        input: {
+          jobRequestId: String(formData.get('jobRequestId') ?? ''),
+          providerId: String(formData.get('providerId') ?? ''),
+        },
+        run: async ({ jobRequestId, providerId }) => {
+          await manualOverrideAssignment({
+            jobRequestId,
+            providerId,
+            actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+            overrideReason: 'Selected by admin from dispatch console',
+          })
+          return {
+            id: jobRequestId,
+            providerId,
+            overrideReason: 'Selected by admin from dispatch console',
+          }
         },
       })
       revalidatePath('/admin/dispatch')
       revalidatePath('/admin')
-      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+      redirect(`/admin/dispatch?request=${result.data.id}&message=dispatch_updated`)
     } catch (error) {
+      const jobRequestId = String(formData.get('jobRequestId') ?? '')
+      const providerId = String(formData.get('providerId') ?? '')
       console.error('[admin/dispatch] Override failed', { jobRequestId, providerId, error })
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
     }
@@ -169,38 +198,67 @@ export default async function AdminDispatchPage({
   async function claimDispatch(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    if (!jobRequestId) return
+    try {
+      const result = await crudAction({
+        entity: 'JobRequest',
+        action: 'dispatch.claim',
+        requiredRole: [...DISPATCH_ROLES],
+        requiredFlag: FLAG,
+        schema: JobRequestQueueSchema,
+        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        run: async ({ jobRequestId }, tx) => {
+          await claimOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.DISPATCH,
+            entityId: jobRequestId,
+            claimedById: activeAdmin.id,
+            claimedByRole: activeAdmin.adminRole,
+            claimedByLabel: activeAdmin.email ?? 'admin',
+          })
+          return { id: jobRequestId, claimedById: activeAdmin.id }
+        },
+      })
 
-    await claimOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.DISPATCH,
-      entityId: jobRequestId,
-      claimedById: activeAdmin.id,
-      claimedByRole: activeAdmin.role,
-      claimedByLabel: activeAdmin.email ?? 'admin',
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
-
-    revalidatePath('/admin/dispatch')
-    revalidatePath('/admin')
-    redirect(`/admin/dispatch?request=${jobRequestId}`)
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${result.data.id}`)
+    } catch (error) {
+      const jobRequestId = String(formData.get('jobRequestId') ?? '')
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
   }
 
   async function releaseDispatch(formData: FormData) {
     'use server'
-    const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    if (!jobRequestId) return
+    try {
+      const result = await crudAction({
+        entity: 'JobRequest',
+        action: 'dispatch.release',
+        requiredRole: [...DISPATCH_ROLES],
+        requiredFlag: FLAG,
+        schema: JobRequestQueueSchema,
+        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        run: async ({ jobRequestId }, tx) => {
+          await releaseOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.DISPATCH,
+            entityId: jobRequestId,
+          })
+          return { id: jobRequestId, released: true }
+        },
+      })
 
-    await releaseOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.DISPATCH,
-      entityId: jobRequestId,
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
-
-    revalidatePath('/admin/dispatch')
-    revalidatePath('/admin')
-    redirect(`/admin/dispatch?request=${jobRequestId}`)
+      revalidatePath('/admin/dispatch')
+      revalidatePath('/admin')
+      redirect(`/admin/dispatch?request=${result.data.id}`)
+    } catch (error) {
+      const jobRequestId = String(formData.get('jobRequestId') ?? '')
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
+    }
   }
 
   const ranking = selectedRequest
@@ -233,6 +291,11 @@ export default async function AdminDispatchPage({
   return (
     <div className="space-y-6">
       {pageWarnings.length > 0 ? <StaleBanner refreshHref={`/admin/dispatch${request ? `?request=${request}` : ''}`} /> : null}
+      {!crudEnabled ? (
+        <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
+          Dispatch mutations are read-only while <code>{FLAG}</code> is disabled.
+        </div>
+      ) : null}
       <div>
         <h1 className="text-xl font-semibold">Dispatch Console</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -342,25 +405,25 @@ export default async function AdminDispatchPage({
                   {!claimedByCurrentUser ? (
                     <form action={claimDispatch}>
                       <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                      <Button type="submit" variant="outline">
+                      <Button type="submit" variant="outline" disabled={!crudEnabled}>
                         {assignment?.claimedById ? 'Take over dispatch' : 'Claim dispatch'}
                       </Button>
                     </form>
                   ) : (
                     <form action={releaseDispatch}>
                       <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                      <Button type="submit" variant="outline">
+                      <Button type="submit" variant="outline" disabled={!crudEnabled}>
                         Release dispatch
                       </Button>
                     </form>
                   )}
                   <form action={runAutoAssign}>
                     <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                    <Button type="submit">Auto-assign top candidate</Button>
+                    <Button type="submit" disabled={!crudEnabled}>Auto-assign top candidate</Button>
                   </form>
                   <form action={rerankForReview}>
                     <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
-                    <Button type="submit" variant="outline">
+                    <Button type="submit" variant="outline" disabled={!crudEnabled}>
                       Refresh ranked shortlist
                     </Button>
                   </form>
@@ -422,7 +485,7 @@ export default async function AdminDispatchPage({
                         <form action={overrideAssignment}>
                           <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
                           <input type="hidden" name="providerId" value={candidate.providerId} />
-                          <Button type="submit" variant="outline" size="sm">
+                          <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                             Override to this technician
                           </Button>
                         </form>

@@ -3,8 +3,7 @@
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
-import { createServiceClient } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { createServiceClient, requireRole } from '@/lib/auth'
 import type { Role } from '@prisma/client'
 
 const FLAG = 'admin.users.v2'
@@ -26,17 +25,29 @@ const DeactivateAdminSchema = z.object({
   adminUserId: z.string().min(1),
 })
 
+const ReactivateAdminSchema = z.object({
+  adminUserId: z.string().min(1),
+})
+
+const RevokeAdminSchema = z.object({
+  adminUserId: z.string().min(1),
+})
+
 type InviteInput = z.infer<typeof InviteAdminSchema>
 type ChangeRoleInput = z.infer<typeof ChangeRoleSchema>
 type DeactivateInput = z.infer<typeof DeactivateAdminSchema>
+type ReactivateInput = z.infer<typeof ReactivateAdminSchema>
+type RevokeInput = z.infer<typeof RevokeAdminSchema>
 
 // ─── inviteAdmin ──────────────────────────────────────────────────────────────
 
 export async function inviteAdminAction(input: InviteInput) {
+  const actor = await requireRole(['OWNER'])
+
   const result = await crudAction<InviteInput, { id: string; email: string }>({
     entity: 'AdminUser',
     action: 'admin.invite',
-    requiredRole: ['ADMIN', 'OWNER'],
+    requiredRole: ['OWNER'],
     requiredFlag: FLAG,
     schema: InviteAdminSchema,
     input,
@@ -69,6 +80,7 @@ export async function inviteAdminAction(input: InviteInput) {
           name: data.name,
           role: data.role as Role,
           active: true,
+          invitedById: actor.adminUserId ?? undefined,
         },
         select: { id: true, email: true },
       })
@@ -89,12 +101,15 @@ export async function inviteAdminAction(input: InviteInput) {
   }
 
   revalidatePath('/admin/team')
+  revalidatePath('/admin/team/permissions')
   return result
 }
 
 // ─── changeRole ───────────────────────────────────────────────────────────────
 
 export async function changeRoleAction(input: ChangeRoleInput) {
+  const actor = await requireRole(['OWNER'])
+
   const result = await crudAction<ChangeRoleInput, { id: string }>({
     entity: 'AdminUser',
     entityId: input.adminUserId,
@@ -106,10 +121,21 @@ export async function changeRoleAction(input: ChangeRoleInput) {
     run: async (data, tx) => {
       const adminUser = await tx.adminUser.findUnique({
         where: { id: data.adminUserId },
-        select: { id: true },
+        select: { id: true, role: true, userId: true, active: true },
       })
       if (!adminUser) {
         throw new CrudActionError('NOT_FOUND', `AdminUser ${data.adminUserId} not found.`)
+      }
+      if (adminUser.userId === actor.id || (actor.adminUserId && adminUser.id === actor.adminUserId)) {
+        throw new CrudActionError('CONFLICT', 'You cannot change your own role.')
+      }
+      if (adminUser.active && adminUser.role === 'OWNER' && data.role !== 'OWNER') {
+        const activeOwnerCount = await tx.adminUser.count({
+          where: { role: 'OWNER', active: true },
+        })
+        if (activeOwnerCount <= 1) {
+          throw new CrudActionError('CONFLICT', 'You cannot remove the last OWNER role.')
+        }
       }
       await tx.adminUser.update({
         where: { id: data.adminUserId },
@@ -119,12 +145,15 @@ export async function changeRoleAction(input: ChangeRoleInput) {
     },
   })
   revalidatePath('/admin/team')
+  revalidatePath('/admin/team/permissions')
   return result
 }
 
 // ─── deactivateAdmin ──────────────────────────────────────────────────────────
 
 export async function deactivateAdminAction(input: DeactivateInput) {
+  const actor = await requireRole(['OWNER'])
+
   const result = await crudAction<DeactivateInput, { id: string }>({
     entity: 'AdminUser',
     entityId: input.adminUserId,
@@ -136,10 +165,21 @@ export async function deactivateAdminAction(input: DeactivateInput) {
     run: async (data, tx) => {
       const adminUser = await tx.adminUser.findUnique({
         where: { id: data.adminUserId },
-        select: { id: true },
+        select: { id: true, role: true, userId: true, active: true },
       })
       if (!adminUser) {
         throw new CrudActionError('NOT_FOUND', `AdminUser ${data.adminUserId} not found.`)
+      }
+      if (adminUser.userId === actor.id || (actor.adminUserId && adminUser.id === actor.adminUserId)) {
+        throw new CrudActionError('CONFLICT', 'You cannot deactivate your own account.')
+      }
+      if (adminUser.active && adminUser.role === 'OWNER') {
+        const activeOwnerCount = await tx.adminUser.count({
+          where: { role: 'OWNER', active: true },
+        })
+        if (activeOwnerCount <= 1) {
+          throw new CrudActionError('CONFLICT', 'You cannot deactivate the last OWNER account.')
+        }
       }
       await tx.adminUser.update({
         where: { id: data.adminUserId },
@@ -149,6 +189,84 @@ export async function deactivateAdminAction(input: DeactivateInput) {
     },
   })
   revalidatePath('/admin/team')
+  revalidatePath('/admin/team/permissions')
+  return result
+}
+
+// ─── reactivateAdmin ──────────────────────────────────────────────────────────
+
+export async function reactivateAdminAction(input: ReactivateInput) {
+  await requireRole(['OWNER'])
+
+  const result = await crudAction<ReactivateInput, { id: string }>({
+    entity: 'AdminUser',
+    entityId: input.adminUserId,
+    action: 'admin.reactivate',
+    requiredRole: ['OWNER'],
+    requiredFlag: FLAG,
+    schema: ReactivateAdminSchema,
+    input,
+    run: async (data, tx) => {
+      const adminUser = await tx.adminUser.findUnique({
+        where: { id: data.adminUserId },
+        select: { id: true, active: true, acceptedAt: true },
+      })
+      if (!adminUser) {
+        throw new CrudActionError('NOT_FOUND', `AdminUser ${data.adminUserId} not found.`)
+      }
+      await tx.adminUser.update({
+        where: { id: data.adminUserId },
+        data: { active: true },
+      })
+      return { id: data.adminUserId }
+    },
+  })
+  revalidatePath('/admin/team')
+  revalidatePath('/admin/team/permissions')
+  return result
+}
+
+// ─── revokeAdmin ──────────────────────────────────────────────────────────────
+
+export async function revokeAdminAction(input: RevokeInput) {
+  const actor = await requireRole(['OWNER'])
+
+  const result = await crudAction<RevokeInput, { id: string }>({
+    entity: 'AdminUser',
+    entityId: input.adminUserId,
+    action: 'admin.revoke',
+    requiredRole: ['OWNER'],
+    requiredFlag: FLAG,
+    schema: RevokeAdminSchema,
+    input,
+    run: async (data, tx) => {
+      const adminUser = await tx.adminUser.findUnique({
+        where: { id: data.adminUserId },
+        select: { id: true, role: true, userId: true, active: true, acceptedAt: true },
+      })
+      if (!adminUser) {
+        throw new CrudActionError('NOT_FOUND', `AdminUser ${data.adminUserId} not found.`)
+      }
+      if (adminUser.userId === actor.id || (actor.adminUserId && adminUser.id === actor.adminUserId)) {
+        throw new CrudActionError('CONFLICT', 'You cannot revoke your own account.')
+      }
+      if (adminUser.active && adminUser.role === 'OWNER') {
+        const activeOwnerCount = await tx.adminUser.count({
+          where: { role: 'OWNER', active: true },
+        })
+        if (activeOwnerCount <= 1) {
+          throw new CrudActionError('CONFLICT', 'You cannot revoke the last OWNER account.')
+        }
+      }
+      await tx.adminUser.update({
+        where: { id: data.adminUserId },
+        data: { active: false },
+      })
+      return { id: data.adminUserId }
+    },
+  })
+  revalidatePath('/admin/team')
+  revalidatePath('/admin/team/permissions')
   return result
 }
 
@@ -185,5 +303,23 @@ export async function deactivateAdminFromFormAction(adminUserId: string) {
   } catch (err) {
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
     return { ok: false as const, error: 'Failed to deactivate admin' }
+  }
+}
+
+export async function reactivateAdminFromFormAction(adminUserId: string) {
+  try {
+    return await reactivateAdminAction({ adminUserId })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to reactivate admin' }
+  }
+}
+
+export async function revokeAdminFromFormAction(adminUserId: string) {
+  try {
+    return await revokeAdminAction({ adminUserId })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to revoke admin' }
   }
 }

@@ -34,7 +34,7 @@ export interface CRUDFieldDef<T extends FieldValues> {
 }
 
 export interface CRUDFormProps<T extends FieldValues> {
-  schema: z.ZodType<T>
+  schema: z.ZodType<T, T>
   fields: CRUDFieldDef<T>[]
   defaultValues?: DefaultValues<T>
   onSubmit: (data: T) => Promise<void>
@@ -57,7 +57,7 @@ export function CRUDForm<T extends FieldValues>({
   loading,
 }: CRUDFormProps<T>) {
   const form = useForm<T>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver<T, unknown, T>(schema),
     defaultValues,
   })
 

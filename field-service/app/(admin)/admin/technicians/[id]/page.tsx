@@ -6,9 +6,9 @@ export const dynamic = 'force-dynamic'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth'
+import { crudAction } from '@/lib/crud-action'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
-import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,8 +25,16 @@ import {
 import { ArrowLeft } from 'lucide-react'
 import { format } from 'date-fns'
 import {
+  addProviderStrikeFromFormAction,
+  deleteCertificationFromFormAction,
+  deleteEquipmentFromFormAction,
   setProviderStatusFromFormAction,
   addProviderNoteFromFormAction,
+  reactivateProviderFromFormAction,
+  setProviderKycFromFormAction,
+  updateProviderProfileFromFormAction,
+  upsertCertificationFromFormAction,
+  upsertEquipmentFromFormAction,
   verifyCertificationFromFormAction,
 } from '../../providers/actions'
 
@@ -60,19 +68,21 @@ function formatJobStatus(status: string): string {
 
 async function toggleActive(providerId: string, currentActive: boolean) {
   'use server'
-  const admin = await requireAdmin()
-  await db.provider.update({
-    where: { id: providerId },
-    data: { active: !currentActive },
-  })
-  await recordAuditLog({
-    actorId: admin.id,
-    actorRole: admin.role,
-    action: 'provider.active_toggle',
-    entityType: 'provider',
+  await crudAction({
+    entity: 'Provider',
     entityId: providerId,
+    action: 'provider.active_toggle',
+    requiredRole: ['ADMIN', 'OWNER'],
+    requiredFlag: 'admin.crud.providers',
+    input: { providerId, currentActive },
     before: { active: currentActive },
-    after: { active: !currentActive },
+    run: async (_input, tx) => {
+      await tx.provider.update({
+        where: { id: providerId },
+        data: { active: !currentActive },
+      })
+      return { id: providerId, active: !currentActive }
+    },
   })
   redirect(`/admin/providers/${providerId}`)
 }
@@ -81,10 +91,12 @@ async function toggleActive(providerId: string, currentActive: boolean) {
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ message?: string }>
 }
 
-export default async function ProviderProfilePage({ params }: Props) {
+export default async function ProviderProfilePage({ params, searchParams }: Props) {
   const { id } = await params
+  const query = (await searchParams) ?? {}
 
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled('admin.crud.providers', admin.id)
@@ -113,16 +125,24 @@ export default async function ProviderProfilePage({ params }: Props) {
       providerNotes: {
         orderBy: { createdAt: 'desc' },
         take: 20,
-        select: { id: true, body: true, pinned: true, authorId: true, createdAt: true },
+        select: {
+          id: true,
+          body: true,
+          pinned: true,
+          authorId: true,
+          createdAt: true,
+          reasonCode: true,
+          strikeDelta: true,
+        },
       },
-      providerCertifications: {
+      adminCertifications: {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true, name: true, issuingAuthority: true, certNumber: true,
           issuedAt: true, expiresAt: true, verifiedAt: true, notes: true,
         },
       },
-      providerEquipment: {
+      equipment: {
         where: { active: true },
         orderBy: { createdAt: 'desc' },
         select: { id: true, label: true, category: true, serialNumber: true },
@@ -136,6 +156,37 @@ export default async function ProviderProfilePage({ params }: Props) {
   })
 
   if (!provider) notFound()
+
+  const auditEvents = await db.adminAuditEvent.findMany({
+    where: {
+      OR: [
+        { entityType: 'Provider', entityId: provider.id },
+        ...provider.providerNotes.map((note) => ({
+          entityType: 'ProviderNote',
+          entityId: note.id,
+        })),
+        ...provider.adminCertifications.map((cert) => ({
+          entityType: 'ProviderCertification',
+          entityId: cert.id,
+        })),
+        ...provider.equipment.map((equipment) => ({
+          entityType: 'ProviderEquipment',
+          entityId: equipment.id,
+        })),
+      ],
+    },
+    include: {
+      admin: {
+        select: {
+          name: true,
+          role: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: { timestamp: 'desc' },
+    take: 20,
+  })
 
   // Stats
   const totalJobs = provider._count.jobs
@@ -153,6 +204,61 @@ export default async function ProviderProfilePage({ params }: Props) {
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   const toggleActiveForProvider = toggleActive.bind(null, provider.id, provider.active)
+
+  async function submitProviderStatus(formData: FormData) {
+    'use server'
+    await setProviderStatusFromFormAction(formData)
+  }
+
+  async function submitVerifyCertification(formData: FormData) {
+    'use server'
+    await verifyCertificationFromFormAction(formData)
+  }
+
+  async function submitAddProviderNote(formData: FormData) {
+    'use server'
+    await addProviderNoteFromFormAction(formData)
+  }
+
+  async function submitAddProviderStrike(formData: FormData) {
+    'use server'
+    await addProviderStrikeFromFormAction(formData)
+  }
+
+  async function submitReactivateProvider(formData: FormData) {
+    'use server'
+    await reactivateProviderFromFormAction(formData)
+  }
+
+  async function submitUpdateProviderProfile(formData: FormData) {
+    'use server'
+    await updateProviderProfileFromFormAction(formData)
+  }
+
+  async function submitSetProviderKyc(formData: FormData) {
+    'use server'
+    await setProviderKycFromFormAction(formData)
+  }
+
+  async function submitUpsertCertification(formData: FormData) {
+    'use server'
+    await upsertCertificationFromFormAction(formData)
+  }
+
+  async function submitDeleteCertification(formData: FormData) {
+    'use server'
+    await deleteCertificationFromFormAction(formData)
+  }
+
+  async function submitUpsertEquipment(formData: FormData) {
+    'use server'
+    await upsertEquipmentFromFormAction(formData)
+  }
+
+  async function submitDeleteEquipment(formData: FormData) {
+    'use server'
+    await deleteEquipmentFromFormAction(formData)
+  }
 
   return (
     <div className="space-y-6">
@@ -190,6 +296,30 @@ export default async function ProviderProfilePage({ params }: Props) {
         )}
       </div>
 
+      {query.message && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+          {query.message}
+        </div>
+      )}
+
+      {provider.suspendedUntil && provider.suspendedUntil > new Date() && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">
+            Provider suspended until{' '}
+            {provider.suspendedUntil.toLocaleString('en-ZA', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </p>
+          {provider.suspendedReason && (
+            <p className="mt-1 text-amber-800">{provider.suspendedReason}</p>
+          )}
+        </div>
+      )}
+
       {/* ── Flag banner ──────────────────────────────────────────────────────── */}
       {!crudEnabled && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
@@ -220,8 +350,16 @@ export default async function ProviderProfilePage({ params }: Props) {
                 </Button>
               </form>
             )}
+            {provider.status !== 'ACTIVE' && (
+              <form action={submitReactivateProvider}>
+                <input type="hidden" name="providerId" value={id} />
+                <Button type="submit" variant="outline" size="sm">
+                  Reactivate provider
+                </Button>
+              </form>
+            )}
             {/* Status change */}
-            <form action={setProviderStatusFromFormAction} className="flex flex-wrap gap-2 items-center">
+            <form action={submitProviderStatus} className="flex flex-wrap gap-2 items-center">
               <input type="hidden" name="providerId" value={id} />
               <select
                 name="status"
@@ -242,6 +380,20 @@ export default async function ProviderProfilePage({ params }: Props) {
                 className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-52"
               />
               <Button type="submit" variant="outline" size="sm">Set status</Button>
+            </form>
+            <form action={submitSetProviderKyc} className="flex flex-wrap gap-2 items-center">
+              <input type="hidden" name="providerId" value={id} />
+              <select
+                name="kycStatus"
+                defaultValue={provider.kycStatus}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="NOT_STARTED">Not started</option>
+                <option value="PENDING">Pending</option>
+                <option value="VERIFIED">Verified</option>
+                <option value="FAILED">Failed</option>
+              </select>
+              <Button type="submit" variant="outline" size="sm">Set KYC</Button>
             </form>
           </CardContent>
         </Card>
@@ -266,6 +418,10 @@ export default async function ProviderProfilePage({ params }: Props) {
               <div>
                 <p className="text-muted-foreground">Provider status</p>
                 <p className="font-medium">{provider.status.replace(/_/g, ' ')}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">KYC status</p>
+                <p className="font-medium">{provider.kycStatus.replace(/_/g, ' ')}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Experience</p>
@@ -347,6 +503,67 @@ export default async function ProviderProfilePage({ params }: Props) {
                 </div>
               </>
             )}
+
+            {crudEnabled && (
+              <>
+                <Separator />
+                <form action={submitUpdateProviderProfile} className="grid gap-3 md:grid-cols-2">
+                  <input type="hidden" name="providerId" value={id} />
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Name</span>
+                    <input
+                      name="name"
+                      defaultValue={provider.name}
+                      className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Phone</span>
+                    <input
+                      name="phone"
+                      defaultValue={provider.phone}
+                      className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Email</span>
+                    <input
+                      name="email"
+                      type="email"
+                      defaultValue={provider.email ?? ''}
+                      className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Experience</span>
+                    <input
+                      name="experience"
+                      defaultValue={provider.experience ?? ''}
+                      className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm md:col-span-2">
+                    <span className="text-muted-foreground">Skills</span>
+                    <input
+                      name="skills"
+                      defaultValue={provider.skills.join(', ')}
+                      className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm md:col-span-2">
+                    <span className="text-muted-foreground">Service areas</span>
+                    <input
+                      name="serviceAreas"
+                      defaultValue={provider.serviceAreas.join(', ')}
+                      className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </label>
+                  <div className="md:col-span-2">
+                    <Button type="submit" variant="outline" size="sm">Save provider profile</Button>
+                  </div>
+                </form>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -401,10 +618,10 @@ export default async function ProviderProfilePage({ params }: Props) {
       {/* ── Certifications ───────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Certifications ({provider.providerCertifications.length})</CardTitle>
+          <CardTitle className="text-base">Certifications ({provider.adminCertifications.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {provider.providerCertifications.length === 0 ? (
+          {provider.adminCertifications.length === 0 ? (
             <p className="px-6 py-4 text-sm text-muted-foreground">No certifications recorded.</p>
           ) : (
             <Table>
@@ -418,7 +635,7 @@ export default async function ProviderProfilePage({ params }: Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {provider.providerCertifications.map((cert) => (
+                {provider.adminCertifications.map((cert) => (
                   <TableRow key={cert.id}>
                     <TableCell className="font-medium text-sm">
                       {cert.name}
@@ -447,15 +664,67 @@ export default async function ProviderProfilePage({ params }: Props) {
                     </TableCell>
                     {crudEnabled && (
                       <TableCell className="text-right">
-                        {!cert.verifiedAt && (
-                          <form action={verifyCertificationFromFormAction}>
+                        <div className="flex justify-end gap-2">
+                          {!cert.verifiedAt && (
+                            <form action={submitVerifyCertification}>
+                              <input type="hidden" name="certId" value={cert.id} />
+                              <input type="hidden" name="providerId" value={id} />
+                              <Button type="submit" variant="ghost" size="sm" className="text-xs h-7">
+                                Verify
+                              </Button>
+                            </form>
+                          )}
+                          <details className="rounded-md border px-2 py-1">
+                            <summary className="cursor-pointer text-xs">Edit</summary>
+                            <form action={submitUpsertCertification} className="mt-2 grid gap-2 text-left">
+                              <input type="hidden" name="providerId" value={id} />
+                              <input type="hidden" name="certId" value={cert.id} />
+                              <input
+                                name="name"
+                                defaultValue={cert.name}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                              />
+                              <input
+                                name="issuingAuthority"
+                                defaultValue={cert.issuingAuthority ?? ''}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                              />
+                              <input
+                                name="certNumber"
+                                defaultValue={cert.certNumber ?? ''}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                              />
+                              <input
+                                type="date"
+                                name="issuedAt"
+                                defaultValue={cert.issuedAt ? format(new Date(cert.issuedAt), 'yyyy-MM-dd') : ''}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                              />
+                              <input
+                                type="date"
+                                name="expiresAt"
+                                defaultValue={cert.expiresAt ? format(new Date(cert.expiresAt), 'yyyy-MM-dd') : ''}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                              />
+                              <textarea
+                                name="notes"
+                                rows={2}
+                                defaultValue={cert.notes ?? ''}
+                                className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+                              />
+                              <Button type="submit" variant="outline" size="sm" className="h-7 text-xs">
+                                Save
+                              </Button>
+                            </form>
+                          </details>
+                          <form action={submitDeleteCertification}>
                             <input type="hidden" name="certId" value={cert.id} />
                             <input type="hidden" name="providerId" value={id} />
-                            <Button type="submit" variant="ghost" size="sm" className="text-xs h-7">
-                              Verify
+                            <Button type="submit" variant="ghost" size="sm" className="h-7 text-xs text-destructive">
+                              Delete
                             </Button>
                           </form>
-                        )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -464,25 +733,151 @@ export default async function ProviderProfilePage({ params }: Props) {
             </Table>
           )}
         </CardContent>
+        {crudEnabled && (
+          <CardContent className="border-t pt-4">
+            <form action={submitUpsertCertification} className="grid gap-3 md:grid-cols-2">
+              <input type="hidden" name="providerId" value={id} />
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Certification name</span>
+                <input
+                  name="name"
+                  required
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Issuing authority</span>
+                <input
+                  name="issuingAuthority"
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Certification number</span>
+                <input
+                  name="certNumber"
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Issued at</span>
+                <input
+                  type="date"
+                  name="issuedAt"
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Expires at</span>
+                <input
+                  type="date"
+                  name="expiresAt"
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <label className="grid gap-1 text-sm md:col-span-2">
+                <span className="text-muted-foreground">Notes</span>
+                <textarea
+                  name="notes"
+                  rows={3}
+                  className="rounded-md border border-input bg-background px-3 py-2 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <div className="md:col-span-2">
+                <Button type="submit" variant="outline" size="sm">Add certification</Button>
+              </div>
+            </form>
+          </CardContent>
+        )}
       </Card>
 
       {/* ── Equipment ────────────────────────────────────────────────────────── */}
-      {provider.providerEquipment.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Equipment ({provider.providerEquipment.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Equipment ({provider.equipment.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {provider.equipment.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No equipment recorded.</p>
+          ) : (
             <div className="flex flex-wrap gap-2">
-              {provider.providerEquipment.map((eq) => (
-                <Badge key={eq.id} variant="secondary" className="text-xs">
-                  {eq.label}{eq.category ? ` · ${eq.category}` : ''}
-                </Badge>
+              {provider.equipment.map((eq) => (
+                <div key={eq.id} className="flex items-center gap-2 rounded-full border px-3 py-1 text-xs">
+                  <span>
+                    {eq.label}{eq.category ? ` · ${eq.category}` : ''}{eq.serialNumber ? ` · ${eq.serialNumber}` : ''}
+                  </span>
+                  {crudEnabled && (
+                    <details className="rounded-md border px-2 py-1">
+                      <summary className="cursor-pointer text-xs">Edit</summary>
+                      <form action={submitUpsertEquipment} className="mt-2 grid gap-2 text-left">
+                        <input type="hidden" name="equipmentId" value={eq.id} />
+                        <input type="hidden" name="providerId" value={id} />
+                        <input
+                          name="label"
+                          defaultValue={eq.label}
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        />
+                        <input
+                          name="category"
+                          defaultValue={eq.category ?? ''}
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        />
+                        <input
+                          name="serialNumber"
+                          defaultValue={eq.serialNumber ?? ''}
+                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        />
+                        <Button type="submit" variant="outline" size="sm" className="h-7 text-xs">
+                          Save
+                        </Button>
+                      </form>
+                    </details>
+                  )}
+                  {crudEnabled && (
+                    <form action={submitDeleteEquipment}>
+                      <input type="hidden" name="equipmentId" value={eq.id} />
+                      <input type="hidden" name="providerId" value={id} />
+                      <button type="submit" className="text-destructive">Delete</button>
+                    </form>
+                  )}
+                </div>
               ))}
             </div>
+          )}
+        </CardContent>
+        {crudEnabled && (
+          <CardContent className="border-t pt-4">
+            <form action={submitUpsertEquipment} className="grid gap-3 md:grid-cols-3">
+              <input type="hidden" name="providerId" value={id} />
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Label</span>
+                <input
+                  name="label"
+                  required
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Category</span>
+                <input
+                  name="category"
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-muted-foreground">Serial number</span>
+                <input
+                  name="serialNumber"
+                  className="h-9 rounded-md border border-input bg-background px-3 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </label>
+              <div className="md:col-span-3">
+                <Button type="submit" variant="outline" size="sm">Add equipment</Button>
+              </div>
+            </form>
           </CardContent>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* ── Admin notes ─────────────────────────────────────────────────────── */}
       <Card>
@@ -496,6 +891,12 @@ export default async function ProviderProfilePage({ params }: Props) {
           {provider.providerNotes.map((note) => (
             <div key={note.id} className={`rounded-md border p-3 text-sm ${note.pinned ? 'border-amber-300 bg-amber-50' : ''}`}>
               <p>{note.body}</p>
+              {(note.reasonCode || note.strikeDelta > 0) && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {note.reasonCode ?? 'ADMIN_CORRECTION'}
+                  {note.strikeDelta > 0 ? ` · strike +${note.strikeDelta}` : ''}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground mt-1">
                 {note.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
                 {note.pinned && <span className="ml-2 text-amber-600 font-medium">pinned</span>}
@@ -503,16 +904,41 @@ export default async function ProviderProfilePage({ params }: Props) {
             </div>
           ))}
           {crudEnabled && (
-            <form action={addProviderNoteFromFormAction} className="flex gap-2 pt-2 border-t">
-              <input type="hidden" name="providerId" value={id} />
-              <input
-                name="body"
-                required
-                placeholder="Add a note…"
-                className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring flex-1"
-              />
-              <Button type="submit" variant="outline" size="sm">Add</Button>
-            </form>
+            <div className="grid gap-3 pt-2 border-t">
+              <form action={submitAddProviderNote} className="flex gap-2">
+                <input type="hidden" name="providerId" value={id} />
+                <input
+                  name="body"
+                  required
+                  placeholder="Add a note…"
+                  className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring flex-1"
+                />
+                <Button type="submit" variant="outline" size="sm">Add note</Button>
+              </form>
+
+              <form action={submitAddProviderStrike} className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
+                <input type="hidden" name="providerId" value={id} />
+                <select
+                  name="reasonCode"
+                  required
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  defaultValue="PROVIDER_STRIKE_COMPLAINT"
+                >
+                  <option value="PROVIDER_STRIKE_COMPLAINT">Complaint</option>
+                  <option value="PROVIDER_STRIKE_LATE">Late arrival</option>
+                  <option value="PROVIDER_STRIKE_NO_SHOW">No show</option>
+                  <option value="POLICY_VIOLATION">Policy violation</option>
+                  <option value="ADMIN_CORRECTION">Admin correction</option>
+                </select>
+                <input
+                  name="body"
+                  required
+                  placeholder="Strike note…"
+                  className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <Button type="submit" variant="destructive" size="sm">Add strike</Button>
+              </form>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -568,6 +994,42 @@ export default async function ProviderProfilePage({ params }: Props) {
               </TableBody>
             </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Audit Trail</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {auditEvents.length === 0 ? (
+            <p className="text-muted-foreground">No audit events yet.</p>
+          ) : (
+            auditEvents.map((event) => (
+              <div key={event.id} className="rounded-md border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="rounded-full text-[11px]">
+                      {event.entityType}
+                    </Badge>
+                    <span className="font-medium">{event.action}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {event.timestamp.toLocaleString('en-ZA', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {event.admin.name} · {event.admin.role} · {event.admin.email}
+                </p>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
     </div>

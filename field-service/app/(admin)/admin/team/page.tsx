@@ -3,7 +3,8 @@
 
 export const dynamic = 'force-dynamic'
 
-import { requireAdmin } from '@/lib/auth'
+import Link from 'next/link'
+import { requireRole } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
@@ -21,6 +22,8 @@ import {
   inviteAdminFromFormAction,
   changeRoleFromFormAction,
   deactivateAdminFromFormAction,
+  reactivateAdminFromFormAction,
+  revokeAdminFromFormAction,
 } from './actions'
 
 export const metadata = buildMetadata({ title: 'Team', noIndex: true })
@@ -42,13 +45,14 @@ const ROLE_BADGE: Record<string, string> = {
 }
 
 export default async function TeamPage() {
-  const actor = await requireAdmin()
+  const actor = await requireRole(['OWNER'])
   const crudEnabled = await isEnabled('admin.users.v2', actor.id)
 
   const admins = await db.adminUser.findMany({
     orderBy: [{ active: 'desc' }, { role: 'asc' }, { name: 'asc' }],
     select: {
       id: true,
+      userId: true,
       email: true,
       name: true,
       role: true,
@@ -69,6 +73,33 @@ export default async function TeamPage() {
     await changeRoleFromFormAction(formData)
   }
 
+  async function submitDeactivateAdmin(formData: FormData) {
+    'use server'
+    const adminUserId = formData.get('adminUserId')
+    if (typeof adminUserId !== 'string' || !adminUserId) {
+      return
+    }
+    await deactivateAdminFromFormAction(adminUserId)
+  }
+
+  async function submitReactivateAdmin(formData: FormData) {
+    'use server'
+    const adminUserId = formData.get('adminUserId')
+    if (typeof adminUserId !== 'string' || !adminUserId) {
+      return
+    }
+    await reactivateAdminFromFormAction(adminUserId)
+  }
+
+  async function submitRevokeAdmin(formData: FormData) {
+    'use server'
+    const adminUserId = formData.get('adminUserId')
+    if (typeof adminUserId !== 'string' || !adminUserId) {
+      return
+    }
+    await revokeAdminFromFormAction(adminUserId)
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -83,6 +114,9 @@ export default async function TeamPage() {
             )}
           </p>
         </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/admin/team/permissions">Permission matrix</Link>
+        </Button>
       </div>
 
       {/* ── Flag banner ──────────────────────────────────────────────────────── */}
@@ -213,10 +247,9 @@ export default async function TeamPage() {
                           Set
                         </Button>
                       </form>
-                      {admin.active && admin.id !== actor.id && (
-                        <form
-                          action={deactivateAdminFromFormAction.bind(null, admin.id) as unknown as (fd: FormData) => Promise<void>}
-                        >
+                      {admin.active && admin.acceptedAt && admin.userId !== actor.id && admin.id !== actor.adminUserId && (
+                        <form action={submitDeactivateAdmin}>
+                          <input type="hidden" name="adminUserId" value={admin.id} />
                           <Button
                             type="submit"
                             variant="ghost"
@@ -224,6 +257,32 @@ export default async function TeamPage() {
                             className="h-7 text-destructive hover:text-destructive/80"
                           >
                             Deactivate
+                          </Button>
+                        </form>
+                      )}
+                      {!admin.active && (
+                        <form action={submitReactivateAdmin}>
+                          <input type="hidden" name="adminUserId" value={admin.id} />
+                          <Button
+                            type="submit"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-emerald-700 hover:text-emerald-800"
+                          >
+                            Reactivate
+                          </Button>
+                        </form>
+                      )}
+                      {admin.active && !admin.acceptedAt && admin.userId !== actor.id && admin.id !== actor.adminUserId && (
+                        <form action={submitRevokeAdmin}>
+                          <input type="hidden" name="adminUserId" value={admin.id} />
+                          <Button
+                            type="submit"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-destructive hover:text-destructive/80"
+                          >
+                            Revoke
                           </Button>
                         </form>
                       )}

@@ -35,6 +35,7 @@ const ADMIN_LIST_ROUTES = [
   '/admin/validation',
   '/admin/dispatch',
   '/admin/field-exceptions',
+  '/admin/flows',
   '/admin/quotes',
   '/admin/bookings',
   '/admin/matches',
@@ -47,9 +48,8 @@ const ADMIN_LIST_ROUTES = [
   '/admin/payments',
   '/admin/reports',
   '/admin/messages',
+  '/admin/services',
   '/admin/settings',
-  '/admin/breached',
-  '/admin/supply',
 ]
 
 for (const route of ADMIN_LIST_ROUTES) {

@@ -30,6 +30,42 @@ const FLAGS: Array<{ key: string; description: string }> = [
     description: 'Enable verification/suspension mutations on the Providers admin page.',
   },
   {
+    key: 'admin.crud.bookings',
+    description: 'Enable booking cancellation and payment mutations on the Booking detail admin page.',
+  },
+  {
+    key: 'admin.crud.payments',
+    description: 'Enable payment queue claim and refund mutations on the Payments admin page.',
+  },
+  {
+    key: 'admin.crud.disputes',
+    description: 'Enable dispute queue claim and resolution mutations on the Disputes admin page.',
+  },
+  {
+    key: 'admin.crud.applications',
+    description: 'Enable provider application claim/approve/reject mutations on the Applications admin page.',
+  },
+  {
+    key: 'admin.crud.quotes',
+    description: 'Enable quote queue claim/release mutations on the Quote Approvals admin page.',
+  },
+  {
+    key: 'admin.crud.dispatch',
+    description: 'Enable dispatch claim, rerank, auto-assign, and override mutations on the Dispatch console.',
+  },
+  {
+    key: 'admin.crud.validation',
+    description: 'Enable validation queue claim, release, promote, and cancel mutations on the Validation Queue admin page.',
+  },
+  {
+    key: 'admin.crud.field_exceptions',
+    description: 'Enable field exception claim and release mutations on the Field Exceptions admin page.',
+  },
+  {
+    key: 'admin.crud.categories',
+    description: 'Enable DB-backed category config mutations on the Categories admin page.',
+  },
+  {
     key: 'admin.users.v2',
     description: 'Enable DB-backed AdminUser team management (invite, role change, deactivate).',
   },

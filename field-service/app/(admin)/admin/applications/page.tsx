@@ -5,11 +5,13 @@
 
 export const dynamic = 'force-dynamic'
 
+import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin, createServiceClient } from '@/lib/auth'
-import { recordAuditLog } from '@/lib/audit'
+import { isEnabled } from '@/lib/flags'
+import { crudAction } from '@/lib/crud-action'
 import { syncProviderRecord } from '@/lib/provider-record'
 import {
   findConflictingActiveProviderApplications,
@@ -39,6 +41,17 @@ import type { ApplicationStatus } from '@prisma/client'
 import { getApplicationsAdminMessage } from '@/lib/admin-action-messages'
 
 export const metadata = buildMetadata({ title: 'Applications', noIndex: true })
+
+const FLAG = 'admin.crud.applications'
+const APPLICATION_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
+
+const ApplicationActionSchema = z.object({
+  id: z.string().min(1),
+})
+
+const RejectApplicationSchema = ApplicationActionSchema.extend({
+  reason: z.string().optional(),
+})
 
 const providerApplicationSelect = {
   id: true,
@@ -81,74 +94,79 @@ async function approveApplication(formData: FormData) {
     redirect('/admin/applications?message=duplicate_active_application')
   }
 
-  // Create Supabase user (phone OTP — no email/password)
-  const supabase = createServiceClient()
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    phone: app.phone,
-    user_metadata: {
-      role: 'provider',
-      name: app.name,
-    },
-    phone_confirm: true,
-  })
-
-  if (authError || !authData.user) {
-    console.error('[applications] Supabase user create failed:', authError)
-    // Still create Provider record — user can be linked later
-  }
-
-  const providerId = await syncProviderRecord(db, {
-    userId: authData?.user?.id ?? null,
-    phone: app.phone,
-    name: app.name,
-    skills: app.skills,
-    serviceAreas: app.serviceAreas,
-    active: true,
-    availableNow: true,
-    verified: true,
-  })
-
-  // Stamp providerId into user_metadata so getSession() returns it on first login.
-  // Without this, session.providerId is undefined until the user re-authenticates
-  // and triggers a metadata refresh.
-  if (authData?.user?.id) {
-    const { error: metaError } = await supabase.auth.admin.updateUserById(authData.user.id, {
-      user_metadata: {
-        role: 'provider',
-        name: app.name,
-        providerId,
-      },
-    })
-    if (metaError) {
-      console.error('[applications] Failed to stamp providerId in user_metadata:', metaError)
-    }
-  }
-
-  // Update application status
-  await db.providerApplication.update({
-    where: { id },
-    data: {
-      status: 'APPROVED',
-      providerId,
-      reviewedAt: new Date(),
-      reviewedById: session.id,
-    },
-  })
-  await recordAuditLog({
-    actorId: session.id,
-    actorRole: session.role,
-    action: 'provider_application.approve',
-    entityType: 'provider_application',
+  await crudAction({
+    entity: 'ProviderApplication',
     entityId: app.id,
+    action: 'provider_application.approve',
+    requiredRole: [...APPLICATION_ROLES],
+    requiredFlag: FLAG,
+    schema: ApplicationActionSchema,
+    input: { id },
     before: {
       status: app.status,
       providerId: app.providerId,
       reviewedById: app.reviewedById,
     },
-    after: {
-      status: 'APPROVED',
-      providerId,
-      reviewedById: session.id,
+    run: async (_data, tx) => {
+      const supabase = createServiceClient()
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        phone: app.phone,
+        user_metadata: {
+          role: 'provider',
+          name: app.name,
+        },
+        phone_confirm: true,
+      })
+
+      if (authError || !authData.user) {
+        console.error('[applications] Supabase user create failed:', authError)
+      }
+
+      const providerId = await syncProviderRecord(tx as typeof db, {
+        userId: authData?.user?.id ?? null,
+        phone: app.phone,
+        name: app.name,
+        skills: app.skills,
+        serviceAreas: app.serviceAreas,
+        active: true,
+        availableNow: true,
+        verified: true,
+      })
+
+      if (authData?.user?.id) {
+        const { error: metaError } = await supabase.auth.admin.updateUserById(authData.user.id, {
+          user_metadata: {
+            role: 'provider',
+            name: app.name,
+            providerId,
+          },
+        })
+        if (metaError) {
+          console.error('[applications] Failed to stamp providerId in user_metadata:', metaError)
+        }
+      }
+
+      await tx.providerApplication.update({
+        where: { id },
+        data: {
+          status: 'APPROVED',
+          providerId,
+          reviewedAt: new Date(),
+          reviewedById: session.id,
+        },
+      })
+
+      await releaseOpsQueueItem(tx as typeof db, {
+        queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+        entityId: app.id,
+      })
+
+      return {
+        id: app.id,
+        status: 'APPROVED',
+        providerId,
+        reviewedById: session.id,
+      }
     },
   })
 
@@ -159,12 +177,6 @@ async function approveApplication(formData: FormData) {
     name: app.name,
     approved: true,
   }).catch(() => {})
-
-  await releaseOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
-    entityId: app.id,
-    actor: { actorId: session.id, actorRole: session.role },
-  })
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
@@ -182,40 +194,51 @@ async function rejectApplication(formData: FormData) {
   })
   if (!app || app.status !== 'PENDING') return
 
-  await db.providerApplication.update({
-    where: { id },
-    data: {
-      status: 'REJECTED',
-      provider: app.providerId
-        ? {
-            update: {
-              active: false,
-              availableNow: false,
-              verified: false,
-            },
-          }
-        : undefined,
-      reviewedAt: new Date(),
-      reviewedById: session.id,
-      notes: reason,
-    },
-  })
-  await recordAuditLog({
-    actorId: session.id,
-    actorRole: session.role,
-    action: 'provider_application.reject',
-    entityType: 'provider_application',
+  await crudAction({
+    entity: 'ProviderApplication',
     entityId: app.id,
+    action: 'provider_application.reject',
+    requiredRole: [...APPLICATION_ROLES],
+    requiredFlag: FLAG,
+    schema: RejectApplicationSchema,
+    input: { id, reason },
     before: {
       status: app.status,
       providerId: app.providerId,
       reviewedById: app.reviewedById,
     },
-    after: {
-      status: 'REJECTED',
-      providerId: app.providerId,
-      reviewedById: session.id,
-      notes: reason ?? null,
+    run: async (_data, tx) => {
+      await tx.providerApplication.update({
+        where: { id },
+        data: {
+          status: 'REJECTED',
+          provider: app.providerId
+            ? {
+                update: {
+                  active: false,
+                  availableNow: false,
+                  verified: false,
+                },
+              }
+            : undefined,
+          reviewedAt: new Date(),
+          reviewedById: session.id,
+          notes: reason,
+        },
+      })
+
+      await releaseOpsQueueItem(tx as typeof db, {
+        queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+        entityId: app.id,
+      })
+
+      return {
+        id: app.id,
+        status: 'REJECTED',
+        providerId: app.providerId,
+        reviewedById: session.id,
+        notes: reason ?? null,
+      }
     },
   })
 
@@ -227,12 +250,6 @@ async function rejectApplication(formData: FormData) {
     reason,
   }).catch(() => {})
 
-  await releaseOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
-    entityId: app.id,
-    actor: { actorId: session.id, actorRole: session.role },
-  })
-
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
 }
@@ -243,13 +260,25 @@ async function claimApplication(formData: FormData) {
   const id = String(formData.get('id') ?? '')
   if (!id) return
 
-  await claimOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+  await crudAction({
+    entity: 'ProviderApplication',
     entityId: id,
-    claimedById: admin.id,
-    claimedByRole: admin.role,
-    claimedByLabel: admin.email ?? 'admin',
-    actor: { actorId: admin.id, actorRole: admin.role },
+    action: 'provider_application.claim',
+    requiredRole: [...APPLICATION_ROLES],
+    requiredFlag: FLAG,
+    schema: ApplicationActionSchema,
+    input: { id },
+    run: async (_input, tx) => {
+      await claimOpsQueueItem(tx, {
+        queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+        entityId: id,
+        claimedById: admin.id,
+        claimedByRole: admin.adminRole,
+        claimedByLabel: admin.email ?? 'admin',
+      })
+
+      return { id }
+    },
   })
 
   revalidatePath('/admin/applications')
@@ -258,14 +287,25 @@ async function claimApplication(formData: FormData) {
 
 async function releaseApplication(formData: FormData) {
   'use server'
-  const admin = await requireAdmin()
   const id = String(formData.get('id') ?? '')
   if (!id) return
 
-  await releaseOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+  await crudAction({
+    entity: 'ProviderApplication',
     entityId: id,
-    actor: { actorId: admin.id, actorRole: admin.role },
+    action: 'provider_application.release',
+    requiredRole: [...APPLICATION_ROLES],
+    requiredFlag: FLAG,
+    schema: ApplicationActionSchema,
+    input: { id },
+    run: async (_input, tx) => {
+      await releaseOpsQueueItem(tx, {
+        queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+        entityId: id,
+      })
+
+      return { id }
+    },
   })
 
   revalidatePath('/admin/applications')
@@ -286,6 +326,7 @@ export default async function ApplicationsPage({
   searchParams: Promise<{ message?: string }>
 }) {
   const admin = await requireAdmin()
+  const crudEnabled = await isEnabled(FLAG, admin.id)
   const { message } = await searchParams
   const banner = getApplicationsAdminMessage(message)
 
@@ -318,6 +359,12 @@ export default async function ApplicationsPage({
           {banner.text}
         </div>
       ) : null}
+
+      {!crudEnabled && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Application mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim, approve, or reject provider applications.
+        </div>
+      )}
 
       {/* Pending */}
       <section className="space-y-3">
@@ -386,14 +433,14 @@ export default async function ApplicationsPage({
                   {!claimedByCurrentUser ? (
                     <form action={claimApplication}>
                       <input type="hidden" name="id" value={app.id} />
-                      <Button type="submit" size="sm" variant="outline">
+                      <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
                         {assignment?.claimedById ? 'Take over' : 'Claim'}
                       </Button>
                     </form>
                   ) : (
                     <form action={releaseApplication}>
                       <input type="hidden" name="id" value={app.id} />
-                      <Button type="submit" size="sm" variant="outline">
+                      <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
                         Release
                       </Button>
                     </form>
@@ -404,7 +451,7 @@ export default async function ApplicationsPage({
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={hasConflict}
+                      disabled={!crudEnabled || hasConflict}
                       className="bg-green-600 hover:bg-green-700 text-white disabled:bg-muted disabled:text-muted-foreground"
                     >
                       Approve
@@ -419,7 +466,7 @@ export default async function ApplicationsPage({
                       placeholder="Reason (optional)"
                       className="h-8 w-48 text-sm"
                     />
-                    <Button type="submit" size="sm" variant="outline">
+                    <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
                       Reject
                     </Button>
                   </form>

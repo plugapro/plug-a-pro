@@ -5,11 +5,13 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { cancelBookingLifecycle } from '@/lib/bookings'
-import { recordAuditLog } from '@/lib/audit'
 import { getBookingAdminMessage } from '@/lib/admin-action-messages'
+import { CrudActionError, crudAction } from '@/lib/crud-action'
+import { isEnabled } from '@/lib/flags'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -18,6 +20,13 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import type { Metadata } from 'next'
+
+const FLAG = 'admin.crud.bookings'
+const CANCEL_ROLES = ['ADMIN', 'OWNER'] as const
+const PAYMENT_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
+const BookingActionSchema = z.object({
+  bookingId: z.string().min(1),
+})
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +52,7 @@ export default async function BookingDetailPage({
   const { id } = await params
   const { message } = await searchParams
   const banner = getBookingAdminMessage(message)
+  const crudEnabled = await isEnabled(FLAG, admin.id)
 
   const booking = await db.booking.findUnique({
     where: { id },
@@ -79,63 +89,106 @@ export default async function BookingDetailPage({
   const ref = booking.id.slice(-8).toUpperCase()
   const canCancel =
     booking.status !== 'COMPLETED' && booking.status !== 'CANCELLED'
+  const bookingStatusBefore = booking.status
+  const bookingCancelReasonBefore = booking.cancelReason ?? null
+  const paymentStatusBefore = booking.payment?.status ?? null
 
   // ─── Server actions ──────────────────────────────────────────────────────────
 
   async function cancelBooking() {
     'use server'
     const activeAdmin = await requireAdmin()
-    await cancelBookingLifecycle({
-      bookingId: id,
-      actorId: activeAdmin.id,
-      actorRole: 'admin',
-      reason: 'Cancelled by admin from booking detail',
-    })
-    redirect('/admin/bookings')
+    try {
+      await crudAction({
+        entity: 'Booking',
+        entityId: id,
+        action: 'booking.cancel',
+        requiredRole: [...CANCEL_ROLES],
+        requiredFlag: FLAG,
+        schema: BookingActionSchema,
+        input: { bookingId: id },
+        before: { status: bookingStatusBefore, cancelReason: bookingCancelReasonBefore },
+        run: async () => {
+          await cancelBookingLifecycle({
+            bookingId: id,
+            actorId: activeAdmin.id,
+            actorRole: 'admin',
+            reason: 'Cancelled by admin from booking detail',
+          })
+          return {
+            id,
+            status: 'CANCELLED',
+            cancelReason: 'Cancelled by admin from booking detail',
+          }
+        },
+      })
+      redirect('/admin/bookings')
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+      redirect(`/admin/bookings/${id}?message=booking_cancel_failed`)
+    }
   }
 
   async function markPaid() {
     'use server'
-    const activeAdmin = await requireAdmin()
-    const freshBooking = await db.booking.findUnique({
-      where: { id },
-      select: {
-        status: true,
-        quote: { select: { amount: true } },
-        payment: { select: { status: true } },
-      },
-    })
-    if (
-      !freshBooking ||
-      freshBooking.status !== 'SCHEDULED' ||
-      freshBooking.payment?.status === 'PAID'
-    ) {
+    try {
+      const result = await crudAction({
+        entity: 'Booking',
+        entityId: id,
+        action: 'payment.mark_paid',
+        requiredRole: [...PAYMENT_ROLES],
+        requiredFlag: FLAG,
+        schema: BookingActionSchema,
+        input: { bookingId: id },
+        before: {
+          bookingStatus: bookingStatusBefore,
+          paymentStatus: paymentStatusBefore,
+        },
+        run: async (_, tx) => {
+          const freshBooking = await tx.booking.findUnique({
+            where: { id },
+            select: {
+              status: true,
+              quote: { select: { amount: true } },
+              payment: { select: { status: true } },
+            },
+          })
+          if (
+            !freshBooking ||
+            freshBooking.status !== 'SCHEDULED' ||
+            freshBooking.payment?.status === 'PAID'
+          ) {
+            throw new CrudActionError('CONFLICT', 'Payment cannot be marked as paid for this booking.')
+          }
+          const amount = freshBooking.quote?.amount ?? 0
+          const paidAt = new Date()
+          await tx.payment.upsert({
+            where: { bookingId: id },
+            create: {
+              bookingId: id,
+              amount,
+              status: 'PAID',
+              paidAt,
+            },
+            update: { status: 'PAID', paidAt },
+          })
+          await tx.booking.update({ where: { id }, data: { status: 'SCHEDULED' } })
+          return {
+            id,
+            bookingStatus: 'SCHEDULED',
+            paymentStatus: 'PAID',
+          }
+        },
+      })
+      redirect(`/admin/bookings/${result.data.id}?message=payment_marked`)
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
       redirect(`/admin/bookings/${id}?message=payment_unavailable`)
     }
-    const amount = freshBooking.quote?.amount ?? 0
-    await db.payment.upsert({
-      where:  { bookingId: id },
-      create: {
-        bookingId: id,
-        amount,
-        status:    'PAID',
-        paidAt:    new Date(),
-      },
-      update: { status: 'PAID', paidAt: new Date() },
-    })
-    await db.booking.update({ where: { id }, data: { status: 'SCHEDULED' } })
-    await recordAuditLog({
-      actorId: activeAdmin.id,
-      actorRole: activeAdmin.role,
-      action: 'payment.mark_paid',
-      entityType: 'booking',
-      entityId: id,
-      after: {
-        bookingStatus: 'SCHEDULED',
-        paymentStatus: 'PAID',
-      },
-    })
-    redirect(`/admin/bookings/${id}?message=payment_marked`)
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -165,6 +218,11 @@ export default async function BookingDetailPage({
       {banner ? (
         <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
           {banner.text}
+        </div>
+      ) : null}
+      {!crudEnabled ? (
+        <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
+          Booking mutations are read-only while <code>{FLAG}</code> is disabled.
         </div>
       ) : null}
 
@@ -492,7 +550,7 @@ export default async function BookingDetailPage({
               {/* Mark as paid */}
               {booking.status === 'SCHEDULED' && (
                 <form action={markPaid}>
-                  <Button type="submit" className="w-full" variant="default">
+                  <Button type="submit" className="w-full" variant="default" disabled={!crudEnabled}>
                     Mark as Paid
                   </Button>
                 </form>
@@ -505,6 +563,7 @@ export default async function BookingDetailPage({
                     type="submit"
                     className="w-full"
                     variant="destructive"
+                    disabled={!crudEnabled}
                   >
                     Cancel Booking
                   </Button>

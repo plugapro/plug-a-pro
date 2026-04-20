@@ -168,6 +168,7 @@ describe('matching — ProviderCertification (WS-B.1)', () => {
     expect(result.eligibleCount).toBe(0)
     const filtered = result.filteredOut.find((f) => f.providerId === 'p1')
     expect(filtered).toBeDefined()
+    expect(filtered?.filteredReasonCodes).toContain('MISSING_REQUIRED_CERTIFICATION:gas_cert')
   })
 
   it('accepts provider with verified ProviderCertification matching the required code', async () => {
@@ -219,6 +220,9 @@ describe('matching — ProviderEquipment (WS-B.1)', () => {
     const result = await rankCandidatesForJobRequest('jr1')
 
     expect(result.eligibleCount).toBe(0)
+    expect(result.filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes).toContain(
+      'MISSING_REQUIRED_EQUIPMENT:drain_snake',
+    )
   })
 
   it('accepts provider with matching active ProviderEquipment label', async () => {

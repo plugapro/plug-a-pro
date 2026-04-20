@@ -49,6 +49,8 @@ model Customer {
   archivedAt      DateTime?
   archiveReason   String?
   channel         CustomerChannel?
+  purgeAfter      DateTime?
+  mergedIntoCustomerId String?
 
   addresses              Address[]
   jobRequests            JobRequest[]
@@ -56,6 +58,10 @@ model Customer {
   messages               MessageEvent[]
   whatsappPreferenceLogs WhatsappPreferenceLog[]
   customerNotes          CustomerNote[]
+  mergedIntoCustomer     Customer?           @relation("CustomerMergeTarget", fields: [mergedIntoCustomerId], references: [id])
+  mergedCustomers        Customer[]          @relation("CustomerMergeTarget")
+  sourceMergeEvents      CustomerMergeEvent[] @relation("CustomerMergeSource")
+  targetMergeEvents      CustomerMergeEvent[] @relation("CustomerMergeTarget")
 
   @@map("customers")
 }
@@ -1272,6 +1278,82 @@ model FeatureFlag {
   @@map("feature_flags")
 }
 
+model Category {
+  id                  String                        @id @default(cuid())
+  slug                String                        @unique
+  label               String
+  description         String?
+  active              Boolean                       @default(true)
+  bookingOnAssignment Boolean                       @default(false)
+  regulated           Boolean                       @default(false)
+  sortOrder           Int                           @default(0)
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+
+  requiredCertifications CategoryRequiredCertification[]
+  requiredEquipment      CategoryRequiredEquipment[]
+  requiredVehicleTypes   CategoryRequiredVehicleType[]
+
+  @@index([active, sortOrder])
+  @@map("categories")
+}
+
+model CategoryRequiredCertification {
+  id         String   @id @default(cuid())
+  categoryId String
+  code       String
+  createdAt  DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, code])
+  @@index([code])
+  @@map("category_required_certifications")
+}
+
+model CategoryRequiredEquipment {
+  id         String   @id @default(cuid())
+  categoryId String
+  tag        String
+  createdAt  DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, tag])
+  @@index([tag])
+  @@map("category_required_equipment")
+}
+
+model CategoryRequiredVehicleType {
+  id         String   @id @default(cuid())
+  categoryId String
+  vehicleType String
+  createdAt  DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, vehicleType])
+  @@index([vehicleType])
+  @@map("category_required_vehicle_types")
+}
+
+model CustomerMergeEvent {
+  id               String    @id @default(cuid())
+  sourceCustomerId String?
+  targetCustomerId String?
+  executedById     String
+  reason           String
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now())
+
+  sourceCustomer Customer? @relation("CustomerMergeSource", fields: [sourceCustomerId], references: [id], onDelete: SetNull)
+  targetCustomer Customer? @relation("CustomerMergeTarget", fields: [targetCustomerId], references: [id], onDelete: SetNull)
+
+  @@index([sourceCustomerId, createdAt])
+  @@index([targetCustomerId, createdAt])
+  @@map("customer_merge_events")
+}
+
 model CustomerNote {
   id         String   @id @default(cuid())
   customerId String
@@ -1293,6 +1375,8 @@ model ProviderNote {
   authorId   String   // admin user ID who wrote the note
   body       String
   pinned     Boolean  @default(false)
+  reasonCode String?
+  strikeDelta Int     @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

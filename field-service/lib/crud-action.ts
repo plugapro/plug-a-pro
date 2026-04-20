@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import type { Role } from '@prisma/client'
+import { Prisma, type Role } from '@prisma/client'
 import { db } from './db'
 import { getSession } from './auth'
 
@@ -36,11 +36,14 @@ function meetsRoleRequirement(actorRole: Role, required: Role[]): boolean {
   return required.some((r) => level >= ROLE_HIERARCHY[r])
 }
 
-/** Maps legacy user_metadata roles to the AdminUser Role enum. */
-function legacyToAdminRole(role: string): Role | null {
-  if (role === 'owner') return 'OWNER'
-  if (role === 'admin') return 'ADMIN'
-  return null
+function toAuditJson(
+  value: unknown
+): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue
 }
 
 // ─── Transaction client type ──────────────────────────────────────────────────
@@ -99,7 +102,6 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
   }
 
   // ── 2. Role ──────────────────────────────────────────────────────────────────
-  // Prefer AdminUser row; fall back to user_metadata role for pre-backfill admins.
   const adminUser = await db.adminUser
     .findUnique({
       where: { userId: session.id },
@@ -107,13 +109,10 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
     })
     .catch(() => null)
 
-  const actorRole: Role | null =
-    adminUser?.active ? adminUser.role : legacyToAdminRole(session.role)
-
-  if (!actorRole || !meetsRoleRequirement(actorRole, opts.requiredRole)) {
+  if (!adminUser?.active || !meetsRoleRequirement(adminUser.role, opts.requiredRole)) {
     throw new CrudActionError(
       'UNAUTHORIZED',
-      `Requires one of [${opts.requiredRole.join(', ')}]. Actor has: ${actorRole ?? 'none'}.`
+      `Requires one of [${opts.requiredRole.join(', ')}]. Actor has: ${adminUser?.role ?? 'none'}.`
     )
   }
 
@@ -143,8 +142,6 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
   }
 
   // ── 5. Atomic transaction ─────────────────────────────────────────────────────
-  const actorIdForAudit = adminUser?.id ?? session.id
-
   const data = await db.$transaction(async (tx) => {
     const result = await opts.run(validInput, tx)
 
@@ -155,28 +152,25 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
     await tx.auditLog.create({
       data: {
         actorId: session.id,
-        actorRole: actorRole,
+        actorRole: adminUser.role,
         action: opts.action,
         entityType: opts.entity,
         entityId,
-        before: opts.before ?? undefined,
-        after: result as Record<string, unknown>,
+        before: toAuditJson(opts.before),
+        after: toAuditJson(result),
       },
     })
 
-    // Also write AdminAuditEvent when the actor has an AdminUser row
-    if (adminUser?.id) {
-      await tx.adminAuditEvent.create({
-        data: {
-          adminId: adminUser.id,
-          action: opts.action,
-          entityType: opts.entity,
-          entityId,
-          before: opts.before ?? undefined,
-          after: result as Record<string, unknown>,
-        },
-      })
-    }
+    await tx.adminAuditEvent.create({
+      data: {
+        adminId: adminUser.id,
+        action: opts.action,
+        entityType: opts.entity,
+        entityId,
+        before: toAuditJson(opts.before),
+        after: toAuditJson(result),
+      },
+    })
 
     return result
   })

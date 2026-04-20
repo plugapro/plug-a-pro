@@ -78,7 +78,7 @@ describe('crudAction', () => {
       })
     })
 
-    it('throws UNAUTHORIZED when legacy role is provider (no admin role)', async () => {
+    it('throws UNAUTHORIZED when no active AdminUser row exists', async () => {
       mockGetSession.mockResolvedValue({ ...ADMIN_SESSION, role: 'provider' })
       mockAdminUserFindUnique.mockResolvedValue(null)
       await expect(crudAction({ ...baseOpts })).rejects.toMatchObject({
@@ -93,11 +93,12 @@ describe('crudAction', () => {
       expect(result.ok).toBe(true)
     })
 
-    it('allows legacy admin role when no AdminUser row exists', async () => {
+    it('rejects legacy admin metadata when no AdminUser row exists', async () => {
       mockGetSession.mockResolvedValue(ADMIN_SESSION)
       mockAdminUserFindUnique.mockResolvedValue(null)
-      const result = await crudAction({ ...baseOpts, requiredRole: ['ADMIN'] })
-      expect(result.ok).toBe(true)
+      await expect(crudAction({ ...baseOpts, requiredRole: ['ADMIN'] })).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+      })
     })
   })
 
@@ -155,25 +156,17 @@ describe('crudAction', () => {
       expect(adminAuditCreated).toBe(true)
     })
 
-    it('writes AuditLog but not AdminAuditEvent when actor has no AdminUser row', async () => {
-      mockGetSession.mockResolvedValue(ADMIN_SESSION) // legacy admin
-      mockAdminUserFindUnique.mockResolvedValue(null)
+    it('rejects inactive AdminUser rows', async () => {
+      mockGetSession.mockResolvedValue(ADMIN_SESSION)
+      mockAdminUserFindUnique.mockResolvedValue({
+        id: 'admin-user-cuid-3',
+        role: 'OWNER',
+        active: false,
+      } as any)
 
-      let auditLogCreated = false
-      let adminAuditCreated = false
-
-      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        const mockTx = {
-          auditLog: { create: vi.fn().mockImplementation(() => { auditLogCreated = true }) },
-          adminAuditEvent: { create: vi.fn().mockImplementation(() => { adminAuditCreated = true }) },
-        }
-        return fn(mockTx)
+      await expect(crudAction({ ...baseOpts })).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
       })
-
-      await crudAction({ ...baseOpts })
-
-      expect(auditLogCreated).toBe(true)
-      expect(adminAuditCreated).toBe(false)
     })
   })
 })

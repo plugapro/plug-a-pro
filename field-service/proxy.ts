@@ -6,6 +6,7 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 
 // Routes that are public (no auth required)
 // Auth model:
@@ -35,7 +36,7 @@ const PUBLIC_PATHS = [
 // Routes that require provider role
 const PROVIDER_PATHS = ['/provider', '/technician']
 
-// Routes that require admin or owner role
+// Routes that require active AdminUser access
 const ADMIN_PATHS = ['/admin']
 
 // admin.plugapro.co.za uses clean paths — map them to internal /admin/* routes
@@ -104,26 +105,34 @@ export async function proxy(request: NextRequest) {
 
     if (error || !user) return redirectToSignIn(request, pathname, isAdminDomain)
 
-    const role = user.user_metadata?.role ?? 'customer'
+    const legacyRole = user.user_metadata?.role ?? 'customer'
+    let effectiveRole = legacyRole
 
     // Enforce provider-only routes
     if (PROVIDER_PATHS.some((p) => pathname.startsWith(p))) {
-      if (role !== 'provider') {
+      if (legacyRole !== 'provider') {
         return NextResponse.redirect(new URL('/provider-sign-in', request.url))
       }
     }
 
     // Enforce admin-only routes
     if (ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
-      if (role !== 'admin' && role !== 'owner') {
-        // On admin domain redirect to /sign-in (maps back to /admin-sign-in internally)
-        const dest = isAdminDomain ? '/sign-in' : '/admin-sign-in'
-        return NextResponse.redirect(new URL(dest, request.url))
+      const adminUser = await db.adminUser
+        .findUnique({
+          where: { userId: user.id },
+          select: { role: true, active: true },
+        })
+        .catch(() => null)
+
+      if (!adminUser?.active) {
+        return redirectToSignIn(request, pathname, isAdminDomain)
       }
+
+      effectiveRole = adminUser.role.toLowerCase()
     }
 
     // Inject user context into headers for downstream use
-    return buildResponse({ 'x-user-id': user.id, 'x-user-role': role })
+    return buildResponse({ 'x-user-id': user.id, 'x-user-role': effectiveRole })
   } catch {
     return redirectToSignIn(request, pathname, isAdminDomain)
   }

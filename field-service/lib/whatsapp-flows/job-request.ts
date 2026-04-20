@@ -14,7 +14,7 @@ import {
   type ListRow,
 } from '../whatsapp-interactive'
 import { db } from '../db'
-import { getCategoryPolicy } from '../service-category-policy'
+import { resolveCategoryRequirements } from '../category-config'
 import { createJobRequest } from '../job-requests/create-job-request'
 import { isInActiveServiceArea, addToServiceAreaWaitlist } from '../service-area-guard'
 import {
@@ -644,7 +644,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
   try {
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
-    const categoryPolicy = getCategoryPolicy(category)
+    const categoryRequirements = await resolveCategoryRequirements({ category })
 
     let result: Awaited<ReturnType<typeof createJobRequest>>
 
@@ -711,7 +711,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     const successMessage =
       `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\n` +
       `We're finding you a nearby worker — you'll get a WhatsApp update when matched.` +
-      (categoryPolicy.bookingOnAssignment
+      (categoryRequirements.policy.bookingOnAssignment
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
         : '')
 
