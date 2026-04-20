@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireAdmin } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { formatCurrency } from '@/lib/payments'
@@ -13,6 +14,12 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  blockCustomerFromFormAction,
+  addCustomerNoteFromFormAction,
+  deactivateCustomerFromFormAction,
+} from '../actions'
 import {
   Table,
   TableBody,
@@ -44,6 +51,7 @@ export default async function CustomerDetailPage({
 }) {
   const { id } = await params
   const admin = await requireAdmin()
+  const crudEnabled = await isEnabled('admin.crud.customers', admin.id)
 
   const customer = await db.customer.findUnique({
     where: { id },
@@ -75,6 +83,11 @@ export default async function CustomerDetailPage({
           createdAt: true,
           note: true,
         },
+      },
+      customerNotes: {
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: { id: true, body: true, pinned: true, authorId: true, createdAt: true },
       },
     },
   })
@@ -116,10 +129,110 @@ export default async function CustomerDetailPage({
           <h1 className="text-2xl font-bold">{customer.name}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{customer.phone}</p>
         </div>
-        <Badge variant={customer.userId ? 'secondary' : 'outline'} className="rounded-full">
-          {channel}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {customer.isBlocked && (
+            <Badge variant="destructive" className="rounded-full">Blocked</Badge>
+          )}
+          {!customer.active && (
+            <Badge variant="outline" className="rounded-full text-muted-foreground">Inactive</Badge>
+          )}
+          <Badge variant={customer.userId ? 'secondary' : 'outline'} className="rounded-full">
+            {channel}
+          </Badge>
+        </div>
       </div>
+
+      {/* ── Admin actions ───────────────────────────────────────────────────── */}
+      {crudEnabled && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Account Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            {/* Block / Unblock */}
+            <div className="flex flex-wrap items-start gap-3">
+              {customer.isBlocked ? (
+                <form
+                  action={async () => {
+                    'use server'
+                    const { unblockCustomerAction } = await import('../actions')
+                    await unblockCustomerAction(id)
+                  }}
+                >
+                  <Button type="submit" variant="outline" size="sm">
+                    Unblock customer
+                  </Button>
+                </form>
+              ) : (
+                <form action={blockCustomerFromFormAction} className="flex gap-2 items-center">
+                  <input type="hidden" name="customerId" value={id} />
+                  <input
+                    name="reason"
+                    required
+                    placeholder="Reason for blocking…"
+                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-60"
+                  />
+                  <Button type="submit" variant="destructive" size="sm">
+                    Block
+                  </Button>
+                </form>
+              )}
+
+              {customer.active && (
+                <form action={deactivateCustomerFromFormAction} className="flex gap-2 items-center">
+                  <input type="hidden" name="customerId" value={id} />
+                  <input
+                    name="reason"
+                    required
+                    placeholder="Reason for deactivation…"
+                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-60"
+                  />
+                  <Button type="submit" variant="outline" size="sm" className="text-destructive border-destructive hover:bg-destructive/10">
+                    Deactivate
+                  </Button>
+                </form>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Admin notes ─────────────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Admin Notes
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {customer.customerNotes.length === 0 && (
+            <p className="text-muted-foreground">No notes yet.</p>
+          )}
+          {customer.customerNotes.map((note) => (
+            <div key={note.id} className={`rounded-md border p-3 text-sm ${note.pinned ? 'border-amber-300 bg-amber-50' : ''}`}>
+              <p>{note.body}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {note.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+                {note.pinned && <span className="ml-2 text-amber-600 font-medium">pinned</span>}
+              </p>
+            </div>
+          ))}
+          {crudEnabled && (
+            <form action={addCustomerNoteFromFormAction} className="flex gap-2 pt-2 border-t">
+              <input type="hidden" name="customerId" value={id} />
+              <input
+                name="body"
+                required
+                placeholder="Add a note…"
+                className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring flex-1"
+              />
+              <Button type="submit" variant="outline" size="sm">Add</Button>
+            </form>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Contact info */}
       <Card>
