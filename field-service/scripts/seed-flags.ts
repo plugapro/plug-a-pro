@@ -1,0 +1,70 @@
+/**
+ * seed-flags.ts
+ *
+ * Upserts all admin CRUD feature flags to their default values.
+ * Run once after deploying the FeatureFlag migration:
+ *
+ *   npx tsx scripts/seed-flags.ts
+ *
+ * Pass --enable to enable all flags (production rollout):
+ *   npx tsx scripts/seed-flags.ts --enable
+ *
+ * Pass --flag=<key> --enable to enable a single flag:
+ *   npx tsx scripts/seed-flags.ts --flag=admin.crud.locations --enable
+ */
+
+import { setFlag } from '../lib/flags'
+import { db } from '../lib/db'
+
+const FLAGS: Array<{ key: string; description: string }> = [
+  {
+    key: 'admin.crud.locations',
+    description: 'Enable create/update/delete mutations on the Location Taxonomy admin page.',
+  },
+  {
+    key: 'admin.crud.customers',
+    description: 'Enable block/suspend/archive mutations on the Customers admin page.',
+  },
+  {
+    key: 'admin.crud.providers',
+    description: 'Enable verification/suspension mutations on the Providers admin page.',
+  },
+  {
+    key: 'admin.users.v2',
+    description: 'Enable DB-backed AdminUser team management (invite, role change, deactivate).',
+  },
+]
+
+async function main() {
+  const args = process.argv.slice(2)
+  const enableAll = args.includes('--enable') && !args.some((a) => a.startsWith('--flag='))
+  const targetFlag = args.find((a) => a.startsWith('--flag='))?.slice('--flag='.length)
+  const enableTarget = args.includes('--enable')
+
+  const targets = targetFlag
+    ? FLAGS.filter((f) => f.key === targetFlag)
+    : FLAGS
+
+  if (targetFlag && targets.length === 0) {
+    console.error(`Unknown flag: ${targetFlag}`)
+    console.error(`Known flags:\n${FLAGS.map((f) => `  ${f.key}`).join('\n')}`)
+    process.exit(1)
+  }
+
+  console.log(`Seeding ${targets.length} feature flag(s)…`)
+
+  for (const flag of targets) {
+    const enabled = targetFlag ? enableTarget : enableAll
+    await setFlag(flag.key, { enabled, description: flag.description })
+    console.log(`  ${enabled ? '✓ enabled ' : '○ disabled'} ${flag.key}`)
+  }
+
+  console.log('Done.')
+}
+
+main()
+  .catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+  .finally(() => db.$disconnect())
