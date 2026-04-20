@@ -354,10 +354,10 @@ export default async function ProviderProfilePage({ params }: Props) {
                       {format(new Date(job.createdAt), 'd MMM yyyy')}
                     </TableCell>
                     <TableCell className="font-medium text-sm">
-                      {job.booking.match?.jobRequest.title ?? '—'}
+                      {job.booking?.match?.jobRequest.title ?? '—'}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                      {job.booking.match?.jobRequest.category ?? '—'}
+                      {job.booking?.match?.jobRequest.category ?? '—'}
                     </TableCell>
                     <TableCell>
                       <Badge

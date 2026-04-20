@@ -328,24 +328,28 @@ export default async function BookingDetailPage({
               <p className="text-sm text-muted-foreground">
                 Full revision trail for this job, including customer feedback and the accepted quote record.
               </p>
-              <QuoteHistoryTimeline
-                audience="provider"
-                quotes={booking.match.quotes.map((quote) => ({
-                  id: quote.id,
-                  amount: Number(quote.amount),
-                  labourCost: Number(quote.labourCost),
-                  materialsCost: Number(quote.materialsCost),
-                  description: quote.description,
-                  status: quote.status,
-                  estimatedHours: quote.estimatedHours,
-                  preferredDate: quote.preferredDate,
-                  validUntil: quote.validUntil,
-                  createdAt: quote.createdAt,
-                  approvedAt: quote.approvedAt,
-                  declinedAt: quote.declinedAt,
-                  notes: quote.notes,
-                }))}
-              />
+              {booking.match != null ? (
+                <QuoteHistoryTimeline
+                  audience="provider"
+                  quotes={booking.match.quotes.map((quote) => ({
+                    id: quote.id,
+                    amount: Number(quote.amount),
+                    labourCost: Number(quote.labourCost),
+                    materialsCost: Number(quote.materialsCost),
+                    description: quote.description,
+                    status: quote.status,
+                    estimatedHours: quote.estimatedHours,
+                    preferredDate: quote.preferredDate,
+                    validUntil: quote.validUntil,
+                    createdAt: quote.createdAt,
+                    approvedAt: quote.approvedAt,
+                    declinedAt: quote.declinedAt,
+                    notes: quote.notes,
+                  }))}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">No match record — quote history unavailable.</p>
+              )}
             </CardContent>
           </Card>
 
