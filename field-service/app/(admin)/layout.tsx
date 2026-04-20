@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/admin/payments',     label: 'Payments',    icon: 'payments' as const },
   { href: '/admin/reports',      label: 'Reports',     icon: 'reports' as const },
   { href: '/admin/messages',     label: 'Messages',    icon: 'messages' as const },
+  { href: '/admin/team',         label: 'Team',        icon: 'users' as const },
   { href: '/admin/settings',     label: 'Settings',    icon: 'settings' as const },
   { href: '/admin/flows',        label: 'Journey Flows', icon: 'workflow' as const },
 ] as const
