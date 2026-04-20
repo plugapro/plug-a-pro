@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
@@ -19,32 +20,56 @@ import {
 
 export const metadata = buildMetadata({ title: 'Providers', noIndex: true })
 
+const STATUS_BADGE: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
+  APPLICATION_PENDING: 'outline',
+  UNDER_REVIEW: 'secondary',
+  ACTIVE: 'default',
+  SUSPENDED: 'destructive',
+  ARCHIVED: 'outline',
+  BANNED: 'destructive',
+}
+
 export default async function ProvidersPage() {
-  await requireAdmin()
+  const actor = await requireAdmin()
+  const crudEnabled = await isEnabled('admin.crud.providers', actor.id)
 
   const providers = await db.provider.findMany({
-    include: {
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      skills: true,
+      status: true,
+      verified: true,
+      active: true,
       _count: {
         select: {
           jobs: { where: { status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] } } },
         },
-      },
-      jobs: {
-        where: { status: { in: ['EN_ROUTE', 'ARRIVED', 'STARTED', 'AWAITING_APPROVAL'] } },
-        take: 1,
-        select: { status: true },
       },
     },
     orderBy: { name: 'asc' },
     take: 500,
   })
 
+  const activeCount = providers.filter((p) => p.status === 'ACTIVE').length
+  const suspendedCount = providers.filter((p) => p.status === 'SUSPENDED' || p.status === 'BANNED').length
+
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Providers</h1>
-        <p className="text-sm text-muted-foreground">{providers.length} registered</p>
+        <p className="text-sm text-muted-foreground">
+          {providers.length} registered · {activeCount} active
+          {suspendedCount > 0 && <span className="ml-2 text-destructive">· {suspendedCount} suspended/banned</span>}
+        </p>
       </div>
+
+      {!crudEnabled && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Provider mutations are disabled. Enable the <code>admin.crud.providers</code> feature flag to verify, suspend, or update providers.
+        </div>
+      )}
 
       <div className="rounded-xl border overflow-hidden">
         <Table>
@@ -53,7 +78,7 @@ export default async function ProvidersPage() {
               <TableHead>Name</TableHead>
               <TableHead className="hidden sm:table-cell">Phone</TableHead>
               <TableHead className="hidden md:table-cell">Skills</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Provider Status</TableHead>
               <TableHead className="text-right">Active Jobs</TableHead>
             </TableRow>
           </TableHeader>
@@ -65,55 +90,47 @@ export default async function ProvidersPage() {
                 </TableCell>
               </TableRow>
             )}
-            {providers.map((provider) => {
-              const isActive  = provider.jobs.length > 0
-              const activeJob = provider.jobs[0]
-
-              return (
-                <TableRow key={provider.id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell>
-                    <Link href={`/admin/providers/${provider.id}`} className="block">
-                      <p className="font-medium hover:text-primary">{provider.name}</p>
-                    </Link>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell text-muted-foreground">
-                    {provider.phone}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {provider.skills.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {provider.skills.slice(0, 3).map((skill) => (
-                          <Badge key={skill} variant="secondary" className="rounded-full text-xs">
-                            {skill}
-                          </Badge>
-                        ))}
-                        {provider.skills.length > 3 && (
-                          <span className="text-xs text-muted-foreground">
-                            +{provider.skills.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">—</span>
+            {providers.map((provider) => (
+              <TableRow key={provider.id} className="cursor-pointer hover:bg-muted/50">
+                <TableCell>
+                  <Link href={`/admin/providers/${provider.id}`} className="block">
+                    <p className="font-medium hover:text-primary">{provider.name}</p>
+                    {provider.verified && (
+                      <p className="text-xs text-green-600">Verified</p>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    {isActive ? (
-                      <Badge variant="default" className="rounded-full capitalize">
-                        {activeJob?.status.replace(/_/g, ' ').toLowerCase() ?? 'active'}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="rounded-full">
-                        available
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {provider._count.jobs}
-                  </TableCell>
-                </TableRow>
-              )
-            })}
+                  </Link>
+                </TableCell>
+                <TableCell className="hidden sm:table-cell text-muted-foreground">
+                  {provider.phone}
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  {provider.skills.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {provider.skills.slice(0, 3).map((skill) => (
+                        <Badge key={skill} variant="secondary" className="rounded-full text-xs">
+                          {skill}
+                        </Badge>
+                      ))}
+                      {provider.skills.length > 3 && (
+                        <span className="text-xs text-muted-foreground">
+                          +{provider.skills.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">—</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={STATUS_BADGE[provider.status] ?? 'outline'} className="rounded-full text-xs">
+                    {provider.status.replace(/_/g, ' ')}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right font-medium">
+                  {provider._count.jobs}
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </div>
