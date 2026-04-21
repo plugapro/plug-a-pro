@@ -7,7 +7,7 @@ type CategoryPolicy = {
   regulated: boolean
 }
 
-const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
+export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
   plumbing: {
     normalizedCategory: 'plumbing',
     bookingOnAssignment: false,
@@ -97,6 +97,15 @@ export function getCategoryPolicy(category: string): CategoryPolicy {
       regulated: false,
     }
   )
+}
+
+export function listCategoryPolicies(): CategoryPolicy[] {
+  return Object.values(CATEGORY_POLICIES).map((policy) => ({
+    ...policy,
+    requiredCertificationCodes: [...policy.requiredCertificationCodes],
+    requiredEquipmentTags: [...policy.requiredEquipmentTags],
+    requiredVehicleTypes: [...policy.requiredVehicleTypes],
+  }))
 }
 
 export function mergeCategoryRequirements(params: {

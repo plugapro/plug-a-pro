@@ -44,6 +44,9 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 
 vi.mock('@/lib/service-area-guard', () => ({
   isInActiveServiceArea: vi.fn(),
+  isActiveProvince: vi.fn().mockReturnValue(true),
+  isActiveCity: vi.fn().mockReturnValue(true),
+  isActiveRegion: vi.fn().mockReturnValue(true),
   addToServiceAreaWaitlist: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -58,8 +61,13 @@ vi.mock('@/lib/structured-address', () => ({
   },
 }))
 
-vi.mock('@/lib/service-category-policy', () => ({
-  getCategoryPolicy: vi.fn().mockReturnValue({ bookingOnAssignment: false }),
+vi.mock('@/lib/category-config', () => ({
+  resolveCategoryRequirements: vi.fn().mockResolvedValue({
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    policy: { bookingOnAssignment: false, regulated: false },
+  }),
 }))
 
 import { handleJobRequestFlow } from '@/lib/whatsapp-flows/job-request'

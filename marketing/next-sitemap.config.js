@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // next-sitemap.config.js
 // Per spec: MDX slugs must be included via additionalPaths — not automatic.
 // The Velite output (.velite/) is read at sitemap generation time (postbuild).

@@ -10,7 +10,7 @@ import type {
 import { db } from '../db'
 import { MATCHING_CONFIG, type MatchingWeights } from './config'
 import { buildWorkingWindow, deriveRequestWindow, evaluateScheduleFit, normalizeCommitments } from './scheduling'
-import { getCategoryPolicy, mergeCategoryRequirements } from '../service-category-policy'
+import { resolveCategoryRequirements } from '../category-config'
 import { isLocationStale, pointFallsWithinRadius } from './geography'
 import { createBookingArtifactsForApprovedQuote } from '../quotes'
 import { initializeBookingPayment } from '../payments'
@@ -27,6 +27,8 @@ import type {
   RankingResult,
   ScoreBreakdown,
 } from './types'
+
+type ResolvedCategoryRequirements = Awaited<ReturnType<typeof resolveCategoryRequirements>>
 
 function normalizeTag(tag: string) {
   return tag.trim().toLowerCase()
@@ -284,43 +286,59 @@ function hasRequiredSkills(jobRequest: MatchingJobRequest, provider: MatchingPro
   return [...requiredSkills].every((skill) => providerSkills.has(skill))
 }
 
-function hasRequiredCertifications(jobRequest: MatchingJobRequest, provider: MatchingProvider) {
-  const requirements = mergeCategoryRequirements({
-    category: jobRequest.category,
-    requiredCertificationCodes: jobRequest.requiredCertificationCodes,
-  })
+function getMissingRequiredCertifications(
+  requirements: ResolvedCategoryRequirements,
+  provider: MatchingProvider,
+) {
+  if (requirements.requiredCertificationCodes.length === 0) return []
 
-  if (requirements.requiredCertificationCodes.length === 0) return true
-
-  const activeCertifications = new Set(
+  // Legacy TechnicianCertification records (original model)
+  const activeLegacyCerts = new Set(
     provider.technicianCertifications
       .filter((cert) => cert.status !== 'EXPIRED')
       .map((cert) => normalizeTag(cert.certificationCode)),
   )
 
+  // WS-B.1 ProviderCertification records — verified (verifiedAt set) certs by name
+  const adminVerifiedCerts = new Set(
+    (provider.adminCertifications ?? [])
+      .filter((cert) => cert.verifiedAt != null)
+      .map((cert) => normalizeTag(cert.name)),
+  )
+
   return requirements.requiredCertificationCodes
     .map(normalizeTag)
-    .every((code) => activeCertifications.has(code))
+    .filter((code) => !activeLegacyCerts.has(code) && !adminVerifiedCerts.has(code))
 }
 
-function hasRequiredEquipment(jobRequest: MatchingJobRequest, provider: MatchingProvider) {
-  const requirements = mergeCategoryRequirements({
-    category: jobRequest.category,
-    requiredEquipmentTags: jobRequest.requiredEquipmentTags,
-  })
-  if (requirements.requiredEquipmentTags.length === 0) return true
+function getMissingRequiredEquipmentTags(
+  requirements: ResolvedCategoryRequirements,
+  provider: MatchingProvider,
+) {
+  if (requirements.requiredEquipmentTags.length === 0) return []
 
-  const providerEquipment = new Set(provider.equipmentTags.map(normalizeTag))
+  // Legacy equipmentTags string array (original model)
+  const legacyEquipment = new Set(provider.equipmentTags.map(normalizeTag))
+
+  // WS-B.1 ProviderEquipment records — active equipment by label and category
+  const adminEquipment = new Set([
+    ...(provider.equipment ?? [])
+      .filter((eq) => eq.active)
+      .flatMap((eq) => [
+        normalizeTag(eq.label),
+        ...(eq.category ? [normalizeTag(eq.category)] : []),
+      ]),
+  ])
+
   return requirements.requiredEquipmentTags
     .map(normalizeTag)
-    .every((equipmentTag) => providerEquipment.has(equipmentTag))
+    .filter((tag) => !legacyEquipment.has(tag) && !adminEquipment.has(tag))
 }
 
-function hasRequiredVehicleTypes(jobRequest: MatchingJobRequest, provider: MatchingProvider) {
-  const requirements = mergeCategoryRequirements({
-    category: jobRequest.category,
-    requiredVehicleTypes: jobRequest.requiredVehicleTypes,
-  })
+function hasRequiredVehicleTypes(
+  requirements: ResolvedCategoryRequirements,
+  provider: MatchingProvider,
+) {
   if (requirements.requiredVehicleTypes.length === 0) return true
 
   const providerVehicles = new Set(provider.vehicleTypes.map(normalizeTag))
@@ -401,10 +419,10 @@ function buildScoreBreakdown(params: {
   travelMinutes: number
   canMeetWindow: boolean
   coverageTier: CoverageTier  // NEW
+  categoryPolicy: ResolvedCategoryRequirements['policy']
   weights?: MatchingWeights
 }) {
   const weights = params.weights ?? MATCHING_CONFIG.weights
-  const categoryPolicy = getCategoryPolicy(params.jobRequest.category)
   const skillMatch = hasRequiredSkills(params.jobRequest, params.provider) ? 1 : 0
   const scheduleFit = params.scheduleFitScore
   const travelEfficiency = Math.max(
@@ -438,7 +456,7 @@ function buildScoreBreakdown(params: {
     `Reliability score ${reliability.toFixed(2)}`,
   ]
 
-  if (categoryPolicy.regulated) {
+  if (params.categoryPolicy.regulated) {
     reasons.push('Regulated service requirements checked')
   }
 
@@ -732,6 +750,43 @@ async function loadMatchingContext(jobRequestId: string) {
     jobsByProvider.set(row.providerId, list)
   }
 
+  // WS-B.1 ProviderCertification + ProviderEquipment batch fetch
+  type AdminCertRow = { providerId: string; name: string; verifiedAt: Date | null }
+  type AdminEquipRow = { providerId: string; label: string; category: string | null; active: boolean }
+
+  const [adminCertRows, adminEquipRows] = await Promise.all([
+    safeOptionalQuery(
+      () =>
+        (db as any).providerCertification?.findMany?.({
+          where: { providerId: { in: providerIds } },
+          select: { providerId: true, name: true, verifiedAt: true },
+        }) ?? Promise.resolve([]),
+      [] as AdminCertRow[],
+    ),
+    safeOptionalQuery(
+      () =>
+        (db as any).providerEquipment?.findMany?.({
+          where: { providerId: { in: providerIds }, active: true },
+          select: { providerId: true, label: true, category: true, active: true },
+        }) ?? Promise.resolve([]),
+      [] as AdminEquipRow[],
+    ),
+  ])
+
+  const adminCertsByProvider = new Map<string, AdminCertRow[]>()
+  for (const row of adminCertRows) {
+    const list = adminCertsByProvider.get(row.providerId) ?? []
+    list.push(row)
+    adminCertsByProvider.set(row.providerId, list)
+  }
+
+  const adminEquipmentByProvider = new Map<string, AdminEquipRow[]>()
+  for (const row of adminEquipRows) {
+    const list = adminEquipmentByProvider.get(row.providerId) ?? []
+    list.push(row)
+    adminEquipmentByProvider.set(row.providerId, list)
+  }
+
   const providers = baseProviders.map((provider) => {
     const hydratedProvider = provider as typeof provider & {
       averageRating?: number
@@ -819,6 +874,8 @@ async function loadMatchingContext(jobRequestId: string) {
       vehicleTypes: hydratedProvider.vehicleTypes ?? [],
       technicianSkills: hydratedProvider.technicianSkills ?? skillsByProvider.get(provider.id) ?? [],
       technicianCertifications: hydratedProvider.technicianCertifications ?? certsByProvider.get(provider.id) ?? [],
+      adminCertifications: adminCertsByProvider.get(provider.id) ?? [],
+      equipment: adminEquipmentByProvider.get(provider.id) ?? [],
       technicianServiceAreas: hydratedProvider.technicianServiceAreas ?? areasByProvider.get(provider.id) ?? [],
       technicianAvailability: hydratedProvider.technicianAvailability ?? availabilityByProvider.get(provider.id) ?? null,
       schedule: schedulesByProvider.get(provider.id) ?? [],
@@ -868,6 +925,12 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
   const filteredOut: RankingResult['filteredOut'] = []
   const candidates: RankedCandidate[] = []
   const requestWindow = deriveRequestWindow(jobRequest)
+  const categoryRequirements = await resolveCategoryRequirements({
+    category: jobRequest.category,
+    requiredCertificationCodes: jobRequest.requiredCertificationCodes,
+    requiredEquipmentTags: jobRequest.requiredEquipmentTags,
+    requiredVehicleTypes: jobRequest.requiredVehicleTypes,
+  })
 
   for (const provider of providers) {
     const filteredReasonCodes: string[] = []
@@ -884,13 +947,16 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
     if (!hasRequiredSkills(jobRequest, provider)) {
       filteredReasonCodes.push('MISSING_REQUIRED_SKILL')
     }
-    if (!hasRequiredCertifications(jobRequest, provider)) {
-      filteredReasonCodes.push('MISSING_REQUIRED_CERTIFICATION')
-    }
-    if (!hasRequiredEquipment(jobRequest, provider)) {
-      filteredReasonCodes.push('MISSING_REQUIRED_EQUIPMENT')
-    }
-    if (!hasRequiredVehicleTypes(jobRequest, provider)) {
+    const missingCertifications = getMissingRequiredCertifications(categoryRequirements, provider)
+    filteredReasonCodes.push(
+      ...missingCertifications.map((code) => `MISSING_REQUIRED_CERTIFICATION:${code}`),
+    )
+
+    const missingEquipmentTags = getMissingRequiredEquipmentTags(categoryRequirements, provider)
+    filteredReasonCodes.push(
+      ...missingEquipmentTags.map((tag) => `MISSING_REQUIRED_EQUIPMENT:${tag}`),
+    )
+    if (!hasRequiredVehicleTypes(categoryRequirements, provider)) {
       filteredReasonCodes.push('MISSING_REQUIRED_VEHICLE')
     }
 
@@ -952,6 +1018,7 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
       travelMinutes: scheduleFit.travelMinutes,
       canMeetWindow: scheduleFit.canMeetWindow,
       coverageTier: areaCoverage.tier,
+      categoryPolicy: categoryRequirements.policy,
     })
 
     candidates.push({

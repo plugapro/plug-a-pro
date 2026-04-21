@@ -5,7 +5,7 @@
 // Triggers lead dispatch fire-and-forget after the transaction commits.
 
 import { db } from '../db'
-import { mergeCategoryRequirements } from '../service-category-policy'
+import { resolveCategoryRequirements } from '../category-config'
 import { geocodeAddress } from '../geocoding'
 import { resolveSuburbNodeId } from '../location-nodes'
 import { getJobRequestAccessUrl } from '../job-request-access'
@@ -68,7 +68,7 @@ export async function createJobRequest(
   const phone = normalizePhone(params.phone)
   params = { ...params, phone }
 
-  const categoryRequirements = mergeCategoryRequirements({
+  const categoryRequirements = await resolveCategoryRequirements({
     category: params.category,
     requiredCertificationCodes: params.requiredCertificationCodes,
     requiredEquipmentTags: params.requiredEquipmentTags,

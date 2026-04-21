@@ -1,10 +1,12 @@
 export const dynamic = 'force-dynamic'
 
+import { z } from 'zod'
 import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
+import { crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
-import { recordAuditLog } from '@/lib/audit'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
@@ -19,8 +21,25 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Disputes', noIndex: true })
+
+const FLAG = 'admin.crud.disputes'
+const CASES_FLAG = 'ops.v2.cases'
+const DISPUTE_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
+
+const UpdateDisputeSchema = z.object({
+  disputeId: z.string().min(1),
+  status: z.enum(['OPEN', 'UNDER_REVIEW', 'RESOLVED_CUSTOMER', 'RESOLVED_PROVIDER', 'RESOLVED_SPLIT', 'CLOSED']),
+  resolution: z.string().nullable().optional(),
+})
+
+const QueueSchema = z.object({
+  disputeId: z.string().min(1),
+})
 
 const DISPUTE_STYLES: Record<string, 'danger' | 'warning' | 'info' | 'success' | 'brand' | 'neutral'> = {
   OPEN: 'danger',
@@ -56,28 +75,33 @@ async function updateDisputeAction(formData: FormData) {
   })
   if (!existing) return
 
-  await db.dispute.update({
-    where: { id: disputeId },
-    data: {
-      status: status as 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_CUSTOMER' | 'RESOLVED_PROVIDER' | 'RESOLVED_SPLIT' | 'CLOSED',
-      resolution,
-      resolvedAt: resolvedStatuses.includes(status) ? new Date() : null,
-      resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
-    },
-  })
-
-  await recordAuditLog({
-    actorId: admin.id,
-    actorRole: admin.role,
-    action: 'dispute.update',
-    entityType: 'dispute',
+  await crudAction({
+    entity: 'Dispute',
     entityId: disputeId,
+    action: 'dispute.update',
+    requiredRole: [...DISPUTE_ROLES],
+    requiredFlag: FLAG,
+    schema: UpdateDisputeSchema,
+    input: { disputeId, status, resolution },
     before: existing,
-    after: {
-      status,
-      resolution,
-      resolvedAt: resolvedStatuses.includes(status) ? new Date().toISOString() : null,
-      resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
+    run: async (_data, tx) => {
+      await tx.dispute.update({
+        where: { id: disputeId },
+        data: {
+          status: status as 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_CUSTOMER' | 'RESOLVED_PROVIDER' | 'RESOLVED_SPLIT' | 'CLOSED',
+          resolution,
+          resolvedAt: resolvedStatuses.includes(status) ? new Date() : null,
+          resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
+        },
+      })
+
+      return {
+        id: disputeId,
+        status,
+        resolution,
+        resolvedAt: resolvedStatuses.includes(status) ? new Date().toISOString() : null,
+        resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
+      }
     },
   })
 
@@ -92,13 +116,25 @@ async function claimDisputeAction(formData: FormData) {
   const disputeId = String(formData.get('disputeId') ?? '')
   if (!disputeId) return
 
-  await claimOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.DISPUTE,
+  await crudAction({
+    entity: 'Dispute',
     entityId: disputeId,
-    claimedById: admin.id,
-    claimedByRole: admin.role,
-    claimedByLabel: admin.email ?? 'admin',
-    actor: { actorId: admin.id, actorRole: admin.role },
+    action: 'dispute.claim',
+    requiredRole: [...DISPUTE_ROLES],
+    requiredFlag: FLAG,
+    schema: QueueSchema,
+    input: { disputeId },
+    run: async (_input, tx) => {
+      await claimOpsQueueItem(tx, {
+        queueType: OPS_QUEUE_TYPES.DISPUTE,
+        entityId: disputeId,
+        claimedById: admin.id,
+        claimedByRole: admin.adminRole,
+        claimedByLabel: admin.email ?? 'admin',
+      })
+
+      return { id: disputeId }
+    },
   })
 
   revalidatePath('/admin/disputes')
@@ -108,14 +144,25 @@ async function claimDisputeAction(formData: FormData) {
 async function releaseDisputeAction(formData: FormData) {
   'use server'
 
-  const admin = await requireAdmin()
   const disputeId = String(formData.get('disputeId') ?? '')
   if (!disputeId) return
 
-  await releaseOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.DISPUTE,
+  await crudAction({
+    entity: 'Dispute',
     entityId: disputeId,
-    actor: { actorId: admin.id, actorRole: admin.role },
+    action: 'dispute.release',
+    requiredRole: [...DISPUTE_ROLES],
+    requiredFlag: FLAG,
+    schema: QueueSchema,
+    input: { disputeId },
+    run: async (_input, tx) => {
+      await releaseOpsQueueItem(tx, {
+        queueType: OPS_QUEUE_TYPES.DISPUTE,
+        entityId: disputeId,
+      })
+
+      return { id: disputeId }
+    },
   })
 
   revalidatePath('/admin/disputes')
@@ -124,6 +171,8 @@ async function releaseDisputeAction(formData: FormData) {
 
 export default async function AdminDisputesPage() {
   const admin = await requireAdmin()
+  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
   const now = new Date()
   const pageWarnings: string[] = []
 
@@ -163,6 +212,23 @@ export default async function AdminDisputesPage() {
   })
 
   const jobById = new Map(jobs.map((job) => [job.id, job]))
+
+  // Fetch open cases for disputes (gated by flag)
+  const disputeIds = disputes.map((d) => d.id)
+  const rawDisputeCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'DISPUTE',
+          entityId: { in: disputeIds },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
+  const caseByDispute = new Map(rawDisputeCases.map((c) => [c.entityId, c]))
   const openCount = disputes.filter((dispute) => dispute.status === 'OPEN').length
   const underReviewCount = disputes.filter((dispute) => dispute.status === 'UNDER_REVIEW').length
 
@@ -175,6 +241,12 @@ export default async function AdminDisputesPage() {
           Manual review queue for jobs that need intervention.
         </p>
       </div>
+
+      {!crudEnabled && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Dispute mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim or update disputes.
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <SummaryCard label="Open disputes" value={openCount} />
@@ -270,14 +342,14 @@ export default async function AdminDisputesPage() {
                   {!claimedByCurrentUser ? (
                     <form action={claimDisputeAction}>
                       <input type="hidden" name="disputeId" value={dispute.id} />
-                      <Button type="submit" variant="outline" size="sm">
+                      <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                         {assignment?.claimedById ? 'Take over' : 'Claim'}
                       </Button>
                     </form>
                   ) : (
                     <form action={releaseDisputeAction}>
                       <input type="hidden" name="disputeId" value={dispute.id} />
-                      <Button type="submit" variant="outline" size="sm">
+                      <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                         Release
                       </Button>
                     </form>
@@ -312,10 +384,32 @@ export default async function AdminDisputesPage() {
                   </div>
                   <Button
                     type="submit"
+                    disabled={!crudEnabled}
                   >
                     Save dispute update
                   </Button>
                 </form>
+
+                {casesEnabled && (() => {
+                  const activeCase = caseByDispute.get(dispute.id)
+                  if (!activeCase) return null
+                  return (
+                    <div className="space-y-4 border-t pt-4 mt-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Case actions</p>
+                        <ResolveCaseDialog caseId={activeCase.id} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                        <CaseActivityTimeline events={activeCase.events} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                        <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}

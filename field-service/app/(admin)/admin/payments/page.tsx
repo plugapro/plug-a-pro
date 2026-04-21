@@ -3,11 +3,13 @@
 
 export const dynamic = 'force-dynamic'
 
+import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
-import { recordAuditLog } from '@/lib/audit'
+import { isEnabled } from '@/lib/flags'
+import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { buildMetadata } from '@/lib/metadata'
 import {
   OPS_QUEUE_TYPES,
@@ -21,8 +23,25 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getPaymentAdminMessage } from '@/lib/admin-action-messages'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
+
+const FLAG = 'admin.crud.payments'
+const CASES_FLAG = 'ops.v2.cases'
+const REFUND_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
+const CLAIM_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
+
+const RefundSchema = z.object({
+  paymentId: z.string().min(1),
+  amount: z.number().positive(),
+})
+
+const QueueSchema = z.object({
+  paymentId: z.string().min(1),
+})
 
 // ─── Server Action ────────────────────────────────────────────────────────────
 
@@ -63,24 +82,40 @@ async function issueRefundAction(formData: FormData) {
 
   const { issueRefund } = await import('@/lib/payments')
   try {
-    await issueRefund({
-      bookingId:   payment.bookingId,
-      amountCents: Math.round(amount * 100),
-    })
-
-    await recordAuditLog({
-      actorId: admin.id,
-      actorRole: admin.role,
-      action: 'payment.refund',
-      entityType: 'payment',
+    await crudAction({
+      entity: 'Payment',
       entityId: paymentId,
+      action: 'payment.refund',
+      requiredRole: [...REFUND_ROLES],
+      requiredFlag: FLAG,
+      schema: RefundSchema,
+      input: { paymentId, amount },
       before: payment,
-      after: {
-        requestedAmount: amount,
+      run: async () => {
+        await issueRefund({
+          bookingId: payment.bookingId,
+          amountCents: Math.round(amount * 100),
+        })
+
+        return {
+          id: paymentId,
+          requestedAmount: amount,
+        }
       },
     })
     redirect('/admin/payments?message=refund_issued')
   } catch (err) {
+    if (err instanceof CrudActionError) {
+      if (err.code === 'FLAG_DISABLED') {
+        redirect('/admin/payments')
+      }
+      if (err.code === 'VALIDATION' || err.code === 'CONFLICT') {
+        redirect('/admin/payments?message=invalid_refund_amount')
+      }
+      if (err.code === 'NOT_FOUND') {
+        redirect('/admin/payments?message=refund_unavailable')
+      }
+    }
     console.error('[admin/payments] Refund failed:', err)
     redirect('/admin/payments?message=refund_failed')
   }
@@ -92,13 +127,25 @@ async function claimPaymentAction(formData: FormData) {
   const paymentId = String(formData.get('paymentId') ?? '')
   if (!paymentId) return
 
-  await claimOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+  await crudAction({
+    entity: 'Payment',
     entityId: paymentId,
-    claimedById: admin.id,
-    claimedByRole: admin.role,
-    claimedByLabel: admin.email ?? 'admin',
-    actor: { actorId: admin.id, actorRole: admin.role },
+    action: 'payment.claim_follow_up',
+    requiredRole: [...CLAIM_ROLES],
+    requiredFlag: FLAG,
+    schema: QueueSchema,
+    input: { paymentId },
+    run: async (_input, tx) => {
+      await claimOpsQueueItem(tx, {
+        queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+        entityId: paymentId,
+        claimedById: admin.id,
+        claimedByRole: admin.adminRole,
+        claimedByLabel: admin.email ?? 'admin',
+      })
+
+      return { id: paymentId }
+    },
   })
 
   revalidatePath('/admin/payments')
@@ -107,14 +154,25 @@ async function claimPaymentAction(formData: FormData) {
 
 async function releasePaymentAction(formData: FormData) {
   'use server'
-  const admin = await requireAdmin()
   const paymentId = String(formData.get('paymentId') ?? '')
   if (!paymentId) return
 
-  await releaseOpsQueueItem(db, {
-    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+  await crudAction({
+    entity: 'Payment',
     entityId: paymentId,
-    actor: { actorId: admin.id, actorRole: admin.role },
+    action: 'payment.release_follow_up',
+    requiredRole: [...CLAIM_ROLES],
+    requiredFlag: FLAG,
+    schema: QueueSchema,
+    input: { paymentId },
+    run: async (_input, tx) => {
+      await releaseOpsQueueItem(tx, {
+        queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+        entityId: paymentId,
+      })
+
+      return { id: paymentId }
+    },
   })
 
   revalidatePath('/admin/payments')
@@ -161,6 +219,8 @@ export default async function PaymentsPage({
   searchParams: Promise<{ status?: string; message?: string }>
 }) {
   const admin = await requireAdmin()
+  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
   const { status, message } = await searchParams
   const banner = getPaymentAdminMessage(message)
 
@@ -197,6 +257,20 @@ export default async function PaymentsPage({
     payments.map((payment) => payment.id),
   )
 
+  const activeCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'PAYMENT',
+          entityId: { in: payments.map((p) => p.id) },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
+
   return (
     <div className="space-y-6">
       <div>
@@ -211,6 +285,12 @@ export default async function PaymentsPage({
           {banner.text}
         </div>
       ) : null}
+
+      {!crudEnabled && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Payment mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim follow-ups or issue refunds.
+        </div>
+      )}
 
       {/* Status filter tabs */}
       <div className="flex gap-1 flex-wrap">
@@ -307,14 +387,14 @@ export default async function PaymentsPage({
                       {!claimedByCurrentUser ? (
                         <form action={claimPaymentAction}>
                           <input type="hidden" name="paymentId" value={p.id} />
-                          <Button type="submit" variant="outline" size="sm">
+                          <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                             {assignment?.claimedById ? 'Take over' : 'Claim'}
                           </Button>
                         </form>
                       ) : (
                         <form action={releasePaymentAction}>
                           <input type="hidden" name="paymentId" value={p.id} />
-                          <Button type="submit" variant="outline" size="sm">
+                          <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                             Release
                           </Button>
                         </form>
@@ -335,6 +415,7 @@ export default async function PaymentsPage({
                             type="submit"
                             variant="outline"
                             size="sm"
+                            disabled={!crudEnabled}
                             onClick={(e) => {
                               if (!confirm('Issue refund for this payment?')) e.preventDefault()
                             }}
@@ -351,6 +432,28 @@ export default async function PaymentsPage({
           </tbody>
         </table>
       </div>
+
+      {casesEnabled && activeCases.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold">Open payment cases</h2>
+          {activeCases.map((activeCase) => (
+            <div key={activeCase.id} className="rounded-xl border p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-mono text-muted-foreground">{activeCase.entityId.slice(-8).toUpperCase()}</p>
+                <ResolveCaseDialog caseId={activeCase.id} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                <CaseActivityTimeline events={activeCase.events} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -41,6 +41,9 @@ model Customer {
   ratings                Review[]
   messages               MessageEvent[]
   whatsappPreferenceLogs WhatsappPreferenceLog[]
+  customerNotes          CustomerNote[]
+  mergeEventsAsSource    CustomerMergeEvent[] @relation("CustomerMergeSource")
+  mergeEventsAsTarget    CustomerMergeEvent[] @relation("CustomerMergeTarget")
 
   @@map("customers")
 }
@@ -187,6 +190,9 @@ model Provider {
   assignmentHolds   AssignmentHold[]
   matchAttempts     MatchAttempt[]
   selectedDispatchDecisions DispatchDecision[] @relation("DispatchDecisionSelectedProvider")
+  providerNotes             ProviderNote[]
+  adminCertifications       ProviderCertification[]
+  equipment                 ProviderEquipment[]
 
   @@map("providers")
 }
@@ -880,6 +886,7 @@ model AuditLog {
   entityId   String
   before     Json?
   after      Json?
+  reason     String?  // human-readable rationale for the action
   ipAddress  String?
   userAgent  String?
   timestamp  DateTime @default(now())
@@ -1254,4 +1261,255 @@ model CaseNote {
 
   @@index([caseId, createdAt])
   @@map("case_notes")
+}
+
+// ─── Admin team ───────────────────────────────────────────────────────────────
+
+enum Role {
+  OPS
+  FINANCE
+  TRUST
+  ADMIN
+  OWNER
+}
+
+model AdminUser {
+  id          String    @id @default(cuid())
+  userId      String    @unique // Supabase auth user ID
+  email       String    @unique
+  name        String
+  role        Role      @default(OPS)
+  active      Boolean   @default(true)
+  invitedAt   DateTime  @default(now())
+  invitedById String?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  invitedBy   AdminUser?  @relation("AdminInvitedBy", fields: [invitedById], references: [id])
+  invitees    AdminUser[] @relation("AdminInvitedBy")
+  auditEvents AdminAuditEvent[]
+
+  @@map("admin_users")
+}
+
+model AdminAuditEvent {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  metadata   Json     @default("{}")
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  admin AdminUser @relation(fields: [adminId], references: [id])
+
+  @@index([adminId, timestamp])
+  @@index([entityType, entityId])
+  @@map("admin_audit_events")
+}
+
+// ─── Customer/Provider enums ──────────────────────────────────────────────────
+
+enum CustomerInternalFlag {
+  VIP
+  FRAUD_RISK
+  DISPUTE_HISTORY
+  LATE_PAYMENT
+  WATCHLIST
+  LOYALTY_MEMBER
+}
+
+enum CustomerChannel {
+  WHATSAPP
+  PWA
+  REFERRAL
+  IMPORT
+}
+
+enum KycStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum ProviderStatus {
+  APPLICATION_PENDING
+  UNDER_REVIEW
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+  BANNED
+}
+
+// ─── Categories ───────────────────────────────────────────────────────────────
+
+model Category {
+  id                  String                        @id @default(cuid())
+  slug                String                        @unique
+  label               String
+  description         String?
+  active              Boolean                       @default(true)
+  bookingOnAssignment Boolean                       @default(false)
+  regulated           Boolean                       @default(false)
+  sortOrder           Int                           @default(0)
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+
+  requiredCertifications CategoryRequiredCertification[]
+  requiredEquipment      CategoryRequiredEquipment[]
+  requiredVehicleTypes   CategoryRequiredVehicleType[]
+
+  @@index([active, sortOrder])
+  @@map("categories")
+}
+
+model CategoryRequiredCertification {
+  id         String   @id @default(cuid())
+  categoryId String
+  code       String
+  createdAt  DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, code])
+  @@index([code])
+  @@map("category_required_certifications")
+}
+
+model CategoryRequiredEquipment {
+  id         String   @id @default(cuid())
+  categoryId String
+  tag        String
+  createdAt  DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, tag])
+  @@index([tag])
+  @@map("category_required_equipment")
+}
+
+model CategoryRequiredVehicleType {
+  id          String   @id @default(cuid())
+  categoryId  String
+  vehicleType String
+  createdAt   DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, vehicleType])
+  @@index([vehicleType])
+  @@map("category_required_vehicle_types")
+}
+
+// ─── Customer data stewardship ────────────────────────────────────────────────
+
+model CustomerMergeEvent {
+  id               String    @id @default(cuid())
+  sourceCustomerId String?
+  targetCustomerId String?
+  executedById     String
+  reason           String
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now())
+
+  sourceCustomer Customer? @relation("CustomerMergeSource", fields: [sourceCustomerId], references: [id], onDelete: SetNull)
+  targetCustomer Customer? @relation("CustomerMergeTarget", fields: [targetCustomerId], references: [id], onDelete: SetNull)
+
+  @@index([sourceCustomerId, createdAt])
+  @@index([targetCustomerId, createdAt])
+  @@map("customer_merge_events")
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  authorId   String
+  body       String
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@map("customer_notes")
+}
+
+// ─── Provider data stewardship ────────────────────────────────────────────────
+
+model ProviderNote {
+  id          String   @id @default(cuid())
+  providerId  String
+  authorId    String
+  body        String
+  pinned      Boolean  @default(false)
+  reasonCode  String?
+  strikeDelta Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, createdAt])
+  @@map("provider_notes")
+}
+
+model ProviderCertification {
+  id               String    @id @default(cuid())
+  providerId       String
+  name             String
+  issuingAuthority String?
+  certNumber       String?
+  issuedAt         DateTime?
+  expiresAt        DateTime?
+  documentUrl      String?
+  verifiedAt       DateTime?
+  verifiedById     String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("provider_certifications")
+}
+
+model ProviderEquipment {
+  id           String   @id @default(cuid())
+  providerId   String
+  label        String
+  category     String?
+  serialNumber String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("provider_equipment")
+}
+
+// ─── Reason codes ─────────────────────────────────────────────────────────────
+
+model ReasonCode {
+  key         String
+  queueType   String
+  label       String
+  requireNote Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([key, queueType])
+  @@map("reason_codes")
 }

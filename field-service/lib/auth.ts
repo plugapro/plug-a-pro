@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
+import { forbidden, redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import { cache } from 'react'
+import type { Role } from '@prisma/client'
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
 
@@ -14,6 +15,11 @@ export interface AuthUser {
   phone: string | null
   role: UserRole
   providerId?: string // set when role === 'provider'
+}
+
+export interface AdminAuthUser extends AuthUser {
+  adminRole: Role
+  adminUserId: string | null
 }
 
 // ─── Supabase client (server-side, per-request) ───────────────────────────────
@@ -93,25 +99,70 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
   }
 })
 
-// ─── Route guards ─────────────────────────────────────────────────────────────
-
-/** Call in admin route layouts — redirects to /admin-sign-in if not admin/owner */
-export async function requireAdmin(): Promise<AuthUser> {
-  const session = await getSession()
-  if (!session) redirect('/admin-sign-in')
-  if (session.role !== 'admin' && session.role !== 'owner') {
-    redirect('/admin-sign-in?error=unauthorized')
-  }
-  return session
+const ROLE_HIERARCHY: Record<Role, number> = {
+  OPS: 1,
+  FINANCE: 2,
+  TRUST: 3,
+  ADMIN: 4,
+  OWNER: 5,
 }
 
-/** Call in API route handlers — returns 401 JSON if not admin/owner, null if authorised */
-export async function requireAdminApi(): Promise<NextResponse | null> {
+function meetsRoleRequirement(actorRole: Role, required: Role[]): boolean {
+  const level = ROLE_HIERARCHY[actorRole]
+  return required.some((role) => level >= ROLE_HIERARCHY[role])
+}
+
+const getAdminActor = cache(async (): Promise<AdminAuthUser | null> => {
   const session = await getSession()
-  if (!session || (session.role !== 'admin' && session.role !== 'owner')) {
+  if (!session) return null
+
+  const { db } = await import('./db')
+  const adminUser = await db.adminUser.findUnique({
+    where: { userId: session.id },
+    select: { id: true, role: true, active: true },
+  })
+
+  if (!adminUser || !adminUser.active) {
+    return null
+  }
+
+  return {
+    ...session,
+    adminRole: adminUser.role,
+    adminUserId: adminUser.id,
+  }
+})
+
+// ─── Route guards ─────────────────────────────────────────────────────────────
+
+/** Call in admin route layouts — redirects when the caller has no active admin access. */
+export async function requireAdmin(): Promise<AdminAuthUser> {
+  const actor = await getAdminActor()
+  if (actor) return actor
+
+  const session = await getSession()
+  if (!session) redirect('/admin-sign-in')
+  redirect('/admin-sign-in?error=unauthorized')
+}
+
+/** Call in API route handlers — returns 401 JSON if the caller has no active admin access. */
+export async function requireAdminApi(): Promise<NextResponse | null> {
+  const actor = await getAdminActor()
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return null
+}
+
+/**
+ * Call in admin pages/actions that require a specific DB-backed AdminUser role.
+ */
+export async function requireRole(required: Role[]): Promise<AdminAuthUser> {
+  const actor = await requireAdmin()
+  if (!meetsRoleRequirement(actor.adminRole, required)) {
+    forbidden()
+  }
+  return actor
 }
 
 /** Call in provider route layouts — redirects to /provider-sign-in if not provider */

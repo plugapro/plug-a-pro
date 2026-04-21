@@ -12,6 +12,7 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 
 function buildCookieHeader(token: string, maxAge: number): string {
   const isProd = process.env.NODE_ENV === 'production'
@@ -49,6 +50,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 })
     }
 
+    let adminAccess = false
+    let adminRole: string | null = null
+
+    if (user.email) {
+      const existingAdmin = await db.adminUser.findFirst({
+        where: {
+          OR: [{ userId: user.id }, { email: user.email }],
+        },
+        select: {
+          id: true,
+          userId: true,
+          email: true,
+          role: true,
+          active: true,
+          acceptedAt: true,
+        },
+      })
+
+      if (existingAdmin) {
+        if (existingAdmin.userId !== user.id) {
+          await db.adminUser.update({
+            where: { id: existingAdmin.id },
+            data: {
+              userId: user.id,
+              acceptedAt: existingAdmin.acceptedAt ?? new Date(),
+            },
+          })
+        } else if (!existingAdmin.acceptedAt) {
+          await db.adminUser.update({
+            where: { id: existingAdmin.id },
+            data: { acceptedAt: new Date() },
+          })
+        }
+
+        adminAccess = existingAdmin.active
+        adminRole = existingAdmin.active ? existingAdmin.role.toLowerCase() : null
+      }
+    }
+
     const requestedMaxAge =
       typeof expiresIn === 'number' && Number.isFinite(expiresIn) ? expiresIn : DEFAULT_SESSION_MAX_AGE
     const maxAge = Math.min(
@@ -56,7 +96,7 @@ export async function POST(request: NextRequest) {
       Math.max(DEFAULT_SESSION_MAX_AGE, Math.floor(requestedMaxAge)),
     )
 
-    const response = NextResponse.json({ userId: user.id })
+    const response = NextResponse.json({ userId: user.id, adminAccess, adminRole })
     response.headers.set('Set-Cookie', buildCookieHeader(accessToken, maxAge))
     return response
   } catch (err) {

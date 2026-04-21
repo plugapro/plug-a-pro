@@ -4,22 +4,22 @@ import { createJobRequest } from '../../lib/job-requests/create-job-request'
 
 const {
   mockDb,
-  mockMergeCategoryRequirements,
+  mockResolveCategoryRequirements,
   mockDispatchLeads,
   mockGeocodeAddress,
 } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
   },
-  mockMergeCategoryRequirements: vi.fn(),
+  mockResolveCategoryRequirements: vi.fn(),
   mockDispatchLeads: vi.fn(),
   mockGeocodeAddress: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 
-vi.mock('../../lib/service-category-policy', () => ({
-  mergeCategoryRequirements: mockMergeCategoryRequirements,
+vi.mock('../../lib/category-config', () => ({
+  resolveCategoryRequirements: mockResolveCategoryRequirements,
 }))
 
 vi.mock('../../lib/geocoding', () => ({
@@ -63,7 +63,7 @@ describe('createJobRequest', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    mockMergeCategoryRequirements.mockReturnValue({
+    mockResolveCategoryRequirements.mockResolvedValue({
       requiredCertificationCodes: [],
       requiredEquipmentTags: [],
       requiredVehicleTypes: [],

@@ -27,6 +27,7 @@ function ProviderVerifyForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resendCooldown, setResendCooldown] = useState(30)
+  const [done, setDone] = useState(false)
   const submitRef = useRef(false)
 
   useEffect(() => {
@@ -65,9 +66,18 @@ function ProviderVerifyForm() {
       const role = data.user.user_metadata?.role
       if (role !== 'provider') {
         await supabase.auth.signOut()
-        setError(
-          "Your account isn't active yet. Once your application is approved, you'll receive a WhatsApp notification."
-        )
+        // Distinguish between a customer account and a truly unrecognised account so
+        // the user knows what action to take instead of waiting for an approval that
+        // may never come.
+        if (role === 'customer') {
+          setError(
+            "This number is linked to a customer account. To become a service provider, please apply via WhatsApp — send \"Register\" to our business number."
+          )
+        } else {
+          setError(
+            "Your provider account hasn't been approved yet. Once your application is reviewed you'll receive a WhatsApp notification. If you haven't applied yet, send \"Register\" to our WhatsApp number."
+          )
+        }
         return
       }
 
@@ -82,6 +92,9 @@ function ProviderVerifyForm() {
         })
       }
 
+      // Mark as done before navigating so the form does not reappear while the
+      // client-side navigation is still in progress.
+      setDone(true)
       router.replace(next)
     } catch {
       setError('Something went wrong. Please try again.')
@@ -105,6 +118,12 @@ function ProviderVerifyForm() {
   if (!phone) {
     router.replace('/provider-sign-in')
     return null
+  }
+
+  if (done) {
+    return (
+      <p className="text-sm text-muted-foreground text-center">Redirecting…</p>
+    )
   }
 
   return (

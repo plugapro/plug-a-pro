@@ -2,9 +2,12 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
+import { AUDIT_ENTITY } from '@/lib/audit-entities'
+import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
-import { recordAuditLog } from '@/lib/audit'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import { dispatchLeads } from '@/lib/matching-engine'
@@ -23,11 +26,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const metadata = buildMetadata({ title: 'Validation Queue', noIndex: true })
+const FLAG = 'admin.crud.validation'
+const VALIDATION_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
+const QueueSchema = z.object({
+  jobRequestId: z.string().min(1),
+})
 
 export default async function AdminValidationQueuePage() {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
+  const crudEnabled = await isEnabled(FLAG, admin.id)
 
   const requests = await db.jobRequest.findMany({
     where: { status: 'PENDING_VALIDATION' },
@@ -75,7 +84,7 @@ export default async function AdminValidationQueuePage() {
       return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
     }),
     db.auditLog.findMany({
-      where: { entityId: { in: requestIds }, entityType: 'job_request' },
+      where: { entityId: { in: requestIds }, entityType: AUDIT_ENTITY.JOB_REQUEST },
       select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
       orderBy: { timestamp: 'desc' },
       take: requestIds.length * 5 + 10,
@@ -97,77 +106,107 @@ export default async function AdminValidationQueuePage() {
   async function claimValidation(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    if (!jobRequestId) return
-
-    await claimOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.VALIDATION,
-      entityId: jobRequestId,
-      claimedById: activeAdmin.id,
-      claimedByRole: activeAdmin.role,
-      claimedByLabel: activeAdmin.email ?? 'admin',
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
+    try {
+      await crudAction({
+        entity: 'JobRequest',
+        action: 'job_request.validation_claim',
+        requiredRole: [...VALIDATION_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        run: async ({ jobRequestId }, tx) => {
+          await claimOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.VALIDATION,
+            entityId: jobRequestId,
+            claimedById: activeAdmin.id,
+            claimedByRole: activeAdmin.adminRole,
+            claimedByLabel: activeAdmin.email ?? 'admin',
+          })
+          return { id: jobRequestId, claimedById: activeAdmin.id }
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+    }
 
     redirect('/admin/validation')
   }
 
   async function releaseValidation(formData: FormData) {
     'use server'
-    const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    if (!jobRequestId) return
-
-    await releaseOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.VALIDATION,
-      entityId: jobRequestId,
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
+    try {
+      await crudAction({
+        entity: 'JobRequest',
+        action: 'job_request.validation_release',
+        requiredRole: [...VALIDATION_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        run: async ({ jobRequestId }, tx) => {
+          await releaseOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.VALIDATION,
+            entityId: jobRequestId,
+          })
+          return { id: jobRequestId, released: true }
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+    }
 
     redirect('/admin/validation')
   }
 
   async function markReadyForMatching(formData: FormData) {
     'use server'
-    const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    if (!jobRequestId) return
+    try {
+      const result = await crudAction({
+        entity: 'JobRequest',
+        entityId: jobRequestId,
+        action: 'job_request.validation_complete',
+        requiredRole: [...VALIDATION_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { jobRequestId },
+        run: async ({ jobRequestId }, tx) => {
+          const existing = await tx.jobRequest.findUnique({
+            where: { id: jobRequestId },
+            select: { status: true },
+          })
+          if (!existing || existing.status !== 'PENDING_VALIDATION') {
+            throw new CrudActionError('CONFLICT', 'Request is not waiting for validation.')
+          }
 
-    const existing = await db.jobRequest.findUnique({
-      where: { id: jobRequestId },
-      select: { status: true },
-    })
-    if (!existing || existing.status !== 'PENDING_VALIDATION') {
-      redirect('/admin/validation')
-    }
+          await tx.jobRequest.update({
+            where: { id: jobRequestId },
+            data: { status: 'OPEN' },
+          })
 
-    await db.jobRequest.update({
-      where: { id: jobRequestId },
-      data: { status: 'OPEN' },
-    })
+          await releaseOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.VALIDATION,
+            entityId: jobRequestId,
+          })
 
-    await recordAuditLog({
-      actorId: activeAdmin.id,
-      actorRole: activeAdmin.role,
-      action: 'job_request.validation_complete',
-      entityType: 'job_request',
-      entityId: jobRequestId,
-      before: { status: existing.status },
-      after: { status: 'OPEN' },
-    })
-
-    await releaseOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.VALIDATION,
-      entityId: jobRequestId,
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
-
-    await dispatchLeads(jobRequestId).catch((error) => {
-      console.error('[admin/validation] Failed to dispatch leads after validation', {
-        jobRequestId,
-        error,
+          return { id: jobRequestId, status: 'OPEN' }
+        },
       })
-    })
+
+      await dispatchLeads(result.data.id).catch((error) => {
+        console.error('[admin/validation] Failed to dispatch leads after validation', {
+          jobRequestId: result.data.id,
+          error,
+        })
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+    }
 
     // Close VALIDATION case, open DISPATCH case
     const validationCase = await db.case.findUnique({
@@ -184,17 +223,42 @@ export default async function AdminValidationQueuePage() {
 
   async function cancelRequest(formData: FormData) {
     'use server'
-    const activeAdmin = await requireAdmin()
-    const jobRequestId = String(formData.get('jobRequestId') ?? '')
-    if (!jobRequestId) return
+    try {
+      await crudAction({
+        entity: 'JobRequest',
+        action: 'job_request.validation_cancelled',
+        requiredRole: [...VALIDATION_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        run: async ({ jobRequestId }, tx) => {
+          const existing = await tx.jobRequest.findUnique({
+            where: { id: jobRequestId },
+            select: { status: true },
+          })
+          if (!existing || existing.status !== 'PENDING_VALIDATION') {
+            throw new CrudActionError('CONFLICT', 'Request is not waiting for validation.')
+          }
 
-    const existing = await db.jobRequest.findUnique({
-      where: { id: jobRequestId },
-      select: { status: true },
-    })
-    if (!existing || existing.status !== 'PENDING_VALIDATION') {
-      redirect('/admin/validation')
+          await tx.jobRequest.update({
+            where: { id: jobRequestId },
+            data: { status: 'CANCELLED' },
+          })
+
+          await releaseOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.VALIDATION,
+            entityId: jobRequestId,
+          })
+
+          return { id: jobRequestId, status: 'CANCELLED' }
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
     }
+
 
     await db.jobRequest.update({
       where: { id: jobRequestId },
@@ -205,7 +269,7 @@ export default async function AdminValidationQueuePage() {
       actorId: activeAdmin.id,
       actorRole: activeAdmin.role,
       action: 'job_request.validation_cancelled',
-      entityType: 'job_request',
+      entityType: AUDIT_ENTITY.JOB_REQUEST,
       entityId: jobRequestId,
       before: { status: existing.status },
       after: { status: 'CANCELLED' },
@@ -225,12 +289,18 @@ export default async function AdminValidationQueuePage() {
       await resolveCase({ caseId: validationCaseToClose.id, resolvedBy: activeAdmin.id, reasonCode: 'CANCELLED', outcome: 'cancelled' }).catch(() => {})
     }
 
+
     redirect('/admin/validation')
   }
 
   return (
     <div className="space-y-6">
       {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/validation" /> : null}
+      {!crudEnabled ? (
+        <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
+          Validation queue mutations are read-only while <code>{FLAG}</code> is disabled.
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-semibold">Validation Queue</h1>
@@ -293,14 +363,14 @@ export default async function AdminValidationQueuePage() {
                     {!claimedByCurrentUser ? (
                       <form action={claimValidation}>
                         <input type="hidden" name="jobRequestId" value={request.id} />
-                        <Button type="submit" variant="outline" size="sm">
+                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
                         </Button>
                       </form>
                     ) : (
                       <form action={releaseValidation}>
                         <input type="hidden" name="jobRequestId" value={request.id} />
-                        <Button type="submit" variant="outline" size="sm">
+                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                           Release
                         </Button>
                       </form>
@@ -308,14 +378,14 @@ export default async function AdminValidationQueuePage() {
 
                     <form action={markReadyForMatching}>
                       <input type="hidden" name="jobRequestId" value={request.id} />
-                      <Button type="submit" size="sm">
+                      <Button type="submit" size="sm" disabled={!crudEnabled}>
                         Mark ready for matching
                       </Button>
                     </form>
 
                     <form action={cancelRequest}>
                       <input type="hidden" name="jobRequestId" value={request.id} />
-                      <Button type="submit" variant="outline" size="sm">
+                      <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                         Cancel request
                       </Button>
                     </form>

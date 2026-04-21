@@ -3,8 +3,11 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import type { JobStatus } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
+import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
@@ -19,8 +22,17 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Field Exceptions', noIndex: true })
+const FLAG = 'admin.crud.field_exceptions'
+const CASES_FLAG = 'ops.v2.cases'
+const FIELD_EXCEPTION_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
+const QueueSchema = z.object({
+  jobId: z.string().min(1),
+})
 
 const FIELD_EXCEPTION_STATUSES: JobStatus[] = [
   'AWAITING_APPROVAL',
@@ -33,6 +45,8 @@ export default async function AdminFieldExceptionsPage() {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
+  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
 
   const jobs = await db.job.findMany({
     where: { status: { in: FIELD_EXCEPTION_STATUSES } },
@@ -104,6 +118,23 @@ export default async function AdminFieldExceptionsPage() {
     }),
   ])
 
+  // Fetch open cases for each booking (gated by flag)
+  const bookingIds = jobs.map((job) => job.booking.id)
+  const rawCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'BOOKING',
+          entityId: { in: bookingIds },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
+  const caseByBooking = new Map(rawCases.map((c) => [c.entityId, c]))
+
   const auditByJob = new Map<string, typeof rawAuditLogs>()
   for (const log of rawAuditLogs) {
     if (!log.entityId) continue
@@ -115,17 +146,30 @@ export default async function AdminFieldExceptionsPage() {
   async function claimFieldException(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
-    const jobId = String(formData.get('jobId') ?? '')
-    if (!jobId) return
-
-    await claimOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.FIELD_EXCEPTION,
-      entityId: jobId,
-      claimedById: activeAdmin.id,
-      claimedByRole: activeAdmin.role,
-      claimedByLabel: activeAdmin.email ?? 'admin',
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
+    try {
+      await crudAction({
+        entity: 'Job',
+        action: 'job.field_exception_claim',
+        requiredRole: [...FIELD_EXCEPTION_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { jobId: String(formData.get('jobId') ?? '') },
+        run: async ({ jobId }, tx) => {
+          await claimOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.FIELD_EXCEPTION,
+            entityId: jobId,
+            claimedById: activeAdmin.id,
+            claimedByRole: activeAdmin.adminRole,
+            claimedByLabel: activeAdmin.email ?? 'admin',
+          })
+          return { id: jobId, claimedById: activeAdmin.id }
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+    }
 
     revalidatePath('/admin/field-exceptions')
     revalidatePath('/admin')
@@ -133,15 +177,27 @@ export default async function AdminFieldExceptionsPage() {
 
   async function releaseFieldException(formData: FormData) {
     'use server'
-    const activeAdmin = await requireAdmin()
-    const jobId = String(formData.get('jobId') ?? '')
-    if (!jobId) return
-
-    await releaseOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.FIELD_EXCEPTION,
-      entityId: jobId,
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
+    try {
+      await crudAction({
+        entity: 'Job',
+        action: 'job.field_exception_release',
+        requiredRole: [...FIELD_EXCEPTION_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { jobId: String(formData.get('jobId') ?? '') },
+        run: async ({ jobId }, tx) => {
+          await releaseOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.FIELD_EXCEPTION,
+            entityId: jobId,
+          })
+          return { id: jobId, released: true }
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+    }
 
     revalidatePath('/admin/field-exceptions')
     revalidatePath('/admin')
@@ -150,6 +206,11 @@ export default async function AdminFieldExceptionsPage() {
   return (
     <div className="space-y-6">
       {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/field-exceptions" /> : null}
+      {!crudEnabled ? (
+        <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
+          Field exception mutations are read-only while <code>{FLAG}</code> is disabled.
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-semibold">Field Exceptions</h1>
@@ -206,14 +267,14 @@ export default async function AdminFieldExceptionsPage() {
                     {!claimedByCurrentUser ? (
                       <form action={claimFieldException}>
                         <input type="hidden" name="jobId" value={job.id} />
-                        <Button type="submit" variant="outline" size="sm">
+                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
                         </Button>
                       </form>
                     ) : (
                       <form action={releaseFieldException}>
                         <input type="hidden" name="jobId" value={job.id} />
-                        <Button type="submit" variant="outline" size="sm">
+                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                           Release
                         </Button>
                       </form>
@@ -243,6 +304,27 @@ export default async function AdminFieldExceptionsPage() {
                             <span className="ml-auto shrink-0">{entry.actorRole}</span>
                           </div>
                         ))}
+                      </div>
+                    )
+                  })()}
+
+                  {casesEnabled && (() => {
+                    const activeCase = caseByBooking.get(job.booking.id)
+                    if (!activeCase) return null
+                    return (
+                      <div className="space-y-4 border-t pt-4 mt-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Case actions</p>
+                          <ResolveCaseDialog caseId={activeCase.id} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                          <CaseActivityTimeline events={activeCase.events} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                          <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+                        </div>
                       </div>
                     )
                   })()}

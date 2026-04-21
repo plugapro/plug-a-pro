@@ -30,7 +30,7 @@ export function ContactForm() {
     return (
       <div className="py-8 text-center">
         <p className="text-lg font-medium mb-2">Thanks for reaching out!</p>
-        <p className="text-muted-foreground">We'll get back to you soon.</p>
+        <p className="text-muted-foreground">We&apos;ll get back to you soon.</p>
       </div>
     );
   }

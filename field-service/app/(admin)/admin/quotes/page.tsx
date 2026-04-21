@@ -2,9 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import type { QuoteStatus } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
+import { AUDIT_ENTITY } from '@/lib/audit-entities'
+import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
@@ -19,15 +23,26 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Quote Approvals', noIndex: true })
 
 const QUOTE_QUEUE_STATUSES: QuoteStatus[] = ['PENDING', 'REVISED']
+const FLAG = 'admin.crud.quotes'
+const CASES_FLAG = 'ops.v2.cases'
+const QUOTE_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
+const QueueSchema = z.object({
+  quoteId: z.string().min(1),
+})
 
 export default async function AdminQuoteQueuePage() {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
+  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
 
   const quotes = await db.quote.findMany({
     where: { status: { in: QUOTE_QUEUE_STATUSES } },
@@ -90,7 +105,7 @@ export default async function AdminQuoteQueuePage() {
       return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
     }),
     db.auditLog.findMany({
-      where: { entityId: { in: quoteIds }, entityType: 'quote' },
+      where: { entityId: { in: quoteIds }, entityType: AUDIT_ENTITY.QUOTE },
       select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
       orderBy: { timestamp: 'desc' },
       take: quoteIds.length * 5 + 10,
@@ -109,20 +124,49 @@ export default async function AdminQuoteQueuePage() {
     auditByQuote.set(log.entityId, list)
   }
 
+  // Fetch open cases for each quote (gated by flag)
+  const rawQuoteCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'QUOTE',
+          entityId: { in: quoteIds },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
+  const caseByQuote = new Map(rawQuoteCases.map((c) => [c.entityId, c]))
+
   async function claimQuote(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
-    const quoteId = String(formData.get('quoteId') ?? '')
-    if (!quoteId) return
-
-    await claimOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
-      entityId: quoteId,
-      claimedById: activeAdmin.id,
-      claimedByRole: activeAdmin.role,
-      claimedByLabel: activeAdmin.email ?? 'admin',
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
+    try {
+      await crudAction({
+        entity: 'Quote',
+        action: 'quote.claim',
+        requiredRole: [...QUOTE_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { quoteId: String(formData.get('quoteId') ?? '') },
+        run: async ({ quoteId }, tx) => {
+          await claimOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
+            entityId: quoteId,
+            claimedById: activeAdmin.id,
+            claimedByRole: activeAdmin.adminRole,
+            claimedByLabel: activeAdmin.email ?? 'admin',
+          })
+          return { id: quoteId, claimedById: activeAdmin.id }
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+    }
 
     revalidatePath('/admin/quotes')
     revalidatePath('/admin')
@@ -130,15 +174,27 @@ export default async function AdminQuoteQueuePage() {
 
   async function releaseQuote(formData: FormData) {
     'use server'
-    const activeAdmin = await requireAdmin()
-    const quoteId = String(formData.get('quoteId') ?? '')
-    if (!quoteId) return
-
-    await releaseOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
-      entityId: quoteId,
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
+    try {
+      await crudAction({
+        entity: 'Quote',
+        action: 'quote.release',
+        requiredRole: [...QUOTE_ROLES],
+        requiredFlag: FLAG,
+        schema: QueueSchema,
+        input: { quoteId: String(formData.get('quoteId') ?? '') },
+        run: async ({ quoteId }, tx) => {
+          await releaseOpsQueueItem(tx, {
+            queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
+            entityId: quoteId,
+          })
+          return { id: quoteId, released: true }
+        },
+      })
+    } catch (error) {
+      if (!(error instanceof CrudActionError)) {
+        throw error
+      }
+    }
 
     revalidatePath('/admin/quotes')
     revalidatePath('/admin')
@@ -149,6 +205,11 @@ export default async function AdminQuoteQueuePage() {
   return (
     <div className="space-y-6">
       {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/quotes" /> : null}
+      {!crudEnabled ? (
+        <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
+          Quote queue mutations are read-only while <code>{FLAG}</code> is disabled.
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-xl font-semibold">Quote Approvals Queue</h1>
@@ -223,14 +284,14 @@ export default async function AdminQuoteQueuePage() {
                     {!claimedByCurrentUser ? (
                       <form action={claimQuote}>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <Button type="submit" variant="outline" size="sm">
+                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
                         </Button>
                       </form>
                     ) : (
                       <form action={releaseQuote}>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <Button type="submit" variant="outline" size="sm">
+                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
                           Release
                         </Button>
                       </form>
@@ -262,6 +323,27 @@ export default async function AdminQuoteQueuePage() {
                             <span className="ml-auto shrink-0">{entry.actorRole}</span>
                           </div>
                         ))}
+                      </div>
+                    )
+                  })()}
+
+                  {casesEnabled && (() => {
+                    const activeCase = caseByQuote.get(quote.id)
+                    if (!activeCase) return null
+                    return (
+                      <div className="space-y-4 border-t pt-4 mt-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Case actions</p>
+                          <ResolveCaseDialog caseId={activeCase.id} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                          <CaseActivityTimeline events={activeCase.events} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                          <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+                        </div>
                       </div>
                     )
                   })()}

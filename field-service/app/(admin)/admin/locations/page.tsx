@@ -4,6 +4,7 @@
 export const dynamic = 'force-dynamic'
 
 import { requireAdmin } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
@@ -33,7 +34,8 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 export default async function LocationsPage() {
-  await requireAdmin()
+  const session = await requireAdmin()
+  const crudEnabled = await isEnabled('admin.crud.locations', session?.id)
 
   async function submitCreateLocationNode(formData: FormData) {
     'use server'
@@ -91,7 +93,15 @@ export default async function LocationsPage() {
         </div>
       </div>
 
+      {/* ── Flag banner ────────────────────────────────────────────────────── */}
+      {!crudEnabled && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          Location mutations are disabled. Enable the <code>admin.crud.locations</code> feature flag to create, update, or delete nodes.
+        </div>
+      )}
+
       {/* ── Add node form ──────────────────────────────────────────────────── */}
+      {crudEnabled && (
       <details className="mb-8 rounded-xl border overflow-hidden">
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium bg-muted/30 hover:bg-muted/50 select-none">
           Add node
@@ -145,6 +155,7 @@ export default async function LocationsPage() {
           </div>
         </form>
       </details>
+      )}
 
       {(Object.keys(byType) as Array<keyof typeof byType>).map((type) => {
         const group = byType[type]
@@ -237,6 +248,7 @@ export default async function LocationsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
+                            {crudEnabled && (
                             <form
                               action={
                                 deactivateLocationNodeAction.bind(null, node.id) as unknown as (
@@ -254,6 +266,8 @@ export default async function LocationsPage() {
                                 Deactivate
                               </Button>
                             </form>
+                            )}
+                            {crudEnabled && (
                             <form
                               action={
                                 deleteLocationNodeAction.bind(null, node.id) as unknown as (
@@ -275,6 +289,7 @@ export default async function LocationsPage() {
                                 Delete
                               </Button>
                             </form>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

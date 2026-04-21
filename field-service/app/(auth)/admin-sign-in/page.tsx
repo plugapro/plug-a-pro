@@ -43,13 +43,6 @@ export default function AdminSignInPage() {
         return
       }
 
-      const role = data.user.user_metadata?.role
-      if (role !== 'admin' && role !== 'owner') {
-        await supabase.auth.signOut()
-        setError('Your account does not have admin access.')
-        return
-      }
-
       if (data.session?.access_token) {
         const sessionRes = await fetch('/api/auth/session', {
           method: 'POST',
@@ -61,6 +54,17 @@ export default function AdminSignInPage() {
         })
         if (!sessionRes.ok) {
           setError('Failed to establish session. Please try again.')
+          return
+        }
+
+        const sessionData = (await sessionRes.json()) as {
+          adminAccess?: boolean
+        }
+
+        if (!sessionData.adminAccess) {
+          await supabase.auth.signOut()
+          await fetch('/api/auth/session', { method: 'DELETE' })
+          setError('Your account does not have admin access.')
           return
         }
       }

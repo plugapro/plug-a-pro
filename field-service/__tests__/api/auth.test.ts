@@ -7,6 +7,15 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
 }))
 
+vi.mock('@/lib/db', () => ({
+  db: {
+    adminUser: {
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+  },
+}))
+
 vi.mock('../../lib/auth', () => ({
   getSession: vi.fn(),
   linkCustomerAccount: vi.fn(),
@@ -15,7 +24,13 @@ vi.mock('../../lib/auth', () => ({
 // ─── /api/auth/session ────────────────────────────────────────────────────────
 
 describe('POST /api/auth/session', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(async () => {
+    vi.clearAllMocks()
+
+    const { db } = await import('@/lib/db')
+    ;(db.adminUser.findFirst as any).mockResolvedValue(null)
+    ;(db.adminUser.update as any).mockResolvedValue(null)
+  })
 
   it('rejects missing accessToken', async () => {
     const { POST } = await import('../../app/api/auth/session/route')
@@ -48,12 +63,12 @@ describe('POST /api/auth/session', () => {
     expect(res.status).toBe(401)
   })
 
-  it('sets HttpOnly cookie and returns userId on valid token', async () => {
+  it('sets HttpOnly cookie and returns userId without admin access by default', async () => {
     const { createClient } = await import('@supabase/supabase-js')
     ;(createClient as any).mockReturnValue({
       auth: {
         getUser: vi.fn().mockResolvedValue({
-          data: { user: { id: 'user-123' } },
+          data: { user: { id: 'user-123', user_metadata: { role: 'admin' } } },
           error: null,
         }),
       },
@@ -71,6 +86,8 @@ describe('POST /api/auth/session', () => {
 
     const body = await res.json()
     expect(body.userId).toBe('user-123')
+    expect(body.adminAccess).toBe(false)
+    expect(body.adminRole).toBeNull()
 
     const setCookie = res.headers.get('Set-Cookie') ?? ''
     expect(setCookie).toContain('HttpOnly')
@@ -101,6 +118,90 @@ describe('POST /api/auth/session', () => {
 
     const setCookie = res.headers.get('Set-Cookie') ?? ''
     expect(setCookie).toContain('Max-Age=86400')
+  })
+
+  it('claims a pending AdminUser invite by email and returns DB-backed admin access', async () => {
+    const { createClient } = await import('@supabase/supabase-js')
+    const { db } = await import('@/lib/db')
+
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: {
+            user: {
+              id: 'user-ops-1',
+              email: 'ops@plugapro.co.za',
+              user_metadata: { role: 'customer' },
+            },
+          },
+          error: null,
+        }),
+      },
+    })
+    ;(db.adminUser.findFirst as any).mockResolvedValue({
+      id: 'admin-ops-1',
+      userId: 'pending:ops@plugapro.co.za',
+      email: 'ops@plugapro.co.za',
+      role: 'OPS',
+      active: true,
+      acceptedAt: null,
+    })
+
+    const { POST } = await import('../../app/api/auth/session/route')
+    const req = new NextRequest('http://localhost/api/auth/session', {
+      method: 'POST',
+      body: JSON.stringify({ accessToken: 'valid-token' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    const body = await res.json()
+    expect(body.adminAccess).toBe(true)
+    expect(body.adminRole).toBe('ops')
+    expect(db.adminUser.update).toHaveBeenCalledWith({
+      where: { id: 'admin-ops-1' },
+      data: {
+        userId: 'user-ops-1',
+        acceptedAt: expect.any(Date),
+      },
+    })
+  })
+
+  it('does not grant admin access from legacy metadata when no AdminUser row exists', async () => {
+    const { createClient } = await import('@supabase/supabase-js')
+    const { db } = await import('@/lib/db')
+
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: {
+            user: {
+              id: 'legacy-admin-1',
+              email: 'legacy-admin@plugapro.co.za',
+              user_metadata: { role: 'owner' },
+            },
+          },
+          error: null,
+        }),
+      },
+    })
+    ;(db.adminUser.findFirst as any).mockResolvedValue(null)
+
+    const { POST } = await import('../../app/api/auth/session/route')
+    const req = new NextRequest('http://localhost/api/auth/session', {
+      method: 'POST',
+      body: JSON.stringify({ accessToken: 'valid-token' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    const body = await res.json()
+    expect(body.adminAccess).toBe(false)
+    expect(body.adminRole).toBeNull()
   })
 })
 

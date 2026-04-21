@@ -42,6 +42,11 @@ describe('isEnabled — default behaviour', () => {
     ])
     expect(await isEnabled('ops.v2.closeOut')).toBe(false)
   })
+
+  it('returns false when DB throws (graceful degradation)', async () => {
+    mockFindMany.mockRejectedValue(new Error('DB unavailable'))
+    expect(await isEnabled('ops.v2.closeOut')).toBe(false)
+  })
 })
 
 describe('isEnabled — per-user enabledForUsers', () => {

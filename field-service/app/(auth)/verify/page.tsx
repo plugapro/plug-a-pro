@@ -27,6 +27,7 @@ function VerifyForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resendCooldown, setResendCooldown] = useState(30)
+  const [done, setDone] = useState(false)
   const submitRef = useRef(false)
 
   useEffect(() => {
@@ -85,6 +86,9 @@ function VerifyForm() {
         console.warn('[verify] linkCustomerAccount failed:', await res.text())
       }
 
+      // Mark as done before navigating so the form does not reappear while the
+      // client-side navigation is still in progress (router.replace is non-blocking).
+      setDone(true)
       router.replace(next)
     } catch {
       setError('Something went wrong. Please try again.')
@@ -108,6 +112,12 @@ function VerifyForm() {
   if (!phone) {
     router.replace('/sign-in')
     return null
+  }
+
+  if (done) {
+    return (
+      <p className="text-sm text-muted-foreground text-center">Redirecting…</p>
+    )
   }
 
   return (
