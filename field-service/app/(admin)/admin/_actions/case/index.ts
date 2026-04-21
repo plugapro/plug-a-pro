@@ -7,7 +7,7 @@ import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { AUDIT_ENTITY } from '@/lib/audit-entities'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
-import type { CaseEventType } from '@prisma/client'
+import type { CaseEventType, Prisma } from '@prisma/client'
 
 const FLAG = 'ops.v2.cases'
 
@@ -44,7 +44,7 @@ async function appendCaseEvent(
   tx: TxClient,
   caseId: string,
   type: CaseEventType,
-  payload: Record<string, unknown>,
+  payload: Prisma.InputJsonValue,
   actorUserId?: string
 ) {
   await tx.caseEvent.create({
