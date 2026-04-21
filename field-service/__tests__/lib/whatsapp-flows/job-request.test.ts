@@ -44,6 +44,9 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 
 vi.mock('@/lib/service-area-guard', () => ({
   isInActiveServiceArea: vi.fn(),
+  isActiveProvince: vi.fn().mockReturnValue(true),
+  isActiveCity: vi.fn().mockReturnValue(true),
+  isActiveRegion: vi.fn().mockReturnValue(true),
   addToServiceAreaWaitlist: vi.fn().mockResolvedValue(undefined),
 }))
 

@@ -1,30 +1,45 @@
-/** SLA timeouts in hours per operation type. */
-export const SLA = {
-  DISPUTE_RESOLUTION: 72,       // 3 days
-  KYC_VERIFICATION: 48,         // 2 days
-  APPLICATION_REVIEW: 24,       // 1 day
-  CUSTOMER_COMPLAINT: 24,       // 1 day
-  PROVIDER_ONBOARDING: 24,      // 1 day
-  PAYMENT_FOLLOW_UP: 4,         // 4 hours
-  FIELD_EXCEPTION_RESPONSE: 2,  // 2 hours
-  VALIDATION_QUEUE: 1,          // 1 hour
-  DISPATCH_QUEUE: 0.5,          // 30 minutes
-} as const
+// ─── SLA registry — public API ───────────────────────────────────────────────
+// Thin re-export that normalises the ops-dashboard SLA config into the
+// Case-layer API the plan calls `slaFor(queueType)`.
+//
+// The underlying config lives in lib/ops-dashboard/sla.ts; this file
+// is the single import point for code outside the ops-dashboard module.
 
-export type SlaKey = keyof typeof SLA
+import type { OpsQueueType } from '@prisma/client'
+import { OPS_DASHBOARD_QUEUE_SLA } from './ops-dashboard/sla'
+import type { OpsDashboardQueueKey } from './ops-dashboard/types'
 
-/** Returns the absolute deadline given a start time and an SLA key. */
-export function getSlaDeadline(startTime: Date, key: SlaKey): Date {
-  const ms = SLA[key] * 60 * 60 * 1000
-  return new Date(startTime.getTime() + ms)
+export type SlaSpec = {
+  targetMinutes: number
+  warningAtMinutes: number   // 80 % of target — matches getSlaTone logic
+  targetLabel: string
 }
 
-/** Returns true when now is past the deadline. */
-export function isSlaBreached(deadline: Date, now = new Date()): boolean {
-  return now > deadline
+// Map OpsQueueType → OpsDashboardQueueKey so callers don't need to know both
+const QUEUE_TYPE_TO_KEY: Record<OpsQueueType, OpsDashboardQueueKey | null> = {
+  VALIDATION:         'validation',
+  DISPATCH:           'dispatch',
+  QUOTE_APPROVAL:     'quoteApprovals',
+  FIELD_EXCEPTION:    'fieldExceptions',
+  PAYMENT_FOLLOW_UP:  'financeFollowUp',
+  DISPUTE:            'trustRecovery',
+  PROVIDER_ONBOARDING:'providerOnboarding',
 }
 
-/** Remaining hours until breach — negative when already breached. */
-export function slaHoursRemaining(deadline: Date, now = new Date()): number {
-  return (deadline.getTime() - now.getTime()) / (60 * 60 * 1000)
+export function slaFor(queueType: OpsQueueType): SlaSpec {
+  const key = QUEUE_TYPE_TO_KEY[queueType]
+  if (!key) {
+    // TODO(WS-SUPPLY): SUPPLY is not yet in OpsQueueType enum — this branch is unreachable
+    // until the SUPPLY migration is applied. Default to 1 business day when it lands.
+    return { targetMinutes: 8 * 60, warningAtMinutes: Math.floor(8 * 60 * 0.8), targetLabel: 'Resolve inside 1 day' }
+  }
+  const config = OPS_DASHBOARD_QUEUE_SLA[key]
+  return {
+    targetMinutes:    config.targetMinutes,
+    warningAtMinutes: Math.floor(config.targetMinutes * 0.8),
+    targetLabel:      config.targetLabel,
+  }
 }
+
+// Re-export helpers for convenience
+export { getSlaTone, computeOldestAgeMinutes, countOverdueAges } from './ops-dashboard/sla'

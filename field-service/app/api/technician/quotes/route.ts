@@ -8,6 +8,7 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { sendQuoteToClient } from '@/lib/whatsapp-bot'
 import { sendQuoteReady } from '@/lib/whatsapp'
+import { openCase } from '@/lib/cases'
 
 const VALID_FOR_OPTIONS: Record<string, number> = {
   '24h': 24, '48h': 48, '72h': 72, '1w': 168,
@@ -146,6 +147,9 @@ export async function POST(request: NextRequest) {
     where: { id: matchId },
     data: { status: 'QUOTED' },
   })
+
+  openCase({ queueType: 'QUOTE_APPROVAL', entityType: 'QUOTE', entityId: quote.id })
+    .catch((err) => console.error(`[quotes] openCase QUOTE_APPROVAL failed for ${quote.id}:`, err))
 
   const customerPhone = match.jobRequest.customer.phone
   const customerName = match.jobRequest.customer.name ?? 'there'

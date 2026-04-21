@@ -13,6 +13,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // ── DB mock ───────────────────────────────────────────────────────────────────
 vi.mock('@/lib/db', () => ({
   db: {
+    customer: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     providerApplication: {
       findFirst: vi.fn(),
       create: vi.fn(),
@@ -22,7 +25,14 @@ vi.mock('@/lib/db', () => ({
       updateMany: vi.fn(),
       createMany: vi.fn(),
     },
+    attachment: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   },
+}))
+
+vi.mock('@/lib/whatsapp-media', () => ({
+  downloadAndStoreWhatsAppMedia: vi.fn().mockResolvedValue({ attachmentId: 'att_mock_001' }),
 }))
 
 vi.mock('@/lib/whatsapp-interactive', () => ({
@@ -45,6 +55,7 @@ import { normalizePhone } from '@/lib/utils'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
 import * as providerRecord from '@/lib/provider-record'
+import * as whatsappMedia from '@/lib/whatsapp-media'
 
 const phone = '+27821234567'
 
@@ -299,6 +310,129 @@ describe('registration flow — single-step skill multi-select', () => {
     expect(result.nextData).toMatchObject({
       skills: ['Plumbing', 'Garden & Landscaping', 'Appliances'],
     })
+  })
+})
+
+// ─── Evidence file upload paths ───────────────────────────────────────────────
+
+describe('registration flow — evidence file uploads', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function makeMediaCtx(mediaType: 'image' | 'document', mediaId = 'media_abc123') {
+    return {
+      phone,
+      step: 'reg_collect_evidence' as any,
+      data: {} as any,
+      flow: 'registration' as const,
+      reply: {
+        type: mediaType as any,
+        mediaId,
+        mimeType: mediaType === 'image' ? 'image/jpeg' : 'application/pdf',
+      },
+    }
+  }
+
+  it('image message triggers download, stores attachment ID, shows count prompt', async () => {
+    const result = await handleRegistrationFlow(makeMediaCtx('image'))
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaId: 'media_abc123' })
+    )
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('File received (1 total)'),
+      expect.any(Array),
+    )
+    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextData?.evidenceFileUrls).toEqual(['att_mock_001'])
+  })
+
+  it('second image upload accumulates IDs without losing the first', async () => {
+    const ctx = {
+      phone,
+      step: 'reg_collect_evidence' as any,
+      data: { evidenceFileUrls: ['att_first_001'] } as any,
+      flow: 'registration' as const,
+      reply: { type: 'image' as any, mediaId: 'media_second', mimeType: 'image/jpeg' },
+    }
+
+    const result = await handleRegistrationFlow(ctx)
+
+    expect(result.nextData?.evidenceFileUrls).toEqual(['att_first_001', 'att_mock_001'])
+  })
+
+  it('upload failure sends error message and stays on evidence step', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('Unsupported media type: video/mp4')
+    )
+
+    const result = await handleRegistrationFlow(makeMediaCtx('document'))
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining("Couldn't upload"))
+    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextData).toBeUndefined()
+  })
+
+  it('missing mediaId sends error message and stays on evidence step', async () => {
+    const ctx = {
+      phone,
+      step: 'reg_collect_evidence' as any,
+      data: {} as any,
+      flow: 'registration' as const,
+      reply: { type: 'image' as any, mediaId: undefined, mimeType: 'image/jpeg' },
+    }
+
+    const result = await handleRegistrationFlow(ctx)
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining("Couldn't process"))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('reg_collect_evidence')
+  })
+
+  it('handlePending with evidenceFileUrls calls attachment.updateMany to backfill FK', async () => {
+    ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+    ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'app_with_evidence_00',
+    })
+
+    await handleRegistrationFlow(
+      makeCtx('reg_pending', 'submit_yes', undefined, {
+        name: 'Thabo Nkosi',
+        skills: ['Plumbing'],
+        serviceAreas: ['Gauteng'],
+        experience: '3–5 years',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        evidenceFileUrls: ['att_ev_001', 'att_ev_002'],
+      })
+    )
+
+    expect(db.attachment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['att_ev_001', 'att_ev_002'] } }),
+        data: expect.objectContaining({ providerApplicationId: 'app_with_evidence_00' }),
+      })
+    )
+  })
+
+  it('handlePending without evidence files does not call attachment.updateMany', async () => {
+    ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+    ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'app_no_evidence_001',
+    })
+
+    await handleRegistrationFlow(
+      makeCtx('reg_pending', 'submit_yes', undefined, {
+        name: 'Thabo Nkosi',
+        skills: ['Plumbing'],
+        serviceAreas: ['Gauteng'],
+        experience: '3–5 years',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+      })
+    )
+
+    expect(db.attachment.updateMany).not.toHaveBeenCalled()
   })
 })
 

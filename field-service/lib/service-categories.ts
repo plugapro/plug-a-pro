@@ -45,6 +45,36 @@ export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
     label: 'Roofing',
     description: 'Roof repairs, waterproofing, and inspections.',
   },
+  {
+    tag: 'cleaning',
+    label: 'Cleaning',
+    description: 'Domestic, deep-clean, and post-construction cleaning.',
+  },
+  {
+    tag: 'tiling',
+    label: 'Tiling',
+    description: 'Floor and wall tiling, grouting, and waterproofing.',
+  },
+  {
+    tag: 'pest_control',
+    label: 'Pest Control',
+    description: 'Fumigation, rodent control, and pest prevention.',
+  },
+  {
+    tag: 'carpentry',
+    label: 'Carpentry',
+    description: 'Doors, built-in cupboards, wooden floors, and woodwork.',
+  },
+  {
+    tag: 'waterproofing',
+    label: 'Waterproofing',
+    description: 'Basement sealing, roof membranes, and wet room treatment.',
+  },
+  {
+    tag: 'air_conditioning',
+    label: 'Air Conditioning',
+    description: 'AC installation, servicing, and repairs.',
+  },
 ]
 
 const TAG_TO_LABEL = new Map(

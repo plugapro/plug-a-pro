@@ -46,8 +46,9 @@ export type FlowStep =
   | 'reg_collect_availability'
   | 'reg_collect_city'         // city selection within chosen province
   | 'reg_collect_region'       // first region selection within chosen city
-  | 'reg_collect_region_more'  // select additional regions
-  | 'reg_collect_suburb_text'  // free-text suburb fallback when location_nodes has no data
+  | 'reg_collect_region_more'    // select additional regions
+  | 'reg_collect_suburb_select'  // numbered multi-select of suburbs within chosen region
+  | 'reg_collect_suburb_text'    // free-text suburb fallback when location_nodes has no data
   | 'reg_collect_evidence'
   | 'reg_confirm'
   | 'reg_pending'
@@ -128,14 +129,21 @@ export interface ConversationData {
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"
   availability?: string[]       // ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
   evidenceNote?: string
+  evidenceFileUrls?: string[]       // blob URLs of uploaded proof images/documents
 
   // Structured service areas (registration)
-  locationNodeIds?: string[]    // selected region/suburb node IDs for provider
-  selectedRegionLabels?: string[]   // display labels for selected regions
-  provinceKey?: string              // normalized province key
-  cityId?: string                   // LocationNode ID of selected city
-  city?: string                     // city label
-  province?: string                 // province label
+  locationNodeIds?: string[]         // selected region/suburb node IDs for provider
+  selectedRegionLabels?: string[]    // display labels for selected regions
+  selectedSuburbLabels?: string[]    // display labels for selected suburbs (drill-down)
+  regionId?: string                  // region node ID being drilled into for suburb selection
+  regionLabel?: string               // region display label during suburb drill-down
+  suburbPage?: number                // current page offset for suburb paged list
+  suburbPageTotal?: number           // total suburb count for the region
+  suburbOptions?: Array<{ id: string; label: string }>  // suburb options for current page context
+  provinceKey?: string               // normalized province key
+  cityId?: string                    // LocationNode ID of selected city
+  city?: string                      // city label
+  province?: string                  // province label
 
   // Provider job management
   pendingJobId?: string

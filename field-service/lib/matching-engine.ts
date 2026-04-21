@@ -471,7 +471,7 @@ export async function sendLeadReminders(): Promise<number> {
         lead.provider.phone,
         `⏰ *Reminder — Lead Still Available*\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
         'View Lead',
-        `${appUrl}/provider/leads/${lead.id}`,
+        `${appUrl}/leads/${lead.id}`,
         { footer: 'Accept, inspect, or decline from the lead page' },
       )
       await db.lead.update({ where: { id: lead.id }, data: { reminderSentAt: new Date() } })

@@ -29,7 +29,13 @@ import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { CaseActivityTimeline } from '@/components/admin/case/CaseActivityTimeline'
+import { CaseNotesPanel } from '@/components/admin/case/CaseNotesPanel'
+import { ResolveCaseForm } from '@/components/admin/case/ResolveCaseForm'
+import { getReasonCodesForQueue } from '@/lib/reason-codes'
+import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase, addEvent } from '@/lib/cases'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 const FLAG = 'admin.crud.dispatch'
@@ -160,40 +166,82 @@ export default async function AdminDispatchPage({
   async function overrideAssignment(formData: FormData) {
     'use server'
     const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    const providerId = String(formData.get('providerId') ?? '')
+    const reasonCode = String(formData.get('reasonCode') || 'FORCE_ASSIGNED_COVERAGE_EXTENSION')
     try {
-      const result = await crudAction({
-        entity: 'JobRequest',
-        action: 'dispatch.override_assignment',
-        requiredRole: [...DISPATCH_ROLES],
-        requiredFlag: FLAG,
-        schema: OverrideSchema,
-        input: {
-          jobRequestId: String(formData.get('jobRequestId') ?? ''),
-          providerId: String(formData.get('providerId') ?? ''),
-        },
-        run: async ({ jobRequestId, providerId }) => {
-          await manualOverrideAssignment({
-            jobRequestId,
-            providerId,
-            actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-            overrideReason: 'Selected by admin from dispatch console',
-          })
-          return {
-            id: jobRequestId,
-            providerId,
-            overrideReason: 'Selected by admin from dispatch console',
-          }
-        },
+      await manualOverrideAssignment({
+        jobRequestId,
+        providerId,
+        actor: { actorId: activeAdmin.id, actorRole: 'admin' },
+        overrideReason: reasonCode,
       })
+      await recordAuditLog({
+        actorId: activeAdmin.id,
+        actorRole: activeAdmin.role,
+        action: 'dispatch.override_assignment',
+        entityType: AUDIT_ENTITY.JOB_REQUEST,
+        entityId: jobRequestId,
+        after: { providerId, reasonCode },
+      })
+      // Record OPS_ACTION on the dispatch case
+      const dispCase = await getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId).catch(() => null)
+      if (dispCase) {
+        await addEvent({
+          caseId: dispCase.id,
+          type: 'OPS_ACTION',
+          payload: { action: 'force_assign', providerId, reasonCode },
+          actorUserId: activeAdmin.id,
+        }).catch(() => {})
+      }
       revalidatePath('/admin/dispatch')
       revalidatePath('/admin')
-      redirect(`/admin/dispatch?request=${result.data.id}&message=dispatch_updated`)
+      redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
     } catch (error) {
-      const jobRequestId = String(formData.get('jobRequestId') ?? '')
-      const providerId = String(formData.get('providerId') ?? '')
       console.error('[admin/dispatch] Override failed', { jobRequestId, providerId, error })
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
     }
+  }
+
+  async function redispatchAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    if (!jobRequestId) return
+    const { dispatchLeads } = await import('@/lib/matching-engine')
+    await dispatchLeads(jobRequestId).catch(() => {})
+    const dispCase = await getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId).catch(() => null)
+    if (dispCase) {
+      await addEvent({
+        caseId: dispCase.id,
+        type: 'OPS_ACTION',
+        payload: { action: 'redispatch_triggered', triggeredBy: activeAdmin.id },
+        actorUserId: activeAdmin.id,
+      }).catch(() => {})
+    }
+    revalidatePath('/admin/dispatch')
+    redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
+  }
+
+  async function escalateToSupplyAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
+    const reason = String(formData.get('reason') || 'No providers available — needs supply expansion')
+    if (!jobRequestId) return
+    const dispCase = await getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId).catch(() => null)
+    if (dispCase) {
+      await addEvent({
+        caseId: dispCase.id,
+        type: 'ESCALATION',
+        payload: { reason, escalatedTo: 'SUPPLY', escalatedBy: activeAdmin.id },
+        actorUserId: activeAdmin.id,
+      }).catch(() => {})
+    }
+    // Note: a full Supply escalation ticket would require a dedicated entity type.
+    // For now, the ESCALATION event on the dispatch case is the operational record.
+    revalidatePath('/admin/dispatch')
+    redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_updated`)
   }
 
   async function claimDispatch(formData: FormData) {
@@ -260,6 +308,60 @@ export default async function AdminDispatchPage({
       }
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_failed`)
     }
+  }
+
+  const showCloseOut = await isEnabled('ops.v2.closeOut')
+  const dispatchCase = selectedRequest
+    ? await getCaseByEntity('DISPATCH', 'JOB_REQUEST', selectedRequest.id).catch(() => null)
+    : null
+  const dispatchCaseFull = dispatchCase
+    ? await getCase(dispatchCase.id).catch(() => null)
+    : null
+  const dispatchReasonCodes = getReasonCodesForQueue('DISPATCH')
+
+  async function closeCaseAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = String(formData.get('caseId') ?? '')
+    const reasonCode = String(formData.get('reasonCode') ?? '')
+    const note = String(formData.get('note') ?? '') || undefined
+    if (!caseId || !reasonCode) return
+    await resolveCase({ caseId, resolvedBy: activeAdmin.id, reasonCode, note })
+    revalidatePath('/admin/dispatch')
+    revalidatePath('/admin')
+  }
+
+  async function reopenCaseAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = String(formData.get('caseId') ?? '')
+    if (!caseId) return
+    await reopenCase(caseId, activeAdmin.id)
+    revalidatePath('/admin/dispatch')
+  }
+
+  async function claimCaseAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = String(formData.get('caseId') ?? '')
+    const release = formData.get('release') === '1'
+    if (!caseId) return
+    if (release) {
+      await releaseCase(caseId, activeAdmin.id)
+    } else {
+      await claimCase({ caseId, userId: activeAdmin.id })
+    }
+    revalidatePath('/admin/dispatch')
+  }
+
+  async function addNoteAction(formData: FormData) {
+    'use server'
+    const activeAdmin = await requireAdmin()
+    const caseId = dispatchCaseFull?.id
+    const body = String(formData.get('body') ?? '').trim()
+    if (!caseId || !body) return
+    await addNote({ caseId, authorUserId: activeAdmin.id, body })
+    revalidatePath('/admin/dispatch')
   }
 
   const ranking = selectedRequest
@@ -428,6 +530,18 @@ export default async function AdminDispatchPage({
                       Refresh ranked shortlist
                     </Button>
                   </form>
+                  <form action={redispatchAction}>
+                    <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                    <Button type="submit" variant="outline">
+                      Re-dispatch (retry leads)
+                    </Button>
+                  </form>
+                  <form action={escalateToSupplyAction}>
+                    <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
+                    <Button type="submit" variant="outline" className="border-destructive/40 text-destructive hover:bg-destructive/5">
+                      Escalate to Supply
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
                 )
@@ -486,8 +600,9 @@ export default async function AdminDispatchPage({
                         <form action={overrideAssignment}>
                           <input type="hidden" name="jobRequestId" value={selectedRequest.id} />
                           <input type="hidden" name="providerId" value={candidate.providerId} />
-                          <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
-                            Override to this technician
+                          <input type="hidden" name="reasonCode" value="FORCE_ASSIGNED_COVERAGE_EXTENSION" />
+                          <Button type="submit" variant="outline" size="sm">
+                            Force assign
                           </Button>
                         </form>
                       </div>
@@ -563,6 +678,37 @@ export default async function AdminDispatchPage({
                         <span className="ml-auto shrink-0">{entry.actorRole}</span>
                       </div>
                     ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {showCloseOut && dispatchCaseFull && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Case</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ResolveCaseForm
+                      caseId={dispatchCaseFull.id}
+                      queueType="DISPATCH"
+                      isResolved={['RESOLVED', 'CANCELLED'].includes(dispatchCaseFull.state)}
+                      reasonCodes={dispatchReasonCodes}
+                      resolveAction={closeCaseAction}
+                      reopenAction={reopenCaseAction}
+                      claimAction={claimCaseAction}
+                      ownerUserId={dispatchCaseFull.ownerUserId}
+                      currentUserId={admin.id}
+                    />
+                    <Separator />
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                      <CaseNotesPanel notes={dispatchCaseFull.notes} addNoteAction={addNoteAction} />
+                    </div>
+                    <Separator />
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Activity</p>
+                      <CaseActivityTimeline events={dispatchCaseFull.events} />
+                    </div>
                   </CardContent>
                 </Card>
               )}

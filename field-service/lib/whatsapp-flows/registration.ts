@@ -3,6 +3,7 @@
 // No direct connection given to customer — all mediated through Plug-a-Pro
 
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
+import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import { db } from '../db'
 import { syncProviderRecord } from '../provider-record'
 import { normalizePhone } from '../utils'
@@ -46,6 +47,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectRegion(ctx)
     case 'reg_collect_region_more':
       return handleCollectRegionMore(ctx)
+    case 'reg_collect_suburb_select':
+      return handleCollectSuburbSelect(ctx)
     case 'reg_collect_suburb_text':
       return handleCollectSuburbText(ctx)
     case 'reg_collect_availability':
@@ -66,6 +69,21 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
 // ─── Step handlers ────────────────────────────────────────────────────────────
 
 async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
+  // Block customers from registering as providers with the same number.
+  const { normalizePhone } = await import('../utils')
+  const normalizedPhone = normalizePhone(ctx.phone)
+  const existingCustomer = await db.customer.findFirst({
+    where: { phone: normalizedPhone },
+    select: { id: true },
+  })
+  if (existingCustomer) {
+    await sendText(
+      ctx.phone,
+      `⚠️ *Provider registration unavailable*\n\nThis number is already registered as a customer on Plug a Pro.\n\nTo join as a service provider, please use a *different phone number* and restart with *join*.`
+    )
+    return { nextStep: 'done' }
+  }
+
   // Existing active applications own the provider identity for this phone number.
   const existing = await findLatestActiveProviderApplicationByPhone(db, ctx.phone)
 
@@ -313,7 +331,7 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
 
     await sendList(
       ctx.phone,
-      `🗺 Which area(s) of *${cityLabel}* do you work in?\n\n_(You can add multiple areas)_`,
+      `🗺 Which area of *${cityLabel}* do you mainly work in?`,
       [{ title: 'Areas', rows }],
       { buttonLabel: 'Choose Area' }
     )
@@ -350,11 +368,10 @@ async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
-  // "Done" — proceed to experience
+  // Fallback "Done" — used if the user somehow re-enters this step
   if (ctx.reply.id === 'region_done') {
     const nodeIds = ctx.data.locationNodeIds ?? []
     if (nodeIds.length === 0) {
-      // Re-show region list
       return showRegionList(ctx)
     }
     await sendExperiencePrompt(ctx.phone)
@@ -372,41 +389,158 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   const regionId = ctx.reply.id.replace('region_', '')
   const regionLabel = ctx.reply.title ?? ''
 
-  const existing = ctx.data.locationNodeIds ?? []
-  if (existing.includes(regionId)) {
-    // Already selected
-    const areaList = (ctx.data.selectedRegionLabels ?? []).join(', ')
-    await sendButtons(
-      ctx.phone,
-      `✅ *${regionLabel}* is already selected.\n\nAreas: *${areaList}*\n\nAdd another or continue?`,
-      [
-        { id: 'region_more', title: '➕ Add another' },
-        { id: 'region_done', title: '✅ Done' },
-      ]
-    )
-    return { nextStep: 'reg_collect_region' }
-  }
-
-  const newNodeIds = [...existing, regionId]
-  const newLabels = [...(ctx.data.selectedRegionLabels ?? []), regionLabel]
-  const areaList = newLabels.join(', ')
-
-  await sendButtons(
-    ctx.phone,
-    `✅ *${regionLabel}* added!\n\nAreas: *${areaList}*\n\nAdd another area or continue?`,
-    [
-      { id: 'region_more', title: '➕ Add another' },
-      { id: 'region_done', title: '✅ Done' },
-    ]
-  )
-  return {
-    nextStep: 'reg_collect_region',
-    nextData: { locationNodeIds: newNodeIds, selectedRegionLabels: newLabels },
-  }
+  // Drill down to suburb selection within this region
+  return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, [])
 }
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
   return showRegionList(ctx) // re-show the region list
+}
+
+// ─── Suburb multi-select within a region ──────────────────────────────────────
+
+const SUBURB_PAGE_SIZE = 10
+
+async function showSuburbSelectPrompt(
+  phone: string,
+  regionId: string,
+  regionLabel: string,
+  alreadySelected: string[],
+  pageOffset = 0,
+): Promise<FlowResult> {
+  try {
+    const { getSuburbs } = await import('@/lib/location-nodes')
+    const suburbs = await getSuburbs(regionId)
+
+    if (suburbs.length === 0) {
+      // No suburbs seeded — skip drill-down, proceed to experience
+      await sendExperiencePrompt(phone)
+      return {
+        nextStep: 'reg_collect_availability',
+        nextData: {
+          locationNodeIds: [regionId],
+          selectedRegionLabels: [regionLabel],
+        },
+      }
+    }
+
+    const page = suburbs.slice(pageOffset, pageOffset + SUBURB_PAGE_SIZE)
+    const hasMore = suburbs.length > pageOffset + SUBURB_PAGE_SIZE
+
+    const numberedList = page
+      .map((s, i) => `${pageOffset + i + 1}. ${s.label}`)
+      .join('\n')
+
+    const selectedSummary = alreadySelected.length > 0
+      ? `\n\n✅ Selected so far: *${alreadySelected.join(', ')}*`
+      : ''
+
+    const moreNote = hasMore
+      ? `\n\nType *more* to see more suburbs, or *done* when finished.`
+      : `\n\nType the numbers of your suburbs, then *done* when finished.`
+
+    await sendText(
+      phone,
+      `📍 *Which suburbs in ${regionLabel} do you work in?*\n\nReply with numbers separated by commas (e.g. *1,3*).${selectedSummary}${moreNote}\n\n${numberedList}`,
+    )
+
+    return {
+      nextStep: 'reg_collect_suburb_select',
+      nextData: {
+        regionId,
+        regionLabel,
+        suburbPage: pageOffset,
+        suburbPageTotal: suburbs.length,
+        // Preserve suburb options so we can resolve numbers to IDs
+        suburbOptions: suburbs.map(s => ({ id: s.id, label: s.label })),
+      },
+    }
+  } catch {
+    await sendExperiencePrompt(phone)
+    return {
+      nextStep: 'reg_collect_availability',
+      nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel] },
+    }
+  }
+}
+
+async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> {
+  const regionId = ctx.data.regionId as string ?? ''
+  const regionLabel = ctx.data.regionLabel as string ?? ''
+  const suburbOptions = (ctx.data.suburbOptions ?? []) as Array<{ id: string; label: string }>
+  const suburbPage = (ctx.data.suburbPage as number) ?? 0
+  const existingIds: string[] = (ctx.data.locationNodeIds as string[]) ?? []
+  const existingLabels: string[] = (ctx.data.selectedSuburbLabels as string[]) ?? []
+
+  const input = ctx.reply.text?.trim().toLowerCase() ?? ''
+
+  // "done" — proceed if at least one suburb selected
+  if (input === 'done' || ctx.reply.id === 'suburb_done') {
+    if (existingIds.length === 0) {
+      await sendText(ctx.phone, 'Please select at least one suburb, or type *done* to use the whole region.')
+      return { nextStep: 'reg_collect_suburb_select' }
+    }
+    await sendExperiencePrompt(ctx.phone)
+    return {
+      nextStep: 'reg_collect_availability',
+      nextData: {
+        locationNodeIds: existingIds,
+        selectedRegionLabels: [regionLabel],
+        selectedSuburbLabels: existingLabels,
+      },
+    }
+  }
+
+  // "more" — next page
+  if (input === 'more' || ctx.reply.id === 'suburb_more') {
+    const nextOffset = suburbPage + SUBURB_PAGE_SIZE
+    return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, nextOffset)
+  }
+
+  // Parse number selections
+  const tokens = input.split(/[,\s]+/).filter(Boolean)
+  const numbers = tokens.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n >= 1)
+
+  if (numbers.length === 0) {
+    await sendText(ctx.phone, 'Reply with the numbers of your suburbs (e.g. *1,3*), or type *done* when finished.')
+    return { nextStep: 'reg_collect_suburb_select' }
+  }
+
+  const newIds = [...existingIds]
+  const newLabels = [...existingLabels]
+
+  for (const n of numbers) {
+    const suburb = suburbOptions[n - 1]
+    if (suburb && !newIds.includes(suburb.id)) {
+      newIds.push(suburb.id)
+      newLabels.push(suburb.label)
+    }
+  }
+
+  const summary = newLabels.join(', ')
+  const hasMore = (ctx.data.suburbPageTotal as number ?? 0) > suburbPage + SUBURB_PAGE_SIZE
+
+  await sendButtons(
+    ctx.phone,
+    `✅ *Suburbs selected:* ${summary}\n\n${hasMore ? 'Add more suburbs, or continue to the next step.' : 'Continue to the next step, or change your selection.'}`,
+    [
+      { id: 'suburb_done', title: '✅ Continue' },
+      { id: 'suburb_more', title: '➕ Add more' },
+    ],
+  )
+
+  return {
+    nextStep: 'reg_collect_suburb_select',
+    nextData: {
+      regionId,
+      regionLabel,
+      suburbPage,
+      suburbPageTotal: ctx.data.suburbPageTotal,
+      suburbOptions,
+      locationNodeIds: newIds,
+      selectedSuburbLabels: newLabels,
+    },
+  }
 }
 
 // ─── Suburb free-text fallback (when location_nodes DB has no region data) ────
@@ -483,7 +617,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'evidence_add') {
     await sendText(
       ctx.phone,
-      '🧾 Share a short note about any past work, references, or certificate names you want customers to see later.\n\nReply with your note, or type *skip* to continue without one.'
+      '🧾 Share your proof — you can send:\n• A text note (past jobs, references, certificate names)\n• A photo or PDF of a certificate or work sample\n\nOr type *skip* to continue without one.'
     )
     return { nextStep: 'reg_collect_evidence' }
   }
@@ -492,9 +626,52 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     return showRegistrationSummary(ctx, { evidenceNote: '' })
   }
 
+  // ── Media upload (image or document) ──────────────────────────────────────
+  if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one.")
+      return { nextStep: 'reg_collect_evidence' }
+    }
+    // providerApplicationId is not yet created — attachment starts with null FK.
+    // handlePending backfills the FK once the ProviderApplication row exists.
+    try {
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        // no providerApplicationId yet — backfilled at submission
+      })
+      const existing = ctx.data.evidenceFileUrls ?? []
+      const updated = [...existing, attachmentId]
+      await sendButtons(
+        ctx.phone,
+        `✅ File received (${updated.length} total). Add another or continue?`,
+        [
+          { id: 'evidence_done', title: '✅ Continue' },
+          { id: 'evidence_add_more', title: '📎 Add another' },
+        ]
+      )
+      return { nextStep: 'reg_collect_evidence', nextData: { evidenceFileUrls: updated } }
+    } catch (err) {
+      console.error(
+        `[registration:handleCollectEvidence] media upload failed — mediaId=${ctx.reply.mediaId} mimeType=${ctx.reply.mimeType ?? 'unknown'}:`,
+        err
+      )
+      await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or type *skip* to continue without one.")
+      return { nextStep: 'reg_collect_evidence' }
+    }
+  }
+
+  if (ctx.reply.id === 'evidence_done') {
+    return showRegistrationSummary(ctx, {})
+  }
+
+  if (ctx.reply.id === 'evidence_add_more') {
+    await sendText(ctx.phone, '📎 Send your next file, or type *skip* to finish.')
+    return { nextStep: 'reg_collect_evidence' }
+  }
+
   const evidenceNote = ctx.reply.text?.trim()
   if (!evidenceNote) {
-    await sendText(ctx.phone, 'Reply with your proof note, or type *skip* if you do not want to add one now.')
+    await sendText(ctx.phone, 'Reply with your proof note or send a file, or type *skip* if you do not want to add one now.')
     return { nextStep: 'reg_collect_evidence' }
   }
 
@@ -511,13 +688,17 @@ async function showRegistrationSummary(
     : 'Weekdays only'
 
   const merged = { ...ctx.data, ...overrides }
-  const { name, skills, serviceAreas, experience, evidenceNote } = merged
+  const { name, skills, serviceAreas, experience, evidenceNote, evidenceFileUrls } = merged
   const skillList = (skills ?? []).join(', ')
-  const areaList = (serviceAreas ?? []).join(', ')
+  // Prefer suburb-level labels if the provider drilled down, else fall back to region/area labels
+  const suburbLabels = merged.selectedSuburbLabels as string[] | undefined
+  const regionLabels = merged.selectedRegionLabels as string[] | undefined
+  const areaList = (suburbLabels?.length ? suburbLabels : regionLabels?.length ? regionLabels : serviceAreas ?? []).join(', ')
+  const fileCount = evidenceFileUrls?.length ?? 0
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}\nShall I submit your application?`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\nShall I submit your application?`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -575,18 +756,26 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'done' }
     }
 
+    const resolvedAreaLabels = ctx.data.locationNodeIds && (ctx.data.locationNodeIds as string[]).length > 0
+      ? ((ctx.data.selectedSuburbLabels as string[] | undefined)?.length
+          ? (ctx.data.selectedSuburbLabels as string[])
+          : (ctx.data.selectedRegionLabels as string[] | undefined) ?? ctx.data.serviceAreas ?? [])
+      : (ctx.data.serviceAreas ?? [])
+
     const providerId = await syncProviderRecord(db, {
       phone: normalizedPhone,
       name: ctx.data.name ?? 'Unknown',
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
-        ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
-        : (ctx.data.serviceAreas ?? []),
+      serviceAreas: resolvedAreaLabels,
       active: true,
       availableNow: true,
       verified: false,
       locationNodeIds: ctx.data.locationNodeIds ?? [],
     })
+
+    // evidenceFileUrls holds Attachment IDs (not blob URLs) — created during evidence collection
+    // with providerApplicationId=null; we backfill the FK below after the application is created.
+    const evidenceAttachmentIds = ctx.data.evidenceFileUrls ?? []
 
     let application: { id: string }
     try {
@@ -596,11 +785,11 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           phone: normalizedPhone,
           name: ctx.data.name ?? 'Unknown',
           skills: ctx.data.skills ?? [],
-          serviceAreas: ctx.data.locationNodeIds && ctx.data.locationNodeIds.length > 0
-            ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
-            : (ctx.data.serviceAreas ?? []),
+          serviceAreas: resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
           availability: availLabel,
+          evidenceNote: ctx.data.evidenceNote ?? null,
+          evidenceFileUrls: evidenceAttachmentIds,
           status: 'PENDING',
         },
       })
@@ -625,6 +814,17 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     }
 
     const ref = application.id.slice(-8).toUpperCase()
+
+    // Backfill providerApplicationId on any evidence Attachments created during the flow.
+    // They were created with providerApplicationId=null (no app row existed yet).
+    if (evidenceAttachmentIds.length > 0) {
+      await db.attachment.updateMany({
+        where: { id: { in: evidenceAttachmentIds }, providerApplicationId: null },
+        data: { providerApplicationId: application.id },
+      }).catch((err: unknown) => {
+        console.error(`[registration-flow:handlePending] evidence attachment backfill failed for app ${application.id}:`, err)
+      })
+    }
 
     await sendText(
       ctx.phone,

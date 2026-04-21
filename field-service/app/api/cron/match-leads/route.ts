@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, errors: 0 }
+  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, errors: 0 }
 
   // 1. Expire stale offers and retry the next ranked technician where possible
   try {
@@ -49,6 +49,44 @@ export async function GET(request: Request) {
     results.reconciledProviders = reconciliation.reconciled
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error reconciling provider applications:`, err)
+    results.errors++
+  }
+
+  // 1d. Auto-approve provider applications older than 60 min with all required fields
+  try {
+    const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000)
+    const pendingApplications = await db.providerApplication.findMany({
+      where: {
+        status: 'PENDING',
+        submittedAt: { lte: sixtyMinAgo },
+        name: { not: '' },
+        skills: { isEmpty: false },
+        serviceAreas: { isEmpty: false },
+      },
+      select: { id: true, phone: true, name: true },
+      take: 50,
+    })
+
+    for (const app of pendingApplications) {
+      try {
+        await db.providerApplication.update({
+          where: { id: app.id },
+          data: { status: 'APPROVED', reviewedAt: new Date() },
+        })
+        await sendText(
+          app.phone,
+          `✅ *Application Approved!*\n\nHi *${app.name}*, your Plug a Pro application has been approved!\n\nYou'll start receiving job leads on this number. Reply *menu* to check your status anytime.`
+        ).catch((err: unknown) => {
+          console.error(`[cron/match-leads:${reqId}] Failed to notify auto-approved provider ${app.id}:`, err)
+        })
+        results.autoApproved++
+      } catch (err) {
+        console.error(`[cron/match-leads:${reqId}] Failed to auto-approve application ${app.id}:`, err)
+        results.errors++
+      }
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error running auto-approve:`, err)
     results.errors++
   }
 

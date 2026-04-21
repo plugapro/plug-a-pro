@@ -9,6 +9,7 @@ import { db } from './db'
 import type { JobStatus } from '@prisma/client'
 import { recordAuditLog } from './audit'
 import { getJobRequestAccessUrl } from './job-request-access'
+import { openCase } from './cases'
 
 // ─── Valid transitions ────────────────────────────────────────────────────────
 
@@ -118,6 +119,12 @@ export async function transitionJob(params: {
       })
     }
   })
+
+  // Open FIELD_EXCEPTION case for jobs that enter exception states
+  if (toStatus === 'FAILED' || toStatus === 'CALLBACK_REQUIRED') {
+    openCase({ queueType: 'FIELD_EXCEPTION', entityType: 'BOOKING', entityId: jobId })
+      .catch((err) => console.error(`[jobs] openCase FIELD_EXCEPTION failed for ${jobId}:`, err))
+  }
 
   // Trigger side effects outside the transaction
   await triggerSideEffects({ job, toStatus })

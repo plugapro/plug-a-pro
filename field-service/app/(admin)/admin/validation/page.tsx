@@ -11,6 +11,7 @@ import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import { dispatchLeads } from '@/lib/matching-engine'
+import { openCase, resolveCase } from '@/lib/cases'
 import {
   OPS_QUEUE_TYPES,
   claimOpsQueueItem,
@@ -207,6 +208,16 @@ export default async function AdminValidationQueuePage() {
       }
     }
 
+    // Close VALIDATION case, open DISPATCH case
+    const validationCase = await db.case.findUnique({
+      where: { entityType_entityId_queueType: { entityType: 'JOB_REQUEST', entityId: jobRequestId, queueType: 'VALIDATION' } },
+    })
+    if (validationCase) {
+      await resolveCase({ caseId: validationCase.id, resolvedBy: activeAdmin.id, reasonCode: 'VALIDATED', outcome: 'approved' }).catch(() => {})
+    }
+    openCase({ queueType: 'DISPATCH', entityType: 'JOB_REQUEST', entityId: jobRequestId })
+      .catch((err) => console.error('[admin/validation] openCase DISPATCH failed:', err))
+
     redirect('/admin/validation')
   }
 
@@ -247,6 +258,37 @@ export default async function AdminValidationQueuePage() {
         throw error
       }
     }
+
+
+    await db.jobRequest.update({
+      where: { id: jobRequestId },
+      data: { status: 'CANCELLED' },
+    })
+
+    await recordAuditLog({
+      actorId: activeAdmin.id,
+      actorRole: activeAdmin.role,
+      action: 'job_request.validation_cancelled',
+      entityType: AUDIT_ENTITY.JOB_REQUEST,
+      entityId: jobRequestId,
+      before: { status: existing.status },
+      after: { status: 'CANCELLED' },
+    })
+
+    await releaseOpsQueueItem(db, {
+      queueType: OPS_QUEUE_TYPES.VALIDATION,
+      entityId: jobRequestId,
+      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
+    })
+
+    // Close VALIDATION case on cancel
+    const validationCaseToClose = await db.case.findUnique({
+      where: { entityType_entityId_queueType: { entityType: 'JOB_REQUEST', entityId: jobRequestId, queueType: 'VALIDATION' } },
+    })
+    if (validationCaseToClose) {
+      await resolveCase({ caseId: validationCaseToClose.id, resolvedBy: activeAdmin.id, reasonCode: 'CANCELLED', outcome: 'cancelled' }).catch(() => {})
+    }
+
 
     redirect('/admin/validation')
   }

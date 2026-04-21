@@ -188,6 +188,21 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     take: 20,
   })
 
+  // Fetch evidence attachments from the latest provider application
+  const latestApplication = await db.providerApplication.findFirst({
+    where: { phone: provider.phone },
+    orderBy: { submittedAt: 'desc' },
+    select: {
+      evidenceFileUrls: true,
+      attachments: {
+        where: { label: 'evidence' },
+        select: { id: true, mimeType: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  })
+  const evidenceAttachments = latestApplication?.attachments ?? []
+
   // Stats
   const totalJobs = provider._count.jobs
   const completedTotal = await db.job.count({
@@ -480,6 +495,28 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                   <p className="mt-2 text-xs text-muted-foreground">
                     This note is supplied by the provider. It does not become a verified claim unless Plug-A-Pro reviews a specific item and labels it as such.
                   </p>
+                </div>
+              </>
+            )}
+
+            {evidenceAttachments.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Evidence files (uploaded via WhatsApp)</p>
+                  <div className="space-y-2">
+                    {evidenceAttachments.map((att, i) => (
+                      <a
+                        key={att.id}
+                        href={`/api/attachments/${att.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-sm text-primary hover:underline"
+                      >
+                        {att.mimeType.startsWith('image/') ? '🖼' : '📄'} File {i + 1} — {att.mimeType}
+                      </a>
+                    ))}
+                  </div>
                 </div>
               </>
             )}

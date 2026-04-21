@@ -1,124 +1,163 @@
-/**
- * backfill-cases.ts
- *
- * Idempotent script that creates open Case rows for existing entities that
- * have no associated case yet. Run once after deploying the case lifecycle
- * migration, and again whenever you want to sweep for newly uncovered entities.
- *
- * Only run against staging or production — requires a live database.
- *
- *   npx tsx scripts/backfill-cases.ts
- */
+#!/usr/bin/env tsx
+// ─── Backfill Cases for open entities ────────────────────────────────────────
+// Creates Case rows for all currently-open entities across every ops queue.
+// Safe to re-run — uses upsert with onConflict DO NOTHING on (entityType,entityId,queueType).
+//
+// Usage:
+//   pnpm exec tsx scripts/backfill-cases.ts
+//   pnpm exec tsx scripts/backfill-cases.ts --dry-run
+//
+// Entities scanned:
+//   JobRequest  → VALIDATION (PENDING_VALIDATION) or DISPATCH (OPEN/MATCHING)
+//   Match       → DISPATCH (SENT/ACCEPTED/QUOTED/AWAITING_APPROVAL)
+//   Booking     → FIELD (CONFIRMED/IN_PROGRESS/AWAITING_PAYMENT)
+//   Dispute     → TRUST (OPEN/UNDER_REVIEW)
+//   Payment     → FINANCE (FAILED/PENDING past 30min)
+//   ProviderApplication → PROVIDER_ONBOARDING (PENDING)
 
-import { db } from '../lib/db'
-import type { CaseQueueType, CaseEntityType } from '@prisma/client'
+import { PrismaClient, OpsQueueType, CaseEntityType } from '@prisma/client'
+import { slaFor } from '../lib/sla'
 
-// SLA targets in hours per queue type
-const SLA_HOURS: Record<CaseQueueType, number> = {
-  VALIDATION: 4,
-  DISPATCH: 1,
-  FIELD: 2,
-  QUOTES: 24,
-  FINANCE: 48,
-  TRUST: 24,
-  SUPPLY: 24,
-}
+const isDryRun = process.argv.includes('--dry-run')
+const prisma = new PrismaClient()
 
-function slaDueAt(queueType: CaseQueueType, createdAt: Date): Date {
-  const h = SLA_HOURS[queueType]
-  return new Date(createdAt.getTime() + h * 60 * 60 * 1000)
-}
+let created = 0
+let skipped = 0
+let errors  = 0
 
-async function upsertCase(
-  entityType: CaseEntityType,
-  entityId: string,
-  queueType: CaseQueueType,
-  createdAt: Date
-): Promise<{ created: boolean; id: string }> {
-  const existing = await db.case.findFirst({
-    where: { entityType, entityId, queueType, state: { in: ['OPEN', 'IN_PROGRESS'] } },
-    select: { id: true },
-  })
-  if (existing) return { created: false, id: existing.id }
+async function upsertCase(params: {
+  queueType:  OpsQueueType
+  entityType: CaseEntityType
+  entityId:   string
+  createdAt:  Date
+}) {
+  const sla = slaFor(params.queueType)
+  const slaDueAt = new Date(params.createdAt.getTime() + sla.targetMinutes * 60_000)
 
-  const c = await db.case.create({
-    data: {
-      entityType,
-      entityId,
-      queueType,
-      state: 'OPEN',
-      slaDueAt: slaDueAt(queueType, createdAt),
-      events: {
-        create: {
-          type: 'SYSTEM_EVENT',
-          payload: { backfilled: true, backfilledAt: new Date().toISOString() },
+  try {
+    if (isDryRun) {
+      console.log(`[dry-run] would create Case ${params.queueType}/${params.entityType}/${params.entityId}`)
+      created++
+      return
+    }
+
+    const existing = await prisma.case.findUnique({
+      where: {
+        entityType_entityId_queueType: {
+          entityType: params.entityType,
+          entityId:   params.entityId,
+          queueType:  params.queueType,
         },
       },
-    },
-    select: { id: true },
-  })
-  return { created: true, id: c.id }
+      select: { id: true },
+    })
+
+    if (existing) {
+      skipped++
+      return
+    }
+
+    const c = await prisma.case.create({
+      data: {
+        queueType:  params.queueType,
+        entityType: params.entityType,
+        entityId:   params.entityId,
+        slaDueAt,
+        events: {
+          create: {
+            type:    'SYSTEM_EVENT',
+            payload: { backfilled: true, backfilledAt: new Date().toISOString() },
+          },
+        },
+      },
+      select: { id: true },
+    })
+
+    console.log(`created Case ${c.id} for ${params.entityType}/${params.entityId}`)
+    created++
+  } catch (err) {
+    console.error(`error creating Case for ${params.entityType}/${params.entityId}:`, err)
+    errors++
+  }
 }
 
 async function main() {
-  let created = 0
-  let skipped = 0
+  console.log(`backfill-cases starting${isDryRun ? ' (DRY RUN)' : ''}…`)
 
-  // Open job requests → VALIDATION queue
-  const openJRs = await db.jobRequest.findMany({
-    where: { status: { in: ['PENDING', 'REVIEWING'] } },
+  // ── 1. VALIDATION queue — PENDING_VALIDATION job requests ─────────────────
+  const pendingValidation = await prisma.jobRequest.findMany({
+    where: { status: 'PENDING_VALIDATION' },
     select: { id: true, createdAt: true },
   })
-  for (const jr of openJRs) {
-    const r = await upsertCase('JOB_REQUEST', jr.id, 'VALIDATION', jr.createdAt)
-    r.created ? created++ : skipped++
+  for (const jr of pendingValidation) {
+    await upsertCase({ queueType: 'VALIDATION', entityType: 'JOB_REQUEST', entityId: jr.id, createdAt: jr.createdAt })
   }
+  console.log(`validation queue: ${pendingValidation.length} records scanned`)
 
-  // Unmatched job requests → DISPATCH queue
-  const dispatchJRs = await db.jobRequest.findMany({
-    where: { status: 'MATCHING' },
+  // ── 2. DISPATCH queue — OPEN or MATCHING job requests ─────────────────────
+  const openRequests = await prisma.jobRequest.findMany({
+    where: { status: { in: ['OPEN', 'MATCHING'] } },
     select: { id: true, createdAt: true },
   })
-  for (const jr of dispatchJRs) {
-    const r = await upsertCase('JOB_REQUEST', jr.id, 'DISPATCH', jr.createdAt)
-    r.created ? created++ : skipped++
+  for (const jr of openRequests) {
+    await upsertCase({ queueType: 'DISPATCH', entityType: 'JOB_REQUEST', entityId: jr.id, createdAt: jr.createdAt })
   }
+  console.log(`dispatch queue: ${openRequests.length} records scanned`)
 
-  // Open bookings → FIELD queue
-  const openBookings = await db.booking.findMany({
-    where: { status: { in: ['CONFIRMED', 'IN_PROGRESS'] } },
+  // ── 3. QUOTE_APPROVAL queue — PENDING quotes ──────────────────────────────
+  const pendingQuotes = await prisma.quote.findMany({
+    where: { status: 'PENDING' },
     select: { id: true, createdAt: true },
   })
-  for (const b of openBookings) {
-    const r = await upsertCase('BOOKING', b.id, 'FIELD', b.createdAt)
-    r.created ? created++ : skipped++
+  for (const q of pendingQuotes) {
+    await upsertCase({ queueType: 'QUOTE_APPROVAL', entityType: 'QUOTE', entityId: q.id, createdAt: q.createdAt })
   }
+  console.log(`quote_approval queue: ${pendingQuotes.length} records scanned`)
 
-  // Open disputes → TRUST queue
-  const openDisputes = await db.dispute.findMany({
-    where: { status: { notIn: ['RESOLVED', 'CLOSED'] } },
+  // ── 4. FIELD_EXCEPTION queue — jobs in exception states ───────────────────
+  const exceptionJobs = await prisma.job.findMany({
+    where: { status: { in: ['FAILED', 'CALLBACK_REQUIRED'] } },
+    select: { id: true, createdAt: true },
+  })
+  for (const j of exceptionJobs) {
+    await upsertCase({ queueType: 'FIELD_EXCEPTION', entityType: 'BOOKING', entityId: j.id, createdAt: j.createdAt })
+  }
+  console.log(`field_exception queue: ${exceptionJobs.length} records scanned`)
+
+  // ── 5. DISPUTE queue — open disputes ──────────────────────────────────────
+  const openDisputes = await prisma.dispute.findMany({
+    where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } },
     select: { id: true, createdAt: true },
   })
   for (const d of openDisputes) {
-    const r = await upsertCase('DISPUTE', d.id, 'TRUST', d.createdAt)
-    r.created ? created++ : skipped++
+    await upsertCase({ queueType: 'DISPUTE', entityType: 'DISPUTE', entityId: d.id, createdAt: d.createdAt })
   }
+  console.log(`dispute queue: ${openDisputes.length} records scanned`)
 
-  // Pending/failed payments → FINANCE queue
-  const pendingPayments = await db.payment.findMany({
-    where: { status: { in: ['PENDING', 'FAILED'] } },
+  // ── 6. PAYMENT_FOLLOW_UP — failed payments ────────────────────────────────
+  const failedPayments = await prisma.payment.findMany({
+    where: { status: 'FAILED' },
     select: { id: true, createdAt: true },
   })
-  for (const p of pendingPayments) {
-    const r = await upsertCase('PAYMENT', p.id, 'FINANCE', p.createdAt)
-    r.created ? created++ : skipped++
+  for (const p of failedPayments) {
+    await upsertCase({ queueType: 'PAYMENT_FOLLOW_UP', entityType: 'PAYMENT', entityId: p.id, createdAt: p.createdAt })
   }
+  console.log(`payment_follow_up queue: ${failedPayments.length} records scanned`)
 
-  console.log(`Backfill complete: created=${created}, skipped=${skipped}`)
-  await db.$disconnect()
+  // ── 7. PROVIDER_ONBOARDING — pending applications ─────────────────────────
+  const pendingApps = await prisma.providerApplication.findMany({
+    where: { status: 'PENDING' },
+    select: { id: true, submittedAt: true },
+  })
+  for (const a of pendingApps) {
+    await upsertCase({ queueType: 'PROVIDER_ONBOARDING', entityType: 'APPLICATION', entityId: a.id, createdAt: a.submittedAt })
+  }
+  console.log(`provider_onboarding queue: ${pendingApps.length} records scanned`)
+
+  console.log(`\nbackfill-cases complete — created: ${created}, skipped: ${skipped}, errors: ${errors}`)
+  if (errors > 0) process.exit(1)
 }
 
-main().catch((e) => {
-  console.error(e)
-  process.exit(1)
-})
+main()
+  .catch((err) => { console.error(err); process.exit(1) })
+  .finally(() => prisma.$disconnect())
