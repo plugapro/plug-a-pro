@@ -104,3 +104,16 @@ export function isEnabledSync(key: string): boolean {
 export function invalidateFlagCache(): void {
   _cache = null
 }
+
+/** Upsert a feature flag row. Used by seed-flags script. */
+export async function setFlag(
+  key: string,
+  opts: { enabled: boolean; description?: string }
+): Promise<void> {
+  await db.featureFlag.upsert({
+    where: { key },
+    create: { key, enabled: opts.enabled, description: opts.description ?? '' },
+    update: { enabled: opts.enabled, ...(opts.description ? { description: opts.description } : {}) },
+  })
+  invalidateFlagCache()
+}

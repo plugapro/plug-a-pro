@@ -83,6 +83,7 @@ export async function GET(request: Request) {
       adminId: actor.adminUserId ?? actor.id,
       action: 'customer.export',
       entityType: AUDIT_ENTITY.CUSTOMER,
+      entityId: 'bulk',
       metadata: { rowCount: rows.length, filters: { q, channel, blocked, suspended, archived } },
       ipAddress: request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? null,
       userAgent: request.headers.get('user-agent') ?? null,

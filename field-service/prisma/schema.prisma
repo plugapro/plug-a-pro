@@ -36,6 +36,19 @@ model Customer {
   whatsappMarketingSource   String?   // "bot" | "pwa" | "admin" | "import"
   lastWhatsappPrefSyncAt    DateTime?
 
+  // Moderation / lifecycle
+  isBlocked      Boolean   @default(false)
+  blockedReason  String?
+  blockedAt      DateTime?
+  suspendedUntil DateTime?
+  suspendedReason String?
+  archivedAt     DateTime?
+  archiveReason  String?
+  purgeAfter     DateTime?
+  mergedIntoCustomerId String?
+  channel        String?   // "PWA" | "WHATSAPP" | "BOTH"
+  address        String?   // free-text address for quick-edit / display
+
   addresses              Address[]
   jobRequests            JobRequest[]
   ratings                Review[]
@@ -173,6 +186,15 @@ model Provider {
   whatsappMarketingOptIn Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Moderation / lifecycle
+  status         ProviderStatus @default(ACTIVE)
+  kycStatus      KycStatus      @default(NOT_STARTED)
+  suspendedUntil DateTime?
+  suspendedReason String?
+  strikes        Int            @default(0)
+  archivedAt     DateTime?
+  archiveReason  String?
 
   schedule          ProviderSchedule[]
   technicianSkills  TechnicianSkill[]

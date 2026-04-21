@@ -80,6 +80,7 @@ export async function GET(request: Request) {
       adminId: actor.adminUserId ?? actor.id,
       action: 'provider.export',
       entityType: AUDIT_ENTITY.PROVIDER,
+      entityId: 'bulk',
       metadata: { rowCount: rows.length, filters: { q, status, kyc, archived } },
       ipAddress: request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? null,
       userAgent: request.headers.get('user-agent') ?? null,

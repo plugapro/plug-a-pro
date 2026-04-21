@@ -163,6 +163,7 @@ export default async function AdminValidationQueuePage() {
 
   async function markReadyForMatching(formData: FormData) {
     'use server'
+    const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
     try {
       const result = await crudAction({
@@ -223,14 +224,17 @@ export default async function AdminValidationQueuePage() {
 
   async function cancelRequest(formData: FormData) {
     'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
     try {
       await crudAction({
         entity: 'JobRequest',
+        entityId: jobRequestId,
         action: 'job_request.validation_cancelled',
         requiredRole: [...VALIDATION_ROLES],
         requiredFlag: FLAG,
         schema: QueueSchema,
-        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        input: { jobRequestId },
         run: async ({ jobRequestId }, tx) => {
           const existing = await tx.jobRequest.findUnique({
             where: { id: jobRequestId },
@@ -259,28 +263,6 @@ export default async function AdminValidationQueuePage() {
       }
     }
 
-
-    await db.jobRequest.update({
-      where: { id: jobRequestId },
-      data: { status: 'CANCELLED' },
-    })
-
-    await recordAuditLog({
-      actorId: activeAdmin.id,
-      actorRole: activeAdmin.role,
-      action: 'job_request.validation_cancelled',
-      entityType: AUDIT_ENTITY.JOB_REQUEST,
-      entityId: jobRequestId,
-      before: { status: existing.status },
-      after: { status: 'CANCELLED' },
-    })
-
-    await releaseOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.VALIDATION,
-      entityId: jobRequestId,
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
-
     // Close VALIDATION case on cancel
     const validationCaseToClose = await db.case.findUnique({
       where: { entityType_entityId_queueType: { entityType: 'JOB_REQUEST', entityId: jobRequestId, queueType: 'VALIDATION' } },
@@ -288,7 +270,6 @@ export default async function AdminValidationQueuePage() {
     if (validationCaseToClose) {
       await resolveCase({ caseId: validationCaseToClose.id, resolvedBy: activeAdmin.id, reasonCode: 'CANCELLED', outcome: 'cancelled' }).catch(() => {})
     }
-
 
     redirect('/admin/validation')
   }

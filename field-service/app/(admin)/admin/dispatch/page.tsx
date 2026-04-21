@@ -36,6 +36,7 @@ import { CaseNotesPanel } from '@/components/admin/case/CaseNotesPanel'
 import { ResolveCaseForm } from '@/components/admin/case/ResolveCaseForm'
 import { getReasonCodesForQueue } from '@/lib/reason-codes'
 import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase, addEvent } from '@/lib/cases'
+import { recordAuditLog } from '@/lib/audit'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 const FLAG = 'admin.crud.dispatch'

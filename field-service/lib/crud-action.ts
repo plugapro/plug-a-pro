@@ -125,7 +125,7 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
   // ── 3. Feature flag ───────────────────────────────────────────────────────────
   if (opts.requiredFlag) {
     const { isEnabled } = await import('./flags')
-    const on = await isEnabled(opts.requiredFlag, session.id)
+    const on = await isEnabled(opts.requiredFlag, { userId: session.id })
     if (!on) {
       throw new CrudActionError(
         'FLAG_DISABLED',
@@ -176,7 +176,7 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
         entityId,
         before: toAuditJson(opts.before),
         after: toAuditJson(result),
-        ...(opts.reason ? { metadata: toAuditJson({ reason: opts.reason }) } : {}),
+        metadata: (opts.reason ? { reason: opts.reason } : {}) as Prisma.InputJsonValue,
       },
     })
 
