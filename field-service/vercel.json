@@ -5,7 +5,6 @@
     { "path": "/api/cron/follow-up", "schedule": "0 10 * * *" },
     { "path": "/api/cron/slots", "schedule": "0 6 * * 1" },
     { "path": "/api/cron/match-leads",     "schedule": "*/30 7-20 * * *" },
-    { "path": "/api/cron/ops-alerts",      "schedule": "*/30 7-20 * * *" },
-    { "path": "/api/cron/session-timeout", "schedule": "*/10 5-20 * * *" }
+    { "path": "/api/cron/session-timeout", "schedule": "*/20 5-20 * * *" }
   ]
 }

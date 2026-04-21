@@ -1,8 +1,9 @@
-// ─── Cron: Auto-match OPEN job requests + expire stale leads ─────────────────
+// ─── Cron: Auto-match OPEN job requests + expire stale leads + ops alerts ─────
 // Runs every 30 minutes during business hours (07:00–20:00) via Vercel Cron — schedule: */30 7-20 * * *
 // 1. Expires leads past their expiresAt → frees job for re-dispatch
 // 2. Finds OPEN job requests with no active SENT lead → dispatches
 // 3. Alerts admin if jobs remain unmatched after 1 hour
+// 4. Detects queue breaches and sends WhatsApp ops alerts (merged from ops-alerts cron)
 // Secured by CRON_SECRET header (Authorization: Bearer <secret>).
 
 import { NextResponse } from 'next/server'
@@ -12,8 +13,22 @@ import { processPendingAssignmentWorkflows } from '@/lib/matching/service'
 import { reconcileProviderRecordsFromApplications } from '@/lib/provider-record'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { sendText } from '@/lib/whatsapp-interactive'
+import { recordAuditLog } from '@/lib/audit'
+import { detectQueueBreaches, getQueueHref } from '@/lib/ops-dashboard/alerts'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
+const ALERT_COOLDOWN_MINUTES = 90
+
+function formatAge(ageMinutes: number) {
+  if (ageMinutes < 60) return `${ageMinutes}m`
+  const hours = Math.floor(ageMinutes / 60)
+  const minutes = ageMinutes % 60
+  if (hours < 24) return `${hours}h ${minutes}m`
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return `${days}d ${remainingHours}h`
+}
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -157,5 +172,74 @@ export async function GET(request: Request) {
   }
 
   console.log(`[cron/match-leads:${reqId}]`, results)
-  return NextResponse.json({ ok: true, ...results })
+
+  // 5. Ops queue breach alerts (merged from ops-alerts cron)
+  let opsBreaches = 0
+  let opsNotified = 0
+  try {
+    const breaches = await detectQueueBreaches(db)
+    opsBreaches = breaches.length
+
+    const recentAlertCutoff = new Date(Date.now() - ALERT_COOLDOWN_MINUTES * 60000)
+    const recentAlerts = breaches.length
+      ? await db.auditLog.findMany({
+          where: {
+            action: 'ops_alert.sent',
+            entityType: 'ops_queue',
+            entityId: { in: breaches.map((breach) => breach.queueKey) },
+            timestamp: { gte: recentAlertCutoff },
+          },
+          select: { entityId: true, timestamp: true },
+        }).catch((error) => {
+          console.error(`[cron/match-leads:${reqId}] Failed to load recent alert cooldowns`, error)
+          return []
+        })
+      : []
+    const recentlyAlertedQueues = new Set(recentAlerts.map((entry) => entry.entityId))
+
+    for (const breach of breaches) {
+      if (recentlyAlertedQueues.has(breach.queueKey)) {
+        console.log(`[cron/match-leads:${reqId}] Skipping cooldown-suppressed alert`, { queueKey: breach.queueKey })
+        continue
+      }
+
+      const link = `${APP_URL}${getQueueHref(breach.queueKey)}`
+      const message =
+        `⚠️ *Ops Alert — ${breach.label}*\n\n` +
+        `${breach.overdueCount} item${breach.overdueCount === 1 ? '' : 's'} overdue.\n` +
+        `Oldest age: ${formatAge(breach.oldestAgeMinutes)}.\n\n` +
+        `Review: ${link}`
+
+      const sent = ADMIN_PHONE
+        ? await sendText(ADMIN_PHONE, message).catch((error) => {
+            console.error(`[cron/match-leads:${reqId}] Failed to send ops WhatsApp alert`, { queueKey: breach.queueKey, error })
+            return null
+          })
+        : null
+
+      if (sent) opsNotified++
+
+      await recordAuditLog({
+        actorId: 'system',
+        actorRole: 'system',
+        action: 'ops_alert.sent',
+        entityType: 'ops_queue',
+        entityId: breach.queueKey,
+        after: {
+          label: breach.label,
+          overdueCount: breach.overdueCount,
+          oldestAgeMinutes: breach.oldestAgeMinutes,
+          severity: breach.severity,
+          delivered: Boolean(sent),
+        },
+      }).catch((error) => {
+        console.error(`[cron/match-leads:${reqId}] Failed to record alert audit log`, { queueKey: breach.queueKey, error })
+      })
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error running ops breach alerts:`, err)
+    results.errors++
+  }
+
+  return NextResponse.json({ ok: true, ...results, opsBreaches, opsNotified })
 }
