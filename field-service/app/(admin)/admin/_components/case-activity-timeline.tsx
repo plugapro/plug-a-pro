@@ -6,10 +6,12 @@ const EVENT_ICONS: Record<CaseEventType, string> = {
   SYSTEM_EVENT: '🤖',
   OPS_ACTION: '🛠',
   NOTE_ADDED: '📝',
+  ATTACHMENT_ADDED: '📎',
   ASSIGNMENT_CHANGE: '👤',
   CUSTOMER_CONTACTED: '📞',
   ESCALATION: '🔺',
   BREACH_DETECTED: '⚠️',
+  INTERNAL_ONLY: '🔒',
 }
 
 const EVENT_LABELS: Record<CaseEventType, string> = {
@@ -17,10 +19,12 @@ const EVENT_LABELS: Record<CaseEventType, string> = {
   SYSTEM_EVENT: 'System event',
   OPS_ACTION: 'Ops action',
   NOTE_ADDED: 'Note added',
+  ATTACHMENT_ADDED: 'Attachment added',
   ASSIGNMENT_CHANGE: 'Assignment changed',
   CUSTOMER_CONTACTED: 'Customer contacted',
   ESCALATION: 'Escalated',
   BREACH_DETECTED: 'SLA breach detected',
+  INTERNAL_ONLY: 'Internal note',
 }
 
 interface Props {
