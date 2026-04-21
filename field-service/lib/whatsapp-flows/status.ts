@@ -73,7 +73,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       ],
       { footer: 'Reply "menu" for main menu' }
     )
-    return { nextStep: 'welcome' }
+    return { nextStep: 'done' }
   }
 
   log(`customerId=${customer.id} — fetching job requests`)
@@ -104,7 +104,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       ],
       { footer: 'Reply "menu" for main menu' }
     )
-    return { nextStep: 'welcome' }
+    return { nextStep: 'done' }
   }
 
   // Separate active from terminal requests
@@ -211,7 +211,7 @@ async function showRequestStatus(
   if (!jr) {
     log(`jobRequest not found id=${jobRequestId}`)
     await sendText(phone, "⚠️ Sorry, I couldn't load that request. Reply 'menu' to start again.")
-    return { nextStep: 'welcome' }
+    return { nextStep: 'done' }
   }
 
   const job = jr.match?.booking?.job ?? null
