@@ -66,7 +66,7 @@ function caseRevalidate() {
 
 export async function claimCaseAction(caseId: string) {
   const admin = await requireAdmin()
-  if (!(await isEnabled(FLAG, admin.id))) {
+  if (!(await isEnabled(FLAG, { userId: admin.id }))) {
     throw new CrudActionError('FLAG_DISABLED', `Feature '${FLAG}' is not enabled.`)
   }
 
@@ -97,7 +97,7 @@ export async function claimCaseAction(caseId: string) {
 
 export async function releaseCaseAction(caseId: string) {
   const admin = await requireAdmin()
-  if (!(await isEnabled(FLAG, admin.id))) {
+  if (!(await isEnabled(FLAG, { userId: admin.id }))) {
     throw new CrudActionError('FLAG_DISABLED', `Feature '${FLAG}' is not enabled.`)
   }
 
@@ -124,7 +124,7 @@ export async function releaseCaseAction(caseId: string) {
 export async function resolveCaseAction(input: z.infer<typeof ResolveCaseSchema>) {
   const parsed = ResolveCaseSchema.parse(input)
   const admin = await requireAdmin()
-  if (!(await isEnabled(FLAG, admin.id))) {
+  if (!(await isEnabled(FLAG, { userId: admin.id }))) {
     throw new CrudActionError('FLAG_DISABLED', `Feature '${FLAG}' is not enabled.`)
   }
 
@@ -176,7 +176,7 @@ export async function resolveCaseAction(input: z.infer<typeof ResolveCaseSchema>
 export async function reopenCaseAction(input: z.infer<typeof ReopenCaseSchema>) {
   const parsed = ReopenCaseSchema.parse(input)
   const admin = await requireAdmin()
-  if (!(await isEnabled(FLAG, admin.id))) {
+  if (!(await isEnabled(FLAG, { userId: admin.id }))) {
     throw new CrudActionError('FLAG_DISABLED', `Feature '${FLAG}' is not enabled.`)
   }
 
@@ -227,7 +227,7 @@ export async function reopenCaseAction(input: z.infer<typeof ReopenCaseSchema>) 
 export async function addCaseNoteAction(input: z.infer<typeof AddCaseNoteSchema>) {
   const parsed = AddCaseNoteSchema.parse(input)
   const admin = await requireAdmin()
-  if (!(await isEnabled(FLAG, admin.id))) {
+  if (!(await isEnabled(FLAG, { userId: admin.id }))) {
     throw new CrudActionError('FLAG_DISABLED', `Feature '${FLAG}' is not enabled.`)
   }
 

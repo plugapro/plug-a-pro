@@ -56,8 +56,8 @@ export default async function BookingDetailPage({
   const { id } = await params
   const { message } = await searchParams
   const banner = getBookingAdminMessage(message)
-  const crudEnabled = await isEnabled(FLAG, admin.id)
-  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
 
   const booking = await db.booking.findUnique({
     where: { id },
