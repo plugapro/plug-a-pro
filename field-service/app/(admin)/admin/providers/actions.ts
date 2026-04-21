@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
+import { normalizePhone } from '@/lib/utils'
 import type { KycStatus, ProviderStatus } from '@prisma/client'
 
 const FLAG = 'admin.crud.providers'
@@ -42,7 +43,14 @@ const UpdateProviderProfileSchema = z.object({
 
 const SetProviderKycSchema = z.object({
   providerId: z.string().min(1),
-  kycStatus: z.enum(['NOT_STARTED', 'PENDING', 'VERIFIED', 'FAILED']),
+  kycStatus: z.enum([
+    'NOT_STARTED',
+    'IN_PROGRESS',
+    'SUBMITTED',
+    'VERIFIED',
+    'REJECTED',
+    'EXPIRED',
+  ]),
 })
 
 const AddProviderNoteSchema = z.object({
@@ -112,7 +120,7 @@ type DeleteEquipmentInput = z.infer<typeof DeleteEquipmentSchema>
 // ─── createProvider ───────────────────────────────────────────────────────────
 
 export async function createProviderAction(input: CreateProviderInput) {
-  const normalizedPhone = input.phone.startsWith('+') ? input.phone : `+${input.phone}`
+  const normalizedPhone = normalizePhone(input.phone)
 
   const result = await crudAction<CreateProviderInput, { id: string }>({
     entity: 'Provider',
@@ -130,7 +138,10 @@ export async function createProviderAction(input: CreateProviderInput) {
         select: { id: true },
       })
       if (existing) {
-        throw new CrudActionError('CONFLICT', `Provider phone ${data.phone} already exists.`)
+        throw new CrudActionError(
+          'CONFLICT',
+          `A provider with this phone already exists (ID: ${existing.id}). Open their profile to update or review their record.`
+        )
       }
 
       const provider = await tx.provider.create({
@@ -164,7 +175,7 @@ export async function createProviderAction(input: CreateProviderInput) {
 // ─── updateProviderProfile ───────────────────────────────────────────────────
 
 export async function updateProviderProfileAction(input: UpdateProviderProfileInput) {
-  const normalizedPhone = input.phone.startsWith('+') ? input.phone : `+${input.phone}`
+  const normalizedPhone = normalizePhone(input.phone)
 
   const result = await crudAction<UpdateProviderProfileInput, { id: string }>({
     entity: 'Provider',
