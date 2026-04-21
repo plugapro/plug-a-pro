@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-const fs = require("fs/promises");
-const path = require("path");
-const sharp = require("sharp");
+import fs from "fs/promises";
+import path from "path";
+import sharp from "sharp";
 
 const WIDTH = 1080;
 const HEIGHT = 1080;

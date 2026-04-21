@@ -1,13 +1,14 @@
 import { KycStatus, ProviderStatus } from '@prisma/client'
-import { requireAdmin } from '@/lib/auth'
+import { requireRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { toCsv } from '@/lib/csv'
+import { AUDIT_ENTITY } from '@/lib/audit-entities'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
-  const actor = await requireAdmin()
+  const actor = await requireRole(['ADMIN', 'OWNER'])
   const enabled = await isEnabled('admin.crud.providers', actor.id)
   if (!enabled) {
     return new Response('Feature flag disabled', { status: 403 })
@@ -73,6 +74,17 @@ export async function GET(request: Request) {
     { key: 'archivedAt', label: 'Archived At' },
     { key: 'createdAt', label: 'Created At' },
   ])
+
+  await db.adminAuditEvent.create({
+    data: {
+      adminId: actor.adminUserId ?? actor.id,
+      action: 'provider.export',
+      entityType: AUDIT_ENTITY.PROVIDER,
+      metadata: { rowCount: rows.length, filters: { q, status, kyc, archived } },
+      ipAddress: request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? null,
+      userAgent: request.headers.get('user-agent') ?? null,
+    },
+  }).catch((err) => console.error('[providers/export] audit write failed', err))
 
   return new Response(csv, {
     status: 200,

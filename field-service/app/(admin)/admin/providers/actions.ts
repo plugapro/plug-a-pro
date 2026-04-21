@@ -245,12 +245,21 @@ export async function setProviderStatusAction(input: SetStatusInput) {
         select: { id: true, status: true },
       })
       if (!provider) throw new CrudActionError('NOT_FOUND', `Provider ${data.providerId} not found.`)
+      const now = new Date()
       await tx.provider.update({
         where: { id: data.providerId },
         data: {
           status: data.status as ProviderStatus,
           active: data.status === 'ACTIVE',
           verified: data.status === 'ACTIVE' ? true : undefined,
+          // Persist reason for suspended providers (30-day default window)
+          suspendedReason: data.status === 'SUSPENDED' ? data.reason : data.status === 'ACTIVE' ? null : undefined,
+          suspendedUntil: data.status === 'SUSPENDED'
+            ? new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+            : data.status === 'ACTIVE' ? null : undefined,
+          // Persist reason for archived/banned providers
+          archiveReason: data.status === 'ARCHIVED' || data.status === 'BANNED' ? data.reason : undefined,
+          archivedAt: data.status === 'ARCHIVED' || data.status === 'BANNED' ? now : undefined,
         },
       })
       return { id: data.providerId }

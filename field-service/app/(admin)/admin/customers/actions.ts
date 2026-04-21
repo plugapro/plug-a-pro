@@ -190,7 +190,7 @@ export async function blockCustomerAction(input: BlockInput) {
       if (!customer) throw new CrudActionError('NOT_FOUND', `Customer ${data.customerId} not found.`)
       await tx.customer.update({
         where: { id: data.customerId },
-        data: { isBlocked: true, notes: data.reason },
+        data: { isBlocked: true, blockedReason: data.reason, blockedAt: new Date() },
       })
       return { id: data.customerId }
     },
@@ -331,7 +331,7 @@ export async function deactivateCustomerAction(input: DeactivateInput) {
       if (!customer) throw new CrudActionError('NOT_FOUND', `Customer ${data.customerId} not found.`)
       await tx.customer.update({
         where: { id: data.customerId },
-        data: { active: false, isBlocked: true, notes: data.reason },
+        data: { active: false, isBlocked: true, blockedReason: data.reason, blockedAt: new Date() },
       })
       return { id: data.customerId }
     },

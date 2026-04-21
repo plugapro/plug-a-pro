@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireAdmin, mockIsEnabled, mockFindMany } = vi.hoisted(() => ({
+const { mockRequireAdmin, mockRequireRole, mockIsEnabled, mockFindMany } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
+  mockRequireRole: vi.fn(),
   mockIsEnabled: vi.fn(),
   mockFindMany: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
   requireAdmin: mockRequireAdmin,
+  requireRole: mockRequireRole,
 }))
 
 vi.mock('@/lib/flags', () => ({
@@ -19,13 +21,17 @@ vi.mock('@/lib/db', () => ({
     customer: {
       findMany: mockFindMany,
     },
+    adminAuditEvent: {
+      create: vi.fn().mockResolvedValue({}),
+    },
   },
 }))
 
 describe('GET /api/admin/customers/export', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequireAdmin.mockResolvedValue({ id: 'supabase-admin-1' })
+    mockRequireAdmin.mockResolvedValue({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'ADMIN' })
+    mockRequireRole.mockResolvedValue({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'ADMIN' })
     mockIsEnabled.mockResolvedValue(true)
     mockFindMany.mockResolvedValue([])
   })

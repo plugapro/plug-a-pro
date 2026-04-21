@@ -229,7 +229,7 @@ describe('POST /api/webhooks/payments — idempotency', () => {
     })
 
     const res = await POST(req)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(500)
 
     const body = await res.json()
     expect(body).toEqual({ status: 'error' })

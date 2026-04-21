@@ -1518,3 +1518,17 @@ model CaseNote {
 
   @@map("case_notes")
 }
+
+// ─── Reason Codes ─────────────────────────────────────────────────────────────
+
+model ReasonCode {
+  key         String
+  queueType   String   // matches CaseQueueType string values
+  label       String
+  requireNote Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([key, queueType])
+  @@map("reason_codes")
+}

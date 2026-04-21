@@ -70,6 +70,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     description: 'Enable DB-backed AdminUser team management (invite, role change, deactivate).',
   },
   {
+    key: 'admin.crud.messages',
+    description: 'Enable failed message retry mutations on the Messages admin page.',
+  },
+  {
     key: 'ops.v2.cases',
     description: 'Case lifecycle: claim, note, resolve, and reopen exception cases across all ops queues.',
   },
