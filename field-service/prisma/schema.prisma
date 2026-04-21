@@ -1423,3 +1423,97 @@ model ProviderEquipment {
   @@index([providerId])
   @@map("provider_equipment")
 }
+
+// ─── Ops Case lifecycle ───────────────────────────────────────────────────────
+
+enum CaseQueueType {
+  VALIDATION
+  DISPATCH
+  FIELD
+  QUOTES
+  FINANCE
+  TRUST
+  SUPPLY
+}
+
+enum CaseEntityType {
+  JOB_REQUEST
+  MATCH
+  BOOKING
+  PAYMENT
+  DISPUTE
+  APPLICATION
+}
+
+enum CaseState {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+  REOPENED
+}
+
+enum CaseEventType {
+  STATE_CHANGE
+  SYSTEM_EVENT
+  OPS_ACTION
+  NOTE_ADDED
+  ASSIGNMENT_CHANGE
+  CUSTOMER_CONTACTED
+  ESCALATION
+  BREACH_DETECTED
+}
+
+enum CaseNoteVisibility {
+  INTERNAL_ONLY
+}
+
+model Case {
+  id          String         @id @default(cuid())
+  queueType   CaseQueueType
+  entityType  CaseEntityType
+  entityId    String
+  state       CaseState      @default(OPEN)
+  outcome     String?
+  reasonCode  String?
+  ownerUserId String?
+  slaDueAt    DateTime
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  events CaseEvent[]
+  notes  CaseNote[]
+
+  @@unique([entityType, entityId, queueType, state])
+  @@index([queueType, state, slaDueAt])
+  @@map("cases")
+}
+
+model CaseEvent {
+  id          String        @id @default(cuid())
+  caseId      String
+  type        CaseEventType
+  payload     Json
+  actorUserId String?
+  createdAt   DateTime      @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@map("case_events")
+}
+
+model CaseNote {
+  id           String             @id @default(cuid())
+  caseId       String
+  authorUserId String
+  body         String             @db.Text
+  visibility   CaseNoteVisibility @default(INTERNAL_ONLY)
+  createdAt    DateTime           @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("case_notes")
+}

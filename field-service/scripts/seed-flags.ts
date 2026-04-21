@@ -69,6 +69,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'admin.users.v2',
     description: 'Enable DB-backed AdminUser team management (invite, role change, deactivate).',
   },
+  {
+    key: 'ops.v2.cases',
+    description: 'Case lifecycle: claim, note, resolve, and reopen exception cases across all ops queues.',
+  },
 ]
 
 async function main() {
