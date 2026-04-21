@@ -219,8 +219,8 @@ export default async function PaymentsPage({
   searchParams: Promise<{ status?: string; message?: string }>
 }) {
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled(FLAG, admin.id)
-  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
   const { status, message } = await searchParams
   const banner = getPaymentAdminMessage(message)
 

@@ -171,8 +171,8 @@ async function releaseDisputeAction(formData: FormData) {
 
 export default async function AdminDisputesPage() {
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled(FLAG, admin.id)
-  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
   const now = new Date()
   const pageWarnings: string[] = []
 

@@ -45,8 +45,8 @@ export default async function AdminFieldExceptionsPage() {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
-  const crudEnabled = await isEnabled(FLAG, admin.id)
-  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
 
   const jobs = await db.job.findMany({
     where: { status: { in: FIELD_EXCEPTION_STATUSES } },

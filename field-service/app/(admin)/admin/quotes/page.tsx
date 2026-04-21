@@ -41,8 +41,8 @@ export default async function AdminQuoteQueuePage() {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
-  const crudEnabled = await isEnabled(FLAG, admin.id)
-  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
 
   const quotes = await db.quote.findMany({
     where: { status: { in: QUOTE_QUEUE_STATUSES } },
