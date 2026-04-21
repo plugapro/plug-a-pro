@@ -283,7 +283,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
           </div>
           <p className="text-sm text-muted-foreground">Provider profile</p>
         </div>
-        {!crudEnabled && (
+        {crudEnabled && (
           <form action={toggleActiveForProvider}>
             <Button
               type="submit"
@@ -389,9 +389,11 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                 className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 <option value="NOT_STARTED">Not started</option>
-                <option value="PENDING">Pending</option>
+                <option value="IN_PROGRESS">In progress</option>
+                <option value="SUBMITTED">Submitted</option>
                 <option value="VERIFIED">Verified</option>
-                <option value="FAILED">Failed</option>
+                <option value="REJECTED">Rejected</option>
+                <option value="EXPIRED">Expired</option>
               </select>
               <Button type="submit" variant="outline" size="sm">Set KYC</Button>
             </form>

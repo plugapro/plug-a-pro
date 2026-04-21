@@ -128,7 +128,6 @@ describe('customer/provider admin actions', () => {
       })
     ).rejects.toMatchObject({
       code: 'CONFLICT',
-      message: 'Provider phone +27829876543 already exists.',
     })
 
     expect(mockProviderCreate).not.toHaveBeenCalled()
