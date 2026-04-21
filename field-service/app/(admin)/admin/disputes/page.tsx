@@ -21,10 +21,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Disputes', noIndex: true })
 
 const FLAG = 'admin.crud.disputes'
+const CASES_FLAG = 'ops.v2.cases'
 const DISPUTE_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
 
 const UpdateDisputeSchema = z.object({
@@ -168,6 +172,7 @@ async function releaseDisputeAction(formData: FormData) {
 export default async function AdminDisputesPage() {
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
   const now = new Date()
   const pageWarnings: string[] = []
 
@@ -207,6 +212,23 @@ export default async function AdminDisputesPage() {
   })
 
   const jobById = new Map(jobs.map((job) => [job.id, job]))
+
+  // Fetch open cases for disputes (gated by flag)
+  const disputeIds = disputes.map((d) => d.id)
+  const rawDisputeCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'DISPUTE',
+          entityId: { in: disputeIds },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
+  const caseByDispute = new Map(rawDisputeCases.map((c) => [c.entityId, c]))
   const openCount = disputes.filter((dispute) => dispute.status === 'OPEN').length
   const underReviewCount = disputes.filter((dispute) => dispute.status === 'UNDER_REVIEW').length
 
@@ -367,6 +389,27 @@ export default async function AdminDisputesPage() {
                     Save dispute update
                   </Button>
                 </form>
+
+                {casesEnabled && (() => {
+                  const activeCase = caseByDispute.get(dispute.id)
+                  if (!activeCase) return null
+                  return (
+                    <div className="space-y-4 border-t pt-4 mt-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Case actions</p>
+                        <ResolveCaseDialog caseId={activeCase.id} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                        <CaseActivityTimeline events={activeCase.events} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                        <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}

@@ -20,8 +20,12 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import type { Metadata } from 'next'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 const FLAG = 'admin.crud.bookings'
+const CASES_FLAG = 'ops.v2.cases'
 const CANCEL_ROLES = ['ADMIN', 'OWNER'] as const
 const PAYMENT_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
 const BookingActionSchema = z.object({
@@ -53,6 +57,7 @@ export default async function BookingDetailPage({
   const { message } = await searchParams
   const banner = getBookingAdminMessage(message)
   const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
 
   const booking = await db.booking.findUnique({
     where: { id },
@@ -190,6 +195,18 @@ export default async function BookingDetailPage({
       redirect(`/admin/bookings/${id}?message=payment_unavailable`)
     }
   }
+
+  // ─── Case (ops.v2.cases flag) ─────────────────────────────────────────────────
+
+  const activeCase = casesEnabled
+    ? await db.case.findFirst({
+        where: { entityType: 'BOOKING', entityId: id, state: { in: ['OPEN', 'IN_PROGRESS'] } },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => null)
+    : null
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -624,6 +641,23 @@ export default async function BookingDetailPage({
           </Card>
         </div>
       </div>
+
+      {casesEnabled && activeCase && (
+        <div className="space-y-4 rounded-xl border p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Case</h3>
+            <ResolveCaseDialog caseId={activeCase.id} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+            <CaseActivityTimeline events={activeCase.events} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+            <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

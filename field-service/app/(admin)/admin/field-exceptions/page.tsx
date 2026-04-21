@@ -22,9 +22,13 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Field Exceptions', noIndex: true })
 const FLAG = 'admin.crud.field_exceptions'
+const CASES_FLAG = 'ops.v2.cases'
 const FIELD_EXCEPTION_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
 const QueueSchema = z.object({
   jobId: z.string().min(1),
@@ -42,6 +46,7 @@ export default async function AdminFieldExceptionsPage() {
   const now = new Date()
   const pageWarnings: string[] = []
   const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
 
   const jobs = await db.job.findMany({
     where: { status: { in: FIELD_EXCEPTION_STATUSES } },
@@ -112,6 +117,23 @@ export default async function AdminFieldExceptionsPage() {
       return [] as Array<{ id: string; entityId: string | null; action: string; actorRole: string; timestamp: Date }>
     }),
   ])
+
+  // Fetch open cases for each booking (gated by flag)
+  const bookingIds = jobs.map((job) => job.booking.id)
+  const rawCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'BOOKING',
+          entityId: { in: bookingIds },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
+  const caseByBooking = new Map(rawCases.map((c) => [c.entityId, c]))
 
   const auditByJob = new Map<string, typeof rawAuditLogs>()
   for (const log of rawAuditLogs) {
@@ -282,6 +304,27 @@ export default async function AdminFieldExceptionsPage() {
                             <span className="ml-auto shrink-0">{entry.actorRole}</span>
                           </div>
                         ))}
+                      </div>
+                    )
+                  })()}
+
+                  {casesEnabled && (() => {
+                    const activeCase = caseByBooking.get(job.booking.id)
+                    if (!activeCase) return null
+                    return (
+                      <div className="space-y-4 border-t pt-4 mt-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Case actions</p>
+                          <ResolveCaseDialog caseId={activeCase.id} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                          <CaseActivityTimeline events={activeCase.events} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                          <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+                        </div>
                       </div>
                     )
                   })()}

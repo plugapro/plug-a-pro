@@ -23,11 +23,15 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Quote Approvals', noIndex: true })
 
 const QUOTE_QUEUE_STATUSES: QuoteStatus[] = ['PENDING', 'REVISED']
 const FLAG = 'admin.crud.quotes'
+const CASES_FLAG = 'ops.v2.cases'
 const QUOTE_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
 const QueueSchema = z.object({
   quoteId: z.string().min(1),
@@ -38,6 +42,7 @@ export default async function AdminQuoteQueuePage() {
   const now = new Date()
   const pageWarnings: string[] = []
   const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
 
   const quotes = await db.quote.findMany({
     where: { status: { in: QUOTE_QUEUE_STATUSES } },
@@ -118,6 +123,22 @@ export default async function AdminQuoteQueuePage() {
     list.push(log)
     auditByQuote.set(log.entityId, list)
   }
+
+  // Fetch open cases for each quote (gated by flag)
+  const rawQuoteCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'QUOTE',
+          entityId: { in: quoteIds },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
+  const caseByQuote = new Map(rawQuoteCases.map((c) => [c.entityId, c]))
 
   async function claimQuote(formData: FormData) {
     'use server'
@@ -302,6 +323,27 @@ export default async function AdminQuoteQueuePage() {
                             <span className="ml-auto shrink-0">{entry.actorRole}</span>
                           </div>
                         ))}
+                      </div>
+                    )
+                  })()}
+
+                  {casesEnabled && (() => {
+                    const activeCase = caseByQuote.get(quote.id)
+                    if (!activeCase) return null
+                    return (
+                      <div className="space-y-4 border-t pt-4 mt-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Case actions</p>
+                          <ResolveCaseDialog caseId={activeCase.id} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                          <CaseActivityTimeline events={activeCase.events} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                          <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+                        </div>
                       </div>
                     )
                   })()}

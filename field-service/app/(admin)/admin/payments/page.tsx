@@ -23,10 +23,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getPaymentAdminMessage } from '@/lib/admin-action-messages'
+import { CaseActivityTimeline } from '../_components/case-activity-timeline'
+import { CaseNotes } from '../_components/case-notes'
+import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
 const FLAG = 'admin.crud.payments'
+const CASES_FLAG = 'ops.v2.cases'
 const REFUND_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
 const CLAIM_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
 
@@ -216,6 +220,7 @@ export default async function PaymentsPage({
 }) {
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, admin.id)
+  const casesEnabled = await isEnabled(CASES_FLAG, admin.id)
   const { status, message } = await searchParams
   const banner = getPaymentAdminMessage(message)
 
@@ -251,6 +256,20 @@ export default async function PaymentsPage({
     OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
     payments.map((payment) => payment.id),
   )
+
+  const activeCases = casesEnabled
+    ? await db.case.findMany({
+        where: {
+          entityType: 'PAYMENT',
+          entityId: { in: payments.map((p) => p.id) },
+          state: { in: ['OPEN', 'IN_PROGRESS'] },
+        },
+        include: {
+          events: { orderBy: { createdAt: 'desc' }, take: 50 },
+          notes: { orderBy: { createdAt: 'desc' } },
+        },
+      }).catch(() => [])
+    : []
 
   return (
     <div className="space-y-6">
@@ -413,6 +432,28 @@ export default async function PaymentsPage({
           </tbody>
         </table>
       </div>
+
+      {casesEnabled && activeCases.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold">Open payment cases</h2>
+          {activeCases.map((activeCase) => (
+            <div key={activeCase.id} className="rounded-xl border p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-mono text-muted-foreground">{activeCase.entityId.slice(-8).toUpperCase()}</p>
+                <ResolveCaseDialog caseId={activeCase.id} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Timeline</p>
+                <CaseActivityTimeline events={activeCase.events} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
+                <CaseNotes caseId={activeCase.id} notes={activeCase.notes} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
