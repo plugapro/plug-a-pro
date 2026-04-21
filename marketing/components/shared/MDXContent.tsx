@@ -34,7 +34,7 @@ function useMDXComponent(code: string) {
 }
 
 export function MDXContent({ code, components }: MDXContentProps) {
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const Component = useMemo(() => useMDXComponent(code), [code]);
   return (
     <div className="prose prose-zinc dark:prose-invert max-w-none">

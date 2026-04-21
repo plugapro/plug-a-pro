@@ -24,7 +24,7 @@ export function SocialProof() {
     <section className="py-16 px-4 border-t border-border/40">
       <div className="max-w-5xl mx-auto">
         <h2 className="text-3xl font-bold text-center mb-4">
-          From people who've used it
+          From people who&apos;ve used it
         </h2>
         <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
           Customers who got their jobs done. Workers who got steady work.
