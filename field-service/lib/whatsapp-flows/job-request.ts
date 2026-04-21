@@ -265,7 +265,8 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
       where: { phone: ctx.phone },
       select: { name: true, id: true },
     })
-    const isFirstBooking = !existingCustomer || existingCustomer.name === 'WhatsApp Customer'
+    const PLACEHOLDER_NAMES = new Set(['WhatsApp Customer', 'Customer'])
+    const isFirstBooking = !existingCustomer || PLACEHOLDER_NAMES.has(existingCustomer.name)
 
     if (!isFirstBooking) {
       const lastAddress = await db.address.findFirst({
@@ -335,7 +336,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
   }
 
   await db.customer.updateMany({
-    where: { phone: ctx.phone, name: 'WhatsApp Customer' },
+    where: { phone: ctx.phone, name: { in: ['WhatsApp Customer', 'Customer'] } },
     data: { name: text },
   })
 
