@@ -35,7 +35,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default async function LocationsPage() {
   const session = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.locations', session?.id)
+  const crudEnabled = await isEnabled('admin.crud.locations', { userId: session?.id })
 
   async function submitCreateLocationNode(formData: FormData) {
     'use server'

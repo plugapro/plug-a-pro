@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   const actor = await requireRole(['ADMIN', 'OWNER'])
-  const enabled = await isEnabled('admin.crud.customers', actor.id)
+  const enabled = await isEnabled('admin.crud.customers', { userId: actor.id })
   if (!enabled) {
     return new Response('Feature flag disabled', { status: 403 })
   }

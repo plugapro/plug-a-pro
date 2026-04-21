@@ -18,7 +18,7 @@ export default async function NewProviderPage({
   searchParams?: Promise<{ message?: string }>
 }) {
   const actor = await requireRole(['ADMIN', 'OWNER'])
-  const crudEnabled = await isEnabled('admin.crud.providers', actor.id)
+  const crudEnabled = await isEnabled('admin.crud.providers', { userId: actor.id })
   const query = (await searchParams) ?? {}
 
   if (!crudEnabled) {

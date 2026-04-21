@@ -37,7 +37,7 @@ interface CustomersPageProps {
 
 export default async function CustomersPage({ searchParams }: CustomersPageProps) {
   const actor = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.customers', actor.id)
+  const crudEnabled = await isEnabled('admin.crud.customers', { userId: actor.id })
   const filters = (await searchParams) ?? {}
   const q = filters.q?.trim() ?? ''
   const now = new Date()

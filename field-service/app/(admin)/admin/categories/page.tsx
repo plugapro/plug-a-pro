@@ -10,7 +10,7 @@ export const metadata = buildMetadata({ title: 'Categories', noIndex: true })
 
 export default async function CategoriesPage() {
   const actor = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.categories', actor.id)
+  const crudEnabled = await isEnabled('admin.crud.categories', { userId: actor.id })
   const categories = await listCategoriesForAdmin()
 
   return (
