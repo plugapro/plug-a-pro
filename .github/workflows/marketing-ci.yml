@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build Velite content
+        run: pnpm velite build
+
       - name: Lint
         run: pnpm lint
 
