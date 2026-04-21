@@ -58,7 +58,7 @@ export default async function AdminDispatchPage({
   const banner = getDispatchAdminMessage(message)
   const now = new Date()
   const pageWarnings: string[] = []
-  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
 
   const requests = await db.jobRequest.findMany({
     where: {

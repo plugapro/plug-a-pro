@@ -99,7 +99,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
   const query = (await searchParams) ?? {}
 
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.providers', admin.id)
+  const crudEnabled = await isEnabled('admin.crud.providers', { userId: admin.id })
 
   const provider = await db.provider.findFirst({
     where: { id },

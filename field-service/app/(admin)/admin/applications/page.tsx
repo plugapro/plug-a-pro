@@ -326,7 +326,7 @@ export default async function ApplicationsPage({
   searchParams: Promise<{ message?: string }>
 }) {
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
   const { message } = await searchParams
   const banner = getApplicationsAdminMessage(message)
 
