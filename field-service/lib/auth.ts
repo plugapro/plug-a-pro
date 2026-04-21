@@ -117,20 +117,31 @@ const getAdminActor = cache(async (): Promise<AdminAuthUser | null> => {
   if (!session) return null
 
   const { db } = await import('./db')
-  const adminUser = await db.adminUser.findUnique({
-    where: { userId: session.id },
+  const adminUser = await db.adminUser.findFirst({
+    where: { OR: [{ userId: session.id }, { email: session.email ?? '' }] },
     select: { id: true, role: true, active: true },
   })
 
-  if (!adminUser || !adminUser.active) {
-    return null
+  if (adminUser?.active) {
+    return {
+      ...session,
+      adminRole: adminUser.role,
+      adminUserId: adminUser.id,
+    }
   }
 
-  return {
-    ...session,
-    adminRole: adminUser.role,
-    adminUserId: adminUser.id,
+  // Legacy fallback: honour Supabase user_metadata.role for accounts predating
+  // the AdminUser table. Run backfill-admin-users.ts to migrate permanently.
+  const metaRole = session.role
+  if (metaRole === 'admin' || metaRole === 'owner') {
+    return {
+      ...session,
+      adminRole: (metaRole.toUpperCase() as Role),
+      adminUserId: null,
+    }
   }
+
+  return null
 })
 
 // ─── Route guards ─────────────────────────────────────────────────────────────

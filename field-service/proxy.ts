@@ -118,17 +118,23 @@ export async function proxy(request: NextRequest) {
     // Enforce admin-only routes
     if (ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
       const adminUser = await db.adminUser
-        .findUnique({
-          where: { userId: user.id },
+        .findFirst({
+          where: { OR: [{ userId: user.id }, { email: user.email ?? '' }] },
           select: { role: true, active: true },
         })
         .catch(() => null)
 
-      if (!adminUser?.active) {
-        return redirectToSignIn(request, pathname, isAdminDomain)
+      if (adminUser?.active) {
+        effectiveRole = adminUser.role.toLowerCase()
+      } else {
+        // Legacy fallback: accounts with Supabase user_metadata.role set before
+        // the AdminUser table existed. Run backfill-admin-users.ts to migrate.
+        const metaRole = user.user_metadata?.role as string | undefined
+        if (metaRole !== 'admin' && metaRole !== 'owner') {
+          return redirectToSignIn(request, pathname, isAdminDomain)
+        }
+        effectiveRole = metaRole
       }
-
-      effectiveRole = adminUser.role.toLowerCase()
     }
 
     // Inject user context into headers for downstream use
