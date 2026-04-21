@@ -11,7 +11,6 @@ const EVENT_ICONS: Record<CaseEventType, string> = {
   CUSTOMER_CONTACTED: '📞',
   ESCALATION: '🔺',
   BREACH_DETECTED: '⚠️',
-  INTERNAL_ONLY: '🔒',
 }
 
 const EVENT_LABELS: Record<CaseEventType, string> = {
@@ -24,7 +23,6 @@ const EVENT_LABELS: Record<CaseEventType, string> = {
   CUSTOMER_CONTACTED: 'Customer contacted',
   ESCALATION: 'Escalated',
   BREACH_DETECTED: 'SLA breach detected',
-  INTERNAL_ONLY: 'Internal note',
 }
 
 interface Props {
