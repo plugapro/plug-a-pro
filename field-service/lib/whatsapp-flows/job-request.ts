@@ -221,22 +221,37 @@ async function handleWelcome(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleBrowseCategories(ctx: FlowContext): Promise<FlowResult> {
-  if (ctx.reply.id === 'book' || ctx.step === 'browse_categories') {
-    const rows = JOB_CATEGORIES.map((c) => ({
-      id: c.id,
-      title: c.label,
-    }))
-
-    await sendList(
-      ctx.phone,
-      'What type of service do you need? 👇',
-      [{ title: 'Our Services', rows }],
-      { buttonLabel: 'Choose Service' }
-    )
-    return { nextStep: 'collect_name' }
+  // If the user selected a category, delegate immediately to name-capture step.
+  if (ctx.reply.id?.startsWith('cat_') && ctx.reply.id !== 'cat_prev' && ctx.reply.id !== 'cat_next') {
+    return handleCollectNameStep({ ...ctx, step: 'collect_name' })
   }
 
-  return { nextStep: 'browse_categories' }
+  // Determine which page to show.
+  let page = ctx.data.addrPage ?? 0
+  if (ctx.reply.id === 'cat_prev') page = Math.max(0, page - 1)
+  else if (ctx.reply.id === 'cat_next') page = page + 1
+
+  // WhatsApp hard-caps list messages at 10 rows total (across all sections).
+  // We use 8 item slots + up to 2 nav rows, matching PAGE_SIZE.
+  const totalPages = Math.ceil(JOB_CATEGORIES.length / PAGE_SIZE)
+  const clampedPage = Math.max(0, Math.min(page, totalPages - 1))
+  const pageItems = JOB_CATEGORIES.slice(clampedPage * PAGE_SIZE, (clampedPage + 1) * PAGE_SIZE)
+  const hasPrev = clampedPage > 0
+  const hasNext = (clampedPage + 1) * PAGE_SIZE < JOB_CATEGORIES.length
+
+  const rows: ListRow[] = pageItems.map((c) => ({ id: c.id, title: c.label.slice(0, 24) }))
+  if (hasPrev) rows.push({ id: 'cat_prev', title: '← Previous' })
+  if (hasNext) rows.push({ id: 'cat_next', title: 'Next →' })
+
+  const pageNote = totalPages > 1 ? ` (${clampedPage + 1}/${totalPages})` : ''
+  await sendList(
+    ctx.phone,
+    `What type of service do you need? 👇${pageNote}`,
+    [{ title: 'Our Services', rows }],
+    { buttonLabel: 'Choose Service' },
+  )
+
+  return { nextStep: 'browse_categories', nextData: { addrPage: clampedPage } }
 }
 
 // ─── Name capture ─────────────────────────────────────────────────────────────
@@ -250,7 +265,8 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
       where: { phone: ctx.phone },
       select: { name: true, id: true },
     })
-    const isFirstBooking = !existingCustomer || existingCustomer.name === 'WhatsApp Customer'
+    const PLACEHOLDER_NAMES = new Set(['WhatsApp Customer', 'Customer'])
+    const isFirstBooking = !existingCustomer || PLACEHOLDER_NAMES.has(existingCustomer.name)
 
     if (!isFirstBooking) {
       const lastAddress = await db.address.findFirst({
@@ -308,7 +324,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     await sendText(ctx.phone, '👤 What is your *first name*?\n\n_(Just your first name is fine — e.g. "Annah")_')
     return {
       nextStep: 'collect_name',
-      nextData: { selectedCategory: category, category, isFirstBooking: true },
+      nextData: { selectedCategory: category, category, isFirstBooking: true, addrPage: undefined },
     }
   }
 
@@ -320,7 +336,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
   }
 
   await db.customer.updateMany({
-    where: { phone: ctx.phone, name: 'WhatsApp Customer' },
+    where: { phone: ctx.phone, name: { in: ['WhatsApp Customer', 'Customer'] } },
     data: { name: text },
   })
 

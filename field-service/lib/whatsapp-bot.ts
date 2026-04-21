@@ -319,21 +319,18 @@ export async function processInboundMessage(
 // ─── Conversation state ───────────────────────────────────────────────────────
 
 async function loadConversation(phone: string) {
-  const existing = await db.conversation.findUnique({
+  // Use upsert to avoid P2002 when two concurrent webhook deliveries for the same
+  // new user both attempt `create` after seeing no existing record.
+  return db.conversation.upsert({
     where: { phone },
-  })
-
-  if (existing) return existing
-
-  // Create fresh conversation
-  return db.conversation.create({
-    data: {
+    create: {
       phone,
       flow: 'idle',
       step: 'welcome',
       data: {},
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
     },
+    update: {}, // no-op when the record already exists
   })
 }
 
