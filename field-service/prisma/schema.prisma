@@ -910,6 +910,7 @@ model AuditLog {
   entityId   String
   before     Json?
   after      Json?
+  reason     String?  // human-readable justification for the action
   ipAddress  String?
   userAgent  String?
   timestamp  DateTime @default(now())

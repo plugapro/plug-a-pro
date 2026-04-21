@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import type { QuoteStatus } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
+import { AUDIT_ENTITY } from '@/lib/audit-entities'
 import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
@@ -99,7 +100,7 @@ export default async function AdminQuoteQueuePage() {
       return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
     }),
     db.auditLog.findMany({
-      where: { entityId: { in: quoteIds }, entityType: 'quote' },
+      where: { entityId: { in: quoteIds }, entityType: AUDIT_ENTITY.QUOTE },
       select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
       orderBy: { timestamp: 'desc' },
       take: quoteIds.length * 5 + 10,

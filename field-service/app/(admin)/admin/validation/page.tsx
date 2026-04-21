@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
+import { AUDIT_ENTITY } from '@/lib/audit-entities'
 import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
@@ -82,7 +83,7 @@ export default async function AdminValidationQueuePage() {
       return new Map() as Awaited<ReturnType<typeof listOpsQueueAssignments>>
     }),
     db.auditLog.findMany({
-      where: { entityId: { in: requestIds }, entityType: 'job_request' },
+      where: { entityId: { in: requestIds }, entityType: AUDIT_ENTITY.JOB_REQUEST },
       select: { id: true, entityId: true, action: true, actorRole: true, timestamp: true },
       orderBy: { timestamp: 'desc' },
       take: requestIds.length * 5 + 10,

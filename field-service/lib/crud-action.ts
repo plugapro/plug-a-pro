@@ -73,6 +73,12 @@ interface CrudActionOptions<TInput, TOutput> {
   /** Snapshot of the record before mutation — written to AdminAuditEvent.before. */
   before?: Record<string, unknown> | null
   /**
+   * Optional human-readable justification for this action.
+   * Written into both audit rows so reviewers can reconstruct why the
+   * change was made, not only what changed.
+   */
+  reason?: string
+  /**
    * The mutation to execute inside a transaction.
    * The AuditLog / AdminAuditEvent rows are written in the same transaction.
    */
@@ -158,6 +164,7 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
         entityId,
         before: toAuditJson(opts.before),
         after: toAuditJson(result),
+        reason: opts.reason,
       },
     })
 
@@ -169,6 +176,7 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
         entityId,
         before: toAuditJson(opts.before),
         after: toAuditJson(result),
+        ...(opts.reason ? { metadata: toAuditJson({ reason: opts.reason }) } : {}),
       },
     })
 

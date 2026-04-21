@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
+import { AUDIT_ENTITY } from '@/lib/audit-entities'
 import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
@@ -277,7 +278,7 @@ export default async function AdminDispatchPage({
     : []
   const requestAuditTrail = selectedRequest
     ? await db.auditLog.findMany({
-        where: { entityId: selectedRequest.id, entityType: 'job_request' },
+        where: { entityId: selectedRequest.id, entityType: AUDIT_ENTITY.JOB_REQUEST },
         select: { id: true, action: true, actorRole: true, timestamp: true },
         orderBy: { timestamp: 'desc' },
         take: 10,
