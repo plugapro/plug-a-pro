@@ -23,6 +23,7 @@ const { mockDb, mockEmitMatchEvent } = vi.hoisted(() => ({
       update: vi.fn(),
       create: vi.fn(),
       findFirst: vi.fn(),
+      count: vi.fn(),
     },
     dispatchDecision: {
       update: vi.fn(),
@@ -132,6 +133,7 @@ function setupBaseTransaction() {
   mockDb.technicianScheduleItem.updateMany.mockResolvedValue({ count: 0 })
   mockDb.technicianScheduleItem.deleteMany.mockResolvedValue({ count: 0 })
   mockDb.technicianScheduleItem.create.mockResolvedValue({})
+  mockDb.matchAttempt.count.mockResolvedValue(1)
   mockDb.dispatchDecision.update.mockResolvedValue({})
   mockDb.jobRequest.update.mockResolvedValue({})
   // loadMatchingJobRequest inside createOfferForAttempt

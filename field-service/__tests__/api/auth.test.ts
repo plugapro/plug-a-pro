@@ -169,7 +169,10 @@ describe('POST /api/auth/session', () => {
     })
   })
 
-  it('does not grant admin access from legacy metadata when no AdminUser row exists', async () => {
+  it('grants admin access from legacy metadata when no AdminUser row exists (backfill fallback)', async () => {
+    // The session route intentionally honours Supabase user_metadata.role for accounts
+    // that predate the AdminUser table (commits 9e08128 / c215e8e restored this fallback).
+    // Run scripts/backfill-admin-users.ts to migrate these accounts to the DB table.
     const { createClient } = await import('@supabase/supabase-js')
     const { db } = await import('@/lib/db')
 
@@ -200,8 +203,9 @@ describe('POST /api/auth/session', () => {
     expect(res.status).toBe(200)
 
     const body = await res.json()
-    expect(body.adminAccess).toBe(false)
-    expect(body.adminRole).toBeNull()
+    // Legacy fallback is active — metadata role is honoured until backfill runs
+    expect(body.adminAccess).toBe(true)
+    expect(body.adminRole).toBe('owner')
   })
 })
 

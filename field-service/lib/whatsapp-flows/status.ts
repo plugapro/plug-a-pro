@@ -73,7 +73,8 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       ],
       { footer: 'Reply "menu" for main menu' }
     )
-    return { nextStep: 'done' }
+    // Return to welcome so the user's button tap (book / back_home) is handled
+    return { nextStep: 'welcome' }
   }
 
   log(`customerId=${customer.id} — fetching job requests`)
@@ -104,7 +105,8 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       ],
       { footer: 'Reply "menu" for main menu' }
     )
-    return { nextStep: 'done' }
+    // Return to welcome so the user's button tap (book / back_home) is handled
+    return { nextStep: 'welcome' }
   }
 
   // Separate active from terminal requests

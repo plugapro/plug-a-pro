@@ -125,11 +125,16 @@ export async function proxy(request: NextRequest) {
         })
         .catch(() => null)
 
-      if (adminUser?.active) {
+      if (adminUser) {
+        // AdminUser row found — honour DB state regardless of legacy metadata
+        if (!adminUser.active) {
+          // Deactivated accounts are blocked even if Supabase metadata still says admin/owner
+          return redirectToSignIn(request, pathname, isAdminDomain)
+        }
         effectiveRole = adminUser.role.toLowerCase()
       } else {
-        // Legacy fallback: accounts with Supabase user_metadata.role set before
-        // the AdminUser table existed. Run backfill-admin-users.ts to migrate.
+        // No AdminUser row — legacy fallback for accounts that predate the AdminUser table.
+        // Run scripts/backfill-admin-users.ts to migrate these to DB rows.
         const metaRole = user.user_metadata?.role as string | undefined
         if (metaRole !== 'admin' && metaRole !== 'owner') {
           return redirectToSignIn(request, pathname, isAdminDomain)

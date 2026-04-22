@@ -1460,6 +1460,7 @@ export async function acceptAssignmentOffer(params: {
   providerId: string
   inspectionNeeded?: boolean
 }): Promise<OfferResolutionResult> {
+  const acceptStart = Date.now()
   const transactionResult = await db.$transaction(async (tx) => {
     const lead = await tx.lead.findUnique({
       where: { id: params.leadId },
@@ -1716,7 +1717,7 @@ export async function acceptAssignmentOffer(params: {
       jobRequestId: transactionResult.jobRequestId,
       providerId: params.providerId,
       bookingId: transactionResult.bookingId ?? '',
-      latencyMs: 0,
+      latencyMs: Date.now() - acceptStart,
     })
   }
 
@@ -1912,6 +1913,13 @@ export async function expireAssignmentOffer(params: {
     }
   }
 
+  // Count how many candidates have been offered (non-RANKED = already attempted)
+  const attemptsCompleted = hold.dispatchDecisionId
+    ? await db.matchAttempt
+        .count({ where: { dispatchDecisionId: hold.dispatchDecisionId, stage: { not: 'RANKED' } } })
+        .catch(() => 0)
+    : 0
+
   emitMatchEvent({
     event: 'match.hold_expired',
     jobRequestId: hold.jobRequestId,
@@ -1924,14 +1932,14 @@ export async function expireAssignmentOffer(params: {
     emitMatchEvent({
       event: 'match.rematch',
       jobRequestId: hold.jobRequestId,
-      attempt: 0, // attempt number is not readily available here without a separate query
+      attempt: attemptsCompleted,
       triggeredBy: 'hold_expiry',
     })
   } else {
     emitMatchEvent({
       event: 'match.exhausted',
       jobRequestId: hold.jobRequestId,
-      attempts: 0, // attempt count is not readily available without a separate query
+      attempts: attemptsCompleted,
     })
   }
 
