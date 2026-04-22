@@ -6,6 +6,7 @@ const {
   mockDb,
   mockResolveCategoryRequirements,
   mockDispatchLeads,
+  mockOrchestrateMatch,
   mockGeocodeAddress,
 } = vi.hoisted(() => ({
   mockDb: {
@@ -13,6 +14,7 @@ const {
   },
   mockResolveCategoryRequirements: vi.fn(),
   mockDispatchLeads: vi.fn(),
+  mockOrchestrateMatch: vi.fn(),
   mockGeocodeAddress: vi.fn(),
 }))
 
@@ -29,6 +31,23 @@ vi.mock('../../lib/geocoding', () => ({
 vi.mock('../../lib/matching-engine', () => ({
   dispatchLeads: mockDispatchLeads,
 }))
+
+vi.mock('../../lib/matching/orchestrator', () => ({
+  orchestrateMatch: mockOrchestrateMatch,
+}))
+
+// after() from next/server requires a request scope; stub it in tests so
+// the fire-and-forget block runs synchronously and does not throw.
+vi.mock('next/server', async (importOriginal) => {
+  const original = await importOriginal<typeof import('next/server')>()
+  return {
+    ...original,
+    after: (fn: () => void | Promise<void>) => {
+      // Execute immediately in test context — no request scope needed
+      void Promise.resolve().then(fn).catch(() => undefined)
+    },
+  }
+})
 
 const BASE_PARAMS = {
   phone: '+27821234567',
@@ -154,26 +173,28 @@ describe('createJobRequest', () => {
     })
   })
 
-  it('triggers dispatchLeads fire-and-forget after commit', async () => {
+  it('triggers orchestrateMatch fire-and-forget via after() after commit', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+    mockOrchestrateMatch.mockResolvedValue({ status: 'DISPATCHED', holdId: 'hold-1', providerId: 'p-1' })
 
     await createJobRequest(BASE_PARAMS)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    // Let the after() microtask queue drain
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
 
-    expect(mockDispatchLeads).toHaveBeenCalledWith('jr-1')
+    expect(mockOrchestrateMatch).toHaveBeenCalledWith('jr-1', { triggeredBy: 'job_creation' })
   })
 
-  it('does not throw if dispatchLeads fails — matching is non-blocking', async () => {
+  it('does not throw if orchestrateMatch fails — matching is non-blocking', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
-    mockDispatchLeads.mockRejectedValue(new Error('Matching down'))
+    mockOrchestrateMatch.mockRejectedValue(new Error('Matching down'))
 
     await expect(createJobRequest(BASE_PARAMS)).resolves.toBeDefined()
   })

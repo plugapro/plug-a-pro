@@ -10,7 +10,7 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
-import { dispatchLeads } from '@/lib/matching-engine'
+import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { openCase, resolveCase } from '@/lib/cases'
 import {
   OPS_QUEUE_TYPES,
@@ -197,8 +197,8 @@ export default async function AdminValidationQueuePage() {
         },
       })
 
-      await dispatchLeads(result.data.id).catch((error) => {
-        console.error('[admin/validation] Failed to dispatch leads after validation', {
+      await orchestrateMatch(result.data.id, { triggeredBy: 'manual' }).catch((error) => {
+        console.error('[admin/validation] Failed to dispatch after validation', {
           jobRequestId: result.data.id,
           error,
         })

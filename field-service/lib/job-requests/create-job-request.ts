@@ -4,6 +4,7 @@
 // single Prisma transaction so the intake is atomic under retry/failure.
 // Triggers lead dispatch fire-and-forget after the transaction commits.
 
+import { after } from 'next/server'
 import { db } from '../db'
 import { resolveCategoryRequirements } from '../category-config'
 import { geocodeAddress } from '../geocoding'
@@ -198,37 +199,36 @@ export async function createJobRequest(
   openCase({ queueType: 'DISPATCH', entityType: 'JOB_REQUEST', entityId: result.jobRequestId })
     .catch((err) => console.error('[create-job-request] openCase failed:', err))
 
-  // Trigger matching outside the transaction — fire and forget.
-  // Under matching.v2.sync_trigger the orchestrator runs synchronously on this
-  // server instance. Falls back to the legacy dispatchLeads path otherwise.
-  // The 30-min cron will retry on the next cycle if either path fails.
-  import('@/lib/flags')
-    .then(({ isEnabled }) => isEnabled('matching.v2.sync_trigger'))
-    .then((useSyncTrigger) => {
-      if (useSyncTrigger) {
-        return import('../matching/orchestrator')
-          .then(({ orchestrateMatch }) =>
-            orchestrateMatch(result.jobRequestId, { triggeredBy: 'job_creation' })
-          )
-          .then((matchResult) => {
-            if (matchResult.status === 'NO_MATCH') {
-              console.log('[create-job-request] v2: no providers found — cron will retry', {
-                jobRequestId: result.jobRequestId,
-              })
-            }
-          })
-      }
-      return import('../matching-engine')
-        .then(({ dispatchLeads }) => dispatchLeads(result.jobRequestId))
-        .then((matchResult) => {
-          if (matchResult.noMatch) {
-            console.log(
-              `[create-job-request] No providers found for ${result.jobRequestId} — cron will retry`,
-            )
-          }
+  // Trigger matching via after() so Vercel keeps the function alive until matching completes.
+  // after() runs post-response, preventing the Vercel cold-start timeout from killing the match.
+  // The 5-min cron will also catch anything that fails here.
+  after(async () => {
+    try {
+      const { orchestrateMatch } = await import('../matching/orchestrator')
+      const matchResult = await orchestrateMatch(result.jobRequestId, { triggeredBy: 'job_creation' })
+
+      if (matchResult.status === 'NO_MATCH') {
+        console.log('[create-job-request] no providers found — cron will retry', {
+          jobRequestId: result.jobRequestId,
+          consideredCount: matchResult.consideredCount,
         })
-    })
-    .catch((err) => console.error('[create-job-request] Matching error:', err))
+        // Notify customer so they know their request is received, even if not yet matched
+        const customer = await db.customer.findUnique({
+          where: { id: result.customerId },
+          select: { phone: true, name: true },
+        })
+        if (customer?.phone) {
+          const { sendText } = await import('../whatsapp-interactive')
+          await sendText(
+            customer.phone,
+            `✅ *Request received!*\n\nHi *${(customer.name ?? 'there').split(' ')[0]}*, your service request has been submitted. We're searching for a suitable provider in your area and will notify you as soon as one accepts.\n\nReply *Hi* anytime to check the status.`
+          ).catch(() => {})
+        }
+      }
+    } catch (err) {
+      console.error('[create-job-request] matching trigger failed:', err)
+    }
+  })
 
   const ticketUrl = await getJobRequestAccessUrl(result.jobRequestId)
 

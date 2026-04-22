@@ -2,6 +2,9 @@ export const MATCHING_CONFIG = {
   offerTtlMinutes: 15,
   retryDelayMinutes: 1,
   staleLocationThresholdHours: 8,
+  // Providers whose last heartbeat is older than this are treated as offline.
+  // Only applied when a heartbeat has been recorded at least once (null = never checked in → not filtered).
+  heartbeatStaleMinutes: 15,
   scheduleBufferMinutes: 15,
   defaultDurationMinutes: 120,
   travel: {

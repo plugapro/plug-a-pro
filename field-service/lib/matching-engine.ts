@@ -435,12 +435,14 @@ export async function expireStaleLeads(): Promise<number> {
 
 export async function sendLeadReminders(): Promise<number> {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+  // Send reminder at ~10 minutes — halfway through the 15-minute offer TTL.
+  // (The old 1-hour threshold was dead code: v2 offers expire in 15 minutes.)
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000)
 
   const pendingLeads = await db.lead.findMany({
     where: {
       status: { in: ['SENT', 'VIEWED'] },
-      sentAt: { lte: oneHourAgo },
+      sentAt: { lte: tenMinutesAgo },
       reminderSentAt: null,
       expiresAt: { gt: new Date() },
     },

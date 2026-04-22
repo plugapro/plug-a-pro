@@ -233,6 +233,33 @@ export async function processInboundMessage(
       const { sendText } = await import('./whatsapp-interactive')
       await sendText(phone, `Understood — lead passed (${reason}). We'll keep matching this job with other providers.`)
       return
+    } else if (reply.id?.startsWith('accept:')) {
+      // ── Matching engine v2: AssignmentHold acceptance ────────────────────────
+      await handleAssignmentHoldAcceptance(phone, reply.id)
+      return
+    } else if (reply.id?.startsWith('decline:')) {
+      // ── Matching engine v2: show decline reason sub-menu ─────────────────────
+      const holdId = reply.id.slice('decline:'.length)
+      const { sendButtons } = await import('./whatsapp-interactive')
+      await sendButtons(
+        phone,
+        '❌ *Decline Lead*\n\nWhy are you declining?',
+        [
+          { id: `hd_unavailable:${holdId}`, title: '📅 Not available' },
+          { id: `hd_area:${holdId}`, title: '📍 Too far' },
+          { id: `hd_other:${holdId}`, title: '✏️ Other reason' },
+        ]
+      )
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    } else if (
+      reply.id?.startsWith('hd_unavailable:') ||
+      reply.id?.startsWith('hd_area:') ||
+      reply.id?.startsWith('hd_other:')
+    ) {
+      // ── Matching engine v2: AssignmentHold decline with reason ───────────────
+      await handleAssignmentHoldDecline(phone, reply.id)
+      return
     } else if (
       reply.id?.startsWith('match_accept_') ||
       reply.id?.startsWith('match_inspect_') ||
@@ -1099,6 +1126,124 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
     ).catch(() => {})
     await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
   }
+}
+
+// ─── Matching engine v2: AssignmentHold acceptance ───────────────────────────
+// Triggered when provider taps "Accept" on the hold notification sent by dispatch.ts.
+// Button ID format: `accept:{holdId}`
+
+async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): Promise<void> {
+  const { sendText, sendCtaUrl } = await import('./whatsapp-interactive')
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const holdId = buttonId.slice('accept:'.length)
+
+  const provider = await db.provider.findUnique({ where: { phone }, select: { id: true, name: true } })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  // Look up the lead via hold relationship
+  const lead = await db.lead.findFirst({
+    where: { assignmentHoldId: holdId },
+    select: { id: true, jobRequestId: true },
+  })
+  if (!lead) {
+    await sendText(phone, "⚠️ This lead could not be found — it may have expired or already been taken. New leads will come through as jobs arise.")
+    return
+  }
+
+  const { acceptLead } = await import('./matching-engine')
+  const result = await acceptLead({ leadId: lead.id, providerId: provider.id })
+
+  if (!result.ok) {
+    if (result.reason === 'EXPIRED') {
+      await sendText(phone, "⏰ This lead has expired — the offer window closed before your response. New leads will come through as jobs arise.")
+    } else if (result.reason === 'TAKEN') {
+      await sendText(phone, "⚡ This job was just assigned to another provider. New leads will come through as jobs arise.")
+    } else {
+      await sendText(phone, "😔 Something went wrong processing your acceptance. Please try again or contact support.")
+    }
+    return
+  }
+
+  // Confirm to provider
+  await sendCtaUrl(
+    phone,
+    `✅ *Job accepted! — ${provider.name.split(' ')[0]}*\n\nGreat work! The customer will be notified and you'll receive the full job details shortly.\n\nOpen the app to view the job address and any notes.`,
+    'View Job',
+    `${appUrl}/technician`
+  ).catch(() => sendText(phone, `✅ Job accepted! The customer will be notified. Check the app for full details.`))
+
+  // Notify customer non-blocking
+  ;(async () => {
+    try {
+      const jobRequest = await db.jobRequest.findUnique({
+        where: { id: lead.jobRequestId },
+        select: { customerId: true, category: true },
+      })
+      if (!jobRequest) return
+
+      const customer = await db.customer.findUnique({
+        where: { id: jobRequest.customerId },
+        select: { phone: true, name: true },
+      })
+      if (!customer?.phone) return
+
+      const { sendText: notify } = await import('./whatsapp-interactive')
+      await notify(
+        customer.phone,
+        `🎉 *Great news, ${(customer.name ?? 'there').split(' ')[0]}!*\n\nA provider has accepted your *${jobRequest.category}* request. We're arranging the details and will follow up shortly.\n\nReply *Hi* to check your booking status.`
+      )
+    } catch {
+      // Non-fatal — provider confirmation already sent
+    }
+  })()
+}
+
+// ─── Matching engine v2: AssignmentHold decline ───────────────────────────────
+// Triggered when provider taps a decline-reason button after the sub-menu.
+// Button ID format: `hd_unavailable:{holdId}` | `hd_area:{holdId}` | `hd_other:{holdId}`
+
+async function handleAssignmentHoldDecline(phone: string, buttonId: string): Promise<void> {
+  const { sendText } = await import('./whatsapp-interactive')
+
+  const colonIdx = buttonId.indexOf(':')
+  const prefix = buttonId.slice(0, colonIdx)
+  const holdId = buttonId.slice(colonIdx + 1)
+
+  const reasonMap: Record<string, string> = {
+    hd_unavailable: 'Not available',
+    hd_area: 'Too far',
+    hd_other: 'Other',
+  }
+  const reason = reasonMap[prefix] ?? 'Declined'
+
+  const provider = await db.provider.findUnique({ where: { phone }, select: { id: true } })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  const lead = await db.lead.findFirst({
+    where: { assignmentHoldId: holdId },
+    select: { id: true },
+  })
+  if (!lead) {
+    await sendText(phone, "Understood — we've noted your response. New leads will come through as jobs arise.")
+    return
+  }
+
+  const { declineLead } = await import('./matching-engine')
+  await declineLead({ leadId: lead.id, providerId: provider.id })
+
+  const { releaseProviderCapacity } = await import('./matching/reservation')
+  await releaseProviderCapacity(provider.id).catch(() => {})
+
+  await sendText(
+    phone,
+    `Understood — lead passed (${reason}). We'll keep matching this job with other providers. New leads will come through as they arise.`
+  )
 }
 
 // ─── Backwards-compat alias ───────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import { resolveCategoryRequirements } from '../category-config'
 import { isLocationStale, pointFallsWithinRadius } from './geography'
 import { createBookingArtifactsForApprovedQuote } from '../quotes'
 import { initializeBookingPayment } from '../payments'
+import { emitMatchEvent } from './events'
 import type {
   CoverageTier,
   DispatchActor,
@@ -91,7 +92,7 @@ function buildMatchingJobRequest(record: {
     lat: number | null
     lng: number | null
     locationNodeId: string | null
-    locationNode: { regionKey: string | null } | null
+    locationNode: { regionKey: string | null; provinceKey: string | null } | null
   } | null
 }) {
   return {
@@ -125,6 +126,7 @@ function buildMatchingJobRequest(record: {
           lng: record.address.lng,
           locationNodeId: record.address.locationNodeId ?? null,
           regionKey: record.address.locationNode?.regionKey ?? null,
+          provinceKey: record.address.locationNode?.provinceKey ?? null,
         }
       : null,
   }
@@ -170,7 +172,7 @@ export async function loadMatchingJobRequest(client: any, jobRequestId: string) 
           lng: true,
           locationNodeId: true,
           locationNode: {
-            select: { regionKey: true },
+            select: { regionKey: true, provinceKey: true },
           },
         },
       },
@@ -1677,6 +1679,7 @@ export async function acceptAssignmentOffer(params: {
       ok: true as const,
       responseOutcome: 'ACCEPTED',
       matchId: match.id,
+      jobRequestId: lead.jobRequestId,
       bookingId,
       paymentAmount,
       customerPhone: jobRequest.customer.phone,
@@ -1704,6 +1707,16 @@ export async function acceptAssignmentOffer(params: {
       customerEmail: null,
       customerPhone: transactionResult.customerPhone,
       description: `${transactionResult.category} booking`,
+    })
+  }
+
+  if ('jobRequestId' in transactionResult && transactionResult.jobRequestId) {
+    emitMatchEvent({
+      event: 'match.accepted',
+      jobRequestId: transactionResult.jobRequestId,
+      providerId: params.providerId,
+      bookingId: transactionResult.bookingId ?? '',
+      latencyMs: 0,
     })
   }
 
@@ -1803,6 +1816,14 @@ export async function rejectAssignmentOffer(params: {
     dispatchDecisionId: lead.dispatchDecisionId!,
   })
 
+  emitMatchEvent({
+    event: 'match.declined',
+    jobRequestId: lead.jobRequestId,
+    providerId: params.providerId,
+    holdId: lead.assignmentHold.id,
+    reason: params.reasonCode,
+  })
+
   return {
     ok: true,
     responseOutcome: 'REJECTED',
@@ -1889,6 +1910,29 @@ export async function expireAssignmentOffer(params: {
         console.error('[matching] Failed to send lead-expired notification:', err)
       })
     }
+  }
+
+  emitMatchEvent({
+    event: 'match.hold_expired',
+    jobRequestId: hold.jobRequestId,
+    providerId: hold.providerId,
+    holdId: hold.id,
+    cascaded: next.nextOfferedProviderId !== null,
+  })
+
+  if (next.nextOfferedProviderId) {
+    emitMatchEvent({
+      event: 'match.rematch',
+      jobRequestId: hold.jobRequestId,
+      attempt: 0, // attempt number is not readily available here without a separate query
+      triggeredBy: 'hold_expiry',
+    })
+  } else {
+    emitMatchEvent({
+      event: 'match.exhausted',
+      jobRequestId: hold.jobRequestId,
+      attempts: 0, // attempt count is not readily available without a separate query
+    })
   }
 
   return { expired: true, nextOfferedProviderId: next.nextOfferedProviderId }

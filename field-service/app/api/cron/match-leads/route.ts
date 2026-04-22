@@ -1,14 +1,15 @@
 // ─── Cron: Auto-match OPEN job requests + expire stale leads ─────────────────
-// Runs every 30 minutes during business hours (07:00–20:00) via Vercel Cron — schedule: */30 7-20 * * *
+// Runs every 5 minutes during business hours (07:00–20:00) via Vercel Cron — schedule: */5 7-20 * * *
 // 1. Expires leads past their expiresAt → frees job for re-dispatch
-// 2. Finds OPEN job requests with no active SENT lead → dispatches
+// 2. Finds OPEN job requests with no active SENT lead → dispatches via orchestrateMatch
 // 3. Alerts admin if jobs remain unmatched after 1 hour
 // Secured by CRON_SECRET header (Authorization: Bearer <secret>).
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchLeads, sendLeadReminders } from '@/lib/matching-engine'
+import { sendLeadReminders } from '@/lib/matching-engine'
 import { processPendingAssignmentWorkflows } from '@/lib/matching/service'
+import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { reconcileProviderRecordsFromApplications } from '@/lib/provider-record'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { sendText } from '@/lib/whatsapp-interactive'
@@ -90,41 +91,28 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 2. Dispatch leads for OPEN requests with no active lead
-  // take: 100 handles ~50 concurrent open requests safely at 30-min cadence.
+  // 2. Dispatch leads for OPEN requests with no active hold.
+  // take: 20 is safe at 5-min cadence (matches the max concurrent open requests we'd expect).
   // If queue grows beyond this, add cursor-based pagination here.
   const openRequests = await db.jobRequest.findMany({
     where: { status: 'OPEN' },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
-    take: 100,
+    take: 20,
   })
 
   for (const jr of openRequests) {
-    const activeLead = await db.lead.findFirst({
-      where: { jobRequestId: jr.id, status: { in: ['SENT', 'VIEWED', 'ACCEPTED'] } },
-      select: { id: true },
-    })
-    if (activeLead) continue
-
-    // Skip re-dispatch: if any leads already expired or were declined, this job has
-    // already been offered to providers. Re-broadcasting every 30 min creates spam.
-    // The job stays OPEN for admin review; manual re-dispatch is available in the
-    // dispatch console (/admin/dispatch).
-    const priorLead = await db.lead.findFirst({
-      where: { jobRequestId: jr.id, status: { in: ['EXPIRED', 'DECLINED'] } },
-      select: { id: true },
-    })
-    if (priorLead) continue
-
+    // orchestrateMatch() guards against already-active holds internally;
+    // it returns SKIP for MATCHING/MATCHED/EXPIRED/CANCELLED status too.
     try {
-      const result = await dispatchLeads(jr.id)
-      if (result.leadsDispatched > 0) {
+      const result = await orchestrateMatch(jr.id, { triggeredBy: 'cron' })
+      if (result.status === 'DISPATCHED') {
         results.dispatched++
-      } else if (result.noMatch) {
+      } else if (result.status === 'NO_MATCH') {
         results.noMatch++
         console.warn(`[cron/match-leads:${reqId}] No providers for job ${jr.id}`)
       }
+      // SKIP is expected for jobs with active holds or non-OPEN status — not an error
     } catch (err) {
       console.error(`[cron/match-leads:${reqId}] Error dispatching job ${jr.id}:`, err)
       results.errors++

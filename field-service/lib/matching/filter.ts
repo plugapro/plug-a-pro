@@ -360,6 +360,20 @@ export async function filterEligibleProviders(
       filteredReasonCodes.push('TECHNICIAN_OFFLINE')
     }
 
+    // Hard-filter on live heartbeat: if a provider has checked in at least once but
+    // their last heartbeat is older than heartbeatStaleMinutes, treat them as offline.
+    // Providers who have never sent a heartbeat (null) are not penalised here —
+    // they pre-date the heartbeat system and are still candidates.
+    if (candidate.lastHeartbeatAt !== null) {
+      const staleThreshold = new Date(Date.now() - MATCHING_CONFIG.heartbeatStaleMinutes * 60_000)
+      if (candidate.lastHeartbeatAt < staleThreshold) {
+        filteredReasonCodes.push('TECHNICIAN_HEARTBEAT_STALE')
+      }
+    }
+    if (candidate.isOnline === false) {
+      filteredReasonCodes.push('TECHNICIAN_OFFLINE_LIVE')
+    }
+
     const areaCoverage = providerCoversAddress(serviceAreas, address)
     if (!areaCoverage.covers) filteredReasonCodes.push('OUTSIDE_SERVICE_AREA')
 

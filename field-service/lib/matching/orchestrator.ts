@@ -86,6 +86,7 @@ export async function orchestrateMatch(
         filteredOut,
         rankingSummary: [],
         explanation: 'No eligible technicians passed the matching filters',
+        triggeredBy: options.triggeredBy,
       })
       emitMatchEvent({
         event: 'match.no_providers',
@@ -109,6 +110,12 @@ export async function orchestrateMatch(
       if (!candidate) continue
       reserved = await reserveBestProviderAtomically({ candidate, jobRequest })
       if (reserved.ok) break
+      emitMatchEvent({
+        event: 'reservation.failed',
+        jobRequestId,
+        providerId: candidate.id,
+        reason: reserved.reason,
+      })
     }
 
     if (!reserved?.ok) {
@@ -121,6 +128,7 @@ export async function orchestrateMatch(
         filteredOut,
         rankingSummary: ranked,
         explanation: 'All top candidates were locked or at capacity',
+        triggeredBy: options.triggeredBy,
       })
       return { status: 'NO_MATCH', filteredOut, consideredCount: rawCandidates.length }
     }
@@ -143,6 +151,7 @@ export async function orchestrateMatch(
       filteredOut,
       rankingSummary: ranked,
       explanation: `Lead dispatched to ${reserved.provider.name}`,
+      triggeredBy: options.triggeredBy,
     })
 
     emitMatchEvent({
@@ -175,8 +184,21 @@ async function recordDispatchDecision(
     filteredOut: FilteredProvider[]
     rankingSummary: unknown[]
     explanation: string
+    triggeredBy: string
   }
 ) {
+  // Idempotency key: prevents duplicate DispatchDecisions when orchestrateMatch()
+  // is called concurrently from after(), cron, and manual admin triggers.
+  // Keyed on (jobRequestId, status, selectedProviderId, triggeredBy) — same inputs
+  // produce the same key and hit the ux_dispatch_decisions_job_idempotency DB index.
+  const idempotencyKey = JSON.stringify({
+    jobRequestId: params.jobRequestId,
+    status: params.status,
+    selectedProviderId: params.selectedProviderId ?? null,
+    triggeredBy: params.triggeredBy,
+    ts: Math.floor(Date.now() / 60_000), // 1-minute window prevents false dedup on retries
+  })
+
   try {
     const decision = await client.dispatchDecision.create({
       data: {
@@ -191,6 +213,7 @@ async function recordDispatchDecision(
         explanation: params.explanation,
         initiatedById: 'system',
         initiatedByRole: 'system',
+        idempotencyKey,
       },
     })
 

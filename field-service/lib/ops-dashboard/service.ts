@@ -865,3 +865,66 @@ function formatIncidentAge(ageMinutes: number) {
   const remainingHours = hours % 24
   return `${days}d ${remainingHours}h`
 }
+
+// ─── Matching health metrics ──────────────────────────────────────────────────
+// Queried from DB — used by the admin dashboard matching health card.
+// Covers the last 24 hours unless a different window is passed.
+
+export type MatchingHealthMetrics = {
+  windowHours: number
+  dispatched: number        // decisions with status OFFERING or ASSIGNED in window
+  noMatch: number           // decisions with status NO_MATCH in window
+  noMatchRate: number       // noMatch / (dispatched + noMatch), 0–1
+  holdsExpired: number      // holds that reached EXPIRED status in window
+  holdsAccepted: number     // holds that reached ACCEPTED status in window
+  holdsDeclined: number     // holds that reached REJECTED status in window
+  rematches: number         // dispatch decisions with retryCount > 0
+  currentOpenJobs: number   // job_requests with status OPEN right now
+  currentActiveHolds: number // assignment_holds with status ACTIVE right now
+}
+
+export async function getMatchingHealthMetrics(windowHours = 24): Promise<MatchingHealthMetrics> {
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000)
+
+  const [decisionsRaw, holdsRaw, openJobs, activeHolds] = await Promise.all([
+    db.dispatchDecision.groupBy({
+      by: ['status'],
+      where: { createdAt: { gte: since } },
+      _count: { id: true },
+    }),
+    db.assignmentHold.groupBy({
+      by: ['status'],
+      where: { updatedAt: { gte: since } },
+      _count: { id: true },
+    }),
+    db.jobRequest.count({ where: { status: 'OPEN' } }),
+    db.assignmentHold.count({ where: { status: 'ACTIVE' } }),
+  ])
+
+  const decisionCount = (status: string) =>
+    decisionsRaw.find((r) => r.status === status)?._count.id ?? 0
+  const holdCount = (status: string) =>
+    holdsRaw.find((r) => r.status === status)?._count.id ?? 0
+
+  const dispatched = decisionCount('OFFERING') + decisionCount('ASSIGNED') + decisionCount('RANKED')
+  const noMatch = decisionCount('NO_MATCH')
+  const total = dispatched + noMatch
+
+  // retryCount > 0 means at least one rematch was attempted on this decision
+  const rematchDecisions = await db.dispatchDecision.count({
+    where: { createdAt: { gte: since }, retryCount: { gt: 0 } },
+  })
+
+  return {
+    windowHours,
+    dispatched,
+    noMatch,
+    noMatchRate: total > 0 ? noMatch / total : 0,
+    holdsExpired: holdCount('EXPIRED'),
+    holdsAccepted: holdCount('ACCEPTED'),
+    holdsDeclined: holdCount('REJECTED'),
+    rematches: rematchDecisions,
+    currentOpenJobs: openJobs,
+    currentActiveHolds: activeHolds,
+  }
+}

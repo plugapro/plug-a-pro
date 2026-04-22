@@ -45,6 +45,7 @@ export type MatchingAddress = {
   lng: number | null
   locationNodeId: string | null   // SUBURB node id — null for legacy addresses
   regionKey: string | null         // denormalised from the linked LocationNode
+  provinceKey: string | null       // denormalised from the linked LocationNode — enables province-level pool fallback
 }
 
 export type MatchingProvider = Pick<
