@@ -139,6 +139,7 @@ model LocationNode {
 
   technicianServiceAreas TechnicianServiceArea[]
   addresses              Address[]
+  candidatePool          CandidatePool[]
 
   @@index([nodeType, active])
   @@index([provinceKey, nodeType])
@@ -215,7 +216,11 @@ model Provider {
   providerNotes             ProviderNote[]
   adminCertifications       ProviderCertification[]
   equipment                 ProviderEquipment[]
+  liveStatus                ProviderLiveStatus?
+  candidatePool             CandidatePool[]
+  capacity                  ProviderCapacity?
 
+  @@index([active, verified])
   @@map("providers")
 }
 
@@ -316,6 +321,7 @@ model JobRequest {
   assignmentHolds AssignmentHold[]
   dispatchDecisions DispatchDecision[]
 
+  @@index([status, createdAt])
   @@map("job_requests")
 }
 
@@ -343,6 +349,7 @@ model Lead {
   assignmentHold AssignmentHold? @relation(fields: [assignmentHoldId], references: [id], onDelete: SetNull)
 
   @@unique([jobRequestId, providerId])
+  @@index([jobRequestId, status])
   @@map("leads")
 }
 
@@ -768,6 +775,7 @@ model AssignmentHold {
   scheduleItems    TechnicianScheduleItem[]
 
   @@index([jobRequestId, status])
+  @@index([expiresAt, status])
   @@map("assignment_holds")
 }
 
@@ -1520,6 +1528,64 @@ model ProviderEquipment {
 
   @@index([providerId])
   @@map("provider_equipment")
+}
+
+// ─── Matching engine v2 — performance foundations ────────────────────────────
+// These three models support near real-time dispatch without full-table scans.
+
+// Tracks provider online/offline state updated by app heartbeat (every 2 min).
+// Separated from Provider to keep the hot-path write narrow and fast.
+model ProviderLiveStatus {
+  providerId       String    @id
+  isOnline         Boolean   @default(false)
+  availabilityMode String    @default("OFFLINE") // ONLINE | ONLINE_LIMITED | OFFLINE | BREAK
+  activeJobCount   Int       @default(0)
+  lastHeartbeatAt  DateTime?
+  lastLocationLat  Float?
+  lastLocationLng  Float?
+  lastLocationAt   DateTime?
+  updatedAt        DateTime  @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([isOnline])
+  @@index([lastLocationLat, lastLocationLng])
+  @@map("provider_live_status")
+}
+
+// Precomputed index of eligible providers per (category slug × location node).
+// Rebuilt on provider profile change and every 5 min by cron.
+// Enables O(1) candidate shortlisting instead of full provider scan.
+model CandidatePool {
+  id             String    @id @default(cuid())
+  categorySlug   String
+  locationNodeId String?
+  provinceKey    String?
+  providerId     String
+  scoreBase      Float     @default(0) // reliability + skill signal, not travel-adjusted
+  lastRefreshed  DateTime  @default(now())
+
+  provider     Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  locationNode LocationNode? @relation(fields: [locationNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([categorySlug, locationNodeId, providerId])
+  @@index([categorySlug, locationNodeId])
+  @@index([categorySlug, provinceKey])
+  @@map("candidate_pool")
+}
+
+// Tracks provider active workload to prevent overloading.
+// activeHolds incremented on AssignmentHold creation, decremented on resolution.
+model ProviderCapacity {
+  providerId     String @id
+  activeHolds    Int    @default(0)
+  activeJobs     Int    @default(0)
+  maxConcurrent  Int    @default(2)
+  updatedAt      DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@map("provider_capacity")
 }
 
 // ─── Reason codes ─────────────────────────────────────────────────────────────
