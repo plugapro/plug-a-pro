@@ -1,3 +1,12 @@
+// DISCLAIMER: Plug A Pro is a marketplace platform that connects customers with independent
+// service providers. Plug A Pro does not verify, guarantee, or take responsibility for
+// ensuring that providers hold any trade certifications, licences, or regulatory approvals
+// required by law for a given category of work (including but not limited to wireman's
+// licences for electrical work). It is the responsibility of the customer and the provider
+// to satisfy themselves that all applicable legal and safety requirements are met before
+// work commences. Plug A Pro expressly disclaims any liability arising from work performed
+// without the required certifications.
+
 type CategoryPolicy = {
   normalizedCategory: string
   bookingOnAssignment: boolean
@@ -19,8 +28,11 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
   electrical: {
     normalizedCategory: 'electrical',
     bookingOnAssignment: false,
-    requiredCertificationCodes: ['wireman'],
-    requiredEquipmentTags: ['multimeter'],
+    // Certification and equipment requirements relaxed — providers are not blocked from
+    // receiving leads for lacking a wireman's licence or multimeter. Plug A Pro does not
+    // take responsibility for verifying regulatory compliance; see disclaimer above.
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: true,
   },

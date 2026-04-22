@@ -128,8 +128,8 @@ export async function detectQueueBreaches(client: PrismaClient): Promise<QueueBr
     `,
     client.$queryRaw<QueueBreachRow[]>`
       SELECT
-        COUNT(*) FILTER (WHERE "createdAt" <= ${new Date(now.getTime() - QUEUE_SLA_BY_KEY.providerOnboarding.breachAtMinutes * 60000)})::bigint AS "overdueCount",
-        MIN("createdAt") AS "oldestAt"
+        COUNT(*) FILTER (WHERE "submittedAt" <= ${new Date(now.getTime() - QUEUE_SLA_BY_KEY.providerOnboarding.breachAtMinutes * 60000)})::bigint AS "overdueCount",
+        MIN("submittedAt") AS "oldestAt"
       FROM "provider_applications"
       WHERE "status" = 'PENDING'
     `,
