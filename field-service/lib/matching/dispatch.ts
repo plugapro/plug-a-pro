@@ -4,14 +4,14 @@
 // remains active and the provider can still be notified by retry.
 
 import { db } from '@/lib/db'
-import { sendInteractiveButtons } from '@/lib/whatsapp-interactive'
+import { sendButtons } from '@/lib/whatsapp-interactive'
 import type { CandidatePoolEntry } from './candidate-pool'
-import type { MatchingJobRequest } from './service'
+import type { MatchingJobRequest } from './types'
 
 type AssignmentHold = { id: string; expiresAt: Date }
 
 export async function dispatchMatchLead(params: {
-  jobRequest: MatchingJobRequest
+  jobRequest: MatchingJobRequest & { address?: { suburb?: string | null } | null }
   hold: AssignmentHold
   provider: CandidatePoolEntry
 }): Promise<void> {
@@ -43,15 +43,13 @@ export async function dispatchMatchLead(params: {
     hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg',
   })
 
-  await sendInteractiveButtons(
+  await sendButtons(
     provider.phone,
-    {
-      body: `🔔 *New Job Lead — ${category}*\n\nArea: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`,
-      buttons: [
-        { id: `accept:${hold.id}`, title: 'Accept ✅' },
-        { id: `decline:${hold.id}`, title: 'Decline ❌' },
-      ],
-    }
+    `🔔 *New Job Lead — ${category}*\n\nArea: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`,
+    [
+      { id: `accept:${hold.id}`, title: 'Accept' },
+      { id: `decline:${hold.id}`, title: 'Decline' },
+    ]
   ).catch((err: unknown) => {
     console.error('[dispatch] WhatsApp send failed — hold still active', {
       holdId: hold.id,

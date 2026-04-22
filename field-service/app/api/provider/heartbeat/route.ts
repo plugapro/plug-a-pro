@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const isOnline = availabilityMode !== 'OFFLINE' && availabilityMode !== 'BREAK'
   const now = new Date()
 
-  await db.providerLiveStatus.upsert({
+  await (db as any).providerLiveStatus.upsert({
     where: { providerId: session.providerId },
     create: {
       providerId: session.providerId,

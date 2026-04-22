@@ -199,15 +199,34 @@ export async function createJobRequest(
     .catch((err) => console.error('[create-job-request] openCase failed:', err))
 
   // Trigger matching outside the transaction — fire and forget.
-  // The cron job will retry on the next cycle if this fails.
-  import('../matching-engine')
-    .then(({ dispatchLeads }) => dispatchLeads(result.jobRequestId))
-    .then((matchResult) => {
-      if (matchResult.noMatch) {
-        console.log(
-          `[create-job-request] No providers found for ${result.jobRequestId} — cron will retry`,
-        )
+  // Under matching.v2.sync_trigger the orchestrator runs synchronously on this
+  // server instance. Falls back to the legacy dispatchLeads path otherwise.
+  // The 30-min cron will retry on the next cycle if either path fails.
+  import('@/lib/flags')
+    .then(({ isEnabled }) => isEnabled('matching.v2.sync_trigger'))
+    .then((useSyncTrigger) => {
+      if (useSyncTrigger) {
+        return import('../matching/orchestrator')
+          .then(({ orchestrateMatch }) =>
+            orchestrateMatch(result.jobRequestId, { triggeredBy: 'job_creation' })
+          )
+          .then((matchResult) => {
+            if (matchResult.status === 'NO_MATCH') {
+              console.log('[create-job-request] v2: no providers found — cron will retry', {
+                jobRequestId: result.jobRequestId,
+              })
+            }
+          })
       }
+      return import('../matching-engine')
+        .then(({ dispatchLeads }) => dispatchLeads(result.jobRequestId))
+        .then((matchResult) => {
+          if (matchResult.noMatch) {
+            console.log(
+              `[create-job-request] No providers found for ${result.jobRequestId} — cron will retry`,
+            )
+          }
+        })
     })
     .catch((err) => console.error('[create-job-request] Matching error:', err))
 

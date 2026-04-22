@@ -125,7 +125,7 @@ async function loadFromDirectScan(params: {
   const categorySlug = category.trim().toLowerCase()
 
   // Load all active+verified providers who list this category in their skills
-  const providers = await db.provider.findMany({
+  const providers = await (db as any).provider.findMany({
     where: {
       active: true,
       verified: true,
@@ -146,7 +146,13 @@ async function loadFromDirectScan(params: {
       },
     },
     take: limit,
-  })
+  }) as Array<{
+    id: string; name: string; phone: string; skills: string[]; serviceAreas: string[]
+    maxTravelMinutes: number; reliabilityScore: number; averageRating: number
+    active: boolean; verified: boolean; availableNow: boolean
+    lastKnownLat: number | null; lastKnownLng: number | null
+    liveStatus?: { isOnline: boolean; lastLocationLat: number | null; lastLocationLng: number | null; lastHeartbeatAt: Date | null } | null
+  }>
 
   return providers.map((p) => ({
     id: p.id,

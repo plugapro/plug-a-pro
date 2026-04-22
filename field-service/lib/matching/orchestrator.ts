@@ -13,7 +13,7 @@
 import { db } from '@/lib/db'
 import { loadMatchingJobRequest } from './service'
 import { loadCandidatePool } from './candidate-pool'
-import { filterEligibleProviders } from './filter'
+import { filterEligibleProviders, type FilteredCandidate } from './filter'
 import { scoreAndRankCandidates } from './scoring'
 import { reserveBestProviderAtomically } from './reservation'
 import { dispatchMatchLead } from './dispatch'
@@ -71,7 +71,10 @@ export async function orchestrateMatch(
     })
 
     // 2. Filter: area coverage, skills, certs, equipment, live status, capacity
-    const { eligible, filteredOut } = await filterEligibleProviders(rawCandidates, jobRequest)
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      rawCandidates,
+      jobRequest as Parameters<typeof filterEligibleProviders>[1]
+    )
 
     if (eligible.length === 0) {
       await recordDispatchDecision(db, {
@@ -101,7 +104,9 @@ export async function orchestrateMatch(
 
     // 4. Try top-5 candidates in rank order — stop on first successful reservation
     let reserved: Awaited<ReturnType<typeof reserveBestProviderAtomically>> | null = null
-    for (const candidate of ranked.slice(0, 5)) {
+    for (const rankedCandidate of ranked.slice(0, 5)) {
+      const candidate = eligible.find((e) => e.id === rankedCandidate.providerId)
+      if (!candidate) continue
       reserved = await reserveBestProviderAtomically({ candidate, jobRequest })
       if (reserved.ok) break
     }

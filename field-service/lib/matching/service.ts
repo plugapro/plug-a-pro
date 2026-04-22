@@ -130,7 +130,7 @@ function buildMatchingJobRequest(record: {
   }
 }
 
-async function loadMatchingJobRequest(client: any, jobRequestId: string) {
+export async function loadMatchingJobRequest(client: any, jobRequestId: string) {
   const query = {
     where: { id: jobRequestId },
     select: {

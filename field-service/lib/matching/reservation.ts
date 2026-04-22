@@ -11,9 +11,8 @@
 
 import { db } from '@/lib/db'
 import { MATCHING_CONFIG } from './config'
-import { createId } from '@paralleldrive/cuid2'
 import type { CandidatePoolEntry } from './candidate-pool'
-import type { MatchingJobRequest } from './service'
+import type { MatchingJobRequest } from './types'
 
 type AssignmentHold = {
   id: string
@@ -33,7 +32,6 @@ export async function reserveBestProviderAtomically(params: {
   jobRequest: MatchingJobRequest
 }): Promise<ReservationResult> {
   const { candidate, jobRequest } = params
-  const holdId = createId()
   const expiresAt = new Date(Date.now() + MATCHING_CONFIG.offerTtlMinutes * 60_000)
 
   try {
@@ -65,7 +63,7 @@ export async function reserveBestProviderAtomically(params: {
         }
 
         // ── 3. Capacity guard ─────────────────────────────────────────────────
-        const capacity = await tx.providerCapacity.findUnique({
+        const capacity = await (tx as any).providerCapacity.findUnique({
           where: { providerId: candidate.id },
           select: { activeHolds: true, maxConcurrent: true },
         })
@@ -82,20 +80,9 @@ export async function reserveBestProviderAtomically(params: {
           return { reason: 'JOB_NO_LONGER_OPEN' as const }
         }
 
-        // ── 5. Create a stub DispatchDecision for the AssignmentHold FK ───────
-        // AssignmentHold requires dispatchDecisionId and matchAttemptId — we create
-        // a minimal MatchAttempt here so the FK is satisfied. The full decision
-        // is written by the orchestrator after this transaction commits.
-        const matchAttempt = await tx.matchAttempt.create({
-          data: {
-            jobRequestId: jobRequest.id,
-            providerId: candidate.id,
-            scoreTotal: candidate.scoreBase,
-            viable: true,
-            rankedPosition: 1,
-          },
-        })
-
+        // ── 5. Create stub DispatchDecision then MatchAttempt ─────────────────
+        // DispatchDecision must come first — MatchAttempt requires its FK.
+        // The orchestrator overwrites these with real data after the transaction.
         const dispatchDecision = await tx.dispatchDecision.create({
           data: {
             jobRequestId: jobRequest.id,
@@ -112,16 +99,27 @@ export async function reserveBestProviderAtomically(params: {
           },
         })
 
+        const matchAttempt = await tx.matchAttempt.create({
+          data: {
+            jobRequestId: jobRequest.id,
+            providerId: candidate.id,
+            dispatchDecisionId: dispatchDecision.id,
+            attemptNumber: 1,
+            rankedPosition: 1,
+            stage: 'OFFERED',
+            hardFilterPassed: true,
+            score: candidate.scoreBase,
+          },
+        })
+
         // ── 6. Create the AssignmentHold ───────────────────────────────────────
         const hold = await tx.assignmentHold.create({
           data: {
-            id: holdId,
             jobRequestId: jobRequest.id,
             providerId: candidate.id,
             dispatchDecisionId: dispatchDecision.id,
             matchAttemptId: matchAttempt.id,
             status: 'ACTIVE',
-            offeredAt: new Date(),
             expiresAt,
           },
         })
@@ -133,7 +131,7 @@ export async function reserveBestProviderAtomically(params: {
         })
 
         // ── 8. Increment capacity counter ─────────────────────────────────────
-        await tx.providerCapacity.upsert({
+        await (tx as any).providerCapacity.upsert({
           where: { providerId: candidate.id },
           create: { providerId: candidate.id, activeHolds: 1, activeJobs: 0, maxConcurrent: 2 },
           update: { activeHolds: { increment: 1 }, updatedAt: new Date() },
@@ -145,7 +143,7 @@ export async function reserveBestProviderAtomically(params: {
     )
 
     if ('reason' in result) {
-      return { ok: false, reason: result.reason }
+      return { ok: false, reason: result.reason! }
     }
 
     return { ok: true, hold: result.hold, provider: candidate }
@@ -162,7 +160,7 @@ export async function reserveBestProviderAtomically(params: {
 // ── Decrement capacity counter — call when a hold resolves ─────────────────────
 
 export async function releaseProviderCapacity(providerId: string): Promise<void> {
-  await db.providerCapacity.updateMany({
+  await (db as any).providerCapacity.updateMany({
     where: { providerId, activeHolds: { gt: 0 } },
     data: { activeHolds: { decrement: 1 }, updatedAt: new Date() },
   })
