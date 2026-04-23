@@ -42,19 +42,37 @@ export async function dispatchMatchLead(params: {
   const expiryStr = hold.expiresAt.toLocaleTimeString('en-ZA', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg',
   })
+  const body = `🔔 *New Job Lead — ${category}*\n\nArea: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
+  const msgMeta = { jobRequestId: jobRequest.id, holdId: hold.id, providerId: provider.id }
 
   await sendButtons(
     provider.phone,
-    `🔔 *New Job Lead — ${category}*\n\nArea: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`,
+    body,
     [
       { id: `accept:${hold.id}`, title: 'Accept' },
       { id: `decline:${hold.id}`, title: 'Decline' },
-    ]
-  ).catch((err: unknown) => {
+    ],
+    undefined,
+    { templateName: 'dispatch:job_lead', metadata: msgMeta }
+  ).catch(async (err: unknown) => {
+    const failureReason = err instanceof Error ? err.message : String(err)
     console.error('[dispatch] WhatsApp send failed — hold still active', {
-      holdId: hold.id,
-      providerId: provider.id,
-      error: err,
+      ...msgMeta,
+      error: failureReason,
     })
+    // Record the failure in message_events so ops can see and retry
+    await db.messageEvent.create({
+      data: {
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: 'dispatch:job_lead',
+        body,
+        to: provider.phone,
+        status: 'FAILED',
+        sentAt: new Date(),
+        failureReason,
+        metadata: msgMeta as object,
+      },
+    }).catch(() => {})
   })
 }

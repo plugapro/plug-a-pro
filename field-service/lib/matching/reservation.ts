@@ -109,6 +109,7 @@ export async function reserveBestProviderAtomically(params: {
             stage: 'OFFERED',
             hardFilterPassed: true,
             score: candidate.scoreBase,
+            offeredAt: new Date(),
           },
         })
 
