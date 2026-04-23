@@ -134,6 +134,9 @@ export async function syncProviderRecord(
       active: input.active,
       availableNow: input.availableNow,
       verified: input.verified,
+      // Transition status to ACTIVE on approval — keeps provider.status in sync
+      // with the application approval so the provider is immediately match-eligible.
+      ...(input.verified && { status: 'ACTIVE' }),
     }
 
     if (input.userId) {
@@ -196,6 +199,7 @@ export async function syncProviderRecord(
         active: input.active,
         availableNow: input.availableNow,
         verified: input.verified,
+        ...(input.verified && { status: 'ACTIVE' }),
       },
     })
   }
@@ -226,8 +230,16 @@ export async function reconcileProviderRecordsFromApplications(
 
   const applications = await client.providerApplication.findMany({
     where: {
-      status: { in: ['PENDING', 'APPROVED'] },
-      providerId: null,
+      OR: [
+        {
+          status: { in: ['PENDING', 'APPROVED'] },
+          providerId: null,
+        },
+        {
+          status: 'APPROVED',
+          provider: { is: { verified: false } },
+        },
+      ],
     },
     select: {
       id: true,
