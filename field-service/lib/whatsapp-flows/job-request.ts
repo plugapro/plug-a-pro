@@ -730,6 +730,51 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
   try {
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
+
+    // ── Dedup guard: detect retry after a previous send-error ─────────────────
+    // If the customer already has an active job request for this category it
+    // means their previous submission succeeded in the DB but the confirmation
+    // message failed to deliver. Update the availability note and return early
+    // so we don't create a duplicate.
+    const existingActive = await db.jobRequest.findFirst({
+      where: {
+        customer: { phone: ctx.phone },
+        category,
+        status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, description: true, status: true, customerId: true },
+    })
+
+    if (existingActive) {
+      const latestDescription = ctx.data.availabilityNote
+        ? `Preferred availability: ${ctx.data.availabilityNote}`
+        : existingActive.description
+
+      if (latestDescription !== existingActive.description) {
+        await db.jobRequest.update({
+          where: { id: existingActive.id },
+          data: { description: latestDescription },
+        })
+      }
+
+      const ref = existingActive.id.slice(-8).toUpperCase()
+      const statusLine =
+        existingActive.status === 'MATCHING'
+          ? "We've already notified nearby providers and are waiting for one to accept."
+          : "We're actively searching for a provider in your area."
+
+      await sendText(
+        ctx.phone,
+        `✅ *Your ${ctx.data.selectedCategory ?? category} request is already in!*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider accepts. Reply *Hi* to check status at any time. 👍`
+      )
+
+      return {
+        nextStep: 'done',
+        nextData: { jobRequestId: existingActive.id, customerId: existingActive.customerId },
+      }
+    }
+
     const categoryRequirements = await resolveCategoryRequirements({ category })
 
     let result: Awaited<ReturnType<typeof createJobRequest>>
@@ -844,10 +889,19 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
     return { nextStep: 'done', nextData: { jobRequestId: result.jobRequestId, customerId: result.customerId } }
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err)
     console.error('[job-request-flow] Create job request error:', err)
+
+    // In pilot mode, append a truncated technical error to the WhatsApp message
+    // so failures can be triaged without needing server logs. Disable by removing
+    // PILOT_DEBUG_ERRORS from env once stable.
+    const debugSuffix = process.env.PILOT_DEBUG_ERRORS === 'true'
+      ? `\n\n_🔧 Debug: ${errorMessage.slice(0, 300)}_`
+      : ''
+
     await sendText(
       ctx.phone,
-      "😔 Something went wrong submitting your request. Please try again or contact us directly."
+      `😔 Something went wrong submitting your request. Please try again or contact us directly.${debugSuffix}`
     )
     return { nextStep: 'done' }
   }

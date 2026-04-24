@@ -23,6 +23,10 @@ vi.mock('@/lib/db', () => ({
     address: {
       findFirst: vi.fn(),
     },
+    jobRequest: {
+      findFirst: vi.fn().mockResolvedValue(null), // default: no existing active request
+      update: vi.fn().mockResolvedValue({}),
+    },
   },
 }))
 
@@ -656,6 +660,233 @@ describe('WhatsApp job-request flow — structured address', () => {
       )
 
       expect(result.nextStep).toBe('addr_select_province')
+    })
+  })
+
+  // ── 11. Dedup guard — retry after DB-success / message-fail ───────────────
+
+  describe('dedup guard — existing active job request', () => {
+    const structuredData = {
+      category: 'cat_plumbing',
+      selectedCategory: 'Plumbing',
+      addrLocationNodeId: 'sub_sandton',
+      addressLine1: '14 Main Road',
+      address: '14 Main Road, Sandton, JHB North, Johannesburg, Gauteng 2196',
+      availabilityNote: 'As soon as possible',
+    }
+
+    beforeEach(() => {
+      ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue({
+        street: '14 Main Road, Sandton',
+        addressLine1: '14 Main Road',
+        addressLine2: null,
+        complexName: null,
+        unitNumber: null,
+        suburb: 'Sandton',
+        region: 'JHB North',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        postalCode: '2196',
+        locationNodeId: 'sub_sandton',
+      })
+    })
+
+    it('returns done without calling createJobRequest when an active request exists', async () => {
+      ;(db.jobRequest.findFirst as any).mockResolvedValue({
+        id: 'jr_existing1234',
+        description: 'Preferred availability: As soon as possible',
+        status: 'OPEN',
+        customerId: 'cust_001',
+      })
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(createJobRequestModule.createJobRequest).not.toHaveBeenCalled()
+      expect(result.nextStep).toBe('done')
+      expect(result.nextData).toMatchObject({
+        jobRequestId: 'jr_existing1234',
+        customerId: 'cust_001',
+      })
+    })
+
+    it('sends the "already in" message when an active request is detected', async () => {
+      ;(db.jobRequest.findFirst as any).mockResolvedValue({
+        id: 'jr_existing1234',
+        description: 'Preferred availability: As soon as possible',
+        status: 'OPEN',
+        customerId: 'cust_001',
+      })
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('already in')
+      )
+      // Ref should be the last 8 chars of 'jr_existing1234' uppercased → TING1234
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('TING1234')
+      )
+    })
+
+    it('mentions provider-searching status line for OPEN status', async () => {
+      ;(db.jobRequest.findFirst as any).mockResolvedValue({
+        id: 'jr_abc12345',
+        description: '',
+        status: 'OPEN',
+        customerId: 'cust_001',
+      })
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('actively searching')
+      )
+    })
+
+    it('mentions providers-notified status line for MATCHING status', async () => {
+      ;(db.jobRequest.findFirst as any).mockResolvedValue({
+        id: 'jr_abc12345',
+        description: '',
+        status: 'MATCHING',
+        customerId: 'cust_001',
+      })
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('already notified nearby providers')
+      )
+    })
+
+    it('updates description when availability note differs from existing', async () => {
+      ;(db.jobRequest.findFirst as any).mockResolvedValue({
+        id: 'jr_existing1234',
+        description: 'Preferred availability: This week',  // old note
+        status: 'OPEN',
+        customerId: 'cust_001',
+      })
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          availabilityNote: 'This weekend',  // new note differs
+        })
+      )
+
+      expect(db.jobRequest.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'jr_existing1234' },
+          data: { description: 'Preferred availability: This weekend' },
+        })
+      )
+    })
+
+    it('does NOT call update when description is unchanged', async () => {
+      ;(db.jobRequest.findFirst as any).mockResolvedValue({
+        id: 'jr_existing1234',
+        description: 'Preferred availability: As soon as possible',
+        status: 'OPEN',
+        customerId: 'cust_001',
+      })
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(db.jobRequest.update).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── 12. Pilot debug errors (PILOT_DEBUG_ERRORS=true) ─────────────────────
+
+  describe('pilot debug error suffix', () => {
+    const structuredData = {
+      category: 'cat_plumbing',
+      selectedCategory: 'Plumbing',
+      addrLocationNodeId: 'sub_sandton',
+      addressLine1: '14 Main Road',
+      address: '14 Main Road, Sandton, Johannesburg',
+      availabilityNote: 'As soon as possible',
+    }
+
+    beforeEach(() => {
+      ;(db.jobRequest.findFirst as any).mockResolvedValue(null) // no existing active request
+      ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue({
+        street: '14 Main Road, Sandton',
+        addressLine1: '14 Main Road',
+        addressLine2: null,
+        complexName: null,
+        unitNumber: null,
+        suburb: 'Sandton',
+        region: 'JHB North',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        postalCode: '2196',
+        locationNodeId: 'sub_sandton',
+      })
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new Error('DB connection refused')
+      )
+    })
+
+    it('appends technical error to WhatsApp message when PILOT_DEBUG_ERRORS=true', async () => {
+      const original = process.env.PILOT_DEBUG_ERRORS
+      process.env.PILOT_DEBUG_ERRORS = 'true'
+      try {
+        await handleJobRequestFlow(
+          makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+        )
+
+        expect(wa.sendText).toHaveBeenCalledWith(
+          PHONE,
+          expect.stringContaining('DB connection refused')
+        )
+        expect(wa.sendText).toHaveBeenCalledWith(
+          PHONE,
+          expect.stringContaining('🔧 Debug:')
+        )
+      } finally {
+        process.env.PILOT_DEBUG_ERRORS = original
+      }
+    })
+
+    it('does NOT append debug info when PILOT_DEBUG_ERRORS is not set', async () => {
+      const original = process.env.PILOT_DEBUG_ERRORS
+      delete process.env.PILOT_DEBUG_ERRORS
+      try {
+        await handleJobRequestFlow(
+          makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+        )
+
+        const sendTextCall = (wa.sendText as any).mock.calls[0]
+        expect(sendTextCall[1]).not.toContain('🔧 Debug:')
+        expect(sendTextCall[1]).not.toContain('DB connection refused')
+      } finally {
+        process.env.PILOT_DEBUG_ERRORS = original
+      }
+    })
+
+    it('still sends the user-friendly error message in both cases', async () => {
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Something went wrong submitting your request')
+      )
     })
   })
 })
