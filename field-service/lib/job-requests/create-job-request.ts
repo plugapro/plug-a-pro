@@ -201,8 +201,10 @@ export async function createJobRequest(
 
   // Trigger matching via after() so Vercel keeps the function alive until matching completes.
   // after() runs post-response, preventing the Vercel cold-start timeout from killing the match.
-  // The 5-min cron will also catch anything that fails here.
-  after(async () => {
+  // If after() is unavailable (e.g. called from inside another after() callback such as the
+  // WhatsApp webhook handler), fall back to a plain fire-and-forget promise — the 5-min cron
+  // will catch anything that doesn't complete.
+  const runMatching = async () => {
     try {
       const { orchestrateMatch } = await import('../matching/orchestrator')
       const matchResult = await orchestrateMatch(result.jobRequestId, { triggeredBy: 'job_creation' })
@@ -228,7 +230,15 @@ export async function createJobRequest(
     } catch (err) {
       console.error('[create-job-request] matching trigger failed:', err)
     }
-  })
+  }
+
+  try {
+    after(runMatching)
+  } catch {
+    // after() is not available in this execution context (e.g. nested inside another after()
+    // callback from the WhatsApp webhook handler). Run fire-and-forget instead; cron backfills.
+    void runMatching()
+  }
 
   let ticketUrl: string | null = null
   try {
