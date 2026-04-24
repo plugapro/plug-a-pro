@@ -15,6 +15,8 @@ import { isLocationStale, pointFallsWithinRadius } from './geography'
 import { createBookingArtifactsForApprovedQuote } from '../quotes'
 import { initializeBookingPayment } from '../payments'
 import { emitMatchEvent } from './events'
+import { notifyExpiredJobParties } from './customer-recontact'
+import { releaseProviderCapacity } from './reservation'
 import type {
   CoverageTier,
   DispatchActor,
@@ -1887,30 +1889,23 @@ export async function expireAssignmentOffer(params: {
     })
   })
 
+  // Decrement the provider's capacity counter — this must happen outside the
+  // transaction so it runs even if offerNextRankedCandidate fails below.
+  await releaseProviderCapacity(hold.providerId).catch((err) =>
+    console.error('[expireAssignmentOffer] releaseProviderCapacity failed', { providerId: hold.providerId, err })
+  )
+
   const next = await offerNextRankedCandidate({
     jobRequestId: hold.jobRequestId,
     dispatchDecisionId: hold.dispatchDecisionId,
   })
 
-  // When all candidates exhausted the job is now EXPIRED — notify the last provider
+  // When all candidates exhausted the job is now EXPIRED — notify the customer and last provider
   if (!next.nextOfferedProviderId) {
-    const [provider, jobRequest] = await Promise.all([
-      db.provider.findUnique({ where: { id: hold.providerId }, select: { phone: true } }),
-      db.jobRequest.findUnique({
-        where: { id: hold.jobRequestId },
-        select: { id: true, category: true },
-      }),
-    ])
-    if (provider?.phone && jobRequest) {
-      const ref = jobRequest.id.slice(-8).toUpperCase()
-      const { sendText } = await import('../whatsapp-interactive')
-      await sendText(
-        provider.phone,
-        `⏰ *Lead Expired*\n\n*${jobRequest.category}* · Ref: ${ref}\n\nThis lead expired without a response and the service request has been closed. No action needed.`,
-      ).catch((err) => {
-        console.error('[matching] Failed to send lead-expired notification:', err)
-      })
-    }
+    await notifyExpiredJobParties({
+      jobRequestId: hold.jobRequestId,
+      lastProviderId: hold.providerId,
+    })
   }
 
   // Count how many candidates have been offered (non-RANKED = already attempted)
