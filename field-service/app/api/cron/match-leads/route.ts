@@ -8,13 +8,14 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendLeadReminders } from '@/lib/matching-engine'
-import { processPendingAssignmentWorkflows } from '@/lib/matching/service'
+import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from '@/lib/matching/service'
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
-import { reconcileProviderRecordsFromApplications } from '@/lib/provider-record'
+import { reconcileProviderRecordsFromApplications, syncProviderRecord } from '@/lib/provider-record'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { sendText } from '@/lib/whatsapp-interactive'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
+const PROVIDER_AUTO_APPROVAL_WINDOW_MINUTES = 30
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -23,7 +24,19 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, errors: 0 }
+  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, errors: 0, reconciledCapacity: 0 }
+
+  // 0. Reconcile stale capacity counters (safety net — corrects counter drift)
+  try {
+    const reconcile = await reconcileStaleAssignmentState()
+    results.reconciledCapacity = reconcile.corrected
+    if (reconcile.corrected > 0) {
+      console.warn(`[cron/match-leads:${reqId}] Capacity reconciliation corrected ${reconcile.corrected} provider(s)`)
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Capacity reconciliation error:`, err)
+    results.errors++
+  }
 
   // 1. Expire stale offers and retry the next ranked technician where possible
   try {
@@ -53,26 +66,43 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1d. Auto-approve provider applications older than 60 min with all required fields
+  // 1d. Auto-approve provider applications older than 30 min with all required fields
   try {
-    const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000)
+    const approvalCutoff = new Date(Date.now() - PROVIDER_AUTO_APPROVAL_WINDOW_MINUTES * 60 * 1000)
     const pendingApplications = await db.providerApplication.findMany({
       where: {
         status: 'PENDING',
-        submittedAt: { lte: sixtyMinAgo },
+        submittedAt: { lte: approvalCutoff },
         name: { not: '' },
         skills: { isEmpty: false },
         serviceAreas: { isEmpty: false },
       },
-      select: { id: true, phone: true, name: true },
+      select: { id: true, phone: true, name: true, skills: true, serviceAreas: true },
       take: 50,
     })
 
     for (const app of pendingApplications) {
       try {
-        await db.providerApplication.update({
-          where: { id: app.id },
-          data: { status: 'APPROVED', reviewedAt: new Date() },
+        const reviewedAt = new Date()
+        await db.$transaction(async (tx) => {
+          const providerId = await syncProviderRecord(tx as typeof db, {
+            phone: app.phone,
+            name: app.name,
+            skills: app.skills,
+            serviceAreas: app.serviceAreas,
+            active: true,
+            availableNow: true,
+            verified: true,
+          })
+
+          await tx.providerApplication.update({
+            where: { id: app.id },
+            data: {
+              status: 'APPROVED',
+              reviewedAt,
+              providerId,
+            },
+          })
         })
         await sendText(
           app.phone,

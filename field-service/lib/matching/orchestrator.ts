@@ -105,11 +105,14 @@ export async function orchestrateMatch(
 
     // 4. Try top-5 candidates in rank order — stop on first successful reservation
     let reserved: Awaited<ReturnType<typeof reserveBestProviderAtomically>> | null = null
+    const reservationFailures: Record<string, string> = {}
+
     for (const rankedCandidate of ranked.slice(0, 5)) {
       const candidate = eligible.find((e) => e.id === rankedCandidate.providerId)
       if (!candidate) continue
       reserved = await reserveBestProviderAtomically({ candidate, jobRequest })
       if (reserved.ok) break
+      reservationFailures[rankedCandidate.providerId] = reserved.reason
       emitMatchEvent({
         event: 'reservation.failed',
         jobRequestId,
@@ -118,7 +121,28 @@ export async function orchestrateMatch(
       })
     }
 
+    // Annotate ranked summary with per-candidate reservation failure reasons
+    const annotatedRanked = ranked.map((rc) => ({
+      ...rc,
+      ...(reservationFailures[rc.providerId]
+        ? { reservationFailureReason: reservationFailures[rc.providerId] }
+        : {}),
+    }))
+
     if (!reserved?.ok) {
+      // Build a precise explanation instead of a generic catch-all
+      const reasonCounts: Record<string, number> = {}
+      for (const reason of Object.values(reservationFailures)) {
+        reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1
+      }
+      const explanationParts = Object.entries(reasonCounts).map(
+        ([reason, count]) => `${count}× ${reason}`
+      )
+      const explanation =
+        explanationParts.length > 0
+          ? `Reservation failed — ${explanationParts.join(', ')}`
+          : 'All top candidates were locked or at capacity'
+
       await recordDispatchDecision(db, {
         jobRequestId,
         mode: jobRequest.assignmentMode,
@@ -126,8 +150,8 @@ export async function orchestrateMatch(
         consideredCount: rawCandidates.length,
         eligibleCount: eligible.length,
         filteredOut,
-        rankingSummary: ranked,
-        explanation: 'All top candidates were locked or at capacity',
+        rankingSummary: annotatedRanked,
+        explanation,
         triggeredBy: options.triggeredBy,
       })
       return { status: 'NO_MATCH', filteredOut, consideredCount: rawCandidates.length }
@@ -149,7 +173,7 @@ export async function orchestrateMatch(
       consideredCount: rawCandidates.length,
       eligibleCount: eligible.length,
       filteredOut,
-      rankingSummary: ranked,
+      rankingSummary: annotatedRanked,
       explanation: `Lead dispatched to ${reserved.provider.name}`,
       triggeredBy: options.triggeredBy,
     })

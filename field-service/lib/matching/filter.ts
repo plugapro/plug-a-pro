@@ -40,6 +40,7 @@ export type EligibleProvider = CandidatePoolEntry & {
   cancellationRate: number
   punctualityScore: number
   lastKnownLocationAt: Date | null
+  dailyAssignedJobs: number    // same-day accepted/active matches (real count, not cached)
   // Relations hydrated from DB
   technicianSkills: SkillRow[]
   technicianCertifications: CertRow[]
@@ -317,6 +318,28 @@ export async function filterEligibleProviders(
     }).catch(() => []) as Promise<Array<{ providerId: string } & AdminEquipRow>>,
   ])
 
+  // ── Cooldown: find providers who already timed out on THIS job recently ────────
+  const cooldownCutoff = new Date(Date.now() - MATCHING_CONFIG.cooldownAfterTimeoutMinutes * 60_000)
+  const timedOutRows = await db.$queryRaw<Array<{ providerId: string }>>`
+    SELECT DISTINCT "providerId" FROM match_attempts
+    WHERE "jobRequestId" = ${jobRequest.id}
+    AND "responseOutcome" = 'TIMED_OUT'
+    AND "respondedAt" > ${cooldownCutoff}
+  `.catch(() => [] as Array<{ providerId: string }>)
+  const timedOutProviderIds = new Set(timedOutRows.map((r) => r.providerId))
+
+  // ── Daily-load: count same-day accepted/active matches per provider ───────────
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const dailyJobRows = await db.$queryRaw<Array<{ providerId: string; cnt: bigint }>>`
+    SELECT "providerId", COUNT(*)::bigint AS cnt FROM matches
+    WHERE "providerId" = ANY(${providerIds})
+    AND status::text = ANY(ARRAY['MATCHED','CONFIRMED','IN_PROGRESS'])
+    AND "createdAt" >= ${todayStart}
+    GROUP BY "providerId"
+  `.catch(() => [] as Array<{ providerId: string; cnt: bigint }>)
+  const dailyJobsById = new Map(dailyJobRows.map((r) => [r.providerId, Number(r.cnt)]))
+
   // ── Index by providerId ───────────────────────────────────────────────────
   const metricsById = new Map(metricsRows.map((r) => [r.id, r]))
   const skillsById = indexByProvider(skillRows)
@@ -372,6 +395,17 @@ export async function filterEligibleProviders(
     }
     if (candidate.isOnline === false) {
       filteredReasonCodes.push('TECHNICIAN_OFFLINE_LIVE')
+    }
+
+    // Cooldown: provider already ghosted this job recently — skip for 12h
+    if (timedOutProviderIds.has(candidate.id)) {
+      filteredReasonCodes.push('OFFER_COOLDOWN_ACTIVE')
+    }
+
+    // Daily-load hard cap: provider has hit their maximum for today
+    const dailyJobs = dailyJobsById.get(candidate.id) ?? 0
+    if (dailyJobs >= MATCHING_CONFIG.hardDailyMax) {
+      filteredReasonCodes.push('DAILY_MAX_REACHED')
     }
 
     const areaCoverage = providerCoversAddress(serviceAreas, address)
@@ -458,6 +492,7 @@ export async function filterEligibleProviders(
       cancellationRate: metrics?.cancellationRate ?? 0,
       punctualityScore: metrics?.punctualityScore ?? 1,
       lastKnownLocationAt: metrics?.lastKnownLocationAt ?? null,
+      dailyAssignedJobs: dailyJobsById.get(candidate.id) ?? 0,
       technicianSkills: techSkills as SkillRow[],
       technicianCertifications: techCerts as CertRow[],
       technicianServiceAreas: serviceAreas as ServiceAreaRow[],

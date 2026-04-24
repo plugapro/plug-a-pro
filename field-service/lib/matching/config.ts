@@ -7,6 +7,9 @@ export const MATCHING_CONFIG = {
   heartbeatStaleMinutes: 15,
   scheduleBufferMinutes: 15,
   defaultDurationMinutes: 120,
+  cooldownAfterTimeoutMinutes: 720,  // 12h re-offer cooldown per (job, provider) after TIMED_OUT
+  preferredDailyLoad: 1,             // soft penalty threshold
+  hardDailyMax: 2,                   // hard daily job cap (filter out above this)
   travel: {
     defaultSpeedKmh: 35,
     minTravelMinutes: 10,

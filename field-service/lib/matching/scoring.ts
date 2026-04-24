@@ -72,6 +72,14 @@ function buildScoreBreakdown(
   const geographicPenalty =
     provider.coverageTier === 'REGION_FALLBACK' ? MATCHING_CONFIG.regionFallbackPenalty : 0
 
+  const dailyJobs = provider.dailyAssignedJobs ?? 0
+  // workloadFairness: 1.0 below preferred load, decays toward 0 above it
+  const workloadFairness = dailyJobs < MATCHING_CONFIG.preferredDailyLoad
+    ? 1
+    : Math.max(0, 1 - (dailyJobs - MATCHING_CONFIG.preferredDailyLoad + 1) * 0.4)
+  // Soft penalty applied to total when provider is at or above preferred load
+  const workloadPenalty = workloadFairness < 1 ? 0.08 * (1 - workloadFairness) : 0
+
   const total =
     skillMatch * weights.skillMatch +
     scheduleFit * weights.scheduleFit +
@@ -79,7 +87,8 @@ function buildScoreBreakdown(
     reliability * weights.reliability +
     customerPreference * weights.customerPreference +
     marginEfficiency * weights.marginEfficiency -
-    geographicPenalty
+    geographicPenalty -
+    workloadPenalty
 
   const reasons: string[] = [
     skillMatch === 1 ? 'Required skills matched' : 'Missing required skill coverage',
@@ -100,6 +109,9 @@ function buildScoreBreakdown(
   if (provider.coverageTier === 'LEGACY_STRING') {
     reasons.push('Service area matched by name (legacy — structured areas not yet configured)')
   }
+  if (dailyJobs >= MATCHING_CONFIG.preferredDailyLoad) {
+    reasons.push(`Provider already has ${dailyJobs} job(s) today — fairness penalty applied`)
+  }
   reasons.push(
     provider.verified ? 'Marketplace-reviewed profile' : 'Profile pending marketplace review'
   )
@@ -112,6 +124,7 @@ function buildScoreBreakdown(
     customerPreference,
     marginEfficiency,
     geographicPenalty,
+    workloadFairness,
     total,
     reasons,
   }

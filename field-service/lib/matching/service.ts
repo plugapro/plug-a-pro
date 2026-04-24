@@ -1766,6 +1766,53 @@ export async function processPendingAssignmentWorkflows() {
   }
 }
 
+// ── Capacity reconciliation ────────────────────────────────────────────────────
+// Safety net: recomputes provider_capacity.activeHolds from actual active holds.
+// Corrects any drift caused by process crashes or legacy code paths.
+// Called at the start of every match-leads cron run.
+export async function reconcileStaleAssignmentState(): Promise<{ corrected: number }> {
+  const capacityRows = await safeOptionalQuery(
+    () =>
+      (db as any).providerCapacity?.findMany?.({
+        where: { activeHolds: { gt: 0 } },
+        select: { providerId: true, activeHolds: true },
+      }),
+    [] as Array<{ providerId: string; activeHolds: number }>,
+  )
+
+  let corrected = 0
+
+  for (const row of capacityRows) {
+    const actualCount = await db.assignmentHold
+      .count({
+        where: {
+          providerId: row.providerId,
+          status: 'ACTIVE',
+          expiresAt: { gt: new Date() },
+        },
+      })
+      .catch(() => row.activeHolds) // If count fails, keep existing value — don't corrupt
+
+    if (actualCount !== row.activeHolds) {
+      await (db as any).providerCapacity
+        ?.update?.({
+          where: { providerId: row.providerId },
+          data: { activeHolds: actualCount, updatedAt: new Date() },
+        })
+        .catch(() => {}) // Non-fatal
+
+      console.warn('[reconcile] corrected activeHolds', {
+        providerId: row.providerId,
+        was: row.activeHolds,
+        now: actualCount,
+      })
+      corrected++
+    }
+  }
+
+  return { corrected }
+}
+
 export async function rejectAssignmentOffer(params: {
   leadId: string
   providerId: string

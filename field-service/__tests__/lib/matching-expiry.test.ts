@@ -1,16 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { expireAssignmentOffer, processPendingAssignmentWorkflows } from '../../lib/matching/service'
+import { expireAssignmentOffer, processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from '../../lib/matching/service'
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const { mockDb, mockEmitMatchEvent } = vi.hoisted(() => ({
+const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     assignmentHold: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
       create: vi.fn(),
+      count: vi.fn(),
     },
     lead: {
       findUnique: vi.fn(),
@@ -39,6 +41,10 @@ const { mockDb, mockEmitMatchEvent } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
+    providerCapacity: {
+      findMany: vi.fn(),
+      update: vi.fn(),
+    },
     technicianScheduleItem: {
       deleteMany: vi.fn(),
       updateMany: vi.fn(),
@@ -49,12 +55,13 @@ const { mockDb, mockEmitMatchEvent } = vi.hoisted(() => ({
     },
   },
   mockEmitMatchEvent: vi.fn(),
+  mockSendText: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/matching/events', () => ({ emitMatchEvent: mockEmitMatchEvent }))
 vi.mock('../../lib/whatsapp-interactive', () => ({
-  sendText: vi.fn().mockResolvedValue(undefined),
+  sendText: mockSendText,
   sendButtons: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -101,6 +108,10 @@ function makeMatchingJobRequest() {
     customerAcceptedAmount: null,
     customerAcceptedScope: null,
     autoCreateBookingOnAssignment: false,
+    customerNoMatchNotifiedAt: null,
+    customerRematchCheckSentAt: null,
+    customerRematchCheckRespondedAt: null,
+    customerRematchCheckOutcome: null,
     status: 'MATCHING',
     customer: { id: 'customer-1', name: 'Bob', phone: '+27831234567' },
     address: {
@@ -150,6 +161,7 @@ function setupBaseTransaction() {
 describe('expireAssignmentOffer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSendText.mockResolvedValue(undefined)
     setupBaseTransaction()
   })
 
@@ -205,6 +217,10 @@ describe('expireAssignmentOffer', () => {
     // No RANKED attempts remaining
     mockDb.matchAttempt.findMany.mockResolvedValue([])
     mockDb.provider.findUnique.mockResolvedValue({ phone: '+27821234567' })
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      ...makeMatchingJobRequest(),
+      status: 'EXPIRED',
+    })
 
     const result = await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
 
@@ -215,6 +231,38 @@ describe('expireAssignmentOffer', () => {
     )
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'match.exhausted', jobRequestId: 'job-1' })
+    )
+    expect(mockSendText).toHaveBeenNthCalledWith(
+      2,
+      '+27831234567',
+      expect.stringContaining('Thank you for trying Plug a Pro.'),
+      expect.objectContaining({
+        templateName: 'interactive:job_request_no_match',
+        metadata: expect.objectContaining({ jobRequestId: 'job-1', hasFutureWindow: false }),
+      })
+    )
+  })
+
+  it('tells the customer we will recheck if their requested time is still in the future', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
+    mockDb.matchAttempt.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue({ phone: '+27821234567' })
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      ...makeMatchingJobRequest(),
+      status: 'EXPIRED',
+      requestedWindowStart: new Date(Date.now() + 2 * 60 * 60 * 1000),
+      requestedWindowEnd: new Date(Date.now() + 4 * 60 * 60 * 1000),
+    })
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(mockSendText).toHaveBeenNthCalledWith(
+      2,
+      '+27831234567',
+      expect.stringContaining('we will message you if a suitable provider becomes available in time'),
+      expect.objectContaining({
+        metadata: expect.objectContaining({ hasFutureWindow: true }),
+      })
     )
   })
 
@@ -298,5 +346,62 @@ describe('processPendingAssignmentWorkflows', () => {
     expect(result.processed).toBe(2)
     expect(result.expiredOffers).toBe(2)
     expect(result.reoffered).toBe(0)
+  })
+})
+
+// ── reconcileStaleAssignmentState ─────────────────────────────────────────────
+
+describe('reconcileStaleAssignmentState', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDb.providerCapacity.update.mockResolvedValue({})
+  })
+
+  it('corrects a provider whose activeHolds counter is higher than actual count', async () => {
+    mockDb.providerCapacity.findMany.mockResolvedValue([
+      { providerId: 'provider-1', activeHolds: 3 },
+    ])
+    // Actual live holds = 1
+    mockDb.assignmentHold.count.mockResolvedValue(1)
+
+    const result = await reconcileStaleAssignmentState()
+
+    expect(result.corrected).toBe(1)
+    expect(mockDb.providerCapacity.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { providerId: 'provider-1' },
+        data: expect.objectContaining({ activeHolds: 1 }),
+      })
+    )
+  })
+
+  it('does not update a provider whose counter is already correct', async () => {
+    mockDb.providerCapacity.findMany.mockResolvedValue([
+      { providerId: 'provider-1', activeHolds: 2 },
+    ])
+    // Actual matches the stored counter
+    mockDb.assignmentHold.count.mockResolvedValue(2)
+
+    const result = await reconcileStaleAssignmentState()
+
+    expect(result.corrected).toBe(0)
+    expect(mockDb.providerCapacity.update).not.toHaveBeenCalled()
+  })
+
+  it('returns corrected count reflecting total providers fixed', async () => {
+    mockDb.providerCapacity.findMany.mockResolvedValue([
+      { providerId: 'provider-1', activeHolds: 2 },
+      { providerId: 'provider-2', activeHolds: 1 },
+      { providerId: 'provider-3', activeHolds: 3 },
+    ])
+    // provider-1: drifted (actual=0), provider-2: correct (actual=1), provider-3: drifted (actual=1)
+    mockDb.assignmentHold.count
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1)
+
+    const result = await reconcileStaleAssignmentState()
+
+    expect(result.corrected).toBe(2)
   })
 })

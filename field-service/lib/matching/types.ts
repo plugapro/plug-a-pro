@@ -109,6 +109,7 @@ export type ScoreBreakdown = {
   customerPreference: number
   marginEfficiency: number
   geographicPenalty: number   // 0.0 normally; regionFallbackPenalty when tier = REGION_FALLBACK
+  workloadFairness: number    // 1 = below preferredDailyLoad; 0 = at/above
   total: number
   reasons: string[]
 }
@@ -136,6 +137,7 @@ export type RankedCandidate = {
     punctualityScore: number
   }
   selectionReason: string
+  reservationFailureReason?: string  // populated by orchestrator after reservation attempt
 }
 
 export type RankingResult = {
