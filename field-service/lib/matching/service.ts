@@ -493,6 +493,7 @@ function buildScoreBreakdown(params: {
     customerPreference,
     marginEfficiency,
     geographicPenalty,
+    workloadFairness: 1,
     total,
     reasons,
   } satisfies ScoreBreakdown
