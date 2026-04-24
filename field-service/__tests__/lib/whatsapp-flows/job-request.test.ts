@@ -431,7 +431,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       expect(result.nextStep).toBe('done')
       expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Use the options below'),
+        expect.stringContaining('Request submitted'),
         expect.arrayContaining([
           expect.objectContaining({ id: 'status' }),
           expect.objectContaining({ id: 'back_home' }),

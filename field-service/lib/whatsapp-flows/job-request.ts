@@ -801,29 +801,45 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
         : '')
 
-    if (result.ticketUrl) {
-      try {
-        await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
-      } catch (err) {
-        console.error('[job-request-flow] Ticket CTA send failed:', err)
+    // ── Send success confirmation ─────────────────────────────────────────────
+    // The job request is in the DB at this point. Success message delivery
+    // failures must NOT propagate to the outer catch — that would incorrectly
+    // tell the customer their submission failed when it actually succeeded.
+    try {
+      if (result.ticketUrl) {
+        try {
+          await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
+        } catch (ctaErr) {
+          console.error('[job-request-flow] Ticket CTA send failed:', ctaErr)
+          // CTA URL failed (e.g. non-HTTPS URL, domain not approved) — fall back
+          // to a plain button message which has no URL requirements.
+          await sendButtons(
+            ctx.phone,
+            successMessage,
+            [
+              { id: 'status', title: '📋 Track My Request' },
+              { id: 'back_home', title: '🏠 Main Menu' },
+            ]
+          )
+        }
+      } else {
         await sendButtons(
           ctx.phone,
-          `${successMessage}\n\nUse the options below while we finish sending your ticket link.`,
+          successMessage,
           [
             { id: 'status', title: '📋 Track My Request' },
             { id: 'back_home', title: '🏠 Main Menu' },
           ]
         )
       }
-    } else {
-      await sendButtons(
+    } catch (sendErr) {
+      // Interactive message failed — last-resort plain text so the customer
+      // knows their request was received. sendText is simpler and more resilient.
+      console.error('[job-request-flow] Success message send failed:', sendErr)
+      await sendText(
         ctx.phone,
-        successMessage,
-        [
-          { id: 'status', title: '📋 Track My Request' },
-          { id: 'back_home', title: '🏠 Main Menu' },
-        ]
-      )
+        `${successMessage}\n\nReply *Hi* anytime to check your request status.`
+      ).catch((e) => console.error('[job-request-flow] Plain-text fallback also failed:', e))
     }
 
     return { nextStep: 'done', nextData: { jobRequestId: result.jobRequestId, customerId: result.customerId } }
