@@ -711,7 +711,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       })
     })
 
-    it('sends the "already in" message when an active request is detected', async () => {
+    it('sends the "already received" message when an active request is detected', async () => {
       ;(db.jobRequest.findFirst as any).mockResolvedValue({
         id: 'jr_existing1234',
         description: 'Preferred availability: As soon as possible',
@@ -725,7 +725,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('already in')
+        expect.stringContaining("We've already received your")
       )
       // Ref should be the last 8 chars of 'jr_existing1234' uppercased → TING1234
       expect(wa.sendText).toHaveBeenCalledWith(

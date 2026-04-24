@@ -766,7 +766,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
       await sendText(
         ctx.phone,
-        `✅ *Your ${ctx.data.selectedCategory ?? category} request is already in!*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider accepts. Reply *Hi* to check status at any time. 👍`
+        `✅ *We've already received your ${ctx.data.selectedCategory ?? category} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider accepts. Reply *Hi* to check status at any time. 👍`
       )
 
       return {
