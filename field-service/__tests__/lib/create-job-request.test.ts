@@ -8,6 +8,7 @@ const {
   mockDispatchLeads,
   mockOrchestrateMatch,
   mockGeocodeAddress,
+  mockGetJobRequestAccessUrl,
 } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockDispatchLeads: vi.fn(),
   mockOrchestrateMatch: vi.fn(),
   mockGeocodeAddress: vi.fn(),
+  mockGetJobRequestAccessUrl: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
@@ -34,6 +36,10 @@ vi.mock('../../lib/matching-engine', () => ({
 
 vi.mock('../../lib/matching/orchestrator', () => ({
   orchestrateMatch: mockOrchestrateMatch,
+}))
+
+vi.mock('../../lib/job-request-access', () => ({
+  getJobRequestAccessUrl: mockGetJobRequestAccessUrl,
 }))
 
 // after() from next/server requires a request scope; stub it in tests so
@@ -89,6 +95,7 @@ describe('createJobRequest', () => {
       policy: { bookingOnAssignment: false },
     })
     mockGeocodeAddress.mockResolvedValue({ lat: -26.1, lng: 27.9 })
+    mockGetJobRequestAccessUrl.mockResolvedValue(null)
     mockDispatchLeads.mockResolvedValue({
       noMatch: false,
       leadsDispatched: 1,
@@ -197,6 +204,21 @@ describe('createJobRequest', () => {
     mockOrchestrateMatch.mockRejectedValue(new Error('Matching down'))
 
     await expect(createJobRequest(BASE_PARAMS)).resolves.toBeDefined()
+  })
+
+  it('returns a created request even if ticket URL generation fails', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+    mockGetJobRequestAccessUrl.mockRejectedValue(new Error('Token write failed'))
+
+    await expect(createJobRequest(BASE_PARAMS)).resolves.toEqual({
+      jobRequestId: 'jr-1',
+      customerId: 'cust-1',
+      ticketUrl: null,
+    })
   })
 
   it('propagates transaction errors to the caller', async () => {

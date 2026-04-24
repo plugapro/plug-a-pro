@@ -230,7 +230,12 @@ export async function createJobRequest(
     }
   })
 
-  const ticketUrl = await getJobRequestAccessUrl(result.jobRequestId)
+  let ticketUrl: string | null = null
+  try {
+    ticketUrl = await getJobRequestAccessUrl(result.jobRequestId)
+  } catch (err) {
+    console.error('[create-job-request] ticket URL generation failed:', err)
+  }
 
   return {
     ...result,

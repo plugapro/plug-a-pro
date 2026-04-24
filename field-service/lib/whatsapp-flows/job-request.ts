@@ -802,7 +802,19 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         : '')
 
     if (result.ticketUrl) {
-      await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
+      try {
+        await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
+      } catch (err) {
+        console.error('[job-request-flow] Ticket CTA send failed:', err)
+        await sendButtons(
+          ctx.phone,
+          `${successMessage}\n\nUse the options below while we finish sending your ticket link.`,
+          [
+            { id: 'status', title: '📋 Track My Request' },
+            { id: 'back_home', title: '🏠 Main Menu' },
+          ]
+        )
+      }
     } else {
       await sendButtons(
         ctx.phone,
