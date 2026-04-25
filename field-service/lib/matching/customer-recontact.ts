@@ -35,6 +35,8 @@ type MatchableJobRequestRecord = RequestTiming & {
   customerRematchCheckSentAt: Date | null
   customerRematchCheckRespondedAt: Date | null
   customerRematchCheckOutcome: string | null
+  altSlotNegotiationSentAt: Date | null
+  altSlotNegotiationOutcome: string | null
   customer: {
     id: string
     name: string
@@ -244,6 +246,8 @@ async function loadJobRequestForCustomerMessaging(jobRequestId: string) {
         customerRematchCheckSentAt: true,
         customerRematchCheckRespondedAt: true,
         customerRematchCheckOutcome: true,
+        altSlotNegotiationSentAt: true,
+        altSlotNegotiationOutcome: true,
         customer: {
           select: {
             id: true,
@@ -330,6 +334,8 @@ async function loadJobRequestForCustomerMessaging(jobRequestId: string) {
       customerRematchCheckSentAt: null,
       customerRematchCheckRespondedAt: null,
       customerRematchCheckOutcome: null,
+      altSlotNegotiationSentAt: null,
+      altSlotNegotiationOutcome: null,
     } as MatchableJobRequestRecord
   }
 }
@@ -339,6 +345,10 @@ export async function notifyCustomerNoMatch(jobRequestId: string) {
 
   if (!jobRequest || jobRequest.status !== 'EXPIRED') return false
   if (!jobRequest.customer?.phone || jobRequest.customerNoMatchNotifiedAt) return false
+
+  // Don't send the hard decline while alternative-slot negotiation is in flight —
+  // the customer is currently being offered alternative times.
+  if (jobRequest.altSlotNegotiationSentAt && !jobRequest.altSlotNegotiationOutcome) return false
 
   const message = buildExhaustedMessage(jobRequest)
   await sendText(jobRequest.customer.phone, message, {

@@ -236,8 +236,9 @@ export async function createJobRequest(
     after(runMatching)
   } catch {
     // after() is not available in this execution context (e.g. nested inside another after()
-    // callback from the WhatsApp webhook handler). Run fire-and-forget instead; cron backfills.
-    void runMatching()
+    // callback from the WhatsApp webhook handler). Await directly so matching completes
+    // within the outer after() lifetime rather than being abandoned fire-and-forget.
+    await runMatching()
   }
 
   let ticketUrl: string | null = null

@@ -725,7 +725,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining("We've already received your")
+        expect.stringContaining("You have an active")
       )
       // Ref should be the last 8 chars of 'jr_existing1234' uppercased → TING1234
       expect(wa.sendText).toHaveBeenCalledWith(
@@ -748,7 +748,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('actively searching')
+        expect.stringContaining('still searching')
       )
     })
 
@@ -766,7 +766,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('already notified nearby providers')
+        expect.stringContaining("We've notified nearby providers")
       )
     })
 

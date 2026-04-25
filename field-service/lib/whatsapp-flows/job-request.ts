@@ -761,12 +761,12 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       const ref = existingActive.id.slice(-8).toUpperCase()
       const statusLine =
         existingActive.status === 'MATCHING'
-          ? "We've already notified nearby providers and are waiting for one to accept."
-          : "We're actively searching for a provider in your area."
+          ? "We've notified nearby providers and are waiting for one to accept."
+          : "We're still searching for a suitable provider in your area."
 
       await sendText(
         ctx.phone,
-        `✅ *We've already received your ${ctx.data.selectedCategory ?? category} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider accepts. Reply *Hi* to check status at any time. 👍`
+        `ℹ️ *You have an active ${ctx.data.selectedCategory ?? category} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`
       )
 
       return {
