@@ -15,8 +15,11 @@ const {
 } = vi.hoisted(() => ({
   mockDb: {
     assignmentHold: { findFirst: vi.fn() },
-    dispatchDecision: { create: vi.fn() },
-    jobRequest: { update: vi.fn() },
+    dispatchDecision: { create: vi.fn(), update: vi.fn() },
+    jobRequest: {
+      update: vi.fn(),
+      findUnique: vi.fn(),
+    },
   },
   mockLoadMatchingJobRequest: vi.fn(),
   mockLoadCandidatePool: vi.fn(),
@@ -123,7 +126,10 @@ describe('orchestrateMatch', () => {
     vi.clearAllMocks()
     mockIsEnabled.mockResolvedValue(false)
     mockDb.assignmentHold.findFirst.mockResolvedValue(null)
+    // Default: no alt-slot negotiation in flight
+    mockDb.jobRequest.findUnique.mockResolvedValue({ altSlotNegotiationSentAt: null, altSlotNegotiationOutcome: null })
     mockDb.dispatchDecision.create.mockResolvedValue({ id: 'decision-1' })
+    mockDb.dispatchDecision.update.mockResolvedValue({})
     mockDb.jobRequest.update.mockResolvedValue({})
     mockDispatchMatchLead.mockResolvedValue(undefined)
     mockEmitMatchEvent.mockReturnValue(undefined)
@@ -173,7 +179,7 @@ describe('orchestrateMatch', () => {
   it('returns NO_MATCH when candidate pool is empty', async () => {
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue([])
-    mockFilterEligibleProviders.mockResolvedValue({ eligible: [], filteredOut: [] })
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [], filteredOut: [], nearMiss: [] })
 
     const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
 
@@ -189,6 +195,7 @@ describe('orchestrateMatch', () => {
     mockFilterEligibleProviders.mockResolvedValue({
       eligible: [],
       filteredOut: [{ providerId: 'provider-1', filteredReasonCodes: ['NO_AREA_COVERAGE'] }],
+      nearMiss: [],
     })
 
     const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
@@ -204,7 +211,7 @@ describe('orchestrateMatch', () => {
     const candidates = [1, 2, 3, 4, 5].map((n) => makeEligibleCandidate(`provider-${n}`))
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue(candidates)
-    mockFilterEligibleProviders.mockResolvedValue({ eligible: candidates, filteredOut: [] })
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: candidates, filteredOut: [], nearMiss: [] })
     mockScoreAndRankCandidates.mockReturnValue(
       candidates.map((c, i) => ({ providerId: c.id, score: 1 - i * 0.1, rank: i + 1 }))
     )
@@ -227,7 +234,7 @@ describe('orchestrateMatch', () => {
     const hold = makeHold()
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue([candidate])
-    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [] })
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [], nearMiss: [] })
     mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-1', score: 0.9, rank: 1 }])
     mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: candidate })
 
@@ -250,7 +257,7 @@ describe('orchestrateMatch', () => {
     const hold = makeHold('job-1', 'provider-2')
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue([c1, c2])
-    mockFilterEligibleProviders.mockResolvedValue({ eligible: [c1, c2], filteredOut: [] })
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [c1, c2], filteredOut: [], nearMiss: [] })
     mockScoreAndRankCandidates.mockReturnValue([
       { providerId: 'provider-1', score: 0.95, rank: 1 },
       { providerId: 'provider-2', score: 0.85, rank: 2 },
@@ -274,7 +281,7 @@ describe('orchestrateMatch', () => {
     mockIsEnabled.mockResolvedValue(true)
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue([candidate])
-    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [] })
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [], nearMiss: [] })
     mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-1', score: 0.9, rank: 1 }])
     mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: candidate })
 
@@ -302,7 +309,7 @@ describe('orchestrateMatch', () => {
     const hold = makeHold()
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue([candidate])
-    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [] })
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [], nearMiss: [] })
     mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-1', score: 0.9, rank: 1 }])
     mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: candidate })
 

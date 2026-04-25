@@ -166,6 +166,21 @@ export type DispatchHistoryResult = {
   attempts: MatchAttempt[]
 }
 
+// ── Alternative-slot negotiation ─────────────────────────────────────────────
+
+/**
+ * One bookable window discovered during the alternative-slot probe.
+ * slotKey is stable across WA button round-trips: "2026-04-29:morning"
+ */
+export type SlotOption = {
+  slotKey: string       // "{yyyy-MM-dd}:{morning|afternoon}" — stable routing key
+  slotLabel: string     // "Wed 29 Apr · Morning (7–12)" — display text
+  band: 'morning' | 'afternoon'
+  probeStartUtc: string // ISO string of window open (UTC)
+  probeEndUtc: string   // ISO string of window close (UTC)
+  providers: Array<{ id: string; name: string; phone: string; score: number }>
+}
+
 export type OfferResolutionResult =
   | {
       ok: true

@@ -58,9 +58,22 @@ export type FilteredCandidate = {
   filteredReasonCodes: string[]
 }
 
-// ── Internal row types ────────────────────────────────────────────────────────
+/**
+ * Provider who passed ALL hard filters (area, skills, certs, equipment, live status)
+ * but failed only because of schedule/window fit. Preserved for alternative-slot probing.
+ */
+export type NearMissProvider = CandidatePoolEntry & {
+  missReasonCodes: string[]              // always WINDOW_NOT_FEASIBLE or SCHEDULE_CONFLICT
+  schedule: ScheduleRow[]
+  scheduleItems: ScheduleItemRow[]
+  technicianAvailability: AvailabilityRow | null
+  technicianServiceAreas: ServiceAreaRow[]
+  dailyAssignedJobs: number
+}
 
-type ServiceAreaRow = {
+// ── Internal row types (exported for alternative-slots.ts) ───────────────────
+
+export type ServiceAreaRow = {
   label: string
   city: string | null
   active: boolean
@@ -72,13 +85,13 @@ type ServiceAreaRow = {
   regionKey: string | null
 }
 
-type AvailabilityRow = {
+export type AvailabilityRow = {
   availabilityState: string
   nextAvailableAt: Date | null
   breakUntil: Date | null
 }
 
-type ScheduleItemRow = {
+export type ScheduleItemRow = {
   id: string
   itemType: string
   title: string | null
@@ -92,7 +105,7 @@ type ScheduleItemRow = {
   status: string
 }
 
-type ScheduleRow = {
+export type ScheduleRow = {
   dayOfWeek: number
   startTime: string
   endTime: string
@@ -239,9 +252,9 @@ function providerCoversAddress(
 export async function filterEligibleProviders(
   rawCandidates: CandidatePoolEntry[],
   jobRequest: MatchingJobRequest & { address: MatchingAddress }
-): Promise<{ eligible: EligibleProvider[]; filteredOut: FilteredCandidate[] }> {
+): Promise<{ eligible: EligibleProvider[]; filteredOut: FilteredCandidate[]; nearMiss: NearMissProvider[] }> {
   if (rawCandidates.length === 0) {
-    return { eligible: [], filteredOut: [] }
+    return { eligible: [], filteredOut: [], nearMiss: [] }
   }
 
   const providerIds = rawCandidates.map((c) => c.id)
@@ -361,6 +374,11 @@ export async function filterEligibleProviders(
 
   const eligible: EligibleProvider[] = []
   const filteredOut: FilteredCandidate[] = []
+  const nearMiss: NearMissProvider[] = []
+
+  // Codes that qualify a provider as a "near-miss" — they pass all hard checks
+  // but only fail because their schedule/window doesn't fit the requested time.
+  const SCHEDULE_ONLY_CODES = new Set(['WINDOW_NOT_FEASIBLE', 'SCHEDULE_CONFLICT'])
 
   for (const candidate of rawCandidates) {
     const metrics = metricsById.get(candidate.id)
@@ -468,6 +486,21 @@ export async function filterEligibleProviders(
 
     if (filteredReasonCodes.length > 0) {
       filteredOut.push({ providerId: candidate.id, providerName: candidate.name, filteredReasonCodes })
+
+      // Near-miss: passed every hard filter but failed ONLY on schedule/window fit.
+      // These providers are preserved so the orchestrator can probe alternative slots.
+      if (filteredReasonCodes.every((code) => SCHEDULE_ONLY_CODES.has(code))) {
+        nearMiss.push({
+          ...candidate,
+          missReasonCodes: filteredReasonCodes,
+          schedule: (schedule as ScheduleRow[]),
+          scheduleItems: (scheduleItems as ScheduleItemRow[]),
+          technicianAvailability: availability,
+          technicianServiceAreas: (serviceAreas as ServiceAreaRow[]),
+          dailyAssignedJobs: dailyJobsById.get(candidate.id) ?? 0,
+        })
+      }
+
       continue
     }
 
@@ -504,7 +537,7 @@ export async function filterEligibleProviders(
     })
   }
 
-  return { eligible, filteredOut }
+  return { eligible, filteredOut, nearMiss }
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

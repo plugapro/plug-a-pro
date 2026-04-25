@@ -13,6 +13,7 @@ export type FlowName =
   | 'help'
   | 'provider_job'
   | 'provider_journey'  // registered provider: availability + job status via WA
+  | 'alt_slot'          // alternative-slot negotiation after NO_MATCH
 
 // All possible step names (namespaced by flow)
 export type FlowStep =
@@ -70,6 +71,10 @@ export type FlowStep =
   | 'tech_job_view'
   | 'tech_job_confirm_accept'
   | 'tech_job_confirm_decline'
+  // Alternative-slot negotiation (stateless — handled via button ID intercepts)
+  | 'alt_slot_customer_offered'  // customer has been offered alternative slots
+  | 'alt_slot_provider_offered'  // provider has been asked to pick a slot (provider-first)
+  | 'alt_slot_customer_confirm'  // customer confirming provider's chosen slot
   // Provider journey (registered provider WhatsApp interactions)
   | 'pj_menu'
   | 'pj_toggle_available'
@@ -148,6 +153,10 @@ export interface ConversationData {
   // Provider job management
   pendingJobId?: string
   declineReason?: string
+
+  // Alternative-slot negotiation — persisted so out-of-band responses can look up context
+  altSlotJobRequestId?: string
+  altSlotPendingProviderId?: string   // provider-first: the provider who selected a slot
 
   // Provider journey
   availableNow?: boolean

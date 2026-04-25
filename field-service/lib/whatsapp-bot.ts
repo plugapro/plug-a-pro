@@ -273,6 +273,21 @@ export async function processInboundMessage(
       // ── Match-level lead responses (quote flow) ─────────────────────────────
       await handleMatchLeadResponse(phone, reply.id)
       return
+    } else if (reply.id?.startsWith('alt_slot_c:')) {
+      // ── Phase 5: customer picks / declines an alternative slot ───────────────
+      const { handleCustomerSlotResponse } = await import('./whatsapp-flows/alternative-slot')
+      await handleCustomerSlotResponse(phone, reply.id)
+      return
+    } else if (reply.id?.startsWith('alt_slot_p:')) {
+      // ── Phase 5: provider picks / declines an alternative slot ───────────────
+      const { handleProviderSlotResponse } = await import('./whatsapp-flows/alternative-slot')
+      await handleProviderSlotResponse(phone, reply.id)
+      return
+    } else if (reply.id?.startsWith('alt_cust_ok:') || reply.id?.startsWith('alt_cust_no:')) {
+      // ── Phase 5: customer confirms / rejects provider's chosen slot ──────────
+      const { handleCustomerSlotConfirmation } = await import('./whatsapp-flows/alternative-slot')
+      await handleCustomerSlotConfirmation(phone, reply.id)
+      return
     } else if (reply.id?.startsWith('rematch_yes:') || reply.id?.startsWith('rematch_no:')) {
       await handleCustomerRematchCheckResponse(phone, reply.id)
       return
