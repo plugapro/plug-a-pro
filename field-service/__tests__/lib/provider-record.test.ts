@@ -93,6 +93,40 @@ describe('reconcileProviderRecordsFromApplications', () => {
     })
   })
 
+  it('repairs approved applications already linked to unverified providers', async () => {
+    const client = makeClient()
+    client.providerApplication.findMany.mockResolvedValue([
+      {
+        id: 'app_linked_approved',
+        phone: '+27764010810',
+        name: 'Seth plumber',
+        skills: ['Plumbing'],
+        serviceAreas: ['Bromhof'],
+        status: 'APPROVED',
+        providerId: 'provider_existing',
+      },
+    ])
+    client.provider.findUnique.mockResolvedValue({ id: 'provider_existing' })
+    client.provider.updateMany.mockResolvedValue({ count: 1 })
+    client.providerApplication.updateMany.mockResolvedValue({ count: 1 })
+
+    const result = await reconcileProviderRecordsFromApplications(client as never)
+
+    expect(result).toEqual({ reconciled: 1 })
+    expect(client.provider.updateMany).toHaveBeenCalledWith({
+      where: { id: 'provider_existing' },
+      data: expect.objectContaining({
+        verified: true,
+        active: true,
+        availableNow: true,
+      }),
+    })
+    expect(client.providerApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: 'app_linked_approved' },
+      data: { providerId: 'provider_existing' },
+    })
+  })
+
   it('deduplicates same phone in two applications — both are linked to the same Provider id', async () => {
     // Two applications for the same phone, both unlinked (e.g. old data or race condition
     // before the partial unique index was applied). reconcile must link both to the same provider.

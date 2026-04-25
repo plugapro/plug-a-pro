@@ -2,7 +2,7 @@ Load current project context from OpenBrain — use this mid-session to refresh 
 
 Run:
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend && pnpm brain -- context --project "Plug-A-Pro"
+cd "/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend" && pnpm brain -- context --project "Plug-A-Pro"
 ```
 
 Then summarise in 3 bullets:

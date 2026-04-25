@@ -6,6 +6,7 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -14,14 +15,31 @@ export async function GET(request: Request) {
   }
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-
-  const result = await db.jobRequest.updateMany({
+  const staleJobs = await db.jobRequest.findMany({
     where: {
       status: 'OPEN',
       createdAt: { lt: cutoff },
     },
+    select: { id: true },
+  })
+
+  if (staleJobs.length === 0) {
+    console.log('[cron/slots] Expired 0 stale job requests')
+    return NextResponse.json({ expired: 0 })
+  }
+
+  const result = await db.jobRequest.updateMany({
+    where: { id: { in: staleJobs.map((job) => job.id) } },
     data: { status: 'EXPIRED' },
   })
+
+  await Promise.all(
+    staleJobs.map((job) =>
+      notifyExpiredJobParties({ jobRequestId: job.id }).catch((err) => {
+        console.error(`[cron/slots] Failed to notify parties for expired job ${job.id}:`, err)
+      })
+    )
+  )
 
   console.log(`[cron/slots] Expired ${result.count} stale job requests`)
 

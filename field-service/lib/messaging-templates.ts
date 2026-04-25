@@ -216,10 +216,10 @@ export const TEMPLATES = {
     name: 'technician_application_received',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'Sent as template confirmation after application (covers >24h reply gap)',
+    description: 'Sent as template confirmation after application submission',
     // {{1}} applicant name, {{2}} application ref
     example:
-      'Hi {{1}}, we received your application to join Plug a Pro. Ref: {{2}}. We review all applications within 24 hours and will update you here.',
+      'Hi {{1}}, we received your application to join Plug a Pro. Ref: {{2}}. We review all applications within 30 minutes and will update you here.',
   },
 
   technician_welcome: {

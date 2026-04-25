@@ -5,6 +5,7 @@
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import { db } from '../db'
 import { transitionJob } from '../jobs'
+import { promptCustomersForNewProviderAvailability } from '../matching/customer-recontact'
 import type { FlowContext, FlowResult } from './types'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -82,6 +83,12 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'pj_toggle' || ctx.reply.id === 'pj_go_online' || ctx.reply.id === 'pj_go_offline') {
     const goingOnline = !provider.availableNow
     await db.provider.update({ where: { id: provider.id }, data: { availableNow: goingOnline } })
+
+    if (goingOnline) {
+      await promptCustomersForNewProviderAvailability(provider.id).catch((error) => {
+        console.error('[provider-journey] customer recontact failed:', error)
+      })
+    }
 
     if (goingOnline) {
       await sendButtons(

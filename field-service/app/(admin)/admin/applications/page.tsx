@@ -94,7 +94,7 @@ async function approveApplication(formData: FormData) {
     redirect('/admin/applications?message=duplicate_active_application')
   }
 
-  await crudAction({
+  const approval = await crudAction({
     entity: 'ProviderApplication',
     entityId: app.id,
     action: 'provider_application.approve',
@@ -177,6 +177,13 @@ async function approveApplication(formData: FormData) {
     name: app.name,
     approved: true,
   }).catch(() => {})
+
+  if (approval.data?.providerId) {
+    const { promptCustomersForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
+    await promptCustomersForNewProviderAvailability(approval.data.providerId).catch((error) => {
+      console.error('[applications] customer recontact failed:', error)
+    })
+  }
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')

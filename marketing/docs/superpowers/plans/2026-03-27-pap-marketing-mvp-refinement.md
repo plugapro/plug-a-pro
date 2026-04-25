@@ -84,7 +84,7 @@ export const siteConfig = {
 - [ ] **Step 1.3: Run typecheck to verify**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors (or only pre-existing unrelated errors).
@@ -92,7 +92,7 @@ Expected: no errors (or only pre-existing unrelated errors).
 - [ ] **Step 1.4: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add app/globals.css lib/metadata.ts
 git commit -m "chore: update siteConfig for Plug-A-Pro and add missing accent CSS vars"
 ```
@@ -138,7 +138,7 @@ export const metadata: Metadata = buildMetadata({
 - [ ] **Step 2.3: Verify no remaining cleaning references**
 
 ```bash
-grep -ri "clean" /Users/shimane/Projects/Plug-A-Pro/marketing/app /Users/shimane/Projects/Plug-A-Pro/marketing/components --include="*.tsx" --include="*.ts" -l
+grep -ri "clean" /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/app /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/components --include="*.tsx" --include="*.ts" -l
 ```
 
 Expected: zero results (or only unrelated matches like `className`).
@@ -146,7 +146,7 @@ Expected: zero results (or only unrelated matches like `className`).
 - [ ] **Step 2.4: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/WhoItsFor.tsx "app/(marketing)/solutions/page.tsx"
 git commit -m "feat: remove Cleaning Services from all marketing surfaces"
 ```
@@ -304,7 +304,7 @@ Replace the problem items array:
 - [ ] **Step 3.4: Verify TypeScript**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -30
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -30
 ```
 
 Expected: no new TypeScript errors.
@@ -312,7 +312,7 @@ Expected: no new TypeScript errors.
 - [ ] **Step 3.5: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/WhoItsFor.tsx "app/(marketing)/solutions/page.tsx" components/marketing/ProblemStatement.tsx
 git commit -m "feat: replace emoji icons with Lucide React across service components"
 ```
@@ -371,7 +371,7 @@ In `app/(marketing)/solutions/page.tsx`, after the closing `</div>` of the solut
 - [ ] **Step 4.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add "app/(marketing)/solutions/page.tsx"
 git commit -m "feat: elevate Home Maintenance to top of solutions + add DIY callout"
 ```
@@ -442,7 +442,7 @@ export function Hero() {
 - [ ] **Step 5.2: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/Hero.tsx
 git commit -m "feat: update Hero with Plug-A-Pro headline, real copy, and DIY positioning"
 ```
@@ -565,7 +565,7 @@ export default function FeaturesPage() {
 - [ ] **Step 6.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/Features.tsx "app/(marketing)/features/page.tsx"
 git commit -m "feat: replace generic Features placeholders with real Plug-A-Pro feature content"
 ```
@@ -624,7 +624,7 @@ export default function HomePage() {
 - [ ] **Step 7.2: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add "app/(marketing)/page.tsx"
 git commit -m "feat: restructure homepage to surface ProblemStatement, WhoItsFor, HowItWorksSteps, OperatingModel"
 ```
@@ -832,7 +832,7 @@ export function PricingCards() {
 - [ ] **Step 8.5: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/shared/Nav.tsx components/marketing/CTAStrip.tsx components/marketing/SocialProof.tsx components/marketing/PricingCards.tsx
 git commit -m "feat: update Nav, CTAStrip, SocialProof, and PricingCards with real Plug-A-Pro content"
 ```
@@ -977,7 +977,7 @@ export default function AboutPage() {
 - [ ] **Step 9.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add "app/(marketing)/faq/page.tsx" "app/(marketing)/about/page.tsx"
 git commit -m "feat: update FAQ and About pages with real Plug-A-Pro content"
 ```
@@ -995,7 +995,7 @@ git commit -m "feat: update FAQ and About pages with real Plug-A-Pro content"
 - [ ] **Step 10.1: Create current-site-audit.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/current-site-audit.md << 'EOF'
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/docs/marketing-site/current-site-audit.md << 'EOF'
 # Plug-A-Pro Marketing Site — Current Site Audit
 
 Conducted: 2026-03-27
@@ -1055,7 +1055,7 @@ EOF
 - [ ] **Step 10.2: Create visual-direction.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/visual-direction.md << 'EOF'
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/docs/marketing-site/visual-direction.md << 'EOF'
 # Plug-A-Pro Marketing Site — Visual Direction
 
 Decided: 2026-03-27
@@ -1137,7 +1137,7 @@ EOF
 - [ ] **Step 10.3: Create content-changes.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/content-changes.md << 'EOF'
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/docs/marketing-site/content-changes.md << 'EOF'
 # Plug-A-Pro Marketing Site — Content Changes Log
 
 Updated: 2026-03-27
@@ -1243,7 +1243,7 @@ EOF
 - [ ] **Step 10.4: Create qa-checklist.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/qa-checklist.md << 'EOF'
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/docs/marketing-site/qa-checklist.md << 'EOF'
 # Plug-A-Pro Marketing Site — QA Checklist
 
 Date: 2026-03-27
@@ -1332,7 +1332,7 @@ EOF
 - [ ] **Step 10.5: Commit docs**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add docs/marketing-site/
 git commit -m "docs: add marketing site audit, visual direction, content changes, and QA checklist"
 ```
@@ -1344,7 +1344,7 @@ git commit -m "docs: add marketing site audit, visual direction, content changes
 - [ ] **Step 11.1: Log audit findings to OpenBrain**
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
   --project "Plug-A-Pro" \
   --domain "engineering" \
   --title "implementation — marketing site MVP refinement (2026-03-27)" \
@@ -1355,7 +1355,7 @@ cd /Users/shimane/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowled
 - [ ] **Step 11.2: Run lint**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npm run lint 2>&1 | tail -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npm run lint 2>&1 | tail -20
 ```
 
 Expected: no errors. Fix any lint issues before proceeding.
@@ -1363,7 +1363,7 @@ Expected: no errors. Fix any lint issues before proceeding.
 - [ ] **Step 11.3: Run typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1
 ```
 
 Expected: no errors.
@@ -1371,7 +1371,7 @@ Expected: no errors.
 - [ ] **Step 11.4: Run build**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npm run build 2>&1 | tail -30
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npm run build 2>&1 | tail -30
 ```
 
 Expected: build completes successfully with no errors.
@@ -1379,7 +1379,7 @@ Expected: build completes successfully with no errors.
 - [ ] **Step 11.5: Final commit and push**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git status
 git push
 ```
@@ -1387,7 +1387,7 @@ git push
 - [ ] **Step 11.6: Log final status to OpenBrain**
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
   --project "Plug-A-Pro" \
   --domain "engineering" \
   --title "QA — marketing site MVP refinement build result (2026-03-27)" \

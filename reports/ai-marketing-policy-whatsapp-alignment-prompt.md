@@ -29,14 +29,14 @@ This is not a generic content pass. It is a marketplace-model, persona-fit, and 
 
 The AI agent must use these documents as source intent:
 
-- [persona-clarification-document.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/persona-clarification-document.md#L1)
-- [mvp-scope-prioritisation-document.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/mvp-scope-prioritisation-document.md#L1)
-- [role-by-role-feature-requirements-matrix.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/role-by-role-feature-requirements-matrix.md#L1)
-- [whatsapp-journey-specification.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/whatsapp-journey-specification.md#L1)
-- [platform-responsibility-matrix.md](/Users/shimane/Projects/Plug-A-Pro/reports/platform-responsibility-matrix.md#L1)
-- [platform-responsibility-and-user-journey-sweep.md](/Users/shimane/Projects/Plug-A-Pro/reports/platform-responsibility-and-user-journey-sweep.md#L1)
-- [platform-copy-risk-register.md](/Users/shimane/Projects/Plug-A-Pro/reports/platform-copy-risk-register.md#L1)
-- [meta-whatsapp-external-copy-remediation-runbook.md](/Users/shimane/Projects/Plug-A-Pro/reports/meta-whatsapp-external-copy-remediation-runbook.md#L1)
+- [persona-clarification-document.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/strategy/servicemen-app/persona-clarification-document.md#L1)
+- [mvp-scope-prioritisation-document.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/strategy/servicemen-app/mvp-scope-prioritisation-document.md#L1)
+- [role-by-role-feature-requirements-matrix.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/strategy/servicemen-app/role-by-role-feature-requirements-matrix.md#L1)
+- [whatsapp-journey-specification.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/strategy/servicemen-app/whatsapp-journey-specification.md#L1)
+- [platform-responsibility-matrix.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/reports/platform-responsibility-matrix.md#L1)
+- [platform-responsibility-and-user-journey-sweep.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/reports/platform-responsibility-and-user-journey-sweep.md#L1)
+- [platform-copy-risk-register.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/reports/platform-copy-risk-register.md#L1)
+- [meta-whatsapp-external-copy-remediation-runbook.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/reports/meta-whatsapp-external-copy-remediation-runbook.md#L1)
 
 ## Core Business Model To Enforce
 

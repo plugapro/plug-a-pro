@@ -8,10 +8,12 @@
 import { NextResponse } from 'next/server'
 import { requireProvider } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { MATCHING_CONFIG } from '@/lib/matching/config'
+import { promptCustomersForNewProviderAvailability } from '@/lib/matching/customer-recontact'
 
 export async function POST(request: Request) {
   const session = await requireProvider()
-  if (!session) {
+  if (!session?.providerId) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
@@ -28,6 +30,10 @@ export async function POST(request: Request) {
 
   const isOnline = availabilityMode !== 'OFFLINE' && availabilityMode !== 'BREAK'
   const now = new Date()
+  const previousLiveStatus = await (db as any).providerLiveStatus.findUnique({
+    where: { providerId: session.providerId },
+    select: { isOnline: true, lastHeartbeatAt: true },
+  }).catch(() => null)
 
   await (db as any).providerLiveStatus.upsert({
     where: { providerId: session.providerId },
@@ -56,6 +62,22 @@ export async function POST(request: Request) {
     await db.provider.update({
       where: { id: session.providerId },
       data: { lastKnownLat: lat, lastKnownLng: lng, lastKnownLocationAt: now },
+    })
+  }
+
+  const becameReachable =
+    isOnline &&
+    (
+      !previousLiveStatus ||
+      previousLiveStatus.isOnline === false ||
+      !previousLiveStatus.lastHeartbeatAt ||
+      previousLiveStatus.lastHeartbeatAt <
+        new Date(Date.now() - MATCHING_CONFIG.heartbeatStaleMinutes * 60 * 1000)
+    )
+
+  if (becameReachable) {
+    await promptCustomersForNewProviderAvailability(session.providerId).catch((error) => {
+      console.error('[provider/heartbeat] customer recontact failed:', error)
     })
   }
 

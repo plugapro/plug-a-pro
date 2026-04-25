@@ -186,7 +186,7 @@ Next:
 ## OpenBrain Log Template — Current Deployment Update
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
   --project "Plug-A-Pro" \
   --domain "engineering" \

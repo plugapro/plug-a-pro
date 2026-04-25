@@ -27,6 +27,7 @@ import {
   handleProviderJourneyFlow,
   PROVIDER_JOURNEY_TRIGGERS,
 } from './whatsapp-flows/provider-journey'
+import { hasFutureExplicitRequestWindow } from './matching/customer-recontact'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
 import { applyOptIn, applyOptOut } from './whatsapp-policy'
 
@@ -57,6 +58,10 @@ const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no market
 
 // Keywords that trigger marketing opt-in
 const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in', 'optin']
+
+function firstName(name: string | null | undefined) {
+  return (name?.trim() || 'there').split(/\s+/)[0]
+}
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
@@ -267,6 +272,9 @@ export async function processInboundMessage(
     ) {
       // ── Match-level lead responses (quote flow) ─────────────────────────────
       await handleMatchLeadResponse(phone, reply.id)
+      return
+    } else if (reply.id?.startsWith('rematch_yes:') || reply.id?.startsWith('rematch_no:')) {
+      await handleCustomerRematchCheckResponse(phone, reply.id)
       return
     } else if (reply.id?.startsWith('quote_accept_') || reply.id?.startsWith('quote_decline_')) {
       // ── Customer quote response buttons ─────────────────────────────────────
@@ -520,6 +528,109 @@ async function tryMediatedRelay(phone: string, text: string): Promise<boolean> {
   }
 
   return false
+}
+
+async function handleCustomerRematchCheckResponse(phone: string, actionId: string): Promise<void> {
+  const wantsRematch = actionId.startsWith('rematch_yes:')
+  const jobRequestId = actionId.split(':')[1] ?? ''
+
+  const customer = await db.customer.findUnique({
+    where: { phone },
+    select: { id: true, name: true },
+  })
+
+  if (!customer) {
+    await sendText(phone, "We couldn't verify your request. Reply *Hi* to start again.")
+    return
+  }
+
+  const jobRequest = await db.jobRequest.findFirst({
+    where: {
+      id: jobRequestId,
+      customerId: customer.id,
+    },
+    select: {
+      id: true,
+      category: true,
+      title: true,
+      status: true,
+      requestedWindowStart: true,
+      requestedWindowEnd: true,
+      requestedArrivalLatest: true,
+    },
+  })
+
+  if (!jobRequest) {
+    await sendText(phone, "We couldn't find that request. Reply *Hi* if you still need help.")
+    return
+  }
+
+  if (!wantsRematch) {
+    await db.jobRequest.update({
+      where: { id: jobRequest.id },
+      data: {
+        customerRematchCheckRespondedAt: new Date(),
+        customerRematchCheckOutcome: 'NO',
+      },
+    })
+    await sendText(phone, `Thanks, ${firstName(customer.name)}. We won't reopen that request.`)
+    return
+  }
+
+  if (!hasFutureExplicitRequestWindow(jobRequest)) {
+    await db.jobRequest.update({
+      where: { id: jobRequest.id },
+      data: {
+        customerRematchCheckRespondedAt: new Date(),
+        customerRematchCheckOutcome: 'WINDOW_ELAPSED',
+      },
+    })
+    await sendText(
+      phone,
+      `Thanks, ${firstName(customer.name)}. That requested time has already passed, so we won't reopen this request. Reply *Hi* whenever you'd like to submit a new one.`
+    )
+    return
+  }
+
+  if (jobRequest.status !== 'EXPIRED') {
+    await db.jobRequest.update({
+      where: { id: jobRequest.id },
+      data: {
+        customerRematchCheckRespondedAt: new Date(),
+        customerRematchCheckOutcome: 'ALREADY_ACTIVE',
+      },
+    })
+    await sendText(phone, 'Your request is already active, so there is nothing else you need to do right now.')
+    return
+  }
+
+  await db.jobRequest.update({
+    where: { id: jobRequest.id },
+    data: {
+      status: 'OPEN',
+      customerRematchCheckRespondedAt: new Date(),
+      customerRematchCheckOutcome: 'YES',
+    },
+  })
+
+  const { orchestrateMatch } = await import('./matching/orchestrator')
+  const result = await orchestrateMatch(jobRequest.id, { triggeredBy: 'rematch' }).catch((error) => {
+    console.error('[whatsapp-bot] rematch confirm failed:', error)
+    return { status: 'ERROR' as const }
+  })
+
+  if (result.status === 'DISPATCHED') {
+    await sendText(
+      phone,
+      `Thanks, ${firstName(customer.name)}. We've reopened your request and sent it to an available provider. We'll update you as soon as they respond.`
+    )
+    return
+  }
+
+  await sendText(
+    phone,
+    `Thanks, ${firstName(customer.name)}. We've reopened your request and will keep trying while your requested time is still valid.`
+  )
 }
 
 // ─── Job notification to provider via WhatsApp ───────────────────────────────

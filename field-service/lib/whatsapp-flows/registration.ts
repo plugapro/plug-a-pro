@@ -102,7 +102,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   if (existing?.status === 'PENDING') {
     await sendText(
       ctx.phone,
-      `⏳ Your application is under review. We'll contact you within 24 hours.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *menu* anytime to return to the main menu.`
+      `⏳ Your application is under review. We'll contact you within 30 minutes.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *menu* anytime to return to the main menu.`
     )
     return { nextStep: 'done' }
   }
@@ -751,7 +751,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       const ref = existingApp.id.slice(-8).toUpperCase()
       await sendText(
         ctx.phone,
-        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 24 hours. Reply *menu* anytime to return to the main menu.`
+        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 30 minutes. Reply *menu* anytime to return to the main menu.`
       )
       return { nextStep: 'done' }
     }
@@ -808,7 +808,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       const ref = racedExisting.id.slice(-8).toUpperCase()
       await sendText(
         ctx.phone,
-        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 24 hours. Reply *menu* anytime to return to the main menu.`
+        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 30 minutes. Reply *menu* anytime to return to the main menu.`
       )
       return { nextStep: 'done' }
     }
@@ -828,7 +828,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
     await sendText(
       ctx.phone,
-      `🎉 *Application submitted!*\n\nThanks, *${ctx.data.name}* — we'll review your details and get back to you within *24 hours*.\n\nRef: *${ref}*\n\n_We'll message you here with the outcome._`
+      `🎉 *Application submitted!*\n\nThanks, *${ctx.data.name}* — we'll review your details and get back to you within *30 minutes*.\n\nRef: *${ref}*\n\n_We'll message you here with the outcome._`
     )
 
     // Send template confirmation (covers the case where >24h passes before we reply)

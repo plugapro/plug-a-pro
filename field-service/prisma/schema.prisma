@@ -307,6 +307,10 @@ model JobRequest {
   latestDispatchDecisionId String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt   DateTime?        // if no match within window, mark EXPIRED
+  customerNoMatchNotifiedAt DateTime?
+  customerRematchCheckSentAt DateTime?
+  customerRematchCheckRespondedAt DateTime?
+  customerRematchCheckOutcome String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 

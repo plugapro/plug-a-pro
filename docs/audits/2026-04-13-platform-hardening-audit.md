@@ -10,31 +10,31 @@ Mode: audit + safe, targeted remediation only
 
 | Journey | Entry point | Main steps | Dependencies | Failure points | Permissions |
 |---|---|---|---|---|---|
-| Browse and start a request | [field-service/app/(customer)/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/page.tsx:1), [services/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/services/page.tsx:1) | land on home, browse categories, open `/book/[serviceId]`, complete booking form | customer auth cookie, category list, booking form, geocoding, create-job-request API | sign-in redirect loss, address capture friction, failed request creation, missing post-submit tracking | guest on home, authenticated customer required on `/services` and `/book/*` |
-| Customer auth and account linking | [sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/sign-in/page.tsx:1), [verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1), [api/auth/session/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/auth/session/route.ts:1), [api/auth/link/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/auth/link/route.ts:1) | send OTP, verify code, persist HttpOnly cookie, link Supabase user to existing customer row | Supabase OTP, session cookie, phone-match link flow | lost callback/deep link, raw provider error copy, stale customer linkage by phone/userId | customer role |
-| Track active requests and bookings | [bookings/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/page.tsx:1), [requests/[id]/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/requests/[id]/page.tsx:1), [bookings/[id]/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/[id]/page.tsx:1) | list active requests, open request, open booking, cancel, sign off completion, raise dispute | customer resolution by session, request/match/booking data, quote/payment/job context | no results due to cross-channel identity split, dead links, weak ownership checks | authenticated customer, server-side ownership check |
-| Quote approval and payment | [quotes/[token]/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/quotes/[token]/page.tsx:1), [api/quotes/[token]/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/quotes/[token]/route.ts:1), [api/webhooks/payments/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/webhooks/payments/route.ts:1) | review quote, approve or decline, create booking artifacts, initialize payment, handle webhook | approval token, quote transaction, PSP webhook verification | token misuse if entropy/rotation is weak, payment webhook retry/error ambiguity, customer messaging dead links | public token flow + PSP signed webhook |
-| Attachment and status visibility | [api/attachments/[id]/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1), [lib/whatsapp-flows/status.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/whatsapp-flows/status.ts:1) | open proof photos, view request status, follow app CTA | session auth, attachment proxy, WhatsApp interactive sends | attachment denial if customer not linked properly, raw blob exposure if URL leaks, interactive fallback failure | customer/provider/admin auth on proxy route |
+| Browse and start a request | [field-service/app/(customer)/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/page.tsx:1), [services/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/services/page.tsx:1) | land on home, browse categories, open `/book/[serviceId]`, complete booking form | customer auth cookie, category list, booking form, geocoding, create-job-request API | sign-in redirect loss, address capture friction, failed request creation, missing post-submit tracking | guest on home, authenticated customer required on `/services` and `/book/*` |
+| Customer auth and account linking | [sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/sign-in/page.tsx:1), [verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1), [api/auth/session/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/auth/session/route.ts:1), [api/auth/link/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/auth/link/route.ts:1) | send OTP, verify code, persist HttpOnly cookie, link Supabase user to existing customer row | Supabase OTP, session cookie, phone-match link flow | lost callback/deep link, raw provider error copy, stale customer linkage by phone/userId | customer role |
+| Track active requests and bookings | [bookings/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/page.tsx:1), [requests/[id]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/requests/[id]/page.tsx:1), [bookings/[id]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/[id]/page.tsx:1) | list active requests, open request, open booking, cancel, sign off completion, raise dispute | customer resolution by session, request/match/booking data, quote/payment/job context | no results due to cross-channel identity split, dead links, weak ownership checks | authenticated customer, server-side ownership check |
+| Quote approval and payment | [quotes/[token]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/quotes/[token]/page.tsx:1), [api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/quotes/[token]/route.ts:1), [api/webhooks/payments/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/webhooks/payments/route.ts:1) | review quote, approve or decline, create booking artifacts, initialize payment, handle webhook | approval token, quote transaction, PSP webhook verification | token misuse if entropy/rotation is weak, payment webhook retry/error ambiguity, customer messaging dead links | public token flow + PSP signed webhook |
+| Attachment and status visibility | [api/attachments/[id]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1), [lib/whatsapp-flows/status.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/whatsapp-flows/status.ts:1) | open proof photos, view request status, follow app CTA | session auth, attachment proxy, WhatsApp interactive sends | attachment denial if customer not linked properly, raw blob exposure if URL leaks, interactive fallback failure | customer/provider/admin auth on proxy route |
 
 ### B. Service provider journeys
 
 | Journey | Entry point | Main steps | Dependencies | Failure points | Permissions |
 |---|---|---|---|---|---|
-| Provider onboarding and login | [provider-sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/provider-sign-in/page.tsx:1), [provider-verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/provider-verify/page.tsx:1), [technician-* auth pages](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/technician-sign-in/page.tsx:1), [applications/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/applications/page.tsx:1) | register via WhatsApp, admin reviews application, provider OTP sign-in, provider role verified | Supabase user metadata, application dedupe, provider sync | duplicate active applications, lost callback, raw verify errors, approval conflicts | provider role required |
-| Accept or reject assignment offer | [api/provider/assignment-offers/[id]/accept/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/provider/assignment-offers/[id]/accept/route.ts:1), [reject/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/provider/assignment-offers/[id]/reject/route.ts:1) | resolve provider from session, accept or reject offer, update assignment state | provider DB lookup, matching service | duplicate actions, stale offers, error payloads from service layer | authenticated provider, provider ownership enforced server-side |
-| Quote and inspection lifecycle | [provider/quotes/[matchId]/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(provider)/provider/quotes/[matchId]/page.tsx:1), [api/technician/quotes/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/technician/quotes/route.ts:1) | inspection complete, submit quote, revise declined quote | provider auth, match ownership, quote state machine | duplicate quote submissions, inconsistent revision state, public quote token downstream | authenticated provider |
-| Job execution lifecycle | [provider/jobs/[id]/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(provider)/provider/jobs/[id]/page.tsx:1), [api/technician/jobs/[id]/status/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/technician/jobs/[id]/status/route.ts:1), [photo/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/technician/jobs/[id]/photo/route.ts:1) | open job, update status, upload photos, request extra work, raise dispute | provider auth, job ownership, attachment storage, job transition state machine | invalid state transitions, upload validation failure, job side-effect dead links | authenticated provider, assigned-provider ownership enforced |
-| Earnings and profile | [provider/earnings/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(provider)/provider/earnings/page.tsx:1), [provider/profile/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(provider)/provider/profile/page.tsx:1) | review earnings, update profile | provider auth, provider record | missing provider link, stale metadata | authenticated provider |
+| Provider onboarding and login | [provider-sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/provider-sign-in/page.tsx:1), [provider-verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/provider-verify/page.tsx:1), [technician-* auth pages](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/technician-sign-in/page.tsx:1), [applications/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/applications/page.tsx:1) | register via WhatsApp, admin reviews application, provider OTP sign-in, provider role verified | Supabase user metadata, application dedupe, provider sync | duplicate active applications, lost callback, raw verify errors, approval conflicts | provider role required |
+| Accept or reject assignment offer | [api/provider/assignment-offers/[id]/accept/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/provider/assignment-offers/[id]/accept/route.ts:1), [reject/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/provider/assignment-offers/[id]/reject/route.ts:1) | resolve provider from session, accept or reject offer, update assignment state | provider DB lookup, matching service | duplicate actions, stale offers, error payloads from service layer | authenticated provider, provider ownership enforced server-side |
+| Quote and inspection lifecycle | [provider/quotes/[matchId]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(provider)/provider/quotes/[matchId]/page.tsx:1), [api/technician/quotes/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/technician/quotes/route.ts:1) | inspection complete, submit quote, revise declined quote | provider auth, match ownership, quote state machine | duplicate quote submissions, inconsistent revision state, public quote token downstream | authenticated provider |
+| Job execution lifecycle | [provider/jobs/[id]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(provider)/provider/jobs/[id]/page.tsx:1), [api/technician/jobs/[id]/status/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/technician/jobs/[id]/status/route.ts:1), [photo/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/technician/jobs/[id]/photo/route.ts:1) | open job, update status, upload photos, request extra work, raise dispute | provider auth, job ownership, attachment storage, job transition state machine | invalid state transitions, upload validation failure, job side-effect dead links | authenticated provider, assigned-provider ownership enforced |
+| Earnings and profile | [provider/earnings/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(provider)/provider/earnings/page.tsx:1), [provider/profile/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(provider)/provider/profile/page.tsx:1) | review earnings, update profile | provider auth, provider record | missing provider link, stale metadata | authenticated provider |
 
 ### C. Operations dashboard journeys
 
 | Journey | Entry point | Main steps | Dependencies | Failure points | Permissions |
 |---|---|---|---|---|---|
-| Admin sign-in and protected navigation | [admin-sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/admin-sign-in/page.tsx:1), [proxy.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/proxy.ts:1), [requireAdmin](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/auth.ts:84) | email/password sign-in, set session cookie, enter admin routes | Supabase auth, role metadata, proxy redirect | lost callback, unauthorized route access, role mismatch | admin or owner |
-| Dashboard triage | [admin/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/page.tsx:1) | view validation, dispatch, quotes, field exceptions, finance, trust recovery, onboarding lanes | aggregate DB queries, ops queue ownership | stale counts, queue/action drift, missing browser verification | admin/owner |
-| Validation, dispatch, and field exceptions | [validation/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/validation/page.tsx:1), [dispatch/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/dispatch/page.tsx:1), [field-exceptions/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/field-exceptions/page.tsx:1) | claim queue item, review data, mark ready, assign, override, release | ops queue assignment model, matching service, job request state | migration mismatch, claim drift, manual override side effects | admin/owner |
-| Provider onboarding review | [applications/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/applications/page.tsx:1) | review pending application, claim item, approve or reject, notify provider | application dedupe helpers, Supabase admin API, provider sync | duplicate phone identities, partial user/profile creation | admin/owner |
-| Payments and disputes | [payments/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/payments/page.tsx:1), [disputes/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(admin)/admin/disputes/page.tsx:1) | claim item, review payment/dispute, refund or update case | payment records, dispute records, audit logging | privileged money actions, weak traceability if logs are missing | admin/owner |
+| Admin sign-in and protected navigation | [admin-sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/admin-sign-in/page.tsx:1), [proxy.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/proxy.ts:1), [requireAdmin](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/auth.ts:84) | email/password sign-in, set session cookie, enter admin routes | Supabase auth, role metadata, proxy redirect | lost callback, unauthorized route access, role mismatch | admin or owner |
+| Dashboard triage | [admin/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/page.tsx:1) | view validation, dispatch, quotes, field exceptions, finance, trust recovery, onboarding lanes | aggregate DB queries, ops queue ownership | stale counts, queue/action drift, missing browser verification | admin/owner |
+| Validation, dispatch, and field exceptions | [validation/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/validation/page.tsx:1), [dispatch/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/dispatch/page.tsx:1), [field-exceptions/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/field-exceptions/page.tsx:1) | claim queue item, review data, mark ready, assign, override, release | ops queue assignment model, matching service, job request state | migration mismatch, claim drift, manual override side effects | admin/owner |
+| Provider onboarding review | [applications/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/applications/page.tsx:1) | review pending application, claim item, approve or reject, notify provider | application dedupe helpers, Supabase admin API, provider sync | duplicate phone identities, partial user/profile creation | admin/owner |
+| Payments and disputes | [payments/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/payments/page.tsx:1), [disputes/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(admin)/admin/disputes/page.tsx:1) | claim item, review payment/dispute, refund or update case | payment records, dispute records, audit logging | privileged money actions, weak traceability if logs are missing | admin/owner |
 
 ## 2. Issue Register
 
@@ -43,12 +43,12 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: sign-in recovery from protected deep links
 - Severity: High
 - Category: Security / Reliability / UX
-- Location: [proxy.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/proxy.ts:1), [sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/sign-in/page.tsx:1), [verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1), provider/admin auth entry pages
+- Location: [proxy.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/proxy.ts:1), [sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/sign-in/page.tsx:1), [verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1), provider/admin auth entry pages
 - How to reproduce: open a protected route while signed out, let proxy redirect to sign-in, complete auth
 - Expected behavior: user returns safely to the original in-app route only
 - Actual behavior before fix: proxy used `callbackUrl`, sign-in flow read `next`, and the raw redirect target was not sanitized
 - Root cause: redirect plumbing diverged between proxy and auth screens, and redirect targets were trusted too loosely
-- Fix applied: introduced [safe-redirect.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/safe-redirect.ts:1), updated customer/provider/technician/admin auth entry pages to read sanitized `next` or `callbackUrl`, and updated [proxy.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/proxy.ts:1) to emit both parameters consistently
+- Fix applied: introduced [safe-redirect.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/safe-redirect.ts:1), updated customer/provider/technician/admin auth entry pages to read sanitized `next` or `callbackUrl`, and updated [proxy.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/proxy.ts:1) to emit both parameters consistently
 - Residual risk: browser-level verification of every deep-link path still required
 
 ### H-002 — Customer cross-channel identity mismatch broke request tracking
@@ -56,12 +56,12 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: post-booking tracking, booking detail, attachment access
 - Severity: High
 - Category: Access Control / Reliability / Data Integrity
-- Location: [customer-session.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/customer-session.ts:1), [create-job-request.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/job-requests/create-job-request.ts:1), customer bookings/request pages, [api/attachments/[id]/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
+- Location: [customer-session.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/customer-session.ts:1), [create-job-request.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/job-requests/create-job-request.ts:1), customer bookings/request pages, [api/attachments/[id]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
 - How to reproduce: book via WhatsApp, later authenticate on web with same phone, then open bookings/request tracking
 - Expected behavior: the authenticated web customer sees the same customer/request history as the WhatsApp identity
 - Actual behavior before fix: customer resolution relied too heavily on `userId`, so phone-only records could appear “missing”
 - Root cause: customer identity continuity existed in concept but was not enforced consistently across route handlers and page-level ownership checks
-- Fix applied: centralized server-side session resolution in [customer-session.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/customer-session.ts:1), updated booking/request/profile screens and attachment proxy to use it, and hardened job-request creation to reconcile by phone before creating a new customer
+- Fix applied: centralized server-side session resolution in [customer-session.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/customer-session.ts:1), updated booking/request/profile screens and attachment proxy to use it, and hardened job-request creation to reconcile by phone before creating a new customer
 - Residual risk: legacy production data with truly duplicated customer rows may still require manual cleanup
 
 ### H-003 — Customer request tracking was incomplete after successful booking
@@ -69,7 +69,7 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: request creation → track progress
 - Severity: High
 - Category: UX / Reliability
-- Location: [bookings/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/page.tsx:1), [BookingFlow.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/components/customer/BookingFlow.tsx:1)
+- Location: [bookings/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/page.tsx:1), [BookingFlow.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/components/customer/BookingFlow.tsx:1)
 - How to reproduce: create a job request that has not yet become a booking, then open “My bookings”
 - Expected behavior: active requests remain visible until they become bookings
 - Actual behavior before fix: the customer saw an empty bookings screen because only confirmed bookings were listed
@@ -82,7 +82,7 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: WhatsApp “My Request”
 - Severity: Medium
 - Category: UX / Error Messaging / Security
-- Location: [status.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/whatsapp-flows/status.ts:1)
+- Location: [status.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/whatsapp-flows/status.ts:1)
 - How to reproduce: ask the bot to track a request
 - Expected behavior: safe, guided app handoff with resilient fallback
 - Actual behavior before fix: bot messages could embed raw tracking URLs directly
@@ -95,12 +95,12 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: OTP verification
 - Severity: Medium
 - Category: Error Messaging / Security
-- Location: [verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1), [provider-verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/provider-verify/page.tsx:1), [technician-verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/technician-verify/page.tsx:1)
+- Location: [verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1), [provider-verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/provider-verify/page.tsx:1), [technician-verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/technician-verify/page.tsx:1)
 - How to reproduce: submit an invalid or expired code, or trigger a provider-side OTP error
 - Expected behavior: user-friendly and non-technical guidance
 - Actual behavior before fix: raw `verifyError.message` could be shown
 - Root cause: verify forms forwarded provider error text directly to the UI
-- Fix applied: added [auth-client-errors.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/auth-client-errors.ts:1) and normalized verify-page error messaging
+- Fix applied: added [auth-client-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/auth-client-errors.ts:1) and normalized verify-page error messaging
 - Residual risk: send-OTP pages still rely on inline mapping, not a shared helper, but user-facing output is already controlled
 
 ### H-006 — Payment webhook leaked internal exception text in HTTP response
@@ -108,7 +108,7 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: payment webhook failure handling
 - Severity: Medium
 - Category: Security / Error Messaging
-- Location: [api/webhooks/payments/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/webhooks/payments/route.ts:1)
+- Location: [api/webhooks/payments/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/webhooks/payments/route.ts:1)
 - How to reproduce: force `handlePaymentSuccess` or `handlePaymentFailed` to throw
 - Expected behavior: webhook response should not echo raw internal error text
 - Actual behavior before fix: response body included `message: String(err)`
@@ -121,7 +121,7 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: session establishment
 - Severity: Medium
 - Category: Security / Architecture
-- Location: [api/auth/session/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/auth/session/route.ts:1)
+- Location: [api/auth/session/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/auth/session/route.ts:1)
 - How to reproduce: call `/api/auth/session` with an arbitrarily large `expiresIn`
 - Expected behavior: server controls cookie lifetime regardless of caller input
 - Actual behavior before fix: `expiresIn` from the client directly shaped `Max-Age`
@@ -134,7 +134,7 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: job completion notification
 - Severity: Medium
 - Category: UX / Reliability
-- Location: [jobs.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/jobs.ts:1)
+- Location: [jobs.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/jobs.ts:1)
 - How to reproduce: complete a job and inspect the WhatsApp completion link
 - Expected behavior: completion message should land on a real invoice-visible screen
 - Actual behavior before fix: message linked to `/bookings/{id}/invoice`, which does not exist
@@ -147,7 +147,7 @@ Mode: audit + safe, targeted remediation only
 - Journey affected: proof photos, quote attachments, invoice artifacts
 - Severity: High
 - Category: Security / Privacy
-- Location: [storage.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/storage.ts:1), [api/attachments/[id]/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
+- Location: [storage.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/storage.ts:1), [api/attachments/[id]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
 - How to reproduce: obtain a raw Vercel Blob URL from an attachment record and fetch it directly
 - Expected behavior: attachment access should be private by default and enforced server-side
 - Actual behavior: the application proxy protects normal UI access, but blobs are still uploaded with `access: 'public'`
@@ -171,31 +171,31 @@ Mode: audit + safe, targeted remediation only
 ## 3. Fix Summary
 
 ### Files changed
-- [field-service/lib/customer-session.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/customer-session.ts:1)
-- [field-service/lib/job-requests/create-job-request.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/job-requests/create-job-request.ts:1)
-- [field-service/app/(customer)/bookings/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/page.tsx:1)
-- [field-service/app/(customer)/bookings/[id]/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/[id]/page.tsx:1)
-- [field-service/app/(customer)/requests/[id]/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/requests/[id]/page.tsx:1)
-- [field-service/app/(customer)/profile/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/profile/page.tsx:1)
-- [field-service/app/(customer)/layout.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(customer)/layout.tsx:1)
-- [field-service/components/customer/BookingFlow.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/components/customer/BookingFlow.tsx:1)
-- [field-service/lib/geocoding.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/geocoding.ts:1)
-- [field-service/app/api/customer/location-reverse/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/customer/location-reverse/route.ts:1)
-- [field-service/lib/whatsapp-flows/status.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/whatsapp-flows/status.ts:1)
-- [field-service/lib/safe-redirect.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/safe-redirect.ts:1)
-- [field-service/proxy.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/proxy.ts:1)
-- [field-service/app/(auth)/sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/sign-in/page.tsx:1)
-- [field-service/app/(auth)/verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1)
-- [field-service/app/(auth)/provider-sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/provider-sign-in/page.tsx:1)
-- [field-service/app/(auth)/provider-verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/provider-verify/page.tsx:1)
-- [field-service/app/(auth)/technician-sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/technician-sign-in/page.tsx:1)
-- [field-service/app/(auth)/technician-verify/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/technician-verify/page.tsx:1)
-- [field-service/app/(auth)/admin-sign-in/page.tsx](/Users/shimane/Projects/Plug-A-Pro/field-service/app/(auth)/admin-sign-in/page.tsx:1)
-- [field-service/lib/auth-client-errors.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/auth-client-errors.ts:1)
-- [field-service/app/api/auth/session/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/auth/session/route.ts:1)
-- [field-service/app/api/webhooks/payments/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/webhooks/payments/route.ts:1)
-- [field-service/app/api/attachments/[id]/route.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
-- [field-service/lib/jobs.ts](/Users/shimane/Projects/Plug-A-Pro/field-service/lib/jobs.ts:1)
+- [field-service/lib/customer-session.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/customer-session.ts:1)
+- [field-service/lib/job-requests/create-job-request.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/job-requests/create-job-request.ts:1)
+- [field-service/app/(customer)/bookings/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/page.tsx:1)
+- [field-service/app/(customer)/bookings/[id]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/bookings/[id]/page.tsx:1)
+- [field-service/app/(customer)/requests/[id]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/requests/[id]/page.tsx:1)
+- [field-service/app/(customer)/profile/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/profile/page.tsx:1)
+- [field-service/app/(customer)/layout.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/layout.tsx:1)
+- [field-service/components/customer/BookingFlow.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/components/customer/BookingFlow.tsx:1)
+- [field-service/lib/geocoding.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/geocoding.ts:1)
+- [field-service/app/api/customer/location-reverse/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/customer/location-reverse/route.ts:1)
+- [field-service/lib/whatsapp-flows/status.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/whatsapp-flows/status.ts:1)
+- [field-service/lib/safe-redirect.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/safe-redirect.ts:1)
+- [field-service/proxy.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/proxy.ts:1)
+- [field-service/app/(auth)/sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/sign-in/page.tsx:1)
+- [field-service/app/(auth)/verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/verify/page.tsx:1)
+- [field-service/app/(auth)/provider-sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/provider-sign-in/page.tsx:1)
+- [field-service/app/(auth)/provider-verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/provider-verify/page.tsx:1)
+- [field-service/app/(auth)/technician-sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/technician-sign-in/page.tsx:1)
+- [field-service/app/(auth)/technician-verify/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/technician-verify/page.tsx:1)
+- [field-service/app/(auth)/admin-sign-in/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(auth)/admin-sign-in/page.tsx:1)
+- [field-service/lib/auth-client-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/auth-client-errors.ts:1)
+- [field-service/app/api/auth/session/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/auth/session/route.ts:1)
+- [field-service/app/api/webhooks/payments/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/webhooks/payments/route.ts:1)
+- [field-service/app/api/attachments/[id]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
+- [field-service/lib/jobs.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/jobs.ts:1)
 
 ### What changed and why
 - Centralized customer identity resolution so WhatsApp-originated customers and authenticated web customers converge safely on one record.

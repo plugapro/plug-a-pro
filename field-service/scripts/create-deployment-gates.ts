@@ -44,7 +44,7 @@ function slugify(value: string) {
 
 function buildMarkdown(args: Args) {
   const slug = slugify(args.release)
-  const openBrainPath = '/Users/shimane/Projects/MobileApps/OpenBrain/backend'
+  const openBrainPath = '/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend'
 
   return `# Deployment Gates — ${args.release}
 

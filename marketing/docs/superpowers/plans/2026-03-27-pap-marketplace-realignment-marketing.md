@@ -63,7 +63,7 @@ export const siteConfig = {
 - [ ] **Step 1.2: Verify typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -71,7 +71,7 @@ Expected: no errors.
 - [ ] **Step 1.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add lib/metadata.ts
 git commit -m "content: update siteConfig description to marketplace framing"
 ```
@@ -150,7 +150,7 @@ export function Hero() {
 - [ ] **Step 2.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -158,7 +158,7 @@ Expected: no errors.
 - [ ] **Step 2.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/Hero.tsx
 git commit -m "content: rewrite Hero for marketplace — dual-audience CTAs"
 ```
@@ -308,7 +308,7 @@ export function ProblemStatement() {
 - [ ] **Step 3.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -316,7 +316,7 @@ Expected: no errors.
 - [ ] **Step 3.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/ProblemStatement.tsx
 git commit -m "content: rewrite ProblemStatement with dual customer/provider framing"
 ```
@@ -465,7 +465,7 @@ export function WhoItsFor() {
 - [ ] **Step 4.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -473,7 +473,7 @@ Expected: no errors.
 - [ ] **Step 4.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/WhoItsFor.tsx
 git commit -m "content: rewrite WhoItsFor with dual customer/worker audience sections"
 ```
@@ -567,7 +567,7 @@ export function HowItWorksSteps() {
 - [ ] **Step 5.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -575,7 +575,7 @@ Expected: no errors.
 - [ ] **Step 5.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/HowItWorksSteps.tsx
 git commit -m "content: rewrite HowItWorksSteps — marketplace flow Describe→Match→Done"
 ```
@@ -685,7 +685,7 @@ export function TrustSafety() {
 - [ ] **Step 6.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -693,7 +693,7 @@ Expected: no errors.
 - [ ] **Step 6.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/TrustSafety.tsx
 git commit -m "feat: add TrustSafety component — anonymity, screening, photos, disputes"
 ```
@@ -794,7 +794,7 @@ export function Features() {
 - [ ] **Step 7.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -802,7 +802,7 @@ Expected: no errors.
 - [ ] **Step 7.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/Features.tsx
 git commit -m "content: rewrite Features — marketplace features replacing B2B dispatch features"
 ```
@@ -907,7 +907,7 @@ export function OperatingModel() {
 - [ ] **Step 8.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -915,7 +915,7 @@ Expected: no errors.
 - [ ] **Step 8.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/OperatingModel.tsx
 git commit -m "content: rewrite OperatingModel — dual-side customer/worker view"
 ```
@@ -986,7 +986,7 @@ export function SocialProof() {
 - [ ] **Step 9.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -994,7 +994,7 @@ Expected: no errors.
 - [ ] **Step 9.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/SocialProof.tsx
 git commit -m "content: rewrite SocialProof — consumer + worker testimonials"
 ```
@@ -1048,7 +1048,7 @@ export function CTAStrip() {
 - [ ] **Step 10.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1056,7 +1056,7 @@ Expected: no errors.
 - [ ] **Step 10.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/marketing/CTAStrip.tsx
 git commit -m "content: rewrite CTAStrip — dual-audience close"
 ```
@@ -1119,7 +1119,7 @@ export function Nav() {
 - [ ] **Step 11.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1127,7 +1127,7 @@ Expected: no errors.
 - [ ] **Step 11.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add components/shared/Nav.tsx
 git commit -m "content: update Nav — marketplace links, request help CTA"
 ```
@@ -1178,7 +1178,7 @@ export default function HomePage() {
 - [ ] **Step 12.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1186,7 +1186,7 @@ Expected: no errors.
 - [ ] **Step 12.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add app/\(marketing\)/page.tsx
 git commit -m "content: update homepage — add TrustSafety, remove SaaS pricing section"
 ```
@@ -1382,7 +1382,7 @@ export default function HowItWorksPage() {
 - [ ] **Step 13.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1390,7 +1390,7 @@ Expected: no errors.
 - [ ] **Step 13.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add app/\(marketing\)/how-it-works/page.tsx
 git commit -m "content: rewrite how-it-works — marketplace customer and worker flows"
 ```
@@ -1604,7 +1604,7 @@ export default function ForWorkersPage() {
 - [ ] **Step 14.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1612,7 +1612,7 @@ Expected: no errors.
 - [ ] **Step 14.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add app/\(marketing\)/for-workers/page.tsx
 git commit -m "feat: add /for-workers page — provider benefits, onboarding steps, registration CTA"
 ```
@@ -1835,7 +1835,7 @@ export default function ServicesPage() {
 - [ ] **Step 15.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1843,7 +1843,7 @@ Expected: no errors.
 - [ ] **Step 15.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add app/\(marketing\)/solutions/page.tsx
 git commit -m "content: rewrite Solutions as Services — job categories from customer perspective"
 ```
@@ -1982,7 +1982,7 @@ export default function FAQPage() {
 - [ ] **Step 16.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1990,7 +1990,7 @@ Expected: no errors.
 - [ ] **Step 16.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add app/\(marketing\)/faq/page.tsx
 git commit -m "content: rewrite FAQ — dual-audience questions for customers and workers"
 ```
@@ -2005,7 +2005,7 @@ git commit -m "content: rewrite FAQ — dual-audience questions for customers an
 - [ ] **Step 17.1: Check if pricing page exists**
 
 ```bash
-ls /Users/shimane/Projects/Plug-A-Pro/marketing/app/\(marketing\)/pricing/page.tsx 2>&1
+ls /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/app/\(marketing\)/pricing/page.tsx 2>&1
 ```
 
 If the file does not exist, skip to step 17.3. If it exists, continue to step 17.2.
@@ -2058,7 +2058,7 @@ export default function PricingPage() {
 - [ ] **Step 17.3: Typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -2066,7 +2066,7 @@ Expected: no errors.
 - [ ] **Step 17.4: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add app/\(marketing\)/pricing/page.tsx
 git commit -m "content: replace pricing page with early-access / waitlist framing"
 ```
@@ -2078,7 +2078,7 @@ git commit -m "content: replace pricing page with early-access / waitlist framin
 - [ ] **Step 18.1: Run full typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1
 ```
 
 Expected: no errors. If there are errors, fix them before proceeding.
@@ -2086,7 +2086,7 @@ Expected: no errors. If there are errors, fix them before proceeding.
 - [ ] **Step 18.2: Run build**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npm run build 2>&1 | tail -30
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npm run build 2>&1 | tail -30
 ```
 
 Expected: build completes with no errors. Type errors will fail the build.
@@ -2094,7 +2094,7 @@ Expected: build completes with no errors. Type errors will fail the build.
 - [ ] **Step 18.3: Start dev server for visual review**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npm run dev
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npm run dev
 ```
 
 Visit `http://localhost:3000` and verify:
@@ -2111,7 +2111,7 @@ Visit `http://localhost:3000` and verify:
 - [ ] **Step 18.4: Final commit if any last-minute fixes were made**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
 git add -p
 git commit -m "fix: final build and visual review corrections"
 ```

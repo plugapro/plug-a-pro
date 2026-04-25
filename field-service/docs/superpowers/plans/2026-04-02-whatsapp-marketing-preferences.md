@@ -72,7 +72,7 @@ model WhatsappPreferenceLog {
 - [ ] **Step 2: Run migration**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
 npx prisma migrate dev --name whatsapp_preferences
 ```
 
@@ -102,7 +102,7 @@ git commit -m "feat(schema): add WhatsApp preference fields to Customer + Whatsa
 
 - [ ] **Step 1: Write the policy module**
 
-Create `/Users/shimane/Projects/Plug-A-Pro/field-service/lib/whatsapp-policy.ts`:
+Create `/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/whatsapp-policy.ts`:
 
 ```typescript
 // lib/whatsapp-policy.ts
@@ -230,7 +230,7 @@ export async function applyOptIn(
 - [ ] **Step 2: Verify TypeScript compiles**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
 npx tsc --noEmit 2>&1 | head -30
 ```
 
@@ -810,7 +810,7 @@ git commit -m "test(policy): unit tests for canSend, applyOptOut, applyOptIn"
 
 - [ ] **Step 1: Write handoff doc**
 
-Create `/Users/shimane/Projects/Plug-A-Pro/field-service/docs/whatsapp-preferences.md`:
+Create `/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/docs/whatsapp-preferences.md`:
 
 ```markdown
 # WhatsApp Marketing Preferences

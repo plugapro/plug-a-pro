@@ -85,7 +85,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "quotes_approval_token_key"
 - [ ] **Step 3: Regenerate Prisma client**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
 npx prisma generate
 ```
 
@@ -264,7 +264,7 @@ if (reply.id?.startsWith('mdc_')) {
 - [ ] **Step 5: TypeScript check**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
 npx tsc --noEmit 2>&1 | head -30
 ```
 
@@ -959,7 +959,7 @@ git commit -m "feat: add GET/PATCH /api/quotes/[token] — client approval creat
 - [ ] **Step 1: Check if (public) route group exists**
 
 ```bash
-ls /Users/shimane/Projects/Plug-A-Pro/field-service/app/ | grep public
+ls /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/ | grep public
 ```
 
 If `(public)` does not exist, create the page at `app/quotes/[token]/page.tsx` directly.
@@ -1976,7 +1976,7 @@ git commit -m "feat: earnings dashboard PWA + Earnings tab in provider nav"
 - [ ] **Step 1: Full TypeScript check**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
 npx tsc --noEmit 2>&1
 ```
 
@@ -1985,7 +1985,7 @@ Expected: 0 errors. Fix any type errors before proceeding.
 - [ ] **Step 2: Deploy to preview**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro
 VERCEL_ORG_ID=<org_id> VERCEL_PROJECT_ID=<project_id> vercel
 ```
 
@@ -2000,14 +2000,14 @@ Expected: preview URL printed, build succeeds.
 - [ ] **Step 4: Deploy to production (requires user confirmation)**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro
 VERCEL_ORG_ID=<org_id> VERCEL_PROJECT_ID=<project_id> vercel --prod
 ```
 
 - [ ] **Step 5: Log to OpenBrain**
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
   --project "Plug-A-Pro" \
   --domain "engineering" \

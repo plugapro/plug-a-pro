@@ -147,10 +147,10 @@ Recommended titles:
 
 ## OpenBrain CLI Pattern
 
-If the local OpenBrain CLI is available at `/Users/shimane/Projects/MobileApps/OpenBrain/backend`:
+If the local OpenBrain CLI is available at `/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend`:
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
   --project "Plug-A-Pro" \
   --domain "engineering" \
