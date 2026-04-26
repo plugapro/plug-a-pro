@@ -48,22 +48,6 @@ export async function POST(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
-  if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
-    const photoCount = await db.attachment.count({
-      where: {
-        jobId,
-        mimeType: { startsWith: 'image/' },
-      },
-    })
-
-    if (photoCount === 0) {
-      return NextResponse.json(
-        { error: 'Add at least one work photo before marking the job complete.' },
-        { status: 422 },
-      )
-    }
-  }
-
   try {
     await transitionJob({
       jobId,

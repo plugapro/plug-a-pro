@@ -3,7 +3,6 @@
 // Called by both the HTTP approval page and the WhatsApp bot button handler.
 
 import { db } from './db'
-import { initializeBookingPayment, type PaymentCollectionMode } from './payments'
 import { addMinutes, format } from 'date-fns'
 import { MATCHING_CONFIG } from './matching/config'
 import type { Prisma } from '@prisma/client'
@@ -15,11 +14,6 @@ export type QuoteDecisionResult =
       matchId: string
       bookingId: string
       scheduledDate: Date
-      payment: {
-        mode: PaymentCollectionMode
-        status: 'PENDING'
-        checkoutUrl: string | null
-      }
       provider: { id: string; phone: string; name: string }
       customer: { id: string; phone: string; name: string }
       category: string
@@ -238,31 +232,8 @@ export async function processQuoteDecision(
         provider,
         customer,
         category,
-        paymentAmount: Number(quote.amount),
       }
     })
-
-    if (result.action === 'approved') {
-      const payment = await initializeBookingPayment({
-        bookingId: result.bookingId,
-        amountRand: result.paymentAmount,
-        customerEmail: null,
-        customerPhone: result.customer.phone,
-        description: `${result.category} booking`,
-      })
-
-      return {
-        action: 'approved',
-        quoteId: result.quoteId,
-        matchId: result.matchId,
-        bookingId: result.bookingId,
-        scheduledDate: result.scheduledDate,
-        payment,
-        provider: result.provider,
-        customer: result.customer,
-        category: result.category,
-      }
-    }
 
     return result
   } catch (err) {

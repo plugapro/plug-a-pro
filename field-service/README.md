@@ -1,4 +1,4 @@
-# Plug-A-Pro — Field Service App
+# Plug A Pro — Field Service App
 
 WhatsApp-native field service platform for South Africa. Three-role PWA (customer, technician, admin) with full job lifecycle management, WhatsApp bot integration, and Peach Payments.
 
@@ -28,7 +28,7 @@ Required credentials:
 npm install
 npx prisma generate
 npx prisma migrate dev --name init
-npx prisma db seed          # loads Plug-A-Pro demo data
+npx prisma db seed          # loads Plug A Pro demo data
 ```
 
 ### 3. Run locally
@@ -61,7 +61,7 @@ field-service/
 │   ├── auth.ts         # Supabase Auth + role guards
 │   ├── db.ts           # Prisma client singleton
 │   ├── jobs.ts         # Job lifecycle state machine + side effects
-│   ├── metadata.ts     # Plug-A-Pro config (name, URL, accent, WhatsApp#)
+│   ├── metadata.ts     # Plug A Pro config (name, URL, accent, WhatsApp#)
 │   ├── messaging-templates.ts  # WhatsApp template registry (9 templates)
 │   ├── payments.ts     # PSP abstraction (Peach Payments)
 │   ├── slotting.ts     # Availability engine
@@ -112,7 +112,7 @@ Every status change creates a `JobStatusEvent` (immutable audit trail).
 | `npm run test` | Vitest |
 | `npm run db:migrate` | Run Prisma migrations (dev) |
 | `npm run db:migrate:prod` | Deploy migrations (production) |
-| `npm run db:seed` | Seed Plug-A-Pro demo data |
+| `npm run db:seed` | Seed Plug A Pro demo data |
 | `npm run db:studio` | Open Prisma Studio |
 
 ---

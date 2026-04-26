@@ -392,7 +392,7 @@ async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
     await sendText(
       ctx.phone,
       `Thanks for your interest! 🙏\n\n` +
-      `Plug a Pro is currently only available in *Gauteng*, but we're expanding fast.\n\n` +
+      `Plug A Pro is currently only available in *Gauteng*, but we're expanding fast.\n\n` +
       `We've noted your details and will send you a WhatsApp the moment we go live in your area. No action needed from you! 🚀`,
     )
     return { nextStep: 'done' }
@@ -484,7 +484,7 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
         ctx.phone,
         `Thank you for reaching out! 🙏\n\n` +
         `We're not in *${selected.label}* just yet, but we're expanding fast.\n\n` +
-        `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
+        `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
         `No action needed from you. 🚀`,
       )
       return { nextStep: 'done' }
@@ -938,7 +938,7 @@ async function handleLegacyConfirmAddress(ctx: FlowContext): Promise<FlowResult>
       ctx.phone,
       `Thank you for reaching out! 🙏\n\n` +
       `We're not in *${city}* just yet, but we're expanding fast.\n\n` +
-      `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
+      `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
       `No action needed from you. 🚀`,
     )
     return { nextStep: 'done' }
@@ -987,7 +987,7 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
 export async function showMainMenu(phone: string): Promise<void> {
   await sendList(
     phone,
-    '👋 Welcome to Plug a Pro!\n\nHow can I help you today?',
+    '👋 Welcome to Plug A Pro!\n\nHow can I help you today?',
     [
       {
         title: 'Services',

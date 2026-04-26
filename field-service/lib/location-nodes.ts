@@ -276,6 +276,71 @@ export async function searchNodes(
 }
 
 /**
+ * Suburb-only full-text search for the booking combobox.
+ * Returns SUBURB nodes only (not REGION), with all parent labels and postalCode
+ * so the caller can populate the SuburbPicker.Selection interface directly.
+ * The existing searchNodes() function is preserved for other callers.
+ */
+export async function searchSuburbNodes(
+  q: string,
+  provinceKey?: string,
+): Promise<SuburbOption[]> {
+  if (q.length < 2) {
+    throw new Error('Search query must be at least 2 characters')
+  }
+
+  const nodes = await db.locationNode.findMany({
+    where: {
+      active: true,
+      nodeType: 'SUBURB',
+      label: { contains: q, mode: 'insensitive' },
+      ...(provinceKey ? { provinceKey } : {}),
+    },
+    orderBy: { label: 'asc' },
+    take: 20,
+    select: {
+      id: true,
+      slug: true,
+      label: true,
+      postalCode: true,
+      provinceKey: true,
+      cityKey: true,
+      regionKey: true,
+      lat: true,
+      lng: true,
+      parent: {
+        select: {
+          label: true,
+          parent: {
+            select: {
+              label: true,
+              parent: {
+                select: { label: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  return nodes.map((n) => ({
+    id: n.id,
+    slug: n.slug,
+    label: toTitleCase(n.label),
+    regionLabel: toTitleCase(n.parent?.label ?? ''),
+    cityLabel: toTitleCase(n.parent?.parent?.label ?? ''),
+    provinceLabel: toTitleCase(n.parent?.parent?.parent?.label ?? ''),
+    postalCode: n.postalCode ?? '',
+    provinceKey: n.provinceKey ?? '',
+    cityKey: n.cityKey ?? '',
+    regionKey: n.regionKey ?? '',
+    lat: n.lat,
+    lng: n.lng,
+  }))
+}
+
+/**
  * Resolve a raw suburb string to a locationNodeId via case-insensitive label match.
  * Optional city filter narrows the search by cityKey.
  * Returns the node id if found, null otherwise.

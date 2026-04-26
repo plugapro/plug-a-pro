@@ -44,6 +44,7 @@ const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
     providerCapacity: {
       findMany: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     technicianScheduleItem: {
       deleteMany: vi.fn(),
@@ -235,7 +236,7 @@ describe('expireAssignmentOffer', () => {
     expect(mockSendText).toHaveBeenNthCalledWith(
       2,
       '+27831234567',
-      expect.stringContaining('Thank you for trying Plug a Pro.'),
+      expect.stringContaining('Thank you for trying Plug A Pro.'),
       expect.objectContaining({
         templateName: 'interactive:job_request_no_match',
         metadata: expect.objectContaining({ jobRequestId: 'job-1', hasFutureWindow: false }),

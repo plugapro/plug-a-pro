@@ -50,6 +50,14 @@ vi.mock('@/lib/provider-record', () => ({
   syncProviderRecord: vi.fn().mockResolvedValue('provider_created'),
 }))
 
+vi.mock('@/lib/matching/customer-recontact', () => ({
+  checkJobsForNewProviderAvailability: vi.fn().mockResolvedValue({
+    dispatchedOpenJobs: 0,
+    promptedExpiredJobs: 0,
+    templateFallbacks: 0,
+  }),
+}))
+
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 import { normalizePhone } from '@/lib/utils'
 import { db } from '@/lib/db'
@@ -82,7 +90,7 @@ describe('registration flow — duplicate prevention', () => {
   // ── startRegistration ──────────────────────────────────────────────────────
 
   describe('startRegistration (reg_start step)', () => {
-    it('shows "under review" message and returns done when PENDING application exists', async () => {
+    it('shows existing profile message and returns done when PENDING application exists', async () => {
       ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'app_aaaabbbb',
         status: 'PENDING',
@@ -90,7 +98,7 @@ describe('registration flow — duplicate prevention', () => {
 
       const result = await handleRegistrationFlow(makeCtx('reg_start'))
 
-      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('under review'))
+      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('provider profile is already on file'))
       expect(result.nextStep).toBe('done')
       // No new application must be created
       expect(db.providerApplication.create).not.toHaveBeenCalled()
@@ -120,7 +128,7 @@ describe('registration flow — duplicate prevention', () => {
 
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('Join Plug a Pro'),
+        expect.stringContaining('Join Plug A Pro'),
         expect.any(Array),
       )
       expect(result.nextStep).toBe('reg_collect_name')
@@ -137,7 +145,7 @@ describe('registration flow — duplicate prevention', () => {
       // REJECTED is treated as no active application — shows the welcome prompt
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('Join Plug a Pro'),
+        expect.stringContaining('Join Plug A Pro'),
         expect.any(Array),
       )
       expect(result.nextStep).toBe('reg_collect_name')
@@ -183,7 +191,7 @@ describe('registration flow — duplicate prevention', () => {
       )
 
       expect(result.nextStep).toBe('done')
-      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('already under review'))
+      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('provider profile is already on file'))
       expect(db.providerApplication.create).not.toHaveBeenCalled()
       expect(providerRecord.syncProviderRecord).not.toHaveBeenCalled()
     })
@@ -230,7 +238,7 @@ describe('registration flow — duplicate prevention', () => {
           }),
         })
       )
-      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('Application submitted'))
+      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('Profile submitted'))
     })
 
     it('passes normalized phone (E.164) to syncProviderRecord and create', async () => {
@@ -273,7 +281,7 @@ describe('registration flow — duplicate prevention', () => {
       )
 
       expect(result.nextStep).toBe('done')
-      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('already under review'))
+      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('provider profile is already on file'))
     })
   })
 })

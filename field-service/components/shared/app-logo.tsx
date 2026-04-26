@@ -16,7 +16,7 @@ export function AppLogo({
   const logo = (
     <Image
       src="/logo.png"
-      alt="Plug-A-Pro"
+      alt="Plug A Pro"
       width={compact ? 92 : 104}
       height={compact ? 32 : 36}
       priority={priority}

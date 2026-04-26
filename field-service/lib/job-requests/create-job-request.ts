@@ -12,6 +12,7 @@ import { resolveSuburbNodeId } from '../location-nodes'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { normalizePhone } from '../utils'
 import { openCase } from '../cases'
+import { MATCHING_CONFIG } from '../matching/config'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -164,6 +165,21 @@ export async function createJobRequest(
       categoryRequirements.policy.bookingOnAssignment &&
       typeof params.customerAcceptedAmount === 'number'
 
+    // Compute expiry: default is jobRequestMaxAgeDays from now.
+    // If the client specified an urgency window (requestedArrivalLatest) that is
+    // earlier, use that + 24 h buffer so we don't expire before the window closes.
+    const defaultExpiresAt = new Date(
+      Date.now() + MATCHING_CONFIG.jobRequestMaxAgeDays * 24 * 60 * 60 * 1000,
+    )
+    const urgencyExpiresAt =
+      params.requestedArrivalLatest
+        ? new Date(params.requestedArrivalLatest.getTime() + 24 * 60 * 60 * 1000)
+        : null
+    const expiresAt =
+      urgencyExpiresAt && urgencyExpiresAt < defaultExpiresAt
+        ? urgencyExpiresAt
+        : defaultExpiresAt
+
     const jobRequest = await tx.jobRequest.create({
       data: {
         customerId: customer.id,
@@ -172,6 +188,7 @@ export async function createJobRequest(
         title: params.title,
         description: params.description ?? '',
         status: 'OPEN',
+        expiresAt,
         requestedWindowStart: params.requestedWindowStart ?? undefined,
         requestedWindowEnd: params.requestedWindowEnd ?? undefined,
         requestedArrivalLatest: params.requestedArrivalLatest ?? undefined,

@@ -4,7 +4,7 @@
 //
 // Pool is rebuilt by:
 //   - Cron every 5 min: POST /api/internal/cron/rebuild-candidate-pool
-//   - On provider profile update (skills, service areas, verified status changes)
+//   - On provider profile update (skills, service areas, active status changes)
 //
 // Pool freshness: entries older than 10 min are treated as stale → direct scan.
 
@@ -103,7 +103,6 @@ async function loadFromPool(params: {
       cp."categorySlug" = ${categorySlug}
       AND cp."lastRefreshed" > ${staleThreshold}
       AND p.active = true
-      AND p.verified = true
       AND (
         (${locationNodeId}::text IS NOT NULL AND cp."locationNodeId" = ${locationNodeId})
         OR
@@ -124,11 +123,11 @@ async function loadFromDirectScan(params: {
   const { category, limit } = params
   const categorySlug = category.trim().toLowerCase()
 
-  // Load all active+verified providers who list this category in their skills
+  // Load all active providers who list this category in their skills. Marketplace
+  // review is not a hard MVP gate for odd-job lead matching.
   const providers = await (db as any).provider.findMany({
     where: {
       active: true,
-      verified: true,
       skills: { has: category },
     },
     select: {
@@ -197,7 +196,6 @@ export async function rebuildCandidatePoolForProvider(providerId: string): Promi
     LEFT JOIN location_nodes ln ON ln.id = tsa."locationNodeId"
     WHERE p.id = ${providerId}
       AND p.active = true
-      AND p.verified = true
     ON CONFLICT ("categorySlug", "locationNodeId", "providerId")
     DO UPDATE SET "scoreBase" = EXCLUDED."scoreBase", "lastRefreshed" = now()
   `
@@ -217,7 +215,6 @@ export async function rebuildCandidatePoolForCategory(categorySlug: string): Pro
     JOIN technician_service_areas tsa ON tsa."providerId" = p.id AND tsa.active = true
     LEFT JOIN location_nodes ln ON ln.id = tsa."locationNodeId"
     WHERE p.active = true
-      AND p.verified = true
       AND ${categorySlug} = ANY(lower(p.skills::text)::text[])
     ON CONFLICT ("categorySlug", "locationNodeId", "providerId")
     DO UPDATE SET "scoreBase" = EXCLUDED."scoreBase", "lastRefreshed" = now()

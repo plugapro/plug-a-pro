@@ -1,9 +1,17 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import type { CityOption, RegionOption, SuburbOption } from '@/lib/location-nodes'
+// ─── Suburb search combobox ────────────────────────────────────────────────────
+// Replaces the old 4-level cascade (city → region → suburb) with a single
+// text input that searches suburb nodes directly. Results are fetched from
+// /api/locations/search?mode=suburb, which returns only SUBURB-level nodes
+// with all parent labels so the Selection interface can be populated directly.
+//
+// Props interface is unchanged — callers (BookingFlow) need no modification.
 
-type Selection = {
+import { useState, useRef, useEffect } from 'react'
+import type { SuburbOption } from '@/lib/location-nodes'
+
+export type Selection = {
   province: string
   region: string
   suburb: string
@@ -13,188 +21,140 @@ type Selection = {
 }
 
 type Props = {
-  initialCities: CityOption[]
   provinceKey: string
   onSelect: (selection: Selection | null) => void
 }
 
-export function SuburbPicker({ initialCities, provinceKey, onSelect }: Props) {
-  const [selectedCityId, setSelectedCityId] = useState('')
-  const [selectedRegionId, setSelectedRegionId] = useState('')
-  const [selectedSuburbId, setSelectedSuburbId] = useState('')
-  const [regions, setRegions] = useState<RegionOption[]>([])
-  const [suburbs, setSuburbs] = useState<SuburbOption[]>([])
-  const [loadingRegions, setLoadingRegions] = useState(false)
-  const [loadingSuburbs, setLoadingSuburbs] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
+export function SuburbPicker({ provinceKey, onSelect }: Props) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SuburbOption[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<SuburbOption | null>(null)
+  const [open, setOpen] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const listRef = useRef<HTMLUListElement | null>(null)
 
-  const filteredCities = useMemo(
-    () => initialCities.filter((city) => city.provinceKey === provinceKey),
-    [initialCities, provinceKey],
-  )
-
+  // Clear selection when province changes
   useEffect(() => {
-    setSelectedCityId('')
-    setSelectedRegionId('')
-    setSelectedSuburbId('')
-    setRegions([])
-    setSuburbs([])
-    setFetchError(null)
+    setQuery('')
+    setResults([])
+    setSelected(null)
+    setOpen(false)
     onSelect(null)
-  }, [provinceKey, onSelect])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provinceKey])
 
-  async function handleCityChange(cityId: string) {
-    setSelectedCityId(cityId)
-    setSelectedRegionId('')
-    setSelectedSuburbId('')
-    setRegions([])
-    setSuburbs([])
-    onSelect(null)
-
-    if (!cityId) return
-
-    setLoadingRegions(true)
-    setFetchError(null)
-    try {
-      const res = await fetch(`/api/locations/regions?cityId=${encodeURIComponent(cityId)}`)
-      if (res.ok) setRegions(await res.json())
-      else setFetchError('Failed to load areas. Please try again.')
-    } catch {
-      setFetchError('Failed to load areas. Please try again.')
-    } finally {
-      setLoadingRegions(false)
-    }
-  }
-
-  async function handleRegionChange(regionId: string) {
-    setSelectedRegionId(regionId)
-    setSelectedSuburbId('')
-    setSuburbs([])
-    onSelect(null)
-
-    if (!regionId) return
-
-    setLoadingSuburbs(true)
-    setFetchError(null)
-    try {
-      const res = await fetch(`/api/locations/suburbs?regionId=${encodeURIComponent(regionId)}`)
-      if (res.ok) setSuburbs(await res.json())
-      else setFetchError('Failed to load suburbs. Please try again.')
-    } catch {
-      setFetchError('Failed to load suburbs. Please try again.')
-    } finally {
-      setLoadingSuburbs(false)
-    }
-  }
-
-  function handleSuburbChange(suburbId: string) {
-    if (!suburbId) {
-      onSelect(null)
+  async function fetchResults(q: string) {
+    if (q.length < 2) {
+      setResults([])
+      setOpen(false)
       return
     }
 
-    const suburb = suburbs.find((entry) => entry.id === suburbId)
-    if (!suburb) return
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ q, mode: 'suburb' })
+      if (provinceKey) params.set('provinceKey', provinceKey)
+      const res = await fetch(`/api/locations/search?${params}`)
+      if (!res.ok) throw new Error('Search failed')
+      const data: SuburbOption[] = await res.json()
+      setResults(data)
+      setOpen(data.length > 0)
+    } catch {
+      setError('Could not load suburbs. Please try again.')
+      setOpen(false)
+    } finally {
+      setLoading(false)
+    }
+  }
 
+  function handleInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value
+    setQuery(value)
+    setSelected(null)
+    onSelect(null)
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => fetchResults(value), 250)
+  }
+
+  function handleSelect(suburb: SuburbOption) {
+    setSelected(suburb)
+    setQuery(suburb.label)
+    setOpen(false)
+    setResults([])
     onSelect({
-      province: suburb.provinceLabel,
-      region: suburb.regionLabel,
-      suburb: suburb.label,
-      city: suburb.cityLabel,
-      postalCode: suburb.postalCode,
       locationNodeId: suburb.id,
+      suburb: suburb.label,
+      region: suburb.regionLabel,
+      city: suburb.cityLabel,
+      province: suburb.provinceLabel,
+      postalCode: suburb.postalCode,
     })
   }
 
+  function handleBlur(e: React.FocusEvent) {
+    // Keep open if focus moves into the results list
+    if (listRef.current?.contains(e.relatedTarget as Node)) return
+    setOpen(false)
+  }
+
   return (
-    <div className="space-y-3">
-      <div className="space-y-1">
-        <label htmlFor="suburb-picker-city" className="text-sm">
-          City / municipality
-        </label>
-        <select
-          id="suburb-picker-city"
-          className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-          onChange={(event) => handleCityChange(event.target.value)}
-          value={selectedCityId}
+    <div className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={handleInput}
+        onBlur={handleBlur}
+        onFocus={() => results.length > 0 && !selected && setOpen(true)}
+        placeholder="Type your suburb…"
+        autoComplete="off"
+        role="combobox"
+        aria-label="Suburb search"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls="suburb-listbox"
+        aria-haspopup="listbox"
+        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      />
+      {loading && (
+        <span className="absolute right-3 top-2 text-xs text-muted-foreground">Searching…</span>
+      )}
+
+      {open && results.length > 0 && (
+        <ul
+          ref={listRef}
+          id="suburb-listbox"
+          role="listbox"
+          className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-background shadow-md"
         >
-          <option value="" disabled>
-            Select city…
-          </option>
-          {filteredCities.map((city) => (
-            <option key={city.id} value={city.id}>
-              {city.label}
-            </option>
+          {results.map((suburb) => (
+            <li key={suburb.id}>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-muted focus:bg-muted focus:outline-none"
+                onMouseDown={(e) => e.preventDefault()} // prevent blur before click
+                onClick={() => handleSelect(suburb)}
+              >
+                <span className="font-medium">{suburb.label}</span>
+                <span className="ml-1 text-muted-foreground text-xs">
+                  {[suburb.regionLabel, suburb.cityLabel].filter(Boolean).join(', ')}
+                </span>
+              </button>
+            </li>
           ))}
-        </select>
-      </div>
-
-      {filteredCities.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No mapped cities are available for this province yet.
-        </p>
+        </ul>
       )}
 
-      {(regions.length > 0 || loadingRegions) && (
-        <div className="space-y-1">
-          <label htmlFor="suburb-picker-region" className="text-sm">
-            Region / area
-          </label>
-          <select
-            id="suburb-picker-region"
-            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => handleRegionChange(event.target.value)}
-            value={selectedRegionId}
-            disabled={loadingRegions}
-          >
-            <option value="" disabled>
-              {loadingRegions ? 'Loading…' : 'Select area…'}
-            </option>
-            {regions.map((region) => (
-              <option key={region.id} value={region.id}>
-                {region.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      {error && (
+        <p className="mt-1 text-xs text-destructive" role="alert">{error}</p>
       )}
 
-      {(suburbs.length > 0 || loadingSuburbs) && (
-        <div className="space-y-1">
-          <label htmlFor="suburb-picker-suburb" className="text-sm">
-            Suburb
-          </label>
-          <select
-            id="suburb-picker-suburb"
-            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => {
-              setSelectedSuburbId(event.target.value)
-              handleSuburbChange(event.target.value)
-            }}
-            value={selectedSuburbId}
-            disabled={loadingSuburbs}
-          >
-            <option value="" disabled>
-              {loadingSuburbs ? 'Loading…' : 'Select suburb…'}
-            </option>
-            {suburbs.map((suburb) => (
-              <option key={suburb.id} value={suburb.id}>
-                {suburb.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {selectedRegionId && !loadingSuburbs && suburbs.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No mapped suburbs are available for this area yet. Choose a different region.
-        </p>
-      )}
-
-      {fetchError && (
-        <p className="text-sm text-destructive" role="alert">
-          {fetchError}
+      {selected && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {[selected.regionLabel, selected.cityLabel, selected.postalCode].filter(Boolean).join(' · ')}
         </p>
       )}
     </div>

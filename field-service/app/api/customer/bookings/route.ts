@@ -12,6 +12,10 @@ import {
   resolveStructuredAddressCapture,
 } from '@/lib/structured-address'
 import { isInActiveServiceArea, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
+import { uploadJobRequestPhoto } from '@/lib/storage'
+
+const MAX_REQUEST_PHOTOS = 5
+const MAX_REQUEST_PHOTO_SIZE = 10 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -25,7 +29,7 @@ export async function POST(req: NextRequest) {
   let body: {
     category: string
     title: string
-    description: string
+    description?: string
     addressLine1: string
     addressLine2?: string
     complexName?: string
@@ -44,9 +48,32 @@ export async function POST(req: NextRequest) {
     customerAcceptedScope?: string
     locationNodeId: string
   }
+  let photos: File[] = []
 
   try {
-    body = await req.json()
+    const contentType = req.headers.get('content-type') ?? ''
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await req.formData()
+      const rawWindowEnd = formData.get('requestedWindowEnd')
+      const rawArrivalLatest = formData.get('requestedArrivalLatest')
+      body = {
+        category: String(formData.get('category') ?? ''),
+        title: String(formData.get('title') ?? ''),
+        description: String(formData.get('description') ?? ''),
+        addressLine1: String(formData.get('addressLine1') ?? ''),
+        addressLine2: String(formData.get('addressLine2') ?? ''),
+        complexName: String(formData.get('complexName') ?? ''),
+        unitNumber: String(formData.get('unitNumber') ?? ''),
+        locationNodeId: String(formData.get('locationNodeId') ?? ''),
+        ...(rawWindowEnd ? { requestedWindowEnd: String(rawWindowEnd) } : {}),
+        ...(rawArrivalLatest ? { requestedArrivalLatest: String(rawArrivalLatest) } : {}),
+      }
+      photos = formData
+        .getAll('photos')
+        .filter((value): value is File => value instanceof File && value.size > 0)
+    } else {
+      body = await req.json()
+    }
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
@@ -76,6 +103,19 @@ export async function POST(req: NextRequest) {
 
   if (!category || !title || !addressLine1 || !locationNodeId) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+
+  if (photos.length > MAX_REQUEST_PHOTOS) {
+    return NextResponse.json({ error: `Upload up to ${MAX_REQUEST_PHOTOS} photos` }, { status: 400 })
+  }
+
+  for (const photo of photos) {
+    if (!photo.type.startsWith('image/')) {
+      return NextResponse.json({ error: 'Only image files can be uploaded as job photos' }, { status: 400 })
+    }
+    if (photo.size > MAX_REQUEST_PHOTO_SIZE) {
+      return NextResponse.json({ error: 'Each photo must be 10MB or smaller' }, { status: 400 })
+    }
   }
 
   try {
@@ -131,9 +171,23 @@ export async function POST(req: NextRequest) {
       postalCode: resolvedAddress.postalCode,
       locationNodeId: resolvedAddress.locationNodeId,
     })
+
+    let uploadedPhotoCount = 0
+    for (const photo of photos) {
+      await uploadJobRequestPhoto({
+        jobRequestId: result.jobRequestId,
+        file: photo,
+        label: 'evidence',
+        caption: 'Customer job photo',
+        uploadedBy: session.id,
+      })
+      uploadedPhotoCount++
+    }
+
     return NextResponse.json({
       jobRequestId: result.jobRequestId,
       ticketUrl: result.ticketUrl,
+      uploadedPhotoCount,
     })
   } catch (err) {
     if (err instanceof InvalidStructuredAddressError) {

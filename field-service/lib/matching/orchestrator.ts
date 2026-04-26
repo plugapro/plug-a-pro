@@ -11,6 +11,7 @@
 //   6. Record DispatchDecision audit trail
 
 import { db } from '@/lib/db'
+import { expireOpenJobRequest } from '@/lib/job-requests/expire-job-request'
 import { loadMatchingJobRequest } from './service'
 import { loadCandidatePool } from './candidate-pool'
 import { filterEligibleProviders, type FilteredCandidate } from './filter'
@@ -52,6 +53,13 @@ export async function orchestrateMatch(
   }
   if (jobRequest.status !== 'OPEN') {
     return { status: 'SKIP', reason: `JOB_STATUS_${jobRequest.status}` }
+  }
+
+  // Inline expiry guard: if the job has passed its expiresAt, transition it now
+  // rather than dispatching. This covers the race between cron sweep ticks.
+  if (jobRequest.expiresAt && jobRequest.expiresAt <= new Date()) {
+    await expireOpenJobRequest(jobRequestId, 'expired_at_dispatch_time')
+    return { status: 'SKIP', reason: 'JOB_EXPIRED' }
   }
 
   // ── Guard: skip if already actively held ──────────────────────────────────

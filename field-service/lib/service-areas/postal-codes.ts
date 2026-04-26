@@ -1,4 +1,4 @@
-// Generated from the Plug-A-Pro suburb taxonomy via reverse geocoding of
+// Generated from the Plug A Pro suburb taxonomy via reverse geocoding of
 // the curated suburb coordinates in lib/service-areas/south-africa.ts.
 // Only postcode-backed suburb nodes are exposed in the structured customer
 // capture flow. Nodes without a reliable postcode stay available only for

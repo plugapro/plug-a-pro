@@ -7,20 +7,18 @@ import { notFound, redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { BookingFlow } from '@/components/customer/BookingFlow'
-import { getCities } from '@/lib/location-nodes'
+import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
 export const metadata = buildMetadata({ title: 'Request a Job' })
 
-const CATEGORIES: Record<string, { name: string; description: string }> = {
-  plumbing:   { name: 'Plumbing',       description: 'Leaks, installations, drain clearing and more.' },
-  painting:   { name: 'Painting',       description: 'Interior and exterior painting services.' },
-  garden:     { name: 'Garden',         description: 'Lawn care, landscaping, and tree trimming.' },
-  handyman:   { name: 'Handyman',       description: 'General repairs and odd jobs around the home.' },
-  appliances: { name: 'Appliances',     description: 'Repairs and installation of home appliances.' },
-  electrical: { name: 'Electrical',     description: 'Wiring, fault-finding, and compliance certificates.' },
-  diy:        { name: 'DIY & Assembly', description: 'Flat-pack assembly, shelving, and mounting.' },
-  roofing:    { name: 'Roofing',        description: 'Roof repairs, waterproofing, and inspections.' },
-}
+// Build a lookup map from the single canonical list so all 15 categories are
+// valid routes without any manual maintenance here.
+const CATEGORIES = Object.fromEntries(
+  SERVICE_CATEGORY_OPTIONS.map((cat) => [
+    cat.tag,
+    { name: cat.label, description: cat.description },
+  ]),
+)
 
 export default async function RequestJobPage({
   params,
@@ -40,7 +38,5 @@ export default async function RequestJobPage({
     description: categoryInfo.description,
   }
 
-  const initialCities = await getCities()
-
-  return <BookingFlow category={categoryData} initialCities={initialCities} />
+  return <BookingFlow category={categoryData} />
 }

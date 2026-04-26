@@ -6,16 +6,16 @@ type BadgeVariant = NonNullable<ComponentProps<typeof Badge>['variant']>
 
 const JOB_CONFIG: Record<JobStatus, { label: string; variant: BadgeVariant }> = {
   SCHEDULED: { label: 'Scheduled', variant: 'neutral' },
-  EN_ROUTE: { label: 'En Route', variant: 'info' },
+  EN_ROUTE: { label: 'On the way', variant: 'info' },
   ARRIVED: { label: 'Arrived', variant: 'brand' },
   STARTED: { label: 'In Progress', variant: 'warning' },
   PAUSED: { label: 'Paused', variant: 'neutral' },
-  AWAITING_APPROVAL: { label: 'Awaiting Approval', variant: 'warning' },
-  PENDING_COMPLETION_CONFIRMATION: { label: 'Pending Confirmation', variant: 'brand' },
+  AWAITING_APPROVAL: { label: 'Needs approval', variant: 'warning' },
+  PENDING_COMPLETION_CONFIRMATION: { label: 'Ready for sign-off', variant: 'brand' },
   COMPLETED: { label: 'Completed', variant: 'success' },
   CANCELLED: { label: 'Cancelled', variant: 'danger' },
   FAILED: { label: 'Failed', variant: 'danger' },
-  CALLBACK_REQUIRED: { label: 'Callback Required', variant: 'danger' },
+  CALLBACK_REQUIRED: { label: 'Follow-up needed', variant: 'danger' },
 }
 
 const BOOKING_CONFIG: Record<BookingStatus, { label: string; variant: BadgeVariant }> = {
@@ -27,16 +27,16 @@ const BOOKING_CONFIG: Record<BookingStatus, { label: string; variant: BadgeVaria
 
 const MATCH_CONFIG: Record<MatchStatus, { label: string; variant: BadgeVariant }> = {
   MATCHED: { label: 'Matched', variant: 'info' },
-  INSPECTION_SCHEDULED: { label: 'Inspection Scheduled', variant: 'brand' },
-  INSPECTION_COMPLETE: { label: 'Inspection Complete', variant: 'neutral' },
-  QUOTED: { label: 'Quoted', variant: 'warning' },
-  QUOTE_APPROVED: { label: 'Quote Approved', variant: 'success' },
-  QUOTE_DECLINED: { label: 'Quote Declined', variant: 'danger' },
+  INSPECTION_SCHEDULED: { label: 'Visit arranged', variant: 'brand' },
+  INSPECTION_COMPLETE: { label: 'Visit done', variant: 'neutral' },
+  QUOTED: { label: 'Quote sent', variant: 'warning' },
+  QUOTE_APPROVED: { label: 'Quote approved', variant: 'success' },
+  QUOTE_DECLINED: { label: 'Needs quote update', variant: 'danger' },
   CANCELLED: { label: 'Cancelled', variant: 'danger' },
 }
 
 const JOB_REQUEST_CONFIG: Record<JobRequestStatus, { label: string; variant: BadgeVariant }> = {
-  PENDING_VALIDATION: { label: 'Pending Validation', variant: 'neutral' },
+  PENDING_VALIDATION: { label: 'Draft', variant: 'neutral' },
   OPEN: { label: 'Open', variant: 'info' },
   MATCHING: { label: 'Matching', variant: 'brand' },
   MATCHED: { label: 'Matched', variant: 'success' },
@@ -45,7 +45,7 @@ const JOB_REQUEST_CONFIG: Record<JobRequestStatus, { label: string; variant: Bad
 }
 
 const QUOTE_CONFIG: Record<QuoteStatus, { label: string; variant: BadgeVariant }> = {
-  PENDING: { label: 'Pending', variant: 'warning' },
+  PENDING: { label: 'Client reviewing', variant: 'warning' },
   APPROVED: { label: 'Approved', variant: 'success' },
   DECLINED: { label: 'Declined', variant: 'danger' },
   EXPIRED: { label: 'Expired', variant: 'neutral' },

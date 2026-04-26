@@ -21,7 +21,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'plumbing',
     bookingOnAssignment: false,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['plumbing-kit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -48,7 +48,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'garden & landscaping',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['garden-tools'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -56,7 +56,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'handyman',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['basic-toolkit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -64,7 +64,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'appliances',
     bookingOnAssignment: false,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['multimeter'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -72,7 +72,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'diy & assembly',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['basic-toolkit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -80,18 +80,78 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'roofing',
     bookingOnAssignment: false,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['ladder'],
-    requiredVehicleTypes: ['bakkie', 'van'],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
     regulated: false,
   },
   cleaning: {
     normalizedCategory: 'cleaning',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['cleaning-kit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
+  tiling: {
+    normalizedCategory: 'tiling',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  pest_control: {
+    normalizedCategory: 'pest_control',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  carpentry: {
+    normalizedCategory: 'carpentry',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  waterproofing: {
+    normalizedCategory: 'waterproofing',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  air_conditioning: {
+    normalizedCategory: 'air_conditioning',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  // "Other" is a UI-level escape hatch only. The stored category is always
+  // the closest real tag the client selected — this entry guards against
+  // the literal string 'other' ever reaching the matching engine.
+  other: {
+    normalizedCategory: 'other',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+}
+
+// Map short tag keys used in service-categories.ts to the policy table keys.
+// e.g. 'garden' (tag) → 'garden & landscaping' (policy key).
+// This prevents bookingOnAssignment from silently falling back to false
+// when the job category arrives in tag form rather than label form.
+const TAG_ALIAS_TO_POLICY_KEY: Record<string, string> = {
+  'garden': 'garden & landscaping',
+  'diy': 'diy & assembly',
 }
 
 function normalizeCategory(input: string) {
@@ -99,9 +159,12 @@ function normalizeCategory(input: string) {
 }
 
 export function getCategoryPolicy(category: string): CategoryPolicy {
+  const normalized = normalizeCategory(category)
+  // Resolve tag alias (e.g. 'garden' → 'garden & landscaping') before lookup.
+  const policyKey = TAG_ALIAS_TO_POLICY_KEY[normalized] ?? normalized
   return (
-    CATEGORY_POLICIES[normalizeCategory(category)] ?? {
-      normalizedCategory: normalizeCategory(category),
+    CATEGORY_POLICIES[policyKey] ?? {
+      normalizedCategory: normalized,
       bookingOnAssignment: false,
       requiredCertificationCodes: [],
       requiredEquipmentTags: [],

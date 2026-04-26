@@ -31,7 +31,6 @@ export default async function ProviderLayout({
         <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-3">
           <AppNavLink href="/provider" label="Jobs" icon="jobs" />
           <AppNavLink href="/provider/leads" label="Leads" icon="leads" />
-          <AppNavLink href="/provider/earnings" label="Earnings" icon="earnings" />
           <AppNavLink href="/provider/profile" label="Profile" icon="userRound" />
         </div>
       </nav>

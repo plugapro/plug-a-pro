@@ -32,6 +32,7 @@ export default async function RequestDetailPage({
     include: {
       customer: { select: { id: true, userId: true } },
       address: true,
+      attachments: { orderBy: { createdAt: 'asc' } },
       leads: {
         include: {
           provider: {
@@ -139,6 +140,25 @@ export default async function RequestDetailPage({
               })}
             </Row>
           )}
+          {jobRequest.attachments.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Photos
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {jobRequest.attachments.map((photo) => (
+                  <a key={photo.id} href={`/api/attachments/${photo.id}`} target="_blank" rel="noopener noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/attachments/${photo.id}`}
+                      alt={photo.caption ?? photo.label ?? 'Job photo'}
+                      className="h-36 w-full rounded-lg object-cover"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -162,7 +182,7 @@ export default async function RequestDetailPage({
               <div className="rounded-lg border px-3 py-3">
                 <p className="text-sm font-medium">Portfolio links</p>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Shared by the provider unless Plug-A-Pro says a specific link or document was reviewed.
+                  Shared by the provider unless Plug A Pro says a specific link or document was reviewed.
                 </p>
                 <div className="mt-2 space-y-1.5">
                   {provider.portfolioUrls.map((url) => (

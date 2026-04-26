@@ -8,6 +8,7 @@ import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { formatDistanceToNow, format } from 'date-fns'
+import { getCategoryPolicy } from '@/lib/service-category-policy'
 
 export const metadata = buildMetadata({ title: 'Lead Details', noIndex: true })
 
@@ -59,7 +60,12 @@ export default async function LeadDetailPage({
   const lead = await db.lead.findUnique({
     where: { id: leadId },
     include: {
-      jobRequest: { include: { address: true } },
+      jobRequest: {
+        include: {
+          address: true,
+          attachments: { orderBy: { createdAt: 'asc' } },
+        },
+      },
     },
   })
 
@@ -80,6 +86,11 @@ export default async function LeadDetailPage({
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
   const isResponded = lead.status === 'ACCEPTED' || lead.status === 'DECLINED'
   const canAct = !isExpired && !isResponded
+
+  // Hide "Inspection First" for simple categories where bookingOnAssignment is true
+  // (e.g. garden, handyman, cleaning, diy) — these don't need a site visit before quoting.
+  const categoryPolicy = getCategoryPolicy(jr.category)
+  const showInspectionOption = !categoryPolicy.bookingOnAssignment
 
   return (
     <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-28">
@@ -126,6 +137,23 @@ export default async function LeadDetailPage({
             <p className="text-sm">{jr.description}</p>
           </div>
         )}
+        {jr.attachments.length > 0 && (
+          <div className="px-4 py-3 space-y-2">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer photos</p>
+            <div className="grid grid-cols-2 gap-2">
+              {jr.attachments.map((photo) => (
+                <a key={photo.id} href={`/api/attachments/${photo.id}`} target="_blank" rel="noopener noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/attachments/${photo.id}`}
+                    alt={photo.caption ?? photo.label ?? 'Customer job photo'}
+                    className="h-32 w-full rounded-lg object-cover"
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="px-4 py-3 space-y-0.5">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Received</p>
           <p className="text-sm text-muted-foreground">
@@ -145,13 +173,15 @@ export default async function LeadDetailPage({
             </Button>
           </form>
 
-          <form action={acceptLead}>
-            <input type="hidden" name="leadId" value={leadId} />
-            <input type="hidden" name="inspectionNeeded" value="true" />
-            <Button type="submit" size="lg" variant="outline" className="w-full">
-              🔍 Inspection First
-            </Button>
-          </form>
+          {showInspectionOption && (
+            <form action={acceptLead}>
+              <input type="hidden" name="leadId" value={leadId} />
+              <input type="hidden" name="inspectionNeeded" value="true" />
+              <Button type="submit" size="lg" variant="outline" className="w-full">
+                🔍 Inspection First
+              </Button>
+            </form>
+          )}
 
           <form action={declineLead}>
             <input type="hidden" name="leadId" value={leadId} />

@@ -87,9 +87,6 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   return NextResponse.json({
     status: result.action,
     scheduledDate: result.action === 'approved' ? result.scheduledDate.toISOString() : null,
-    paymentMode: result.action === 'approved' ? result.payment.mode : null,
-    paymentStatus: result.action === 'approved' ? result.payment.status : null,
-    paymentUrl: result.action === 'approved' ? result.payment.checkoutUrl : null,
   })
 }
 
@@ -114,9 +111,9 @@ async function notifyAfterDecision(result: {
     })
     await sendCtaUrl(
       providerPhone,
-      `✅ *Quote Approved!*\n\n${category} job is confirmed for ${dateStr}.\n\nOpen the app to view full details:`,
+      `✅ *Quote Approved!*\n\n${category} job arrangement is confirmed for ${dateStr}.\n\nOpen the app to view full details:`,
       'View Job',
-      `${appUrl}/technician`,
+      `${appUrl}/provider`,
       { footer: 'Navigate and update job status from the app' }
     ).catch(() => {})
     const { sendBookingConfirmation } = await import('@/lib/whatsapp')

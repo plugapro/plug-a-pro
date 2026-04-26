@@ -226,4 +226,82 @@ describe('createJobRequest', () => {
 
     await expect(createJobRequest(BASE_PARAMS)).rejects.toThrow('DB connection lost')
   })
+
+  // ── expiresAt computation ─────────────────────────────────────────────────
+
+  it('sets expiresAt to jobRequestMaxAgeDays from now by default', async () => {
+    const { MATCHING_CONFIG } = await import('../../lib/matching/config')
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    const before = Date.now()
+    await createJobRequest(BASE_PARAMS)
+    const after = Date.now()
+
+    expect(tx.jobRequest.create).toHaveBeenCalledOnce()
+    const { data } = (tx.jobRequest.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(data.expiresAt).toBeInstanceOf(Date)
+
+    const expiresMs = (data.expiresAt as Date).getTime()
+    const defaultOffsetMs = MATCHING_CONFIG.jobRequestMaxAgeDays * 24 * 60 * 60 * 1000
+    expect(expiresMs).toBeGreaterThanOrEqual(before + defaultOffsetMs - 500)
+    expect(expiresMs).toBeLessThanOrEqual(after + defaultOffsetMs + 500)
+  })
+
+  it('uses requestedArrivalLatest + 24h when that falls before the 7-day default', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    // 2 days from now → arrivalLatest + 24h = 3 days, well inside the 7-day default
+    const requestedArrivalLatest = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+    await createJobRequest({ ...BASE_PARAMS, requestedArrivalLatest })
+
+    const { data } = (tx.jobRequest.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    const expiresMs = (data.expiresAt as Date).getTime()
+    const expectedMs = requestedArrivalLatest.getTime() + 24 * 60 * 60 * 1000
+    expect(expiresMs).toBeGreaterThanOrEqual(expectedMs - 500)
+    expect(expiresMs).toBeLessThanOrEqual(expectedMs + 500)
+  })
+
+  it('keeps the 7-day default when requestedArrivalLatest + 24h would exceed it', async () => {
+    const { MATCHING_CONFIG } = await import('../../lib/matching/config')
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    // 8 days from now → arrivalLatest + 24h = 9 days, exceeds the 7-day default
+    const requestedArrivalLatest = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000)
+    const before = Date.now()
+    await createJobRequest({ ...BASE_PARAMS, requestedArrivalLatest })
+    const after = Date.now()
+
+    const { data } = (tx.jobRequest.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    const expiresMs = (data.expiresAt as Date).getTime()
+    const defaultOffsetMs = MATCHING_CONFIG.jobRequestMaxAgeDays * 24 * 60 * 60 * 1000
+    expect(expiresMs).toBeGreaterThanOrEqual(before + defaultOffsetMs - 500)
+    expect(expiresMs).toBeLessThanOrEqual(after + defaultOffsetMs + 500)
+  })
+
+  it('expiresAt is always a Date — never undefined or null', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest(BASE_PARAMS)
+
+    const { data } = (tx.jobRequest.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(data.expiresAt).toBeDefined()
+    expect(data.expiresAt).not.toBeNull()
+    expect(data.expiresAt).toBeInstanceOf(Date)
+  })
 })

@@ -87,14 +87,15 @@ describe('provider job action routes', () => {
     })
   })
 
-  it('blocks completion sign-off when no work photos exist yet', async () => {
+  it('allows completion sign-off without forcing optional work photos', async () => {
     const { getSession } = await import('@/lib/auth')
     const { db } = await import('@/lib/db')
+    const { transitionJob } = await import('@/lib/jobs')
 
     ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider' })
     ;(db.provider.findUnique as any).mockResolvedValue({ id: 'provider-1', userId: 'user-1' })
     ;(db.job.findUnique as any).mockResolvedValue({ id: 'job-1', providerId: 'provider-1' })
-    ;(db.attachment.count as any).mockResolvedValue(0)
+    ;(transitionJob as any).mockResolvedValue(undefined)
 
     const { POST } = await import('../../app/api/technician/jobs/[id]/status/route')
     const req = new NextRequest('http://localhost/api/technician/jobs/job-1/status', {
@@ -104,9 +105,13 @@ describe('provider job action routes', () => {
     })
 
     const res = await POST(req, { params: Promise.resolve({ id: 'job-1' }) })
-    expect(res.status).toBe(422)
-    await expect(res.json()).resolves.toEqual({
-      error: 'Add at least one work photo before marking the job complete.',
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ status: 'ok' })
+    expect(transitionJob).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      toStatus: 'PENDING_COMPLETION_CONFIRMATION',
+      actorId: 'user-1',
+      actorRole: 'provider',
     })
   })
 

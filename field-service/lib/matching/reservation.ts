@@ -42,7 +42,6 @@ export async function reserveBestProviderAtomically(params: {
           SELECT id FROM providers
           WHERE id = ${candidate.id}
             AND active = true
-            AND verified = true
           FOR UPDATE SKIP LOCKED
         `
         if (locked.length === 0) {

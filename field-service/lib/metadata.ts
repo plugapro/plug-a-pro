@@ -8,7 +8,7 @@ export const siteConfig = {
   venture: 'plug-a-pro',
 
   // Display name (used in page titles, emails, etc.)
-  name: 'Plug-A-Pro',
+  name: 'Plug A Pro',
 
   // Short tagline (used in meta description, OG tags)
   description: 'Book skilled technicians via WhatsApp. Track every job. Get paid reliably.',

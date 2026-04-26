@@ -85,6 +85,7 @@ function buildMatchingJobRequest(record: {
   customerAcceptedScope: string | null
   autoCreateBookingOnAssignment: boolean
   status: MatchingJobRequest['status']
+  expiresAt?: Date | null
   customer?: { id: string; name: string; phone: string } | null
   address?: {
     street: string
@@ -117,6 +118,7 @@ function buildMatchingJobRequest(record: {
     customerAcceptedScope: record.customerAcceptedScope,
     autoCreateBookingOnAssignment: record.autoCreateBookingOnAssignment,
     status: record.status,
+    expiresAt: record.expiresAt ?? null,
     customer: record.customer ?? { id: record.customerId, name: 'Customer', phone: '' },
     address: record.address
       ? {
@@ -157,6 +159,7 @@ export async function loadMatchingJobRequest(client: any, jobRequestId: string) 
       customerAcceptedScope: true,
       autoCreateBookingOnAssignment: true,
       status: true,
+      expiresAt: true,
       customer: {
         select: {
           id: true,

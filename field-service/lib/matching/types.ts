@@ -34,6 +34,7 @@ export type MatchingJobRequest = Pick<
   | 'customerAcceptedScope'
   | 'autoCreateBookingOnAssignment'
   | 'status'
+  | 'expiresAt'
 >
 
 export type MatchingAddress = {

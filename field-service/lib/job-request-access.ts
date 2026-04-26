@@ -95,6 +95,7 @@ export async function resolveJobRequestAccessToken(token: string) {
     include: {
       customer: { select: { id: true, userId: true, name: true, phone: true } },
       address: true,
+      attachments: { orderBy: { createdAt: 'asc' } },
       leads: {
         include: {
           provider: {

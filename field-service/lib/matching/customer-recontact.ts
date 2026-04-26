@@ -8,6 +8,8 @@ import type { CandidatePoolEntry } from './candidate-pool'
 import { MATCHING_CONFIG } from './config'
 import { filterEligibleProviders } from './filter'
 
+const RECENT_EXPIRED_REMATCH_DAYS = 14
+
 type RequestTiming = {
   requestedWindowStart: Date | null
   requestedWindowEnd: Date | null
@@ -31,6 +33,7 @@ type MatchableJobRequestRecord = RequestTiming & {
   customerAcceptedAmount: unknown
   customerAcceptedScope: string | null
   autoCreateBookingOnAssignment: boolean
+  expiresAt: Date | null
   customerNoMatchNotifiedAt: Date | null
   customerRematchCheckSentAt: Date | null
   customerRematchCheckRespondedAt: Date | null
@@ -102,7 +105,7 @@ function buildExhaustedMessage(jobRequest: MatchableJobRequestRecord) {
       `😔 *Sorry, ${name}*.\n\n` +
       `We were not able to match your *${serviceName}* request in *${area}* just yet.\n\n` +
       `Because your requested time is still ahead, we will message you if a suitable provider becomes available in time and ask whether you still need help.\n\n` +
-      `Thank you for trying Plug a Pro.`
+      `Thank you for trying Plug A Pro.`
     )
   }
 
@@ -111,7 +114,7 @@ function buildExhaustedMessage(jobRequest: MatchableJobRequestRecord) {
   return (
     `😔 *Sorry, ${name}*.\n\n` +
     `We were not able to match your *${serviceName}* request in *${area}* before *${requestedTimeLabel}*.\n\n` +
-    `Thank you for trying Plug a Pro. As we continue growing our provider base, we should be in a better position to help you in future.`
+    `Thank you for trying Plug A Pro. As we continue growing our provider base, we should be in a better position to help you in future.`
   )
 }
 
@@ -186,6 +189,7 @@ function toFilterJobRequest(jobRequest: MatchableJobRequestRecord) {
     customerAcceptedScope: jobRequest.customerAcceptedScope,
     autoCreateBookingOnAssignment: jobRequest.autoCreateBookingOnAssignment,
     status: jobRequest.status,
+    expiresAt: jobRequest.expiresAt,
     address: jobRequest.address
       ? {
           street: jobRequest.address.street,
@@ -248,6 +252,7 @@ async function loadJobRequestForCustomerMessaging(jobRequestId: string) {
         customerRematchCheckOutcome: true,
         altSlotNegotiationSentAt: true,
         altSlotNegotiationOutcome: true,
+        expiresAt: true,
         customer: {
           select: {
             id: true,
@@ -299,6 +304,7 @@ async function loadJobRequestForCustomerMessaging(jobRequestId: string) {
         customerAcceptedAmount: true,
         customerAcceptedScope: true,
         autoCreateBookingOnAssignment: true,
+        expiresAt: true,
         customer: {
           select: {
             id: true,
@@ -336,6 +342,7 @@ async function loadJobRequestForCustomerMessaging(jobRequestId: string) {
       customerRematchCheckOutcome: null,
       altSlotNegotiationSentAt: null,
       altSlotNegotiationOutcome: null,
+      expiresAt: null,
     } as MatchableJobRequestRecord
   }
 }
@@ -435,7 +442,7 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
     },
   })
 
-  if (!provider || !provider.active || !provider.verified || !provider.availableNow) {
+  if (!provider || !provider.active || !provider.availableNow) {
     return { prompted: 0, templateFallbacks: 0 }
   }
 
@@ -450,15 +457,14 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
 
   const candidate = toCandidate(provider)
   const now = new Date()
+  const recentExpiredCutoff = new Date(now.getTime() - RECENT_EXPIRED_REMATCH_DAYS * 24 * 60 * 60 * 1000)
   const jobs = await db.jobRequest.findMany({
     where: {
       status: 'EXPIRED',
       customerRematchCheckSentAt: null,
-      OR: [
-        { requestedWindowEnd: { gt: now } },
-        { requestedArrivalLatest: { gt: now } },
-        { requestedWindowStart: { gt: now } },
-      ],
+      // Recently expired jobs remain useful rematch opportunities when supply
+      // grows after the original request window.
+      createdAt: { gte: recentExpiredCutoff },
     },
     select: {
       id: true,
@@ -521,7 +527,6 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
 
   for (const jobRequest of jobs) {
     if (!jobRequest.customer?.phone || !jobRequest.address) continue
-    if (!hasFutureExplicitRequestWindow(jobRequest)) continue
 
     const { eligible } = await filterEligibleProviders([candidate], toFilterJobRequest(jobRequest) as Parameters<typeof filterEligibleProviders>[1])
     if (eligible.length === 0) continue
@@ -568,4 +573,29 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
   }
 
   return { prompted, templateFallbacks }
+}
+
+export async function checkJobsForNewProviderAvailability(providerId: string) {
+  const openJobs = await db.jobRequest.findMany({
+    where: { status: 'OPEN' },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+    take: 10,
+  })
+
+  let dispatchedOpenJobs = 0
+  const { orchestrateMatch } = await import('./orchestrator')
+
+  for (const job of openJobs) {
+    const result = await orchestrateMatch(job.id, { triggeredBy: 'cron' })
+    if (result.status === 'DISPATCHED') dispatchedOpenJobs++
+  }
+
+  const rematch = await promptCustomersForNewProviderAvailability(providerId)
+
+  return {
+    dispatchedOpenJobs,
+    promptedExpiredJobs: rematch.prompted,
+    templateFallbacks: rematch.templateFallbacks,
+  }
 }

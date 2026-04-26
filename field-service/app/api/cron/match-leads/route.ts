@@ -10,8 +10,10 @@ import { db } from '@/lib/db'
 import { sendLeadReminders } from '@/lib/matching-engine'
 import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from '@/lib/matching/service'
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
+import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
 import { reconcileProviderRecordsFromApplications, syncProviderRecord } from '@/lib/provider-record'
 import { expireStaleQuotes } from '@/lib/quotes'
+import { expireOpenJobRequest } from '@/lib/job-requests/expire-job-request'
 import { sendText } from '@/lib/whatsapp-interactive'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
@@ -24,7 +26,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, errors: 0, reconciledCapacity: 0 }
+  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, errors: 0, reconciledCapacity: 0 }
 
   // 0. Reconcile stale capacity counters (safety net — corrects counter drift)
   try {
@@ -84,8 +86,9 @@ export async function GET(request: Request) {
     for (const app of pendingApplications) {
       try {
         const reviewedAt = new Date()
+        let providerId: string | null = null
         await db.$transaction(async (tx) => {
-          const providerId = await syncProviderRecord(tx as typeof db, {
+          providerId = await syncProviderRecord(tx as typeof db, {
             phone: app.phone,
             name: app.name,
             skills: app.skills,
@@ -106,10 +109,15 @@ export async function GET(request: Request) {
         })
         await sendText(
           app.phone,
-          `✅ *Application Approved!*\n\nHi *${app.name}*, your Plug a Pro application has been approved!\n\nYou'll start receiving job leads on this number. Reply *menu* to check your status anytime.`
+          `✅ *Application Approved!*\n\nHi *${app.name}*, your Plug A Pro application has been approved!\n\nYou'll start receiving job leads on this number. Reply *menu* to check your status anytime.`
         ).catch((err: unknown) => {
           console.error(`[cron/match-leads:${reqId}] Failed to notify auto-approved provider ${app.id}:`, err)
         })
+        if (providerId) {
+          await checkJobsForNewProviderAvailability(providerId).catch((err: unknown) => {
+            console.error(`[cron/match-leads:${reqId}] new-provider job check failed for ${providerId}:`, err)
+          })
+        }
         results.autoApproved++
       } catch (err) {
         console.error(`[cron/match-leads:${reqId}] Failed to auto-approve application ${app.id}:`, err)
@@ -118,6 +126,62 @@ export async function GET(request: Request) {
     }
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error running auto-approve:`, err)
+    results.errors++
+  }
+
+  // 1e. Expire OPEN job requests that have passed their expiresAt deadline.
+  // Only processes jobs where expiresAt was explicitly set (legacy jobs without
+  // the field are ignored). Notify customer after each transition.
+  try {
+    const staleRequests = await db.jobRequest.findMany({
+      where: {
+        status: 'OPEN',
+        expiresAt: { not: null, lte: new Date() },
+      },
+      select: { id: true },
+      take: 20, // match the dispatch batch size
+    })
+
+    for (const jr of staleRequests) {
+      try {
+        const { transitioned } = await expireOpenJobRequest(jr.id, 'max_age_exceeded')
+        if (transitioned) {
+          results.expiredRequests++
+          // Notify customer (fire-and-forget — failure should not block the sweep)
+          notifyExpiredJobParties({ jobRequestId: jr.id }).catch((err: unknown) => {
+            console.error(`[cron/match-leads:${reqId}] Failed to notify expired job parties ${jr.id}:`, err)
+          })
+        }
+      } catch (err) {
+        console.error(`[cron/match-leads:${reqId}] Error expiring job request ${jr.id}:`, err)
+        results.errors++
+      }
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error sweeping expired job requests:`, err)
+    results.errors++
+  }
+
+  // 1f. Catch-up sweep: EXPIRED jobs from the last 24h that never received a
+  // no-match notification (e.g. if 1e fired but the notify call failed).
+  // notifyExpiredJobParties() is idempotent — it guards on customerNoMatchNotifiedAt.
+  try {
+    const recentlyExpired = await db.jobRequest.findMany({
+      where: {
+        status: 'EXPIRED',
+        updatedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        customerNoMatchNotifiedAt: null,
+      },
+      select: { id: true },
+      take: 20,
+    })
+    for (const jr of recentlyExpired) {
+      notifyExpiredJobParties({ jobRequestId: jr.id }).catch((err: unknown) => {
+        console.error(`[cron/match-leads:${reqId}] Catch-up notify failed for ${jr.id}:`, err)
+      })
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error in catch-up expired notification sweep:`, err)
     results.errors++
   }
 

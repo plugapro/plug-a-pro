@@ -28,6 +28,9 @@ export const MATCHING_CONFIG = {
   },
   regionFallbackPenalty: 0.12,   // score penalty when provider covers the region but not the exact suburb
   allowLegacyStringFallback: true, // migration window: allow string-match fallback for providers without structured areas. Set to false post-backfill.
+  // OPEN job requests expire this many days after creation if no provider has been matched.
+  // Expired jobs remain eligible for rematch when new providers join (see customer-recontact.ts).
+  jobRequestMaxAgeDays: 7,
 } as const
 
 export type MatchingWeights = typeof MATCHING_CONFIG.weights

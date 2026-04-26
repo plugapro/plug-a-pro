@@ -1,5 +1,5 @@
 // ─── Customer: Booking detail ─────────────────────────────────────────────────
-// Shows tracking timeline, provider status, invoice link, and rating prompt.
+// Shows tracking timeline, provider status, work evidence, and rating prompt.
 
 export const dynamic = 'force-dynamic'
 
@@ -54,8 +54,6 @@ export default async function BookingDetailPage({
         },
       },
       quote: true,
-      payment: true,
-      invoice: true,
       job: {
         include: {
           statusHistory: { orderBy: { timestamp: 'asc' } },
@@ -96,7 +94,7 @@ export default async function BookingDetailPage({
   const canCancel =
     booking.status === 'SCHEDULED' || booking.status === 'RESCHEDULED'
 
-  async function cancelBooking() {
+  async function cancelBooking(formData: FormData) {
     'use server'
     const { getSession: getsess } = await import('@/lib/auth')
     const sess = await getsess()
@@ -118,11 +116,16 @@ export default async function BookingDetailPage({
     if (!currentCustomer || b.match.jobRequest.customer?.id !== currentCustomer.id) redirect('/bookings')
     if (b.status !== 'SCHEDULED' && b.status !== 'RESCHEDULED') redirect(`/bookings/${id}`)
 
+    // Build a human-readable reason from the form fields.
+    const cancelReason = String(formData.get('cancelReason') ?? '').trim()
+    const cancelNote = String(formData.get('cancelNote') ?? '').trim()
+    const reason = [cancelReason || 'Cancelled by customer', cancelNote].filter(Boolean).join(' — ')
+
     await cancelBookingLifecycle({
       bookingId: id,
       actorId: sess.id,
       actorRole: 'customer',
-      reason: 'Cancelled by customer from booking page',
+      reason,
     })
 
     redirect('/bookings')
@@ -296,23 +299,6 @@ export default async function BookingDetailPage({
         </CardContent>
       </Card>
 
-      {booking.payment && (
-        <Card>
-          <CardContent className="p-4 space-y-2 text-sm">
-            <p className="font-medium">Payment record</p>
-            {booking.payment.collectionMode === 'PLATFORM_CHECKOUT' ? (
-              <p className="text-muted-foreground">
-                Plug-A-Pro created an online checkout record for this booking. Status: <span className="font-medium text-foreground">{booking.payment.status.toLowerCase().replace(/_/g, ' ')}</span>.
-              </p>
-            ) : (
-              <p className="text-muted-foreground">
-                Plug-A-Pro recorded this booking without taking online payment. Payment may still be settled directly with the provider or confirmed offline through support.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       {/* Pending approval */}
       {currentJobStatus === 'AWAITING_APPROVAL' && booking.job?.extras[0] && (
         <div className="rounded-xl border border-orange-300 bg-orange-50 dark:bg-orange-900/10 p-4 space-y-3">
@@ -337,7 +323,7 @@ export default async function BookingDetailPage({
             Your provider has marked the work as complete
           </p>
           <p className="text-sm text-emerald-900/80 dark:text-emerald-100/80">
-            Review the job photos and details above. If the work is complete, confirm it here so we can close the job and issue the final record.
+            Review the job photos and details above. If the work is complete, confirm it here so we can close the job and ask for your review.
           </p>
           <form action={confirmCompletion}>
             <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
@@ -421,33 +407,6 @@ export default async function BookingDetailPage({
         </Card>
       )}
 
-      {/* Invoice */}
-      {booking.invoice && (
-        <Card>
-          <CardContent className="px-4 py-4 flex items-center justify-between">
-            <div>
-              <p className="font-medium text-sm">Invoice #{booking.invoice.number}</p>
-              <p className="text-xs text-muted-foreground">
-                R {Number(booking.invoice.totalAmount).toFixed(2)}
-              </p>
-            </div>
-            {booking.invoice.pdfUrl ? (
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={booking.invoice.pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Download PDF
-                </a>
-              </Button>
-            ) : (
-              <span className="text-xs text-muted-foreground">Generating…</span>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       {/* Rating prompt */}
       {booking.status === 'COMPLETED' && !existingRating && booking.job && (
         <Link
@@ -469,7 +428,7 @@ export default async function BookingDetailPage({
             <div>
               <p className="font-medium text-sm">Need help with this job?</p>
               <p className="text-sm text-muted-foreground">
-                Raise an issue with Plug-A-Pro support and we&apos;ll review the quote, photos, and job history on record.
+                Raise an issue with Plug A Pro support and we&apos;ll review the quote, photos, and job history on record.
               </p>
             </div>
 
@@ -514,7 +473,38 @@ export default async function BookingDetailPage({
 
       {/* Cancel booking */}
       {canCancel && (
-        <form action={cancelBooking}>
+        <form action={cancelBooking} className="space-y-3">
+          <div className="space-y-1">
+            <label htmlFor="cancelReason" className="text-sm text-muted-foreground">
+              Reason for cancelling
+            </label>
+            <select
+              id="cancelReason"
+              name="cancelReason"
+              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              defaultValue=""
+              required
+            >
+              <option value="" disabled>Select a reason…</option>
+              <option value="Found another provider">Found another provider</option>
+              <option value="No longer needed">No longer needed</option>
+              <option value="Cost too high">Cost too high</option>
+              <option value="Taking too long">Taking too long</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="cancelNote" className="text-sm text-muted-foreground">
+              Additional notes <span className="text-muted-foreground/60">(optional)</span>
+            </label>
+            <textarea
+              id="cancelNote"
+              name="cancelNote"
+              rows={2}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+              placeholder="Any extra details…"
+            />
+          </div>
           <Button variant="destructive" className="w-full" type="submit">
             Cancel booking
           </Button>

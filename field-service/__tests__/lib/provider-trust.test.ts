@@ -8,7 +8,7 @@ import {
 
 describe('provider trust helpers', () => {
   it('labels marketplace-approved providers without implying competence verification', () => {
-    expect(getProviderMarketplaceReviewLabel(true)).toBe('Application reviewed by Plug-A-Pro')
+    expect(getProviderMarketplaceReviewLabel(true)).toBe('Application reviewed by Plug A Pro')
   })
 
   it('labels non-approved profiles as provider-supplied', () => {

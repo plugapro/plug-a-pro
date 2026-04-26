@@ -97,7 +97,12 @@ export default async function QuotePage({
   const match = await db.match.findUnique({
     where: { id: matchId },
     include: {
-      jobRequest: { include: { address: true } },
+      jobRequest: {
+        include: {
+          address: true,
+          attachments: { orderBy: { createdAt: 'asc' } },
+        },
+      },
       quotes: { orderBy: { createdAt: 'desc' } },
     },
   })
@@ -201,6 +206,29 @@ export default async function QuotePage({
               notes: quote.notes,
             }))}
           />
+        </div>
+      )}
+
+      {jobRequest.attachments.length > 0 && (
+        <div className="rounded-xl border bg-card p-4 space-y-3">
+          <div>
+            <h2 className="text-sm font-medium">Customer photos</h2>
+            <p className="text-sm text-muted-foreground">
+              Use these photos to understand the problem before quoting.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {jobRequest.attachments.map((photo) => (
+              <a key={photo.id} href={`/api/attachments/${photo.id}`} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/api/attachments/${photo.id}`}
+                  alt={photo.caption ?? photo.label ?? 'Customer job photo'}
+                  className="h-36 w-full rounded-lg object-cover"
+                />
+              </a>
+            ))}
+          </div>
         </div>
       )}
 

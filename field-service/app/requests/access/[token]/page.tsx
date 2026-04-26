@@ -38,7 +38,7 @@ export default async function TicketAccessPage({
             <Link href="/sign-in">Sign in to view your tickets</Link>
           </Button>
           <p className="text-center text-xs text-muted-foreground">
-            You can also return to WhatsApp and ask Plug-A-Pro to resend your ticket link.
+            You can also return to WhatsApp and ask Plug A Pro to resend your ticket link.
           </p>
         </div>
       </div>
@@ -64,7 +64,7 @@ export default async function TicketAccessPage({
     <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Plug-A-Pro ticket</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Plug A Pro ticket</p>
           <h1 className="mt-1 text-xl font-semibold">Request #{jobRequest.id.slice(-8).toUpperCase()}</h1>
           <p className="text-sm capitalize text-muted-foreground">{jobRequest.category}</p>
         </div>
@@ -94,6 +94,30 @@ export default async function TicketAccessPage({
               year: 'numeric',
             })}
           </Row>
+          {jobRequest.attachments.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Photos
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {jobRequest.attachments.map((photo) => (
+                  <a
+                    key={photo.id}
+                    href={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
+                      alt={photo.caption ?? photo.label ?? 'Job photo'}
+                      className="h-36 w-full rounded-lg object-cover"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

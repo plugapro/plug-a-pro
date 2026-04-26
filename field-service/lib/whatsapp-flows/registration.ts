@@ -1,11 +1,12 @@
 // ─── Service provider registration flow via WhatsApp ──────────────────────────
 // Journey: trigger → name → skills (multi-select) → area → experience → availability → submit → pending review
-// No direct connection given to customer — all mediated through Plug-a-Pro
+// No direct connection given to customer — all mediated through Plug A Pro
 
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import { db } from '../db'
 import { syncProviderRecord } from '../provider-record'
+import { checkJobsForNewProviderAvailability } from '../matching/customer-recontact'
 import { normalizePhone } from '../utils'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
 import {
@@ -79,7 +80,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   if (existingCustomer) {
     await sendText(
       ctx.phone,
-      `⚠️ *Provider registration unavailable*\n\nThis number is already registered as a customer on Plug a Pro.\n\nTo join as a service provider, please use a *different phone number* and restart with *join*.`
+      `⚠️ *Provider registration unavailable*\n\nThis number is already registered as a customer on Plug A Pro.\n\nTo join as a service provider, please use a *different phone number* and restart with *join*.`
     )
     return { nextStep: 'done' }
   }
@@ -90,7 +91,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   if (existing?.status === 'APPROVED') {
     await sendButtons(
       ctx.phone,
-      "✅ You're already registered as a Plug a Pro worker! You'll receive job leads through this number.\n\nWhat would you like to do?",
+      "✅ You're already registered as a Plug A Pro worker! You'll receive job leads through this number.\n\nWhat would you like to do?",
       [
         { id: 'pj_view_jobs', title: '📋 My Jobs' },
         { id: 'back_home', title: '🏠 Main Menu' },
@@ -102,14 +103,14 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   if (existing?.status === 'PENDING') {
     await sendText(
       ctx.phone,
-      `⏳ Your application is under review. We'll contact you within 30 minutes.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *menu* anytime to return to the main menu.`
+      `⏳ Your provider profile is already on file.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *jobs* to check leads or *menu* to return to the main menu.`
     )
     return { nextStep: 'done' }
   }
 
   await sendButtons(
     ctx.phone,
-    `👷 *Join Plug a Pro as a Service Provider*\n\nEarn money doing what you're good at. We connect you with customers who need your skills.\n\n*Here's how it works:*\n• We send you job leads in your area\n• You confirm availability and go do the job\n• Plug a Pro keeps the quote and job record clear so payment can be settled properly\n\nReady to apply?`,
+    `👷 *Join Plug A Pro as a Service Provider*\n\nEarn money doing odd jobs, repairs, and once-off work in your area.\n\n*Here's how it works:*\n• Share your name, skills, and work area\n• We send suitable job leads\n• You send a simple quote or arrangement\n• You and the client arrange the work directly\n\nReady to join?`,
     [
       { id: 'reg_start', title: '✅ Yes, Apply Now' },
       { id: 'reg_cancel', title: '❌ Not Now' },
@@ -605,7 +606,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
 
     await sendButtons(
       ctx.phone,
-      '🧾 Would you like to add an optional proof note?\n\nExamples: past jobs, references, or certificate names. This stays provider-supplied unless Plug a Pro says a specific item was reviewed.',
+      '🧾 Would you like to add an optional work note?\n\nExamples: past jobs, references, or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
       [
         { id: 'evidence_add', title: '✍️ Add proof note' },
         { id: 'evidence_skip', title: '⏭️ Skip for now' },
@@ -617,7 +618,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'evidence_add') {
     await sendText(
       ctx.phone,
-      '🧾 Share your proof — you can send:\n• A text note (past jobs, references, certificate names)\n• A photo or PDF of a certificate or work sample\n\nOr type *skip* to continue without one.'
+      '🧾 Share optional work examples — you can send:\n• A text note about past jobs or references\n• A photo or PDF of previous work\n\nOr type *skip* to continue without one.'
     )
     return { nextStep: 'reg_collect_evidence' }
   }
@@ -742,7 +743,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     if (existingApp?.status === 'APPROVED') {
       await sendText(
         ctx.phone,
-        `✅ You're already registered as a Plug a Pro worker. You'll receive job leads through this number.\n\nReply *menu* to return to the main menu.`
+        `✅ You're already registered as a Plug A Pro worker. You'll receive job leads through this number.\n\nReply *menu* to return to the main menu.`
       )
       return { nextStep: 'done' }
     }
@@ -751,7 +752,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       const ref = existingApp.id.slice(-8).toUpperCase()
       await sendText(
         ctx.phone,
-        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 30 minutes. Reply *menu* anytime to return to the main menu.`
+      `⏳ Your provider profile is already on file.\n\nRef: *${ref}*\n\nReply *jobs* to check leads or *menu* anytime to return to the main menu.`
       )
       return { nextStep: 'done' }
     }
@@ -808,7 +809,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       const ref = racedExisting.id.slice(-8).toUpperCase()
       await sendText(
         ctx.phone,
-        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 30 minutes. Reply *menu* anytime to return to the main menu.`
+      `⏳ Your provider profile is already on file.\n\nRef: *${ref}*\n\nReply *jobs* to check leads or *menu* anytime to return to the main menu.`
       )
       return { nextStep: 'done' }
     }
@@ -828,8 +829,14 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
     await sendText(
       ctx.phone,
-      `🎉 *Application submitted!*\n\nThanks, *${ctx.data.name}* — we'll review your details and get back to you within *30 minutes*.\n\nRef: *${ref}*\n\n_We'll message you here with the outcome._`
+      `🎉 *Profile submitted!*\n\nThanks, *${ctx.data.name}* — your provider profile is ready to receive suitable job leads while we keep your details on record.\n\nRef: *${ref}*\n\nReply *jobs* anytime to check available work.`
     )
+
+    // A new provider can unlock older unmatched demand, so check open and
+    // recently expired jobs immediately instead of waiting for the next cron run.
+    checkJobsForNewProviderAvailability(providerId).catch((err) => {
+      console.error(`[registration-flow] new-provider job check failed for provider ${providerId}:`, err)
+    })
 
     // Send template confirmation (covers the case where >24h passes before we reply)
     // Intentional direct sendTemplate bypass: provider applicants have no Customer record yet,
@@ -929,7 +936,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
     case 'edit_evidence':
       await sendText(
         ctx.phone,
-        '🧾 Share a short note about past work, references, or certificate names you want customers to see later.\n\nReply with your note, or type *skip* to clear it.'
+        '🧾 Share a short note about past work or references you want customers to see later.\n\nReply with your note, or type *skip* to clear it.'
       )
       return { nextStep: 'reg_collect_evidence' }
 

@@ -27,7 +27,6 @@ import {
   handleProviderJourneyFlow,
   PROVIDER_JOURNEY_TRIGGERS,
 } from './whatsapp-flows/provider-journey'
-import { hasFutureExplicitRequestWindow } from './matching/customer-recontact'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
 import { applyOptIn, applyOptOut } from './whatsapp-policy'
 
@@ -592,21 +591,6 @@ async function handleCustomerRematchCheckResponse(phone: string, actionId: strin
     return
   }
 
-  if (!hasFutureExplicitRequestWindow(jobRequest)) {
-    await db.jobRequest.update({
-      where: { id: jobRequest.id },
-      data: {
-        customerRematchCheckRespondedAt: new Date(),
-        customerRematchCheckOutcome: 'WINDOW_ELAPSED',
-      },
-    })
-    await sendText(
-      phone,
-      `Thanks, ${firstName(customer.name)}. That requested time has already passed, so we won't reopen this request. Reply *Hi* whenever you'd like to submit a new one.`
-    )
-    return
-  }
-
   if (jobRequest.status !== 'EXPIRED') {
     await db.jobRequest.update({
       where: { id: jobRequest.id },
@@ -689,10 +673,10 @@ export async function notifyProviderApplicationResult(params: {
     const { sendCtaUrl } = await import('./whatsapp-interactive')
     await sendCtaUrl(
       params.phone,
-      `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug a Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule, and start responding to matching requests.`,
+      `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule, and start responding to matching requests.`,
       'Open Provider Portal',
       `${appUrl}/provider`,
-      { footer: 'Welcome to the Plug a Pro network! 👋' }
+      { footer: 'Welcome to the Plug A Pro network! 👋' }
     )
   } else {
     // Intentional direct sendTemplate bypass: provider applicants have no Customer record,
@@ -898,7 +882,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
   const provider = await db.provider.findUnique({ where: { phone } })
   if (!provider) {
-    await sendText(phone, "You're not registered as a Plug a Pro provider. Reply *join* to apply, or contact support if you think this is an error.")
+    await sendText(phone, "You're not registered as a Plug A Pro provider. Reply *join* to apply, or contact support if you think this is an error.")
     return
   }
 

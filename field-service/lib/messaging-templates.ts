@@ -99,7 +99,7 @@ export const TEMPLATES = {
     // {{1}} customer name, {{2}} technician name, {{3}} ETA
     // Body registered with Meta 2026-04-08 (original body was rejected — leading param).
     example:
-      'Hi {{1}}, your Plug-A-Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!',
+      'Hi {{1}}, your Plug A Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!',
   },
 
   technician_arrived: {
@@ -219,7 +219,7 @@ export const TEMPLATES = {
     description: 'Sent as template confirmation after application submission',
     // {{1}} applicant name, {{2}} application ref
     example:
-      'Hi {{1}}, we received your application to join Plug a Pro. Ref: {{2}}. We review all applications within 30 minutes and will update you here.',
+      'Hi {{1}}, we received your application to join Plug A Pro. Ref: {{2}}. We review all applications within 30 minutes and will update you here.',
   },
 
   technician_welcome: {
@@ -229,7 +229,7 @@ export const TEMPLATES = {
     description: 'Sent on approval — includes app link. Used as template for >24h outreach',
     // {{1}} tech name, {{2}} app URL
     example:
-      'Welcome to Plug a Pro, {{1}}! Your application has been approved. Download the app — {{2}} — jobs are waiting!',
+      'Welcome to Plug A Pro, {{1}}! Your application has been approved. Download the app — {{2}} — jobs are waiting!',
   },
 
   technician_application_declined: {
@@ -239,7 +239,7 @@ export const TEMPLATES = {
     description: 'Sent when application is not approved, with optional reason',
     // {{1}} applicant name, {{2}} reason or "at this time"
     example:
-      'Hi {{1}}, thank you for applying to Plug a Pro. Unfortunately we are unable to onboard you {{2}}. You are welcome to apply again in the future.',
+      'Hi {{1}}, thank you for applying to Plug A Pro. Unfortunately we are unable to onboard you {{2}}. You are welcome to apply again in the future.',
   },
 
 } as const
