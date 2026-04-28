@@ -12,6 +12,7 @@ import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
 import { reconcileProviderRecordsFromApplications, syncProviderRecord } from '@/lib/provider-record'
+import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-application-notifications'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { expireOpenJobRequest } from '@/lib/job-requests/expire-job-request'
 import { sendText } from '@/lib/whatsapp-interactive'
@@ -87,6 +88,7 @@ export async function GET(request: Request) {
       try {
         const reviewedAt = new Date()
         let providerId: string | null = null
+        let approved = false
         await db.$transaction(async (tx) => {
           providerId = await syncProviderRecord(tx as typeof db, {
             phone: app.phone,
@@ -98,19 +100,22 @@ export async function GET(request: Request) {
             verified: true,
           })
 
-          await tx.providerApplication.update({
-            where: { id: app.id },
+          const update = await tx.providerApplication.updateMany({
+            where: { id: app.id, status: 'PENDING' },
             data: {
               status: 'APPROVED',
               reviewedAt,
               providerId,
             },
           })
+          approved = update.count > 0
         })
-        await sendText(
-          app.phone,
-          `✅ *Application Approved!*\n\nHi *${app.name}*, your Plug A Pro application has been approved!\n\nYou'll start receiving job leads on this number. Reply *menu* to check your status anytime.`
-        ).catch((err: unknown) => {
+        if (!approved) continue
+        await notifyProviderApplicationApprovedOnce({
+          applicationId: app.id,
+          phone: app.phone,
+          name: app.name,
+        }).catch((err: unknown) => {
           console.error(`[cron/match-leads:${reqId}] Failed to notify auto-approved provider ${app.id}:`, err)
         })
         if (providerId) {

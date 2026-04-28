@@ -32,6 +32,7 @@ import { applyOptIn, applyOptOut } from './whatsapp-policy'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
+const phoneMessageQueues = new Map<string, Promise<void>>()
 
 // Keywords that restart the main menu from any state
 const RESET_KEYWORDS = [
@@ -94,6 +95,26 @@ function isStatelessNotificationReply(
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
+  message: InboundMessage
+): Promise<void> {
+  // Normalise to E.164 (+27…). Meta sends without the leading '+'.
+  const phone = message.from.startsWith('+') ? message.from : `+${message.from}`
+  const previous = phoneMessageQueues.get(phone) ?? Promise.resolve()
+  const current = previous
+    .catch(() => undefined)
+    .then(() => processInboundMessageUnlocked(message))
+
+  phoneMessageQueues.set(phone, current)
+  try {
+    await current
+  } finally {
+    if (phoneMessageQueues.get(phone) === current) {
+      phoneMessageQueues.delete(phone)
+    }
+  }
+}
+
+async function processInboundMessageUnlocked(
   message: InboundMessage
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
@@ -743,6 +764,7 @@ export async function notifyProviderNewJob(params: {
 }
 
 export async function notifyProviderApplicationResult(params: {
+  applicationId?: string
   phone: string
   name: string
   approved: boolean
@@ -751,6 +773,16 @@ export async function notifyProviderApplicationResult(params: {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   if (params.approved) {
+    if (params.applicationId) {
+      const { notifyProviderApplicationApprovedOnce } = await import('./provider-application-notifications')
+      await notifyProviderApplicationApprovedOnce({
+        applicationId: params.applicationId,
+        phone: params.phone,
+        name: params.name,
+      })
+      return
+    }
+
     // Use sendCtaUrl so the provider can tap directly into their portal
     const { sendCtaUrl } = await import('./whatsapp-interactive')
     await sendCtaUrl(

@@ -1,4 +1,4 @@
-// Plug-A-Pro — Marketplace Schema
+// Plug A Pro — Marketplace Schema
 // Domain model: homeowners post job requests → platform matches to independent providers
 // → providers accept leads → quote → book → execute → pay → review
 
@@ -269,12 +269,16 @@ model ProviderApplication {
   notes        String?           // admin review notes
   reviewedAt   DateTime?
   reviewedById String?
+  approvalWhatsappSendStartedAt DateTime?
+  approvalWhatsappSentAt DateTime?
+  approvalWhatsappExternalId String?
   submittedAt  DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
   provider    Provider?    @relation(fields: [providerId], references: [id])
   attachments Attachment[]
 
+  @@index([approvalWhatsappSentAt])
   @@map("provider_applications")
 }
 
