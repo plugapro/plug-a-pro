@@ -454,6 +454,109 @@ describe('handleProviderJourneyFlow', () => {
     })
   })
 
+  describe('My Jobs exclusion and normalization filters', () => {
+    it('excludes a cancelled job request from My Jobs', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', status: 'ACTIVE', availableNow: true, technicianAvailability: null,
+      })
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      // lead whose jobRequest is CANCELLED — should be excluded by the DB query
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([]) // accepted leads query returns empty (DB excluded it)
+        .mockResolvedValueOnce([]) // pending available leads
+
+      await handleProviderJourneyFlow(mockCtx('pj_job_list', 'provider_my_jobs'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('No active jobs right now'),
+        expect.any(Array),
+      )
+    })
+
+    it('excludes an expired job request from My Jobs', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', status: 'ACTIVE', availableNow: true, technicianAvailability: null,
+      })
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([]) // DB excluded expired lead
+        .mockResolvedValueOnce([])
+
+      await handleProviderJourneyFlow(mockCtx('pj_job_list', 'provider_my_jobs'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('No active jobs right now'),
+        expect.any(Array),
+      )
+    })
+
+    it('excludes an accepted lead reassigned to a different provider', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', status: 'ACTIVE', availableNow: true, technicianAvailability: null,
+      })
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      // DB query filters providerId=prov_1 so a reassigned lead (match.providerId=other) never returns
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+
+      await handleProviderJourneyFlow(mockCtx('pj_job_list', 'provider_my_jobs'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('No active jobs right now'),
+        expect.any(Array),
+      )
+    })
+
+    it('resolves a local SA phone number (0711111111) to the same provider via findMany fallback', async () => {
+      // Exact findUnique lookup returns null (phone stored as +27711111111, incoming is local 0711111111)
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+      ;(db.provider.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([{
+        id: 'prov_1', name: 'Sipho', status: 'ACTIVE', availableNow: true, technicianAvailability: null,
+      }])
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+
+      const localCtx = { ...mockCtx('pj_job_list', 'provider_my_jobs'), phone: '0711111111' }
+      await handleProviderJourneyFlow(localCtx as any)
+
+      // Must have fallen back to findMany with phone variants
+      expect(db.provider.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            phone: expect.objectContaining({ in: expect.arrayContaining(['+27711111111', '0711111111']) }),
+          }),
+        }),
+      )
+      // Provider was found; no "not registered" error sent
+      expect(wa.sendText).not.toHaveBeenCalledWith('0711111111', expect.stringContaining('not registered'))
+    })
+
+    it('logs a warning when duplicate provider records share the same phone number', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+      ;(db.provider.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'prov_1', name: 'Sipho', status: 'ACTIVE', availableNow: true, technicianAvailability: null },
+        { id: 'prov_2', name: 'Sipho Dup', status: 'ACTIVE', availableNow: true, technicianAvailability: null },
+      ])
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]).mockResolvedValueOnce([]).mockResolvedValueOnce([])
+
+      await handleProviderJourneyFlow(mockCtx('pj_job_list', 'provider_my_jobs'))
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('duplicate provider phone records detected'),
+        expect.objectContaining({ providerIds: expect.arrayContaining(['prov_1', 'prov_2']) }),
+      )
+      warnSpy.mockRestore()
+    })
+  })
+
   describe('pj_status_confirm step', () => {
     it('uses the central state machine for provider WhatsApp status updates', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({

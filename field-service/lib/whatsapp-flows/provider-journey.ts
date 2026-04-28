@@ -742,6 +742,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
           is: {
             providerId: provider.id,
             status: { in: [...ACTIVE_ACCEPTED_MATCH_STATUSES] },
+            providerCompletedAt: null,
           },
         },
       },
@@ -969,8 +970,16 @@ async function handleJobDetail(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promise<FlowResult> {
+  const traceId = crypto.randomUUID().slice(0, 8)
+  const normalizedPhone = normalizePhone(ctx.phone)
   const provider = await findProviderForWhatsApp(ctx.phone)
   if (!provider) {
+    console.info('[provider-journey] lead_detail provider lookup failed', {
+      traceId,
+      normalizedPhone,
+      leadId,
+      inboundMessageId: ctx.reply.id ?? null,
+    })
     await sendText(ctx.phone, "You're not registered as a provider.")
     return { nextStep: 'done' }
   }
@@ -1009,6 +1018,17 @@ async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promi
   const customer = firstName(lead.jobRequest.customer?.name)
   const status = acceptedLeadStatusLabel(match)
   const nextStep = acceptedLeadNextStep(match)
+  console.info('[provider-journey] lead_detail resolved', {
+    traceId,
+    normalizedPhone,
+    resolvedProviderId: provider.id,
+    leadId: lead.id,
+    jobRequestRef: shortRef(lead.jobRequestId),
+    leadStatus: lead.status,
+    matchStatus: match.status,
+    statusLabel: status,
+    nextStep,
+  })
   const leadUrl = await getProviderLeadAccessUrlByLeadId(lead.id)
   const body =
     `📋 *${category} — ${suburb}*\n\n` +
