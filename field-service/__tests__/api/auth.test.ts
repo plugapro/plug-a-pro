@@ -13,6 +13,12 @@ vi.mock('@/lib/db', () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+    customer: {
+      findUnique: vi.fn(),
+    },
+    provider: {
+      findUnique: vi.fn(),
+    },
   },
 }))
 
@@ -219,6 +225,99 @@ describe('DELETE /api/auth/session', () => {
     expect(setCookie).toContain('sb-access-token=')
     expect(setCookie).toContain('Max-Age=0')
     expect(setCookie).toContain('HttpOnly')
+  })
+})
+
+// ─── /api/auth/phone-exists ───────────────────────────────────────────────────
+
+describe('POST /api/auth/phone-exists', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+
+    const { db } = await import('@/lib/db')
+    ;(db.customer.findUnique as any).mockResolvedValue(null)
+    ;(db.provider.findUnique as any).mockResolvedValue(null)
+  })
+
+  it('returns exists=true when a customer phone exists', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust-1' })
+
+    const { POST } = await import('../../app/api/auth/phone-exists/route')
+    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0821234567', role: 'customer' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ exists: true })
+    expect(db.customer.findUnique).toHaveBeenCalledWith({
+      where: { phone: '+27821234567' },
+      select: { id: true },
+    })
+  })
+
+  it('returns exists=false when a customer phone is unknown', async () => {
+    const { POST } = await import('../../app/api/auth/phone-exists/route')
+    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567', role: 'customer' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ exists: false })
+  })
+
+  it('returns exists=true only for active providers', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true })
+
+    const { POST } = await import('../../app/api/auth/phone-exists/route')
+    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '27821234567', role: 'provider' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ exists: true })
+    expect(db.provider.findUnique).toHaveBeenCalledWith({
+      where: { phone: '+27821234567' },
+      select: { id: true, active: true },
+    })
+  })
+
+  it('returns exists=false for inactive providers', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: false })
+
+    const { POST } = await import('../../app/api/auth/phone-exists/route')
+    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567', role: 'provider' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ exists: false })
+  })
+
+  it('rejects invalid lookup requests', async () => {
+    const { POST } = await import('../../app/api/auth/phone-exists/route')
+    const req = new NextRequest('http://localhost/api/auth/phone-exists', {
+      method: 'POST',
+      body: JSON.stringify({ phone: 'abc', role: 'customer' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(400)
   })
 })
 

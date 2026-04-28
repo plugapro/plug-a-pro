@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getSafeNextPath } from '@/lib/safe-redirect'
+import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 
 function getSupabaseClient() {
   return createClient(
@@ -46,6 +47,12 @@ export default function SignInPage() {
     }
 
     try {
+      const exists = await phoneExistsForSignIn(normalised, 'customer')
+      if (!exists) {
+        setError("We couldn't find a customer account for this number. Check the number, or start a service request first.")
+        return
+      }
+
       const supabase = getSupabaseClient()
       const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalised })
 

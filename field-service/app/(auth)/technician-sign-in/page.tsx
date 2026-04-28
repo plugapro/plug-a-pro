@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getSafeNextPath } from '@/lib/safe-redirect'
+import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 
 function getSupabaseClient() {
   return createClient(
@@ -46,6 +47,12 @@ export default function ProviderSignInPage() {
     }
 
     try {
+      const exists = await phoneExistsForSignIn(normalised, 'provider')
+      if (!exists) {
+        setError("We couldn't find an active provider account for this number. Apply via WhatsApp first, or check the number.")
+        return
+      }
+
       const supabase = getSupabaseClient()
       const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalised })
 
