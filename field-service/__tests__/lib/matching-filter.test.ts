@@ -228,6 +228,153 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   })
 })
 
+describe('filterEligibleProviders — provider availability controls', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupDefaultBatchMocks()
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+  })
+
+  it('excludes a paused provider even if their legacy availableNow flag is still true', async () => {
+    mockDb.technicianAvailability.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      availabilityMode: 'PAUSED',
+      availabilityState: 'PAUSED',
+      nextAvailableAt: null,
+      breakUntil: null,
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+    }])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate({ availableNow: true })],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes)
+      .toContain('TECHNICIAN_PAUSED')
+  })
+
+  it('does not enforce weekly schedule rows while availability mode is always available', async () => {
+    const requestStart = new Date('2026-04-14T12:00:00.000Z')
+    mockDb.technicianAvailability.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      nextAvailableAt: null,
+      breakUntil: null,
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+    }])
+    mockDb.providerSchedule.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      dayOfWeek: requestStart.getDay(),
+      startTime: '06:00',
+      endTime: '07:00',
+      active: true,
+    }])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      {
+        ...makeJobRequest(),
+        requestedWindowStart: requestStart,
+        requestedWindowEnd: new Date('2026-04-14T13:00:00.000Z'),
+      },
+    )
+
+    expect(eligible).toHaveLength(1)
+    expect(filteredOut.find((f) => f.providerId === 'p1')).toBeUndefined()
+  })
+
+  it('enforces weekly schedule rows when availability mode is schedule-based', async () => {
+    const requestStart = new Date('2026-04-14T12:00:00.000Z')
+    mockDb.technicianAvailability.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      availabilityMode: 'SCHEDULE',
+      availabilityState: 'AVAILABLE',
+      nextAvailableAt: null,
+      breakUntil: null,
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+    }])
+    mockDb.providerSchedule.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      dayOfWeek: requestStart.getDay(),
+      startTime: '06:00',
+      endTime: '07:00',
+      active: true,
+    }])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      {
+        ...makeJobRequest(),
+        requestedWindowStart: requestStart,
+        requestedWindowEnd: new Date('2026-04-14T13:00:00.000Z'),
+      },
+    )
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes)
+      .toContain('WINDOW_NOT_FEASIBLE')
+  })
+
+  it('excludes providers who opted out of same-day jobs for same-day requests', async () => {
+    mockDb.technicianAvailability.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      nextAvailableAt: null,
+      breakUntil: null,
+      emergencyAvailable: false,
+      sameDayAvailable: false,
+    }])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      {
+        ...makeJobRequest(),
+        requestedWindowStart: new Date(),
+        requestedWindowEnd: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    )
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes)
+      .toContain('SAME_DAY_NOT_AVAILABLE')
+  })
+
+  it('excludes providers from after-hours jobs unless emergency availability is enabled', async () => {
+    const afterHours = new Date('2026-04-14T20:00:00.000Z')
+    mockDb.technicianAvailability.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      nextAvailableAt: null,
+      breakUntil: null,
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+    }])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      {
+        ...makeJobRequest(),
+        requestedWindowStart: afterHours,
+        requestedWindowEnd: new Date('2026-04-14T21:00:00.000Z'),
+      },
+    )
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes)
+      .toContain('EMERGENCY_NOT_AVAILABLE')
+  })
+})
+
 describe('filterEligibleProviders — near-miss bucket', () => {
   beforeEach(() => {
     vi.clearAllMocks()

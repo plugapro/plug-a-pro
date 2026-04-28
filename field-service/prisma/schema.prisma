@@ -665,15 +665,23 @@ model TechnicianServiceArea {
 model TechnicianAvailability {
   id                 String   @id @default(cuid())
   providerId         String   @unique
+  availabilityMode   String   @default("ALWAYS_AVAILABLE") // ALWAYS_AVAILABLE | SCHEDULE | PAUSED
   availabilityState  TechnicianAvailabilityState @default(AVAILABLE)
   nextAvailableAt    DateTime?
   breakUntil         DateTime?
+  pausedAt           DateTime?
+  pauseReason        String?
+  emergencyAvailable Boolean  @default(false)
+  sameDayAvailable   Boolean  @default(true)
+  lastUpdatedBy      String?
+  lastUpdatedChannel String?
   notes              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
+  @@index([availabilityMode])
   @@map("technician_availability")
 }
 

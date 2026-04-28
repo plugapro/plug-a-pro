@@ -8,9 +8,28 @@ import { transitionJob } from '../jobs'
 import { promptCustomersForNewProviderAvailability } from '../matching/customer-recontact'
 import { recordAuditLog } from '../audit'
 import { AUDIT_ENTITY } from '../audit-entities'
+import { getProviderLeadAccessUrlByLeadId } from '../provider-lead-access'
+import { normalizePhone } from '../utils'
+import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
+const ACTIVE_JOB_STATUSES = [
+  'SCHEDULED',
+  'EN_ROUTE',
+  'ARRIVED',
+  'STARTED',
+  'PAUSED',
+  'AWAITING_APPROVAL',
+  'PENDING_COMPLETION_CONFIRMATION',
+] as const
+const ACTIVE_ACCEPTED_MATCH_STATUSES = [
+  'MATCHED',
+  'INSPECTION_SCHEDULED',
+  'INSPECTION_COMPLETE',
+  'QUOTED',
+  'QUOTE_APPROVED',
+] as const
 
 export const PROVIDER_JOURNEY_TRIGGERS = [
   'available', 'online', 'im available', "i'm available", 'ek is beskikbaar',
@@ -47,6 +66,51 @@ function endOfToday() {
   return end
 }
 
+function toAuditJson(value: Record<string, unknown>): Prisma.InputJsonObject {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonObject
+}
+
+function shortRef(id: string) {
+  return id.slice(-8).toUpperCase()
+}
+
+function firstName(name?: string | null) {
+  return name?.trim().split(/\s+/)[0] || 'Customer'
+}
+
+function providerPhoneVariants(phone: string) {
+  const normalized = normalizePhone(phone)
+  const digits = normalized.replace(/^\+/, '')
+  const local = digits.startsWith('27') ? `0${digits.slice(2)}` : null
+  return [...new Set([normalized, phone, digits, local].filter(Boolean) as string[])]
+}
+
+async function findProviderForWhatsApp(phone: string, include?: Prisma.ProviderInclude) {
+  const normalizedPhone = normalizePhone(phone)
+  const exact = await db.provider.findUnique({
+    where: { phone: normalizedPhone },
+    include,
+  } as Prisma.ProviderFindUniqueArgs)
+  if (exact) return exact as any
+
+  const variants = providerPhoneVariants(phone)
+  const matches = await (db as any).provider.findMany?.({
+    where: { phone: { in: variants } },
+    include,
+    take: 3,
+  }) ?? []
+
+  if (matches.length > 1) {
+    console.warn('[provider-journey] duplicate provider phone records detected', {
+      normalizedPhone,
+      variants,
+      providerIds: matches.map((provider: { id: string }) => provider.id),
+    })
+  }
+
+  return matches[0] ?? null
+}
+
 async function recordProviderAvailabilityAudit(params: {
   providerId: string
   action: string
@@ -60,12 +124,12 @@ async function recordProviderAvailabilityAudit(params: {
     action: params.action,
     entityType: AUDIT_ENTITY.PROVIDER,
     entityId: params.providerId,
-    before: params.before,
-    after: {
+    before: toAuditJson(params.before),
+    after: toAuditJson({
       ...params.after,
       changedChannel: params.channel,
       traceId: crypto.randomUUID().slice(0, 8),
-    },
+    }),
   }).catch((error) => {
     console.error('[provider-journey] availability audit failed:', error)
   })
@@ -630,11 +694,15 @@ async function handleApplicationStatus(ctx: FlowContext): Promise<FlowResult> {
 // ─── Job List ─────────────────────────────────────────────────────────────────
 
 async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
-    include: { technicianAvailability: true },
-  })
+  const traceId = crypto.randomUUID().slice(0, 8)
+  const normalizedPhone = normalizePhone(ctx.phone)
+  const provider = await findProviderForWhatsApp(ctx.phone, { technicianAvailability: true })
   if (!provider) {
+    console.info('[provider-journey] my_jobs provider lookup failed', {
+      traceId,
+      inboundMessageId: ctx.reply.id ?? null,
+      normalizedPhone,
+    })
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
     return { nextStep: 'done' }
   }
@@ -642,31 +710,116 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
   const activeJobs = await db.job.findMany({
     where: {
       providerId: provider.id,
-      status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION'] },
+      status: { in: [...ACTIVE_JOB_STATUSES] },
     },
     include: {
       booking: {
-        include: { match: { include: { jobRequest: true } } },
+        include: {
+          match: {
+            include: {
+              jobRequest: {
+                include: {
+                  address: true,
+                  customer: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
       },
     },
     orderBy: { createdAt: 'desc' },
     take: 5,
   })
 
-  if (activeJobs.length === 0) {
+  const acceptedLeads = (await db.lead.findMany({
+    where: {
+      providerId: provider.id,
+      status: 'ACCEPTED',
+      jobRequest: {
+        status: { notIn: ['EXPIRED', 'CANCELLED'] },
+        match: {
+          is: {
+            providerId: provider.id,
+            status: { in: [...ACTIVE_ACCEPTED_MATCH_STATUSES] },
+          },
+        },
+      },
+    },
+    include: {
+      jobRequest: {
+        include: {
+          customer: { select: { name: true } },
+          address: true,
+          match: {
+            include: {
+              booking: { include: { job: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ respondedAt: 'desc' }, { sentAt: 'desc' }],
+    take: 5,
+  }) ?? []) as any[]
+
+  const activeLeadWork = acceptedLeads.filter((lead: any) =>
+    !lead.jobRequest?.match?.booking?.job &&
+    !lead.jobRequest?.match?.providerCompletedAt
+  )
+  const pendingLeads = activeJobs.length === 0 && activeLeadWork.length === 0
+    ? ((await db.lead.findMany({
+        where: {
+          providerId: provider.id,
+          status: { in: ['SENT', 'VIEWED'] },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        select: { id: true },
+        take: 1,
+      }) ?? []) as any[])
+    : []
+
+  console.info('[provider-journey] my_jobs lookup', {
+    traceId,
+    inboundMessageId: ctx.reply.id ?? null,
+    normalizedPhone,
+    resolvedProviderId: provider.id,
+    providerStatus: provider.status,
+    queryFilters: {
+      jobStatuses: ACTIVE_JOB_STATUSES,
+      leadStatuses: ['ACCEPTED'],
+      matchStatuses: ACTIVE_ACCEPTED_MATCH_STATUSES,
+    },
+    activeJobsFound: activeJobs.length,
+    acceptedLeadWorkFound: activeLeadWork.length,
+    pendingAvailableLeadCount: pendingLeads.length,
+    refsReturned: [
+      ...activeJobs.map((job: any) => shortRef(job.booking?.match?.jobRequest?.id ?? job.id)),
+      ...activeLeadWork.map((lead: any) => shortRef(lead.jobRequestId)),
+    ],
+  })
+
+  if (activeJobs.length === 0 && activeLeadWork.length === 0) {
     const paused = isProviderPaused(provider)
     const statusLine = paused
       ? 'Status: 🔴 Leads paused'
       : 'Status: 🟢 Available for leads'
+    const pendingLeadLine = pendingLeads.length > 0
+      ? '\n\nYou may have available leads waiting.'
+      : ''
     await sendButtons(
       ctx.phone,
-      `📋 *No active jobs right now.*\n\n${statusLine}\n\nWe'll notify you here when a matching lead comes in.`,
-      [
+      `📋 *No active jobs right now.*\n\n${statusLine}\n\nWe'll notify you when a matching lead comes in.${pendingLeadLine}`,
+      pendingLeads.length > 0 ? [
+        { id: 'provider_available_jobs', title: 'Available Jobs' },
+        { id: 'provider_check_status', title: 'Check Status' },
+        { id: 'back_home', title: 'Main Menu' },
+      ] : [
         { id: 'provider_check_status', title: 'Check Status' },
         paused
           ? { id: 'provider_go_available', title: 'Go Available' }
           : { id: 'provider_pause_leads', title: 'Pause Leads' },
-        { id: 'provider_worker_portal', title: 'Worker Portal' },
+        { id: 'back_home', title: 'Main Menu' },
       ]
     )
     return { nextStep: 'pj_toggle_available' }
@@ -682,21 +835,33 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
     PENDING_COMPLETION_CONFIRMATION: 'Awaiting customer confirmation',
   }
 
-  const rows = activeJobs.slice(0, 5).map((job: any) => {
+  const jobRows = activeJobs.slice(0, 5).map((job: any) => {
     const category = job.booking?.match?.jobRequest?.category ?? 'Job'
+    const suburb = job.booking?.match?.jobRequest?.address?.suburb
     const status = statusLabel[job.status] ?? job.status
     return {
       id: `pj_job_${job.id}`,
-      title: category.slice(0, 24),
+      title: `${category}${suburb ? ` — ${suburb}` : ''}`.slice(0, 24),
+      description: status,
+    }
+  })
+  const acceptedLeadRows = activeLeadWork.slice(0, Math.max(0, 5 - jobRows.length)).map((lead: any) => {
+    const category = lead.jobRequest?.category ?? 'Job'
+    const suburb = lead.jobRequest?.address?.suburb
+    const status = acceptedLeadStatusLabel(lead.jobRequest?.match)
+    return {
+      id: `pj_lead_${lead.id}`,
+      title: `${category}${suburb ? ` — ${suburb}` : ''}`.slice(0, 24),
       description: status,
     }
   })
 
+  const rows = [...jobRows, ...acceptedLeadRows]
   rows.push({ id: 'back_home', title: '🏠 Main Menu', description: 'Back to main menu' })
 
   await sendList(
     ctx.phone,
-    `📋 *Your Active Jobs*\n\nTap a job to update its status:`,
+    `📋 *Your active jobs*\n\nChoose a job to manage.`,
     [{ title: 'Active Jobs', rows }],
     { buttonLabel: 'Choose Job' }
   )
@@ -704,11 +869,36 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'pj_job_detail' }
 }
 
+function acceptedLeadStatusLabel(match: any) {
+  if (!match) return 'Accepted'
+  if (match.providerCompletedAt) return 'Completed'
+  if (match.providerStartedAt) return 'In progress'
+  if (match.providerArrivedAt) return 'Arrived'
+  if (match.providerOnTheWayAt) return 'On the way'
+  if (match.plannedArrivalStart) return 'Scheduled'
+  if (match.customerContactedAt) return 'Customer contacted'
+  return 'Accepted'
+}
+
+function acceptedLeadNextStep(match: any) {
+  if (!match?.plannedArrivalStart) return 'Confirm arrival time'
+  if (!match?.customerContactedAt) return 'Contact customer'
+  if (!match?.providerOnTheWayAt) return 'Mark on the way'
+  if (!match?.providerArrivedAt) return 'Mark arrived'
+  if (!match?.providerStartedAt) return 'Start job'
+  if (!match?.providerCompletedAt) return 'Complete job'
+  return 'Review job'
+}
+
 // ─── Job Detail & Status Update ───────────────────────────────────────────────
 
 async function handleJobDetail(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'back_home') {
     return { nextStep: 'done' }
+  }
+
+  if (ctx.reply.id?.startsWith('pj_lead_')) {
+    return handleAcceptedLeadDetail(ctx, ctx.reply.id.replace('pj_lead_', ''))
   }
 
   if (!ctx.reply.id?.startsWith('pj_job_')) {
@@ -776,6 +966,71 @@ async function handleJobDetail(ctx: FlowContext): Promise<FlowResult> {
   )
 
   return { nextStep: 'pj_status_confirm', nextData: { activeJobId: jobId } }
+}
+
+async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(ctx.phone)
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider.")
+    return { nextStep: 'done' }
+  }
+
+  const lead = await db.lead.findUnique({
+    where: { id: leadId },
+    include: {
+      jobRequest: {
+        include: {
+          customer: { select: { name: true } },
+          address: true,
+          match: true,
+        },
+      },
+    },
+  })
+
+  const match = (lead as any)?.jobRequest?.match
+  if (
+    !lead ||
+    lead.providerId !== provider.id ||
+    lead.status !== 'ACCEPTED' ||
+    !match ||
+    match.providerId !== provider.id ||
+    match.status === 'CANCELLED' ||
+    lead.jobRequest.status === 'EXPIRED' ||
+    lead.jobRequest.status === 'CANCELLED'
+  ) {
+    await sendText(ctx.phone, "⚠️ This accepted job is no longer active or doesn't belong to you.")
+    return { nextStep: 'done' }
+  }
+
+  const category = lead.jobRequest.category
+  const address = lead.jobRequest.address
+  const suburb = address?.suburb ?? 'Area on ticket'
+  const customer = firstName(lead.jobRequest.customer?.name)
+  const status = acceptedLeadStatusLabel(match)
+  const nextStep = acceptedLeadNextStep(match)
+  const leadUrl = await getProviderLeadAccessUrlByLeadId(lead.id)
+  const body =
+    `📋 *${category} — ${suburb}*\n\n` +
+    `Customer: *${customer}*\n` +
+    `Ref: *${shortRef(lead.jobRequestId)}*\n` +
+    `Status: *${status}*\n` +
+    `Next step: *${nextStep}*\n\n` +
+    `Open the job to view customer details, photos, contact options, and status actions.`
+
+  if (leadUrl) {
+    await sendCtaUrl(
+      ctx.phone,
+      body,
+      'View Job',
+      leadUrl,
+      { footer: 'Secure link for this accepted job only' },
+    )
+  } else {
+    await sendText(ctx.phone, body)
+  }
+
+  return { nextStep: 'done' }
 }
 
 function getNextStatusOptions(currentStatus: string): Array<{ id: string; label: string }> {

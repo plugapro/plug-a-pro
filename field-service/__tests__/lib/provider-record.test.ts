@@ -13,6 +13,9 @@ function makeClient() {
       updateMany: vi.fn(),
       upsert: vi.fn(),
     },
+    technicianAvailability: {
+      upsert: vi.fn(),
+    },
     providerApplication: {
       findMany: vi.fn(),
       updateMany: vi.fn(),
@@ -91,6 +94,17 @@ describe('reconcileProviderRecordsFromApplications', () => {
       where: { id: 'app_approved' },
       data: { providerId: 'provider_existing' },
     })
+    expect(client.technicianAvailability.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { providerId: 'provider_existing' },
+        update: expect.objectContaining({
+          availabilityMode: 'ALWAYS_AVAILABLE',
+          availabilityState: 'AVAILABLE',
+          emergencyAvailable: false,
+          sameDayAvailable: true,
+        }),
+      }),
+    )
   })
 
   it('repairs approved applications already linked to unverified providers', async () => {

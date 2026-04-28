@@ -12,6 +12,9 @@ type ProviderRecordSyncClient = {
     upsert: (...args: any[]) => Promise<unknown>
     updateMany: (...args: any[]) => Promise<unknown>
   }
+  technicianAvailability?: {
+    upsert: (...args: any[]) => Promise<unknown>
+  }
   technicianSkill?: {
     upsert: (...args: any[]) => Promise<unknown>
     updateMany: (...args: any[]) => Promise<unknown>
@@ -119,6 +122,40 @@ async function upsertStructuredServiceAreas(
   }
 }
 
+async function ensureDefaultProviderAvailability(
+  client: ProviderRecordSyncClient,
+  providerId: string,
+) {
+  if (!client.technicianAvailability) return
+
+  await client.technicianAvailability.upsert({
+    where: { providerId },
+    create: {
+      providerId,
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+      lastUpdatedBy: 'system',
+      lastUpdatedChannel: 'approval',
+      notes: 'Default availability after provider approval',
+    },
+    update: {
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      nextAvailableAt: null,
+      breakUntil: null,
+      pausedAt: null,
+      pauseReason: null,
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+      lastUpdatedBy: 'system',
+      lastUpdatedChannel: 'approval',
+      notes: 'Default availability after provider approval',
+    },
+  })
+}
+
 export async function syncProviderRecord(
   client: ProviderRecordSyncClient,
   input: SyncProviderRecordInput,
@@ -163,6 +200,10 @@ export async function syncProviderRecord(
       } catch (err) {
         console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
       }
+    }
+
+    if (input.verified) {
+      await ensureDefaultProviderAvailability(client, existing.id)
     }
 
     return existing.id
@@ -219,6 +260,10 @@ export async function syncProviderRecord(
     } catch (err) {
       console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
     }
+  }
+
+  if (input.verified) {
+    await ensureDefaultProviderAvailability(client, id)
   }
 
   return id

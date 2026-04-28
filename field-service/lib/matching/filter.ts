@@ -86,9 +86,12 @@ export type ServiceAreaRow = {
 }
 
 export type AvailabilityRow = {
+  availabilityMode: string | null
   availabilityState: string
   nextAvailableAt: Date | null
   breakUntil: Date | null
+  emergencyAvailable?: boolean | null
+  sameDayAvailable?: boolean | null
 }
 
 export type ScheduleItemRow = {
@@ -135,6 +138,17 @@ type MetricsRow = {
 
 function normalizeTag(tag: string) {
   return tag.trim().toLowerCase()
+}
+
+function isSameCalendarDay(left: Date, right: Date) {
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+}
+
+function isOutsideStandardLeadHours(date: Date) {
+  const hour = date.getHours()
+  return hour < 7 || hour >= 17
 }
 
 function hasRequiredSkills(
@@ -307,7 +321,15 @@ export async function filterEligibleProviders(
     }).catch(() => []) as Promise<Array<{ providerId: string } & ServiceAreaRow>>,
     (db as any).technicianAvailability?.findMany?.({
       where: { providerId: { in: providerIds } },
-      select: { providerId: true, availabilityState: true, nextAvailableAt: true, breakUntil: true },
+      select: {
+        providerId: true,
+        availabilityMode: true,
+        availabilityState: true,
+        nextAvailableAt: true,
+        breakUntil: true,
+        emergencyAvailable: true,
+        sameDayAvailable: true,
+      },
     }).catch(() => []) as Promise<Array<{ providerId: string } & AvailabilityRow>>,
     (db as any).providerSchedule?.findMany?.({
       where: { providerId: { in: providerIds }, active: true },
@@ -400,8 +422,17 @@ export async function filterEligibleProviders(
     if (availability?.availabilityState === 'OFFLINE') {
       filteredReasonCodes.push('TECHNICIAN_OFFLINE')
     }
+    if (availability?.availabilityState === 'PAUSED' || availability?.availabilityMode === 'PAUSED') {
+      filteredReasonCodes.push('TECHNICIAN_PAUSED')
+    }
     if (availability?.breakUntil && availability.breakUntil > new Date()) {
       filteredReasonCodes.push('TECHNICIAN_TEMP_PAUSED')
+    }
+    if (availability?.sameDayAvailable === false && isSameCalendarDay(requestWindow.startAt, new Date())) {
+      filteredReasonCodes.push('SAME_DAY_NOT_AVAILABLE')
+    }
+    if (availability?.emergencyAvailable === false && isOutsideStandardLeadHours(requestWindow.startAt)) {
+      filteredReasonCodes.push('EMERGENCY_NOT_AVAILABLE')
     }
 
     // Hard-filter on live heartbeat: if a provider has checked in at least once but
@@ -453,8 +484,10 @@ export async function filterEligibleProviders(
     }
 
     // ── Schedule fit ────────────────────────────────────────────────────────
-    const scheduleRule =
-      schedule.find((rule) => rule.dayOfWeek === requestWindow.startAt.getDay()) ?? null
+    const usesSchedule = availability?.availabilityMode === 'SCHEDULE'
+    const scheduleRule = usesSchedule
+      ? schedule.find((rule) => rule.dayOfWeek === requestWindow.startAt.getDay()) ?? null
+      : null
 
     const workingWindow = buildWorkingWindow({
       requestStartAt: requestWindow.startAt,

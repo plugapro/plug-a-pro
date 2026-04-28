@@ -4,6 +4,7 @@ vi.mock('@/lib/db', () => ({
   db: {
     provider: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
     technicianAvailability: {
@@ -14,6 +15,7 @@ vi.mock('@/lib/db', () => ({
     },
     lead: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     job: {
       findMany: vi.fn(),
@@ -37,6 +39,10 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendCtaUrl: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('@/lib/provider-lead-access', () => ({
+  getProviderLeadAccessUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/leads/access/token'),
+}))
+
 import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
@@ -58,6 +64,9 @@ const mockCtx = (step: string, replyId?: string, replyText?: string, data: objec
 describe('handleProviderJourneyFlow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ;(db.lead.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(db.lead.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+    ;((db.provider as any).findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
   })
 
   describe('pj_menu step', () => {
@@ -184,6 +193,28 @@ describe('handleProviderJourneyFlow', () => {
     })
   })
 
+  describe('pj_available_leads step', () => {
+    it('queries only sent/viewed leads so accepted jobs stay out of Available Jobs', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        name: 'Sipho',
+        active: true,
+        status: 'ACTIVE',
+        availableNow: true,
+      })
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+      await handleProviderJourneyFlow(mockCtx('pj_available_leads', 'provider_available_jobs'))
+
+      expect(db.lead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          providerId: 'prov_1',
+          status: { in: ['SENT', 'VIEWED'] },
+        }),
+      }))
+    })
+  })
+
   describe('pj_job_detail step', () => {
     it('shows job list when pj_view_jobs tapped from pj_toggle_available step', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -206,26 +237,153 @@ describe('handleProviderJourneyFlow', () => {
         },
       ])
       const result = await handleProviderJourneyFlow(mockCtx('pj_toggle_available', 'pj_view_jobs'))
-      expect(db.job.findMany).toHaveBeenCalledWith({
-        where: {
+      expect(db.job.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
           providerId: 'prov_1',
           status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION'] },
-        },
-        include: {
-          booking: {
-            include: { match: { include: { jobRequest: true } } },
-          },
-        },
+        }),
         orderBy: { createdAt: 'desc' },
         take: 5,
-      })
+      }))
       expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Your Active Jobs'),
+        expect.stringContaining('Your active jobs'),
         expect.any(Array),
         expect.any(Object)
       )
       expect(result.nextStep).toBe('pj_job_detail')
+    })
+
+    it('shows an accepted lead in My Jobs before it has been converted into a formal job', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        name: 'Sipho',
+        status: 'ACTIVE',
+        availableNow: true,
+        technicianAvailability: null,
+      })
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([{
+          id: 'lead_1',
+          providerId: 'prov_1',
+          status: 'ACCEPTED',
+          jobRequestId: 'jr_accepted_12345678',
+          jobRequest: {
+            category: 'Plumbing',
+            status: 'MATCHED',
+            customer: { name: 'Tiffany Mokoena' },
+            address: { suburb: 'Bromhof' },
+            match: {
+              id: 'match_1',
+              providerId: 'prov_1',
+              status: 'MATCHED',
+              customerContactedAt: null,
+              plannedArrivalStart: null,
+              providerOnTheWayAt: null,
+              providerArrivedAt: null,
+              providerStartedAt: null,
+              providerCompletedAt: null,
+              booking: null,
+            },
+          },
+        }])
+
+      const result = await handleProviderJourneyFlow(mockCtx('pj_job_list', 'provider_my_jobs'))
+
+      expect(wa.sendList).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Your active jobs'),
+        [expect.objectContaining({
+          rows: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'pj_lead_lead_1',
+              title: expect.stringContaining('Plumbing'),
+              description: 'Accepted',
+            }),
+          ]),
+        })],
+        expect.any(Object),
+      )
+      expect(result.nextStep).toBe('pj_job_detail')
+    })
+
+    it('does not show completed accepted leads as active jobs', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        name: 'Sipho',
+        status: 'ACTIVE',
+        availableNow: true,
+        technicianAvailability: null,
+      })
+      ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      ;(db.lead.findMany as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([{
+          id: 'lead_done',
+          providerId: 'prov_1',
+          status: 'ACCEPTED',
+          jobRequestId: 'jr_done',
+          jobRequest: {
+            status: 'MATCHED',
+            match: {
+              providerId: 'prov_1',
+              status: 'MATCHED',
+              providerCompletedAt: new Date(),
+              booking: null,
+            },
+          },
+        }])
+        .mockResolvedValueOnce([])
+
+      await handleProviderJourneyFlow(mockCtx('pj_job_list', 'provider_my_jobs'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('No active jobs right now'),
+        expect.any(Array),
+      )
+    })
+
+    it('opens a secure View Job CTA for an accepted lead selected from My Jobs', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1',
+        name: 'Sipho',
+        availableNow: true,
+      })
+      ;(db.lead.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'lead_1',
+        providerId: 'prov_1',
+        status: 'ACCEPTED',
+        jobRequestId: 'jr_accepted_12345678',
+        jobRequest: {
+          category: 'Plumbing',
+          status: 'MATCHED',
+          customer: { name: 'Tiffany Mokoena' },
+          address: { suburb: 'Bromhof' },
+          match: {
+            id: 'match_1',
+            providerId: 'prov_1',
+            status: 'MATCHED',
+            customerContactedAt: null,
+            plannedArrivalStart: null,
+            providerOnTheWayAt: null,
+            providerArrivedAt: null,
+            providerStartedAt: null,
+            providerCompletedAt: null,
+          },
+        },
+      })
+
+      const result = await handleProviderJourneyFlow(mockCtx('pj_job_detail', 'pj_lead_lead_1'))
+
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Next step: *Confirm arrival time*'),
+        'View Job',
+        'https://app.plugapro.co.za/leads/access/token',
+        expect.any(Object),
+      )
+      expect(result.nextStep).toBe('done')
     })
 
     it('returns done when back_home tapped', async () => {

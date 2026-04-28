@@ -60,6 +60,17 @@ async function safeOptionalQuery<T>(factory: () => Promise<T>, fallback: T): Pro
   }
 }
 
+function isSameCalendarDay(left: Date, right: Date) {
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+}
+
+function isOutsideStandardLeadHours(date: Date) {
+  const hour = date.getHours()
+  return hour < 7 || hour >= 17
+}
+
 async function safeOptionalMutation<T>(factory: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await factory()
@@ -666,9 +677,12 @@ async function loadMatchingContext(jobRequestId: string) {
   }
   type AvailabilityRow = {
     providerId: string
+    availabilityMode: string | null
     availabilityState: string
     nextAvailableAt: Date | null
     breakUntil: Date | null
+    emergencyAvailable?: boolean | null
+    sameDayAvailable?: boolean | null
   }
   type ScheduleItemRow = {
     providerId: string
@@ -755,7 +769,15 @@ async function loadMatchingContext(jobRequestId: string) {
         () =>
           (db as any).technicianAvailability?.findMany?.({
             where: { providerId: { in: providerIds } },
-            select: { providerId: true, availabilityState: true, nextAvailableAt: true, breakUntil: true },
+            select: {
+              providerId: true,
+              availabilityMode: true,
+              availabilityState: true,
+              nextAvailableAt: true,
+              breakUntil: true,
+              emergencyAvailable: true,
+              sameDayAvailable: true,
+            },
           }) ?? Promise.resolve([]),
         [] as AvailabilityRow[],
       ),
@@ -941,9 +963,12 @@ async function loadMatchingContext(jobRequestId: string) {
         regionKey?: string | null
       }[]
       technicianAvailability?: {
+        availabilityMode: string | null
         availabilityState: string
         nextAvailableAt: Date | null
         breakUntil: Date | null
+        emergencyAvailable?: boolean | null
+        sameDayAvailable?: boolean | null
       } | null
       schedule?: { dayOfWeek: number; startTime: string; endTime: string; active: boolean }[]
       scheduleItems?: {
@@ -1060,8 +1085,26 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
     if (provider.technicianAvailability?.availabilityState === 'OFFLINE') {
       filteredReasonCodes.push('TECHNICIAN_OFFLINE')
     }
+    if (
+      provider.technicianAvailability?.availabilityState === 'PAUSED' ||
+      provider.technicianAvailability?.availabilityMode === 'PAUSED'
+    ) {
+      filteredReasonCodes.push('TECHNICIAN_PAUSED')
+    }
     if (provider.technicianAvailability?.breakUntil && provider.technicianAvailability.breakUntil > new Date()) {
       filteredReasonCodes.push('TECHNICIAN_TEMP_PAUSED')
+    }
+    if (
+      provider.technicianAvailability?.sameDayAvailable === false &&
+      isSameCalendarDay(requestWindow.startAt, new Date())
+    ) {
+      filteredReasonCodes.push('SAME_DAY_NOT_AVAILABLE')
+    }
+    if (
+      provider.technicianAvailability?.emergencyAvailable === false &&
+      isOutsideStandardLeadHours(requestWindow.startAt)
+    ) {
+      filteredReasonCodes.push('EMERGENCY_NOT_AVAILABLE')
     }
     const areaCoverage = providerCoversAddress(provider, address)
     if (!areaCoverage.covers) {
@@ -1083,8 +1126,10 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
       filteredReasonCodes.push('MISSING_REQUIRED_VEHICLE')
     }
 
-    const scheduleRule =
-      provider.schedule.find((rule) => rule.dayOfWeek === requestWindow.startAt.getDay()) ?? null
+    const usesSchedule = provider.technicianAvailability?.availabilityMode === 'SCHEDULE'
+    const scheduleRule = usesSchedule
+      ? provider.schedule.find((rule) => rule.dayOfWeek === requestWindow.startAt.getDay()) ?? null
+      : null
 
     const workingWindow = buildWorkingWindow({
       requestStartAt: requestWindow.startAt,
