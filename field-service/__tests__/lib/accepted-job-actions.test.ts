@@ -1,0 +1,184 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockDb, mockResolveToken, mockVerifyToken, mockGetAccessUrl, mockSendText, mockSendCtaUrl } = vi.hoisted(() => ({
+  mockDb: {
+    lead: { findUnique: vi.fn() },
+    match: { update: vi.fn() },
+    auditLog: { create: vi.fn() },
+  },
+  mockResolveToken: vi.fn(),
+  mockVerifyToken: vi.fn(),
+  mockGetAccessUrl: vi.fn(),
+  mockSendText: vi.fn(),
+  mockSendCtaUrl: vi.fn(),
+}))
+
+vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/provider-lead-access', () => ({
+  resolveProviderLeadAccessToken: mockResolveToken,
+  verifyProviderLeadAccessToken: mockVerifyToken,
+  getProviderLeadAccessUrl: mockGetAccessUrl,
+}))
+vi.mock('@/lib/whatsapp-interactive', () => ({
+  sendText: mockSendText,
+  sendCtaUrl: mockSendCtaUrl,
+}))
+
+import {
+  markAcceptedLeadAction,
+  saveAcceptedLeadArrival,
+  sendFreshAcceptedJobLink,
+} from '@/lib/accepted-job-actions'
+
+const plannedStart = new Date('2026-04-28T15:30:00+02:00')
+const plannedEnd = new Date('2026-04-28T16:00:00+02:00')
+
+function acceptedLead(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'lead-1',
+    providerId: 'provider-1',
+    jobRequestId: 'jr-12345678',
+    status: 'ACCEPTED',
+    provider: { id: 'provider-1', name: 'Jacob Hesser', phone: '+27770000001' },
+    jobRequest: {
+      id: 'jr-12345678',
+      status: 'MATCHED',
+      category: 'Plumbing',
+      customer: { id: 'cust-1', name: 'Tiffany Nkosi', phone: '+27820000001' },
+      address: { suburb: 'Bromhof', city: 'Johannesburg' },
+      match: {
+        id: 'match-1',
+        providerId: 'provider-1',
+        status: 'MATCHED',
+        customerContactedAt: null,
+        plannedArrivalStart: null,
+        plannedArrivalEnd: null,
+        plannedArrivalNote: null,
+        providerOnTheWayAt: null,
+        providerArrivedAt: null,
+        providerStartedAt: null,
+        providerCompletedAt: null,
+        ...overrides,
+      },
+    },
+  }
+}
+
+describe('accepted job actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockResolveToken.mockResolvedValue({ status: 'active', lead: { id: 'lead-1' } })
+    mockDb.lead.findUnique.mockResolvedValue(acceptedLead())
+    mockDb.match.update.mockResolvedValue({})
+    mockDb.auditLog.create.mockResolvedValue({})
+    mockSendText.mockResolvedValue('wamid.customer')
+    mockSendCtaUrl.mockResolvedValue('wamid.provider')
+  })
+
+  it('saves the planned arrival window and notifies the customer once', async () => {
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+      note: 'I will call from the gate.',
+    })
+
+    expect(result).toEqual({ ok: true, duplicate: false })
+    expect(mockDb.match.update).toHaveBeenCalledWith({
+      where: { id: 'match-1' },
+      data: {
+        plannedArrivalStart: plannedStart,
+        plannedArrivalEnd: plannedEnd,
+        plannedArrivalNote: 'I will call from the gate.',
+      },
+    })
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27820000001',
+      expect.stringContaining('Jacob plans to arrive'),
+      expect.objectContaining({
+        templateName: 'post_match_customer_arrival_planned',
+        metadata: expect.objectContaining({ action: 'arrival_planned', leadId: 'lead-1' }),
+      }),
+    )
+  })
+
+  it('does not resend the arrival WhatsApp update for an identical duplicate save', async () => {
+    mockDb.lead.findUnique.mockResolvedValue(acceptedLead({
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+      plannedArrivalNote: 'I will call from the gate.',
+    }))
+
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+      note: 'I will call from the gate.',
+    })
+
+    expect(result).toEqual({ ok: true, duplicate: true })
+    expect(mockDb.match.update).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalled()
+  })
+
+  it('marks on the way and sends the customer update once', async () => {
+    const result = await markAcceptedLeadAction({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      action: 'on_the_way',
+    })
+
+    expect(result).toEqual({ ok: true, duplicate: false })
+    expect(mockDb.match.update).toHaveBeenCalledWith({
+      where: { id: 'match-1' },
+      data: { providerOnTheWayAt: expect.any(Date) },
+    })
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27820000001',
+      expect.stringContaining('Jacob is on the way for your Plumbing request'),
+      expect.objectContaining({
+        templateName: 'post_match_customer_provider_on_the_way',
+      }),
+    )
+  })
+
+  it('blocks old signed links when the lead is no longer accepted by that provider', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      ...acceptedLead(),
+      status: 'EXPIRED',
+    })
+
+    const result = await markAcceptedLeadAction({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      action: 'arrived',
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'UNAVAILABLE' })
+    expect(mockDb.match.update).not.toHaveBeenCalled()
+  })
+
+  it('sends a fresh signed job link for an expired accepted-job token', async () => {
+    mockVerifyToken.mockReturnValue({
+      status: 'expired',
+      payload: { leadId: 'lead-1', providerId: 'provider-1' },
+    })
+    mockGetAccessUrl.mockResolvedValue('https://app.plugapro.co.za/leads/access/fresh-token')
+
+    const result = await sendFreshAcceptedJobLink({ token: 'expired-token' })
+
+    expect(result).toEqual({ ok: true })
+    expect(mockSendCtaUrl).toHaveBeenCalledWith(
+      '+27770000001',
+      expect.stringContaining('fresh secure link'),
+      'View Job',
+      'https://app.plugapro.co.za/leads/access/fresh-token',
+      expect.any(Object),
+      expect.objectContaining({
+        templateName: 'post_match_provider_fresh_job_link',
+      }),
+    )
+  })
+})

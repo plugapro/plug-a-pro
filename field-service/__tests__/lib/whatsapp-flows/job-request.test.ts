@@ -428,6 +428,20 @@ describe('WhatsApp job-request flow — structured address', () => {
       expect(locationNodes.resolveSuburbNodeId).not.toHaveBeenCalled()
     })
 
+    it('backfills every uploaded customer photo onto the created job request', async () => {
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          photoAttachmentIds: ['att_001', 'att_002', 'att_003'],
+        })
+      )
+
+      expect(db.attachment.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['att_001', 'att_002', 'att_003'] }, jobRequestId: null },
+        data: { jobRequestId: 'jr_test123456' },
+      })
+    })
+
     it('falls back to status buttons when ticket CTA delivery fails after a successful submission', async () => {
       ;(createJobRequestModule.createJobRequest as any).mockResolvedValue({
         jobRequestId: 'jr_test123456',
@@ -952,7 +966,10 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
   it('instructs user to send a photo when photos_start is tapped', async () => {
     const result = await handleJobRequestFlow(makePhotoCtx('photos_start'))
     expect(result.nextStep).toBe('collect_photos')
-    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Send your photo now'))
+    expect(wa.sendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Please upload *up to 5 photos* of the issue. You can send them together or one at a time.')
+    )
   })
 
   it('uploads image and returns updated attachment IDs', async () => {
@@ -963,7 +980,48 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     )
     expect(result.nextStep).toBe('collect_photos')
     expect(result.nextData?.photoAttachmentIds).toEqual(['att_001'])
-    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Photo 1 added'), expect.any(Array))
+    expect(result.nextData?.photoMediaIds).toEqual(['media-abc'])
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('1 photo received'), expect.any(Array))
+  })
+
+  it('can suppress progress while an earlier image in a WhatsApp batch is processed', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_001' })
+    const result = await handleJobRequestFlow({
+      ...makePhotoCtx(undefined, undefined, baseData, 'image', 'media-abc'),
+      suppressCustomerPhotoProgress: true,
+      customerPhotoBatchSize: 3,
+    })
+
+    expect(result.nextData?.photoAttachmentIds).toEqual(['att_001'])
+    expect(result.nextData?.photoMediaIds).toEqual(['media-abc'])
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('accumulates multiple image uploads with correct total count', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ attachmentId: 'att_001' })
+      .mockResolvedValueOnce({ attachmentId: 'att_002' })
+      .mockResolvedValueOnce({ attachmentId: 'att_003' })
+
+    const first = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-1'))
+    const second = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, { ...baseData, ...first.nextData }, 'image', 'media-2'))
+    const third = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, { ...baseData, ...first.nextData, ...second.nextData }, 'image', 'media-3'))
+
+    expect(third.nextData?.photoAttachmentIds).toEqual(['att_001', 'att_002', 'att_003'])
+    expect(third.nextData?.photoMediaIds).toEqual(['media-1', 'media-2', 'media-3'])
+    const lastBody: string = (wa.sendButtons as any).mock.calls.at(-1)[1]
+    expect(lastBody).toContain('3 photos received')
+    expect(lastBody).toContain('add 2 more')
+  })
+
+  it('deduplicates repeated WhatsApp media IDs without creating another attachment', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001'], photoMediaIds: ['media-1'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-1'))
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextData?.photoAttachmentIds).toEqual(['att_001'])
+    expect(result.nextData?.photoMediaIds).toEqual(['media-1'])
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('1 photo received'), expect.any(Array))
   })
 
   it('shows Done-only button when 5th photo is added (max reached)', async () => {
@@ -980,7 +1038,7 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-extra'))
     expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
     expect(result.nextStep).toBe('collect_photos')
-    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('maximum'), expect.any(Array))
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Maximum'), expect.any(Array))
   })
 
   it('rejects document with a helpful message', async () => {

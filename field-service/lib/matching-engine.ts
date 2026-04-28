@@ -11,6 +11,7 @@ import {
   rejectAssignmentOffer,
   runAssignmentForJobRequest,
 } from './matching/service'
+import { notifyPostMatchAcceptance } from './post-match-communications'
 import { notifyProviderNewJob } from './whatsapp-bot'
 
 export interface CandidateInput {
@@ -406,6 +407,19 @@ export async function acceptLead(params: {
 }): Promise<LeadAcceptanceResult> {
   const result = await acceptAssignmentOffer(params)
   if (!result.ok) return result
+
+  await notifyPostMatchAcceptance({
+    leadId: params.leadId,
+    providerId: params.providerId,
+    matchId: result.matchId ?? '',
+  }).catch((error: unknown) => {
+    console.error('[matching-engine] post-match communication failed:', {
+      leadId: params.leadId,
+      providerId: params.providerId,
+      error,
+    })
+  })
+
   return {
     ok: true,
     leadId: params.leadId,

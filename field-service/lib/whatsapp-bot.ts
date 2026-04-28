@@ -12,7 +12,7 @@
 
 import { db } from './db'
 import type { Prisma } from '@prisma/client'
-import { parseInbound, sendText, sendButtons, type InboundMessage } from './whatsapp-interactive'
+import { parseInbound, sendText, sendButtons, sendCtaUrl, type InboundMessage } from './whatsapp-interactive'
 import {
   handleJobRequestFlow,
   showMainMenu,
@@ -32,7 +32,24 @@ import { applyOptIn, applyOptOut } from './whatsapp-policy'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
+const CUSTOMER_PHOTO_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS) || 800
+const CITY_TEXT_SUPERSEDE_WINDOW_MS = Number(process.env.WHATSAPP_CITY_TEXT_SUPERSEDE_WINDOW_MS) || 800
 const phoneMessageQueues = new Map<string, Promise<void>>()
+const customerPhotoBatches = new Map<string, {
+  messages: InboundMessage[]
+  timer: ReturnType<typeof setTimeout>
+  waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>
+}>()
+const pendingCityTextMessages = new Map<string, {
+  message: InboundMessage
+  timer: ReturnType<typeof setTimeout>
+  resolve: () => void
+  reject: (error: unknown) => void
+}>()
+const recentCityInteractiveSelections = new Map<string, {
+  messageId: string
+  timer: ReturnType<typeof setTimeout>
+}>()
 
 // Keywords that restart the main menu from any state
 const RESET_KEYWORDS = [
@@ -88,6 +105,7 @@ function isStatelessNotificationReply(
     id.startsWith('rematch_no:') ||
     id.startsWith('quote_accept_') ||
     id.startsWith('quote_decline_') ||
+    id.startsWith('post_match_contact:') ||
     (!id && rawText === 'accept')
   )
 }
@@ -99,23 +117,197 @@ export async function processInboundMessage(
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = message.from.startsWith('+') ? message.from : `+${message.from}`
+  if (await shouldBatchCustomerPhotoMessage(phone, message)) {
+    return enqueueCustomerPhotoBatch(phone, message)
+  }
+
+  if (isCustomerCityInteractiveMessage(message)) {
+    markRecentCityInteractiveSelection(phone, message.id)
+    cancelPendingCityTextMessage(phone, message.id)
+  } else if (await shouldDelayCustomerCityTextMessage(phone, message)) {
+    const recentSelection = recentCityInteractiveSelections.get(phone)
+    if (recentSelection) {
+      console.info('[whatsapp-bot] dropped typed city text because an interactive city selection was just processed', {
+        phone,
+        droppedMessageId: message.id,
+        supersedingMessageId: recentSelection.messageId,
+      })
+      return
+    }
+    return enqueuePendingCityTextMessage(phone, message)
+  }
+
+  return enqueuePhoneMessage(phone, message)
+}
+
+async function shouldBatchCustomerPhotoMessage(phone: string, message: InboundMessage): Promise<boolean> {
+  if (message.type !== 'image') return false
+
+  const conversation = await db.conversation.findUnique({
+    where: { phone },
+    select: { flow: true, step: true, expiresAt: true },
+  })
+
+  return Boolean(
+    conversation &&
+    conversation.flow === 'job_request' &&
+    conversation.step === 'collect_photos' &&
+    conversation.expiresAt > new Date()
+  )
+}
+
+function enqueueCustomerPhotoBatch(phone: string, message: InboundMessage): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existing = customerPhotoBatches.get(phone)
+    if (existing) {
+      existing.messages.push(message)
+      existing.waiters.push({ resolve, reject })
+      clearTimeout(existing.timer)
+      existing.timer = setTimeout(() => flushCustomerPhotoBatch(phone), CUSTOMER_PHOTO_BATCH_WINDOW_MS)
+      return
+    }
+
+    const batch = {
+      messages: [message],
+      waiters: [{ resolve, reject }],
+      timer: setTimeout(() => flushCustomerPhotoBatch(phone), CUSTOMER_PHOTO_BATCH_WINDOW_MS),
+    }
+    customerPhotoBatches.set(phone, batch)
+  })
+}
+
+function flushCustomerPhotoBatch(phone: string) {
+  const batch = customerPhotoBatches.get(phone)
+  if (!batch) return
+  customerPhotoBatches.delete(phone)
+
+  enqueuePhoneMessageBatch(phone, batch.messages)
+    .then(() => batch.waiters.forEach((waiter) => waiter.resolve()))
+    .catch((error: unknown) => batch.waiters.forEach((waiter) => waiter.reject(error)))
+}
+
+async function shouldDelayCustomerCityTextMessage(phone: string, message: InboundMessage): Promise<boolean> {
+  if (message.type !== 'text' || !message.text?.body?.trim()) return false
+
+  const conversation = await db.conversation.findUnique({
+    where: { phone },
+    select: { flow: true, step: true, expiresAt: true },
+  })
+
+  return Boolean(
+    conversation &&
+    conversation.flow === 'job_request' &&
+    conversation.step === 'addr_select_city' &&
+    conversation.expiresAt > new Date()
+  )
+}
+
+function isCustomerCityInteractiveMessage(message: InboundMessage): boolean {
+  if (message.type !== 'interactive') return false
+  const id = message.interactive?.list_reply?.id ?? message.interactive?.button_reply?.id ?? ''
+  return id.startsWith('city__') || id === 'city_prev' || id === 'city_next'
+}
+
+function enqueuePendingCityTextMessage(phone: string, message: InboundMessage): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existing = pendingCityTextMessages.get(phone)
+    if (existing) {
+      clearTimeout(existing.timer)
+      existing.resolve()
+    }
+
+    const pending = {
+      message,
+      resolve,
+      reject,
+      timer: setTimeout(() => flushPendingCityTextMessage(phone), CITY_TEXT_SUPERSEDE_WINDOW_MS),
+    }
+    pendingCityTextMessages.set(phone, pending)
+  })
+}
+
+function markRecentCityInteractiveSelection(phone: string, messageId: string) {
+  const existing = recentCityInteractiveSelections.get(phone)
+  if (existing) clearTimeout(existing.timer)
+
+  const timer = setTimeout(() => {
+    const current = recentCityInteractiveSelections.get(phone)
+    if (current?.messageId === messageId) {
+      recentCityInteractiveSelections.delete(phone)
+    }
+  }, CITY_TEXT_SUPERSEDE_WINDOW_MS)
+
+  recentCityInteractiveSelections.set(phone, { messageId, timer })
+}
+
+function cancelPendingCityTextMessage(phone: string, supersedingMessageId: string) {
+  const pending = pendingCityTextMessages.get(phone)
+  if (!pending) return
+
+  clearTimeout(pending.timer)
+  pendingCityTextMessages.delete(phone)
+  console.info('[whatsapp-bot] dropped typed city text because an interactive city selection arrived', {
+    phone,
+    droppedMessageId: pending.message.id,
+    supersedingMessageId,
+  })
+  pending.resolve()
+}
+
+function flushPendingCityTextMessage(phone: string) {
+  const pending = pendingCityTextMessages.get(phone)
+  if (!pending) return
+  pendingCityTextMessages.delete(phone)
+
+  enqueuePhoneMessage(phone, pending.message)
+    .then(() => pending.resolve())
+    .catch((error: unknown) => pending.reject(error))
+}
+
+function enqueuePhoneMessage(
+  phone: string,
+  message: InboundMessage,
+  options?: { suppressCustomerPhotoProgress?: boolean; customerPhotoBatchSize?: number }
+): Promise<void> {
   const previous = phoneMessageQueues.get(phone) ?? Promise.resolve()
   const current = previous
     .catch(() => undefined)
-    .then(() => processInboundMessageUnlocked(message))
+    .then(() => processInboundMessageUnlocked(message, options))
 
   phoneMessageQueues.set(phone, current)
-  try {
-    await current
-  } finally {
+  current.finally(() => {
     if (phoneMessageQueues.get(phone) === current) {
       phoneMessageQueues.delete(phone)
     }
-  }
+  }).catch(() => undefined)
+  return current
+}
+
+function enqueuePhoneMessageBatch(phone: string, messages: InboundMessage[]): Promise<void> {
+  const previous = phoneMessageQueues.get(phone) ?? Promise.resolve()
+  const current = previous
+    .catch(() => undefined)
+    .then(async () => {
+      for (let index = 0; index < messages.length; index += 1) {
+        await processInboundMessageUnlocked(messages[index], {
+          suppressCustomerPhotoProgress: index < messages.length - 1,
+          customerPhotoBatchSize: messages.length,
+        })
+      }
+    })
+
+  phoneMessageQueues.set(phone, current)
+  current.finally(() => {
+    if (phoneMessageQueues.get(phone) === current) {
+      phoneMessageQueues.delete(phone)
+    }
+  }).catch(() => undefined)
+  return current
 }
 
 async function processInboundMessageUnlocked(
-  message: InboundMessage
+  message: InboundMessage,
+  options?: { suppressCustomerPhotoProgress?: boolean; customerPhotoBatchSize?: number }
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = message.from.startsWith('+') ? message.from : `+${message.from}`
@@ -351,6 +543,24 @@ async function processInboundMessageUnlocked(
       return
     }
 
+    if (reply.id?.startsWith('post_match_contact:')) {
+      await handlePostMatchContactCustomer(phone, reply.id)
+      return
+    }
+
+    if (flow === 'job_request' && step !== 'addr_select_city' &&
+        (reply.id?.startsWith('city__') || reply.id === 'city_prev' || reply.id === 'city_next')) {
+      console.info('[whatsapp-bot] ignored stale city-selection reply after flow advanced', {
+        messageId: message.id,
+        messageType: message.type,
+        replyType: reply.type,
+        replyId: reply.id,
+        flow,
+        step,
+      })
+      return
+    }
+
     // Provider-journey button IDs can arrive from any flow (e.g. registration sends
     // pj_view_jobs after the "already registered" message). Force the correct flow so
     // the handler that owns these buttons always processes them.
@@ -403,7 +613,15 @@ async function processInboundMessageUnlocked(
     }
 
     // Dispatch to flow handler
-    const ctx = { phone, step, data, reply, flow }
+    const ctx = {
+      phone,
+      step,
+      data,
+      reply,
+      flow,
+      suppressCustomerPhotoProgress: options?.suppressCustomerPhotoProgress,
+      customerPhotoBatchSize: options?.customerPhotoBatchSize,
+    }
     let result: { nextStep: FlowStep; nextData?: Partial<ConversationData> } = { nextStep: step, nextData: data }
 
     if (flow === 'job_request' || step === 'browse_categories') {
@@ -438,6 +656,16 @@ async function processInboundMessageUnlocked(
       result = { nextStep: 'welcome', nextData: {} }
       flow = 'idle'
     }
+
+    console.info('[whatsapp-bot] processed inbound message', {
+      messageId: message.id,
+      messageType: message.type,
+      replyType: reply.type,
+      replyId: reply.id,
+      flow,
+      step,
+      nextStep: result.nextStep,
+    })
 
     // Determine if flow is complete
     const terminalSteps: FlowStep[] = ['done', 'cancelled']
@@ -1307,7 +1535,7 @@ export async function sendQuoteToClient(params: {
 // ─── Customer quote response handler ─────────────────────────────────────────
 
 async function handleCustomerQuoteResponse(phone: string, buttonId: string): Promise<void> {
-  const { sendText, sendCtaUrl } = await import('./whatsapp-interactive')
+  const { sendText } = await import('./whatsapp-interactive')
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
 
   const quoteId = buttonId.replace('quote_accept_', '').replace('quote_decline_', '')
@@ -1362,8 +1590,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
 // Button ID format: `accept:{holdId}`
 
 async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): Promise<void> {
-  const { sendText, sendCtaUrl } = await import('./whatsapp-interactive')
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const { sendText } = await import('./whatsapp-interactive')
   const holdId = buttonId.slice('accept:'.length)
 
   const provider = await db.provider.findUnique({ where: { phone }, select: { id: true, name: true } })
@@ -1396,38 +1623,30 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     return
   }
 
-  // Confirm to provider
+  // acceptLead owns the post-match customer/provider messages for every accept channel.
+}
+
+async function handlePostMatchContactCustomer(phone: string, buttonId: string): Promise<void> {
+  const leadId = buttonId.slice('post_match_contact:'.length)
+  const { buildAcceptedLeadContactUrlForProvider } = await import('./post-match-communications')
+  const url = await buildAcceptedLeadContactUrlForProvider({ leadId, providerPhone: phone })
+
+  if (!url) {
+    await sendText(phone, 'Customer contact is not available for this lead. Open the job details or contact support if this looks wrong.')
+    return
+  }
+
   await sendCtaUrl(
     phone,
-    `✅ *Job accepted! — ${provider.name.split(' ')[0]}*\n\nGreat work! The customer will be notified and you'll receive the full job details shortly.\n\nOpen the app to view the job address and any notes.`,
-    'View Job',
-    `${appUrl}/technician`
-  ).catch(() => sendText(phone, `✅ Job accepted! The customer will be notified. Check the app for full details.`))
-
-  // Notify customer non-blocking
-  ;(async () => {
-    try {
-      const jobRequest = await db.jobRequest.findUnique({
-        where: { id: lead.jobRequestId },
-        select: { customerId: true, category: true },
-      })
-      if (!jobRequest) return
-
-      const customer = await db.customer.findUnique({
-        where: { id: jobRequest.customerId },
-        select: { phone: true, name: true },
-      })
-      if (!customer?.phone) return
-
-      const { sendText: notify } = await import('./whatsapp-interactive')
-      await notify(
-        customer.phone,
-        `🎉 *Great news, ${(customer.name ?? 'there').split(' ')[0]}!*\n\nA provider has accepted your *${jobRequest.category}* request. We're arranging the details and will follow up shortly.\n\nReply *Hi* to check your booking status.`
-      )
-    } catch {
-      // Non-fatal — provider confirmation already sent
-    }
-  })()
+    'Open the customer WhatsApp chat and confirm the job details. This contact handover has been logged on the ticket.',
+    'Open Chat',
+    url,
+    { footer: 'Use this only for the accepted job.' },
+    {
+      templateName: 'post_match_provider_contact_customer',
+      metadata: { leadId },
+    },
+  )
 }
 
 // ─── Matching engine v2: AssignmentHold decline ───────────────────────────────

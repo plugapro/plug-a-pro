@@ -754,10 +754,10 @@ async function sendCustomerPhotoProgress(phone: string, count: number) {
 
   await sendButtons(
     phone,
-    `✅ *${count} photo${count === 1 ? '' : 's'} received.* You can add up to ${remaining} more, or continue.`,
+    `✅ *${count} photo${count === 1 ? '' : 's'} received.* You can add ${remaining} more or continue.`,
     [
       { id: 'photos_done', title: '✅ Continue' },
-      { id: 'photos_add_more', title: '📷 Add another' },
+      { id: 'photos_add_more', title: '📷 Add more photos' },
     ]
   )
 }
@@ -780,9 +780,12 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
   // User tapped "Add photo" / "Add more" — instruct them to send a media message
   if (ctx.reply.id === 'photos_start' || ctx.reply.id === 'photos_add_more') {
     const remaining = MAX_CUSTOMER_PHOTOS - photoAttachmentIds.length
+    const limitCopy = remaining === MAX_CUSTOMER_PHOTOS
+      ? `up to ${MAX_CUSTOMER_PHOTOS} photos`
+      : `up to ${remaining} more photo${remaining === 1 ? '' : 's'}`
     await sendText(
       ctx.phone,
-      `📸 Please upload *one photo at a time*. You can add up to ${remaining} more photo${remaining === 1 ? '' : 's'}.`
+      `📸 Please upload *${limitCopy}* of the issue. You can send them together or one at a time.`
     )
     return { nextStep: 'collect_photos' }
   }
@@ -804,12 +807,16 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
     }
 
     if (photoMediaIds.includes(ctx.reply.mediaId)) {
-      await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      if (!ctx.suppressCustomerPhotoProgress) {
+        await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      }
       return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
     }
 
     if (photoAttachmentIds.length >= MAX_CUSTOMER_PHOTOS) {
-      await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      if (!ctx.suppressCustomerPhotoProgress) {
+        await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      }
       return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
     }
 
@@ -823,7 +830,9 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       const updated = uniqueStrings([...photoAttachmentIds, attachmentId]).slice(0, MAX_CUSTOMER_PHOTOS)
       const updatedMediaIds = uniqueStrings([...photoMediaIds, ctx.reply.mediaId])
 
-      await sendCustomerPhotoProgress(ctx.phone, updated.length)
+      if (!ctx.suppressCustomerPhotoProgress) {
+        await sendCustomerPhotoProgress(ctx.phone, updated.length)
+      }
       return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated, photoMediaIds: updatedMediaIds } }
     } catch (err) {
       console.error('[job-request-flow:handleCollectPhotos] media upload failed:', err)
@@ -840,7 +849,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       `📸 *${count} photo${count > 1 ? 's' : ''} added.*\n\nSend another or tap Done to continue.`,
       [
         { id: 'photos_done', title: '✅ Continue' },
-        { id: 'photos_add_more', title: '📷 Add another' },
+        { id: 'photos_add_more', title: '📷 Add more photos' },
       ]
     )
   } else {

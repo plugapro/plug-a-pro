@@ -179,6 +179,8 @@ export interface FlowContext {
   data: ConversationData
   reply: InboundReply   // what they just said / tapped
   flow: FlowName
+  suppressCustomerPhotoProgress?: boolean // true while processing earlier images in a WhatsApp multi-photo batch
+  customerPhotoBatchSize?: number
 }
 
 // What a flow handler returns

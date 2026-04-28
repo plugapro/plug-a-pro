@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from './db'
 
-const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
 
 type ProviderLeadTokenPayload = {
   v: 1
@@ -134,8 +134,23 @@ export async function resolveProviderLeadAccessToken(token: string) {
       provider: { select: { id: true, name: true, phone: true } },
       jobRequest: {
         include: {
+          customer: { select: { id: true, name: true, phone: true } },
           address: true,
           attachments: { orderBy: { createdAt: 'asc' } },
+          match: {
+            select: {
+              id: true,
+              status: true,
+              customerContactedAt: true,
+              plannedArrivalStart: true,
+              plannedArrivalEnd: true,
+              plannedArrivalNote: true,
+              providerOnTheWayAt: true,
+              providerArrivedAt: true,
+              providerStartedAt: true,
+              providerCompletedAt: true,
+            },
+          },
         },
       },
     },

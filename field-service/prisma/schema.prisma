@@ -373,6 +373,14 @@ model Match {
   providerId      String
   status          MatchStatus @default(MATCHED)
   inspectionNeeded Boolean    @default(false)
+  customerContactedAt DateTime?
+  plannedArrivalStart DateTime?
+  plannedArrivalEnd   DateTime?
+  plannedArrivalNote  String?
+  providerOnTheWayAt  DateTime?
+  providerArrivedAt   DateTime?
+  providerStartedAt   DateTime?
+  providerCompletedAt DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 

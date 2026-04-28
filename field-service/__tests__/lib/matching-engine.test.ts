@@ -14,6 +14,7 @@ const {
   mockProcessPendingAssignmentWorkflows,
   mockNotifyProviderNewJob,
   mockReconcileProviderRecordsFromApplications,
+  mockNotifyPostMatchAcceptance,
 } = vi.hoisted(() => ({
   mockDb: {
     jobRequest: { findUnique: vi.fn(), updateMany: vi.fn() },
@@ -27,6 +28,7 @@ const {
   mockProcessPendingAssignmentWorkflows: vi.fn(),
   mockNotifyProviderNewJob: vi.fn(),
   mockReconcileProviderRecordsFromApplications: vi.fn(),
+  mockNotifyPostMatchAcceptance: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({
@@ -48,10 +50,15 @@ vi.mock('../../lib/provider-record', () => ({
   reconcileProviderRecordsFromApplications: mockReconcileProviderRecordsFromApplications,
 }))
 
+vi.mock('../../lib/post-match-communications', () => ({
+  notifyPostMatchAcceptance: mockNotifyPostMatchAcceptance,
+}))
+
 describe('matching-engine compatibility wrappers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockReconcileProviderRecordsFromApplications.mockResolvedValue({ reconciled: 0 })
+    mockNotifyPostMatchAcceptance.mockResolvedValue(undefined)
   })
 
   it('dispatchLeads returns an offered hold for the top ranked technician', async () => {
@@ -93,6 +100,11 @@ describe('matching-engine compatibility wrappers', () => {
       leadId: 'lead-1',
       matchId: 'match-1',
       inspectionNeeded: false,
+    })
+    expect(mockNotifyPostMatchAcceptance).toHaveBeenCalledWith({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      matchId: 'match-1',
     })
   })
 
