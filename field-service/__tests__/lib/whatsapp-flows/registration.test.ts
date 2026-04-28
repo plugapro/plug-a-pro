@@ -73,6 +73,7 @@ import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
 import * as providerRecord from '@/lib/provider-record'
 import * as whatsappMedia from '@/lib/whatsapp-media'
+import * as locationNodes from '@/lib/location-nodes'
 
 const phone = '+27821234567'
 
@@ -305,8 +306,29 @@ describe('registration flow — numbered bulk skill selection', () => {
 
     expect(wa.sendList).not.toHaveBeenCalled()
     expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
+    const body: string = (wa.sendText as any).mock.calls.at(-1)[1]
+    expect(body).toContain('1. Plumbing')
+    expect(body).toContain('2. Painting')
+    expect(body).not.toMatch(/[□☐☑]/)
+    expect(body).not.toContain('☐ 1.')
+    expect(body).not.toContain('✅ 1.')
     expect(result.nextStep).toBe('reg_collect_skills_more')
     expect(result.nextData).toMatchObject({ name: 'Thabo Nkosi', skills: [] })
+  })
+
+  it('re-shows selected skills as plain numbered rows, not checkbox rows', async () => {
+    await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, '', {
+        name: 'Thabo Nkosi',
+        skills: ['Plumbing', 'Electrical'],
+      })
+    )
+
+    const body: string = (wa.sendText as any).mock.calls.at(-1)[1]
+    expect(body).toContain('1. Plumbing (selected)')
+    expect(body).toContain('6. Electrical (selected)')
+    expect(body).not.toMatch(/[□☐☑]/)
+    expect(body).not.toContain('✅ 1.')
   })
 
   it('parses "1,3" — selects two skills and shows Continue / Change buttons', async () => {
@@ -349,6 +371,21 @@ describe('registration flow — numbered bulk skill selection', () => {
     )
 
     expect(result.nextData?.skills).toHaveLength(3)
+  })
+
+  it('strips trailing periods — "1.,3." selects skills 1 and 3', async () => {
+    // WhatsApp renders the numbered list as "1. Plumbing" and some users copy
+    // the format and reply "1.,3." — the trailing period must be ignored.
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, '1.,3.', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(result.nextData?.skills).toHaveLength(2)
+    expect(result.nextData?.skills).toContain('Plumbing')
+    expect(result.nextData?.skills).toContain('Garden & Landscaping')
   })
 
   it('"1,99" — accepts skill 1, warns about ignored number 99', async () => {
@@ -469,6 +506,46 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextStep).toBe('reg_collect_skills_more')
     expect(result.nextData?.skills).toEqual([])
   })
+
+  it('marks only Johannesburg as active pilot in the city list', async () => {
+    ;(locationNodes.getCities as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'city_jhb', label: 'Johannesburg', cityKey: 'johannesburg', provinceKey: 'gauteng', slug: 'gauteng__johannesburg' },
+      { id: 'city_pta', label: 'Pretoria', cityKey: 'pretoria', provinceKey: 'gauteng', slug: 'gauteng__pretoria' },
+    ])
+
+    const result = await handleRegistrationFlow(makeCtx('reg_collect_experience', 'area_gauteng'))
+    const rows = (wa.sendList as any).mock.calls[0][2][0].rows
+
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: 'Johannesburg', description: expect.stringContaining('Active pilot') }),
+      expect.objectContaining({ title: 'Pretoria', description: expect.stringContaining('Coming soon') }),
+    ]))
+    expect(result.nextStep).toBe('reg_collect_city')
+  })
+
+  it('marks only JHB West / Roodepoort as active in Johannesburg area list', async () => {
+    ;(locationNodes.getRegions as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: 'rgn_west', label: 'JHB West / Roodepoort', regionKey: 'jhb_west', slug: 'gauteng__johannesburg__jhb_west' },
+      { id: 'rgn_north', label: 'Johannesburg North', regionKey: 'jhb_north', slug: 'gauteng__johannesburg__jhb_north' },
+    ])
+
+    const result = await handleRegistrationFlow({
+      phone,
+      step: 'reg_collect_city' as any,
+      data: { provinceKey: 'gauteng' } as any,
+      flow: 'registration' as const,
+      reply: { type: 'button_reply' as any, id: 'city_city_jhb', title: 'Johannesburg' },
+    })
+    const body: string = (wa.sendList as any).mock.calls[0][1]
+    const rows = (wa.sendList as any).mock.calls[0][2][0].rows
+
+    expect(body).toContain('Only *JHB West / Roodepoort* is live')
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: 'JHB West / Roodepoort', description: expect.stringContaining('Active pilot') }),
+      expect.objectContaining({ title: 'Johannesburg North', description: expect.stringContaining('Coming soon') }),
+    ]))
+    expect(result.nextStep).toBe('reg_collect_region')
+  })
 })
 
 // ─── Evidence file upload paths ───────────────────────────────────────────────
@@ -500,11 +577,12 @@ describe('registration flow — evidence file uploads', () => {
     )
     expect(wa.sendButtons).toHaveBeenCalledWith(
       phone,
-      expect.stringContaining('File received (1 total)'),
+      expect.stringContaining('1 file received'),
       expect.any(Array),
     )
     expect(result.nextStep).toBe('reg_collect_evidence')
     expect(result.nextData?.evidenceFileUrls).toEqual(['att_mock_001'])
+    expect(result.nextData?.evidenceMediaIds).toEqual(['media_abc123'])
   })
 
   it('second image upload accumulates IDs without losing the first', async () => {
@@ -519,6 +597,43 @@ describe('registration flow — evidence file uploads', () => {
     const result = await handleRegistrationFlow(ctx)
 
     expect(result.nextData?.evidenceFileUrls).toEqual(['att_first_001', 'att_mock_001'])
+    expect(result.nextData?.evidenceMediaIds).toEqual(['media_second'])
+  })
+
+  it('deduplicates repeated evidence media IDs without uploading again', async () => {
+    const ctx = {
+      phone,
+      step: 'reg_collect_evidence' as any,
+      data: { evidenceFileUrls: ['att_first_001'], evidenceMediaIds: ['media_dup'] } as any,
+      flow: 'registration' as const,
+      reply: { type: 'image' as any, mediaId: 'media_dup', mimeType: 'image/jpeg' },
+    }
+
+    const result = await handleRegistrationFlow(ctx)
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextData?.evidenceFileUrls).toEqual(['att_first_001'])
+    expect(result.nextData?.evidenceMediaIds).toEqual(['media_dup'])
+    expect(wa.sendButtons).toHaveBeenCalledWith(phone, expect.stringContaining('1 file received'), expect.any(Array))
+  })
+
+  it('blocks evidence uploads after 5 files', async () => {
+    const ctx = {
+      phone,
+      step: 'reg_collect_evidence' as any,
+      data: {
+        evidenceFileUrls: ['a', 'b', 'c', 'd', 'e'],
+        evidenceMediaIds: ['m1', 'm2', 'm3', 'm4', 'm5'],
+      } as any,
+      flow: 'registration' as const,
+      reply: { type: 'image' as any, mediaId: 'media_extra', mimeType: 'image/jpeg' },
+    }
+
+    const result = await handleRegistrationFlow(ctx)
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextData?.evidenceFileUrls).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(wa.sendButtons).toHaveBeenCalledWith(phone, expect.stringContaining('Maximum reached'), expect.any(Array))
   })
 
   it('upload failure sends error message and stays on evidence step', async () => {
@@ -631,8 +746,31 @@ describe('registration flow — numbered bulk suburb selection', () => {
       expect.any(Object),
     )
     expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
+    const body: string = (wa.sendText as any).mock.calls.at(-1)[1]
+    expect(body).toContain('1. Suburb 1')
+    expect(body).toContain('2. Suburb 2')
+    expect(body).not.toMatch(/[□☐☑]/)
+    expect(body).not.toContain('☐ 1.')
+    expect(body).not.toContain('✅ 1.')
     expect(result.nextStep).toBe('reg_collect_suburb_select')
     expect(result.nextData?.suburbOptions).toHaveLength(20)
+  })
+
+  it('re-shows selected suburbs as plain numbered rows, not checkbox rows', async () => {
+    await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', 'suburb_add_more', undefined, {
+        ...suburbBaseData,
+        locationNodeIds: ['sub_0'],
+        selectedSuburbLabels: ['Suburb 1'],
+      })
+    )
+
+    const body: string = (wa.sendText as any).mock.calls[0][1]
+    expect(body).toContain('Selected so far: *Suburb 1*')
+    expect(body).toContain('1. Suburb 1 (selected)')
+    expect(body).not.toMatch(/[□☐☑]/)
+    expect(body).not.toContain('✅ Selected so far')
+    expect(body).not.toContain('✅ 1.')
   })
 
   it('"1,3" selects two suburbs and shows Continue / Add more / Change buttons', async () => {
