@@ -134,7 +134,7 @@ function VerifyForm() {
 
       {/* Form */}
       <form onSubmit={handleVerify} className="space-y-4">
-        <OtpInput value={otp} onChange={setOtp} disabled={loading} />
+        <OtpInput value={otp} onChange={(next) => { setError(null); setOtp(next) }} disabled={loading} />
 
         {error && <p className="text-sm text-destructive text-center">{error}</p>}
 

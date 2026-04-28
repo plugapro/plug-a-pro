@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, KeyboardEvent, ClipboardEvent } from 'react'
+import { useEffect, useRef, KeyboardEvent, ClipboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 
 interface OtpInputProps {
@@ -10,33 +10,77 @@ interface OtpInputProps {
   length?: number
 }
 
+export function normalizeOtpValue(raw: string, length = 6): string {
+  return raw.replace(/\D/g, '').slice(0, length)
+}
+
+function otpDigits(value: string, length: number): string[] {
+  const normalized = normalizeOtpValue(value, length)
+  return Array.from({ length }, (_, index) => normalized[index] ?? '')
+}
+
+export function applyOtpInputChange(
+  currentValue: string,
+  index: number,
+  rawInput: string,
+  length = 6,
+): { value: string; focusIndex: number } {
+  const cleaned = normalizeOtpValue(rawInput, length)
+
+  if (cleaned.length > 1) {
+    return {
+      value: cleaned,
+      focusIndex: Math.min(cleaned.length, length) - 1,
+    }
+  }
+
+  const next = otpDigits(currentValue, length)
+  next[index] = cleaned
+  return {
+    value: next.join('').slice(0, length),
+    focusIndex: cleaned && index < length - 1 ? index + 1 : index,
+  }
+}
+
+export function applyOtpBackspace(
+  currentValue: string,
+  index: number,
+  length = 6,
+): { value: string; focusIndex: number } {
+  const next = otpDigits(currentValue, length)
+  if (next[index]) {
+    next[index] = ''
+    return { value: next.join('').slice(0, length), focusIndex: index }
+  }
+
+  if (index > 0) {
+    next[index - 1] = ''
+    return { value: next.join('').slice(0, length), focusIndex: index - 1 }
+  }
+
+  return { value: next.join('').slice(0, length), focusIndex: index }
+}
+
 export function OtpInput({ value, onChange, disabled, length = 6 }: OtpInputProps) {
   const refs = useRef<Array<HTMLInputElement | null>>([])
-  const digits = value.padEnd(length, '').split('').slice(0, length)
+  const digits = otpDigits(value, length)
+
+  useEffect(() => {
+    if (!disabled) refs.current[0]?.focus()
+  }, [disabled])
 
   function handleChange(index: number, raw: string) {
-    const digit = raw.replace(/\D/g, '').slice(-1)
-    const next = [...digits]
-    next[index] = digit
-    onChange(next.join('').trimEnd())
-    if (digit && index < length - 1) {
-      refs.current[index + 1]?.focus()
-    }
+    const next = applyOtpInputChange(value, index, raw, length)
+    onChange(next.value)
+    refs.current[next.focusIndex]?.focus()
   }
 
   function handleKeyDown(index: number, e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Backspace') {
       e.preventDefault()
-      if (digits[index]) {
-        const next = [...digits]
-        next[index] = ''
-        onChange(next.join('').trimEnd())
-      } else if (index > 0) {
-        const next = [...digits]
-        next[index - 1] = ''
-        onChange(next.join('').trimEnd())
-        refs.current[index - 1]?.focus()
-      }
+      const next = applyOtpBackspace(value, index, length)
+      onChange(next.value)
+      refs.current[next.focusIndex]?.focus()
     } else if (e.key === 'ArrowLeft' && index > 0) {
       refs.current[index - 1]?.focus()
     } else if (e.key === 'ArrowRight' && index < length - 1) {
@@ -46,9 +90,9 @@ export function OtpInput({ value, onChange, disabled, length = 6 }: OtpInputProp
 
   function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
     e.preventDefault()
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, length)
+    const pasted = normalizeOtpValue(e.clipboardData.getData('text'), length)
     onChange(pasted)
-    const focusIndex = Math.min(pasted.length, length - 1)
+    const focusIndex = pasted.length > 0 ? Math.min(pasted.length, length) - 1 : 0
     refs.current[focusIndex]?.focus()
   }
 
@@ -60,7 +104,8 @@ export function OtpInput({ value, onChange, disabled, length = 6 }: OtpInputProp
           ref={(el) => { refs.current[i] = el }}
           type="text"
           inputMode="numeric"
-          maxLength={1}
+          pattern="[0-9]*"
+          maxLength={length}
           value={digits[i] ?? ''}
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
