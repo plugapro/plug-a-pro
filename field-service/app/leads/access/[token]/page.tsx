@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { getCategoryPolicy } from '@/lib/service-category-policy'
 import { db } from '@/lib/db'
 import { resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
+import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import {
   markAcceptedLeadAction,
   saveAcceptedLeadArrival,
@@ -382,21 +383,18 @@ export default async function ProviderLeadAccessPage({
             <div className="px-4 py-3 space-y-2">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer photos</p>
               <div className="grid grid-cols-2 gap-2">
-                {jr.attachments.map((photo) => (
-                  <a
-                    key={photo.id}
-                    href={`/api/attachments/${photo.id}?leadToken=${attachmentToken}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/attachments/${photo.id}?leadToken=${attachmentToken}`}
-                      alt={photo.caption ?? photo.label ?? 'Customer job photo'}
-                      className="h-32 w-full rounded-lg object-cover"
+                {jr.attachments.map((photo) => {
+                  const src = `/api/attachments/${photo.id}?leadToken=${attachmentToken}`
+                  return (
+                    <AttachmentThumbnail
+                      key={photo.id}
+                      attachmentId={photo.id}
+                      src={src}
+                      href={src}
+                      alt={photo.caption ?? 'Customer photo'}
                     />
-                  </a>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

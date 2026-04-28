@@ -12,6 +12,7 @@ const {
   mockFetch,
   mockHead,
   mockResolveJobRequestAccessScope,
+  mockResolveProviderLeadAttachmentScope,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockDb: {
@@ -22,6 +23,7 @@ const {
   mockFetch: vi.fn(),
   mockHead: vi.fn(),
   mockResolveJobRequestAccessScope: vi.fn(),
+  mockResolveProviderLeadAttachmentScope: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
@@ -29,6 +31,9 @@ vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@vercel/blob', () => ({ head: mockHead }))
 vi.mock('@/lib/job-request-access', () => ({
   resolveJobRequestAccessScope: mockResolveJobRequestAccessScope,
+}))
+vi.mock('@/lib/provider-lead-access', () => ({
+  resolveProviderLeadAttachmentScope: mockResolveProviderLeadAttachmentScope,
 }))
 vi.stubGlobal('fetch', mockFetch)
 
@@ -43,6 +48,9 @@ const makeRequest = () =>
 
 const makeTokenRequest = (token: string) =>
   new NextRequest(`http://localhost/api/attachments/att-1?token=${token}`)
+
+const makeLeadTokenRequest = (token: string) =>
+  new NextRequest(`http://localhost/api/attachments/att-1?leadToken=${token}`)
 
 const makeParams = () =>
   Promise.resolve({ id: 'att-1' }) as Promise<{ id: string }>
@@ -72,6 +80,10 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
       status: 200,
     })
     mockResolveJobRequestAccessScope.mockResolvedValue({
+      status: 'invalid',
+      jobRequestId: null,
+    })
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
       status: 'invalid',
       jobRequestId: null,
     })
@@ -247,5 +259,65 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     const res = await GET(makeTokenRequest('token-123'), { params: makeParams() })
 
     expect(res.status).toBe(401)
+  })
+
+  it('allows an unauthenticated request with a valid provider lead token for the same job request', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-1',
+      leadId: 'lead-1',
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      jobRequest: {
+        id: 'jr-1',
+        customer: { id: 'cust-db-id' },
+      },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeLeadTokenRequest('lead-token-123'), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    expect(mockResolveProviderLeadAttachmentScope).toHaveBeenCalledWith('lead-token-123')
+    expect(mockHead).toHaveBeenCalledWith('https://blob.example.com/att-1')
+  })
+
+  it('falls back to the stored attachment URL when blob metadata has no downloadUrl', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+    mockHead.mockResolvedValue({})
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    expect(mockFetch).toHaveBeenCalledWith('https://blob.example.com/att-1')
+  })
+
+  it('returns a diagnostic error when the stored image file cannot be found', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+    mockFetch.mockResolvedValue({
+      ok: false,
+      body: null,
+      status: 404,
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+    const body = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(body).toEqual(
+      expect.objectContaining({
+        code: 'IMAGE_NOT_FOUND',
+        attachmentId: 'att-1',
+        traceId: expect.any(String),
+      }),
+    )
   })
 })
