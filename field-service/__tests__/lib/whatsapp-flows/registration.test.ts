@@ -295,32 +295,23 @@ describe('registration flow — duplicate prevention', () => {
   })
 })
 
-describe('registration flow — list-based skill selection', () => {
+describe('registration flow — numbered bulk skill selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('shows an interactive skill list after collecting the provider name', async () => {
+  it('shows a numbered text list of skills (not an interactive list) after name is collected', async () => {
     const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
 
-    expect(wa.sendList).toHaveBeenCalledWith(
-      phone,
-      expect.stringContaining('Tap a skill to select it'),
-      expect.arrayContaining([
-        expect.objectContaining({
-          rows: expect.arrayContaining([
-            expect.objectContaining({ id: 'skill_plumbing', title: 'Plumbing' }),
-          ]),
-        }),
-      ]),
-      expect.objectContaining({ buttonLabel: 'Pick Skill' }),
-    )
+    expect(wa.sendList).not.toHaveBeenCalled()
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
     expect(result.nextStep).toBe('reg_collect_skills_more')
+    expect(result.nextData).toMatchObject({ name: 'Thabo Nkosi', skills: [] })
   })
 
-  it('adds a tapped skill and shows Continue / Add more buttons', async () => {
+  it('parses "1,3" — selects two skills and shows Continue / Change buttons', async () => {
     const result = await handleRegistrationFlow(
-      makeCtx('reg_collect_skills_more', 'skill_plumbing', undefined, {
+      makeCtx('reg_collect_skills_more', undefined, '1,3', {
         name: 'Thabo Nkosi',
         skills: [],
       })
@@ -328,25 +319,106 @@ describe('registration flow — list-based skill selection', () => {
 
     expect(wa.sendButtons).toHaveBeenCalledWith(
       phone,
-      expect.stringContaining('Plumbing added'),
+      expect.stringContaining('Skills selected'),
       expect.arrayContaining([
-        expect.objectContaining({ id: 'skills_done' }),
-        expect.objectContaining({ id: 'skills_add_more' }),
+        expect.objectContaining({ id: 'skills_confirm' }),
+        expect.objectContaining({ id: 'skills_change' }),
       ]),
     )
     expect(result.nextStep).toBe('reg_collect_skills_more')
-    expect(result.nextData).toMatchObject({ skills: ['Plumbing'] })
+    expect(result.nextData?.skills).toHaveLength(2)
   })
 
-  it('proceeds to area when skills_done and at least one skill is selected', async () => {
+  it('deduplicates input "1,1,2,3,2,2" to exactly 3 skills', async () => {
     const result = await handleRegistrationFlow(
-      makeCtx('reg_collect_skills_more', 'skills_done', undefined, {
+      makeCtx('reg_collect_skills_more', undefined, '1,1,2,3,2,2', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(result.nextData?.skills).toHaveLength(3)
+  })
+
+  it('parses mixed separators "1 2,3" as three selections', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, '1 2,3', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(result.nextData?.skills).toHaveLength(3)
+  })
+
+  it('"1,99" — accepts skill 1, warns about ignored number 99', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, '1,99', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('99'),
+      expect.any(Array),
+    )
+    expect(result.nextData?.skills).toHaveLength(1)
+  })
+
+  it('"99" only — re-shows numbered list with "None of those numbers" error', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, '99', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+    expect(wa.sendText).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('None of those numbers'),
+    )
+    expect(result.nextStep).toBe('reg_collect_skills_more')
+  })
+
+  it('matches skill text "plumbing" via label-matching fallback', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, 'plumbing', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('Plumbing'),
+      expect.any(Array),
+    )
+    expect(result.nextData?.skills).toContain('Plumbing')
+  })
+
+  it('"done" without any selection re-shows numbered list with prompt to pick first', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, 'done', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
+    expect(result.nextStep).toBe('reg_collect_skills_more')
+  })
+
+  it('skills_confirm with selections proceeds to area (interactive province list)', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', 'skills_confirm', undefined, {
         name: 'Thabo Nkosi',
         skills: ['Plumbing', 'Electrical'],
       })
     )
 
-    // promptArea sends a list of provinces
     expect(wa.sendList).toHaveBeenCalledWith(
       phone,
       expect.stringContaining('area'),
@@ -354,6 +426,20 @@ describe('registration flow — list-based skill selection', () => {
       expect.any(Object),
     )
     expect(result.nextStep).toBe('reg_collect_experience')
+  })
+
+  it('skills_change clears selection and re-shows numbered text list (not sendList)', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', 'skills_change', undefined, {
+        name: 'Thabo Nkosi',
+        skills: ['Plumbing'],
+      })
+    )
+
+    expect(wa.sendList).not.toHaveBeenCalled()
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
+    expect(result.nextStep).toBe('reg_collect_skills_more')
+    expect(result.nextData?.skills).toEqual([])
   })
 })
 
@@ -480,59 +566,145 @@ describe('registration flow — evidence file uploads', () => {
   })
 })
 
-// ─── WhatsApp list row count enforcement ─────────────────────────────────────
-// WhatsApp lists are hard-capped at 10 rows total across all sections (ref: whatsapp-interactive.ts:4).
-// These tests assert that every sendList call produced by the registration flow stays within the limit.
+// ─── Numbered suburb multi-select ────────────────────────────────────────────
+// Suburbs are presented as plain numbered text (not interactive lists).
+// Provider replies with comma-separated numbers; global 1-based numbering across pages.
 
-describe('registration flow — WhatsApp list row count (max 10)', () => {
+describe('registration flow — numbered bulk suburb selection', () => {
+  // Mirror the mock: 20 fake suburbs as stored in session ctx.data after the first prompt
+  const fakeSuburbs = Array.from({ length: 20 }, (_, i) => ({ id: `sub_${i}`, label: `Suburb ${i + 1}` }))
+
+  const suburbBaseData = {
+    regionId: 'rgn_test',
+    regionLabel: 'Sandton',
+    suburbPage: 0,
+    suburbOptions: fakeSuburbs,
+    locationNodeIds: [] as string[],
+    selectedSuburbLabels: [] as string[],
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  function totalRows(sections: Array<{ rows?: unknown[] }>): number {
-    return sections.reduce((sum, s) => sum + (s.rows?.length ?? 0), 0)
-  }
-
-  it('skill list page 0 has ≤ 10 rows', async () => {
-    await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
-
-    expect(wa.sendList).toHaveBeenCalled()
-    const [, , sections] = (wa.sendList as ReturnType<typeof vi.fn>).mock.calls[0]
-    expect(totalRows(sections)).toBeLessThanOrEqual(10)
-  })
-
-  it('skill list next page (skills_page_next) has ≤ 10 rows', async () => {
-    await handleRegistrationFlow(
-      makeCtx('reg_collect_skills_more', 'skills_page_next', undefined, {
-        name: 'Thabo Nkosi',
-        skills: [],
-        skillPage: 0,
-      })
-    )
-
-    expect(wa.sendList).toHaveBeenCalled()
-    const [, , sections] = (wa.sendList as ReturnType<typeof vi.fn>).mock.calls[0]
-    expect(totalRows(sections)).toBeLessThanOrEqual(10)
-  })
-
-  it('suburb list with large dataset has ≤ 10 rows', async () => {
-    // handleCollectRegion → showSuburbSelectPrompt (getSuburbs is mocked to return 20 suburbs)
-    await handleRegistrationFlow(
-      makeCtx('reg_collect_region', 'region_jnb_north', 'North', {
+  it('shows a numbered text list (not interactive list) after region is selected', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_region', 'region_jnb_north', undefined, {
         cityId: 'city_jhb',
         cityLabel: 'Johannesburg',
       })
     )
 
-    expect(wa.sendList).toHaveBeenCalled()
-    const listCalls = (wa.sendList as ReturnType<typeof vi.fn>).mock.calls
-    // The suburb list body contains "suburbs" — find that call
-    const suburbCall = listCalls.find(([, body]: [string, string]) =>
-      typeof body === 'string' && body.toLowerCase().includes('suburb')
+    // Must use plain text, not sendList
+    expect(wa.sendList).not.toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('suburb'),
+      expect.any(Array),
+      expect.any(Object),
     )
-    expect(suburbCall).toBeDefined()
-    const [, , sections] = suburbCall!
-    expect(totalRows(sections)).toBeLessThanOrEqual(10)
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
+    expect(result.nextStep).toBe('reg_collect_suburb_select')
+    expect(result.nextData?.suburbOptions).toHaveLength(20)
+  })
+
+  it('"1,3" selects two suburbs and shows Continue / Add more / Change buttons', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, '1,3', suburbBaseData)
+    )
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('Selected suburbs'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'suburb_confirm' }),
+        expect.objectContaining({ id: 'suburb_add_more' }),
+        expect.objectContaining({ id: 'suburb_change' }),
+      ]),
+    )
+    expect(result.nextData?.locationNodeIds).toHaveLength(2)
+    expect(result.nextData?.selectedSuburbLabels).toContain('Suburb 1')
+    expect(result.nextData?.selectedSuburbLabels).toContain('Suburb 3')
+  })
+
+  it('deduplicates input "1,1,3" to exactly 2 suburbs', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, '1,1,3', suburbBaseData)
+    )
+
+    expect(result.nextData?.locationNodeIds).toHaveLength(2)
+  })
+
+  it('"more" advances to the next page (global offset +15)', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, 'more', suburbBaseData)
+    )
+
+    // Items on page 2 are numbered starting from 16 (global 1-based)
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('16.'))
+    expect(result.nextStep).toBe('reg_collect_suburb_select')
+  })
+
+  it('"more" on the last page shows "You have seen all N suburbs" message', async () => {
+    await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, 'more', {
+        ...suburbBaseData,
+        suburbPage: 15,  // already on page 2 (last page for 20 suburbs)
+      })
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('all 20 suburbs'))
+  })
+
+  it('"all" selects all 20 suburbs and shows confirmation', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, 'all', suburbBaseData)
+    )
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('All 20 suburbs'),
+      expect.any(Array),
+    )
+    expect(result.nextData?.locationNodeIds).toHaveLength(20)
+  })
+
+  it('"99" only — sends "None of those numbers" error and re-shows list', async () => {
+    await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, '99', suburbBaseData)
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('None of those numbers'),
+    )
+  })
+
+  it('"done" without any selection re-shows list with prompt', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', undefined, 'done', suburbBaseData)
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
+    expect(result.nextStep).toBe('reg_collect_suburb_select')
+  })
+
+  it('suburb_confirm with selections proceeds to experience list', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_suburb_select', 'suburb_confirm', undefined, {
+        ...suburbBaseData,
+        locationNodeIds: ['sub_0', 'sub_2'],
+        selectedSuburbLabels: ['Suburb 1', 'Suburb 3'],
+      })
+    )
+
+    // sendExperiencePrompt sends an interactive list
+    expect(wa.sendList).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('experience'),
+      expect.any(Array),
+      expect.any(Object),
+    )
+    expect(result.nextStep).toBe('reg_collect_availability')
   })
 })
 

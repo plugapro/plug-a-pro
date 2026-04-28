@@ -11,7 +11,7 @@ import { normalizePhone } from '../utils'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
 import {
   SERVICE_CATEGORY_OPTIONS,
-  getServiceCategorySelectionSummary,
+  resolveServiceCategoryTag,
 } from '../service-categories'
 import type { FlowContext, FlowResult } from './types'
 
@@ -23,6 +23,10 @@ export const REGISTRATION_TRIGGERS = [
   'ek wil werk',        // Afrikaans: "I want to work"
   'ngifuna ukusebenza', // Zulu: "I want to work"
 ]
+
+// ─── Provider skill options (all categories except 'other', which is client-side) ─
+// 'other' lets clients describe unusual jobs, but providers select real skill tags.
+const PROVIDER_SKILL_OPTIONS = SERVICE_CATEGORY_OPTIONS.filter(o => o.tag !== 'other')
 
 // ─── Flow entry point ─────────────────────────────────────────────────────────
 
@@ -138,60 +142,110 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills' }
   }
 
-  await sendSkillListPrompt(ctx.phone, `Nice to meet you, *${name}*! 👋\n\n🔧 *What type of work do you do?*`)
+  await sendText(
+    ctx.phone,
+    buildSkillPromptText(`Nice to meet you, *${name}*! 👋\n\n🔧 *What type of work do you do?*`)
+  )
   return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   const existingSkills: string[] = ctx.data.skills ?? []
-  const skillPage = (ctx.data.skillPage as number) ?? 0
 
-  if (ctx.reply.id === 'skills_done') {
+  // ── Button replies (from confirmation screen) ──────────────────────────────
+
+  if (ctx.reply.id === 'skills_confirm') {
     if (existingSkills.length === 0) {
-      await sendSkillListPrompt(ctx.phone, '🔧 *Please choose at least one skill first.*')
-      return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: 0 } }
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please choose at least one skill first.*'))
+      return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
     }
     return promptArea(ctx)
   }
 
-  if (ctx.reply.id === 'skills_page_next') {
-    const nextPage = skillPage + SKILL_PAGE_SIZE
-    await sendSkillListPrompt(ctx.phone, '🔧 *More skills:*', existingSkills, nextPage)
-    return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: nextPage } }
+  if (ctx.reply.id === 'skills_change' || ctx.reply.id === 'edit_skills') {
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
   }
 
-  if (ctx.reply.id === 'skills_add_more') {
-    await sendSkillListPrompt(ctx.phone, '🔧 *Add another skill:*', existingSkills, 0)
-    return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: 0 } }
+  // ── Text reply ─────────────────────────────────────────────────────────────
+
+  const raw = ctx.reply.text?.trim() ?? ''
+
+  if (/^done$/i.test(raw)) {
+    if (existingSkills.length === 0) {
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please choose at least one skill first.*'))
+      return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+    }
+    return promptArea(ctx)
   }
 
-  if (ctx.reply.id === 'edit_skills') {
-    await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills* — previous selection will be replaced.')
-    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [], skillPage: 0 } }
+  if (/^change(\s+skills?)?$/i.test(raw)) {
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
   }
 
-  if (ctx.reply.id?.startsWith('skill_')) {
-    const tag = ctx.reply.id.replace('skill_', '')
-    const option = SERVICE_CATEGORY_OPTIONS.find(o => o.tag === tag)
-    const skillLabel = option?.label ?? ctx.reply.title ?? tag
-    const updatedSkills = existingSkills.includes(skillLabel)
-      ? existingSkills
-      : [...existingSkills, skillLabel]
+  // ── Parse number input ─────────────────────────────────────────────────────
 
-    await sendButtons(
+  const indices = parseNumberedInput(raw)
+
+  // No numbers found — try label matching as fallback
+  let labelMatched: string[] = []
+  if (indices.length === 0 && raw.length > 0) {
+    const parts = raw.split(/[,;&\s]+/).filter(s => s.length > 1)
+    for (const part of parts) {
+      const tag = resolveServiceCategoryTag(part)
+      if (!tag || tag === 'other') continue
+      const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === tag)
+      if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+    }
+  }
+
+  if (indices.length === 0 && labelMatched.length === 0) {
+    if (!raw) {
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *What type of work do you do?*'))
+    } else {
+      // Unrecognised text — ask for numbers
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please reply with the numbers from the list below.*'))
+    }
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
+  }
+
+  // Validate indices (1-based) against PROVIDER_SKILL_OPTIONS
+  const validSkills: string[] = []
+  const invalidNums: number[] = []
+  for (const n of indices) {
+    const option = PROVIDER_SKILL_OPTIONS[n - 1]
+    if (option) {
+      validSkills.push(option.label)
+    } else {
+      invalidNums.push(n)
+    }
+  }
+
+  // All numbers were invalid (no label matches either)
+  if (validSkills.length === 0 && labelMatched.length === 0) {
+    await sendText(
       ctx.phone,
-      `✅ *${skillLabel} added*\n\nSelected skills: *${updatedSkills.join(', ')}*\n\nAdd more skills or continue?`,
-      [
-        { id: 'skills_done', title: '✅ Continue' },
-        { id: 'skills_add_more', title: '➕ Add skill' },
-      ]
+      buildSkillPromptText(`❌ None of those numbers are on the list (${invalidNums.join(', ')}).\n\n🔧 *Choose your skills:*`)
     )
-    return { nextStep: 'reg_collect_skills_more', nextData: { skills: updatedSkills, skillPage } }
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
   }
 
-  // Fallback — re-show list from page 0
-  await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills:*', existingSkills, 0)
-  return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: 0 } }
+  // Merge new selections into existing (deduplicated)
+  const merged = [...new Set([...existingSkills, ...validSkills, ...labelMatched])]
+
+  let confirmBody = `✅ *Skills selected:* ${merged.join(', ')}`
+  if (invalidNums.length > 0) {
+    confirmBody += `\n\n_(We ignored numbers not on the list: ${invalidNums.join(', ')})_`
+  }
+  confirmBody += '\n\nShall I continue?'
+
+  await sendButtons(ctx.phone, confirmBody, [
+    { id: 'skills_confirm', title: '✅ Continue' },
+    { id: 'skills_change', title: '✏️ Change skills' },
+  ])
+
+  return { nextStep: 'reg_collect_skills_more', nextData: { skills: merged } }
 }
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
@@ -213,17 +267,9 @@ async function promptArea(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
-  if (ctx.reply.id === 'edit_skills') {
-    await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills* — previous selection will be replaced.')
+  if (ctx.reply.id === 'edit_skills' || ctx.reply.id === 'skills_change') {
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
-  }
-
-  if (ctx.reply.id === 'skills_done') {
-    const skills = ctx.data.skills ?? []
-    if (skills.length === 0) {
-      await sendSkillListPrompt(ctx.phone, '🔧 *Please choose at least one skill first.*')
-      return { nextStep: 'reg_collect_skills_more' }
-    }
   }
 
   return promptArea(ctx)
@@ -425,26 +471,27 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
   const regionId = ctx.reply.id.replace('region_', '')
   const regionLabel = ctx.reply.title ?? ''
 
-  // Drill down to suburb selection within this region
-  return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, [])
+  // Drill down to suburb selection within this region (numbered text list)
+  return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
 }
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
   return showRegionList(ctx) // re-show the region list
 }
 
-// ─── Suburb multi-select within a region ──────────────────────────────────────
+// ─── Suburb multi-select within a region (numbered text list) ─────────────────
+// Providers reply once with multiple numbers (e.g. "1,3,5") to select suburbs.
+// Uses global 1-based numbering across all pages so "8" always means the 8th suburb.
 
-// WhatsApp lists are capped at 10 rows total (whatsapp-interactive.ts:4).
-// Page size 8 leaves room for ➕ More and ✅ Done control rows without going over.
-const SUBURB_PAGE_SIZE = 8
+const SUBURB_TEXT_PAGE_SIZE = 15
 
-async function showSuburbSelectPrompt(
+async function showSuburbNumberedPrompt(
   phone: string,
   regionId: string,
   regionLabel: string,
-  alreadySelected: string[],
-  pageOffset = 0,
+  selectedLabels: string[],
+  selectedIds: string[],
+  pageOffset: number,
 ): Promise<FlowResult> {
   try {
     const { getSuburbs } = await import('@/lib/location-nodes')
@@ -462,25 +509,9 @@ async function showSuburbSelectPrompt(
       }
     }
 
-    const page = suburbs.slice(pageOffset, pageOffset + SUBURB_PAGE_SIZE)
-    const hasMore = suburbs.length > pageOffset + SUBURB_PAGE_SIZE
-
-    const selectedSummary = alreadySelected.length > 0
-      ? `\n\n✅ Selected so far: *${alreadySelected.join(', ')}*`
-      : ''
-
-    const rows: Array<{ id: string; title: string }> = page.map(s => ({
-      id: `suburb_${s.id}`,
-      title: s.label,
-    }))
-    if (hasMore) rows.push({ id: 'suburb_more', title: '➕ More suburbs…' })
-    if (alreadySelected.length > 0) rows.push({ id: 'suburb_done', title: '✅ Done selecting' })
-
-    await sendList(
+    await sendText(
       phone,
-      `📍 *Which suburbs in ${regionLabel} do you work in?*${selectedSummary}\n\nTap a suburb to select it.`,
-      [{ title: 'Suburbs', rows }],
-      { buttonLabel: 'Select Suburb' },
+      buildSuburbPromptText(regionLabel, suburbs, pageOffset, selectedLabels),
     )
 
     return {
@@ -489,8 +520,9 @@ async function showSuburbSelectPrompt(
         regionId,
         regionLabel,
         suburbPage: pageOffset,
-        suburbPageTotal: suburbs.length,
         suburbOptions: suburbs.map(s => ({ id: s.id, label: s.label })),
+        locationNodeIds: selectedIds,
+        selectedSuburbLabels: selectedLabels,
       },
     }
   } catch {
@@ -510,10 +542,12 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   const existingIds: string[] = (ctx.data.locationNodeIds as string[]) ?? []
   const existingLabels: string[] = (ctx.data.selectedSuburbLabels as string[]) ?? []
 
-  // "done" — proceed if at least one suburb selected
-  if (ctx.reply.id === 'suburb_done') {
+  // ── Button replies (from confirmation screen) ──────────────────────────────
+
+  if (ctx.reply.id === 'suburb_confirm') {
     if (existingIds.length === 0) {
-      return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, [], suburbPage)
+      await showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
+      return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
     }
     await sendExperiencePrompt(ctx.phone)
     return {
@@ -526,55 +560,139 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
     }
   }
 
-  // "more" — next page of suburbs
-  if (ctx.reply.id === 'suburb_more') {
-    const nextOffset = suburbPage + SUBURB_PAGE_SIZE
-    return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, nextOffset)
-  }
-
-  // "add_more" — return to list from confirmation screen
+  // "add more" — show numbered list keeping current selections
   if (ctx.reply.id === 'suburb_add_more') {
-    return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, 0)
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, 0)
   }
 
-  // Suburb tapped from list
-  if (ctx.reply.id?.startsWith('suburb_')) {
-    const suburbId = ctx.reply.id.replace('suburb_', '')
-    const suburb = suburbOptions.find(s => s.id === suburbId)
+  // "change" — clear all and restart
+  if (ctx.reply.id === 'suburb_change') {
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
+  }
 
-    if (!suburb) {
-      return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, suburbPage)
+  // ── Text reply ─────────────────────────────────────────────────────────────
+
+  const raw = ctx.reply.text?.trim() ?? ''
+  const rawLower = raw.toLowerCase()
+
+  if (rawLower === 'done') {
+    if (existingIds.length === 0) {
+      await sendText(ctx.phone, '📍 Please choose at least one suburb first.')
+      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0)
     }
-
-    const newIds = existingIds.includes(suburb.id) ? existingIds : [...existingIds, suburb.id]
-    const newLabels = existingLabels.includes(suburb.label) ? existingLabels : [...existingLabels, suburb.label]
-    const hasMore = (ctx.data.suburbPageTotal as number ?? 0) > suburbPage + SUBURB_PAGE_SIZE
-
-    await sendButtons(
-      ctx.phone,
-      `✅ *${suburb.label} added*\n\nSelected: *${newLabels.join(', ')}*\n\n${hasMore ? 'Add more suburbs, or continue.' : 'Continue, or add more.'}`,
-      [
-        { id: 'suburb_done', title: '✅ Continue' },
-        { id: 'suburb_add_more', title: '➕ Add more' },
-      ],
-    )
-
+    await sendExperiencePrompt(ctx.phone)
     return {
-      nextStep: 'reg_collect_suburb_select',
+      nextStep: 'reg_collect_availability',
       nextData: {
-        regionId,
-        regionLabel,
-        suburbPage,
-        suburbPageTotal: ctx.data.suburbPageTotal,
-        suburbOptions,
-        locationNodeIds: newIds,
-        selectedSuburbLabels: newLabels,
+        locationNodeIds: existingIds,
+        selectedRegionLabels: [regionLabel],
+        selectedSuburbLabels: existingLabels,
       },
     }
   }
 
-  // Fallback — re-show list
-  return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, suburbPage)
+  if (rawLower === 'more') {
+    const nextOffset = suburbPage + SUBURB_TEXT_PAGE_SIZE
+    if (nextOffset >= suburbOptions.length) {
+      await sendText(
+        ctx.phone,
+        `📍 You have seen all ${suburbOptions.length} suburbs in ${regionLabel}.\n\nReply with numbers to select, or *done* to continue.`
+      )
+      return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
+    }
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, nextOffset)
+  }
+
+  if (rawLower === 'all') {
+    // TODO: If a business limit on max suburbs per provider is introduced, enforce it here.
+    const allIds = suburbOptions.map(s => s.id)
+    const allLabels = suburbOptions.map(s => s.label)
+    const preview = allLabels.length > 8
+      ? `${allLabels.slice(0, 8).join(', ')} + ${allLabels.length - 8} more`
+      : allLabels.join(', ')
+    await sendButtons(
+      ctx.phone,
+      `✅ *All ${allLabels.length} suburbs in ${regionLabel} selected!*\n\n${preview}\n\nContinue?`,
+      [
+        { id: 'suburb_confirm', title: '✅ Continue' },
+        { id: 'suburb_change', title: '✏️ Change' },
+      ],
+    )
+    return {
+      nextStep: 'reg_collect_suburb_select',
+      nextData: {
+        regionId, regionLabel, suburbPage, suburbOptions,
+        locationNodeIds: allIds,
+        selectedSuburbLabels: allLabels,
+      },
+    }
+  }
+
+  // ── Parse number input ─────────────────────────────────────────────────────
+  // Numbers are 1-based and global (refer to suburbOptions index, not the current page).
+
+  const indices = parseNumberedInput(raw)
+
+  if (indices.length === 0) {
+    if (!raw) {
+      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, suburbPage)
+    }
+    await sendText(ctx.phone, '📍 Please reply with suburb numbers from the list, e.g. *1,3,5*')
+    return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
+  }
+
+  // Validate against full suburbOptions (global, 1-based)
+  const newIds: string[] = []
+  const newLabels: string[] = []
+  const invalidNums: number[] = []
+
+  for (const n of indices) {
+    const suburb = suburbOptions[n - 1]
+    if (!suburb) {
+      invalidNums.push(n)
+    } else if (!existingIds.includes(suburb.id)) {
+      newIds.push(suburb.id)
+      newLabels.push(suburb.label)
+    }
+    // silently skip already-selected suburbs (no duplicate message needed)
+  }
+
+  // Every number was invalid and nothing was already selected
+  if (newIds.length === 0 && existingIds.length === 0 && invalidNums.length > 0) {
+    await sendText(
+      ctx.phone,
+      `❌ None of those numbers match suburbs on the list (${invalidNums.join(', ')}).\n\nPlease try again, e.g. *1,3,5*`
+    )
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], suburbPage)
+  }
+
+  const mergedIds = [...existingIds, ...newIds]
+  const mergedLabels = [...existingLabels, ...newLabels]
+
+  let confirmBody = `✅ *Selected suburbs:* ${mergedLabels.join(', ')}`
+  if (invalidNums.length > 0) {
+    confirmBody += `\n\n_(We ignored numbers not on the list: ${invalidNums.join(', ')})_`
+  }
+  confirmBody += '\n\nReady to continue?'
+
+  await sendButtons(
+    ctx.phone,
+    confirmBody,
+    [
+      { id: 'suburb_confirm', title: '✅ Continue' },
+      { id: 'suburb_add_more', title: '➕ Add more' },
+      { id: 'suburb_change', title: '✏️ Change' },
+    ],
+  )
+
+  return {
+    nextStep: 'reg_collect_suburb_select',
+    nextData: {
+      regionId, regionLabel, suburbPage, suburbOptions,
+      locationNodeIds: mergedIds,
+      selectedSuburbLabels: mergedLabels,
+    },
+  }
 }
 
 // ─── Suburb free-text fallback (when location_nodes DB has no region data) ────
@@ -942,7 +1060,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_skills' }   // handleCollectSkills reads the text as the new name
 
     case 'edit_skills':
-      await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills* — previous selection will be replaced.')
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
       return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
 
     case 'edit_area':
@@ -993,35 +1111,88 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// WhatsApp lists are capped at 10 rows total (whatsapp-interactive.ts:4).
-// Page size 8 leaves room for ➕ More and ✅ Done control rows without going over.
-const SKILL_PAGE_SIZE = 8
+/**
+ * Parses a WhatsApp reply into a deduplicated, sorted list of 1-based positive integers.
+ * Accepts comma, semicolon, and whitespace separators.
+ * Rejects floats ("1.2"), non-numeric fragments, and zero/negative numbers.
+ * Strips leading # (e.g. "#3" → 3).
+ *
+ * Examples:
+ *   "1,3,6"     → [1, 3, 6]
+ *   "1 2 3"     → [1, 2, 3]
+ *   "1;2;3"     → [1, 2, 3]
+ *   "1, 2, 3"   → [1, 2, 3]
+ *   "1,1,2,3,2" → [1, 2, 3]  (deduplicated)
+ *   "#1,#3"     → [1, 3]
+ *   "1.2,3"     → [3]         (1.2 is not an integer — rejected)
+ *   "1a,3"      → [3]         (1a is not a pure integer — rejected)
+ */
+function parseNumberedInput(raw: string): number[] {
+  const parts = raw.trim().split(/[\s,;]+/).filter(Boolean)
+  const seen = new Set<number>()
+  for (const part of parts) {
+    // Strip leading # (e.g. "#1")
+    const stripped = part.replace(/^#/, '')
+    // Only accept pure digit strings — no floats, no mixed alphanumeric
+    if (!/^\d+$/.test(stripped)) continue
+    const n = parseInt(stripped, 10)
+    if (n > 0) seen.add(n)
+  }
+  return [...seen].sort((a, b) => a - b)
+}
 
-async function sendSkillListPrompt(
-  phone: string,
-  intro: string,
-  selectedSkills: string[] = [],
-  pageOffset = 0,
-): Promise<void> {
-  const selectedSummary = selectedSkills.length > 0
-    ? `\n\n✅ Selected so far: *${selectedSkills.join(', ')}*`
-    : ''
-  const page = SERVICE_CATEGORY_OPTIONS.slice(pageOffset, pageOffset + SKILL_PAGE_SIZE)
-  const hasMore = SERVICE_CATEGORY_OPTIONS.length > pageOffset + SKILL_PAGE_SIZE
-
-  const rows: Array<{ id: string; title: string }> = page.map(o => ({
-    id: `skill_${o.tag}`,
-    title: o.label,
-  }))
-  if (hasMore) rows.push({ id: 'skills_page_next', title: '➕ More skills…' })
-  if (selectedSkills.length > 0) rows.push({ id: 'skills_done', title: '✅ Done selecting' })
-  // rows.length is at most SKILL_PAGE_SIZE + 2 = 10 ✓
-
-  await sendList(
-    phone,
-    `${intro}${selectedSummary}\n\nTap a skill to select it.`,
-    [{ title: 'Trades & Services', rows }],
-    { buttonLabel: 'Pick Skill' },
+/**
+ * Builds a numbered skill selection prompt as a plain text message.
+ * Skills are numbered 1–N (PROVIDER_SKILL_OPTIONS, 'other' excluded).
+ * Provider replies with comma-separated numbers, e.g. "1,3,6".
+ */
+function buildSkillPromptText(intro: string): string {
+  const lines = PROVIDER_SKILL_OPTIONS.map((o, i) => `${i + 1}. ${o.label}`)
+  return (
+    `${intro}\n\n` +
+    `Reply with all numbers that apply, separated by commas.\n` +
+    `Example: *1,3,6*\n\n` +
+    lines.join('\n')
   )
 }
 
+/**
+ * Builds a numbered suburb selection prompt as a plain text message.
+ * Numbers are global (1-based across all pages) so "8" always means the 8th suburb
+ * regardless of the current page offset.
+ */
+function buildSuburbPromptText(
+  regionLabel: string,
+  allSuburbs: Array<{ id: string; label: string }>,
+  pageOffset: number,
+  selectedLabels: string[],
+): string {
+  const page = allSuburbs.slice(pageOffset, pageOffset + SUBURB_TEXT_PAGE_SIZE)
+  const hasMore = allSuburbs.length > pageOffset + SUBURB_TEXT_PAGE_SIZE
+  const total = allSuburbs.length
+
+  const selectedSummary = selectedLabels.length > 0
+    ? `\n✅ Selected so far: *${selectedLabels.join(', ')}*\n`
+    : ''
+
+  // Global numbering: suburb at index i has number (pageOffset + i + 1)
+  const lines = page.map((s, i) => `${pageOffset + i + 1}. ${s.label}`)
+
+  // Build example numbers from the current page
+  const exNums = [pageOffset + 1, Math.min(pageOffset + 3, total)].filter((v, i, a) => a.indexOf(v) === i)
+  const example = exNums.join(',')
+
+  const instructions: string[] = [
+    `Reply with all numbers for suburbs you cover. Example: *${example}*`,
+  ]
+  if (selectedLabels.length > 0) instructions.push(`Reply *done* to continue with your current selection.`)
+  if (hasMore) instructions.push(`Reply *more* to see the next batch of suburbs.`)
+  instructions.push(`Reply *all* to cover the whole ${regionLabel} area.`)
+
+  return (
+    `📍 *Which suburbs in ${regionLabel} do you work in?*${selectedSummary}\n` +
+    lines.join('\n') +
+    `\n\n` +
+    instructions.join('\n')
+  )
+}
