@@ -28,8 +28,9 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   providerApplicationId?: string | null
   prefix?: string
   label?: string
+  maxSizeBytes?: number
 }): Promise<{ attachmentId: string }> {
-  const { mediaId, providerApplicationId = null, prefix = 'evidence', label = 'evidence' } = params
+  const { mediaId, providerApplicationId = null, prefix = 'evidence', label = 'evidence', maxSizeBytes = MAX_EVIDENCE_SIZE } = params
 
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
   if (!accessToken) throw new Error('Missing WHATSAPP_ACCESS_TOKEN')
@@ -48,8 +49,8 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   if (!ALLOWED_EVIDENCE_TYPES[meta.mime_type]) {
     throw new Error(`Unsupported media type: ${meta.mime_type}`)
   }
-  if (meta.file_size > MAX_EVIDENCE_SIZE) {
-    throw new Error(`File too large: ${meta.file_size} bytes (max ${MAX_EVIDENCE_SIZE})`)
+  if (meta.file_size > maxSizeBytes) {
+    throw new Error(`File too large: ${meta.file_size} bytes (max ${maxSizeBytes})`)
   }
 
   // Step 2 — download binary

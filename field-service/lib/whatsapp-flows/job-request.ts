@@ -717,8 +717,6 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'collect_photos', nextData: { availabilityNote, photoAttachmentIds: [] } }
 }
 
-const MAX_CUSTOMER_PHOTOS = 5
-
 async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
   const { selectedCategory, address, availabilityNote } = ctx.data
   const photoCount = (ctx.data.photoAttachmentIds ?? []).length
@@ -735,15 +733,24 @@ async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'job_request_submitted' }
 }
 
+const MAX_CUSTOMER_PHOTOS = 5
+const MAX_CUSTOMER_PHOTO_BYTES = 10 * 1024 * 1024 // 10 MB — tighter than the 15 MB evidence limit
+
 async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
   const photoAttachmentIds: string[] = ctx.data.photoAttachmentIds ?? []
+  const rawText = ctx.reply.text?.trim().toLowerCase()
 
-  // Skip photo collection
-  if (ctx.reply.id === 'photos_skip') {
+  // Button: skip or done (with 0 photos)
+  if (ctx.reply.id === 'photos_skip' || rawText === 'skip') {
     return showJobRequestSummary(ctx)
   }
 
-  // User tapped "Add photo" — instruct them to send a media message
+  // Button: done (with photos already added)
+  if (ctx.reply.id === 'photos_done' || rawText === 'done') {
+    return showJobRequestSummary(ctx)
+  }
+
+  // User tapped "Add photo" / "Add more" — instruct them to send a media message
   if (ctx.reply.id === 'photos_start' || ctx.reply.id === 'photos_add_more') {
     const remaining = MAX_CUSTOMER_PHOTOS - photoAttachmentIds.length
     await sendText(
@@ -753,13 +760,17 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'collect_photos' }
   }
 
-  // Done tapped (with 0 or more photos)
-  if (ctx.reply.id === 'photos_done') {
-    return showJobRequestSummary(ctx)
+  // Documents are not accepted — customer photos must be images
+  if (ctx.reply.type === 'document') {
+    await sendText(
+      ctx.phone,
+      `❗ Please send a *photo* (image), not a document.\n\nTap *Skip* if you don't have any photos to add.`
+    )
+    return { nextStep: 'collect_photos' }
   }
 
-  // Image or document received
-  if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
+  // Image received
+  if (ctx.reply.type === 'image') {
     if (!ctx.reply.mediaId) {
       await sendText(ctx.phone, '❗ Photo did not come through. Please try sending it again.')
       return { nextStep: 'collect_photos' }
@@ -779,6 +790,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
         mediaId: ctx.reply.mediaId,
         prefix: 'customer-photos',
         label: 'customer_photo',
+        maxSizeBytes: MAX_CUSTOMER_PHOTO_BYTES,
       })
       const updated = [...photoAttachmentIds, attachmentId]
       const remaining = MAX_CUSTOMER_PHOTOS - updated.length
@@ -802,7 +814,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated } }
     } catch (err) {
       console.error('[job-request-flow:handleCollectPhotos] media upload failed:', err)
-      await sendText(ctx.phone, '❗ Photo upload failed. Please try again or tap Skip.')
+      await sendText(ctx.phone, '❗ I couldn\'t upload that photo. Please try again or type *skip*.')
       return { nextStep: 'collect_photos' }
     }
   }
@@ -955,7 +967,12 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       })
     }
 
-    // Backfill jobRequestId on any customer photos uploaded during the flow
+    // Backfill jobRequestId on any customer photos uploaded during the flow.
+    // Photos are created with jobRequestId=null during the WhatsApp conversation and linked here
+    // once the JobRequest row exists.
+    // TODO: Add a cron sweep (e.g. in match-leads/route.ts) to delete Attachment rows where
+    //       label='customer_photo', jobRequestId IS NULL, and createdAt < NOW() - 24h.
+    //       These are orphans from abandoned WhatsApp sessions.
     if (ctx.data.photoAttachmentIds?.length) {
       await db.attachment.updateMany({
         where: { id: { in: ctx.data.photoAttachmentIds }, jobRequestId: null },

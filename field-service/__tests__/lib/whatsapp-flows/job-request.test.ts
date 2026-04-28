@@ -27,7 +27,14 @@ vi.mock('@/lib/db', () => ({
       findFirst: vi.fn().mockResolvedValue(null), // default: no existing active request
       update: vi.fn().mockResolvedValue({}),
     },
+    attachment: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   },
+}))
+
+vi.mock('@/lib/whatsapp-media', () => ({
+  downloadAndStoreWhatsAppMedia: vi.fn(),
 }))
 
 vi.mock('@/lib/location-nodes', () => ({
@@ -80,6 +87,7 @@ import * as wa from '@/lib/whatsapp-interactive'
 import * as serviceAreaGuard from '@/lib/service-area-guard'
 import * as structuredAddress from '@/lib/structured-address'
 import * as createJobRequestModule from '@/lib/job-requests/create-job-request'
+import * as whatsappMedia from '@/lib/whatsapp-media'
 import { db } from '@/lib/db'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -888,5 +896,144 @@ describe('WhatsApp job-request flow — structured address', () => {
         expect.stringContaining('Something went wrong submitting your request')
       )
     })
+  })
+})
+
+// ─── collect_photos step ──────────────────────────────────────────────────────
+
+describe('WhatsApp job-request flow — collect_photos step', () => {
+  // Shared conversation data that mimics state after availability is selected
+  const baseData = {
+    selectedCategory: 'Plumbing',
+    address: '14 Main Rd, Sandton, Johannesburg',
+    availabilityNote: 'As soon as possible',
+    photoAttachmentIds: [] as string[],
+  }
+
+  function makePhotoCtx(
+    replyId?: string,
+    replyText?: string,
+    data: object = baseData,
+    type: 'button_reply' | 'text' | 'image' | 'document' = replyId ? 'button_reply' : 'text',
+    mediaId?: string,
+  ) {
+    return {
+      phone: PHONE,
+      step: 'collect_photos' as any,
+      data: data as any,
+      flow: 'job_request' as const,
+      reply: { type, id: replyId, text: replyText, title: replyId, mediaId } as any,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows photo prompt and confirmation summary when photos_skip is tapped', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx('photos_skip'))
+    expect(result.nextStep).toBe('job_request_submitted')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Job Request Summary'),
+      expect.arrayContaining([expect.objectContaining({ id: 'confirm_yes' })])
+    )
+    // No "Photos attached" line when skipped
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).not.toContain('Photos:')
+  })
+
+  it('proceeds to confirmation when "skip" is typed as free text', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'skip'))
+    expect(result.nextStep).toBe('job_request_submitted')
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Job Request Summary'), expect.any(Array))
+  })
+
+  it('instructs user to send a photo when photos_start is tapped', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx('photos_start'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Send your photo now'))
+  })
+
+  it('uploads image and returns updated attachment IDs', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_001' })
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-abc'))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaId: 'media-abc', prefix: 'customer-photos', label: 'customer_photo' })
+    )
+    expect(result.nextStep).toBe('collect_photos')
+    expect(result.nextData?.photoAttachmentIds).toEqual(['att_001'])
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Photo 1 added'), expect.any(Array))
+  })
+
+  it('shows Done-only button when 5th photo is added (max reached)', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_005' })
+    const data = { ...baseData, photoAttachmentIds: ['att_001', 'att_002', 'att_003', 'att_004'] }
+    await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-xyz'))
+    const buttons: { id: string }[] = (wa.sendButtons as any).mock.calls[0][2]
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].id).toBe('photos_done')
+  })
+
+  it('blocks upload and shows max-reached message when already at 5 photos', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['a', 'b', 'c', 'd', 'e'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-extra'))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('maximum'), expect.any(Array))
+  })
+
+  it('rejects document with a helpful message', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'document', 'doc-media'))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('photo'))
+    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('not a document'))
+  })
+
+  it('continues to summary when photos_done is tapped with photos', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001', 'att_002'] }
+    const result = await handleJobRequestFlow(makePhotoCtx('photos_done', undefined, data))
+    expect(result.nextStep).toBe('job_request_submitted')
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Photos: *2 attached*')
+  })
+
+  it('continues to summary when "done" is typed as free text', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'done', data))
+    expect(result.nextStep).toBe('job_request_submitted')
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Photos: *1 attached*'), expect.any(Array))
+  })
+
+  it('shows upload-failed message and stays on collect_photos when download throws', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Network error'))
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-bad'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining("couldn't upload"))
+  })
+
+  it('resends skip/start prompt on unknown reply when no photos yet', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'something random'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Add a photo?'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'photos_skip' }),
+        expect.objectContaining({ id: 'photos_start' }),
+      ])
+    )
+  })
+
+  it('resends done/add-more prompt on unknown reply when photos already added', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'something random', data))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('1 photo added'),
+      expect.arrayContaining([expect.objectContaining({ id: 'photos_done' })])
+    )
   })
 })
