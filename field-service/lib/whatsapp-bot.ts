@@ -62,6 +62,35 @@ function firstName(name: string | null | undefined) {
   return (name?.trim() || 'there').split(/\s+/)[0]
 }
 
+function isStatelessNotificationReply(
+  reply: ReturnType<typeof parseInbound>,
+  rawText: string,
+) {
+  const id = reply.id ?? ''
+  return (
+    id === 'back_home' ||
+    id === 'session_restart' ||
+    id.startsWith('mdc_') ||
+    id.startsWith('accept:') ||
+    id.startsWith('decline:') ||
+    id.startsWith('hd_unavailable:') ||
+    id.startsWith('hd_area:') ||
+    id.startsWith('hd_other:') ||
+    id.startsWith('match_accept_') ||
+    id.startsWith('match_inspect_') ||
+    id.startsWith('match_decline_') ||
+    id.startsWith('alt_slot_c:') ||
+    id.startsWith('alt_slot_p:') ||
+    id.startsWith('alt_cust_ok:') ||
+    id.startsWith('alt_cust_no:') ||
+    id.startsWith('rematch_yes:') ||
+    id.startsWith('rematch_no:') ||
+    id.startsWith('quote_accept_') ||
+    id.startsWith('quote_decline_') ||
+    (!id && rawText === 'accept')
+  )
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function processInboundMessage(
@@ -128,9 +157,13 @@ export async function processInboundMessage(
     let flow: FlowName = conversation.flow as FlowName
     let step: FlowStep = isExpired ? 'welcome' : (conversation.step as FlowStep)
     let data: ConversationData = isExpired ? {} : (conversation.data as ConversationData)
+    const isStatelessReply = isStatelessNotificationReply(reply, rawText)
 
     // Session expired mid-flow — offer contextual resume instead of silently resetting
-    if (isExpired && conversation.flow !== 'idle' && !isReset) {
+    // Stateless notification replies must bypass this guard: these button IDs carry
+    // all routing context needed to process the action even when the conversation
+    // session has timed out.
+    if (isExpired && conversation.flow !== 'idle' && !isReset && !isStatelessReply) {
       const oldFlow = conversation.flow as FlowName
       const oldData = conversation.data as ConversationData
 
