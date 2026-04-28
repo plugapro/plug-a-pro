@@ -58,6 +58,15 @@ vi.mock('@/lib/matching/customer-recontact', () => ({
   }),
 }))
 
+// 20 fake suburbs — intentionally more than SUBURB_PAGE_SIZE to validate pagination cap
+vi.mock('@/lib/location-nodes', () => ({
+  getCities: vi.fn().mockResolvedValue([]),
+  getRegions: vi.fn().mockResolvedValue([]),
+  getSuburbs: vi.fn().mockResolvedValue(
+    Array.from({ length: 20 }, (_, i) => ({ id: `sub_${i}`, label: `Suburb ${i + 1}` }))
+  ),
+}))
+
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 import { normalizePhone } from '@/lib/utils'
 import { db } from '@/lib/db'
@@ -468,6 +477,62 @@ describe('registration flow — evidence file uploads', () => {
     )
 
     expect(db.attachment.updateMany).not.toHaveBeenCalled()
+  })
+})
+
+// ─── WhatsApp list row count enforcement ─────────────────────────────────────
+// WhatsApp lists are hard-capped at 10 rows total across all sections (ref: whatsapp-interactive.ts:4).
+// These tests assert that every sendList call produced by the registration flow stays within the limit.
+
+describe('registration flow — WhatsApp list row count (max 10)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function totalRows(sections: Array<{ rows?: unknown[] }>): number {
+    return sections.reduce((sum, s) => sum + (s.rows?.length ?? 0), 0)
+  }
+
+  it('skill list page 0 has ≤ 10 rows', async () => {
+    await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
+
+    expect(wa.sendList).toHaveBeenCalled()
+    const [, , sections] = (wa.sendList as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(totalRows(sections)).toBeLessThanOrEqual(10)
+  })
+
+  it('skill list next page (skills_page_next) has ≤ 10 rows', async () => {
+    await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', 'skills_page_next', undefined, {
+        name: 'Thabo Nkosi',
+        skills: [],
+        skillPage: 0,
+      })
+    )
+
+    expect(wa.sendList).toHaveBeenCalled()
+    const [, , sections] = (wa.sendList as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(totalRows(sections)).toBeLessThanOrEqual(10)
+  })
+
+  it('suburb list with large dataset has ≤ 10 rows', async () => {
+    // handleCollectRegion → showSuburbSelectPrompt (getSuburbs is mocked to return 20 suburbs)
+    await handleRegistrationFlow(
+      makeCtx('reg_collect_region', 'region_jnb_north', 'North', {
+        cityId: 'city_jhb',
+        cityLabel: 'Johannesburg',
+      })
+    )
+
+    expect(wa.sendList).toHaveBeenCalled()
+    const listCalls = (wa.sendList as ReturnType<typeof vi.fn>).mock.calls
+    // The suburb list body contains "suburbs" — find that call
+    const suburbCall = listCalls.find(([, body]: [string, string]) =>
+      typeof body === 'string' && body.toLowerCase().includes('suburb')
+    )
+    expect(suburbCall).toBeDefined()
+    const [, , sections] = suburbCall!
+    expect(totalRows(sections)).toBeLessThanOrEqual(10)
   })
 })
 

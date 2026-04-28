@@ -144,23 +144,30 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   const existingSkills: string[] = ctx.data.skills ?? []
+  const skillPage = (ctx.data.skillPage as number) ?? 0
 
   if (ctx.reply.id === 'skills_done') {
     if (existingSkills.length === 0) {
       await sendSkillListPrompt(ctx.phone, '🔧 *Please choose at least one skill first.*')
-      return { nextStep: 'reg_collect_skills_more' }
+      return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: 0 } }
     }
     return promptArea(ctx)
   }
 
+  if (ctx.reply.id === 'skills_page_next') {
+    const nextPage = skillPage + SKILL_PAGE_SIZE
+    await sendSkillListPrompt(ctx.phone, '🔧 *More skills:*', existingSkills, nextPage)
+    return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: nextPage } }
+  }
+
   if (ctx.reply.id === 'skills_add_more') {
-    await sendSkillListPrompt(ctx.phone, '🔧 *Add another skill:*', existingSkills)
-    return { nextStep: 'reg_collect_skills_more' }
+    await sendSkillListPrompt(ctx.phone, '🔧 *Add another skill:*', existingSkills, 0)
+    return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: 0 } }
   }
 
   if (ctx.reply.id === 'edit_skills') {
     await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills* — previous selection will be replaced.')
-    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [], skillPage: 0 } }
   }
 
   if (ctx.reply.id?.startsWith('skill_')) {
@@ -179,12 +186,12 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
         { id: 'skills_add_more', title: '➕ Add skill' },
       ]
     )
-    return { nextStep: 'reg_collect_skills_more', nextData: { skills: updatedSkills } }
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: updatedSkills, skillPage } }
   }
 
-  // Fallback — re-show list for any unexpected input
-  await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills:*', existingSkills)
-  return { nextStep: 'reg_collect_skills_more' }
+  // Fallback — re-show list from page 0
+  await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills:*', existingSkills, 0)
+  return { nextStep: 'reg_collect_skills_more', nextData: { skillPage: 0 } }
 }
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
@@ -428,7 +435,9 @@ async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
 
 // ─── Suburb multi-select within a region ──────────────────────────────────────
 
-const SUBURB_PAGE_SIZE = 10
+// WhatsApp lists are capped at 10 rows total (whatsapp-interactive.ts:4).
+// Page size 8 leaves room for ➕ More and ✅ Done control rows without going over.
+const SUBURB_PAGE_SIZE = 8
 
 async function showSuburbSelectPrompt(
   phone: string,
@@ -984,25 +993,34 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function sendSkillListPrompt(phone: string, intro: string, selectedSkills: string[] = []): Promise<void> {
+// WhatsApp lists are capped at 10 rows total (whatsapp-interactive.ts:4).
+// Page size 8 leaves room for ➕ More and ✅ Done control rows without going over.
+const SKILL_PAGE_SIZE = 8
+
+async function sendSkillListPrompt(
+  phone: string,
+  intro: string,
+  selectedSkills: string[] = [],
+  pageOffset = 0,
+): Promise<void> {
   const selectedSummary = selectedSkills.length > 0
     ? `\n\n✅ Selected so far: *${selectedSkills.join(', ')}*`
     : ''
-  const firstSection = SERVICE_CATEGORY_OPTIONS.slice(0, 8)
-  const secondSection = SERVICE_CATEGORY_OPTIONS.slice(8)
+  const page = SERVICE_CATEGORY_OPTIONS.slice(pageOffset, pageOffset + SKILL_PAGE_SIZE)
+  const hasMore = SERVICE_CATEGORY_OPTIONS.length > pageOffset + SKILL_PAGE_SIZE
+
+  const rows: Array<{ id: string; title: string }> = page.map(o => ({
+    id: `skill_${o.tag}`,
+    title: o.label,
+  }))
+  if (hasMore) rows.push({ id: 'skills_page_next', title: '➕ More skills…' })
+  if (selectedSkills.length > 0) rows.push({ id: 'skills_done', title: '✅ Done selecting' })
+  // rows.length is at most SKILL_PAGE_SIZE + 2 = 10 ✓
+
   await sendList(
     phone,
     `${intro}${selectedSummary}\n\nTap a skill to select it.`,
-    [
-      {
-        title: 'Trades & Services',
-        rows: firstSection.map(o => ({ id: `skill_${o.tag}`, title: o.label })),
-      },
-      ...(secondSection.length > 0 ? [{
-        title: 'More skills',
-        rows: secondSection.map(o => ({ id: `skill_${o.tag}`, title: o.label })),
-      }] : []),
-    ],
+    [{ title: 'Trades & Services', rows }],
     { buttonLabel: 'Pick Skill' },
   )
 }
