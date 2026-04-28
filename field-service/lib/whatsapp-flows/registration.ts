@@ -188,15 +188,23 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
 
   const indices = parseNumberedInput(raw)
 
-  // No numbers found — try label matching as fallback
+  // No numbers found — try label matching as fallback.
+  // 1. Try the full raw phrase first (handles "pest control", "air conditioning", etc.)
+  // 2. If no full-phrase match, split into tokens (handles "plumbing electrical")
   let labelMatched: string[] = []
   if (indices.length === 0 && raw.length > 0) {
-    const parts = raw.split(/[,;&\s]+/).filter(s => s.length > 1)
-    for (const part of parts) {
-      const tag = resolveServiceCategoryTag(part)
-      if (!tag || tag === 'other') continue
-      const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === tag)
+    const fullTag = resolveServiceCategoryTag(raw)
+    if (fullTag && fullTag !== 'other') {
+      const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === fullTag)
       if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+    } else {
+      const parts = raw.split(/[,;&\s]+/).filter(s => s.length > 1)
+      for (const part of parts) {
+        const tag = resolveServiceCategoryTag(part)
+        if (!tag || tag === 'other') continue
+        const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === tag)
+        if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+      }
     }
   }
 

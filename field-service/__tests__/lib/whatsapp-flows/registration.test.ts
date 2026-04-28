@@ -383,7 +383,7 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextStep).toBe('reg_collect_skills_more')
   })
 
-  it('matches skill text "plumbing" via label-matching fallback', async () => {
+  it('matches single-word skill text "plumbing" via label-matching fallback', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, 'plumbing', {
         name: 'Thabo Nkosi',
@@ -397,6 +397,34 @@ describe('registration flow — numbered bulk skill selection', () => {
       expect.any(Array),
     )
     expect(result.nextData?.skills).toContain('Plumbing')
+  })
+
+  it('matches multi-word phrase "pest control" via full-phrase label fallback', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, 'pest control', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('Pest Control'),
+      expect.any(Array),
+    )
+    expect(result.nextData?.skills).toContain('Pest Control')
+  })
+
+  it('matches multiple tokens "plumbing electrical" when full phrase does not resolve', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_skills_more', undefined, 'plumbing electrical', {
+        name: 'Thabo Nkosi',
+        skills: [],
+      })
+    )
+
+    expect(result.nextData?.skills).toContain('Plumbing')
+    expect(result.nextData?.skills).toContain('Electrical')
   })
 
   it('"done" without any selection re-shows numbered list with prompt to pick first', async () => {
