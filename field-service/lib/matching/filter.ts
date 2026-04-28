@@ -400,6 +400,9 @@ export async function filterEligibleProviders(
     if (availability?.availabilityState === 'OFFLINE') {
       filteredReasonCodes.push('TECHNICIAN_OFFLINE')
     }
+    if (availability?.breakUntil && availability.breakUntil > new Date()) {
+      filteredReasonCodes.push('TECHNICIAN_TEMP_PAUSED')
+    }
 
     // Hard-filter on live heartbeat: if a provider has checked in at least once but
     // their last heartbeat is older than heartbeatStaleMinutes, treat them as offline.

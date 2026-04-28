@@ -17,6 +17,7 @@ import { initializeBookingPayment } from '../payments'
 import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
 import { releaseProviderCapacity } from './reservation'
+import { sendText } from '../whatsapp-interactive'
 import type {
   CoverageTier,
   DispatchActor,
@@ -32,6 +33,11 @@ import type {
 } from './types'
 
 type ResolvedCategoryRequirements = Awaited<ReturnType<typeof resolveCategoryRequirements>>
+
+const OFFER_TIMEOUT_CONSECUTIVE_PAUSE_THRESHOLD = 3
+const OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD = 6
+const OFFER_TIMEOUT_PAUSE_WINDOW_HOURS = 24
+const OFFER_TIMEOUT_TEMP_PAUSE_HOURS = 12
 
 function normalizeTag(tag: string) {
   return tag.trim().toLowerCase()
@@ -63,6 +69,112 @@ async function safeOptionalMutation<T>(factory: () => Promise<T>, fallback: T): 
     }
     throw error
   }
+}
+
+async function pauseProviderAfterRepeatedOfferTimeouts(providerId: string) {
+  const since = new Date(Date.now() - OFFER_TIMEOUT_PAUSE_WINDOW_HOURS * 60 * 60 * 1000)
+  const timeoutCount = await db.assignmentHold.count({
+    where: {
+      providerId,
+      status: 'EXPIRED',
+      outcomeReasonCode: 'OFFER_TIMEOUT',
+      respondedAt: { gte: since },
+    },
+  })
+
+  const recentResolvedHolds = await db.assignmentHold.findMany({
+    where: {
+      providerId,
+      respondedAt: { gte: since },
+      status: { in: ['ACCEPTED', 'REJECTED', 'EXPIRED', 'RELEASED', 'CANCELLED'] },
+    },
+    orderBy: { respondedAt: 'desc' },
+    take: OFFER_TIMEOUT_CONSECUTIVE_PAUSE_THRESHOLD,
+    select: { status: true, outcomeReasonCode: true },
+  })
+  const hasConsecutiveTimeouts =
+    recentResolvedHolds.length >= OFFER_TIMEOUT_CONSECUTIVE_PAUSE_THRESHOLD &&
+    recentResolvedHolds.every(
+      (hold) => hold.status === 'EXPIRED' && hold.outcomeReasonCode === 'OFFER_TIMEOUT',
+    )
+
+  if (timeoutCount < OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD && !hasConsecutiveTimeouts) {
+    return { paused: false, timeoutCount }
+  }
+
+  const isHardPause = timeoutCount >= OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD
+  const breakUntil = new Date(Date.now() + OFFER_TIMEOUT_TEMP_PAUSE_HOURS * 60 * 60 * 1000)
+
+  const provider = await db.provider.update({
+    where: { id: providerId },
+    data: {
+      ...(isHardPause ? { availableNow: false } : {}),
+      updatedAt: new Date(),
+    },
+    select: { id: true, phone: true, name: true },
+  })
+  await db.technicianAvailability.upsert({
+    where: { providerId },
+    create: {
+      providerId,
+      availabilityState: 'PAUSED',
+      breakUntil: isHardPause ? null : breakUntil,
+      notes: isHardPause
+        ? 'Auto-paused after repeated offer timeouts; provider must go online manually.'
+        : 'Auto-paused for 12 hours after consecutive offer timeouts.',
+    },
+    update: {
+      availabilityState: 'PAUSED',
+      breakUntil: isHardPause ? null : breakUntil,
+      notes: isHardPause
+        ? 'Auto-paused after repeated offer timeouts; provider must go online manually.'
+        : 'Auto-paused for 12 hours after consecutive offer timeouts.',
+      updatedAt: new Date(),
+    },
+  })
+
+  await sendText(
+    provider.phone,
+    isHardPause
+      ? `⏸️ *Leads paused*\n\nHi *${provider.name.split(' ')[0] || 'there'}*, we paused new Plug A Pro leads because several job offers expired without a response.\n\nReply *menu* when you're ready, then choose *Go Online* to receive leads again.`
+      : `⏸️ *Leads paused for 12 hours*\n\nHi *${provider.name.split(' ')[0] || 'there'}*, the last few job offers expired without a response, so we paused new Plug A Pro leads for 12 hours.\n\nReply *menu* if you want to manage your availability.`,
+    {
+      templateName: 'interactive:provider_auto_paused_timeout',
+      metadata: {
+        providerId,
+        timeoutCount,
+        pauseType: isHardPause ? 'hard' : 'temporary',
+        windowHours: OFFER_TIMEOUT_PAUSE_WINDOW_HOURS,
+        ...(isHardPause ? {} : { breakUntil: breakUntil.toISOString() }),
+      },
+    },
+  ).catch((error) => {
+    console.error('[matching] Failed to notify provider about timeout pause:', { providerId, error })
+  })
+
+  if (isHardPause && process.env.ADMIN_WHATSAPP_NUMBER) {
+    await sendText(
+      process.env.ADMIN_WHATSAPP_NUMBER,
+      `⚠️ *Provider leads paused*\n\n${provider.name} (${provider.phone}) has ${timeoutCount} offer timeouts in ${OFFER_TIMEOUT_PAUSE_WINDOW_HOURS}h and was taken offline for leads.`,
+      {
+        templateName: 'interactive:provider_timeout_admin_alert',
+        metadata: { providerId, timeoutCount, windowHours: OFFER_TIMEOUT_PAUSE_WINDOW_HOURS },
+      },
+    ).catch((error) => {
+      console.error('[matching] Failed to notify admin about provider timeout pause:', { providerId, error })
+    })
+  }
+
+  emitMatchEvent({
+    event: 'provider.auto_paused',
+    providerId,
+    reason: isHardPause ? 'repeated_offer_timeouts_hard' : 'consecutive_offer_timeouts',
+    timeoutCount,
+    windowHours: OFFER_TIMEOUT_PAUSE_WINDOW_HOURS,
+    pauseType: isHardPause ? 'hard' : 'temporary',
+  })
+
+  return { paused: true, timeoutCount, pauseType: isHardPause ? 'hard' : 'temporary' }
 }
 
 function buildMatchingJobRequest(record: {
@@ -947,6 +1059,9 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
     if (!provider.availableNow) filteredReasonCodes.push('TECHNICIAN_NOT_AVAILABLE_NOW')
     if (provider.technicianAvailability?.availabilityState === 'OFFLINE') {
       filteredReasonCodes.push('TECHNICIAN_OFFLINE')
+    }
+    if (provider.technicianAvailability?.breakUntil && provider.technicianAvailability.breakUntil > new Date()) {
+      filteredReasonCodes.push('TECHNICIAN_TEMP_PAUSED')
     }
     const areaCoverage = providerCoversAddress(provider, address)
     if (!areaCoverage.covers) {
@@ -1944,6 +2059,9 @@ export async function expireAssignmentOffer(params: {
   // transaction so it runs even if offerNextRankedCandidate fails below.
   await releaseProviderCapacity(hold.providerId).catch((err) =>
     console.error('[expireAssignmentOffer] releaseProviderCapacity failed', { providerId: hold.providerId, err })
+  )
+  await pauseProviderAfterRepeatedOfferTimeouts(hold.providerId).catch((err) =>
+    console.error('[expireAssignmentOffer] provider auto-pause check failed', { providerId: hold.providerId, err })
   )
 
   const next = await offerNextRankedCandidate({

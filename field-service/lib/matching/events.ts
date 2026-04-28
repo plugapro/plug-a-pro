@@ -76,6 +76,14 @@ export type MatchDomainEvent =
       providerId: string
       reason: string
     }
+  | {
+      event: 'provider.auto_paused'
+      providerId: string
+      reason: string
+      timeoutCount: number
+      windowHours: number
+      pauseType: 'temporary' | 'hard'
+    }
 
 export function emitMatchEvent(event: MatchDomainEvent): void {
   console.log(JSON.stringify({

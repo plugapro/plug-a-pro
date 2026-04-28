@@ -40,11 +40,15 @@ const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
     provider: {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
     },
     providerCapacity: {
       findMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+    },
+    technicianAvailability: {
+      upsert: vi.fn(),
     },
     technicianScheduleItem: {
       deleteMany: vi.fn(),
@@ -138,6 +142,8 @@ function setupBaseTransaction() {
     id: 'hold-new',
     expiresAt: new Date(Date.now() + 15 * 60_000),
   })
+  mockDb.assignmentHold.count.mockResolvedValue(0)
+  mockDb.assignmentHold.findMany.mockResolvedValue([])
   mockDb.lead.updateMany.mockResolvedValue({ count: 1 })
   mockDb.lead.update.mockResolvedValue({})
   mockDb.lead.upsert.mockResolvedValue({ id: 'lead-new' })
@@ -155,6 +161,12 @@ function setupBaseTransaction() {
     id: 'provider-2', name: 'Bob', phone: '+27829876543',
     availableNow: true, serviceAreas: [], skills: [],
   })
+  mockDb.provider.update.mockResolvedValue({
+    id: 'provider-1',
+    name: 'Seth',
+    phone: '+27764010810',
+  })
+  mockDb.technicianAvailability.upsert.mockResolvedValue({})
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -279,6 +291,134 @@ describe('expireAssignmentOffer', () => {
         where: expect.objectContaining({ assignmentHoldId: 'hold-1' }),
         data: expect.objectContaining({ status: 'EXPIRED' }),
       })
+    )
+  })
+
+  it('temporarily auto-pauses a provider after three consecutive offer timeouts', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold({ providerId: 'provider-timeout' }))
+    mockDb.assignmentHold.count.mockResolvedValue(3)
+    mockDb.assignmentHold.findMany.mockResolvedValue([
+      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+    ])
+    mockDb.matchAttempt.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue(null)
+    mockDb.provider.update.mockResolvedValue({
+      id: 'provider-timeout',
+      name: 'Seth Timeout',
+      phone: '+27764010810',
+    })
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(mockDb.provider.update).toHaveBeenCalledWith({
+      where: { id: 'provider-timeout' },
+      data: expect.objectContaining({ updatedAt: expect.any(Date) }),
+      select: { id: true, phone: true, name: true },
+    })
+    expect(mockDb.provider.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ availableNow: false }) }),
+    )
+    expect(mockDb.technicianAvailability.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { providerId: 'provider-timeout' },
+        create: expect.objectContaining({
+          availabilityState: 'PAUSED',
+          breakUntil: expect.any(Date),
+        }),
+        update: expect.objectContaining({
+          availabilityState: 'PAUSED',
+          breakUntil: expect.any(Date),
+        }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Leads paused for 12 hours'),
+      expect.objectContaining({
+        templateName: 'interactive:provider_auto_paused_timeout',
+        metadata: expect.objectContaining({
+          providerId: 'provider-timeout',
+          timeoutCount: 3,
+          pauseType: 'temporary',
+        }),
+      }),
+    )
+    expect(mockEmitMatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'provider.auto_paused',
+        providerId: 'provider-timeout',
+        reason: 'consecutive_offer_timeouts',
+        pauseType: 'temporary',
+      }),
+    )
+  })
+
+  it('hard-pauses a provider after six recent offer timeouts', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold({ providerId: 'provider-hard-timeout' }))
+    mockDb.assignmentHold.count.mockResolvedValue(6)
+    mockDb.assignmentHold.findMany.mockResolvedValue([
+      { status: 'REJECTED', outcomeReasonCode: 'TECHNICIAN_REJECTED_OFFER' },
+      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+    ])
+    mockDb.matchAttempt.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue(null)
+    mockDb.provider.update.mockResolvedValue({
+      id: 'provider-hard-timeout',
+      name: 'Seth Timeout',
+      phone: '+27764010810',
+    })
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(mockDb.provider.update).toHaveBeenCalledWith({
+      where: { id: 'provider-hard-timeout' },
+      data: expect.objectContaining({ availableNow: false }),
+      select: { id: true, phone: true, name: true },
+    })
+    expect(mockDb.technicianAvailability.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ availabilityState: 'PAUSED', breakUntil: null }),
+        update: expect.objectContaining({ availabilityState: 'PAUSED', breakUntil: null }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Leads paused'),
+      expect.objectContaining({
+        metadata: expect.objectContaining({ pauseType: 'hard', timeoutCount: 6 }),
+      }),
+    )
+    expect(mockEmitMatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'provider.auto_paused',
+        providerId: 'provider-hard-timeout',
+        reason: 'repeated_offer_timeouts_hard',
+        pauseType: 'hard',
+      }),
+    )
+  })
+
+  it('does not auto-pause a provider below the timeout threshold', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold({ providerId: 'provider-ok' }))
+    mockDb.assignmentHold.count.mockResolvedValue(2)
+    mockDb.assignmentHold.findMany.mockResolvedValue([
+      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+      { status: 'EXPIRED', outcomeReasonCode: 'OFFER_TIMEOUT' },
+    ])
+    mockDb.matchAttempt.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue(null)
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(mockDb.provider.update).not.toHaveBeenCalled()
+    expect(mockDb.technicianAvailability.upsert).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('Leads paused'),
+      expect.anything(),
     )
   })
 })
