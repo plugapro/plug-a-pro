@@ -1399,21 +1399,28 @@ async function createOfferForAttempt(params: {
   // Template fallback — only fires when the interactive CTA message fails (e.g. provider outside 24h session window).
   // Sending both would duplicate the notification; the interactive message is always preferred.
   if (!interactiveDelivered) {
-    const { sendJobOffer } = await import('../whatsapp')
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+    const [{ sendJobOffer }, { getProviderLeadAccessUrl }] = await Promise.all([
+      import('../whatsapp'),
+      import('../provider-lead-access'),
+    ])
     const scheduledWindow = requestWindow.startAt.toLocaleDateString('en-ZA', {
       weekday: 'short', day: 'numeric', month: 'short',
     })
-    sendJobOffer({
-      providerPhone: provider.phone,
-      providerFirstName: provider.name.split(' ')[0] ?? provider.name,
-      serviceName: jobRequest.category,
-      area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
-      scheduledWindow,
-      jobUrl: `${appUrl}/leads/${lead.id}`,
-    }).catch((error) => {
-      console.error('[matching] Failed to send job_offer template to provider:', error)
-    })
+    const signedUrl = await getProviderLeadAccessUrl({ leadId: lead.id, providerId: params.providerId })
+    if (!signedUrl) {
+      console.error('[matching] Skipping job_offer template — no signed lead URL available', { leadId: lead.id })
+    } else {
+      sendJobOffer({
+        providerPhone: provider.phone,
+        providerFirstName: provider.name.split(' ')[0] ?? provider.name,
+        serviceName: jobRequest.category,
+        area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
+        scheduledWindow,
+        jobUrl: signedUrl,
+      }).catch((error) => {
+        console.error('[matching] Failed to send job_offer template to provider:', error)
+      })
+    }
   }
 
   return { hold, lead }
