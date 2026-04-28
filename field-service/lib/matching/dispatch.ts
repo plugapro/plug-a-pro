@@ -4,7 +4,7 @@
 // remains active and the provider can still be notified by retry.
 
 import { db } from '@/lib/db'
-import { sendButtons } from '@/lib/whatsapp-interactive'
+import { sendCtaUrl } from '@/lib/whatsapp-interactive'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
 
@@ -44,18 +44,15 @@ export async function dispatchMatchLead(params: {
     hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg',
   })
   const titleLine = jobRequest.title ? `*${jobRequest.title}*\n` : ''
-  const urlLine = appUrl ? `\n\n🔗 Full details: ${appUrl}/provider/leads/${lead.id}` : ''
-  const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.${urlLine}`
+  const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
   const msgMeta = { jobRequestId: jobRequest.id, holdId: hold.id, providerId: provider.id }
 
-  await sendButtons(
+  await sendCtaUrl(
     provider.phone,
     body,
-    [
-      { id: `accept:${hold.id}`, title: 'Accept' },
-      { id: `decline:${hold.id}`, title: 'Decline' },
-    ],
-    undefined,
+    'View Lead',
+    `${appUrl}/leads/${lead.id}`,
+    { footer: 'Accept, inspect, or decline from the lead page' },
     { templateName: 'dispatch:job_lead', metadata: msgMeta }
   ).catch(async (err: unknown) => {
     const failureReason = err instanceof Error ? err.message : String(err)

@@ -173,10 +173,127 @@ export async function processInboundMessage(
 
     const isProviderJobList = PROVIDER_KEYWORDS.some((k) => rawText === k)
 
-    // Universal intercepts — handle before flow routing
+    // ─── Stateless notification-response intercepts ─────────────────────────────
+    // These run regardless of session state — push-notification button replies can
+    // arrive hours after the user last interacted; session expiry must not block them.
+
     if (reply.id === 'back_home' || reply.id === 'session_restart') {
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (reply.id?.startsWith('mdc_')) {
+      // ── Match decline reason responses ──────────────────────────────────────
+      const leadId = reply.id.replace(/^mdc_(unavailable|area|other)_/, '')
+      const reasonMap: Record<string, string> = {
+        [`mdc_unavailable_${leadId}`]: 'Not available',
+        [`mdc_area_${leadId}`]: 'Too far',
+        [`mdc_other_${leadId}`]: 'Other',
+      }
+      const reason = reasonMap[reply.id] ?? 'Declined'
+      const provider = await db.provider.findUnique({ where: { phone } })
+      if (provider) {
+        const { declineLead } = await import('./matching-engine')
+        await declineLead({ leadId, providerId: provider.id })
+      }
+      await sendText(phone, `Understood — lead passed (${reason}). We'll keep matching this job with other providers.`)
+      return
+    }
+
+    if (reply.id?.startsWith('accept:')) {
+      // ── Matching engine v2: AssignmentHold acceptance ────────────────────────
+      await handleAssignmentHoldAcceptance(phone, reply.id)
+      return
+    }
+
+    if (!reply.id && rawText === 'accept') {
+      // ── Provider typed "accept" as text instead of tapping the button ─────────
+      // Find the most recent pending (SENT/VIEWED) lead for this provider and accept it.
+      const providerForAccept = await db.provider.findUnique({ where: { phone }, select: { id: true } })
+      if (providerForAccept) {
+        const activeLead = await db.lead.findFirst({
+          where: {
+            providerId: providerForAccept.id,
+            status: { in: ['SENT', 'VIEWED'] },
+            expiresAt: { gt: new Date() },
+          },
+          orderBy: { sentAt: 'desc' },
+          select: { assignmentHoldId: true },
+        })
+        if (activeLead?.assignmentHoldId) {
+          await handleAssignmentHoldAcceptance(phone, `accept:${activeLead.assignmentHoldId}`)
+          return
+        }
+      }
+      // No active lead — fall through to main menu
+    }
+
+    if (reply.id?.startsWith('decline:')) {
+      // ── Matching engine v2: show decline reason sub-menu ─────────────────────
+      const holdId = reply.id.slice('decline:'.length)
+      await sendButtons(
+        phone,
+        '❌ *Decline Lead*\n\nWhy are you declining?',
+        [
+          { id: `hd_unavailable:${holdId}`, title: '📅 Not available' },
+          { id: `hd_area:${holdId}`, title: '📍 Too far' },
+          { id: `hd_other:${holdId}`, title: '✏️ Other reason' },
+        ]
+      )
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (
+      reply.id?.startsWith('hd_unavailable:') ||
+      reply.id?.startsWith('hd_area:') ||
+      reply.id?.startsWith('hd_other:')
+    ) {
+      // ── Matching engine v2: AssignmentHold decline with reason ───────────────
+      await handleAssignmentHoldDecline(phone, reply.id)
+      return
+    }
+
+    if (
+      reply.id?.startsWith('match_accept_') ||
+      reply.id?.startsWith('match_inspect_') ||
+      reply.id?.startsWith('match_decline_')
+    ) {
+      // ── Match-level lead responses (quote flow) ─────────────────────────────
+      await handleMatchLeadResponse(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('alt_slot_c:')) {
+      // ── Phase 5: customer picks / declines an alternative slot ───────────────
+      const { handleCustomerSlotResponse } = await import('./whatsapp-flows/alternative-slot')
+      await handleCustomerSlotResponse(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('alt_slot_p:')) {
+      // ── Phase 5: provider picks / declines an alternative slot ───────────────
+      const { handleProviderSlotResponse } = await import('./whatsapp-flows/alternative-slot')
+      await handleProviderSlotResponse(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('alt_cust_ok:') || reply.id?.startsWith('alt_cust_no:')) {
+      // ── Phase 5: customer confirms / rejects provider's chosen slot ──────────
+      const { handleCustomerSlotConfirmation } = await import('./whatsapp-flows/alternative-slot')
+      await handleCustomerSlotConfirmation(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('rematch_yes:') || reply.id?.startsWith('rematch_no:')) {
+      await handleCustomerRematchCheckResponse(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('quote_accept_') || reply.id?.startsWith('quote_decline_')) {
+      // ── Customer quote response buttons ─────────────────────────────────────
+      await handleCustomerQuoteResponse(phone, reply.id)
       return
     }
 
@@ -221,102 +338,6 @@ export async function processInboundMessage(
     } else if (reply.id === 'status' || reply.id === 'my_booking') {
       flow = 'status'
       step = 'status_show'
-    } else if (reply.id?.startsWith('mdc_')) {
-      // ── Match decline reason responses ──────────────────────────────────────
-      const leadId = reply.id.replace(/^mdc_(unavailable|area|other)_/, '')
-      const reasonMap: Record<string, string> = {
-        [`mdc_unavailable_${leadId}`]: 'Not available',
-        [`mdc_area_${leadId}`]: 'Too far',
-        [`mdc_other_${leadId}`]: 'Other',
-      }
-      const reason = reasonMap[reply.id] ?? 'Declined'
-
-      const provider = await db.provider.findUnique({ where: { phone } })
-      if (provider) {
-        const { declineLead } = await import('./matching-engine')
-        await declineLead({ leadId, providerId: provider.id })
-      }
-
-      const { sendText } = await import('./whatsapp-interactive')
-      await sendText(phone, `Understood — lead passed (${reason}). We'll keep matching this job with other providers.`)
-      return
-    } else if (reply.id?.startsWith('accept:')) {
-      // ── Matching engine v2: AssignmentHold acceptance ────────────────────────
-      await handleAssignmentHoldAcceptance(phone, reply.id)
-      return
-    } else if (!reply.id && rawText === 'accept') {
-      // ── Provider typed "accept" as text instead of tapping the button ─────────
-      // Find the most recent pending (SENT/VIEWED) lead for this provider and accept it.
-      const providerForAccept = await db.provider.findUnique({ where: { phone }, select: { id: true } })
-      if (providerForAccept) {
-        const activeLead = await db.lead.findFirst({
-          where: {
-            providerId: providerForAccept.id,
-            status: { in: ['SENT', 'VIEWED'] },
-            expiresAt: { gt: new Date() },
-          },
-          orderBy: { sentAt: 'desc' },
-          select: { assignmentHoldId: true },
-        })
-        if (activeLead?.assignmentHoldId) {
-          await handleAssignmentHoldAcceptance(phone, `accept:${activeLead.assignmentHoldId}`)
-          return
-        }
-      }
-      // No active lead — fall through to main menu
-    } else if (reply.id?.startsWith('decline:')) {
-      // ── Matching engine v2: show decline reason sub-menu ─────────────────────
-      const holdId = reply.id.slice('decline:'.length)
-      const { sendButtons } = await import('./whatsapp-interactive')
-      await sendButtons(
-        phone,
-        '❌ *Decline Lead*\n\nWhy are you declining?',
-        [
-          { id: `hd_unavailable:${holdId}`, title: '📅 Not available' },
-          { id: `hd_area:${holdId}`, title: '📍 Too far' },
-          { id: `hd_other:${holdId}`, title: '✏️ Other reason' },
-        ]
-      )
-      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
-      return
-    } else if (
-      reply.id?.startsWith('hd_unavailable:') ||
-      reply.id?.startsWith('hd_area:') ||
-      reply.id?.startsWith('hd_other:')
-    ) {
-      // ── Matching engine v2: AssignmentHold decline with reason ───────────────
-      await handleAssignmentHoldDecline(phone, reply.id)
-      return
-    } else if (
-      reply.id?.startsWith('match_accept_') ||
-      reply.id?.startsWith('match_inspect_') ||
-      reply.id?.startsWith('match_decline_')
-    ) {
-      // ── Match-level lead responses (quote flow) ─────────────────────────────
-      await handleMatchLeadResponse(phone, reply.id)
-      return
-    } else if (reply.id?.startsWith('alt_slot_c:')) {
-      // ── Phase 5: customer picks / declines an alternative slot ───────────────
-      const { handleCustomerSlotResponse } = await import('./whatsapp-flows/alternative-slot')
-      await handleCustomerSlotResponse(phone, reply.id)
-      return
-    } else if (reply.id?.startsWith('alt_slot_p:')) {
-      // ── Phase 5: provider picks / declines an alternative slot ───────────────
-      const { handleProviderSlotResponse } = await import('./whatsapp-flows/alternative-slot')
-      await handleProviderSlotResponse(phone, reply.id)
-      return
-    } else if (reply.id?.startsWith('alt_cust_ok:') || reply.id?.startsWith('alt_cust_no:')) {
-      // ── Phase 5: customer confirms / rejects provider's chosen slot ──────────
-      const { handleCustomerSlotConfirmation } = await import('./whatsapp-flows/alternative-slot')
-      await handleCustomerSlotConfirmation(phone, reply.id)
-      return
-    } else if (reply.id?.startsWith('rematch_yes:') || reply.id?.startsWith('rematch_no:')) {
-      await handleCustomerRematchCheckResponse(phone, reply.id)
-      return
-    } else if (reply.id?.startsWith('quote_accept_') || reply.id?.startsWith('quote_decline_')) {
-      // ── Customer quote response buttons ─────────────────────────────────────
-      await handleCustomerQuoteResponse(phone, reply.id)
-      return
     } else if (reply.id?.startsWith('view_job_') || reply.id?.startsWith('accept_job_') || reply.id?.startsWith('decline_job_')) {
       // Provider job management
       const jobId = reply.id.replace(/^(view_job_|accept_job_|decline_job_)/, '')

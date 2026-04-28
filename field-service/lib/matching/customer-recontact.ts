@@ -91,7 +91,7 @@ function formatRequestedTimeLabel(jobRequest: RequestTiming) {
     return `${format(jobRequest.requestedWindowStart, 'EEE d MMM, HH:mm')} - ${format(jobRequest.requestedWindowEnd, 'HH:mm')}`
   }
   const singlePoint = jobRequest.requestedArrivalLatest ?? jobRequest.requestedWindowStart ?? jobRequest.requestedWindowEnd
-  if (!singlePoint) return 'your requested time'
+  if (!singlePoint) return 'as soon as possible'
   return format(singlePoint, 'EEE d MMM, HH:mm')
 }
 
@@ -99,6 +99,7 @@ function buildExhaustedMessage(jobRequest: MatchableJobRequestRecord) {
   const name = firstName(jobRequest.customer?.name)
   const serviceName = jobRequest.title?.trim() || jobRequest.category
   const area = formatArea(jobRequest)
+  const deadline = getRequestedMatchDeadline(jobRequest)
 
   if (hasFutureExplicitRequestWindow(jobRequest)) {
     return (
@@ -106,6 +107,15 @@ function buildExhaustedMessage(jobRequest: MatchableJobRequestRecord) {
       `We were not able to match your *${serviceName}* request in *${area}* just yet.\n\n` +
       `Because your requested time is still ahead, we will message you if a suitable provider becomes available in time and ask whether you still need help.\n\n` +
       `Thank you for trying Plug A Pro.`
+    )
+  }
+
+  if (!deadline) {
+    // ASAP request — no specific time window was set
+    return (
+      `😔 *Sorry, ${name}*.\n\n` +
+      `We were not able to match your *${serviceName}* request in *${area}* at this time.\n\n` +
+      `Thank you for trying Plug A Pro. As we continue growing our provider base, we should be in a better position to help you in future.`
     )
   }
 
