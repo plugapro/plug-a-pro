@@ -107,9 +107,45 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
 // ─── Step handlers ────────────────────────────────────────────────────────────
 
 async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
-  // Block customers from registering as providers with the same number.
+  // A known provider should never be sent through duplicate registration.
   const { normalizePhone } = await import('../utils')
   const normalizedPhone = normalizePhone(ctx.phone)
+  const digits = normalizedPhone.replace(/\D/g, '')
+  const phoneVariants = Array.from(new Set([
+    normalizedPhone,
+    digits ? `+${digits}` : null,
+    digits || null,
+    digits.startsWith('27') ? `0${digits.slice(2)}` : null,
+  ].filter(Boolean) as string[]))
+
+  const existingProvider = await (db as any).provider?.findFirst?.({
+    where: { phone: { in: phoneVariants } },
+    select: { id: true, name: true, status: true, active: true, availableNow: true },
+  }) ?? null
+
+  if (existingProvider) {
+    const inactive =
+      !existingProvider.active ||
+      ['SUSPENDED', 'ARCHIVED', 'BANNED'].includes(existingProvider.status)
+    await sendButtons(
+      ctx.phone,
+      inactive
+        ? `👷 Hi ${existingProvider.name}, your provider profile is currently inactive.\n\nYou won't receive new job leads until this is resolved.`
+        : `✅ Hi ${existingProvider.name}, you're already registered as a Plug A Pro provider.\n\nWhat would you like to manage?`,
+      inactive
+        ? [
+            { id: 'provider_status', title: 'Provider Status' },
+            { id: 'provider_support', title: 'Support' },
+          ]
+        : [
+            { id: 'provider_my_jobs', title: 'My Jobs' },
+            { id: 'provider_availability', title: 'Availability' },
+            { id: 'back_home', title: 'Main Menu' },
+          ],
+    )
+    return { nextStep: inactive ? 'pj_provider_status' : 'pj_toggle_available' }
+  }
+
   const existingCustomer = await db.customer.findFirst({
     where: { phone: normalizedPhone },
     select: { id: true },

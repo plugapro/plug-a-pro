@@ -35,6 +35,7 @@ import {
   resolveStructuredAddressCapture,
   InvalidStructuredAddressError,
 } from '../structured-address'
+import { normalizePhone } from '../utils'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
@@ -58,6 +59,125 @@ const JOB_CATEGORIES = [
 // WhatsApp list cap is 10 rows total per message.
 // When paging is needed we use 8 item rows + up to 2 nav rows.
 const PAGE_SIZE = 8
+const ACTIVE_PROVIDER_JOB_STATUSES = [
+  'SCHEDULED',
+  'EN_ROUTE',
+  'ARRIVED',
+  'STARTED',
+  'PAUSED',
+  'AWAITING_APPROVAL',
+  'PENDING_COMPLETION_CONFIRMATION',
+] as const
+
+function phoneLookupVariants(phone: string) {
+  const normalized = normalizePhone(phone)
+  const digits = normalized.replace(/\D/g, '')
+  const local = digits.startsWith('27') ? `0${digits.slice(2)}` : null
+  return Array.from(new Set([normalized, digits ? `+${digits}` : null, digits || null, local].filter(Boolean) as string[]))
+}
+
+function firstName(name?: string | null) {
+  return name?.trim().split(/\s+/)[0] || 'there'
+}
+
+function applicationRef(id: string) {
+  return id.slice(-8).toUpperCase()
+}
+
+async function resolveProviderMenuContext(phone: string) {
+  const normalizedPhone = normalizePhone(phone)
+  const variants = phoneLookupVariants(phone)
+  const traceId = crypto.randomUUID().slice(0, 8)
+  const provider = await (db as any).provider?.findFirst?.({
+    where: { phone: { in: variants } },
+    select: {
+      id: true,
+      phone: true,
+      name: true,
+      status: true,
+      active: true,
+      verified: true,
+      availableNow: true,
+      suspendedUntil: true,
+      suspendedReason: true,
+      skills: true,
+      serviceAreas: true,
+      technicianAvailability: {
+        select: {
+          availabilityMode: true,
+          availabilityState: true,
+          breakUntil: true,
+          emergencyAvailable: true,
+        },
+      },
+    },
+  }) ?? null
+
+  const application = provider
+    ? null
+    : await (db as any).providerApplication?.findFirst?.({
+        where: {
+          phone: { in: variants },
+          status: { in: ['PENDING', 'APPROVED'] },
+        },
+        orderBy: { submittedAt: 'desc' },
+        select: {
+          id: true,
+          phone: true,
+          name: true,
+          status: true,
+          skills: true,
+          serviceAreas: true,
+          experience: true,
+          availability: true,
+          providerId: true,
+          submittedAt: true,
+        },
+      }) ?? null
+
+  const isInactiveProvider = Boolean(provider) && (
+    !provider.active ||
+    ['SUSPENDED', 'ARCHIVED', 'BANNED'].includes(provider.status) ||
+    (provider.suspendedUntil != null && provider.suspendedUntil > new Date())
+  )
+  const isPendingProvider = Boolean(provider) && ['APPLICATION_PENDING', 'UNDER_REVIEW'].includes(provider.status)
+  const isActiveProvider = Boolean(provider) && !isInactiveProvider && !isPendingProvider && provider.status === 'ACTIVE'
+  let activeJobCount = 0
+  if (isActiveProvider && typeof (db as any).job?.count === 'function') {
+    activeJobCount = await (db as any).job.count({
+      where: {
+        providerId: provider.id,
+        status: { in: [...ACTIVE_PROVIDER_JOB_STATUSES] },
+      },
+    }).catch(() => 0)
+  }
+
+  const status =
+    isInactiveProvider ? 'inactive_provider' :
+    isPendingProvider ? 'pending_provider' :
+    isActiveProvider ? 'active_provider' :
+    application?.status === 'PENDING' ? 'pending_application' :
+    application?.status === 'APPROVED' ? 'approved_application' :
+    'unknown'
+  const isPaused =
+    Boolean(provider) &&
+    (!provider.availableNow ||
+      provider.technicianAvailability?.availabilityMode === 'PAUSED' ||
+      provider.technicianAvailability?.availabilityState === 'PAUSED' ||
+      provider.technicianAvailability?.availabilityState === 'OFFLINE')
+
+  console.info('[whatsapp-menu] resolved sender', {
+    traceId,
+    inboundPhone: phone,
+    normalizedPhone,
+    providerId: provider?.id ?? null,
+    applicationId: application?.id ?? null,
+    providerStatus: provider?.status ?? application?.status ?? 'not_registered',
+    outboundMenuType: status,
+  })
+
+  return { traceId, normalizedPhone, status, provider, application, activeJobCount, isPaused }
+}
 
 // ─── Paging helper ────────────────────────────────────────────────────────────
 
@@ -1148,6 +1268,108 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
 // ─── Exported helpers ─────────────────────────────────────────────────────────
 
 export async function showMainMenu(phone: string): Promise<void> {
+  const menu = await resolveProviderMenuContext(phone)
+
+  if (menu.status === 'pending_application' || menu.status === 'pending_provider') {
+    const application = menu.application
+    const name = firstName(menu.provider?.name ?? application?.name)
+    const ref = application?.id ? applicationRef(application.id) : 'Pending'
+
+    await sendList(
+      phone,
+      `Hi ${name}, your Plug A Pro provider application is still under review.\n\nRef: *${ref}*\n\nWe'll notify you here once it's approved.`,
+      [
+        {
+          title: 'Services',
+          rows: [
+            { id: 'book', title: 'Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
+            { id: 'status', title: 'My Request', description: 'Track or manage an existing booking' },
+            { id: 'help', title: 'Get Help', description: 'FAQs, pricing, support' },
+          ],
+        },
+        {
+          title: 'Provider',
+          rows: [
+            { id: 'provider_application_status', title: 'Application Status', description: 'Check your provider application' },
+            { id: 'provider_update_application', title: 'Update Application', description: 'Edit your details or service areas' },
+            { id: 'provider_support', title: 'Support', description: 'Get help with your application' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
+  if (menu.status === 'active_provider' || menu.status === 'approved_application') {
+    const name = firstName(menu.provider?.name ?? menu.application?.name)
+    const activeJobsLine = menu.activeJobCount > 0
+      ? `\n\nYou have *${menu.activeJobCount} active job${menu.activeJobCount === 1 ? '' : 's'}*.`
+      : ''
+    const statusLine = menu.isPaused
+      ? '\n\nStatus: 🔴 Leads paused\n\nYou won’t receive new leads until you go available again.'
+      : '\n\nStatus: 🟢 Available for leads'
+    const pauseRow = menu.isPaused
+      ? { id: 'provider_go_available', title: 'Go Available', description: 'Start receiving matching leads again' }
+      : { id: 'provider_pause_leads', title: 'Pause Leads', description: 'Stop new leads temporarily' }
+
+    await sendList(
+      phone,
+      `Welcome back, ${name}.${statusLine}${activeJobsLine}\n\nWhat would you like to do?`,
+      [
+        {
+          title: 'Services',
+          rows: [
+            { id: 'book', title: 'Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
+            { id: 'status', title: 'My Request', description: 'Track or manage an existing booking' },
+            { id: 'help', title: 'Get Help', description: 'FAQs, pricing, support' },
+          ],
+        },
+        {
+          title: 'Provider',
+          rows: [
+            { id: 'provider_my_jobs', title: 'My Jobs', description: 'Manage accepted and scheduled work' },
+            { id: 'provider_available_jobs', title: 'Available Jobs', description: 'View leads you can accept' },
+            { id: 'provider_check_status', title: 'Check Status', description: 'See if you can receive leads' },
+            pauseRow,
+            { id: 'provider_worker_portal', title: 'Worker Portal', description: 'Manage detailed availability' },
+            { id: 'provider_support', title: 'Support', description: 'Get help' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
+  if (menu.status === 'inactive_provider') {
+    const name = firstName(menu.provider?.name)
+
+    await sendList(
+      phone,
+      `Hi ${name}, your provider profile is currently inactive.\n\nYou won't receive new job leads until this is resolved.`,
+      [
+        {
+          title: 'Services',
+          rows: [
+            { id: 'book', title: 'Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
+            { id: 'status', title: 'My Request', description: 'Track or manage an existing booking' },
+            { id: 'help', title: 'Get Help', description: 'FAQs, pricing, support' },
+          ],
+        },
+        {
+          title: 'Provider',
+          rows: [
+            { id: 'provider_status', title: 'Provider Status', description: 'See why your account is inactive' },
+            { id: 'provider_support', title: 'Contact Support', description: 'Get help with your account' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
   await sendList(
     phone,
     '👋 Welcome to Plug A Pro!\n\nHow can I help you today?',

@@ -29,6 +29,7 @@ import {
 } from './whatsapp-flows/provider-journey'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
 import { applyOptIn, applyOptOut } from './whatsapp-policy'
+import { normalizePhone } from './utils'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
@@ -116,7 +117,7 @@ export async function processInboundMessage(
   message: InboundMessage
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
-  const phone = message.from.startsWith('+') ? message.from : `+${message.from}`
+  const phone = normalizePhone(message.from)
   if (await shouldBatchCustomerPhotoMessage(phone, message)) {
     return enqueueCustomerPhotoBatch(phone, message)
   }
@@ -310,7 +311,7 @@ async function processInboundMessageUnlocked(
   options?: { suppressCustomerPhotoProgress?: boolean; customerPhotoBatchSize?: number }
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
-  const phone = message.from.startsWith('+') ? message.from : `+${message.from}`
+  const phone = normalizePhone(message.from)
   const reply = parseInbound(message)
 
   try {
@@ -371,12 +372,30 @@ async function processInboundMessageUnlocked(
     let step: FlowStep = isExpired ? 'welcome' : (conversation.step as FlowStep)
     let data: ConversationData = isExpired ? {} : (conversation.data as ConversationData)
     const isStatelessReply = isStatelessNotificationReply(reply, rawText)
+    const isProviderMenuReply = Boolean(reply.id && [
+      'provider_available_jobs',
+      'provider_my_jobs',
+      'provider_check_status',
+      'provider_availability',
+      'provider_pause_leads',
+      'provider_pause_today',
+      'provider_pause_manual',
+      'provider_pause_cancel',
+      'provider_go_available',
+      'provider_worker_portal',
+      'provider_service_areas',
+      'provider_profile',
+      'provider_support',
+      'provider_status',
+      'provider_application_status',
+      'provider_update_application',
+    ].includes(reply.id))
 
     // Session expired mid-flow — offer contextual resume instead of silently resetting
     // Stateless notification replies must bypass this guard: these button IDs carry
     // all routing context needed to process the action even when the conversation
     // session has timed out.
-    if (isExpired && conversation.flow !== 'idle' && !isReset && !isStatelessReply) {
+    if (isExpired && conversation.flow !== 'idle' && !isReset && !isStatelessReply && !isProviderMenuReply) {
       const oldFlow = conversation.flow as FlowName
       const oldData = conversation.data as ConversationData
 
@@ -570,8 +589,80 @@ async function processInboundMessageUnlocked(
       step = 'pj_toggle_available'
     }
 
+    if (reply.id === 'provider_available_jobs') {
+      flow = 'provider_journey'
+      step = 'pj_available_leads'
+    } else if (reply.id === 'provider_my_jobs') {
+      flow = 'provider_journey'
+      step = 'pj_job_list'
+    } else if (reply.id === 'provider_check_status') {
+      flow = 'provider_journey'
+      step = 'pj_provider_status'
+    } else if (reply.id === 'provider_availability') {
+      flow = 'provider_journey'
+      step = 'pj_toggle_available'
+    } else if (reply.id === 'provider_pause_leads' ||
+      reply.id === 'provider_pause_today' ||
+      reply.id === 'provider_pause_manual' ||
+      reply.id === 'provider_pause_cancel') {
+      flow = 'provider_journey'
+      step = 'pj_pause_confirm'
+    } else if (reply.id === 'provider_go_available') {
+      flow = 'provider_journey'
+      step = 'pj_toggle_available'
+    } else if (reply.id === 'provider_worker_portal') {
+      flow = 'provider_journey'
+      step = 'pj_worker_portal'
+    } else if (reply.id === 'provider_service_areas') {
+      flow = 'provider_journey'
+      step = 'pj_service_areas'
+    } else if (reply.id === 'provider_profile') {
+      flow = 'provider_journey'
+      step = 'pj_profile'
+    } else if (reply.id === 'provider_support') {
+      flow = 'provider_journey'
+      step = 'pj_support'
+    } else if (reply.id === 'provider_status') {
+      flow = 'provider_journey'
+      step = 'pj_provider_status'
+    } else if (reply.id === 'provider_application_status') {
+      flow = 'provider_journey'
+      step = 'pj_application_status'
+    } else if (reply.id === 'provider_update_application') {
+      const application = await db.providerApplication.findFirst({
+        where: { phone, status: { in: ['PENDING', 'APPROVED'] } },
+        orderBy: { submittedAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          skills: true,
+          serviceAreas: true,
+          experience: true,
+          availability: true,
+          evidenceNote: true,
+        },
+      })
+
+      if (application) {
+        flow = 'registration'
+        step = 'reg_edit_field'
+        data = {
+          ...data,
+          applicationId: application.id,
+          name: application.name,
+          skills: application.skills,
+          serviceAreas: application.serviceAreas,
+          experience: application.experience ?? undefined,
+          evidenceNote: application.evidenceNote ?? undefined,
+        }
+      } else {
+        flow = 'provider_journey'
+        step = 'pj_profile'
+      }
+    }
+
     // Route to appropriate flow (keyword overrides only when idle or expired)
-    if (isReset || isExpired) {
+    if ((isReset || isExpired) && !isProviderMenuReply) {
       flow = 'idle'
       step = 'welcome'
       data = {}

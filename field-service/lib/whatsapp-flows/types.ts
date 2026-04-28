@@ -78,9 +78,17 @@ export type FlowStep =
   | 'alt_slot_customer_confirm'  // customer confirming provider's chosen slot
   // Provider journey (registered provider WhatsApp interactions)
   | 'pj_menu'
+  | 'pj_available_leads'
   | 'pj_toggle_available'
+  | 'pj_pause_confirm'
   | 'pj_job_list'
   | 'pj_job_detail'
+  | 'pj_service_areas'
+  | 'pj_profile'
+  | 'pj_support'
+  | 'pj_provider_status'
+  | 'pj_worker_portal'
+  | 'pj_application_status'
   | 'pj_status_update'
   | 'pj_status_confirm'
   | 'pj_problem_report'
@@ -135,6 +143,7 @@ export interface ConversationData {
   serviceAreas?: string[]
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"
   availability?: string[]       // ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+  applicationId?: string
   evidenceNote?: string
   evidenceFileUrls?: string[]       // Attachment IDs for uploaded proof images/documents
   evidenceMediaIds?: string[]       // WhatsApp media IDs already processed for evidence dedupe

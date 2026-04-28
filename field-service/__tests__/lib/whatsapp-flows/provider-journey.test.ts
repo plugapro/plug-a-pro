@@ -9,6 +9,12 @@ vi.mock('@/lib/db', () => ({
     technicianAvailability: {
       upsert: vi.fn().mockResolvedValue({}),
     },
+    auditLog: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+    lead: {
+      findMany: vi.fn(),
+    },
     job: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -28,6 +34,7 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: vi.fn().mockResolvedValue(undefined),
   sendButtons: vi.fn().mockResolvedValue(undefined),
   sendList: vi.fn().mockResolvedValue(undefined),
+  sendCtaUrl: vi.fn().mockResolvedValue(undefined),
 }))
 
 import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey'
@@ -56,13 +63,14 @@ describe('handleProviderJourneyFlow', () => {
   describe('pj_menu step', () => {
     it('shows provider menu when provider exists and is online', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'prov_1', name: 'Sipho', availableNow: true,
+        id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
       })
       const result = await handleProviderJourneyFlow(mockCtx('pj_menu'))
-      expect(wa.sendButtons).toHaveBeenCalledWith(
+      expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
         expect.stringContaining('Sipho'),
-        expect.arrayContaining([expect.objectContaining({ id: 'back_home' })])
+        expect.any(Array),
+        expect.any(Object),
       )
       expect(result.nextStep).toBe('pj_toggle_available')
     })
@@ -76,28 +84,51 @@ describe('handleProviderJourneyFlow', () => {
 
     it('shows offline status when availableNow is false', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'prov_1', name: 'Sipho', availableNow: false,
+        id: 'prov_1', name: 'Sipho', availableNow: false, technicianAvailability: null,
       })
       await handleProviderJourneyFlow(mockCtx('pj_menu'))
-      expect(wa.sendButtons).toHaveBeenCalledWith(
+      expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Offline'),
-        expect.any(Array)
+        expect.stringContaining('Leads paused'),
+        expect.any(Array),
+        expect.any(Object),
       )
     })
   })
 
   describe('pj_toggle_available step', () => {
-    it('sets availableNow=false when provider is online and taps toggle', async () => {
+    it('asks for confirmation when provider is online and taps toggle', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
       })
       ;(db.provider.update as ReturnType<typeof vi.fn>).mockResolvedValue({ availableNow: false })
       await handleProviderJourneyFlow(mockCtx('pj_toggle_available', 'pj_toggle'))
+      expect(db.provider.update).not.toHaveBeenCalled()
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Pause new job leads'),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'provider_pause_today' }),
+          expect.objectContaining({ id: 'provider_pause_manual' }),
+        ]),
+      )
+    })
+
+    it('sets availableNow=false when pause is confirmed', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
+      })
+      await handleProviderJourneyFlow(mockCtx('pj_pause_confirm', 'provider_pause_manual'))
       expect(db.provider.update).toHaveBeenCalledWith({
         where: { id: 'prov_1' },
         data: { availableNow: false },
       })
+      expect((db as any).technicianAvailability.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { providerId: 'prov_1' },
+          update: expect.objectContaining({ availabilityMode: 'PAUSED', availabilityState: 'PAUSED' }),
+        }),
+      )
     })
 
     it('sets availableNow=true and clears pause when provider is offline and taps toggle', async () => {
@@ -142,7 +173,7 @@ describe('handleProviderJourneyFlow', () => {
       )
       expect(wa.sendButtons).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('now Online'),
+        expect.stringContaining('available again'),
         expect.any(Array),
       )
     })

@@ -2,10 +2,12 @@
 // Registered providers manage availability and job status through WhatsApp.
 // Entry: keywords "available", "offline", "my jobs", or "provider menu"
 
-import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
+import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { db } from '../db'
 import { transitionJob } from '../jobs'
 import { promptCustomersForNewProviderAvailability } from '../matching/customer-recontact'
+import { recordAuditLog } from '../audit'
+import { AUDIT_ENTITY } from '../audit-entities'
 import type { FlowContext, FlowResult } from './types'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -16,14 +18,85 @@ export const PROVIDER_JOURNEY_TRIGGERS = [
   'provider menu', 'my dashboard',
 ]
 
+function isProviderPaused(provider: {
+  availableNow: boolean
+  technicianAvailability?: {
+    availabilityMode?: string | null
+    availabilityState?: string | null
+    breakUntil?: Date | null
+  } | null
+}) {
+  return (
+    !provider.availableNow ||
+    provider.technicianAvailability?.availabilityMode === 'PAUSED' ||
+    provider.technicianAvailability?.availabilityState === 'PAUSED' ||
+    provider.technicianAvailability?.availabilityState === 'OFFLINE' ||
+    Boolean(provider.technicianAvailability?.breakUntil && provider.technicianAvailability.breakUntil > new Date())
+  )
+}
+
+function availabilityModeLabel(mode?: string | null) {
+  if (mode === 'SCHEDULE') return 'Schedule-based'
+  if (mode === 'PAUSED') return 'Paused'
+  return 'Always available'
+}
+
+function endOfToday() {
+  const end = new Date()
+  end.setHours(23, 59, 59, 999)
+  return end
+}
+
+async function recordProviderAvailabilityAudit(params: {
+  providerId: string
+  action: string
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  channel: 'whatsapp' | 'pwa'
+}) {
+  await recordAuditLog({
+    actorId: params.providerId,
+    actorRole: 'provider',
+    action: params.action,
+    entityType: AUDIT_ENTITY.PROVIDER,
+    entityId: params.providerId,
+    before: params.before,
+    after: {
+      ...params.after,
+      changedChannel: params.channel,
+      traceId: crypto.randomUUID().slice(0, 8),
+    },
+  }).catch((error) => {
+    console.error('[provider-journey] availability audit failed:', error)
+  })
+}
+
 export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowResult> {
   switch (ctx.step) {
     case 'pj_menu':
       return handleProviderMenu(ctx)
+    case 'pj_available_leads':
+      return handleAvailableLeads(ctx)
     case 'pj_toggle_available':
       return handleToggleAvailable(ctx)
+    case 'pj_pause_confirm':
+      return handlePauseConfirm(ctx)
+    case 'pj_job_list':
+      return handleJobList(ctx)
     case 'pj_job_detail':
       return handleJobDetail(ctx)
+    case 'pj_service_areas':
+      return handleServiceAreas(ctx)
+    case 'pj_profile':
+      return handleProviderProfile(ctx)
+    case 'pj_support':
+      return handleProviderSupport(ctx)
+    case 'pj_provider_status':
+      return handleProviderStatus(ctx)
+    case 'pj_worker_portal':
+      return handleWorkerPortal(ctx)
+    case 'pj_application_status':
+      return handleApplicationStatus(ctx)
     case 'pj_status_confirm':
       return handleStatusConfirm(ctx)
     case 'pj_problem_report':
@@ -36,7 +109,10 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
 // ─── Provider Menu ────────────────────────────────────────────────────────────
 
 async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    include: { technicianAvailability: true },
+  })
 
   if (!provider) {
     await sendText(
@@ -46,18 +122,96 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  const statusEmoji = provider.availableNow ? '🟢' : '🔴'
-  const statusText = provider.availableNow ? 'Online — accepting leads' : 'Offline — not accepting leads'
-  const toggleLabel = provider.availableNow ? '🔴 Go Offline' : '🟢 Go Online'
+  const paused = isProviderPaused(provider)
+  const statusLine = paused
+    ? 'Status: 🔴 Leads paused'
+    : 'Status: 🟢 Available for leads'
 
-  await sendButtons(
+  await sendList(
     ctx.phone,
-    `👷 *Provider Menu*\n\nHi ${provider.name}!\n${statusEmoji} Status: *${statusText}*\n\nWhat would you like to do?`,
-    [
-      { id: 'pj_toggle', title: toggleLabel },
-      { id: 'pj_view_jobs', title: '📋 My Jobs' },
-      { id: 'back_home', title: '🏠 Main Menu' },
-    ]
+    `Welcome back, ${provider.name}.\n\n${statusLine}\n\nWhat would you like to do?`,
+    [{
+      title: 'Provider',
+      rows: [
+        { id: 'provider_my_jobs', title: 'My Jobs', description: 'Manage accepted and scheduled work' },
+        { id: 'provider_available_jobs', title: 'Available Jobs', description: 'View leads you can accept' },
+        { id: 'provider_check_status', title: 'Check Status', description: 'See if you can receive leads' },
+        paused
+          ? { id: 'provider_go_available', title: 'Go Available', description: 'Start receiving matching leads again' }
+          : { id: 'provider_pause_leads', title: 'Pause Leads', description: 'Stop new leads temporarily' },
+        { id: 'provider_worker_portal', title: 'Worker Portal', description: 'Manage detailed availability' },
+        { id: 'provider_support', title: 'Support', description: 'Get help' },
+      ],
+    }],
+    { buttonLabel: 'Choose Option' },
+  )
+
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function handleAvailableLeads(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  if (!provider.active || provider.status !== 'ACTIVE' || !provider.availableNow) {
+    await sendButtons(
+      ctx.phone,
+      !provider.availableNow
+        ? "Your leads are currently paused. Go available again before checking new leads."
+        : "Your provider profile is not active right now, so new leads are hidden until your account is resolved.",
+      [
+        !provider.availableNow
+          ? { id: 'provider_go_available', title: 'Go Available' }
+          : { id: 'provider_status', title: 'Provider Status' },
+        { id: 'provider_support', title: 'Support' },
+      ],
+    )
+    return { nextStep: 'pj_toggle_available' }
+  }
+
+  const leads = await db.lead.findMany({
+    where: {
+      providerId: provider.id,
+      status: { in: ['SENT', 'VIEWED'] },
+      expiresAt: { gt: new Date() },
+    },
+    include: {
+      jobRequest: { include: { address: true } },
+    },
+    orderBy: { sentAt: 'desc' },
+    take: 5,
+  })
+
+  if (leads.length === 0) {
+    await sendButtons(
+      ctx.phone,
+      "📋 *No available leads right now.*\n\nWe'll send new job leads here when they match your services and active service areas.",
+      [
+        { id: 'provider_availability', title: 'Availability' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+    )
+    return { nextStep: 'pj_toggle_available' }
+  }
+
+  const rows = leads.map((lead) => {
+    const request = lead.jobRequest
+    const suburb = request.address?.suburb ?? request.address?.city ?? 'Area in request'
+    return {
+      id: `match_accept_${lead.id}`,
+      title: request.category.slice(0, 24),
+      description: `${suburb} • expires soon`.slice(0, 72),
+    }
+  })
+
+  await sendList(
+    ctx.phone,
+    `📋 *Available Jobs*\n\nTap a lead to accept it. Expired or closed leads are not shown.`,
+    [{ title: 'Open Leads', rows }],
+    { buttonLabel: 'Choose Lead' },
   )
 
   return { nextStep: 'pj_toggle_available' }
@@ -72,6 +226,14 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
 
   if (ctx.reply.id === 'pj_view_jobs') {
     return handleJobList(ctx)
+  }
+
+  if (ctx.reply.id === 'provider_go_available' || ctx.reply.id === 'pj_go_online') {
+    return setProviderAvailable(ctx)
+  }
+
+  if (ctx.reply.id === 'provider_pause_leads' || ctx.reply.id === 'pj_go_offline') {
+    return promptPauseLeads(ctx)
   }
 
   const provider = await db.provider.findUnique({
@@ -96,39 +258,58 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
       : ctx.reply.id === 'pj_go_offline' ? false
       : !effectivelyOnline
 
-    await db.provider.update({ where: { id: provider.id }, data: { availableNow: goingOnline } })
+    if (!goingOnline) {
+      return promptPauseLeads(ctx)
+    }
+
+    await db.provider.update({ where: { id: provider.id }, data: { availableNow: true } })
 
     // Going online: clear any pause state so leads flow again immediately
-    if (goingOnline) {
-      await db.technicianAvailability.upsert({
-        where: { providerId: provider.id },
-        create: { providerId: provider.id, availabilityState: 'AVAILABLE' },
-        update: { availabilityState: 'AVAILABLE', breakUntil: null, notes: null },
-      })
-      await promptCustomersForNewProviderAvailability(provider.id).catch((error) => {
-        console.error('[provider-journey] customer recontact failed:', error)
-      })
-    }
+    await db.technicianAvailability.upsert({
+      where: { providerId: provider.id },
+      create: {
+        providerId: provider.id,
+        availabilityMode: 'ALWAYS_AVAILABLE',
+        availabilityState: 'AVAILABLE',
+        lastUpdatedBy: provider.id,
+        lastUpdatedChannel: 'whatsapp',
+      },
+      update: {
+        availabilityMode: 'ALWAYS_AVAILABLE',
+        availabilityState: 'AVAILABLE',
+        nextAvailableAt: null,
+        breakUntil: null,
+        pausedAt: null,
+        pauseReason: null,
+        lastUpdatedBy: provider.id,
+        lastUpdatedChannel: 'whatsapp',
+        notes: null,
+      },
+    })
+    await recordProviderAvailabilityAudit({
+      providerId: provider.id,
+      action: 'provider.availability.available',
+      channel: 'whatsapp',
+      before: {
+        availableNow: provider.availableNow,
+        availabilityMode: provider.technicianAvailability?.availabilityMode ?? null,
+        availabilityState: provider.technicianAvailability?.availabilityState ?? null,
+      },
+      after: { availableNow: true, availabilityMode: 'ALWAYS_AVAILABLE', availabilityState: 'AVAILABLE' },
+    })
+    await promptCustomersForNewProviderAvailability(provider.id).catch((error) => {
+      console.error('[provider-journey] customer recontact failed:', error)
+    })
 
-    if (goingOnline) {
-      await sendButtons(
-        ctx.phone,
-        `🟢 *You are now Online*\n\nYou'll receive job leads in your area. We'll send them here on WhatsApp.\n\nMake sure notifications are turned on!`,
-        [
-          { id: 'pj_view_jobs', title: '📋 View My Jobs' },
-          { id: 'back_home', title: '🏠 Main Menu' },
-        ]
-      )
-    } else {
-      await sendButtons(
-        ctx.phone,
-        `🔴 *You are now Offline*\n\nYou won't receive new job leads until you go online again.\n\nReply *available* or tap Go Online when you're ready to work.`,
-        [
-          { id: 'pj_go_online', title: '🟢 Go Online' },
-          { id: 'back_home', title: '🏠 Main Menu' },
-        ]
-      )
-    }
+    await sendButtons(
+      ctx.phone,
+      `🟢 *You're available again.*\n\nWe'll send you matching leads when they come in.`,
+      [
+        { id: 'provider_my_jobs', title: 'My Jobs' },
+        { id: 'provider_check_status', title: 'Check Status' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+    )
     return { nextStep: 'pj_toggle_available' }
   }
 
@@ -136,10 +317,323 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
   return handleProviderMenu(ctx)
 }
 
+async function setProviderAvailable(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    include: { technicianAvailability: true },
+  })
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  await db.provider.update({ where: { id: provider.id }, data: { availableNow: true } })
+  await db.technicianAvailability.upsert({
+    where: { providerId: provider.id },
+    create: {
+      providerId: provider.id,
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      lastUpdatedBy: provider.id,
+      lastUpdatedChannel: 'whatsapp',
+    },
+    update: {
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      nextAvailableAt: null,
+      breakUntil: null,
+      pausedAt: null,
+      pauseReason: null,
+      lastUpdatedBy: provider.id,
+      lastUpdatedChannel: 'whatsapp',
+      notes: null,
+    },
+  })
+  await recordProviderAvailabilityAudit({
+    providerId: provider.id,
+    action: 'provider.availability.available',
+    channel: 'whatsapp',
+    before: {
+      availableNow: provider.availableNow,
+      availabilityMode: provider.technicianAvailability?.availabilityMode ?? null,
+      availabilityState: provider.technicianAvailability?.availabilityState ?? null,
+    },
+    after: { availableNow: true, availabilityMode: 'ALWAYS_AVAILABLE', availabilityState: 'AVAILABLE' },
+  })
+  await promptCustomersForNewProviderAvailability(provider.id).catch((error) => {
+    console.error('[provider-journey] customer recontact failed:', error)
+  })
+
+  await sendButtons(
+    ctx.phone,
+    `🟢 *You're available again.*\n\nWe'll send you matching leads when they come in.`,
+    [
+      { id: 'provider_my_jobs', title: 'My Jobs' },
+      { id: 'provider_check_status', title: 'Check Status' },
+      { id: 'back_home', title: 'Main Menu' },
+    ],
+  )
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function promptPauseLeads(ctx: FlowContext): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    `Pause new job leads?\n\nYou won't receive new leads while paused. Existing accepted jobs are not affected.`,
+    [
+      { id: 'provider_pause_today', title: 'Pause Today' },
+      { id: 'provider_pause_manual', title: 'Until I Turn On' },
+      { id: 'provider_pause_cancel', title: 'Cancel' },
+    ],
+  )
+  return { nextStep: 'pj_pause_confirm' }
+}
+
+async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id === 'provider_pause_cancel' || ctx.reply.id === 'back_home') {
+    return { nextStep: 'done' }
+  }
+
+  if (ctx.reply.id !== 'provider_pause_today' && ctx.reply.id !== 'provider_pause_manual') {
+    return promptPauseLeads(ctx)
+  }
+
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    include: { technicianAvailability: true },
+  })
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  const now = new Date()
+  const breakUntil = ctx.reply.id === 'provider_pause_today' ? endOfToday() : null
+  const pauseReason = ctx.reply.id === 'provider_pause_today'
+    ? 'Paused for today from WhatsApp'
+    : 'Paused until manually reactivated from WhatsApp'
+
+  await db.provider.update({ where: { id: provider.id }, data: { availableNow: false } })
+  await db.technicianAvailability.upsert({
+    where: { providerId: provider.id },
+    create: {
+      providerId: provider.id,
+      availabilityMode: 'PAUSED',
+      availabilityState: 'PAUSED',
+      pausedAt: now,
+      breakUntil,
+      pauseReason,
+      lastUpdatedBy: provider.id,
+      lastUpdatedChannel: 'whatsapp',
+      notes: pauseReason,
+    },
+    update: {
+      availabilityMode: 'PAUSED',
+      availabilityState: 'PAUSED',
+      pausedAt: now,
+      breakUntil,
+      pauseReason,
+      lastUpdatedBy: provider.id,
+      lastUpdatedChannel: 'whatsapp',
+      notes: pauseReason,
+    },
+  })
+  await recordProviderAvailabilityAudit({
+    providerId: provider.id,
+    action: 'provider.availability.paused',
+    channel: 'whatsapp',
+    before: {
+      availableNow: provider.availableNow,
+      availabilityMode: provider.technicianAvailability?.availabilityMode ?? null,
+      availabilityState: provider.technicianAvailability?.availabilityState ?? null,
+      breakUntil: provider.technicianAvailability?.breakUntil ?? null,
+    },
+    after: { availableNow: false, availabilityMode: 'PAUSED', availabilityState: 'PAUSED', breakUntil },
+  })
+
+  await sendButtons(
+    ctx.phone,
+    `🔴 *Leads paused.*\n\nYou won't receive new job leads until you go available again.\n\nExisting accepted jobs are still active.`,
+    [
+      { id: 'provider_go_available', title: 'Go Available' },
+      { id: 'provider_my_jobs', title: 'My Jobs' },
+      { id: 'back_home', title: 'Main Menu' },
+    ],
+  )
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    select: { serviceAreas: true, technicianServiceAreas: { select: { label: true, active: true } } },
+  })
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  const structuredAreas = provider.technicianServiceAreas.map(
+    (area) => `${area.label} — ${area.active ? 'Active pilot' : 'Coming soon'}`,
+  )
+  const legacyAreas = provider.serviceAreas.map((area) => `${area} — status saved`)
+  const areas = structuredAreas.length ? structuredAreas : legacyAreas
+
+  await sendButtons(
+    ctx.phone,
+    `📍 *Service Areas*\n\n${areas.length ? areas.join('\n') : 'No service areas saved yet.'}`,
+    [
+      { id: 'provider_profile', title: 'Profile' },
+      { id: 'back_home', title: 'Main Menu' },
+    ],
+  )
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function handleProviderProfile(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    select: {
+      name: true,
+      phone: true,
+      status: true,
+      active: true,
+      verified: true,
+      availableNow: true,
+      skills: true,
+      serviceAreas: true,
+    },
+  })
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  await sendButtons(
+    ctx.phone,
+    `👤 *Provider Profile*\n\nName: *${provider.name}*\nPhone: *${provider.phone}*\nStatus: *${provider.active ? provider.status : 'INACTIVE'}*\nAvailability: *${provider.availableNow ? 'Online' : 'Offline'}*\nServices: ${provider.skills.length ? provider.skills.join(', ') : 'Not set'}\nAreas: ${provider.serviceAreas.length ? provider.serviceAreas.join(', ') : 'Not set'}`,
+    [
+      { id: 'provider_service_areas', title: 'Service Areas' },
+      { id: 'provider_support', title: 'Support' },
+    ],
+  )
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function handleProviderSupport(ctx: FlowContext): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    "🛟 *Provider Support*\n\nTell us what you need help with. A Plug A Pro team member can review your account, application, or current jobs.",
+    [
+      { id: 'provider_status', title: 'Provider Status' },
+      { id: 'back_home', title: 'Main Menu' },
+    ],
+  )
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    include: {
+      technicianAvailability: true,
+      schedule: { where: { active: true }, orderBy: { dayOfWeek: 'asc' } },
+      technicianServiceAreas: {
+        where: { active: true },
+        select: { label: true },
+      },
+    },
+  })
+  if (!provider) {
+    return handleApplicationStatus(ctx)
+  }
+
+  const paused = isProviderPaused(provider)
+  const mode = provider.technicianAvailability?.availabilityMode ?? (
+    provider.schedule.length > 0 ? 'SCHEDULE' : 'ALWAYS_AVAILABLE'
+  )
+  const todaySchedule = provider.schedule.find((row) => row.dayOfWeek === new Date().getDay())
+  const serviceAreas = provider.technicianServiceAreas.length
+    ? provider.technicianServiceAreas.map((area) => area.label).join(', ')
+    : provider.serviceAreas.join(', ') || 'Not set'
+  const services = provider.skills.join(', ') || 'Not set'
+  const inactiveReason = provider.suspendedReason
+    ? `\nReason: ${provider.suspendedReason}`
+    : ''
+  const suspendedUntil = provider.suspendedUntil
+    ? `\nUntil: ${provider.suspendedUntil.toLocaleDateString('en-ZA')}`
+    : ''
+  const statusBody = paused
+    ? `🔴 *You're currently paused.*\n\nYou won't receive new job leads until you go available again.`
+    : mode === 'SCHEDULE'
+      ? `🟡 *Your availability is schedule-based.*\n\nToday: ${todaySchedule ? `Available ${todaySchedule.startTime}–${todaySchedule.endTime}` : 'Not available'}\nCurrent status: ${provider.availableNow ? 'Available' : 'Not available'}`
+      : `🟢 *You're currently available for new leads.*`
+
+  await sendButtons(
+    ctx.phone,
+    `${statusBody}\n\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when available.`,
+    paused
+      ? [
+          { id: 'provider_go_available', title: 'Go Available' },
+          { id: 'provider_worker_portal', title: 'Manage Availability' },
+          { id: 'back_home', title: 'Main Menu' },
+        ]
+      : [
+          { id: 'provider_pause_leads', title: 'Pause Leads' },
+          { id: 'provider_worker_portal', title: 'Manage Availability' },
+          { id: 'provider_my_jobs', title: 'My Jobs' },
+        ],
+  )
+  return { nextStep: 'pj_toggle_available' }
+}
+
+async function handleWorkerPortal(ctx: FlowContext): Promise<FlowResult> {
+  const portalUrl = APP_URL ? `${APP_URL}/provider/availability` : ''
+  if (!portalUrl) {
+    await sendText(ctx.phone, 'Open the Worker Portal and go to Provider > Availability to manage your detailed schedule.')
+    return { nextStep: 'done' }
+  }
+
+  await sendCtaUrl(
+    ctx.phone,
+    'Manage your detailed working hours, emergency jobs, same-day jobs, and temporary pauses in the Worker Portal.',
+    'Worker Portal',
+    portalUrl,
+    { footer: 'WhatsApp supports quick status changes only' },
+  )
+  return { nextStep: 'done' }
+}
+
+async function handleApplicationStatus(ctx: FlowContext): Promise<FlowResult> {
+  const application = await db.providerApplication.findFirst({
+    where: { phone: ctx.phone, status: { in: ['PENDING', 'APPROVED'] } },
+    orderBy: { submittedAt: 'desc' },
+    select: { id: true, name: true, status: true },
+  })
+
+  if (!application) {
+    await sendText(ctx.phone, "We couldn't find a provider application for this number. Reply *join* if you'd like to apply.")
+    return { nextStep: 'done' }
+  }
+
+  await sendButtons(
+    ctx.phone,
+    `Hi ${application.name}, your provider application is still under review.\n\nRef: *${application.id.slice(-8).toUpperCase()}*\n\nWe'll notify you here once it's approved.`,
+    [
+      { id: 'provider_update_application', title: 'Update Application' },
+      { id: 'provider_support', title: 'Support' },
+    ],
+  )
+  return { nextStep: 'pj_toggle_available' }
+}
+
 // ─── Job List ─────────────────────────────────────────────────────────────────
 
 async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    include: { technicianAvailability: true },
+  })
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
     return { nextStep: 'done' }
@@ -160,12 +654,19 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
   })
 
   if (activeJobs.length === 0) {
+    const paused = isProviderPaused(provider)
+    const statusLine = paused
+      ? 'Status: 🔴 Leads paused'
+      : 'Status: 🟢 Available for leads'
     await sendButtons(
       ctx.phone,
-      `📋 *No active jobs right now.*\n\nYou'll receive a WhatsApp notification when a new lead comes in.\n\nMake sure you're online to receive leads.`,
+      `📋 *No active jobs right now.*\n\n${statusLine}\n\nWe'll notify you here when a matching lead comes in.`,
       [
-        { id: 'pj_toggle', title: '🟢 Check Status' },
-        { id: 'back_home', title: '🏠 Main Menu' },
+        { id: 'provider_check_status', title: 'Check Status' },
+        paused
+          ? { id: 'provider_go_available', title: 'Go Available' }
+          : { id: 'provider_pause_leads', title: 'Pause Leads' },
+        { id: 'provider_worker_portal', title: 'Worker Portal' },
       ]
     )
     return { nextStep: 'pj_toggle_available' }
