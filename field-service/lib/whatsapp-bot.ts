@@ -241,6 +241,26 @@ export async function processInboundMessage(
       // ── Matching engine v2: AssignmentHold acceptance ────────────────────────
       await handleAssignmentHoldAcceptance(phone, reply.id)
       return
+    } else if (!reply.id && rawText === 'accept') {
+      // ── Provider typed "accept" as text instead of tapping the button ─────────
+      // Find the most recent pending (SENT/VIEWED) lead for this provider and accept it.
+      const providerForAccept = await db.provider.findUnique({ where: { phone }, select: { id: true } })
+      if (providerForAccept) {
+        const activeLead = await db.lead.findFirst({
+          where: {
+            providerId: providerForAccept.id,
+            status: { in: ['SENT', 'VIEWED'] },
+            expiresAt: { gt: new Date() },
+          },
+          orderBy: { sentAt: 'desc' },
+          select: { assignmentHoldId: true },
+        })
+        if (activeLead?.assignmentHoldId) {
+          await handleAssignmentHoldAcceptance(phone, `accept:${activeLead.assignmentHoldId}`)
+          return
+        }
+      }
+      // No active lead — fall through to main menu
     } else if (reply.id?.startsWith('decline:')) {
       // ── Matching engine v2: show decline reason sub-menu ─────────────────────
       const holdId = reply.id.slice('decline:'.length)

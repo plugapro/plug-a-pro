@@ -18,7 +18,7 @@ export async function dispatchMatchLead(params: {
   const { jobRequest, hold, provider } = params
 
   // Create Lead record — upsert to handle idempotent re-dispatch
-  await db.lead.upsert({
+  const lead = await db.lead.upsert({
     where: { jobRequestId_providerId: { jobRequestId: jobRequest.id, providerId: provider.id } },
     create: {
       jobRequestId: jobRequest.id,
@@ -37,12 +37,15 @@ export async function dispatchMatchLead(params: {
   })
 
   // WhatsApp lead notification — non-blocking, failure does not roll back hold
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   const suburb = jobRequest.address?.suburb ?? 'your area'
   const category = jobRequest.category
   const expiryStr = hold.expiresAt.toLocaleTimeString('en-ZA', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg',
   })
-  const body = `🔔 *New Job Lead — ${category}*\n\nArea: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
+  const titleLine = jobRequest.title ? `*${jobRequest.title}*\n` : ''
+  const urlLine = appUrl ? `\n\n🔗 Full details: ${appUrl}/provider/leads/${lead.id}` : ''
+  const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.${urlLine}`
   const msgMeta = { jobRequestId: jobRequest.id, holdId: hold.id, providerId: provider.id }
 
   await sendButtons(

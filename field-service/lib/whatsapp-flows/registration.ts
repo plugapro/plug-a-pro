@@ -210,10 +210,10 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
 
   if (indices.length === 0 && labelMatched.length === 0) {
     if (!raw) {
-      await sendText(ctx.phone, buildSkillPromptText('🔧 *What type of work do you do?*'))
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *What type of work do you do?*', existingSkills))
     } else {
       // Unrecognised text — ask for numbers
-      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please reply with the numbers from the list below.*'))
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please reply with the numbers from the list below.*', existingSkills))
     }
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
   }
@@ -234,7 +234,7 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   if (validSkills.length === 0 && labelMatched.length === 0) {
     await sendText(
       ctx.phone,
-      buildSkillPromptText(`❌ None of those numbers are on the list (${invalidNums.join(', ')}).\n\n🔧 *Choose your skills:*`)
+      buildSkillPromptText(`❌ None of those numbers are on the list (${invalidNums.join(', ')}).\n\n🔧 *Choose your skills:*`, existingSkills)
     )
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
   }
@@ -258,11 +258,11 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
   const rows = [
-    { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
-    { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town area (coming soon)' },
-    { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: 'Durban & surrounds' },
-    { id: 'area_eastern_cape', title: 'Eastern Cape', description: 'Port Elizabeth & surrounds' },
-    { id: 'area_other', title: 'Other province', description: 'Rest of South Africa' },
+    { id: 'area_gauteng', title: 'Gauteng', description: '🟢 Active — Johannesburg & surrounds' },
+    { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon — register now' },
+    { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon — register now' },
+    { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon — register now' },
+    { id: 'area_other', title: 'Other province', description: '🔜 Coming soon — register now' },
   ]
 
   await sendList(
@@ -303,11 +303,11 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       [{
         title: 'Areas',
         rows: [
-          { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
-          { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town area (coming soon)' },
-          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: 'Durban & surrounds' },
-          { id: 'area_eastern_cape', title: 'Eastern Cape', description: 'Port Elizabeth & surrounds' },
-          { id: 'area_other', title: 'Other province', description: 'Rest of South Africa' },
+          { id: 'area_gauteng', title: 'Gauteng', description: '🟢 Active — Johannesburg & surrounds' },
+          { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon — register now' },
+          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon — register now' },
+          { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon — register now' },
+          { id: 'area_other', title: 'Other province', description: '🔜 Coming soon — register now' },
         ],
       }],
       { buttonLabel: 'Choose Area' }
@@ -1154,8 +1154,11 @@ function parseNumberedInput(raw: string): number[] {
  * Skills are numbered 1–N (PROVIDER_SKILL_OPTIONS, 'other' excluded).
  * Provider replies with comma-separated numbers, e.g. "1,3,6".
  */
-function buildSkillPromptText(intro: string): string {
-  const lines = PROVIDER_SKILL_OPTIONS.map((o, i) => `${i + 1}. ${o.label}`)
+function buildSkillPromptText(intro: string, selected: string[] = []): string {
+  const lines = PROVIDER_SKILL_OPTIONS.map((o, i) => {
+    const checkbox = selected.includes(o.label) ? '✅' : '☐'
+    return `${checkbox} ${i + 1}. ${o.label}`
+  })
   return (
     `${intro}\n\n` +
     `Reply with all numbers that apply, separated by commas.\n` +
@@ -1184,7 +1187,10 @@ function buildSuburbPromptText(
     : ''
 
   // Global numbering: suburb at index i has number (pageOffset + i + 1)
-  const lines = page.map((s, i) => `${pageOffset + i + 1}. ${s.label}`)
+  const lines = page.map((s, i) => {
+    const checkbox = selectedLabels.includes(s.label) ? '✅' : '☐'
+    return `${checkbox} ${pageOffset + i + 1}. ${s.label}`
+  })
 
   // Build example numbers from the current page
   const exNums = [pageOffset + 1, Math.min(pageOffset + 3, total)].filter((v, i, a) => a.indexOf(v) === i)
