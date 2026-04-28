@@ -1,5 +1,6 @@
 import { normalizePhone } from './utils'
 import { syncProviderSkills } from './provider-skills'
+import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-guard'
 
 type ProviderRecordSyncClient = {
   provider: {
@@ -84,6 +85,8 @@ async function upsertStructuredServiceAreas(
     const isSuburb = node.nodeType === 'SUBURB'
     const areaType = isSuburb ? 'SUBURB' : 'REGION'
     const suburbKey = isSuburb ? (node.slug.split('__').at(-1) ?? node.slug) : null
+    const regionKey = node.regionKey ?? (node.nodeType === 'REGION' ? getRegionKeyFromSlug(node.slug) : null)
+    const isActivePilotArea = getRegionServiceStatus({ regionKey, slug: node.slug }) === 'active'
 
     await client.technicianServiceArea.upsert({
       where: {
@@ -99,18 +102,18 @@ async function upsertStructuredServiceAreas(
         label: node.label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,
-        regionKey: node.regionKey,
+        regionKey,
         suburbKey,
-        active: true,
+        active: isActivePilotArea,
       },
       update: {
         areaType,
         label: node.label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,
-        regionKey: node.regionKey,
+        regionKey,
         suburbKey,
-        active: true,
+        active: isActivePilotArea,
       },
     })
   }

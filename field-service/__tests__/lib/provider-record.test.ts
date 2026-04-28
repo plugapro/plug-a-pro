@@ -272,3 +272,103 @@ describe('syncProviderRecord — phone normalization', () => {
     })
   })
 })
+
+describe('syncProviderRecord — pilot service-area activation', () => {
+  it('marks JHB West / Roodepoort structured coverage active', async () => {
+    const client = {
+      provider: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'prov_exists' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        createMany: vi.fn(),
+      },
+      technicianSkill: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+      technicianServiceArea: {
+        upsert: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      locationNode: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'sub_roodepoort',
+            nodeType: 'SUBURB',
+            slug: 'gauteng__johannesburg__jhb_west__roodepoort',
+            label: 'Roodepoort',
+            provinceKey: 'gauteng',
+            cityKey: 'johannesburg',
+            regionKey: 'jhb_west',
+          },
+        ]),
+      },
+    }
+
+    await syncProviderRecord(client as never, {
+      phone: '+27821234567',
+      name: 'Pilot Provider',
+      skills: ['Plumbing'],
+      serviceAreas: ['Roodepoort'],
+      active: true,
+      availableNow: true,
+      verified: false,
+      locationNodeIds: ['sub_roodepoort'],
+    })
+
+    expect(client.technicianServiceArea.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ active: true, regionKey: 'jhb_west' }),
+        update: expect.objectContaining({ active: true, regionKey: 'jhb_west' }),
+      }),
+    )
+  })
+
+  it('marks non-pilot structured coverage coming soon and inactive for matching', async () => {
+    const client = {
+      provider: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'prov_exists' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        createMany: vi.fn(),
+      },
+      technicianSkill: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+      technicianServiceArea: {
+        upsert: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      locationNode: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'sub_sandton',
+            nodeType: 'SUBURB',
+            slug: 'gauteng__johannesburg__jhb_north__sandton',
+            label: 'Sandton',
+            provinceKey: 'gauteng',
+            cityKey: 'johannesburg',
+            regionKey: 'jhb_north',
+          },
+        ]),
+      },
+    }
+
+    await syncProviderRecord(client as never, {
+      phone: '+27821234567',
+      name: 'Coming Soon Provider',
+      skills: ['Plumbing'],
+      serviceAreas: ['Sandton'],
+      active: true,
+      availableNow: true,
+      verified: false,
+      locationNodeIds: ['sub_sandton'],
+    })
+
+    expect(client.technicianServiceArea.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ active: false, regionKey: 'jhb_north' }),
+        update: expect.objectContaining({ active: false, regionKey: 'jhb_north' }),
+      }),
+    )
+  })
+})

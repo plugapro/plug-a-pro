@@ -169,6 +169,33 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
     expect(filtered).toBeUndefined()
   })
 
+  it('excludes provider whose only structured service area is coming soon/inactive', async () => {
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+    mockDb.technicianServiceArea.findMany.mockResolvedValue([{
+      providerId: 'p1',
+      label: 'Sandton',
+      city: 'Johannesburg',
+      active: false,
+      areaType: 'SUBURB',
+      lat: -26.1,
+      lng: 28.05,
+      radiusKm: null,
+      locationNodeId: null,
+      regionKey: null,
+    }])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes)
+      .toContain('OUTSIDE_SERVICE_AREA')
+  })
+
   it('excludes provider with DAILY_MAX_REACHED when dailyJobs >= hardDailyMax', async () => {
     // $queryRaw: cooldown empty, daily jobs = 2 (hardDailyMax is 2)
     mockDb.$queryRaw

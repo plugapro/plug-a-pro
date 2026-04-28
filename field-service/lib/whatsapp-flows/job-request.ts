@@ -736,8 +736,35 @@ async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
 const MAX_CUSTOMER_PHOTOS = 5
 const MAX_CUSTOMER_PHOTO_BYTES = 10 * 1024 * 1024 // 10 MB — tighter than the 15 MB evidence limit
 
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
+}
+
+async function sendCustomerPhotoProgress(phone: string, count: number) {
+  const remaining = MAX_CUSTOMER_PHOTOS - count
+
+  if (remaining <= 0) {
+    await sendButtons(
+      phone,
+      `✅ *${MAX_CUSTOMER_PHOTOS} photos received.* Maximum reached.\n\nContinue to the next step?`,
+      [{ id: 'photos_done', title: '✅ Continue' }]
+    )
+    return
+  }
+
+  await sendButtons(
+    phone,
+    `✅ *${count} photo${count === 1 ? '' : 's'} received.* You can add up to ${remaining} more, or continue.`,
+    [
+      { id: 'photos_done', title: '✅ Continue' },
+      { id: 'photos_add_more', title: '📷 Add another' },
+    ]
+  )
+}
+
 async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
-  const photoAttachmentIds: string[] = ctx.data.photoAttachmentIds ?? []
+  const photoAttachmentIds = uniqueStrings(ctx.data.photoAttachmentIds ?? [])
+  const photoMediaIds = uniqueStrings(ctx.data.photoMediaIds ?? [])
   const rawText = ctx.reply.text?.trim().toLowerCase()
 
   // Button: skip or done (with 0 photos)
@@ -755,7 +782,7 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
     const remaining = MAX_CUSTOMER_PHOTOS - photoAttachmentIds.length
     await sendText(
       ctx.phone,
-      `📸 Send your photo now. You can add up to ${remaining} more photo${remaining === 1 ? '' : 's'}.`
+      `📸 Please upload *one photo at a time*. You can add up to ${remaining} more photo${remaining === 1 ? '' : 's'}.`
     )
     return { nextStep: 'collect_photos' }
   }
@@ -776,13 +803,14 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_photos' }
     }
 
+    if (photoMediaIds.includes(ctx.reply.mediaId)) {
+      await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
+    }
+
     if (photoAttachmentIds.length >= MAX_CUSTOMER_PHOTOS) {
-      await sendButtons(
-        ctx.phone,
-        `📸 You've added ${MAX_CUSTOMER_PHOTOS} photos (the maximum). Tap *Done* to continue.`,
-        [{ id: 'photos_done', title: '✅ Done' }]
-      )
-      return { nextStep: 'collect_photos' }
+      await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
     }
 
     try {
@@ -792,26 +820,11 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
         label: 'customer_photo',
         maxSizeBytes: MAX_CUSTOMER_PHOTO_BYTES,
       })
-      const updated = [...photoAttachmentIds, attachmentId]
-      const remaining = MAX_CUSTOMER_PHOTOS - updated.length
+      const updated = uniqueStrings([...photoAttachmentIds, attachmentId]).slice(0, MAX_CUSTOMER_PHOTOS)
+      const updatedMediaIds = uniqueStrings([...photoMediaIds, ctx.reply.mediaId])
 
-      if (remaining === 0) {
-        await sendButtons(
-          ctx.phone,
-          `✅ *${updated.length} photo${updated.length > 1 ? 's' : ''} added.* Maximum reached.\n\nTap Done to continue.`,
-          [{ id: 'photos_done', title: '✅ Done' }]
-        )
-      } else {
-        await sendButtons(
-          ctx.phone,
-          `✅ Photo ${updated.length} added.\n\nSend another photo or tap Done to continue.`,
-          [
-            { id: 'photos_done', title: '✅ Done' },
-            { id: 'photos_add_more', title: '📷 Add more' },
-          ]
-        )
-      }
-      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated } }
+      await sendCustomerPhotoProgress(ctx.phone, updated.length)
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated, photoMediaIds: updatedMediaIds } }
     } catch (err) {
       console.error('[job-request-flow:handleCollectPhotos] media upload failed:', err)
       await sendText(ctx.phone, '❗ I couldn\'t upload that photo. Please try again or type *skip*.')
@@ -826,8 +839,8 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       ctx.phone,
       `📸 *${count} photo${count > 1 ? 's' : ''} added.*\n\nSend another or tap Done to continue.`,
       [
-        { id: 'photos_done', title: '✅ Done' },
-        { id: 'photos_add_more', title: '📷 Add more' },
+        { id: 'photos_done', title: '✅ Continue' },
+        { id: 'photos_add_more', title: '📷 Add another' },
       ]
     )
   } else {

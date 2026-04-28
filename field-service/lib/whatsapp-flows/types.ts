@@ -136,11 +136,13 @@ export interface ConversationData {
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"
   availability?: string[]       // ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
   evidenceNote?: string
-  evidenceFileUrls?: string[]       // blob URLs of uploaded proof images/documents
+  evidenceFileUrls?: string[]       // Attachment IDs for uploaded proof images/documents
+  evidenceMediaIds?: string[]       // WhatsApp media IDs already processed for evidence dedupe
 
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider
   selectedRegionLabels?: string[]    // display labels for selected regions
+  selectedRegionStatus?: 'active' | 'coming_soon'
   selectedSuburbLabels?: string[]    // display labels for selected suburbs (drill-down)
   regionId?: string                  // region node ID being drilled into for suburb selection
   regionLabel?: string               // region display label during suburb drill-down
@@ -167,6 +169,7 @@ export interface ConversationData {
 
   // Shared
   customerId?: string
+  photoMediaIds?: string[]          // WhatsApp media IDs already processed for customer photo dedupe
 }
 
 // The full conversation context passed to each flow handler

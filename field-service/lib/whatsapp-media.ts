@@ -31,6 +31,15 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   maxSizeBytes?: number
 }): Promise<{ attachmentId: string }> {
   const { mediaId, providerApplicationId = null, prefix = 'evidence', label = 'evidence', maxSizeBytes = MAX_EVIDENCE_SIZE } = params
+  const uploadedBy = `system:whatsapp:${mediaId}`
+
+  const existing = await db.attachment.findFirst({
+    where: { uploadedBy, label },
+    select: { id: true },
+  })
+  if (existing) {
+    return { attachmentId: existing.id }
+  }
 
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
   if (!accessToken) throw new Error('Missing WHATSAPP_ACCESS_TOKEN')
@@ -83,7 +92,7 @@ export async function downloadAndStoreWhatsAppMedia(params: {
       mimeType: meta.mime_type,
       sizeBytes: meta.file_size,
       label,
-      uploadedBy: 'system:whatsapp',
+      uploadedBy,
     },
   })
 

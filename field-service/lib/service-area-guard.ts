@@ -21,6 +21,48 @@ export const ACTIVE_REGION_KEYS_SET = new Set([
   'jhb_west',
 ])
 
+export const ACTIVE_PILOT_REGION_LABEL = 'JHB West / Roodepoort'
+export const ACTIVE_PILOT_CITY_LABEL = 'Johannesburg'
+
+export type ServiceAreaStatus = 'active' | 'coming_soon'
+
+export function normalizeLocationKey(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+export function getRegionKeyFromSlug(slug: string | null | undefined): string {
+  return normalizeLocationKey(slug?.split('__').at(-1) ?? '')
+}
+
+export function getRegionServiceStatus(input: {
+  regionKey?: string | null
+  slug?: string | null
+}): ServiceAreaStatus {
+  const regionKey = normalizeLocationKey(input.regionKey) || getRegionKeyFromSlug(input.slug)
+  return isActiveRegion(regionKey) ? 'active' : 'coming_soon'
+}
+
+export function getCityServiceStatus(input: {
+  cityKey?: string | null
+}): ServiceAreaStatus {
+  return isActiveCity(normalizeLocationKey(input.cityKey)) ? 'active' : 'coming_soon'
+}
+
+export function describeCityServiceStatus(input: { cityKey?: string | null }): string {
+  return getCityServiceStatus(input) === 'active'
+    ? `🟢 Active pilot — ${ACTIVE_PILOT_REGION_LABEL}`
+    : '🔜 Coming soon — register now'
+}
+
+export function describeRegionServiceStatus(input: {
+  regionKey?: string | null
+  slug?: string | null
+}): string {
+  return getRegionServiceStatus(input) === 'active'
+    ? '🟢 Active pilot'
+    : '🔜 Coming soon — register now'
+}
+
 // Normalised city keys currently accepting new job requests (legacy guard — kept
 // for the `handleCollectAddress` fallback path that checks city label free-text).
 export const ACTIVE_CITY_KEYS = new Set([
