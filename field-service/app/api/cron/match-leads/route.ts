@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, errors: 0, reconciledCapacity: 0 }
+  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0 }
 
   // 0. Reconcile stale capacity counters (safety net — corrects counter drift)
   try {
@@ -182,6 +182,40 @@ export async function GET(request: Request) {
     }
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error in catch-up expired notification sweep:`, err)
+    results.errors++
+  }
+
+  // 1g. Auto-resume providers whose temporary pause has expired (breakUntil <= now).
+  // Hard-paused providers (breakUntil=null) are excluded — they must re-enable manually via WhatsApp.
+  try {
+    const expiredPauses = await db.technicianAvailability.findMany({
+      where: {
+        availabilityState: 'PAUSED',
+        breakUntil: { not: null, lte: new Date() },
+      },
+      select: { providerId: true },
+      take: 50,
+    })
+    for (const { providerId } of expiredPauses) {
+      try {
+        await db.$transaction([
+          db.provider.update({ where: { id: providerId }, data: { availableNow: true } }),
+          db.technicianAvailability.update({
+            where: { providerId },
+            data: { availabilityState: 'AVAILABLE', breakUntil: null, notes: null },
+          }),
+        ])
+        checkJobsForNewProviderAvailability(providerId).catch((err: unknown) => {
+          console.error(`[cron/match-leads:${reqId}] auto-resume job check failed for ${providerId}:`, err)
+        })
+        results.autoResumed++
+      } catch (err) {
+        console.error(`[cron/match-leads:${reqId}] auto-resume failed for provider ${providerId}:`, err)
+        results.errors++
+      }
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error in auto-resume sweep:`, err)
     results.errors++
   }
 

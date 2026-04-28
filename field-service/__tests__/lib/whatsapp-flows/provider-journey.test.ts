@@ -6,6 +6,9 @@ vi.mock('@/lib/db', () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    technicianAvailability: {
+      upsert: vi.fn().mockResolvedValue({}),
+    },
     job: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -15,6 +18,10 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/jobs', () => ({
   transitionJob: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/matching/customer-recontact', () => ({
+  promptCustomersForNewProviderAvailability: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/whatsapp-interactive', () => ({
@@ -83,7 +90,7 @@ describe('handleProviderJourneyFlow', () => {
   describe('pj_toggle_available step', () => {
     it('sets availableNow=false when provider is online and taps toggle', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'prov_1', name: 'Sipho', availableNow: true,
+        id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
       })
       ;(db.provider.update as ReturnType<typeof vi.fn>).mockResolvedValue({ availableNow: false })
       await handleProviderJourneyFlow(mockCtx('pj_toggle_available', 'pj_toggle'))
@@ -93,9 +100,9 @@ describe('handleProviderJourneyFlow', () => {
       })
     })
 
-    it('sets availableNow=true when provider is offline and taps toggle', async () => {
+    it('sets availableNow=true and clears pause when provider is offline and taps toggle', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'prov_1', name: 'Sipho', availableNow: false,
+        id: 'prov_1', name: 'Sipho', availableNow: false, technicianAvailability: null,
       })
       ;(db.provider.update as ReturnType<typeof vi.fn>).mockResolvedValue({ availableNow: true })
       await handleProviderJourneyFlow(mockCtx('pj_toggle_available', 'pj_toggle'))
@@ -103,6 +110,41 @@ describe('handleProviderJourneyFlow', () => {
         where: { id: 'prov_1' },
         data: { availableNow: true },
       })
+      expect((db as any).technicianAvailability.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { providerId: 'prov_1' },
+          update: expect.objectContaining({ availabilityState: 'AVAILABLE', breakUntil: null }),
+        })
+      )
+    })
+
+    it('clears temp pause when provider taps Go Online while temp-paused', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: true,
+        technicianAvailability: {
+          availabilityState: 'PAUSED',
+          breakUntil: new Date(Date.now() + 3 * 60 * 60 * 1000), // 3h in the future
+        },
+      })
+      ;(db.provider.update as ReturnType<typeof vi.fn>).mockResolvedValue({ availableNow: true })
+      await handleProviderJourneyFlow(mockCtx('pj_toggle_available', 'pj_go_online'))
+      // Should set online (not toggle to offline)
+      expect(db.provider.update).toHaveBeenCalledWith({
+        where: { id: 'prov_1' },
+        data: { availableNow: true },
+      })
+      // Must clear the pause state
+      expect((db as any).technicianAvailability.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { providerId: 'prov_1' },
+          update: expect.objectContaining({ availabilityState: 'AVAILABLE', breakUntil: null }),
+        })
+      )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('now Online'),
+        expect.any(Array),
+      )
     })
 
     it('returns done when back_home tapped', async () => {
@@ -114,7 +156,7 @@ describe('handleProviderJourneyFlow', () => {
   describe('pj_job_detail step', () => {
     it('shows job list when pj_view_jobs tapped from pj_toggle_available step', async () => {
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'prov_1', name: 'Sipho', availableNow: true,
+        id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
       })
       ;(db.job.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
         {

@@ -74,17 +74,37 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
     return handleJobList(ctx)
   }
 
-  const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
+  const provider = await db.provider.findUnique({
+    where: { phone: ctx.phone },
+    include: { technicianAvailability: true },
+  })
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
     return { nextStep: 'done' }
   }
 
   if (ctx.reply.id === 'pj_toggle' || ctx.reply.id === 'pj_go_online' || ctx.reply.id === 'pj_go_offline') {
-    const goingOnline = !provider.availableNow
+    // A temp-paused provider has availableNow=true but a future breakUntil — treat as offline
+    const isTempPaused =
+      provider.technicianAvailability?.availabilityState === 'PAUSED' &&
+      provider.technicianAvailability.breakUntil != null &&
+      provider.technicianAvailability.breakUntil > new Date()
+    const effectivelyOnline = provider.availableNow && !isTempPaused
+
+    const goingOnline =
+      ctx.reply.id === 'pj_go_online' ? true
+      : ctx.reply.id === 'pj_go_offline' ? false
+      : !effectivelyOnline
+
     await db.provider.update({ where: { id: provider.id }, data: { availableNow: goingOnline } })
 
+    // Going online: clear any pause state so leads flow again immediately
     if (goingOnline) {
+      await db.technicianAvailability.upsert({
+        where: { providerId: provider.id },
+        create: { providerId: provider.id, availabilityState: 'AVAILABLE' },
+        update: { availabilityState: 'AVAILABLE', breakUntil: null, notes: null },
+      })
       await promptCustomersForNewProviderAvailability(provider.id).catch((error) => {
         console.error('[provider-journey] customer recontact failed:', error)
       })
