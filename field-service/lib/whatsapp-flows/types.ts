@@ -35,6 +35,7 @@ export type FlowStep =
   | 'confirm_address'           // LEGACY: receives typed city, assembles + confirms full address
   | 'collect_availability'
   | 'confirm_job_request'
+  | 'collect_photos'            // optional customer photo upload before confirm
   | 'job_request_submitted'
   | 'notify_me'                 // no providers in area — join waitlist
   // Registration (provider onboarding)
@@ -102,6 +103,7 @@ export interface ConversationData {
   addressCity?: string          // legacy: free-text city
   hasSavedAddress?: boolean     // true = a previous address was offered to reuse
   availabilityNote?: string     // free-text preferred availability from customer
+  photoAttachmentIds?: string[] // Attachment IDs for customer job photos (backfilled onto job request after creation)
   jobRequestId?: string
   matchId?: string
   category?: string

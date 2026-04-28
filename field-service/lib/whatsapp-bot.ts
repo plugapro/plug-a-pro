@@ -105,11 +105,14 @@ export async function processInboundMessage(
     }
 
     // Drop reactions, voice notes, stickers — nothing actionable.
-    // image/document are allowed through for evidence collection in the registration flow.
+    // image/document are allowed through for:
+    //   - evidence collection in the provider registration flow
+    //   - customer photo upload in the job-request flow
     // Must be checked BEFORE flow dispatch so mid-flow reactions don't retrigger menus.
     if (reply.type === 'other') return
     if ((reply.type === 'image' || reply.type === 'document') &&
-        !(conversation.flow === 'registration' && conversation.step === 'reg_collect_evidence')) {
+        !((conversation.flow === 'registration' && conversation.step === 'reg_collect_evidence') ||
+          (conversation.flow === 'job_request' && conversation.step === 'collect_photos'))) {
       return
     }
 

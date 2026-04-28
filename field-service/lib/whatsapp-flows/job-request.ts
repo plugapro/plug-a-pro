@@ -16,6 +16,7 @@ import {
 import { db } from '../db'
 import { resolveCategoryRequirements } from '../category-config'
 import { createJobRequest } from '../job-requests/create-job-request'
+import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import {
   isInActiveServiceArea,
   isActiveProvince,
@@ -203,6 +204,8 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleCollectAvailability(ctx)
     case 'confirm_job_request':
       return handleConfirmJobRequest(ctx)
+    case 'collect_photos':
+      return handleCollectPhotos(ctx)
     case 'job_request_submitted':
       return handleJobRequestSubmitted(ctx)
     case 'notify_me':
@@ -702,17 +705,130 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
     return handleCollectAvailability(ctx)
   }
 
-  const { selectedCategory, address } = ctx.data
+  // Prompt for optional photos before showing the confirmation summary
+  await sendButtons(
+    ctx.phone,
+    `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+    [
+      { id: 'photos_skip', title: '⏭ Skip' },
+      { id: 'photos_start', title: '📷 Add photo' },
+    ]
+  )
+  return { nextStep: 'collect_photos', nextData: { availabilityNote, photoAttachmentIds: [] } }
+}
+
+const MAX_CUSTOMER_PHOTOS = 5
+
+async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
+  const { selectedCategory, address, availabilityNote } = ctx.data
+  const photoCount = (ctx.data.photoAttachmentIds ?? []).length
+  const photoLine = photoCount > 0 ? `\n📸 Photos: *${photoCount} attached*` : ''
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}\n🗓 ${availabilityNote}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}\n🗓 ${availabilityNote}${photoLine}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },
     ]
   )
-  return { nextStep: 'job_request_submitted', nextData: { availabilityNote } }
+  return { nextStep: 'job_request_submitted' }
+}
+
+async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
+  const photoAttachmentIds: string[] = ctx.data.photoAttachmentIds ?? []
+
+  // Skip photo collection
+  if (ctx.reply.id === 'photos_skip') {
+    return showJobRequestSummary(ctx)
+  }
+
+  // User tapped "Add photo" — instruct them to send a media message
+  if (ctx.reply.id === 'photos_start' || ctx.reply.id === 'photos_add_more') {
+    const remaining = MAX_CUSTOMER_PHOTOS - photoAttachmentIds.length
+    await sendText(
+      ctx.phone,
+      `📸 Send your photo now. You can add up to ${remaining} more photo${remaining === 1 ? '' : 's'}.`
+    )
+    return { nextStep: 'collect_photos' }
+  }
+
+  // Done tapped (with 0 or more photos)
+  if (ctx.reply.id === 'photos_done') {
+    return showJobRequestSummary(ctx)
+  }
+
+  // Image or document received
+  if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, '❗ Photo did not come through. Please try sending it again.')
+      return { nextStep: 'collect_photos' }
+    }
+
+    if (photoAttachmentIds.length >= MAX_CUSTOMER_PHOTOS) {
+      await sendButtons(
+        ctx.phone,
+        `📸 You've added ${MAX_CUSTOMER_PHOTOS} photos (the maximum). Tap *Done* to continue.`,
+        [{ id: 'photos_done', title: '✅ Done' }]
+      )
+      return { nextStep: 'collect_photos' }
+    }
+
+    try {
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        prefix: 'customer-photos',
+        label: 'customer_photo',
+      })
+      const updated = [...photoAttachmentIds, attachmentId]
+      const remaining = MAX_CUSTOMER_PHOTOS - updated.length
+
+      if (remaining === 0) {
+        await sendButtons(
+          ctx.phone,
+          `✅ *${updated.length} photo${updated.length > 1 ? 's' : ''} added.* Maximum reached.\n\nTap Done to continue.`,
+          [{ id: 'photos_done', title: '✅ Done' }]
+        )
+      } else {
+        await sendButtons(
+          ctx.phone,
+          `✅ Photo ${updated.length} added.\n\nSend another photo or tap Done to continue.`,
+          [
+            { id: 'photos_done', title: '✅ Done' },
+            { id: 'photos_add_more', title: '📷 Add more' },
+          ]
+        )
+      }
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated } }
+    } catch (err) {
+      console.error('[job-request-flow:handleCollectPhotos] media upload failed:', err)
+      await sendText(ctx.phone, '❗ Photo upload failed. Please try again or tap Skip.')
+      return { nextStep: 'collect_photos' }
+    }
+  }
+
+  // Unknown reply — resend the appropriate prompt
+  if (photoAttachmentIds.length > 0) {
+    const count = photoAttachmentIds.length
+    await sendButtons(
+      ctx.phone,
+      `📸 *${count} photo${count > 1 ? 's' : ''} added.*\n\nSend another or tap Done to continue.`,
+      [
+        { id: 'photos_done', title: '✅ Done' },
+        { id: 'photos_add_more', title: '📷 Add more' },
+      ]
+    )
+  } else {
+    await sendButtons(
+      ctx.phone,
+      `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+      [
+        { id: 'photos_skip', title: '⏭ Skip' },
+        { id: 'photos_start', title: '📷 Add photo' },
+      ]
+    )
+  }
+  return { nextStep: 'collect_photos' }
 }
 
 async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> {
@@ -837,6 +953,14 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         province: addrParts[3] ?? '',
         locationNodeId: ctx.data.addressLocationNodeId ?? null,
       })
+    }
+
+    // Backfill jobRequestId on any customer photos uploaded during the flow
+    if (ctx.data.photoAttachmentIds?.length) {
+      await db.attachment.updateMany({
+        where: { id: { in: ctx.data.photoAttachmentIds }, jobRequestId: null },
+        data: { jobRequestId: result.jobRequestId },
+      }).catch((err) => console.error('[job-request-flow] photo attachment backfill failed:', err))
     }
 
     const successMessage =

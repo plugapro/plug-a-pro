@@ -27,8 +27,9 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   mediaId: string
   providerApplicationId?: string | null
   prefix?: string
+  label?: string
 }): Promise<{ attachmentId: string }> {
-  const { mediaId, providerApplicationId = null, prefix = 'evidence' } = params
+  const { mediaId, providerApplicationId = null, prefix = 'evidence', label = 'evidence' } = params
 
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
   if (!accessToken) throw new Error('Missing WHATSAPP_ACCESS_TOKEN')
@@ -71,7 +72,8 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   })
 
   // Step 4 — create Attachment record so access goes via the auth proxy.
-  // providerApplicationId starts null; backfilled in handlePending once the application row exists.
+  // providerApplicationId / jobRequestId start null; backfilled by the caller once the parent
+  // record exists (e.g. handlePending for evidence, handleJobRequestSubmitted for customer photos).
   const attachment = await db.attachment.create({
     data: {
       providerApplicationId,
@@ -79,7 +81,7 @@ export async function downloadAndStoreWhatsAppMedia(params: {
       blobKey: blob.pathname,
       mimeType: meta.mime_type,
       sizeBytes: meta.file_size,
-      label: 'evidence',
+      label,
       uploadedBy: 'system:whatsapp',
     },
   })
