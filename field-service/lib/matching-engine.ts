@@ -434,7 +434,6 @@ export async function expireStaleLeads(): Promise<number> {
 // ─── Lead reminder: 1-hour nudge for SENT/VIEWED leads with no response ───────
 
 export async function sendLeadReminders(): Promise<number> {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   // Send reminder at ~10 minutes — halfway through the 15-minute offer TTL.
   // (The old 1-hour threshold was dead code: v2 offers expire in 15 minutes.)
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000)
@@ -448,6 +447,7 @@ export async function sendLeadReminders(): Promise<number> {
     },
     select: {
       id: true,
+      providerId: true,
       expiresAt: true,
       provider: { select: { phone: true } },
       jobRequest: { select: { category: true, address: { select: { suburb: true, city: true } } } },
@@ -469,11 +469,19 @@ export async function sendLeadReminders(): Promise<number> {
 
     try {
       const { sendCtaUrl } = await import('./whatsapp-interactive')
+      const { getProviderLeadAccessUrl } = await import('./provider-lead-access')
+      const leadUrl = await getProviderLeadAccessUrl({
+        leadId: lead.id,
+        providerId: lead.providerId,
+      })
+      if (!leadUrl) {
+        throw new Error('Missing provider lead access URL')
+      }
       await sendCtaUrl(
         lead.provider.phone,
         `⏰ *Reminder — Lead Still Available*\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
         'View Lead',
-        `${appUrl}/leads/${lead.id}`,
+        leadUrl,
         { footer: 'Accept, inspect, or decline from the lead page' },
       )
       await db.lead.update({ where: { id: lead.id }, data: { reminderSentAt: new Date() } })

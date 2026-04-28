@@ -722,17 +722,22 @@ export async function notifyProviderNewJob(params: {
   expiresInMinutes?: number
 }): Promise<void> {
   const { sendCtaUrl } = await import('./whatsapp-interactive')
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const { getProviderLeadAccessUrlByLeadId } = await import('./provider-lead-access')
   const ref = params.leadId.slice(-8).toUpperCase()
   const expiryLabel = params.expiresInMinutes
     ? `${params.expiresInMinutes} min`
     : '4 hours'
+  const leadUrl = await getProviderLeadAccessUrlByLeadId(params.leadId)
+
+  if (!leadUrl) {
+    throw new Error(`Could not create provider lead access URL for lead ${params.leadId}`)
+  }
 
   await sendCtaUrl(
     params.providerPhone,
     `🔔 *New Lead Available*\n\n*${params.category}* · ${params.area}\nRef: ${ref} · Expires in ${expiryLabel}\n\nTap below to view the full job details and respond.`,
     'View Lead',
-    `${appUrl}/leads/${params.leadId}`,
+    leadUrl,
     { footer: 'Accept, inspect, or decline from the lead page' },
   )
 }
@@ -1009,7 +1014,12 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
   if (buttonId.startsWith('match_inspect_')) {
     // Send a link to the lead detail page so the provider can review and decide
-    const leadUrl = `${appUrl}/leads/${leadId}`
+    const { getProviderLeadAccessUrl } = await import('./provider-lead-access')
+    const leadUrl = await getProviderLeadAccessUrl({ leadId, providerId: provider.id })
+    if (!leadUrl) {
+      await sendText(phone, '😔 We could not generate a secure lead link. Please try again or contact support.')
+      return
+    }
     await sendCtaUrl(
       phone,
       `🔍 *View Lead Details*\n\nOpen the link below to review the full job details, then choose to accept, request an inspection, or decline.`,

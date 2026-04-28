@@ -15,6 +15,7 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { resolveJobRequestAccessScope } from '@/lib/job-request-access'
+import { resolveProviderLeadAttachmentScope } from '@/lib/provider-lead-access'
 
 export async function GET(
   request: NextRequest,
@@ -22,6 +23,7 @@ export async function GET(
 ) {
   const reqId = crypto.randomUUID().slice(0, 8)
   const token = request.nextUrl.searchParams.get('token')?.trim() || null
+  const leadToken = request.nextUrl.searchParams.get('leadToken')?.trim() || null
 
   const session = await getSession()
 
@@ -64,6 +66,7 @@ export async function GET(
   }
 
   const tokenScope = token ? await resolveJobRequestAccessScope(token) : null
+  const leadTokenScope = leadToken ? await resolveProviderLeadAttachmentScope(leadToken) : null
   const attachmentJobRequestId =
     attachment.jobRequest?.id ??
     attachment.job?.booking?.match?.jobRequest?.id ??
@@ -72,6 +75,10 @@ export async function GET(
     tokenScope?.status === 'active' &&
     attachmentJobRequestId != null &&
     tokenScope.jobRequestId === attachmentJobRequestId
+  const leadTokenAllowsAttachment =
+    leadTokenScope?.status === 'active' &&
+    attachmentJobRequestId != null &&
+    leadTokenScope.jobRequestId === attachmentJobRequestId
 
   let sessionAllowsAttachment = false
 
@@ -113,7 +120,16 @@ export async function GET(
     sessionAllowsAttachment = allowed
   }
 
-  if (!sessionAllowsAttachment && !tokenAllowsAttachment) {
+  if (!sessionAllowsAttachment && !tokenAllowsAttachment && !leadTokenAllowsAttachment) {
+    if (!session && leadTokenScope?.status) {
+      const error = leadTokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired lead token'
+      const status = leadTokenScope.status === 'active' ? 403 : 401
+      console.warn(
+        `[attachments:${reqId}] Lead token denied: tokenStatus=${leadTokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'}`,
+      )
+      return NextResponse.json({ error }, { status })
+    }
+
     if (!session && tokenScope?.status) {
       const error = tokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired ticket token'
       const status = tokenScope.status === 'active' ? 403 : 401
@@ -153,7 +169,8 @@ export async function GET(
     return NextResponse.json({ error: 'File not found in storage' }, { status: 404 })
   }
 
-  const servedTo = session?.id ?? `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`
+  const servedTo = session?.id ??
+    (leadTokenScope?.jobRequestId ? `lead-token:${leadTokenScope.leadId ?? 'unknown'}` : `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`)
   console.info(`[attachments:${reqId}] Served ${id} to ${servedTo}`)
 
   const headers = new Headers()
