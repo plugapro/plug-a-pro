@@ -12,8 +12,6 @@ import { findLatestActiveProviderApplicationByPhone } from '../provider-applicat
 import {
   SERVICE_CATEGORY_OPTIONS,
   getServiceCategorySelectionSummary,
-  labelsFromServiceCategoryTags,
-  normalizeServiceCategorySelections,
 } from '../service-categories'
 import type { FlowContext, FlowResult } from './types'
 
@@ -140,31 +138,53 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills' }
   }
 
-  await sendSkillPrompt(ctx.phone, `Nice to meet you, *${name}*! 👋`)
+  await sendSkillListPrompt(ctx.phone, `Nice to meet you, *${name}*! 👋\n\n🔧 *What type of work do you do?*`)
   return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
-  const rawInput = ctx.reply.text?.trim() ?? ctx.reply.title?.trim() ?? ''
-  const skills = parseSkillSelections(rawInput)
+  const existingSkills: string[] = ctx.data.skills ?? []
 
-  if (skills.length === 0) {
-    await sendSkillPrompt(
-      ctx.phone,
-      'Please choose at least one valid skill. Reply with numbers or a comma-separated list.',
-    )
+  if (ctx.reply.id === 'skills_done') {
+    if (existingSkills.length === 0) {
+      await sendSkillListPrompt(ctx.phone, '🔧 *Please choose at least one skill first.*')
+      return { nextStep: 'reg_collect_skills_more' }
+    }
+    return promptArea(ctx)
+  }
+
+  if (ctx.reply.id === 'skills_add_more') {
+    await sendSkillListPrompt(ctx.phone, '🔧 *Add another skill:*', existingSkills)
     return { nextStep: 'reg_collect_skills_more' }
   }
 
-  await sendButtons(
-    ctx.phone,
-    `✅ Selected skills: *${skills.join(', ')}*\n\nUse these skills for your application, or replace them before continuing.`,
-    [
-      { id: 'skills_done', title: '✅ Continue' },
-      { id: 'edit_skills', title: '✏️ Change skills' },
-    ]
-  )
-  return { nextStep: 'reg_collect_area', nextData: { skills } }
+  if (ctx.reply.id === 'edit_skills') {
+    await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills* — previous selection will be replaced.')
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+  }
+
+  if (ctx.reply.id?.startsWith('skill_')) {
+    const tag = ctx.reply.id.replace('skill_', '')
+    const option = SERVICE_CATEGORY_OPTIONS.find(o => o.tag === tag)
+    const skillLabel = option?.label ?? ctx.reply.title ?? tag
+    const updatedSkills = existingSkills.includes(skillLabel)
+      ? existingSkills
+      : [...existingSkills, skillLabel]
+
+    await sendButtons(
+      ctx.phone,
+      `✅ *${skillLabel} added*\n\nSelected skills: *${updatedSkills.join(', ')}*\n\nAdd more skills or continue?`,
+      [
+        { id: 'skills_done', title: '✅ Continue' },
+        { id: 'skills_add_more', title: '➕ Add skill' },
+      ]
+    )
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: updatedSkills } }
+  }
+
+  // Fallback — re-show list for any unexpected input
+  await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills:*', existingSkills)
+  return { nextStep: 'reg_collect_skills_more' }
 }
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
@@ -187,14 +207,14 @@ async function promptArea(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'edit_skills') {
-    await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
+    await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills* — previous selection will be replaced.')
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
   }
 
   if (ctx.reply.id === 'skills_done') {
     const skills = ctx.data.skills ?? []
     if (skills.length === 0) {
-      await sendSkillPrompt(ctx.phone, 'Please choose at least one skill before continuing.')
+      await sendSkillListPrompt(ctx.phone, '🔧 *Please choose at least one skill first.*')
       return { nextStep: 'reg_collect_skills_more' }
     }
   }
@@ -236,6 +256,14 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
 
   const areaLabel = ctx.reply.title ?? ''
   const provinceKey = PROVINCE_KEY_MAP[ctx.reply.id ?? ''] ?? 'gauteng'
+
+  // Soft pilot notice for providers outside Gauteng — still allow full registration
+  if (ctx.reply.id !== 'area_gauteng') {
+    await sendText(
+      ctx.phone,
+      `🌍 *Heads up — Pilot Phase*\n\nPlug A Pro is currently operating in Gauteng only. We are expanding soon!\n\nYou can still complete your profile now — we will WhatsApp you the moment we go live in your area. No need to re-register later.`
+    )
+  }
 
   try {
     const { getCities } = await import('@/lib/location-nodes')
@@ -428,21 +456,22 @@ async function showSuburbSelectPrompt(
     const page = suburbs.slice(pageOffset, pageOffset + SUBURB_PAGE_SIZE)
     const hasMore = suburbs.length > pageOffset + SUBURB_PAGE_SIZE
 
-    const numberedList = page
-      .map((s, i) => `${pageOffset + i + 1}. ${s.label}`)
-      .join('\n')
-
     const selectedSummary = alreadySelected.length > 0
       ? `\n\n✅ Selected so far: *${alreadySelected.join(', ')}*`
       : ''
 
-    const moreNote = hasMore
-      ? `\n\nType *more* to see more suburbs, or *done* when finished.`
-      : `\n\nType the numbers of your suburbs, then *done* when finished.`
+    const rows: Array<{ id: string; title: string }> = page.map(s => ({
+      id: `suburb_${s.id}`,
+      title: s.label,
+    }))
+    if (hasMore) rows.push({ id: 'suburb_more', title: '➕ More suburbs…' })
+    if (alreadySelected.length > 0) rows.push({ id: 'suburb_done', title: '✅ Done selecting' })
 
-    await sendText(
+    await sendList(
       phone,
-      `📍 *Which suburbs in ${regionLabel} do you work in?*\n\nReply with numbers separated by commas (e.g. *1,3*).${selectedSummary}${moreNote}\n\n${numberedList}`,
+      `📍 *Which suburbs in ${regionLabel} do you work in?*${selectedSummary}\n\nTap a suburb to select it.`,
+      [{ title: 'Suburbs', rows }],
+      { buttonLabel: 'Select Suburb' },
     )
 
     return {
@@ -452,7 +481,6 @@ async function showSuburbSelectPrompt(
         regionLabel,
         suburbPage: pageOffset,
         suburbPageTotal: suburbs.length,
-        // Preserve suburb options so we can resolve numbers to IDs
         suburbOptions: suburbs.map(s => ({ id: s.id, label: s.label })),
       },
     }
@@ -473,13 +501,10 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   const existingIds: string[] = (ctx.data.locationNodeIds as string[]) ?? []
   const existingLabels: string[] = (ctx.data.selectedSuburbLabels as string[]) ?? []
 
-  const input = ctx.reply.text?.trim().toLowerCase() ?? ''
-
   // "done" — proceed if at least one suburb selected
-  if (input === 'done' || ctx.reply.id === 'suburb_done') {
+  if (ctx.reply.id === 'suburb_done') {
     if (existingIds.length === 0) {
-      await sendText(ctx.phone, 'Please select at least one suburb, or type *done* to use the whole region.')
-      return { nextStep: 'reg_collect_suburb_select' }
+      return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, [], suburbPage)
     }
     await sendExperiencePrompt(ctx.phone)
     return {
@@ -492,56 +517,55 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
     }
   }
 
-  // "more" — next page
-  if (input === 'more' || ctx.reply.id === 'suburb_more') {
+  // "more" — next page of suburbs
+  if (ctx.reply.id === 'suburb_more') {
     const nextOffset = suburbPage + SUBURB_PAGE_SIZE
     return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, nextOffset)
   }
 
-  // Parse number selections
-  const tokens = input.split(/[,\s]+/).filter(Boolean)
-  const numbers = tokens.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n >= 1)
-
-  if (numbers.length === 0) {
-    await sendText(ctx.phone, 'Reply with the numbers of your suburbs (e.g. *1,3*), or type *done* when finished.')
-    return { nextStep: 'reg_collect_suburb_select' }
+  // "add_more" — return to list from confirmation screen
+  if (ctx.reply.id === 'suburb_add_more') {
+    return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, 0)
   }
 
-  const newIds = [...existingIds]
-  const newLabels = [...existingLabels]
+  // Suburb tapped from list
+  if (ctx.reply.id?.startsWith('suburb_')) {
+    const suburbId = ctx.reply.id.replace('suburb_', '')
+    const suburb = suburbOptions.find(s => s.id === suburbId)
 
-  for (const n of numbers) {
-    const suburb = suburbOptions[n - 1]
-    if (suburb && !newIds.includes(suburb.id)) {
-      newIds.push(suburb.id)
-      newLabels.push(suburb.label)
+    if (!suburb) {
+      return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, suburbPage)
+    }
+
+    const newIds = existingIds.includes(suburb.id) ? existingIds : [...existingIds, suburb.id]
+    const newLabels = existingLabels.includes(suburb.label) ? existingLabels : [...existingLabels, suburb.label]
+    const hasMore = (ctx.data.suburbPageTotal as number ?? 0) > suburbPage + SUBURB_PAGE_SIZE
+
+    await sendButtons(
+      ctx.phone,
+      `✅ *${suburb.label} added*\n\nSelected: *${newLabels.join(', ')}*\n\n${hasMore ? 'Add more suburbs, or continue.' : 'Continue, or add more.'}`,
+      [
+        { id: 'suburb_done', title: '✅ Continue' },
+        { id: 'suburb_add_more', title: '➕ Add more' },
+      ],
+    )
+
+    return {
+      nextStep: 'reg_collect_suburb_select',
+      nextData: {
+        regionId,
+        regionLabel,
+        suburbPage,
+        suburbPageTotal: ctx.data.suburbPageTotal,
+        suburbOptions,
+        locationNodeIds: newIds,
+        selectedSuburbLabels: newLabels,
+      },
     }
   }
 
-  const summary = newLabels.join(', ')
-  const hasMore = (ctx.data.suburbPageTotal as number ?? 0) > suburbPage + SUBURB_PAGE_SIZE
-
-  await sendButtons(
-    ctx.phone,
-    `✅ *Suburbs selected:* ${summary}\n\n${hasMore ? 'Add more suburbs, or continue to the next step.' : 'Continue to the next step, or change your selection.'}`,
-    [
-      { id: 'suburb_done', title: '✅ Continue' },
-      { id: 'suburb_more', title: '➕ Add more' },
-    ],
-  )
-
-  return {
-    nextStep: 'reg_collect_suburb_select',
-    nextData: {
-      regionId,
-      regionLabel,
-      suburbPage,
-      suburbPageTotal: ctx.data.suburbPageTotal,
-      suburbOptions,
-      locationNodeIds: newIds,
-      selectedSuburbLabels: newLabels,
-    },
-  }
+  // Fallback — re-show list
+  return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, suburbPage)
 }
 
 // ─── Suburb free-text fallback (when location_nodes DB has no region data) ────
@@ -909,7 +933,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_skills' }   // handleCollectSkills reads the text as the new name
 
     case 'edit_skills':
-      await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
+      await sendSkillListPrompt(ctx.phone, '🔧 *Choose your skills* — previous selection will be replaced.')
       return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
 
     case 'edit_area':
@@ -960,35 +984,26 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function sendSkillPrompt(phone: string, intro: string): Promise<void> {
-  const numberedList = SERVICE_CATEGORY_OPTIONS.map(
-    (option, index) => `${index + 1}. ${option.label}`,
-  ).join('\n')
-
-  await sendText(
+async function sendSkillListPrompt(phone: string, intro: string, selectedSkills: string[] = []): Promise<void> {
+  const selectedSummary = selectedSkills.length > 0
+    ? `\n\n✅ Selected so far: *${selectedSkills.join(', ')}*`
+    : ''
+  const firstSection = SERVICE_CATEGORY_OPTIONS.slice(0, 8)
+  const secondSection = SERVICE_CATEGORY_OPTIONS.slice(8)
+  await sendList(
     phone,
-    `${intro}\n\n🔧 *Choose your skills in one reply.*\nReply with numbers separated by commas.\nExample: *1,3,5*\n\n${numberedList}`,
+    `${intro}${selectedSummary}\n\nTap a skill to select it.`,
+    [
+      {
+        title: 'Trades & Services',
+        rows: firstSection.map(o => ({ id: `skill_${o.tag}`, title: o.label })),
+      },
+      ...(secondSection.length > 0 ? [{
+        title: 'More skills',
+        rows: secondSection.map(o => ({ id: `skill_${o.tag}`, title: o.label })),
+      }] : []),
+    ],
+    { buttonLabel: 'Pick Skill' },
   )
 }
 
-function parseSkillSelections(input: string): string[] {
-  if (!input.trim()) return []
-
-  const tokens = input
-    .split(/[,\n]/)
-    .map((token) => token.trim())
-    .filter(Boolean)
-
-  if (tokens.length === 0) return []
-
-  const numericSelections = tokens.every((token) => /^\d+$/.test(token))
-  if (numericSelections) {
-    const tags = tokens
-      .map((token) => Number(token))
-      .map((index) => SERVICE_CATEGORY_OPTIONS[index - 1]?.tag)
-      .filter((value): value is string => Boolean(value))
-    return labelsFromServiceCategoryTags(tags)
-  }
-
-  return labelsFromServiceCategoryTags(normalizeServiceCategorySelections(tokens))
-}
