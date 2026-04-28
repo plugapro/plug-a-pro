@@ -2,18 +2,21 @@
 
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getSafeNextPath } from '@/lib/safe-redirect'
-import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
+import { normalizePhone } from '@/lib/utils'
 
-function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+type SendCodeError = {
+  title: string
+  reason: string
+  code: string
+  step: string
+  traceId: string
+  time: string
+  phoneMasked?: string
+  providerId?: string
 }
 
 export default function ProviderSignInPage() {
@@ -21,17 +24,21 @@ export default function ProviderSignInPage() {
   const searchParams = useSearchParams()
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<SendCodeError | null>(null)
   const next = getSafeNextPath(
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
     '/provider',
   )
 
-  function normalise(raw: string): string {
-    const digits = raw.replace(/\D/g, '')
-    if (digits.startsWith('27')) return `+${digits}`
-    if (digits.startsWith('0') && digits.length === 10) return `+27${digits.slice(1)}`
-    return `+${digits}`
+  function localError(reason: string, code: string): SendCodeError {
+    return {
+      title: "We couldn't send your login code.",
+      reason,
+      code,
+      step: 'Worker portal send-code',
+      traceId: `client_${Date.now().toString(36)}`,
+      time: new Date().toISOString(),
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -39,41 +46,35 @@ export default function ProviderSignInPage() {
     setError(null)
     setLoading(true)
 
-    const normalised = normalise(phone)
+    const normalised = normalizePhone(phone)
     if (!/^\+\d{10,15}$/.test(normalised)) {
-      setError('Please enter a valid South African mobile number.')
+      setError(localError('The mobile number format is invalid. Use a South African mobile number such as 0823035070.', 'INVALID_PHONE_NUMBER'))
       setLoading(false)
       return
     }
 
     try {
-      const exists = await phoneExistsForSignIn(normalised, 'provider')
-      if (!exists) {
-        setError("We couldn't find an active provider account for this number. Apply via WhatsApp first, or check the number.")
-        return
+      const response = await fetch('/api/auth/provider/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalised }),
+      })
+      const payload = await response.json().catch(() => ({})) as {
+        ok?: boolean
+        phone?: string
+        error?: SendCodeError
       }
 
-      const supabase = getSupabaseClient()
-      const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalised })
-
-      if (otpError) {
-        const msg = otpError.message.toLowerCase()
-        console.error('[provider-sign-in] Supabase OTP error:', otpError.message)
-        if (msg.includes('unsupported') || msg.includes('provider') || msg.includes('sms') || msg.includes('not enabled') || msg.includes('phone')) {
-          setError('SMS login is temporarily unavailable. Please contact support@plugapro.co.za.')
-        } else if (msg.includes('rate') || msg.includes('limit')) {
-          setError('Too many attempts. Please wait a few minutes and try again.')
-        } else {
-          setError('Could not send code. Please try again or contact support@plugapro.co.za.')
-        }
+      if (!response.ok || !payload.ok || !payload.phone) {
+        setError(payload.error ?? localError('The sign-in service did not return a usable response.', 'UNKNOWN_AUTH_ERROR'))
         return
       }
 
       router.push(
-        `/provider-verify?phone=${encodeURIComponent(normalised)}&next=${encodeURIComponent(next)}`,
+        `/provider-verify?phone=${encodeURIComponent(payload.phone)}&next=${encodeURIComponent(next)}`,
       )
     } catch {
-      setError('Something went wrong. Please try again.')
+      setError(localError('The browser could not reach the sign-in service. Please try again or contact support with this screenshot.', 'UNKNOWN_AUTH_ERROR'))
     } finally {
       setLoading(false)
     }
@@ -109,7 +110,20 @@ export default function ProviderSignInPage() {
           />
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive space-y-2">
+            <p className="font-medium">{error.title}</p>
+            <p>{error.reason}</p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-destructive/90">
+              <dt>Error code</dt><dd className="text-right font-medium">{error.code}</dd>
+              {error.phoneMasked && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.phoneMasked}</dd></>}
+              {error.providerId && <><dt>Provider ID</dt><dd className="text-right font-medium">{error.providerId}</dd></>}
+              <dt>Step</dt><dd className="text-right font-medium">{error.step}</dd>
+              <dt>Trace ID</dt><dd className="text-right font-medium">{error.traceId}</dd>
+              <dt>Time</dt><dd className="text-right font-medium">{error.time}</dd>
+            </dl>
+          </div>
+        )}
 
         <Button type="submit" size="lg" disabled={loading || !phone} className="w-full">
           {loading ? 'Sending code…' : 'Send code'}

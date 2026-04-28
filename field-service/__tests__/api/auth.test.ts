@@ -321,6 +321,103 @@ describe('POST /api/auth/phone-exists', () => {
   })
 })
 
+// ─── /api/auth/provider/send-code ─────────────────────────────────────────────
+
+describe('POST /api/auth/provider/send-code', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.test'
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
+
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockResolvedValue(null)
+
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
+      },
+    })
+  })
+
+  it.each([
+    ['0823035070', '+27823035070'],
+    ['27823035070', '+27823035070'],
+    ['+27823035070', '+27823035070'],
+  ])('normalizes %s and sends a provider login code', async (input, normalized) => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null })
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true })
+    ;(createClient as any).mockReturnValue({ auth: { signInWithOtp } })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: input }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, phone: normalized })
+    expect(db.provider.findUnique).toHaveBeenCalledWith({
+      where: { phone: normalized },
+      select: { id: true, active: true },
+    })
+    expect(signInWithOtp).toHaveBeenCalledWith({ phone: normalized })
+  })
+
+  it('returns PROVIDER_NOT_FOUND with a trace ID for unknown provider phones', async () => {
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(body.error).toMatchObject({
+      code: 'PROVIDER_NOT_FOUND',
+      step: 'Worker portal send-code',
+      phoneMasked: '082****070',
+    })
+    expect(body.error.traceId).toMatch(/^auth_/)
+  })
+
+  it('returns OTP_DELIVERY_FAILED when Supabase OTP delivery fails', async () => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true })
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({ error: new Error('gateway rejected message') }),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(502)
+    expect(body.error).toMatchObject({
+      code: 'OTP_DELIVERY_FAILED',
+      providerId: 'prov-1',
+      step: 'Worker portal send-code',
+    })
+    expect(body.error.traceId).toMatch(/^auth_/)
+  })
+})
+
 // ─── /api/auth/link ───────────────────────────────────────────────────────────
 
 describe('POST /api/auth/link', () => {
