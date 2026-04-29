@@ -1,27 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/db', () => ({
-  db: {
-    provider: {
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      update: vi.fn(),
+vi.mock('@/lib/db', () => {
+  const providerMock = { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() }
+  const availabilityMock = { upsert: vi.fn().mockResolvedValue({}) }
+  const txClient = { provider: providerMock, technicianAvailability: availabilityMock }
+  return {
+    db: {
+      provider: providerMock,
+      technicianAvailability: availabilityMock,
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+      lead: { findMany: vi.fn(), findUnique: vi.fn() },
+      job: { findMany: vi.fn(), findUnique: vi.fn() },
+      $transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(txClient)),
     },
-    technicianAvailability: {
-      upsert: vi.fn().mockResolvedValue({}),
-    },
-    auditLog: {
-      create: vi.fn().mockResolvedValue({}),
-    },
-    lead: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-    },
-    job: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-    },
-  },
+  }
+})
+
+vi.mock('@/lib/audit', () => ({
+  recordAuditLog: vi.fn().mockResolvedValue({}),
 }))
 
 vi.mock('@/lib/jobs', () => ({
@@ -47,6 +43,7 @@ import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
 import { transitionJob } from '@/lib/jobs'
+import { recordAuditLog } from '@/lib/audit'
 
 const mockCtx = (step: string, replyId?: string, replyText?: string, data: object = {}) => ({
   phone: '+27711111111',
@@ -599,6 +596,109 @@ describe('handleProviderJourneyFlow', () => {
     it('stays on same step when unrecognised button', async () => {
       const result = await handleProviderJourneyFlow(mockCtx('pj_status_confirm', 'invalid_button'))
       expect(result.nextStep).toBe('pj_status_confirm')
+    })
+  })
+
+  describe('pj_pause_confirm — provider_pause_today', () => {
+    it('sets breakUntil to 23:59:59 of today when provider_pause_today selected', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
+      })
+      await handleProviderJourneyFlow(mockCtx('pj_pause_confirm', 'provider_pause_today'))
+      const upsertArgs = ((db as any).technicianAvailability.upsert as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      const breakUntil = upsertArgs.create.breakUntil as Date
+      expect(breakUntil).toBeInstanceOf(Date)
+      expect(breakUntil.getHours()).toBe(23)
+      expect(breakUntil.getMinutes()).toBe(59)
+      expect(breakUntil.getSeconds()).toBe(59)
+    })
+  })
+
+  describe('pj_provider_status step', () => {
+    const baseProvider = {
+      id: 'prov_1',
+      name: 'Sipho',
+      availableNow: true,
+      status: 'ACTIVE',
+      skills: ['Plumbing'],
+      serviceAreas: [],
+      suspendedReason: null,
+      suspendedUntil: null,
+      technicianAvailability: {
+        availabilityMode: 'ALWAYS_AVAILABLE',
+        availabilityState: 'AVAILABLE',
+        emergencyAvailable: true,
+        breakUntil: null,
+      },
+      schedule: [],
+      technicianServiceAreas: [{ label: 'Randburg' }],
+    }
+
+    it('shows availability mode, service areas, and emergency flag in message body', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(baseProvider)
+      await handleProviderJourneyFlow(mockCtx('pj_provider_status'))
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Always available'),
+        expect.any(Array),
+      )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Randburg'),
+        expect.any(Array),
+      )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('On'),
+        expect.any(Array),
+      )
+    })
+
+    it('shows Go Available button and paused message when provider is paused', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...baseProvider,
+        availableNow: false,
+        technicianAvailability: {
+          availabilityMode: 'PAUSED',
+          availabilityState: 'PAUSED',
+          emergencyAvailable: false,
+          breakUntil: null,
+        },
+      })
+      await handleProviderJourneyFlow(mockCtx('pj_provider_status'))
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('paused'),
+        expect.arrayContaining([expect.objectContaining({ id: 'provider_go_available' })]),
+      )
+    })
+  })
+
+  describe('audit log assertions', () => {
+    it('records audit log when provider pauses leads', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
+      })
+      await handleProviderJourneyFlow(mockCtx('pj_pause_confirm', 'provider_pause_manual'))
+      expect(recordAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'prov_1',
+          action: 'provider.availability.paused',
+        }),
+      )
+    })
+
+    it('records audit log when provider goes available', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: false, technicianAvailability: null,
+      })
+      await handleProviderJourneyFlow(mockCtx('pj_toggle_available', 'provider_go_available'))
+      expect(recordAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'prov_1',
+          action: 'provider.availability.available',
+        }),
+      )
     })
   })
 })

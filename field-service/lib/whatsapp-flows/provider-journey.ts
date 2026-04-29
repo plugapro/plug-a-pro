@@ -173,10 +173,7 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
 // ─── Provider Menu ────────────────────────────────────────────────────────────
 
 async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
-    include: { technicianAvailability: true },
-  })
+  const provider = await findProviderForWhatsApp(ctx.phone, { technicianAvailability: true })
 
   if (!provider) {
     await sendText(
@@ -214,7 +211,7 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleAvailableLeads(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
+  const provider = await findProviderForWhatsApp(ctx.phone)
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
     return { nextStep: 'done' }
@@ -300,10 +297,7 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
     return promptPauseLeads(ctx)
   }
 
-  const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
-    include: { technicianAvailability: true },
-  })
+  const provider = await findProviderForWhatsApp(ctx.phone, { technicianAvailability: true })
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
     return { nextStep: 'done' }
@@ -382,36 +376,35 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function setProviderAvailable(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
-    include: { technicianAvailability: true },
-  })
+  const provider = await findProviderForWhatsApp(ctx.phone, { technicianAvailability: true })
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
     return { nextStep: 'done' }
   }
 
-  await db.provider.update({ where: { id: provider.id }, data: { availableNow: true } })
-  await db.technicianAvailability.upsert({
-    where: { providerId: provider.id },
-    create: {
-      providerId: provider.id,
-      availabilityMode: 'ALWAYS_AVAILABLE',
-      availabilityState: 'AVAILABLE',
-      lastUpdatedBy: provider.id,
-      lastUpdatedChannel: 'whatsapp',
-    },
-    update: {
-      availabilityMode: 'ALWAYS_AVAILABLE',
-      availabilityState: 'AVAILABLE',
-      nextAvailableAt: null,
-      breakUntil: null,
-      pausedAt: null,
-      pauseReason: null,
-      lastUpdatedBy: provider.id,
-      lastUpdatedChannel: 'whatsapp',
-      notes: null,
-    },
+  await db.$transaction(async (tx) => {
+    await tx.provider.update({ where: { id: provider.id }, data: { availableNow: true } })
+    await tx.technicianAvailability.upsert({
+      where: { providerId: provider.id },
+      create: {
+        providerId: provider.id,
+        availabilityMode: 'ALWAYS_AVAILABLE',
+        availabilityState: 'AVAILABLE',
+        lastUpdatedBy: provider.id,
+        lastUpdatedChannel: 'whatsapp',
+      },
+      update: {
+        availabilityMode: 'ALWAYS_AVAILABLE',
+        availabilityState: 'AVAILABLE',
+        nextAvailableAt: null,
+        breakUntil: null,
+        pausedAt: null,
+        pauseReason: null,
+        lastUpdatedBy: provider.id,
+        lastUpdatedChannel: 'whatsapp',
+        notes: null,
+      },
+    })
   })
   await recordProviderAvailabilityAudit({
     providerId: provider.id,
@@ -462,10 +455,7 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
     return promptPauseLeads(ctx)
   }
 
-  const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
-    include: { technicianAvailability: true },
-  })
+  const provider = await findProviderForWhatsApp(ctx.phone, { technicianAvailability: true })
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
     return { nextStep: 'done' }
@@ -477,30 +467,32 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
     ? 'Paused for today from WhatsApp'
     : 'Paused until manually reactivated from WhatsApp'
 
-  await db.provider.update({ where: { id: provider.id }, data: { availableNow: false } })
-  await db.technicianAvailability.upsert({
-    where: { providerId: provider.id },
-    create: {
-      providerId: provider.id,
-      availabilityMode: 'PAUSED',
-      availabilityState: 'PAUSED',
-      pausedAt: now,
-      breakUntil,
-      pauseReason,
-      lastUpdatedBy: provider.id,
-      lastUpdatedChannel: 'whatsapp',
-      notes: pauseReason,
-    },
-    update: {
-      availabilityMode: 'PAUSED',
-      availabilityState: 'PAUSED',
-      pausedAt: now,
-      breakUntil,
-      pauseReason,
-      lastUpdatedBy: provider.id,
-      lastUpdatedChannel: 'whatsapp',
-      notes: pauseReason,
-    },
+  await db.$transaction(async (tx) => {
+    await tx.provider.update({ where: { id: provider.id }, data: { availableNow: false } })
+    await tx.technicianAvailability.upsert({
+      where: { providerId: provider.id },
+      create: {
+        providerId: provider.id,
+        availabilityMode: 'PAUSED',
+        availabilityState: 'PAUSED',
+        pausedAt: now,
+        breakUntil,
+        pauseReason,
+        lastUpdatedBy: provider.id,
+        lastUpdatedChannel: 'whatsapp',
+        notes: pauseReason,
+      },
+      update: {
+        availabilityMode: 'PAUSED',
+        availabilityState: 'PAUSED',
+        pausedAt: now,
+        breakUntil,
+        pauseReason,
+        lastUpdatedBy: provider.id,
+        lastUpdatedChannel: 'whatsapp',
+        notes: pauseReason,
+      },
+    })
   })
   await recordProviderAvailabilityAudit({
     providerId: provider.id,
@@ -529,7 +521,7 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
   const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
+    where: { phone: normalizePhone(ctx.phone) },
     select: { serviceAreas: true, technicianServiceAreas: { select: { label: true, active: true } } },
   })
   if (!provider) {
@@ -556,7 +548,7 @@ async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleProviderProfile(ctx: FlowContext): Promise<FlowResult> {
   const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
+    where: { phone: normalizePhone(ctx.phone) },
     select: {
       name: true,
       phone: true,
@@ -597,15 +589,12 @@ async function handleProviderSupport(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({
-    where: { phone: ctx.phone },
-    include: {
-      technicianAvailability: true,
-      schedule: { where: { active: true }, orderBy: { dayOfWeek: 'asc' } },
-      technicianServiceAreas: {
-        where: { active: true },
-        select: { label: true },
-      },
+  const provider = await findProviderForWhatsApp(ctx.phone, {
+    technicianAvailability: true,
+    schedule: { where: { active: true }, orderBy: { dayOfWeek: 'asc' } },
+    technicianServiceAreas: {
+      where: { active: true },
+      select: { label: true },
     },
   })
   if (!provider) {
@@ -1083,7 +1072,7 @@ async function handleStatusConfirm(ctx: FlowContext): Promise<FlowResult> {
   const jobId = withoutPrefix.slice(0, firstUnderscore)
   const newStatus = withoutPrefix.slice(firstUnderscore + 1)
 
-  const provider = await db.provider.findUnique({ where: { phone: ctx.phone } })
+  const provider = await findProviderForWhatsApp(ctx.phone)
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider.")
     return { nextStep: 'done' }
