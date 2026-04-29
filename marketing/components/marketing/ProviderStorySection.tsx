@@ -41,25 +41,21 @@ const journeySteps = [
   "Local providers become easier to find",
 ];
 
-function getImageLayoutClass(index: number) {
-  if (index === 0) return "md:col-span-3 md:row-span-2";
-  if (index === 4) return "md:col-span-6";
-  return "md:col-span-3";
-}
-
 export function ProviderStorySection() {
   return (
     <section className="border-t border-border/40 bg-muted/30 px-4 py-20 md:py-24">
       <div className="mx-auto max-w-6xl">
-        <div className="grid gap-12 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+        <div className="grid gap-10 lg:grid-cols-2 lg:items-center lg:gap-14">
+
+          {/* ── Text column ── */}
           <div>
             <p className="mb-4 text-xs font-medium uppercase tracking-widest brand-gradient-text">
               Built for local service providers
             </p>
-            <h2 className="mb-5 max-w-xl text-3xl font-bold leading-tight md:text-5xl">
+            <h2 className="mb-5 text-3xl font-bold leading-tight md:text-4xl">
               From street signs to digital leads
             </h2>
-            <div className="space-y-4 text-muted-foreground leading-relaxed">
+            <div className="space-y-3 text-muted-foreground leading-relaxed text-sm">
               <p>
                 Across our communities, skilled plumbers, electricians, carpenters,
                 painters, tilers, welders, roofers and handymen are already putting
@@ -73,7 +69,7 @@ export function ProviderStorySection() {
               </p>
             </div>
 
-            <div className="mt-7 grid gap-3 text-sm text-muted-foreground">
+            <div className="mt-6 space-y-2 text-sm text-muted-foreground">
               {[
                 "Customers can request help without driving around looking for signs.",
                 "Providers get a better digital presence for their trade.",
@@ -81,7 +77,7 @@ export function ProviderStorySection() {
               ].map((point) => (
                 <div key={point} className="flex gap-3">
                   <span
-                    className="mt-2 size-1.5 shrink-0 rounded-full"
+                    className="mt-[7px] size-1.5 shrink-0 rounded-full"
                     style={{ background: "var(--accent-brand)" }}
                     aria-hidden="true"
                   />
@@ -100,7 +96,7 @@ export function ProviderStorySection() {
                     rel="noopener noreferrer"
                   />
                 }
-                size="lg"
+                size="default"
                 onClick={() => {
                   analytics.whatsappClick("provider_story_customer");
                   analytics.ctaClick("Find a Local Pro", "provider_story", "customer");
@@ -118,7 +114,7 @@ export function ProviderStorySection() {
                   />
                 }
                 variant="outline"
-                size="lg"
+                size="default"
                 onClick={() => {
                   analytics.whatsappClick("provider_story_provider");
                   analytics.ctaClick("Register as a Provider", "provider_story", "provider");
@@ -129,31 +125,26 @@ export function ProviderStorySection() {
             </div>
           </div>
 
-          <div className="-mx-4 overflow-x-auto px-4 pb-3 md:mx-0 md:overflow-visible md:px-0 md:pb-0">
-            <div className="flex min-w-max snap-x gap-4 md:grid md:min-w-0 md:grid-cols-6 md:grid-rows-2 md:gap-4">
-              {providerStoryImages.map((image, index) => (
+          {/* ── Image column ── */}
+          {/* Mobile: horizontal scroll; desktop: clean 2×2 grid */}
+          <div className="-mx-4 overflow-x-auto px-4 pb-2 md:mx-0 md:overflow-visible md:px-0 md:pb-0">
+            <div className="flex min-w-max gap-3 snap-x md:grid md:min-w-0 md:grid-cols-2 md:gap-3">
+              {providerStoryImages.slice(0, 4).map((image) => (
                 <figure
                   key={image.src}
-                  className={[
-                    "group relative w-[74vw] max-w-[330px] shrink-0 snap-center overflow-hidden rounded-xl border border-border/50 bg-background shadow-sm transition-shadow hover:shadow-md md:w-auto md:max-w-none",
-                    getImageLayoutClass(index),
-                  ].join(" ")}
+                  className="group relative w-[72vw] max-w-[300px] shrink-0 snap-center overflow-hidden rounded-xl border border-border/50 bg-background shadow-sm transition-shadow hover:shadow-md md:w-auto md:max-w-none"
                 >
-                  <div className={index === 0 ? "aspect-[4/5] md:aspect-auto md:h-full" : "aspect-[4/3]"}>
+                  <div className="aspect-[4/3]">
                     <Image
                       src={image.src}
                       alt={image.alt}
-                      width={1080}
-                      height={1080}
-                      sizes={
-                        index === 0
-                          ? "(min-width: 1024px) 32rem, 74vw"
-                          : "(min-width: 1024px) 20rem, 74vw"
-                      }
+                      width={800}
+                      height={600}
+                      sizes="(min-width: 1024px) 22rem, 72vw"
                       className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
                     />
                   </div>
-                  <figcaption className="absolute inset-x-3 bottom-3 rounded-lg border border-white/25 bg-black/55 px-3 py-2 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
+                  <figcaption className="absolute inset-x-3 bottom-3 rounded-lg border border-white/20 bg-black/55 px-3 py-1.5 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
                     {image.label}
                   </figcaption>
                 </figure>
@@ -162,13 +153,14 @@ export function ProviderStorySection() {
           </div>
         </div>
 
-        <div className="mt-12 grid gap-3 md:grid-cols-4">
+        {/* ── Journey steps ── */}
+        <div className="mt-10 grid gap-2 sm:grid-cols-2 md:grid-cols-4">
           {journeySteps.map((step, index) => (
             <div
               key={step}
-              className="rounded-xl border border-border/40 bg-background/80 p-4"
+              className="rounded-xl border border-border/40 bg-background/80 px-4 py-3"
             >
-              <p className="mb-2 text-xs font-semibold text-muted-foreground">
+              <p className="mb-1 text-xs font-semibold text-muted-foreground">
                 Step {index + 1}
               </p>
               <p className="text-sm font-medium">{step}</p>
