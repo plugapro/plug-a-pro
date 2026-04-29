@@ -689,6 +689,58 @@ describe('registration flow — evidence file uploads', () => {
     )
   })
 
+  it('suppresses file progress confirmation when suppressEvidenceFileProgress is true (mid-batch)', async () => {
+    const ctx = {
+      phone,
+      step: 'reg_collect_evidence' as any,
+      data: {} as any,
+      flow: 'registration' as const,
+      reply: { type: 'image' as any, mediaId: 'media_batch_1', mimeType: 'image/jpeg' },
+      suppressEvidenceFileProgress: true,
+      evidenceFileBatchSize: 3,
+    }
+
+    const result = await handleRegistrationFlow(ctx)
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalled()
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextData?.evidenceFileUrls).toEqual(['att_mock_001'])
+  })
+
+  it('sends file progress confirmation on last batch item when suppressEvidenceFileProgress is false', async () => {
+    const ctx = {
+      phone,
+      step: 'reg_collect_evidence' as any,
+      data: {
+        evidenceFileUrls: ['att_first', 'att_second'],
+        evidenceMediaIds: ['media_batch_1', 'media_batch_2'],
+      } as any,
+      flow: 'registration' as const,
+      reply: { type: 'image' as any, mediaId: 'media_batch_3', mimeType: 'image/jpeg' },
+      suppressEvidenceFileProgress: false,
+      evidenceFileBatchSize: 3,
+    }
+
+    const result = await handleRegistrationFlow(ctx)
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalled()
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      phone,
+      expect.stringContaining('3 files received'),
+      expect.any(Array),
+    )
+    expect(result.nextData?.evidenceFileUrls).toEqual(['att_first', 'att_second', 'att_mock_001'])
+  })
+
+  it('uses "Add another file" button label (not "Add another")', async () => {
+    const result = await handleRegistrationFlow(makeMediaCtx('image'))
+
+    const buttons: Array<{ id: string; title: string }> = (wa.sendButtons as any).mock.calls[0][2]
+    const addMoreButton = buttons.find((b) => b.id === 'evidence_add_more')
+    expect(addMoreButton?.title).toBe('📎 Add another file')
+  })
+
   it('handlePending without evidence files does not call attachment.updateMany', async () => {
     ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
     ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockResolvedValue({

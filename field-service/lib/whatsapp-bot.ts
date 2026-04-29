@@ -34,9 +34,15 @@ import { normalizePhone } from './utils'
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
 const CUSTOMER_PHOTO_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS) || 800
+const PROVIDER_EVIDENCE_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || 800
 const CITY_TEXT_SUPERSEDE_WINDOW_MS = Number(process.env.WHATSAPP_CITY_TEXT_SUPERSEDE_WINDOW_MS) || 800
 const phoneMessageQueues = new Map<string, Promise<void>>()
 const customerPhotoBatches = new Map<string, {
+  messages: InboundMessage[]
+  timer: ReturnType<typeof setTimeout>
+  waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>
+}>()
+const providerEvidenceBatches = new Map<string, {
   messages: InboundMessage[]
   timer: ReturnType<typeof setTimeout>
   waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>
@@ -122,6 +128,9 @@ export async function processInboundMessage(
   if (await shouldBatchCustomerPhotoMessage(phone, message)) {
     return enqueueCustomerPhotoBatch(phone, message)
   }
+  if (await shouldBatchProviderEvidenceMessage(phone, message)) {
+    return enqueueProviderEvidenceBatch(phone, message)
+  }
 
   if (isCustomerCityInteractiveMessage(message)) {
     markRecentCityInteractiveSelection(phone, message.id)
@@ -158,6 +167,22 @@ async function shouldBatchCustomerPhotoMessage(phone: string, message: InboundMe
   )
 }
 
+async function shouldBatchProviderEvidenceMessage(phone: string, message: InboundMessage): Promise<boolean> {
+  if (message.type !== 'image' && message.type !== 'document') return false
+
+  const conversation = await db.conversation.findUnique({
+    where: { phone },
+    select: { flow: true, step: true, expiresAt: true },
+  })
+
+  return Boolean(
+    conversation &&
+    conversation.flow === 'registration' &&
+    conversation.step === 'reg_collect_evidence' &&
+    conversation.expiresAt > new Date()
+  )
+}
+
 function enqueueCustomerPhotoBatch(phone: string, message: InboundMessage): Promise<void> {
   return new Promise((resolve, reject) => {
     const existing = customerPhotoBatches.get(phone)
@@ -178,12 +203,42 @@ function enqueueCustomerPhotoBatch(phone: string, message: InboundMessage): Prom
   })
 }
 
+function enqueueProviderEvidenceBatch(phone: string, message: InboundMessage): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existing = providerEvidenceBatches.get(phone)
+    if (existing) {
+      existing.messages.push(message)
+      existing.waiters.push({ resolve, reject })
+      clearTimeout(existing.timer)
+      existing.timer = setTimeout(() => flushProviderEvidenceBatch(phone), PROVIDER_EVIDENCE_BATCH_WINDOW_MS)
+      return
+    }
+
+    const batch = {
+      messages: [message],
+      waiters: [{ resolve, reject }],
+      timer: setTimeout(() => flushProviderEvidenceBatch(phone), PROVIDER_EVIDENCE_BATCH_WINDOW_MS),
+    }
+    providerEvidenceBatches.set(phone, batch)
+  })
+}
+
 function flushCustomerPhotoBatch(phone: string) {
   const batch = customerPhotoBatches.get(phone)
   if (!batch) return
   customerPhotoBatches.delete(phone)
 
-  enqueuePhoneMessageBatch(phone, batch.messages)
+  enqueuePhoneMessageBatch(phone, batch.messages, 'customer_photo')
+    .then(() => batch.waiters.forEach((waiter) => waiter.resolve()))
+    .catch((error: unknown) => batch.waiters.forEach((waiter) => waiter.reject(error)))
+}
+
+function flushProviderEvidenceBatch(phone: string) {
+  const batch = providerEvidenceBatches.get(phone)
+  if (!batch) return
+  providerEvidenceBatches.delete(phone)
+
+  enqueuePhoneMessageBatch(phone, batch.messages, 'provider_evidence')
     .then(() => batch.waiters.forEach((waiter) => waiter.resolve()))
     .catch((error: unknown) => batch.waiters.forEach((waiter) => waiter.reject(error)))
 }
@@ -266,10 +321,19 @@ function flushPendingCityTextMessage(phone: string) {
     .catch((error: unknown) => pending.reject(error))
 }
 
+type MediaBatchOptions = {
+  suppressCustomerPhotoProgress?: boolean
+  customerPhotoBatchSize?: number
+  suppressEvidenceFileProgress?: boolean
+  evidenceFileBatchSize?: number
+}
+
+type MessageBatchMode = 'customer_photo' | 'provider_evidence'
+
 function enqueuePhoneMessage(
   phone: string,
   message: InboundMessage,
-  options?: { suppressCustomerPhotoProgress?: boolean; customerPhotoBatchSize?: number }
+  options?: MediaBatchOptions
 ): Promise<void> {
   const previous = phoneMessageQueues.get(phone) ?? Promise.resolve()
   const current = previous
@@ -285,16 +349,17 @@ function enqueuePhoneMessage(
   return current
 }
 
-function enqueuePhoneMessageBatch(phone: string, messages: InboundMessage[]): Promise<void> {
+function enqueuePhoneMessageBatch(phone: string, messages: InboundMessage[], mode: MessageBatchMode): Promise<void> {
   const previous = phoneMessageQueues.get(phone) ?? Promise.resolve()
   const current = previous
     .catch(() => undefined)
     .then(async () => {
       for (let index = 0; index < messages.length; index += 1) {
-        await processInboundMessageUnlocked(messages[index], {
-          suppressCustomerPhotoProgress: index < messages.length - 1,
-          customerPhotoBatchSize: messages.length,
-        })
+        const isLast = index === messages.length - 1
+        const opts: MediaBatchOptions = mode === 'customer_photo'
+          ? { suppressCustomerPhotoProgress: !isLast, customerPhotoBatchSize: messages.length }
+          : { suppressEvidenceFileProgress: !isLast, evidenceFileBatchSize: messages.length }
+        await processInboundMessageUnlocked(messages[index], opts)
       }
     })
 
@@ -309,7 +374,7 @@ function enqueuePhoneMessageBatch(phone: string, messages: InboundMessage[]): Pr
 
 async function processInboundMessageUnlocked(
   message: InboundMessage,
-  options?: { suppressCustomerPhotoProgress?: boolean; customerPhotoBatchSize?: number }
+  options?: MediaBatchOptions
 ): Promise<void> {
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = normalizePhone(message.from)
@@ -725,6 +790,8 @@ async function processInboundMessageUnlocked(
       flow,
       suppressCustomerPhotoProgress: options?.suppressCustomerPhotoProgress,
       customerPhotoBatchSize: options?.customerPhotoBatchSize,
+      suppressEvidenceFileProgress: options?.suppressEvidenceFileProgress,
+      evidenceFileBatchSize: options?.evidenceFileBatchSize,
     }
     let result: { nextStep: FlowStep; nextData?: Partial<ConversationData> } = { nextStep: step, nextData: data }
 
@@ -1505,7 +1572,14 @@ async function handleProviderJobFlow(
         include: {
           match: {
             include: {
-              jobRequest: { include: { address: true } },
+              jobRequest: {
+                include: {
+                  address: true,
+                  leads: {
+                    select: { id: true, providerId: true },
+                  },
+                },
+              },
             },
           },
         },
@@ -1547,14 +1621,24 @@ async function handleProviderJobFlow(
       return { nextStep: 'done' }
     }
 
-    // No status change needed (already SCHEDULED); just confirm acceptance
-    const jobUrl = `${appUrl}/provider/jobs/${jobId}`
+    // No status change needed (already SCHEDULED); just confirm acceptance.
+    // Prefer a scoped one-job WhatsApp link when this scheduled job originated
+    // from a lead; fall back to the authenticated portal for legacy bookings.
+    const acceptedLeadId = job.booking.match.jobRequest.leads.find((lead) => lead.providerId === job.providerId)?.id
+    const jobUrl = acceptedLeadId
+      ? await (await import('./provider-lead-access')).getProviderSignedJobHandoverUrl({
+          leadId: acceptedLeadId,
+          providerId: job.providerId,
+          jobRequestId: job.booking.match.jobRequest.id,
+          providerPhone: job.provider.phone,
+        }) ?? `${appUrl}/provider/jobs/${jobId}`
+      : `${appUrl}/provider/jobs/${jobId}`
     await sendCtaUrl(
       ctx.phone,
-      `✅ *Job Confirmed!*\n\nSee full customer notes and directions in the app:`,
+      `✅ *Job Confirmed!*\n\nYou can manage this job from the link below. No login is needed when a secure job link is available.`,
       'Open Job',
       jobUrl,
-      { footer: 'Navigate and update job status from the app' }
+      { footer: acceptedLeadId ? 'Secure link for this accepted job only.' : 'Sign in may be required for this booking.' }
     )
     return { nextStep: 'done' }
   }

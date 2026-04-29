@@ -65,6 +65,7 @@ vi.mock('@/lib/post-match-communications', () => ({
 
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { handleJobRequestFlow } from '@/lib/whatsapp-flows/job-request'
+import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 
 const PHONE = '+27821234567'
 
@@ -307,6 +308,104 @@ describe('processInboundMessage customer photo batching', () => {
     expect(calls[2][0]).toMatchObject({ suppressCustomerPhotoProgress: false, customerPhotoBatchSize: 3 })
     expect(storedConversation.data.photoAttachmentIds).toEqual(['att-media-1', 'att-media-2', 'att-media-3'])
     expect(storedConversation.data.photoMediaIds).toEqual(['media-1', 'media-2', 'media-3'])
+  })
+})
+
+describe('processInboundMessage provider evidence batching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+  })
+
+  function evidenceImageMessage(mediaId: string) {
+    return {
+      from: PHONE,
+      id: `wamid.${mediaId}`,
+      type: 'image',
+      image: { id: mediaId, mime_type: 'image/jpeg' },
+      timestamp: String(Date.now()),
+    }
+  }
+
+  it('processes WhatsApp multi-file evidence batches sequentially and suppresses duplicate confirmations until the last file', async () => {
+    let storedConversation = {
+      phone: PHONE,
+      flow: 'registration',
+      step: 'reg_collect_evidence',
+      data: {
+        name: 'Sipho Dlamini',
+        skills: ['plumbing'],
+        evidenceFileUrls: [],
+        evidenceMediaIds: [],
+      },
+      expiresAt: new Date(Date.now() + 60_000),
+    }
+
+    mockDb.conversation.findUnique.mockImplementation(async () => storedConversation)
+    mockDb.conversation.upsert.mockImplementation(async (args: any) => {
+      if (args.update && ('flow' in args.update || 'step' in args.update || 'data' in args.update)) {
+        storedConversation = {
+          ...storedConversation,
+          flow: args.update.flow,
+          step: args.update.step,
+          data: args.update.data,
+          expiresAt: args.update.expiresAt,
+        }
+      }
+      return storedConversation
+    })
+
+    ;(handleRegistrationFlow as ReturnType<typeof vi.fn>).mockImplementation(async (ctx: any) => {
+      const mediaId = ctx.reply.mediaId
+      const evidenceFileUrls = [...(ctx.data.evidenceFileUrls ?? []), `att-${mediaId}`]
+      const evidenceMediaIds = [...(ctx.data.evidenceMediaIds ?? []), mediaId]
+      return {
+        nextStep: 'reg_collect_evidence',
+        nextData: { evidenceFileUrls, evidenceMediaIds },
+      }
+    })
+
+    const first = processInboundMessage(evidenceImageMessage('ev-1'))
+    const second = processInboundMessage(evidenceImageMessage('ev-2'))
+    const third = processInboundMessage(evidenceImageMessage('ev-3'))
+
+    await vi.advanceTimersByTimeAsync(801)
+    await Promise.all([first, second, third])
+
+    expect(handleRegistrationFlow).toHaveBeenCalledTimes(3)
+    const calls = (handleRegistrationFlow as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls[0][0]).toMatchObject({ suppressEvidenceFileProgress: true, evidenceFileBatchSize: 3 })
+    expect(calls[1][0]).toMatchObject({ suppressEvidenceFileProgress: true, evidenceFileBatchSize: 3 })
+    expect(calls[2][0]).toMatchObject({ suppressEvidenceFileProgress: false, evidenceFileBatchSize: 3 })
+    expect(storedConversation.data.evidenceFileUrls).toEqual(['att-ev-1', 'att-ev-2', 'att-ev-3'])
+    expect(storedConversation.data.evidenceMediaIds).toEqual(['ev-1', 'ev-2', 'ev-3'])
+  })
+
+  it('does not batch provider evidence when conversation is not on reg_collect_evidence step', async () => {
+    mockDb.conversation.findUnique.mockResolvedValue({
+      phone: PHONE,
+      flow: 'registration',
+      step: 'reg_collect_name',
+      data: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+    mockDb.conversation.upsert.mockResolvedValue({
+      phone: PHONE,
+      flow: 'registration',
+      step: 'reg_collect_name',
+      data: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+
+    ;(handleRegistrationFlow as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nextStep: 'reg_collect_name',
+    })
+
+    await processInboundMessage(evidenceImageMessage('ev-off-step'))
+    await vi.advanceTimersByTimeAsync(801)
+
+    // Image sent on a non-media step is dropped by the whatsapp-bot media gate before the flow handler runs
+    expect(handleRegistrationFlow).not.toHaveBeenCalled()
   })
 })
 

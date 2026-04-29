@@ -190,6 +190,8 @@ export interface FlowContext {
   flow: FlowName
   suppressCustomerPhotoProgress?: boolean // true while processing earlier images in a WhatsApp multi-photo batch
   customerPhotoBatchSize?: number
+  suppressEvidenceFileProgress?: boolean  // true while processing earlier files in a provider evidence batch
+  evidenceFileBatchSize?: number
 }
 
 // What a flow handler returns

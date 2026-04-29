@@ -9,6 +9,7 @@ import { syncProviderRecord } from '../provider-record'
 import { checkJobsForNewProviderAvailability } from '../matching/customer-recontact'
 import { normalizePhone } from '../utils'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
+import { createTestCohortContext } from '../internal-test-cohort'
 import {
   SERVICE_CATEGORY_OPTIONS,
   resolveServiceCategoryTag,
@@ -58,7 +59,7 @@ async function sendEvidenceFileProgress(phone: string, count: number) {
     `✅ *${count} file${count === 1 ? '' : 's'} received.* You can add up to ${remaining} more, or continue.`,
     [
       { id: 'evidence_done', title: '✅ Continue' },
-      { id: 'evidence_add_more', title: '📎 Add another' },
+      { id: 'evidence_add_more', title: '📎 Add another file' },
     ]
   )
 }
@@ -913,7 +914,12 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     const existingMediaIds = uniqueStrings(ctx.data.evidenceMediaIds ?? [])
 
     if (existingMediaIds.includes(ctx.reply.mediaId)) {
-      await sendEvidenceFileProgress(ctx.phone, existing.length)
+      console.info('[registration:handleCollectEvidence] duplicate media skipped', {
+        phone: ctx.phone, mediaId: ctx.reply.mediaId, currentCount: existing.length,
+      })
+      if (!ctx.suppressEvidenceFileProgress) {
+        await sendEvidenceFileProgress(ctx.phone, existing.length)
+      }
       return {
         nextStep: 'reg_collect_evidence',
         nextData: { evidenceFileUrls: existing, evidenceMediaIds: existingMediaIds },
@@ -921,7 +927,9 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     }
 
     if (existing.length >= MAX_EVIDENCE_FILES) {
-      await sendEvidenceFileProgress(ctx.phone, existing.length)
+      if (!ctx.suppressEvidenceFileProgress) {
+        await sendEvidenceFileProgress(ctx.phone, existing.length)
+      }
       return {
         nextStep: 'reg_collect_evidence',
         nextData: { evidenceFileUrls: existing, evidenceMediaIds: existingMediaIds },
@@ -937,7 +945,20 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       })
       const updated = uniqueStrings([...existing, attachmentId]).slice(0, MAX_EVIDENCE_FILES)
       const updatedMediaIds = uniqueStrings([...existingMediaIds, ctx.reply.mediaId])
-      await sendEvidenceFileProgress(ctx.phone, updated.length)
+
+      console.info('[registration:handleCollectEvidence] evidence file saved', {
+        phone: ctx.phone,
+        mediaId: ctx.reply.mediaId,
+        mimeType: ctx.reply.mimeType ?? 'unknown',
+        attachmentId,
+        newCount: updated.length,
+        batchSize: ctx.evidenceFileBatchSize ?? 1,
+        suppressed: ctx.suppressEvidenceFileProgress ?? false,
+      })
+
+      if (!ctx.suppressEvidenceFileProgress) {
+        await sendEvidenceFileProgress(ctx.phone, updated.length)
+      }
       return {
         nextStep: 'reg_collect_evidence',
         nextData: { evidenceFileUrls: updated, evidenceMediaIds: updatedMediaIds },
@@ -1031,6 +1052,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     // Race condition: user taps "Submit" twice (or retries quickly). Check for
     // an existing active application before creating a new record.
     const normalizedPhone = normalizePhone(ctx.phone)
+    const cohort = createTestCohortContext(normalizedPhone)
     const existingApp = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
 
     if (existingApp?.status === 'APPROVED') {
@@ -1084,6 +1106,8 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           availability: availLabel,
           evidenceNote: ctx.data.evidenceNote ?? null,
           evidenceFileUrls: evidenceAttachmentIds,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
           status: 'PENDING',
         },
       })
