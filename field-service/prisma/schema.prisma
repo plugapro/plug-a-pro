@@ -668,6 +668,11 @@ model PaymentIntent {
   bankStatementReference String?
   proofOfPaymentUrl      String?
   adminNote              String?
+  // Payfast ITN fields — populated when a Payfast notification arrives.
+  itnReceivedAt          DateTime?
+  itnPaymentStatus       String?
+  itnAmountCents         Int?
+  creditedLedgerEntryId  String?
   createdAt              DateTime            @default(now())
   paidAt                 DateTime?
   creditedAt             DateTime?
@@ -1360,6 +1365,9 @@ enum PaymentIntentMethod {
   PAYMENT_LINK
   GATEWAY_CARD
   GATEWAY_EFT
+  PAYFAST_CARD
+  PAYFAST_EFT
+  PAYFAST_SCODE
 }
 
 enum PaymentIntentStatus {
@@ -1367,7 +1375,10 @@ enum PaymentIntentStatus {
   PENDING_PAYMENT
   PROOF_UPLOADED
   MATCHED_ON_STATEMENT
+  // ITN_RECEIVED: Payfast ITN arrived and verified; crediting in-flight.
+  ITN_RECEIVED
   CREDITED
+  CANCELLED
   FAILED
   EXPIRED
   REVERSED

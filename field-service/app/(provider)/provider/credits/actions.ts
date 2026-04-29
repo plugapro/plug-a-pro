@@ -11,7 +11,9 @@ import {
 } from '@/lib/provider-wallet'
 import {
   createManualEftTopUpIntent,
+  createPayfastTopUpIntent,
   getManualEftBankAccountInstructions,
+  type PayfastTopUpMethod,
 } from '@/lib/provider-credit-payment-intents'
 
 const ESTIMATED_CREDITS_PER_LEAD_UNLOCK = 1
@@ -218,6 +220,35 @@ export async function createProviderTopUpIntent(
 
   revalidatePath('/provider/credits')
   return serializeTopUpInstructions(result)
+}
+
+export type ProviderPayfastCheckoutResult = {
+  intentId: string
+  checkout: import('@/lib/payfast').PayfastCheckoutPayload
+}
+
+/**
+ * Create a Payfast checkout intent for the authenticated provider.
+ * The caller must POST the provider's browser to `result.checkout.action`
+ * with `result.checkout.fields`.
+ *
+ * IMPORTANT: the Payfast return URL is UI-only — wallet crediting only
+ * happens after Payfast sends a verified ITN to /api/webhooks/payfast.
+ */
+export async function createProviderPayfastTopUpIntent(
+  amountCents: number,
+  paymentMethod: PayfastTopUpMethod = 'PAYFAST_CARD',
+): Promise<ProviderPayfastCheckoutResult> {
+  const provider = await getAuthenticatedProvider()
+  const result = await createPayfastTopUpIntent({
+    providerId: provider.id,
+    amountCents,
+    paymentMethod,
+    providerCellphone: provider.phone,
+  })
+
+  revalidatePath('/provider/credits')
+  return { intentId: result.intent.id, checkout: result.checkout }
 }
 
 export async function createProviderTopUpIntentFormAction(formData: FormData) {

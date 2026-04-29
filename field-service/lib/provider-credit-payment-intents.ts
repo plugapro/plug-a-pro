@@ -2,9 +2,19 @@ import { randomBytes, randomInt } from 'crypto'
 import { Prisma, type PaymentIntent } from '@prisma/client'
 import { db } from './db'
 import { PLUG_A_PRO_CREDIT_VALUE_CENTS } from './provider-wallet'
+import {
+  buildCheckoutPayload,
+  getPayfastConfig,
+  type PayfastCheckoutPayload,
+} from './payfast'
 
 export const MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000
 export const MANUAL_EFT_REFERENCE_ATTEMPTS = 10
+
+// ─── Payfast-allowed top-up package amounts ───────────────────────────────────
+// R50 (5000 cents) is intentionally excluded from the default pilot UI.
+// Do not add R50 to this set without explicit product approval.
+export const PAYFAST_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
 
 type PaymentIntentErrorCode =
   | 'INVALID_AMOUNT'
@@ -221,4 +231,107 @@ export async function createManualEftTopUpIntent(
   })
 
   return result
+}
+
+// ─── Payfast checkout intent ───────────────────────────────────────────────────
+
+export type PayfastTopUpMethod = 'PAYFAST_CARD' | 'PAYFAST_EFT' | 'PAYFAST_SCODE'
+
+export type CreatePayfastTopUpIntentInput = {
+  providerId: string
+  amountCents: number
+  paymentMethod?: PayfastTopUpMethod
+  providerName?: string | null
+  providerEmail?: string | null
+  providerCellphone?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export type CreatePayfastTopUpIntentResult = {
+  intent: PaymentIntent
+  checkout: PayfastCheckoutPayload
+}
+
+/**
+ * Create a PaymentIntent for a Payfast gateway top-up and return the Payfast
+ * checkout payload. Wallet balance is NOT modified here — crediting happens
+ * only after a verified Payfast ITN with payment_status === "COMPLETE".
+ *
+ * The caller must redirect or POST the provider's browser to
+ * `result.checkout.action` with `result.checkout.fields`.
+ *
+ * IMPORTANT: the Payfast return URL is UI-only — never credit the wallet there.
+ */
+export async function createPayfastTopUpIntent(
+  input: CreatePayfastTopUpIntentInput,
+): Promise<CreatePayfastTopUpIntentResult> {
+  if (!PAYFAST_ALLOWED_AMOUNTS_CENTS.has(input.amountCents)) {
+    throw new ProviderCreditPaymentIntentError(
+      'INVALID_AMOUNT',
+      'Top-up amount must be one of the approved packages: R100, R200, or R500.',
+    )
+  }
+
+  const creditsToIssue = creditsForAmount(input.amountCents)
+  const paymentMethod = input.paymentMethod ?? 'PAYFAST_CARD'
+  const config = getPayfastConfig()
+
+  const intent = await db.$transaction(async (tx) => {
+    const provider = await tx.provider.findUnique({
+      where: { id: input.providerId },
+      select: { id: true, phone: true, name: true, email: true },
+    })
+
+    if (!provider) {
+      throw new ProviderCreditPaymentIntentError(
+        'PROVIDER_NOT_FOUND',
+        'Provider account not found.',
+      )
+    }
+
+    // Use the intent ID as the Payfast m_payment_id and as the internal
+    // payment reference. For Payfast there is no human-readable bank
+    // reference — the gateway provides its own payment ID in the ITN.
+    const paymentReference = await createUniquePaymentReference(
+      tx,
+      // Prefix with "PF-" to distinguish Payfast intents from manual EFT
+      // references in admin tooling.
+      () => `PF-${randomBytes(6).toString('hex').toUpperCase()}`,
+    )
+
+    return tx.paymentIntent.create({
+      data: {
+        providerId: provider.id,
+        amountCents: input.amountCents,
+        currency: 'ZAR',
+        creditsToIssue,
+        paymentMethod,
+        paymentReference,
+        status: 'PENDING_PAYMENT',
+        providerCellphone: input.providerCellphone ?? provider.phone,
+        metadata: toJson(input.metadata),
+      },
+    })
+  })
+
+  // Build the Payfast checkout payload outside the transaction — if this fails
+  // the intent stays in PENDING_PAYMENT and will expire naturally.
+  const providerProfile = {
+    name: input.providerName ?? undefined,
+    email: input.providerEmail ?? undefined,
+    phone: input.providerCellphone ?? undefined,
+  }
+
+  const checkout = buildCheckoutPayload(
+    {
+      id: intent.id,
+      amountCents: intent.amountCents,
+      creditsToIssue: intent.creditsToIssue,
+      paymentMethod: intent.paymentMethod,
+    },
+    providerProfile,
+    config,
+  )
+
+  return { intent, checkout }
 }

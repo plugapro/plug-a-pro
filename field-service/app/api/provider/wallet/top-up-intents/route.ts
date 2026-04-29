@@ -4,14 +4,20 @@ import { db } from '@/lib/db'
 import {
   ProviderCreditPaymentIntentError,
   createManualEftTopUpIntent,
+  createPayfastTopUpIntent,
+  type PayfastTopUpMethod,
 } from '@/lib/provider-credit-payment-intents'
 
 type CreateTopUpIntentBody = {
   amountCents?: unknown
   /** Backward-compatible JSON client path; normalized then validated as cents. */
   amountRand?: unknown
+  /** Optional payment method: "MANUAL_EFT" (default) | "PAYFAST_CARD" | "PAYFAST_EFT" | "PAYFAST_SCODE" */
+  paymentMethod?: unknown
   metadata?: unknown
 }
+
+const PAYFAST_METHODS = new Set<string>(['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'])
 
 function parseAmountCents(body: CreateTopUpIntentBody) {
   if (typeof body.amountCents === 'number') return body.amountCents
@@ -34,22 +40,37 @@ export async function POST(request: NextRequest) {
 
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
-    select: { id: true, phone: true },
+    select: { id: true, phone: true, name: true, email: true },
   })
   if (!provider) {
     return NextResponse.json({ error: 'Provider not found' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => ({})) as CreateTopUpIntentBody
+  const amountCents = parseAmountCents(body)
+  const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : 'MANUAL_EFT'
 
   try {
+    if (PAYFAST_METHODS.has(paymentMethod)) {
+      const result = await createPayfastTopUpIntent({
+        providerId: provider.id,
+        amountCents,
+        paymentMethod: paymentMethod as PayfastTopUpMethod,
+        providerName: provider.name,
+        providerEmail: provider.email,
+        providerCellphone: session.phone ?? provider.phone,
+        metadata: parseMetadata(body),
+      })
+      return NextResponse.json(result, { status: 201 })
+    }
+
+    // Default: Manual EFT
     const result = await createManualEftTopUpIntent({
       providerId: provider.id,
-      amountCents: parseAmountCents(body),
+      amountCents,
       providerCellphone: session.phone ?? provider.phone,
       metadata: parseMetadata(body),
     })
-
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     if (error instanceof ProviderCreditPaymentIntentError) {

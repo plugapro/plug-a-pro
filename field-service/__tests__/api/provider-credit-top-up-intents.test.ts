@@ -53,7 +53,7 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     expect(response.status).toBe(201)
     expect(mockDb.provider.findUnique).toHaveBeenCalledWith({
       where: { userId: 'user-1' },
-      select: { id: true, phone: true },
+      select: { id: true, phone: true, name: true, email: true },
     })
     expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith({
       providerId: 'provider-1',
