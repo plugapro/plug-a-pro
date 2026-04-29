@@ -293,7 +293,7 @@ describe('verifyItn', () => {
       some_new_field: 'some_value',
     }
     const signature = generateSignature(base as Record<string, string>, config.passphrase)
-    const itn: PayfastItnPayload = { ...base, signature }
+    const itn = { ...base, signature } as PayfastItnPayload
     const result = verifyItn(itn, PAYFAST_LIVE_IP, config)
     expect(result).toEqual({ valid: true })
   })
