@@ -31,8 +31,8 @@ const mockTransaction = vi.mocked(db.$transaction)
 const mockIsEnabled = vi.mocked(isEnabled)
 
 const ADMIN_SESSION = { id: 'supabase-user-1', email: 'admin@test.com', phone: null, role: 'admin' as const }
-const OPS_ADMIN_USER = { id: 'admin-user-cuid-1', role: 'OPS' as const, active: true }
-const ADMIN_ADMIN_USER = { id: 'admin-user-cuid-2', role: 'ADMIN' as const, active: true }
+const OPS_ADMIN_USER = { id: 'admin-user-cuid-1', role: 'OPS' as const, active: true } as any
+const ADMIN_ADMIN_USER = { id: 'admin-user-cuid-2', role: 'ADMIN' as const, active: true } as any
 
 const testSchema = z.object({ name: z.string().min(1, 'Name required') })
 
@@ -48,7 +48,7 @@ const baseOpts = {
 beforeEach(() => {
   vi.clearAllMocks()
   // Default: transaction passes through to callback
-  mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+  ;(mockTransaction as any).mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
     const mockTx = {
       auditLog: { create: vi.fn() },
       adminAuditEvent: { create: vi.fn() },
@@ -139,7 +139,7 @@ describe('crudAction', () => {
       let auditLogCreated = false
       let adminAuditCreated = false
 
-      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      ;(mockTransaction as any).mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const mockTx = {
           auditLog: { create: vi.fn().mockImplementation(() => { auditLogCreated = true }) },
           adminAuditEvent: { create: vi.fn().mockImplementation(() => { adminAuditCreated = true }) },

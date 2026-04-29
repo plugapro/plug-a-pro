@@ -7,6 +7,7 @@ import { getCategoryPolicy } from '@/lib/service-category-policy'
 import { db } from '@/lib/db'
 import { resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { LeadUnlockError, unlockLeadForProvider } from '@/lib/lead-unlocks'
 import {
   markAcceptedLeadAction,
   saveAcceptedLeadArrival,
@@ -25,6 +26,9 @@ async function acceptLeadWithToken(formData: FormData) {
   }
 
   const lead = resolved.lead
+  if (!lead.unlock) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?error=unlock_required`)
+  }
   if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
     redirect(`/leads/access/${encodeURIComponent(token)}?error=closed`)
   }
@@ -37,6 +41,32 @@ async function acceptLeadWithToken(formData: FormData) {
   }
 
   redirect(`/leads/access/${encodeURIComponent(token)}?accepted=1`)
+}
+
+async function unlockLeadWithToken(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+
+  const resolved = await resolveProviderLeadAccessToken(token)
+  if (resolved.status !== 'active' || !resolved.lead) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+  }
+
+  try {
+    await unlockLeadForProvider(resolved.lead.id, resolved.lead.providerId)
+  } catch (error) {
+    if (error instanceof LeadUnlockError) {
+      const reason = error.code === 'INSUFFICIENT_CREDITS'
+        ? 'credits'
+        : error.code === 'KYC_REQUIRED'
+          ? 'kyc'
+          : 'unavailable'
+      redirect(`/leads/access/${encodeURIComponent(token)}?error=${reason}`)
+    }
+    throw error
+  }
+
+  redirect(`/leads/access/${encodeURIComponent(token)}?unlocked=1`)
 }
 
 async function declineLeadWithToken(formData: FormData) {
@@ -216,10 +246,13 @@ function ClosedLeadMessage({
 
 export default async function ProviderLeadAccessPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>
+  searchParams?: Promise<{ error?: string; unlocked?: string }>
 }) {
   const { token } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : {}
   const resolved = await resolveProviderLeadAccessToken(token)
 
   if (resolved.status === 'expired') {
@@ -278,6 +311,7 @@ export default async function ProviderLeadAccessPage({
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
   const isAccepted = lead.status === 'ACCEPTED'
   const isDeclined = lead.status === 'DECLINED'
+  const isUnlocked = Boolean(lead.unlock)
 
   if ((isExpired && !isAccepted) || isDeclined) {
     const traceId = createTraceId('job')
@@ -313,9 +347,17 @@ export default async function ProviderLeadAccessPage({
     await db.lead.update({ where: { id: lead.id }, data: { status: 'VIEWED' } })
   }
 
-  const area = addr
+  const previewArea = addr
+    ? [addr.suburb, addr.city].filter(Boolean).join(', ')
+    : 'Area on file'
+  const fullArea = addr
     ? [addr.street, addr.suburb, addr.city, addr.province].filter(Boolean).join(', ')
     : 'Location on file'
+  const preferredWindow = formatWindow(jr.requestedWindowStart, jr.requestedWindowEnd) ??
+    (jr.requestedArrivalLatest ? `Before ${format(jr.requestedArrivalLatest, 'EEE, d MMM · HH:mm')}` : 'Flexible')
+  const estimatedValue = jr.customerAcceptedAmount != null
+    ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(jr.customerAcceptedAmount))
+    : null
   const categoryPolicy = getCategoryPolicy(jr.category)
   const showInspectionOption = !categoryPolicy.bookingOnAssignment
   const attachmentToken = encodeURIComponent(token)
@@ -348,16 +390,52 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
+        {resolvedSearchParams.unlocked && (
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            Lead unlocked. Full customer and job details are now available.
+          </div>
+        )}
+
+        {resolvedSearchParams.error === 'credits' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            You need at least 1 Plug-A-Pro Credit to unlock this lead. Top up in the provider app and try again.
+          </div>
+        )}
+
+        {resolvedSearchParams.error === 'kyc' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            KYC must be approved before unlocking full customer details.
+          </div>
+        )}
+
+        {resolvedSearchParams.error === 'unlock_required' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Unlock this lead before accepting it.
+          </div>
+        )}
+
         <div className="rounded-lg border bg-card divide-y">
           <div className="px-4 py-3 space-y-0.5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Category</p>
             <p className="font-medium">{jr.category}</p>
           </div>
           <div className="px-4 py-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Location</p>
-            <p className="font-medium">{area}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">
+              {isUnlocked ? 'Full location' : 'Area preview'}
+            </p>
+            <p className="font-medium">{isUnlocked ? fullArea : previewArea}</p>
           </div>
-          {isAccepted && (
+          <div className="px-4 py-3 space-y-0.5">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Preferred time</p>
+            <p className="font-medium">{preferredWindow}</p>
+          </div>
+          {estimatedValue && (
+            <div className="px-4 py-3 space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Estimated job value</p>
+              <p className="font-medium">{estimatedValue}</p>
+            </div>
+          )}
+          {isUnlocked && (
             <div className="px-4 py-3 space-y-0.5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer contact</p>
               <p className="font-medium">{jr.customer.name}</p>
@@ -375,11 +453,17 @@ export default async function ProviderLeadAccessPage({
           )}
           {jr.description && (
             <div className="px-4 py-3 space-y-0.5">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Description</p>
-              <p className="text-sm whitespace-pre-line">{jr.description}</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                {isUnlocked ? 'Description' : 'Short description'}
+              </p>
+              <p className="text-sm whitespace-pre-line">
+                {isUnlocked || jr.description.length <= 180
+                  ? jr.description
+                  : `${jr.description.slice(0, 180).trim()}...`}
+              </p>
             </div>
           )}
-          {jr.attachments.length > 0 && (
+          {isUnlocked && jr.attachments.length > 0 && (
             <div className="px-4 py-3 space-y-2">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer photos</p>
               <div className="grid grid-cols-2 gap-2">
@@ -396,6 +480,11 @@ export default async function ProviderLeadAccessPage({
                   )
                 })}
               </div>
+            </div>
+          )}
+          {!isUnlocked && (
+            <div className="px-4 py-3 text-sm text-muted-foreground">
+              Unlock this lead for 1 Plug-A-Pro Credit to view customer contact details, full address, and photos.
             </div>
           )}
           <div className="px-4 py-3 space-y-0.5">
@@ -519,6 +608,13 @@ export default async function ProviderLeadAccessPage({
                 </Button>
               )}
             </>
+          ) : !isUnlocked ? (
+            <form action={unlockLeadWithToken}>
+              <input type="hidden" name="token" value={token} />
+              <Button type="submit" size="lg" className="w-full">
+                Unlock lead for 1 Plug-A-Pro Credit
+              </Button>
+            </form>
           ) : (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
@@ -529,7 +625,7 @@ export default async function ProviderLeadAccessPage({
             </form>
           )}
 
-          {!isAccepted && showInspectionOption && (
+          {!isAccepted && isUnlocked && showInspectionOption && (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="true" />

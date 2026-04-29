@@ -4,6 +4,10 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { normalizePhone } from '@/lib/utils'
+import {
+  awardKycApprovedPromoCreditsInTransaction,
+  evaluateAndAwardProviderProfileCompletionPromoCreditsInTransaction,
+} from '@/lib/provider-promo-awards'
 import type { KycStatus, ProviderStatus } from '@prisma/client'
 
 const FLAG = 'admin.crud.providers'
@@ -218,6 +222,16 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
             : [],
         },
       })
+
+      await evaluateAndAwardProviderProfileCompletionPromoCreditsInTransaction(
+        tx,
+        data.providerId,
+        {
+          referenceType: 'provider',
+          referenceId: data.providerId,
+        },
+      )
+
       return { id: data.providerId }
     },
   })
@@ -343,6 +357,12 @@ export async function setProviderKycAction(input: SetProviderKycInput) {
         where: { id: data.providerId },
         data: { kycStatus: data.kycStatus as KycStatus },
       })
+      if (data.kycStatus === 'VERIFIED') {
+        await awardKycApprovedPromoCreditsInTransaction(tx, data.providerId, {
+          referenceType: 'provider_kyc',
+          referenceId: data.providerId,
+        })
+      }
       return { id: data.providerId }
     },
   })

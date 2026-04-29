@@ -165,6 +165,12 @@ async function updateProfile(formData: FormData) {
     })
   }
 
+  const { evaluateAndAwardProviderProfileCompletionPromoCredits } = await import('@/lib/provider-promo-awards')
+  await evaluateAndAwardProviderProfileCompletionPromoCredits(provider.id, {
+    referenceType: 'provider',
+    referenceId: provider.id,
+  })
+
   redirect('/provider/profile')
 }
 

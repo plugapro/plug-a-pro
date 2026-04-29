@@ -605,9 +605,9 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
   const mode = provider.technicianAvailability?.availabilityMode ?? (
     provider.schedule.length > 0 ? 'SCHEDULE' : 'ALWAYS_AVAILABLE'
   )
-  const todaySchedule = provider.schedule.find((row) => row.dayOfWeek === new Date().getDay())
+  const todaySchedule = provider.schedule.find((row: { dayOfWeek: number }) => row.dayOfWeek === new Date().getDay())
   const serviceAreas = provider.technicianServiceAreas.length
-    ? provider.technicianServiceAreas.map((area) => area.label).join(', ')
+    ? provider.technicianServiceAreas.map((area: { label: string }) => area.label).join(', ')
     : provider.serviceAreas.join(', ') || 'Not set'
   const services = provider.skills.join(', ') || 'Not set'
   const inactiveReason = provider.suspendedReason

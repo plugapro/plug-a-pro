@@ -5,6 +5,7 @@
 
 import { db } from '@/lib/db'
 import { getProviderLeadAccessUrl } from '@/lib/provider-lead-access'
+import { notifyProviderZeroBalanceLeadAvailable } from '@/lib/provider-wallet-notifications'
 import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
@@ -50,6 +51,20 @@ export async function dispatchMatchLead(params: {
   const leadUrl = await getProviderLeadAccessUrl({
     leadId: lead.id,
     providerId: provider.id,
+  })
+
+  notifyProviderZeroBalanceLeadAvailable({
+    providerId: provider.id,
+    leadId: lead.id,
+    jobRequestId: jobRequest.id,
+    holdId: hold.id,
+  }).catch((error: unknown) => {
+    console.error('[dispatch] zero-balance lead WhatsApp notification failed', {
+      jobRequestId: jobRequest.id,
+      leadId: lead.id,
+      providerId: provider.id,
+      error,
+    })
   })
 
   if (!leadUrl) {

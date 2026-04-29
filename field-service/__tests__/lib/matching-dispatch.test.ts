@@ -4,6 +4,7 @@ const {
   mockDb,
   mockSendCtaUrl,
   mockSendButtons,
+  mockNotifyZeroBalance,
 } = vi.hoisted(() => ({
   mockDb: {
     lead: { upsert: vi.fn() },
@@ -11,12 +12,16 @@ const {
   },
   mockSendCtaUrl: vi.fn(),
   mockSendButtons: vi.fn(),
+  mockNotifyZeroBalance: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendCtaUrl: mockSendCtaUrl,
   sendButtons: mockSendButtons,
+}))
+vi.mock('@/lib/provider-wallet-notifications', () => ({
+  notifyProviderZeroBalanceLeadAvailable: mockNotifyZeroBalance,
 }))
 
 describe('dispatchMatchLead WhatsApp notification', () => {
@@ -27,6 +32,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     mockDb.lead.upsert.mockResolvedValue({ id: 'lead-1' })
     mockSendCtaUrl.mockResolvedValue('wamid-cta')
     mockSendButtons.mockResolvedValue('wamid-buttons')
+    mockNotifyZeroBalance.mockResolvedValue(undefined)
   })
 
   it('sends a clean CTA URL without exposing a raw URL in the body and preserves accept/decline actions', async () => {

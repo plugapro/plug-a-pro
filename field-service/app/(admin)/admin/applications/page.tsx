@@ -13,6 +13,7 @@ import { requireAdmin, createServiceClient } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { crudAction } from '@/lib/crud-action'
 import { syncProviderRecord } from '@/lib/provider-record'
+import { awardMobileVerifiedPromoCreditsInTransaction } from '@/lib/provider-promo-awards'
 import {
   findConflictingActiveProviderApplications,
   getConflictingActiveProviderApplicationIds,
@@ -168,6 +169,12 @@ async function approveApplication(formData: FormData) {
           approvedNow: false,
         }
       }
+
+      await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
+        referenceType: 'provider_application',
+        referenceId: app.id,
+        createdBy: session.id,
+      })
 
       await releaseOpsQueueItem(tx as typeof db, {
         queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,

@@ -132,6 +132,7 @@ export async function resolveProviderLeadAccessToken(token: string) {
     where: { id: verified.payload.leadId },
     include: {
       provider: { select: { id: true, name: true, phone: true } },
+      unlock: true,
       jobRequest: {
         include: {
           customer: { select: { id: true, name: true, phone: true } },
@@ -167,6 +168,14 @@ export async function resolveProviderLeadAttachmentScope(token: string) {
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
     return { status: resolved.status, jobRequestId: null, leadId: resolved.payload?.leadId ?? null }
+  }
+
+  if (!resolved.lead.unlock) {
+    return {
+      status: 'locked' as const,
+      jobRequestId: null,
+      leadId: resolved.lead.id,
+    }
   }
 
   return {

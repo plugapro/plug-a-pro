@@ -21,6 +21,7 @@ const baseRequest = {
   preferredProviderId: null,
   assignmentMode: 'AUTO_ASSIGN' as const,
   status: 'OPEN' as const,
+  expiresAt: null,
 }
 
 const requestAddress = {
@@ -32,6 +33,7 @@ const requestAddress = {
   lng: 28.0567,
   locationNodeId: null,
   regionKey: null,
+  provinceKey: null,
 }
 
 describe('evaluateScheduleFit', () => {

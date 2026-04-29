@@ -13,6 +13,7 @@ import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
 import { reconcileProviderRecordsFromApplications, syncProviderRecord } from '@/lib/provider-record'
 import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-application-notifications'
+import { awardMobileVerifiedPromoCreditsInTransaction } from '@/lib/provider-promo-awards'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { expireOpenJobRequest } from '@/lib/job-requests/expire-job-request'
 import { sendText } from '@/lib/whatsapp-interactive'
@@ -109,6 +110,13 @@ export async function GET(request: Request) {
             },
           })
           approved = update.count > 0
+          if (approved && providerId) {
+            await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
+              referenceType: 'provider_application',
+              referenceId: app.id,
+              createdBy: 'system',
+            })
+          }
         })
         if (!approved) continue
         await notifyProviderApplicationApprovedOnce({

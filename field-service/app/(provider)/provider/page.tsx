@@ -84,6 +84,10 @@ export default async function ProviderHomePage() {
         <Link href="/provider/availability">Manage Availability</Link>
       </Button>
 
+      <Button asChild variant="outline" className="w-full">
+        <Link href="/provider/credits">View Plug-A-Pro Credits</Link>
+      </Button>
+
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
           Active ({activeJobs.length})

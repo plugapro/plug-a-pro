@@ -112,6 +112,7 @@ function makeJobRequest(overrides: Partial<MatchingJobRequest> = {}): MatchingJo
     customerAcceptedScope: null,
     autoCreateBookingOnAssignment: false,
     status: 'OPEN',
+    expiresAt: null,
     ...overrides,
   }
 }

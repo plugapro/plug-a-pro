@@ -62,7 +62,7 @@ function makeJobRequest() {
     id: 'job-1',
     category: 'electrical',
     title: 'Fix lights',
-    description: null,
+    description: 'Fix lights',
     requestedWindowStart: null,
     requestedWindowEnd: null,
     requestedArrivalLatest: null,
@@ -77,6 +77,7 @@ function makeJobRequest() {
     customerAcceptedScope: null,
     autoCreateBookingOnAssignment: false,
     status: 'OPEN' as const,
+    expiresAt: null,
     address: {
       street: '1 Main St',
       suburb: 'Sandton',
