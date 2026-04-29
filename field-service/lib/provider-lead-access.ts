@@ -307,6 +307,11 @@ export async function resolveProviderLeadAccessToken(token: string) {
     return { status: 'invalid' as const, lead: null, payload: verified.payload }
   }
 
+  // If the underlying match was cancelled (job cancelled or reassigned), revoke access.
+  if (lead.jobRequest.match?.status === 'CANCELLED') {
+    return { status: 'invalid' as const, lead: null, payload: verified.payload }
+  }
+
   const scopedLead = {
     ...lead,
     jobRequest: {

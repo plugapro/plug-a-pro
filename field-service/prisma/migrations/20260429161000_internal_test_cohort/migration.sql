@@ -51,16 +51,16 @@ CREATE INDEX "wallet_ledger_entries_isTestTransaction_createdAt_idx" ON "wallet_
 
 UPDATE "customers"
 SET "isTestUser" = true, "cohortName" = 'internal_staff_test'
-WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183');
+WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183', '+27824978565', '+27827006695');
 
 UPDATE "providers"
 SET "isTestUser" = true, "cohortName" = 'internal_staff_test'
-WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183');
+WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183', '+27824978565', '+27827006695');
 
 UPDATE "provider_applications"
 SET "isTestUser" = true, "cohortName" = 'internal_staff_test'
-WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183');
+WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183', '+27824978565', '+27827006695');
 
 UPDATE "conversations"
 SET "isTestSession" = true, "cohortName" = 'internal_staff_test'
-WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183');
+WHERE "phone" IN ('+27823035070', '+27773923802', '+27764010810', '+27832114183', '+27824978565', '+27827006695');

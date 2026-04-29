@@ -520,6 +520,66 @@ describe('POST /api/auth/provider/send-code', () => {
     })
   })
 
+  it('returns RATE_LIMITED when Supabase rejects with a rate limit error', async () => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true, status: 'ACTIVE' })
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({ error: new Error('rate limit exceeded: too many requests') }),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(429)
+    expect(body.error).toMatchObject({
+      code: 'RATE_LIMITED',
+      providerId: 'prov-1',
+      step: 'Worker portal send-code',
+    })
+  })
+
+  it('returns OTP_PROVIDER_UNAVAILABLE when Supabase env vars are missing', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true, status: 'ACTIVE' })
+
+    const savedUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const savedKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    try {
+      const { POST } = await import('../../app/api/auth/provider/send-code/route')
+      const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+        method: 'POST',
+        body: JSON.stringify({ phone: '+27823035070' }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      const res = await POST(req)
+      const body = await res.json()
+
+      expect(res.status).toBe(503)
+      expect(body.error).toMatchObject({
+        code: 'OTP_PROVIDER_UNAVAILABLE',
+        providerId: 'prov-1',
+        step: 'Worker portal send-code',
+      })
+    } finally {
+      process.env.NEXT_PUBLIC_SUPABASE_URL = savedUrl
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedKey
+    }
+  })
+
   it('returns OTP_PROVIDER_BAD_RESPONSE when Supabase returns an unusable response', async () => {
     const { db } = await import('@/lib/db')
     const { createClient } = await import('@supabase/supabase-js')

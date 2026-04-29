@@ -160,6 +160,66 @@ describe('provider lead access tokens', () => {
     expect(serialized).not.toContain('Gate code 1234')
   })
 
+  it('invalidates an accepted-job token when the match is cancelled', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'job-request-1',
+    })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({
+      status: 'ACCEPTED',
+      jobRequest: {
+        id: 'job-request-1',
+        category: 'Plumbing',
+        title: 'Leaking pipe',
+        description: 'Pipe leaking.',
+        requestedWindowStart: null,
+        requestedWindowEnd: null,
+        requestedArrivalLatest: null,
+        customerAcceptedAmount: null,
+        address: { suburb: 'Sandton', city: 'Johannesburg' },
+        match: { id: 'match-1', status: 'CANCELLED', createdAt: new Date(), customerContactedAt: null, plannedArrivalStart: null, plannedArrivalEnd: null, plannedArrivalNote: null, providerOnTheWayAt: null, providerArrivedAt: null, providerStartedAt: null, providerCompletedAt: null },
+      },
+    }))
+
+    await expect(resolveProviderLeadAccessToken(token)).resolves.toMatchObject({
+      status: 'invalid',
+      lead: null,
+    })
+  })
+
+  it('invalidates an accepted-job token when the job is reassigned (match cancelled and replaced)', async () => {
+    // When a job is reassigned, the original match is cancelled.
+    // The provider's accepted-job token must no longer grant access.
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'job-request-1',
+    })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({
+      status: 'ACCEPTED',
+      jobRequest: {
+        id: 'job-request-1',
+        category: 'Plumbing',
+        title: 'Leaking pipe',
+        description: 'Pipe leaking.',
+        requestedWindowStart: null,
+        requestedWindowEnd: null,
+        requestedArrivalLatest: null,
+        customerAcceptedAmount: null,
+        address: { suburb: 'Sandton', city: 'Johannesburg' },
+        match: { id: 'match-1', status: 'CANCELLED', createdAt: new Date(), customerContactedAt: null, plannedArrivalStart: null, plannedArrivalEnd: null, plannedArrivalNote: null, providerOnTheWayAt: null, providerArrivedAt: null, providerStartedAt: null, providerCompletedAt: null },
+      },
+    }))
+
+    await expect(resolveProviderLeadAccessToken(token)).resolves.toMatchObject({
+      status: 'invalid',
+      lead: null,
+    })
+  })
+
   it('loads sensitive lead fields only after unlock', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
