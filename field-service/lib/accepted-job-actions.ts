@@ -2,12 +2,23 @@ import { db } from './db'
 import { recordAuditLog } from './audit'
 import { AUDIT_ENTITY } from './audit-entities'
 import {
+  getCustomerAvailabilitySummary,
+  validateArrivalWindowAgainstCustomerAvailability,
+  type ArrivalValidationErrorCode,
+} from './arrival-availability'
+import {
   getProviderLeadAccessUrl,
   resolveProviderLeadAccessToken,
   verifyProviderLeadAccessToken,
 } from './provider-lead-access'
 
 type AcceptedLeadAction = 'customer_contacted' | 'on_the_way' | 'arrived' | 'started' | 'completed'
+type SaveArrivalErrorCode =
+  | ArrivalValidationErrorCode
+  | 'PROVIDER_NOT_ASSIGNED_TO_JOB'
+  | 'JOB_NOT_SCHEDULABLE'
+  | 'CUSTOMER_NOTIFICATION_FAILED'
+  | 'UNKNOWN_SCHEDULE_SAVE_ERROR'
 
 function firstName(name: string | null | undefined) {
   return name?.trim().split(/\s+/)[0] || 'there'
@@ -19,6 +30,10 @@ function providerFirstName(name: string | null | undefined) {
 
 function ref(id: string) {
   return id.slice(-8).toUpperCase()
+}
+
+function createTraceId() {
+  return `arrival_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
 }
 
 function formatArrivalWindow(start: Date, end: Date | null | undefined) {
@@ -101,19 +116,112 @@ export async function saveAcceptedLeadArrival(params: {
   plannedArrivalStart: Date
   plannedArrivalEnd?: Date | null
   note?: string | null
-}) {
+}): Promise<
+  | { ok: true; duplicate: boolean; traceId: string; updatedAt: Date; plannedArrivalStart: Date; plannedArrivalEnd: Date | null }
+  | { ok: false; reason: SaveArrivalErrorCode | 'UNAVAILABLE' | 'INVALID_TIME'; message: string; traceId: string }
+> {
+  const traceId = createTraceId()
   const lead = await resolveAcceptedLeadFromToken({ leadId: params.leadId, token: params.token })
-  if (!lead) return { ok: false as const, reason: 'UNAVAILABLE' as const }
+  if (!lead) {
+    return {
+      ok: false as const,
+      reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB',
+      message: 'This accepted job is not available to this provider.',
+      traceId,
+    }
+  }
 
   const match = lead.jobRequest.match
-  if (!match) return { ok: false as const, reason: 'UNAVAILABLE' as const }
+  if (!match) {
+    return {
+      ok: false as const,
+      reason: 'JOB_NOT_SCHEDULABLE',
+      message: 'This job is not in a schedulable state.',
+      traceId,
+    }
+  }
   const normalizedNote = params.note?.trim() || null
   const plannedArrivalEnd = params.plannedArrivalEnd ?? null
   if (Number.isNaN(params.plannedArrivalStart.getTime())) {
-    return { ok: false as const, reason: 'INVALID_TIME' as const }
+    return {
+      ok: false as const,
+      reason: 'INVALID_ARRIVAL_TIME',
+      message: 'The selected arrival date or time is invalid.',
+      traceId,
+    }
   }
   if (plannedArrivalEnd && plannedArrivalEnd <= params.plannedArrivalStart) {
-    return { ok: false as const, reason: 'INVALID_TIME' as const }
+    return {
+      ok: false as const,
+      reason: 'ARRIVAL_END_BEFORE_START',
+      message: 'Arrival end time must be after the start time.',
+      traceId,
+    }
+  }
+
+  const availability = getCustomerAvailabilitySummary({
+    requestedWindowStart: lead.jobRequest.requestedWindowStart,
+    requestedWindowEnd: lead.jobRequest.requestedWindowEnd,
+    requestedArrivalLatest: lead.jobRequest.requestedArrivalLatest,
+    description: lead.jobRequest.description,
+  })
+  const validation = validateArrivalWindowAgainstCustomerAvailability({
+    availability,
+    proposedStart: params.plannedArrivalStart,
+    proposedEnd: plannedArrivalEnd,
+  })
+
+  if (!validation.isValid) {
+    await recordAuditLog({
+      actorId: lead.providerId,
+      actorRole: 'provider',
+      action: 'match.arrival_plan_rejected',
+      entityType: AUDIT_ENTITY.JOB_REQUEST,
+      entityId: lead.jobRequestId,
+      before: {
+        plannedArrivalStart: match.plannedArrivalStart?.toISOString() ?? null,
+        plannedArrivalEnd: match.plannedArrivalEnd?.toISOString() ?? null,
+        plannedArrivalNote: match.plannedArrivalNote ?? null,
+        status: match.status,
+      },
+      after: {
+        proposedArrivalStart: params.plannedArrivalStart.toISOString(),
+        proposedArrivalEnd: plannedArrivalEnd?.toISOString() ?? null,
+        proposedArrivalNote: normalizedNote,
+        validationResult: validation.errorCode,
+        customerAvailability: availability.label,
+        statusAfter: match.status,
+        notificationResult: 'not_sent',
+        traceId,
+      },
+    }).catch(() => {})
+
+    console.info('[accepted-job] arrival save rejected', {
+      job_id: lead.jobRequestId,
+      provider_id: lead.providerId,
+      customer_id: lead.jobRequest.customer.id,
+      previous_arrival_window: {
+        start: match.plannedArrivalStart?.toISOString() ?? null,
+        end: match.plannedArrivalEnd?.toISOString() ?? null,
+      },
+      proposed_arrival_window: {
+        start: params.plannedArrivalStart.toISOString(),
+        end: plannedArrivalEnd?.toISOString() ?? null,
+      },
+      validation_result: validation.errorCode,
+      status_before: match.status,
+      status_after: match.status,
+      notification_result: 'not_sent',
+      trace_id: traceId,
+      timestamp: new Date().toISOString(),
+    })
+
+    return {
+      ok: false as const,
+      reason: validation.errorCode,
+      message: validation.reason,
+      traceId,
+    }
   }
 
   const sameWindow =
@@ -121,8 +229,18 @@ export async function saveAcceptedLeadArrival(params: {
     (match.plannedArrivalEnd?.getTime() ?? null) === (plannedArrivalEnd?.getTime() ?? null) &&
     (match.plannedArrivalNote ?? null) === normalizedNote
 
-  if (sameWindow) return { ok: true as const, duplicate: true }
+  if (sameWindow) {
+    return {
+      ok: true as const,
+      duplicate: true,
+      traceId,
+      updatedAt: new Date(),
+      plannedArrivalStart: params.plannedArrivalStart,
+      plannedArrivalEnd,
+    }
+  }
 
+  const updatedAt = new Date()
   await db.match.update({
     where: { id: match.id },
     data: {
@@ -147,23 +265,80 @@ export async function saveAcceptedLeadArrival(params: {
       plannedArrivalStart: params.plannedArrivalStart.toISOString(),
       plannedArrivalEnd: plannedArrivalEnd?.toISOString() ?? null,
       plannedArrivalNote: normalizedNote,
+      statusBefore: match.status,
+      statusAfter: match.status,
+      validationResult: 'VALID',
+      customerAvailability: availability.label,
+      notificationResult: 'pending',
+      traceId,
     },
   }).catch(() => {})
 
-  await notifyCustomer({
-    phone: lead.jobRequest.customer.phone,
-    templateName: 'post_match_customer_arrival_planned',
-    leadId: lead.id,
-    jobRequestId: lead.jobRequestId,
-    matchId: match.id,
-    action: 'arrival_planned',
-    text:
-      `📅 *Update on your ${lead.jobRequest.category} request*\n\n` +
-      `${providerFirstName(lead.provider.name)} plans to arrive ${formatArrivalWindow(params.plannedArrivalStart, plannedArrivalEnd)}.\n\n` +
-      `Ref: *${ref(lead.jobRequestId)}*\n\nReply *status* anytime to check your booking.`,
+  try {
+    await notifyCustomer({
+      phone: lead.jobRequest.customer.phone,
+      templateName: 'post_match_customer_arrival_planned',
+      leadId: lead.id,
+      jobRequestId: lead.jobRequestId,
+      matchId: match.id,
+      action: 'arrival_planned',
+      text:
+        `📅 *Update on your ${lead.jobRequest.category} request*\n\n` +
+        `${providerFirstName(lead.provider.name)} plans to arrive on ${formatArrivalWindow(params.plannedArrivalStart, plannedArrivalEnd)}.\n\n` +
+        `Ref: *${ref(lead.jobRequestId)}*` +
+        (normalizedNote ? `\n\nNote from provider: ${normalizedNote}` : ''),
+    })
+  } catch (error) {
+    await recordAuditLog({
+      actorId: lead.providerId,
+      actorRole: 'provider',
+      action: 'match.arrival_notification_failed',
+      entityType: AUDIT_ENTITY.JOB_REQUEST,
+      entityId: lead.jobRequestId,
+      after: {
+        leadId: lead.id,
+        matchId: match.id,
+        notificationResult: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+        traceId,
+      },
+    }).catch(() => {})
+    return {
+      ok: false as const,
+      reason: 'CUSTOMER_NOTIFICATION_FAILED',
+      message: 'Arrival time was saved, but the customer WhatsApp notification failed.',
+      traceId,
+    }
+  }
+
+  console.info('[accepted-job] arrival save completed', {
+    job_id: lead.jobRequestId,
+    provider_id: lead.providerId,
+    customer_id: lead.jobRequest.customer.id,
+    previous_arrival_window: {
+      start: match.plannedArrivalStart?.toISOString() ?? null,
+      end: match.plannedArrivalEnd?.toISOString() ?? null,
+    },
+    proposed_arrival_window: {
+      start: params.plannedArrivalStart.toISOString(),
+      end: plannedArrivalEnd?.toISOString() ?? null,
+    },
+    validation_result: 'VALID',
+    status_before: match.status,
+    status_after: match.status,
+    notification_result: 'sent',
+    trace_id: traceId,
+    timestamp: updatedAt.toISOString(),
   })
 
-  return { ok: true as const, duplicate: false }
+  return {
+    ok: true as const,
+    duplicate: false,
+    traceId,
+    updatedAt,
+    plannedArrivalStart: params.plannedArrivalStart,
+    plannedArrivalEnd,
+  }
 }
 
 export async function markAcceptedLeadAction(params: {

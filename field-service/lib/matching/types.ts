@@ -188,6 +188,7 @@ export type OfferResolutionResult =
       responseOutcome: AssignmentResponseOutcome
       matchId: string | null
       bookingId?: string | null
+      creditTransactionId?: string | null
       assignmentHoldId: string
       nextOfferedProviderId: string | null
     }

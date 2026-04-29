@@ -78,6 +78,7 @@ export async function notifyPostMatchAcceptance(params: {
   leadId: string
   providerId: string
   matchId: string
+  creditTransactionId?: string | null
 }) {
   const lead = await db.lead.findUnique({
     where: { id: params.leadId },
@@ -181,6 +182,7 @@ export async function notifyPostMatchAcceptance(params: {
             matchId: params.matchId,
             providerId: provider.id,
             leadUnlockId: lead.unlock?.id,
+            creditTransactionId: params.creditTransactionId ?? null,
             customerContactReleased: true,
           },
         },
@@ -194,6 +196,7 @@ export async function notifyPostMatchAcceptance(params: {
           matchId: params.matchId,
           providerId: provider.id,
           leadUnlockId: lead.unlock?.id,
+          creditTransactionId: params.creditTransactionId ?? null,
           customerContactReleased: true,
         },
       })
@@ -218,6 +221,7 @@ export async function notifyPostMatchAcceptance(params: {
           matchId: params.matchId,
           providerId: provider.id,
           leadUnlockId: lead.unlock?.id,
+          creditTransactionId: params.creditTransactionId ?? null,
         },
       },
     )
@@ -229,7 +233,7 @@ export async function notifyPostMatchAcceptance(params: {
     match_id: params.matchId,
     provider_id: provider.id,
     customer_id: customer.id,
-    credit_transaction_id: lead.unlock?.id ?? null,
+    credit_transaction_id: params.creditTransactionId ?? null,
     lead_unlock_id: lead.unlock?.id ?? null,
     customer_notification_result: customer.phone ? 'attempted' : 'skipped_no_phone',
     provider_notification_result: provider.phone ? 'attempted' : 'skipped_no_phone',

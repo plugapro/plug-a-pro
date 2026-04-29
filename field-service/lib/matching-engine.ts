@@ -306,6 +306,7 @@ type LeadAccepted = {
   ok: true
   leadId: string
   matchId: string
+  creditTransactionId?: string | null
   inspectionNeeded: boolean
 }
 
@@ -422,6 +423,7 @@ export async function acceptLead(params: {
     leadId: params.leadId,
     providerId: params.providerId,
     matchId: result.matchId ?? '',
+    creditTransactionId: result.creditTransactionId ?? null,
   }).catch((error: unknown) => {
     console.error('[matching-engine] post-match communication failed:', {
       leadId: params.leadId,
@@ -434,6 +436,7 @@ export async function acceptLead(params: {
     ok: true,
     leadId: params.leadId,
     matchId: result.matchId ?? '',
+    creditTransactionId: result.creditTransactionId ?? null,
     inspectionNeeded: params.inspectionNeeded === true,
   }
 }

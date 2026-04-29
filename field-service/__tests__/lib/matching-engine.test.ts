@@ -99,12 +99,14 @@ describe('matching-engine compatibility wrappers', () => {
       ok: true,
       leadId: 'lead-1',
       matchId: 'match-1',
+      creditTransactionId: null,
       inspectionNeeded: false,
     })
     expect(mockNotifyPostMatchAcceptance).toHaveBeenCalledWith({
       leadId: 'lead-1',
       providerId: 'provider-1',
       matchId: 'match-1',
+      creditTransactionId: null,
     })
   })
 

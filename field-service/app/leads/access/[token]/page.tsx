@@ -3,11 +3,16 @@ export const dynamic = 'force-dynamic'
 import { redirect } from 'next/navigation'
 import { format, formatDistanceToNow } from 'date-fns'
 import { Button } from '@/components/ui/button'
+import { ArrivalSubmitButton } from '@/components/provider/ArrivalSubmitButton'
 import { getCategoryPolicy } from '@/lib/service-category-policy'
 import { db } from '@/lib/db'
 import { resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { LeadUnlockError, unlockLeadForProvider } from '@/lib/lead-unlocks'
+import {
+  deriveDefaultArrivalWindow,
+  getCustomerAvailabilitySummary,
+} from '@/lib/arrival-availability'
 import {
   markAcceptedLeadAction,
   saveAcceptedLeadArrival,
@@ -91,37 +96,21 @@ async function declineLeadWithToken(formData: FormData) {
   redirect(`/leads/access/${encodeURIComponent(token)}?declined=1`)
 }
 
-function dateForArrivalChoice(choice: string, specificDate: string) {
-  const now = new Date()
-  const date = new Date(now)
-  if (choice === 'tomorrow') date.setDate(date.getDate() + 1)
-  if (choice === 'specific' && specificDate) {
-    return specificDate
-  }
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ].join('-')
-}
-
 async function saveArrivalWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
   const leadId = String(formData.get('leadId') ?? '')
-  const arrivalDay = String(formData.get('arrivalDay') ?? 'today')
   const arrivalDate = String(formData.get('arrivalDate') ?? '')
   const arrivalStart = String(formData.get('arrivalStart') ?? '')
   const arrivalEnd = String(formData.get('arrivalEnd') ?? '')
   const note = String(formData.get('note') ?? '')
 
-  if (!token || !leadId || !arrivalStart) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=arrival`)
+  if (!token || !leadId || !arrivalDate || !arrivalStart) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?scheduleError=INVALID_ARRIVAL_TIME`)
   }
 
-  const date = dateForArrivalChoice(arrivalDay, arrivalDate)
-  const plannedArrivalStart = new Date(`${date}T${arrivalStart}:00+02:00`)
-  const plannedArrivalEnd = arrivalEnd ? new Date(`${date}T${arrivalEnd}:00+02:00`) : null
+  const plannedArrivalStart = new Date(`${arrivalDate}T${arrivalStart}:00+02:00`)
+  const plannedArrivalEnd = arrivalEnd ? new Date(`${arrivalDate}T${arrivalEnd}:00+02:00`) : null
   const result = await saveAcceptedLeadArrival({
     leadId,
     token,
@@ -131,9 +120,9 @@ async function saveArrivalWithToken(formData: FormData) {
   })
 
   if (!result.ok) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=${result.reason.toLowerCase()}`)
+    redirect(`/leads/access/${encodeURIComponent(token)}?scheduleError=${result.reason}&scheduleMessage=${encodeURIComponent(result.message)}&traceId=${encodeURIComponent(result.traceId)}`)
   }
-  redirect(`/leads/access/${encodeURIComponent(token)}?updated=arrival`)
+  redirect(`/leads/access/${encodeURIComponent(token)}?updated=arrival&traceId=${encodeURIComponent(result.traceId)}&savedAt=${encodeURIComponent(result.updatedAt.toISOString())}`)
 }
 
 async function markAcceptedActionWithToken(formData: FormData) {
@@ -252,7 +241,15 @@ export default async function ProviderLeadAccessPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>
-  searchParams?: Promise<{ error?: string; unlocked?: string }>
+  searchParams?: Promise<{
+    error?: string
+    unlocked?: string
+    updated?: string
+    scheduleError?: string
+    scheduleMessage?: string
+    traceId?: string
+    savedAt?: string
+  }>
 }) {
   const { token } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
@@ -377,6 +374,13 @@ export default async function ProviderLeadAccessPage({
   const acceptedStage = isAccepted ? deriveAcceptedStage(jr.match) : null
   const plannedWindow = isAccepted ? formatWindow(jr.match?.plannedArrivalStart, jr.match?.plannedArrivalEnd) : null
   const actionDisabled = Boolean(jr.match?.providerCompletedAt)
+  const customerAvailability = getCustomerAvailabilitySummary({
+    requestedWindowStart: jr.requestedWindowStart,
+    requestedWindowEnd: jr.requestedWindowEnd,
+    requestedArrivalLatest: jr.requestedArrivalLatest,
+    description: jr.description,
+  })
+  const defaultArrival = deriveDefaultArrivalWindow(customerAvailability)
 
   return (
     <div className="min-h-screen bg-background">
@@ -406,6 +410,36 @@ export default async function ProviderLeadAccessPage({
         {resolvedSearchParams.unlocked && (
           <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
             Lead unlocked. Full customer and job details are now available.
+          </div>
+        )}
+
+        {resolvedSearchParams.updated === 'arrival' && (
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            <p className="font-medium">Arrival time saved.</p>
+            <p className="mt-1">
+              Customer has been notified on WhatsApp.
+            </p>
+            {resolvedSearchParams.savedAt ? (
+              <p className="mt-1 text-xs text-emerald-800">
+                Last updated: {format(new Date(resolvedSearchParams.savedAt), 'HH:mm, d MMM yyyy')}
+              </p>
+            ) : null}
+            {resolvedSearchParams.traceId ? (
+              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.traceId}</p>
+            ) : null}
+          </div>
+        )}
+
+        {resolvedSearchParams.scheduleError && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <p className="font-medium">Could not save arrival time.</p>
+            <p className="mt-1">
+              Reason: {resolvedSearchParams.scheduleMessage ?? 'The selected arrival window could not be saved.'}
+            </p>
+            <p className="mt-2 text-xs">
+              Error code: {resolvedSearchParams.scheduleError}
+              {resolvedSearchParams.traceId ? ` · Trace ID: ${resolvedSearchParams.traceId}` : ''}
+            </p>
           </div>
         )}
 
@@ -541,39 +575,71 @@ export default async function ProviderLeadAccessPage({
                 The customer will receive this schedule update on WhatsApp.
               </p>
             </div>
+            <div className="rounded-md border bg-muted/30 px-3 py-3 text-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Customer requested availability
+              </p>
+              <p className="mt-1 font-medium">{customerAvailability.label}</p>
+              <p className="mt-1 text-muted-foreground">
+                {customerAvailability.helper}
+              </p>
+              {customerAvailability.allowedWindows.length > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Allowed: {customerAvailability.allowedWindows.join(', ')}
+                </p>
+              )}
+            </div>
             <form action={saveArrivalWithToken} className="space-y-3">
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="leadId" value={lead.id} />
               <label className="block space-y-1 text-sm">
-                <span className="font-medium">Day</span>
-                <select name="arrivalDay" className="h-10 w-full rounded-md border bg-background px-3 text-sm">
-                  <option value="today">Today</option>
-                  <option value="tomorrow">Tomorrow</option>
-                  <option value="specific">Specific date</option>
-                </select>
-              </label>
-              <label className="block space-y-1 text-sm">
-                <span className="font-medium">Specific date</span>
-                <input name="arrivalDate" type="date" className="h-10 w-full rounded-md border bg-background px-3 text-sm" />
+                <span className="font-medium">Arrival date</span>
+                <input
+                  name="arrivalDate"
+                  type="date"
+                  required
+                  defaultValue={defaultArrival.date}
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                />
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block space-y-1 text-sm">
                   <span className="font-medium">From</span>
-                  <input name="arrivalStart" type="time" required className="h-10 w-full rounded-md border bg-background px-3 text-sm" />
+                  <input
+                    name="arrivalStart"
+                    type="time"
+                    required
+                    defaultValue={defaultArrival.start}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
                 </label>
                 <label className="block space-y-1 text-sm">
                   <span className="font-medium">To</span>
-                  <input name="arrivalEnd" type="time" className="h-10 w-full rounded-md border bg-background px-3 text-sm" />
+                  <input
+                    name="arrivalEnd"
+                    type="time"
+                    defaultValue={defaultArrival.end}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
                 </label>
               </div>
               <label className="block space-y-1 text-sm">
                 <span className="font-medium">Note to customer</span>
                 <textarea name="note" rows={3} className="w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional arrival note" />
               </label>
-              <Button type="submit" className="w-full" disabled={actionDisabled}>
-                Confirm Arrival Time
-              </Button>
+              <ArrivalSubmitButton disabled={actionDisabled} />
             </form>
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+              <p className="font-medium">Need a time outside this availability?</p>
+              <p className="mt-1">
+                Outside requested availability. Please contact the customer before scheduling this time.
+              </p>
+              <Button asChild variant="outline" size="sm" className="mt-3 bg-background">
+                <a href={`/api/provider/leads/${lead.id}/contact-customer?leadToken=${encodeURIComponent(token)}`}>
+                  Propose different time
+                </a>
+              </Button>
+            </div>
           </div>
         )}
 

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getSafeNextPath } from '@/lib/safe-redirect'
-import { normalizePhone } from '@/lib/utils'
+import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
 
 type SendCodeError = {
   title: string
@@ -15,14 +15,21 @@ type SendCodeError = {
   step: string
   traceId: string
   time: string
+  mobileChecked?: string
   phoneMasked?: string
+  countryCode?: string
   providerId?: string
+}
+
+function createClientTraceId() {
+  return `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 export default function ProviderSignInPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [phone, setPhone] = useState('')
+  const [countryCode] = useState<OtpCountryCode>('ZA')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<SendCodeError | null>(null)
   const next = getSafeNextPath(
@@ -30,14 +37,22 @@ export default function ProviderSignInPage() {
     '/provider',
   )
 
-  function localError(reason: string, code: string): SendCodeError {
+  function localError(params: {
+    reason: string
+    code: string
+    traceId: string
+    mobileChecked?: string
+    countryCode?: string
+  }): SendCodeError {
     return {
       title: "We couldn't send your login code.",
-      reason,
-      code,
+      reason: params.reason,
+      code: params.code,
       step: 'Worker portal send-code',
-      traceId: `client_${Date.now().toString(36)}`,
+      traceId: params.traceId,
       time: new Date().toISOString(),
+      mobileChecked: params.mobileChecked,
+      countryCode: params.countryCode,
     }
   }
 
@@ -46,9 +61,15 @@ export default function ProviderSignInPage() {
     setError(null)
     setLoading(true)
 
-    const normalised = normalizePhone(phone)
-    if (!/^\+\d{10,15}$/.test(normalised)) {
-      setError(localError('The mobile number format is invalid. Use a South African mobile number such as 0823035070.', 'INVALID_PHONE_NUMBER'))
+    const traceId = createClientTraceId()
+    const normalized = normalizeOtpPhoneNumber(phone, countryCode)
+    if (!normalized.ok) {
+      setError(localError({
+        reason: normalized.reason,
+        code: normalized.errorCode,
+        traceId,
+        countryCode: normalized.countryCode,
+      }))
       setLoading(false)
       return
     }
@@ -56,8 +77,11 @@ export default function ProviderSignInPage() {
     try {
       const response = await fetch('/api/auth/provider/send-code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: normalised }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-trace-id': traceId,
+        },
+        body: JSON.stringify({ phone, countryCode, traceId }),
       })
       const payload = await response.json().catch(() => ({})) as {
         ok?: boolean
@@ -66,7 +90,13 @@ export default function ProviderSignInPage() {
       }
 
       if (!response.ok || !payload.ok || !payload.phone) {
-        setError(payload.error ?? localError('The sign-in service did not return a usable response.', 'UNKNOWN_AUTH_ERROR'))
+        setError(payload.error ?? localError({
+          reason: 'The sign-in service did not return a usable response.',
+          code: 'UNKNOWN_AUTH_ERROR',
+          traceId,
+          mobileChecked: normalized.e164,
+          countryCode,
+        }))
         return
       }
 
@@ -74,7 +104,13 @@ export default function ProviderSignInPage() {
         `/provider-verify?phone=${encodeURIComponent(payload.phone)}&next=${encodeURIComponent(next)}`,
       )
     } catch {
-      setError(localError('The browser could not reach the sign-in service. Please try again or contact support with this screenshot.', 'UNKNOWN_AUTH_ERROR'))
+      setError(localError({
+        reason: 'The browser could not reach the sign-in service. Please try again or contact support with this screenshot.',
+        code: 'OTP_PROVIDER_UNAVAILABLE',
+        traceId,
+        mobileChecked: normalized.e164,
+        countryCode,
+      }))
     } finally {
       setLoading(false)
     }
@@ -97,17 +133,33 @@ export default function ProviderSignInPage() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
-          <Input
-            id="phone"
-            type="tel"
-            inputMode="numeric"
-            placeholder="+27 82 123 4567"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            required
-            disabled={loading}
-            className="h-11 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/20"
-          />
+          <div className="flex overflow-hidden rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+            <select
+              aria-label="Country code"
+              value={countryCode}
+              disabled
+              className="h-11 w-[96px] shrink-0 border-0 border-r border-input bg-muted px-3 text-sm font-medium text-foreground outline-none disabled:opacity-100"
+            >
+              <option value="ZA">🇿🇦 +27</option>
+            </select>
+            <Input
+              id="phone"
+              type="tel"
+              inputMode="tel"
+              placeholder="82 303 5070"
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value)
+                if (error?.code === 'INVALID_PHONE_NUMBER') setError(null)
+              }}
+              required
+              disabled={loading}
+              className="h-11 flex-1 rounded-none border-0 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-0"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            South Africa is selected for OTP sign-in. You can enter 0823035070, 27823035070, or +27823035070.
+          </p>
         </div>
 
         {error && (
@@ -116,7 +168,8 @@ export default function ProviderSignInPage() {
             <p>{error.reason}</p>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-destructive/90">
               <dt>Error code</dt><dd className="text-right font-medium">{error.code}</dd>
-              {error.phoneMasked && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.phoneMasked}</dd></>}
+              {(error.mobileChecked || error.phoneMasked) && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.mobileChecked ?? error.phoneMasked}</dd></>}
+              {error.countryCode && <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></>}
               {error.providerId && <><dt>Provider ID</dt><dd className="text-right font-medium">{error.providerId}</dd></>}
               <dt>Step</dt><dd className="text-right font-medium">{error.step}</dd>
               <dt>Trace ID</dt><dd className="text-right font-medium">{error.traceId}</dd>

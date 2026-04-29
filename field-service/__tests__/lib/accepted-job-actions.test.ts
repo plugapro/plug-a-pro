@@ -30,8 +30,8 @@ import {
   sendFreshAcceptedJobLink,
 } from '@/lib/accepted-job-actions'
 
-const plannedStart = new Date('2026-04-28T15:30:00+02:00')
-const plannedEnd = new Date('2026-04-28T16:00:00+02:00')
+const plannedStart = new Date('2026-04-30T15:30:00+02:00')
+const plannedEnd = new Date('2026-04-30T16:00:00+02:00')
 
 function acceptedLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,6 +44,10 @@ function acceptedLead(overrides: Record<string, unknown> = {}) {
       id: 'jr-12345678',
       status: 'MATCHED',
       category: 'Plumbing',
+      description: 'Preferred availability: Afternoons only',
+      requestedWindowStart: null,
+      requestedWindowEnd: null,
+      requestedArrivalLatest: null,
       customer: { id: 'cust-1', name: 'Tiffany Nkosi', phone: '+27820000001' },
       address: { suburb: 'Bromhof', city: 'Johannesburg' },
       match: {
@@ -84,7 +88,7 @@ describe('accepted job actions', () => {
       note: 'I will call from the gate.',
     })
 
-    expect(result).toEqual({ ok: true, duplicate: false })
+    expect(result).toMatchObject({ ok: true, duplicate: false })
     expect(mockDb.match.update).toHaveBeenCalledWith({
       where: { id: 'match-1' },
       data: {
@@ -118,9 +122,48 @@ describe('accepted job actions', () => {
       note: 'I will call from the gate.',
     })
 
-    expect(result).toEqual({ ok: true, duplicate: true })
+    expect(result).toMatchObject({ ok: true, duplicate: true })
     expect(mockDb.match.update).not.toHaveBeenCalled()
     expect(mockSendText).not.toHaveBeenCalled()
+  })
+
+  it('rejects arrival outside customer availability without updating or notifying', async () => {
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      plannedArrivalStart: new Date('2026-04-30T09:00:00+02:00'),
+      plannedArrivalEnd: new Date('2026-04-30T10:00:00+02:00'),
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'ARRIVAL_OUTSIDE_CUSTOMER_AVAILABILITY',
+    })
+    expect(mockDb.match.update).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalled()
+    expect(mockDb.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: 'match.arrival_plan_rejected',
+      }),
+    }))
+  })
+
+  it('blocks provider not assigned to the accepted job', async () => {
+    mockResolveToken.mockResolvedValue({ status: 'active', lead: { id: 'lead-1' } })
+    mockDb.lead.findUnique.mockResolvedValue(null)
+
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB',
+    })
+    expect(mockDb.match.update).not.toHaveBeenCalled()
   })
 
   it('marks on the way and sends the customer update once', async () => {
