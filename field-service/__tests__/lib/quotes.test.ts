@@ -126,6 +126,7 @@ describe('processQuoteDecision', () => {
       action: 'approved',
       quoteId: 'quote-1',
       matchId: 'match-1',
+      jobRequestId: 'job-request-1',
       bookingId: 'booking-1',
       scheduledDate: preferredDate,
       provider: { id: 'provider-1', phone: '+27123456789', name: 'Provider Pro' },

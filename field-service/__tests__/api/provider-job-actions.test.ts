@@ -112,6 +112,7 @@ describe('provider job action routes', () => {
       toStatus: 'PENDING_COMPLETION_CONFIRMATION',
       actorId: 'user-1',
       actorRole: 'provider',
+      notes: undefined,
     })
   })
 
@@ -159,6 +160,57 @@ describe('provider job action routes', () => {
         },
       ],
     })
+  })
+
+  it('passes technician notes to transitionJob when provided', async () => {
+    const { getSession } = await import('@/lib/auth')
+    const { db } = await import('@/lib/db')
+    const { transitionJob } = await import('@/lib/jobs')
+
+    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider' })
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'provider-1', userId: 'user-1' })
+    ;(db.job.findUnique as any).mockResolvedValue({ id: 'job-1', providerId: 'provider-1' })
+    ;(transitionJob as any).mockResolvedValue(undefined)
+
+    const { POST } = await import('../../app/api/technician/jobs/[id]/status/route')
+    const req = new NextRequest('http://localhost/api/technician/jobs/job-1/status', {
+      method: 'POST',
+      body: JSON.stringify({ toStatus: 'STARTED', notes: 'Replaced valve and tested pressure.' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req, { params: Promise.resolve({ id: 'job-1' }) })
+    expect(res.status).toBe(200)
+    expect(transitionJob).toHaveBeenCalledWith({
+      jobId: 'job-1',
+      toStatus: 'STARTED',
+      actorId: 'user-1',
+      actorRole: 'provider',
+      notes: 'Replaced valve and tested pressure.',
+    })
+  })
+
+  it('ignores blank and non-string notes in the status route', async () => {
+    const { getSession } = await import('@/lib/auth')
+    const { db } = await import('@/lib/db')
+    const { transitionJob } = await import('@/lib/jobs')
+
+    ;(getSession as any).mockResolvedValue({ id: 'user-1', role: 'provider' })
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'provider-1', userId: 'user-1' })
+    ;(db.job.findUnique as any).mockResolvedValue({ id: 'job-1', providerId: 'provider-1' })
+    ;(transitionJob as any).mockResolvedValue(undefined)
+
+    const { POST } = await import('../../app/api/technician/jobs/[id]/status/route')
+    const req = new NextRequest('http://localhost/api/technician/jobs/job-1/status', {
+      method: 'POST',
+      body: JSON.stringify({ toStatus: 'ARRIVED', notes: '   ' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    await POST(req, { params: Promise.resolve({ id: 'job-1' }) })
+    expect(transitionJob).toHaveBeenCalledWith(
+      expect.objectContaining({ notes: undefined }),
+    )
   })
 
   it('sanitizes extra-work transition failures in the provider extras route', async () => {

@@ -12,6 +12,7 @@ export type QuoteDecisionResult =
       action: 'approved'
       quoteId: string
       matchId: string
+      jobRequestId: string
       bookingId: string
       scheduledDate: Date
       provider: { id: string; phone: string; name: string }
@@ -237,6 +238,7 @@ export async function processQuoteDecision(
         action: 'approved' as const,
         quoteId,
         matchId: quote.matchId,
+        jobRequestId: quote.match.jobRequest.id,
         bookingId: booking.bookingId,
         scheduledDate: booking.scheduledDate,
         provider,
