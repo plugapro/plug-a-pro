@@ -7,6 +7,8 @@ import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { JobCard } from '@/components/technician/JobCard'
+import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 
 export const metadata = buildMetadata({ title: 'My Jobs', noIndex: true })
 
@@ -77,6 +79,10 @@ export default async function ProviderHomePage() {
         <h1 className="text-xl font-semibold">My Jobs</h1>
         <p className="text-sm text-muted-foreground">{provider.name}</p>
       </div>
+
+      <Button asChild variant="outline" className="w-full">
+        <Link href="/provider/availability">Manage Availability</Link>
+      </Button>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">

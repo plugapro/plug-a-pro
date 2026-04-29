@@ -1,4 +1,4 @@
-# Plug-A-Pro
+# Plug A Pro
 
 WhatsApp-native field service platform for South Africa. Customers book home services via WhatsApp; technicians manage jobs through a lightweight PWA; the platform handles dispatch, invoicing, and payments.
 

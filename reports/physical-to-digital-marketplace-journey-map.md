@@ -1,10 +1,10 @@
-# Plug-A-Pro Physical-to-Digital Marketplace Journey Map
+# Plug A Pro Physical-to-Digital Marketplace Journey Map
 
 Date: 2026-04-10
 
 ## 1. Purpose
 
-Plug-A-Pro is digitising a real-world informal hiring interaction:
+Plug A Pro is digitising a real-world informal hiring interaction:
 
 1. customer sees workers physically
 2. customer visually evaluates them
@@ -18,7 +18,7 @@ This document maps those physical trust signals to the current digital implement
 
 ## 2. Journey Map
 
-| Physical-world step | Physical trust signal | Digital Plug-A-Pro equivalent | Current adequacy | What is missing | Recommendation |
+| Physical-world step | Physical trust signal | Digital Plug A Pro equivalent | Current adequacy | What is missing | Recommendation |
 |---|---|---|---|---|---|
 | Customer arrives at a hardware store and sees available workers | Immediate sense that a real person exists and is present | Discovery page, request flow, provider listing/profile entry points | `Partial` | Digital discovery is present, but provider evidence depth is still limited | Keep provider identity visible early and avoid blind booking |
 | Customer visually evaluates the worker | Face, age, demeanor, confidence, presentation | Provider profile with profile details, service area, reviews, completed jobs | `Partial` | Richer photo/portfolio context and clearer provenance labels are still limited | Add portfolio and clearly label profile sections as provider-supplied vs platform-recorded |

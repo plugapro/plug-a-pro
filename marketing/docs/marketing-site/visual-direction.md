@@ -1,4 +1,4 @@
-# Plug-A-Pro Marketing Site — Visual Direction
+# Plug A Pro Marketing Site — Visual Direction
 
 Decided: 2026-03-27
 

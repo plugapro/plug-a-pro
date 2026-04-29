@@ -1,12 +1,12 @@
-# Plug-A-Pro Platform Hardening Implementation Plan
+# Plug A Pro Platform Hardening Implementation Plan
 
 Date: 2026-04-13  
 Source audits:
-- [platform hardening audit](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-platform-hardening-audit.md:1)
-- [customer journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-customer-journey-hardening.md:1)
-- [provider journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-provider-journey-hardening.md:1)
-- [ops journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-ops-journey-hardening.md:1)
-- [security and architecture closure](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-security-architecture-closure.md:1)
+- [platform hardening audit](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-platform-hardening-audit.md:1)
+- [customer journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-customer-journey-hardening.md:1)
+- [provider journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-provider-journey-hardening.md:1)
+- [ops journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-ops-journey-hardening.md:1)
+- [security and architecture closure](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-security-architecture-closure.md:1)
 
 ## Goal
 
@@ -50,11 +50,11 @@ Open work in this plan focuses on the remaining residual risks and the closure a
 - Risk reduced:
   - direct exposure of customer/provider/job artifacts if raw blob URLs leak
 - Source findings:
-  - [platform audit H-009](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-platform-hardening-audit.md:1)
-  - [security closure finding 3](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-security-architecture-closure.md:35)
+  - [platform audit H-009](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-platform-hardening-audit.md:1)
+  - [security closure finding 3](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-security-architecture-closure.md:35)
 - Scope:
-  - review [storage.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/storage.ts:1)
-  - review [attachments route](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
+  - review [storage.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/storage.ts:1)
+  - review [attachments route](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/attachments/[id]/route.ts:1)
   - replace public-addressable artifact access with private or signed access semantics
   - remove any unnecessary raw blob URL exposure from persisted records and client payloads
 - Acceptance criteria:
@@ -75,12 +75,12 @@ Open work in this plan focuses on the remaining residual risks and the closure a
 - Risk reduced:
   - replay, stale-link reuse, and token abuse on public quote and extra-work flows
 - Source findings:
-  - [customer journey payment/approval findings](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-customer-journey-hardening.md:1)
-  - [security closure finding 5](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-security-architecture-closure.md:53)
+  - [customer journey payment/approval findings](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-customer-journey-hardening.md:1)
+  - [security closure finding 5](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-security-architecture-closure.md:53)
 - Scope:
-  - review [api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/quotes/[token]/route.ts:1)
-  - review [app/(customer)/approve/[token]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/approve/[token]/page.tsx:1)
-  - review [jobs.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/jobs.ts:227)
+  - review [api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/quotes/[token]/route.ts:1)
+  - review [app/(customer)/approve/[token]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/(customer)/approve/[token]/page.tsx:1)
+  - review [jobs.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/jobs.ts:227)
   - manually test token replay, token guessing resistance, stale-tab conflicts, shared-device behavior, and expired-state handling
   - only then implement any token lifecycle changes that are justified by the test results
 - Acceptance criteria:
@@ -94,7 +94,7 @@ Open work in this plan focuses on the remaining residual risks and the closure a
 - Risk reduced:
   - over-broad privilege sharing across sensitive admin actions
 - Source findings:
-  - [security closure finding 4](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-security-architecture-closure.md:44)
+  - [security closure finding 4](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-security-architecture-closure.md:44)
 - Scope:
   - review all `requireAdmin()` protected surfaces
   - classify actions into:
@@ -113,8 +113,8 @@ Open work in this plan focuses on the remaining residual risks and the closure a
 - Risk reduced:
   - weak operator accountability and incident traceability
 - Source findings:
-  - [ops journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-ops-journey-hardening.md:1)
-  - [security closure architecture finding 3](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-security-architecture-closure.md:96)
+  - [ops journey hardening](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-ops-journey-hardening.md:1)
+  - [security closure architecture finding 3](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-security-architecture-closure.md:96)
 - Scope:
   - extend audit coverage to:
     - queue claim/release
@@ -133,7 +133,7 @@ Open work in this plan focuses on the remaining residual risks and the closure a
 - Risk reduced:
   - inconsistent validation and hard-to-maintain route-local rules
 - Source findings:
-  - [security closure architecture finding 5](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-security-architecture-closure.md:110)
+  - [security closure architecture finding 5](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-security-architecture-closure.md:110)
 - Scope:
   - identify highest-risk write endpoints:
     - booking/request creation
@@ -150,7 +150,7 @@ Open work in this plan focuses on the remaining residual risks and the closure a
 - Risk reduced:
   - route/UI regressions that pass unit tests
 - Source findings:
-  - [platform audit H-010](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/docs/audits/2026-04-13-platform-hardening-audit.md:1)
+  - [platform audit H-010](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/audits/2026-04-13-platform-hardening-audit.md:1)
 - Scope:
   - add a minimal smoke suite for:
     - customer request/booking tracking

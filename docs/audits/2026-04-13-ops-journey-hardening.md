@@ -1,4 +1,4 @@
-# Plug-A-Pro Operations Journey Hardening Audit
+# Plug A Pro Operations Journey Hardening Audit
 
 Date: 2026-04-13  
 Scope: Admin / operations dashboard and privileged workflows only  

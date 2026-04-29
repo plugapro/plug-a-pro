@@ -1,4 +1,4 @@
-# Plug-A-Pro — Business Case Alignment Design
+# Plug A Pro — Business Case Alignment Design
 
 **Date:** 2026-03-27
 **Status:** Awaiting user review
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Plug-A-Pro is a **peer-to-peer marketplace** that connects everyday South African homeowners and renters to nearby independent handymen and home-job workers for small jobs, repairs, inspections, and DIY assistance. The platform acts as the trusted intermediary for discovery, matching, lead routing, mediated communication, quote flow, booking coordination, and trust.
+Plug A Pro is a **peer-to-peer marketplace** that connects everyday South African homeowners and renters to nearby independent handymen and home-job workers for small jobs, repairs, inspections, and DIY assistance. The platform acts as the trusted intermediary for discovery, matching, lead routing, mediated communication, quote flow, booking coordination, and trust.
 
 It is **not** a field service management SaaS sold to plumbing companies to manage their employed staff. Every surface of the current codebase — marketing copy, data model, admin flows, and pricing — reflects the wrong model. This document defines the corrected design and the work required to realign both the marketing site and the application architecture.
 
@@ -18,7 +18,7 @@ It is **not** a field service management SaaS sold to plumbing companies to mana
 
 ### 1.1 Root cause
 
-The platform was built with a B2B SaaS mental model: a *service company* subscribes to Plug-A-Pro and uses it to manage *their own* technicians, dispatch jobs, and invoice clients. This framing is structurally wrong. Plug-A-Pro is a marketplace where the platform itself connects two independent parties — customers and providers — and earns trust and revenue by being the intermediary.
+The platform was built with a B2B SaaS mental model: a *service company* subscribes to Plug A Pro and uses it to manage *their own* technicians, dispatch jobs, and invoice clients. This framing is structurally wrong. Plug A Pro is a marketplace where the platform itself connects two independent parties — customers and providers — and earns trust and revenue by being the intermediary.
 
 ### 1.2 Marketing site — drift by file
 
@@ -64,7 +64,7 @@ The following existing code is structurally sound and can be adapted rather than
 
 ## 2. Corrected Business Model Statement
 
-> **Plug-A-Pro is a marketplace that connects everyday people in South Africa to nearby independent handymen and home-job workers for small jobs, inspections, repairs, and DIY help. The platform is the trusted intermediary for matching, communication, quotes, bookings, and post-job trust.**
+> **Plug A Pro is a marketplace that connects everyday people in South Africa to nearby independent handymen and home-job workers for small jobs, inspections, repairs, and DIY help. The platform is the trusted intermediary for matching, communication, quotes, bookings, and post-job trust.**
 
 ### Two sides of the marketplace
 
@@ -120,7 +120,7 @@ description: "Find nearby handymen and home-job workers via WhatsApp. Get quotes
 
 **Headline:** `Get home help in minutes — not weeks`
 
-**Subheadline:** `Plug-A-Pro connects you to nearby handymen and home-job workers for small repairs, odd jobs, garden work, painting, and more. Message on WhatsApp. Get matched. Get it done.`
+**Subheadline:** `Plug A Pro connects you to nearby handymen and home-job workers for small repairs, odd jobs, garden work, painting, and more. Message on WhatsApp. Get matched. Get it done.`
 
 **Secondary line (DIY angle):** `Started a DIY project and got stuck? Our workers can assess, continue, or finish it.`
 
@@ -128,7 +128,7 @@ description: "Find nearby handymen and home-job workers via WhatsApp. Get quotes
 
 ### 3.4 How It Works
 
-**Section label:** `How Plug-A-Pro works`
+**Section label:** `How Plug A Pro works`
 **Section headline:** `From job to done — in a few taps`
 
 ```
@@ -181,7 +181,7 @@ Category tiles: Plumbing, Painting, Garden & Lawn, Handyman / Odd Jobs, Applianc
 
 ### 3.7 Trust & Safety section
 
-Explain how Plug-A-Pro protects both sides:
+Explain how Plug A Pro protects both sides:
 - Your personal number is not shared by default
 - All communication goes through the platform initially
 - Workers are screened before approval
@@ -211,7 +211,7 @@ Replace with: marketplace monetisation framing appropriate to stage
 Replace business-operator testimonials with:
 - Customer: "I had a leaking tap fixed the same day. The worker showed up on time and the price was exactly what was quoted."
 - Provider: "I get 3–4 jobs a week through the app. Before this I was just waiting outside Builders Warehouse."
-- Customer: "I finally finished my deck. Started it myself, got stuck on the concrete, found someone on Plug-A-Pro who sorted it in two hours."
+- Customer: "I finally finished my deck. Started it myself, got stuck on the concrete, found someone on Plug A Pro who sorted it in two hours."
 
 ### 3.11 WhatsApp CTA
 
@@ -222,7 +222,7 @@ Replace generic "Get started" with:
 ### 3.12 CTAStrip (revised)
 
 **Headline:** `Ready to get a job done — or find work near you?`
-**Body:** `Whether you need help at home or you're a skilled worker looking for steady local jobs, Plug-A-Pro is built for you.`
+**Body:** `Whether you need help at home or you're a skilled worker looking for steady local jobs, Plug A Pro is built for you.`
 **CTAs:** `Request help →` / `Register as a worker →`
 
 ---
@@ -232,7 +232,7 @@ Replace generic "Get started" with:
 ### 4.1 Navigation
 
 ```
-Plug-A-Pro | How It Works | For Workers | Trust & Safety | FAQ | [Request Help] [Find Work]
+Plug A Pro | How It Works | For Workers | Trust & Safety | FAQ | [Request Help] [Find Work]
 ```
 
 Mobile: hamburger with same links plus WhatsApp CTA prominent.
@@ -488,12 +488,12 @@ Customer's personal WhatsApp number must not be shared with a provider (and vice
 
 #### Phase 1 — MVP (mediated via platform messages)
 
-Platform sends outbound WhatsApp to each party from the Plug-A-Pro business number:
+Platform sends outbound WhatsApp to each party from the Plug A Pro business number:
 
 - To customer: "Sipho has accepted your job. You can message him through the app, or reply here."
 - To provider: "New job in Bryanston: tap to view details and send a message."
 
-All replies go to the Plug-A-Pro WhatsApp number and are routed via the conversation bot to the right thread. Neither party sees the other's number — they see `+27 XX XXXX XXXX (Plug-A-Pro)`.
+All replies go to the Plug A Pro WhatsApp number and are routed via the conversation bot to the right thread. Neither party sees the other's number — they see `+27 XX XXXX XXXX (Plug A Pro)`.
 
 Personal numbers are **never** included in message templates, notification bodies, or lead payloads at any stage.
 
@@ -530,7 +530,7 @@ Mitigation: in T&Cs, off-platform communication before job completion voids plat
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Plug-A-Pro Platform                      │
+│                    Plug A Pro Platform                      │
 │                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │  Marketing   │  │  Customer    │  │  Provider        │  │
@@ -837,7 +837,7 @@ Mitigation: in T&Cs, off-platform communication before job completion voids plat
 ## 13. Summary
 
 ### What was wrong
-Every surface of Plug-A-Pro was designed as a B2B field service management SaaS sold to plumbing and electrical contracting businesses to manage their own employed staff. The business model it was designed for does not match the actual product.
+Every surface of Plug A Pro was designed as a B2B field service management SaaS sold to plumbing and electrical contracting businesses to manage their own employed staff. The business model it was designed for does not match the actual product.
 
 ### What the corrected model is
 A peer-to-peer marketplace connecting South African homeowners and DIYers to independent local handymen and home-job workers. The platform is the trust layer, the communication layer, the matching engine, and the accountability layer — not a SaaS tool for service companies.

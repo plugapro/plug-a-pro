@@ -1,4 +1,4 @@
-# Plug-A-Pro Marketing Site — Current Site Audit
+# Plug A Pro Marketing Site — Current Site Audit
 
 Conducted: 2026-03-27
 
@@ -7,7 +7,7 @@ Conducted: 2026-03-27
 | Route | Component | Status |
 |-------|-----------|--------|
 | `/` | Hero, Features, SocialProof, PricingCards, CTAStrip | Mostly generic template — ProblemStatement, WhoItsFor, HowItWorksSteps, OperatingModel existed but were unused on homepage |
-| `/solutions` | Solutions page | Good Plug-A-Pro content, Cleaning Services present, emoji icons |
+| `/solutions` | Solutions page | Good Plug A Pro content, Cleaning Services present, emoji icons |
 | `/how-it-works` | Full flow detail | Strong, specific, no cleaning references — kept as-is |
 | `/features` | Features list | Generic placeholders |
 | `/pricing` | PricingCards | Generic Free/Pro/Enterprise, no field service context |

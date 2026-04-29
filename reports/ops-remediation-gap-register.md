@@ -37,5 +37,5 @@
 
 ## Current ops readiness statement
 
-**Plug-A-Pro is not yet operationally credible for production support at normal failure rates.**  
+**Plug A Pro is not yet operationally credible for production support at normal failure rates.**  
 It is a strong foundation with visible queues and partial interventions, but it still lacks the controlled CRUD, audit depth, exception-handling model, and permission discipline required for ops to run the platform safely on their own.

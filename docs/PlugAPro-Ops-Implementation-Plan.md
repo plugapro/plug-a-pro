@@ -1,4 +1,4 @@
-# Plug-A-Pro Ops — Implementation Plan
+# Plug A Pro Ops — Implementation Plan
 
 **Source of findings:** `PlugAPro-Ops-Review.md` (same folder).  
 **Target runtime:** The admin app at `admin.plugapro.co.za`.  
@@ -295,7 +295,7 @@ Copy this, fill in the angle brackets, paste into a fresh Claude Code session. O
 
 ```
 ## Context
-We're executing Workstream <N>, Task <X.Y> from the Plug-A-Pro Ops Implementation Plan.
+We're executing Workstream <N>, Task <X.Y> from the Plug A Pro Ops Implementation Plan.
 The review that led to this task is in PlugAPro-Ops-Review.md.
 The full plan is in PlugAPro-Ops-Implementation-Plan.md.
 

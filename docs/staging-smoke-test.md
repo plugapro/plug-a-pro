@@ -1,4 +1,4 @@
-# Plug-A-Pro — Staging Smoke Test
+# Plug A Pro — Staging Smoke Test
 
 > Run this checklist after every deployment to staging or production.
 > Each item must pass before the deployment is considered stable.

@@ -1,7 +1,7 @@
 # Task Handoff For Claude: Meta WhatsApp Template Verification
 
 Date: 2026-04-08
-Project: Plug-A-Pro
+Project: Plug A Pro
 Owner: Claude
 Status: External operational verification, not code implementation
 
@@ -44,7 +44,7 @@ Produce a verification result that answers all of these:
      - templates present for future flows only
 
 2. Verify the live state in Meta.
-   - Check WhatsApp Manager / Meta Business Manager for the WABA used by Plug-A-Pro.
+   - Check WhatsApp Manager / Meta Business Manager for the WABA used by Plug A Pro.
    - Record each template name and current state.
    - If direct dashboard access is unavailable, use the Graph API if valid credentials are available.
 

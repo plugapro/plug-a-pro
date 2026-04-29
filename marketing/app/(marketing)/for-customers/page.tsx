@@ -28,7 +28,7 @@ const HOW_IT_WORKS = [
     step: "01",
     title: "Describe your job on WhatsApp",
     detail:
-      "Message the Plug-A-Pro WhatsApp number. Tell us what you need. Plumbing leak, garden overgrown, wall needs painting. We'll ask a few short questions to understand the job.",
+      "Message the Plug A Pro WhatsApp number. Tell us what you need. Plumbing leak, garden overgrown, wall needs painting. We'll ask a few short questions to understand the job.",
   },
   {
     icon: MapPin,
@@ -49,7 +49,7 @@ const HOW_IT_WORKS = [
     step: "04",
     title: "Approve the quote in writing",
     detail:
-      "All quotes come through Plug-A-Pro in writing. You review the price and scope, then approve in writing. No verbal agreements. Everything is written down.",
+      "All quotes come through Plug A Pro in writing. You review the price and scope, then approve in writing. No verbal agreements. Everything is written down.",
   },
   {
     icon: Camera,
@@ -63,7 +63,7 @@ const HOW_IT_WORKS = [
     step: "06",
     title: "Pay and leave a review",
     detail:
-      "Once the job is done, Plug-A-Pro confirms the close-out and you can leave a review to help other customers and reward good workers. Your review builds the community.",
+      "Once the job is done, Plug A Pro confirms the close-out and you can leave a review to help other customers and reward good workers. Your review builds the community.",
   },
 ];
 
@@ -71,12 +71,12 @@ const PROTECTIONS = [
   {
     icon: ShieldCheck,
     title: "Your number stays private",
-    body: "We never need to share your personal phone number just to get the job moving. Plug-A-Pro handles intake, quote approval, and status updates from the platform number.",
+    body: "We never need to share your personal phone number just to get the job moving. Plug A Pro handles intake, quote approval, and status updates from the platform number.",
   },
   {
     icon: UserCheck,
     title: "Applications reviewed before activation",
-    body: "Applications are manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each worker has submitted and recorded on Plug-A-Pro.",
+    body: "Applications are manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each worker has submitted and recorded on Plug A Pro.",
   },
   {
     icon: FileText,
@@ -91,7 +91,7 @@ const PROTECTIONS = [
   {
     icon: Clock,
     title: "Platform mediation for disputes",
-    body: "If something goes wrong, contact Plug-A-Pro support. We review the written quote, job history, and photos already attached to the record.",
+    body: "If something goes wrong, contact Plug A Pro support. We review the written quote, job history, and photos already attached to the record.",
   },
   {
     icon: Star,
@@ -192,7 +192,7 @@ export default function ForCustomersPage() {
             How we protect you
           </h2>
           <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-            Letting a stranger into your home takes trust. Here&apos;s how Plug-A-Pro builds it.
+            Letting a stranger into your home takes trust. Here&apos;s how Plug A Pro builds it.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {PROTECTIONS.map((p) => {

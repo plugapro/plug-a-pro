@@ -146,8 +146,8 @@ async function approveApplication(formData: FormData) {
         }
       }
 
-      await tx.providerApplication.update({
-        where: { id },
+      const statusUpdate = await tx.providerApplication.updateMany({
+        where: { id, status: 'PENDING' },
         data: {
           status: 'APPROVED',
           providerId,
@@ -155,6 +155,19 @@ async function approveApplication(formData: FormData) {
           reviewedById: session.id,
         },
       })
+
+      if (statusUpdate.count === 0) {
+        console.info('[applications] Approval skipped because application is no longer pending', {
+          applicationId: app.id,
+        })
+        return {
+          id: app.id,
+          status: app.status,
+          providerId,
+          reviewedById: app.reviewedById,
+          approvedNow: false,
+        }
+      }
 
       await releaseOpsQueueItem(tx as typeof db, {
         queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
@@ -166,17 +179,21 @@ async function approveApplication(formData: FormData) {
         status: 'APPROVED',
         providerId,
         reviewedById: session.id,
+        approvedNow: true,
       }
     },
   })
 
   // WhatsApp notification
-  const { notifyTechnicianApplicationResult } = await import('@/lib/whatsapp-bot')
-  await notifyTechnicianApplicationResult({
-    phone: app.phone,
-    name: app.name,
-    approved: true,
-  }).catch(() => {})
+  if (approval.data?.approvedNow) {
+    const { notifyTechnicianApplicationResult } = await import('@/lib/whatsapp-bot')
+    await notifyTechnicianApplicationResult({
+      applicationId: app.id,
+      phone: app.phone,
+      name: app.name,
+      approved: true,
+    }).catch(() => {})
+  }
 
   if (approval.data?.providerId) {
     const { promptCustomersForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')

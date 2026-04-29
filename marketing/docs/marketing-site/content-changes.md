@@ -1,4 +1,4 @@
-# Plug-A-Pro Marketing Site — Content Changes Log
+# Plug A Pro Marketing Site — Content Changes Log
 
 Updated: 2026-03-27
 
@@ -7,7 +7,7 @@ Updated: 2026-03-27
 | Field | Before | After |
 |-------|--------|-------|
 | venture | my-product | plug-a-pro |
-| name | My Product | Plug-A-Pro |
+| name | My Product | Plug A Pro |
 | description | Generic one-liner | "WhatsApp booking, smart dispatch, and automatic invoicing — for any business that sends skilled workers to customer homes." |
 | url | https://myproduct.com | https://plugapro.co.za (TODO: production URL) |
 | whatsappNumber | Placeholder | +27000000000 (TODO: real number) |
@@ -52,7 +52,7 @@ Replaced generic USD Free/Pro/Enterprise with real ZAR tiers:
 | Element | Before | After |
 |---------|--------|-------|
 | Heading | "Ready to get started?" | "Ready to modernise your field service business?" |
-| Subtext | Generic | Plug-A-Pro specific |
+| Subtext | Generic | Plug A Pro specific |
 | Primary CTA | Generic | "Get early access" → /waitlist |
 
 ## Nav (components/shared/Nav.tsx)
@@ -85,7 +85,7 @@ Replaced 5 generic questions with 9 field-service-specific questions including a
 
 ## About (app/(marketing)/about/page.tsx)
 
-Replaced "Replace this with..." placeholders with real Plug-A-Pro mission copy: Africa field service context, low-data mobile design, DIY completion support.
+Replaced "Replace this with..." placeholders with real Plug A Pro mission copy: Africa field service context, low-data mobile design, DIY completion support.
 
 ## Items NOT Changed (Kept As-Is)
 

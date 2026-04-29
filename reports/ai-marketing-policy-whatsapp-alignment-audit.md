@@ -1,5 +1,5 @@
 # Marketing, Policy & WhatsApp Alignment Audit
-## Plug-A-Pro — 2026-04-11
+## Plug A Pro — 2026-04-11
 
 Audited against: platform-responsibility-matrix.md, platform-copy-risk-register.md, persona-clarification-document.md, mvp-scope-prioritisation-document.md.
 
@@ -54,7 +54,7 @@ The following blocked-term instances were resolved in a prior session (see platf
 **Classification**: **Overstated**
 **Why**: The TrustSafety component uses the careful, properly caveated version: "Applications are reviewed before activation — eligibility check for marketplace participation, not a promise of licensing, safety, or workmanship." The for-customers page drops the caveat, leaving "reviewed before joining" standing alone as a near-guarantee of character/competence.
 **Recommended rewrite**: "Applications manually reviewed before activation"
-**Add sub-note**: "This is an eligibility check, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each person has submitted and recorded on Plug-A-Pro."
+**Add sub-note**: "This is an eligibility check, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each person has submitted and recorded on Plug A Pro."
 **Action**: Fix now.
 
 ---
@@ -79,7 +79,7 @@ The following blocked-term instances were resolved in a prior session (see platf
 **Location**: `/marketing/app/(marketing)/solutions/page.tsx`, Electrical category
 **Original**: "Light fittings, plugs/sockets, DB board, outdoor lights, extending power"
 **Classification**: **Legally risky (escalate)**
-**Why**: In South Africa, DB board work, new circuits, and extending power require a registered electrician and must be certified with a Certificate of Compliance (COC) under the Occupational Health and Safety Act / SANS 10142. Listing these as general marketplace services without a compliance note exposes Plug-A-Pro to liability if a non-registered provider performs work that causes fire or injury.
+**Why**: In South Africa, DB board work, new circuits, and extending power require a registered electrician and must be certified with a Certificate of Compliance (COC) under the Occupational Health and Safety Act / SANS 10142. Listing these as general marketplace services without a compliance note exposes Plug A Pro to liability if a non-registered provider performs work that causes fire or injury.
 **Recommended rewrite**:
 > "Light fittings, plugs/sockets, fault diagnosis, outdoor lights. Note: work affecting the DB board or requiring new wiring may require a registered electrician and a Certificate of Compliance (COC) under South African law. Mention this in your job description and we'll note it in the request."
 
@@ -91,11 +91,11 @@ The following blocked-term instances were resolved in a prior session (see platf
 
 **Audience**: Provider
 **Location**: `/marketing/app/(marketing)/about/page.tsx`, For workers section
-**Original**: "Plug-A-Pro gives independent workers a steady flow of local jobs matched to their skills and areas they cover."
+**Original**: "Plug A Pro gives independent workers a steady flow of local jobs matched to their skills and areas they cover."
 **Classification**: **Overstated**
 **Why**: "Steady flow" is a volume promise. At launch, job volume is unproven. Promising steady work to providers who register in good faith — particularly informal workers who may deprioritise other income sources — creates legal exposure and trust damage when volume is low.
 **Recommended rewrite**:
-> "Plug-A-Pro connects independent workers with local job leads matched to their skills and service areas."
+> "Plug A Pro connects independent workers with local job leads matched to their skills and service areas."
 
 **Action**: Fix now.
 
@@ -109,7 +109,7 @@ The following blocked-term instances were resolved in a prior session (see platf
 **Classification**: **Incomplete (creates implicit false assurance)**
 **Why**: This correctly addresses the registration barrier for informal workers. But it leaves no mention that certain trade categories — especially electrical, gas, and structural work — carry licensing requirements under South African law regardless of business registration status. An informal provider who reads this may believe no compliance is required for any job type they list. The Terms state providers must hold required licences, but that's late in the journey and rarely read on mobile.
 **Recommended addition after current copy**:
-> "For certain job types — including electrical, gas, and structural work — South African law requires specific licences or certifications. You are responsible for knowing and holding any licences that apply to the work you offer. Plug-A-Pro records the types of work you list but does not verify your licences unless a specific check is requested."
+> "For certain job types — including electrical, gas, and structural work — South African law requires specific licences or certifications. You are responsible for knowing and holding any licences that apply to the work you offer. Plug A Pro records the types of work you list but does not verify your licences unless a specific check is requested."
 
 **Action**: Fix now. Persona-relevant: the informal worker persona is most at risk of missing this.
 
@@ -140,7 +140,7 @@ The following blocked-term instances were resolved in a prior session (see platf
 - `technician_welcome` (MARKETING) — providers who don't opt in won't receive their approval/welcome message. Onboarding breaks silently.
 - `quote_ready` (MARKETING) — customers who haven't opted in won't receive their quote notification. The quote approval flow breaks silently.
 
-This is not a copy issue — it is a product/infrastructure issue that copy created by implying Plug-A-Pro will reliably notify both parties. The content at every touchpoint implies real-time WhatsApp updates. If MARKETING opt-in gates those updates, the platform cannot deliver on what the copy promises.
+This is not a copy issue — it is a product/infrastructure issue that copy created by implying Plug A Pro will reliably notify both parties. The content at every touchpoint implies real-time WhatsApp updates. If MARKETING opt-in gates those updates, the platform cannot deliver on what the copy promises.
 
 **Required actions**:
 1. Product to decide: resubmit `job_offer` with more transactional body text aiming for UTILITY classification, or establish MARKETING opt-in as a mandatory step in provider onboarding.
@@ -158,7 +158,7 @@ This is not a copy issue — it is a product/infrastructure issue that copy crea
 **Location**: `/marketing/app/(marketing)/faq/page.tsx`, Provider Q1
 **Original**: "Anyone with practical home-job skills; no registered company needed"
 **Classification**: **Incomplete**
-**Why**: "No registered company needed" is correctly inclusive for informal workers. But it sits next to no mention of trade licences, and immediately precedes Q2 which says "We review your application" — which could be read as: "if you pass review, you're cleared to work any job." Together these create an implicit suggestion that Plug-A-Pro's review process substitutes for individual compliance obligations.
+**Why**: "No registered company needed" is correctly inclusive for informal workers. But it sits next to no mention of trade licences, and immediately precedes Q2 which says "We review your application" — which could be read as: "if you pass review, you're cleared to work any job." Together these create an implicit suggestion that Plug A Pro's review process substitutes for individual compliance obligations.
 **Recommended addition to Q1 answer**:
 > "For certain job types — electrical, gas, structural work — South African law may require a licence regardless of business registration. You are responsible for holding the right credentials for the work you offer."
 
@@ -214,7 +214,7 @@ This is not a copy issue — it is a product/infrastructure issue that copy crea
 **Classification**: **Accurate but fragile — needs strengthening**
 **Why**: The language is technically correct and avoids false promises. But "support will review" gives no timeline, no process signal, and no outcome framing. For an anxious customer who has paid and wants to cancel, this non-answer increases abandonment risk and support contact volume.
 **Recommended rewrite**:
-> "Send a cancellation request through Plug-A-Pro and we'll stop the job on platform. If you paid online, our team will review your case against the booking stage and payment method and aim to respond within 2 business hours. Refund eligibility depends on when the cancellation happens and whether work has started — we'll walk you through the options."
+> "Send a cancellation request through Plug A Pro and we'll stop the job on platform. If you paid online, our team will review your case against the booking stage and payment method and aim to respond within 2 business hours. Refund eligibility depends on when the cancellation happens and whether work has started — we'll walk you through the options."
 
 **Action**: Fix now.
 
@@ -226,7 +226,7 @@ This is not a copy issue — it is a product/infrastructure issue that copy crea
 
 **Before**: "Workers are reviewed before joining"
 **After**:
-> "Applications manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each worker has submitted and recorded on Plug-A-Pro."
+> "Applications manually reviewed before activation — an eligibility check for marketplace participation, not a guarantee of licensing, safety, or workmanship. Provider profiles show what each worker has submitted and recorded on Plug A Pro."
 
 ---
 
@@ -253,17 +253,17 @@ This is not a copy issue — it is a product/infrastructure issue that copy crea
 ### 2.4 about/page.tsx — Provider volume promise
 
 **Before**:
-> "Plug-A-Pro gives independent workers a steady flow of local jobs matched to their skills and areas they cover."
+> "Plug A Pro gives independent workers a steady flow of local jobs matched to their skills and areas they cover."
 
 **After**:
-> "Plug-A-Pro connects independent workers with local job leads matched to their skills and service areas."
+> "Plug A Pro connects independent workers with local job leads matched to their skills and service areas."
 
 ---
 
 ### 2.5 for-workers/page.tsx — Licensing addition
 
 Add after "You don't need a formal business or company registration to join.":
-> "For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You're responsible for holding any credentials that apply to the work you offer. Plug-A-Pro records the types of work you list but does not verify your licences unless a specific check is requested."
+> "For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You're responsible for holding any credentials that apply to the work you offer. Plug A Pro records the types of work you list but does not verify your licences unless a specific check is requested."
 
 ---
 
@@ -301,7 +301,7 @@ Add to end of Q1 answer:
 
 **Before**: "Send request through Plug a Pro and we'll stop job on platform. If online payment collected, support will review refund handling based on booking stage and payment status."
 **After**:
-> "Send a cancellation request through Plug-A-Pro and we'll stop the job on platform. If you paid online, our team reviews your case against the booking stage and payment method and aims to respond within 2 business hours. Refund eligibility depends on when the cancellation happens and whether work has started — we'll walk you through the options."
+> "Send a cancellation request through Plug A Pro and we'll stop the job on platform. If you paid online, our team reviews your case against the booking stage and payment method and aims to respond within 2 business hours. Refund eligibility depends on when the cancellation happens and whether work has started — we'll walk you through the options."
 
 ---
 
@@ -325,9 +325,9 @@ All 21 templates reviewed. Template bodies are concise, role-appropriate, and do
 
 The platform's provider persona ranges from "solo informal worker finding gigs on WhatsApp" to "small registered SME with two employees." The marketing copy does well at welcoming informal workers ("no company registration needed"). But two gaps remain:
 
-**Gap 1 — Licensing responsibility undersurfaced**: Informal providers may genuinely not know they need a COC for electrical work or a plumbing practitioner registration for certain jobs. "No registration needed" is true for the platform, but not true for the law. The current copy implies Plug-A-Pro's review process is the only gate, which creates risk for the provider (unlicensed work = fine or liability), the customer (unlicensed outcome = no COC), and the platform (facilitating unlicensed trade = reputational + legal exposure).
+**Gap 1 — Licensing responsibility undersurfaced**: Informal providers may genuinely not know they need a COC for electrical work or a plumbing practitioner registration for certain jobs. "No registration needed" is true for the platform, but not true for the law. The current copy implies Plug A Pro's review process is the only gate, which creates risk for the provider (unlicensed work = fine or liability), the customer (unlicensed outcome = no COC), and the platform (facilitating unlicensed trade = reputational + legal exposure).
 
-**Gap 2 — "Steady flow" is a false expectation for an early-stage marketplace**: Informal providers who reduce time on other income sources expecting steady Plug-A-Pro leads will be harmed. The corrected language (ISSUE-04) removes this risk without removing the attractive value proposition.
+**Gap 2 — "Steady flow" is a false expectation for an early-stage marketplace**: Informal providers who reduce time on other income sources expecting steady Plug A Pro leads will be harmed. The corrected language (ISSUE-04) removes this risk without removing the attractive value proposition.
 
 ### 3.2 Trust-Sensitive First-Time Customer
 
@@ -337,7 +337,7 @@ The remaining gap is **dispute resolution under-explained in FAQ** (ISSUE-09). F
 
 ### 3.3 Busy Working Professional / Property Manager
 
-This persona values efficiency and clear pricing. The help.ts pricing with specific Rand floors (ISSUE-02) is the most damaging gap for this persona — they will hold Plug-A-Pro accountable to those floor prices, and when a quote comes in higher, trust breaks. Removing floor prices and shifting to "you see the quote before you approve" is both safer and actually *more* appealing to this persona — they care about transparency, not an estimate.
+This persona values efficiency and clear pricing. The help.ts pricing with specific Rand floors (ISSUE-02) is the most damaging gap for this persona — they will hold Plug A Pro accountable to those floor prices, and when a quote comes in higher, trust breaks. Removing floor prices and shifting to "you see the quote before you approve" is both safer and actually *more* appealing to this persona — they care about transparency, not an estimate.
 
 ### 3.4 Platform / Ops Role
 
@@ -349,7 +349,7 @@ The platform operators are exposed by:
 
 ## Output 4 — Business Model Alignment Summary
 
-**Overall verdict**: The Plug-A-Pro marketing, policy, and WhatsApp content is substantially aligned with the transparent matching-platform model. The major prior-session remediation pass removed the most dangerous trust claims. What remains are:
+**Overall verdict**: The Plug A Pro marketing, policy, and WhatsApp content is substantially aligned with the transparent matching-platform model. The major prior-session remediation pass removed the most dangerous trust claims. What remains are:
 
 | Category | Status |
 |---|---|
@@ -359,7 +359,7 @@ The platform operators are exposed by:
 | Operationally inconsistent (fix now) | 2 (ISSUE-06 areas, ISSUE-12 cancellation) |
 | Legal escalation required | 2 (ISSUE-03 electrical COC, ISSUE-07 MARKETING templates) |
 
-**Does the content reflect a transparent matching platform?** Mostly yes. The trust/safety page is exemplary. The hero, how-it-works, and FAQ are honest about what Plug-A-Pro does and doesn't guarantee.
+**Does the content reflect a transparent matching platform?** Mostly yes. The trust/safety page is exemplary. The hero, how-it-works, and FAQ are honest about what Plug A Pro does and doesn't guarantee.
 
 **Does the content over-claim responsibility?** In two residual places yes: "Workers are reviewed before joining" (no caveat) and "steady flow of jobs" (volume promise). Both are fixable with one-line changes.
 

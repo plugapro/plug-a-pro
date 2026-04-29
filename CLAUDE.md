@@ -1,9 +1,9 @@
-# Plug-A-Pro — Claude Code Context
+# Plug A Pro — Claude Code Context
 
 This file is the Session 0 audit for the current workspace.
 
 ## Scope
-- Monorepo root: `/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro`
+- Monorepo root: `/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro`
 - Admin app: `field-service/`
 - Marketing site: `marketing/`
 - Prompt-pack companion docs currently live in `outputs/`, not `reference/`:

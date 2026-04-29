@@ -13,7 +13,7 @@ const TESTIMONIALS = [
   },
   {
     quote:
-      "I started building a deck but got completely stuck on the concrete footing. Found someone through Plug-A-Pro who sorted it in two hours. He finished the whole thing the next weekend.",
+      "I started building a deck but got completely stuck on the concrete footing. Found someone through Plug A Pro who sorted it in two hours. He finished the whole thing the next weekend.",
     author: "Ryan K.",
     role: "DIYer, Centurion",
   },

@@ -1,4 +1,4 @@
-# Plug-A-Pro Security And Architecture Closure
+# Plug A Pro Security And Architecture Closure
 
 Date: 2026-04-13  
 Scope: final whole-codebase closure pass after the customer, provider, and ops hardening audits  
@@ -8,23 +8,23 @@ Goal: identify remaining exploitable weaknesses, architecture integrity issues, 
 
 ### 1. High: internal error leakage from privileged and provider action routes
 - Areas:
-  - [field-service/app/api/dispatch/service-requests/[id]/assign/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/dispatch/service-requests/[id]/assign/route.ts:1)
-  - [field-service/app/api/dispatch/service-requests/[id]/override/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/dispatch/service-requests/[id]/override/route.ts:1)
-  - [field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts:1)
-  - [field-service/app/api/technician/jobs/[id]/extras/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/technician/jobs/[id]/extras/route.ts:1)
+  - [field-service/app/api/dispatch/service-requests/[id]/assign/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/dispatch/service-requests/[id]/assign/route.ts:1)
+  - [field-service/app/api/dispatch/service-requests/[id]/override/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/dispatch/service-requests/[id]/override/route.ts:1)
+  - [field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts:1)
+  - [field-service/app/api/technician/jobs/[id]/extras/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/technician/jobs/[id]/extras/route.ts:1)
 - Risk:
   - server exceptions were being reflected directly to operators/providers
   - internal identifiers like `JOB_REQUEST_NOT_FOUND` and transition details could leak implementation detail and create confusing recovery behavior
 - Fix applied:
-  - added shared server-side mapping in [field-service/lib/route-action-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/route-action-errors.ts:1)
+  - added shared server-side mapping in [field-service/lib/route-action-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/route-action-errors.ts:1)
   - routes now return safe status codes and operator/provider-facing messages without surfacing raw backend exceptions
 - Residual risk:
   - claim/release queue actions still need the same explicit audit/logging treatment as other privileged mutations
 
 ### 2. High: public quote token actions exposed internal conflict/state codes
 - Area:
-  - [field-service/app/api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/quotes/[token]/route.ts:1)
-  - [field-service/components/quotes/QuoteApproval.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/components/quotes/QuoteApproval.tsx:1)
+  - [field-service/app/api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/quotes/[token]/route.ts:1)
+  - [field-service/components/quotes/QuoteApproval.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/components/quotes/QuoteApproval.tsx:1)
 - Risk:
   - tokenized customer quote actions were returning symbolic domain codes like `ALREADY_ACTIONED` and `MISSING_PREFERRED_DATE`
   - the client was also inferring success for stale `ALREADY_ACTIONED` conflicts instead of forcing the user back into the actual current state
@@ -36,7 +36,7 @@ Goal: identify remaining exploitable weaknesses, architecture integrity issues, 
 
 ### 3. High: attachment privacy still depends on proxy discipline rather than storage-layer privacy
 - Area:
-  - [field-service/app/api/attachments/[id]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/attachments/[id]/route.ts:1)
+  - [field-service/app/api/attachments/[id]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/attachments/[id]/route.ts:1)
 - Risk:
   - authz at the proxy route is now stronger, but blob objects remain publicly addressable at the storage layer if raw URLs leak
 - Fix status:
@@ -52,7 +52,7 @@ Goal: identify remaining exploitable weaknesses, architecture integrity issues, 
 
 ### 4. Medium: admin and owner still share the same effective privilege boundary
 - Area:
-  - [field-service/lib/auth.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/auth.ts:82)
+  - [field-service/lib/auth.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/auth.ts:82)
 - Risk:
   - `requireAdmin()` admits both `admin` and `owner` with identical runtime authority
   - if product intent expects stricter separation for user management, refunds, or settings, that boundary is not encoded
@@ -63,9 +63,9 @@ Goal: identify remaining exploitable weaknesses, architecture integrity issues, 
 
 ### 5. Medium: public approval/token flows need manual abuse testing
 - Areas:
-  - [field-service/app/api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/quotes/[token]/route.ts:1)
-  - [field-service/app/(customer)/approve/[token]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/(customer)/approve/[token]/page.tsx:1)
-  - [field-service/lib/jobs.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/jobs.ts:299)
+  - [field-service/app/api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/quotes/[token]/route.ts:1)
+  - [field-service/app/(customer)/approve/[token]/page.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/(customer)/approve/[token]/page.tsx:1)
+  - [field-service/lib/jobs.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/jobs.ts:299)
 - Risk:
   - token routes are intentionally public; the remaining question is whether token entropy, expiry, replay behavior, and logging satisfy real-world abuse expectations
 - Fix status:
@@ -81,7 +81,7 @@ Goal: identify remaining exploitable weaknesses, architecture integrity issues, 
 - Impact:
   - operational inconsistency, accidental backend detail leakage, and harder UI recovery logic
 - Fix applied:
-  - added shared route error mapping in [field-service/lib/route-action-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/route-action-errors.ts:1)
+  - added shared route error mapping in [field-service/lib/route-action-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/route-action-errors.ts:1)
 - Recommendation:
   - continue converging server-route error handling into shared mappers per persona instead of ad hoc `catch` blocks
 
@@ -124,20 +124,20 @@ Goal: identify remaining exploitable weaknesses, architecture integrity issues, 
 ## Fixes Applied In This Closure Pass
 
 ### Safe route-contract hardening
-- Added [field-service/lib/route-action-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/route-action-errors.ts:1)
+- Added [field-service/lib/route-action-errors.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/route-action-errors.ts:1)
 - Hardened:
-  - [field-service/app/api/dispatch/service-requests/[id]/assign/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/dispatch/service-requests/[id]/assign/route.ts:1)
-  - [field-service/app/api/dispatch/service-requests/[id]/override/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/dispatch/service-requests/[id]/override/route.ts:1)
-  - [field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts:1)
-  - [field-service/app/api/technician/jobs/[id]/extras/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/technician/jobs/[id]/extras/route.ts:1)
-  - [field-service/app/api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/quotes/[token]/route.ts:1)
+  - [field-service/app/api/dispatch/service-requests/[id]/assign/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/dispatch/service-requests/[id]/assign/route.ts:1)
+  - [field-service/app/api/dispatch/service-requests/[id]/override/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/dispatch/service-requests/[id]/override/route.ts:1)
+  - [field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/dispatch/service-requests/[id]/candidates/route.ts:1)
+  - [field-service/app/api/technician/jobs/[id]/extras/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/technician/jobs/[id]/extras/route.ts:1)
+  - [field-service/app/api/quotes/[token]/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/quotes/[token]/route.ts:1)
 - Risk reduced:
   - prevents raw backend exception leakage
   - gives operators/providers/customers actionable, non-technical recovery paths
   - makes status codes more aligned with actual failure semantics
 
 ### Stale-state quote approval hardening
-- Updated [field-service/components/quotes/QuoteApproval.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/components/quotes/QuoteApproval.tsx:1)
+- Updated [field-service/components/quotes/QuoteApproval.tsx](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/components/quotes/QuoteApproval.tsx:1)
 - Risk reduced:
   - avoids treating public-token conflict responses as implicit success
   - reduces incorrect customer-side state assumptions during concurrent quote actions
@@ -149,8 +149,8 @@ Passed:
 - `cd field-service && pnpm build`
 
 Added coverage:
-- [field-service/__tests__/lib/route-action-errors.test.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/__tests__/lib/route-action-errors.test.ts:1)
-- extended [field-service/__tests__/api/provider-job-actions.test.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/__tests__/api/provider-job-actions.test.ts:1)
+- [field-service/__tests__/lib/route-action-errors.test.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/__tests__/lib/route-action-errors.test.ts:1)
+- extended [field-service/__tests__/api/provider-job-actions.test.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/__tests__/api/provider-job-actions.test.ts:1)
 
 Still requiring human validation:
 - browser verification of quote approval conflict/expiry states

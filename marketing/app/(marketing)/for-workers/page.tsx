@@ -10,7 +10,7 @@ import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 export const metadata: Metadata = buildMetadata({
   title: "For Workers",
   description:
-    "Register as a home-job worker on Plug-A-Pro. Get matched to local customers, receive structured leads, submit quotes, and build your reputation.",
+    "Register as a home-job worker on Plug A Pro. Get matched to local customers, receive structured leads, submit quotes, and build your reputation.",
 });
 
 const BENEFITS = [
@@ -22,7 +22,7 @@ const BENEFITS = [
   {
     icon: Smartphone,
     title: "Works on your WhatsApp",
-    body: "Get job notifications, say yes or no, and move through the Plug-A-Pro quote flow on the WhatsApp you already use. Nothing to download.",
+    body: "Get job notifications, say yes or no, and move through the Plug A Pro quote flow on the WhatsApp you already use. Nothing to download.",
   },
   {
     icon: ShieldCheck,
@@ -53,7 +53,7 @@ const HOW_TO_JOIN = [
     step: "3",
     title: "Start getting work",
     detail:
-      "When a job in your area matches what you do, you'll get a WhatsApp message. Say yes, move into the Plug-A-Pro quote flow, do the job, and get paid.",
+      "When a job in your area matches what you do, you'll get a WhatsApp message. Say yes, move into the Plug A Pro quote flow, do the job, and get paid.",
   },
 ];
 
@@ -69,7 +69,7 @@ export default function ForWorkersPage() {
           Your skills. Steady local work.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          Plug-A-Pro brings paying home-job customers to you. Register once, set your areas and skills, and start receiving matched leads on WhatsApp.
+          Plug A Pro brings paying home-job customers to you. Register once, set your areas and skills, and start receiving matched leads on WhatsApp.
         </p>
         <p className="text-sm font-medium mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}
@@ -167,7 +167,7 @@ export default function ForWorkersPage() {
             You don&apos;t need a formal business or company registration to join. If you have practical skills and a track record of doing good work, we want to hear from you.
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You are responsible for holding any credentials that apply to the work you offer. Plug-A-Pro records the types of work you list but does not verify your licences unless a specific check is requested.
+            For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You are responsible for holding any credentials that apply to the work you offer. Plug A Pro records the types of work you list but does not verify your licences unless a specific check is requested.
           </p>
           <ul className="grid grid-cols-2 gap-2 mb-6">
             {[

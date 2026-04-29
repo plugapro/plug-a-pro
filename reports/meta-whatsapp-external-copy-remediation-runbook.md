@@ -5,9 +5,9 @@ Date: 2026-04-10
 
 ## 1. Purpose
 
-This runbook is for a browser-based audit in Meta Business Manager, WhatsApp Business Manager, Facebook Pages, ads, message templates, and operator macros that may sit outside the Plug-A-Pro repository.
+This runbook is for a browser-based audit in Meta Business Manager, WhatsApp Business Manager, Facebook Pages, ads, message templates, and operator macros that may sit outside the Plug A Pro repository.
 
-The objective is to find every place where externally managed copy implies stronger platform responsibility or stronger provider vetting than Plug-A-Pro actually supports.
+The objective is to find every place where externally managed copy implies stronger platform responsibility or stronger provider vetting than Plug A Pro actually supports.
 
 This runbook assumes the auditor is using Chrome automation and can log into:
 
@@ -90,7 +90,7 @@ Use only if the exact claim is directly supported by implemented and repeatable 
 
 Examples:
 
-- “We record customer reviews completed through Plug-A-Pro.”
+- “We record customer reviews completed through Plug A Pro.”
 - “You can review quote history before accepting.”
 
 ### Overstated
@@ -135,7 +135,7 @@ When a claim is overstated, misleading, or unsupported, rewrite it using one of 
 - `provider-supplied details`
 - `provider-shared evidence`
 - `platform-recorded job history`
-- `customer reviews collected on Plug-A-Pro`
+- `customer reviews collected on Plug A Pro`
 - `quote, booking, and job record kept in writing`
 - `risk reduced through records and traceability`
 
@@ -275,6 +275,6 @@ The rule is simple:
 - remove fake assurance
 - keep the marketplace honest
 
-Plug-A-Pro can claim transparency, records, coordination, matching, reviews, and auditability where implemented.
+Plug A Pro can claim transparency, records, coordination, matching, reviews, and auditability where implemented.
 
 It cannot claim provider character, safety, legality, competence, or workmanship guarantees unless a real labelled process supports each claim.

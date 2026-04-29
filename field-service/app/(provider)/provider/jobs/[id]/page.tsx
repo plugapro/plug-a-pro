@@ -10,6 +10,7 @@ import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { recordAuditLog } from '@/lib/audit'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { buildMetadata } from '@/lib/metadata'
 import { JobStatusControls } from '@/components/technician/StatusControls'
 import { EvidenceUploader } from '@/components/technician/EvidenceUploader'
@@ -199,10 +200,11 @@ export default async function JobDetailPage({
             <div className="grid grid-cols-2 gap-2">
               {job.photos.map((photo) => (
                 <div key={photo.id} className="space-y-1">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <AttachmentThumbnail
+                    attachmentId={photo.id}
                     src={`/api/attachments/${photo.id}`}
                     alt={photo.label ?? 'Job photo'}
+                    href={`/api/attachments/${photo.id}`}
                     className="rounded-lg object-cover w-full h-40"
                   />
                   {(photo.caption || photo.label) && (
@@ -259,7 +261,7 @@ export default async function JobDetailPage({
           <div>
             <p className="font-medium text-sm">Problem on this job?</p>
             <p className="text-sm text-muted-foreground">
-              Raise it with Plug-A-Pro support so the written quote, photos, and job history can be reviewed.
+              Raise it with Plug A Pro support so the written quote, photos, and job history can be reviewed.
             </p>
           </div>
 

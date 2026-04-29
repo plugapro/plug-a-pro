@@ -147,7 +147,10 @@ export function evaluateScheduleFit(params: {
   const { startAt: requestedStartAt, endAt: requestedEndAt, durationMinutes } =
     deriveRequestWindow(params.jobRequest)
 
-  if (params.technicianAvailability?.availabilityState === 'OFFLINE') {
+  if (
+    params.technicianAvailability?.availabilityState === 'OFFLINE' ||
+    params.technicianAvailability?.availabilityState === 'PAUSED'
+  ) {
     return {
       isAvailable: false,
       score: 0,
@@ -155,7 +158,11 @@ export function evaluateScheduleFit(params: {
       estimatedStartAt: null,
       estimatedEndAt: null,
       travelMinutes: 0,
-      notes: ['Technician is offline'],
+      notes: [
+        params.technicianAvailability.availabilityState === 'PAUSED'
+          ? 'Technician is paused'
+          : 'Technician is offline',
+      ],
       conflictingCommitmentIds,
     } satisfies ScheduleFitResult
   }
@@ -346,4 +353,3 @@ export function evaluateScheduleFit(params: {
     conflictingCommitmentIds,
   } satisfies ScheduleFitResult
 }
-

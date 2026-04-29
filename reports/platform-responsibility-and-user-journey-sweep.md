@@ -1,4 +1,4 @@
-# Plug-A-Pro Platform Responsibility and User Journey Sweep
+# Plug A Pro Platform Responsibility and User Journey Sweep
 
 Date: 2026-04-10  
 Auditor: Codex marketplace-model alignment sweep
@@ -7,7 +7,7 @@ Auditor: Codex marketplace-model alignment sweep
 
 ### Pre-fix judgement
 
-Before remediation, Plug-A-Pro behaved mostly like a matching platform in backend mechanics, but parts of the product copy and some UI labels over-claimed trust and implied stronger provider vetting than the implementation actually supports.
+Before remediation, Plug A Pro behaved mostly like a matching platform in backend mechanics, but parts of the product copy and some UI labels over-claimed trust and implied stronger provider vetting than the implementation actually supports.
 
 The highest-risk issues were not in the core booking logic. They were in the trust language around:
 
@@ -22,7 +22,7 @@ That combination created a real business-model alignment risk: the product could
 
 ### Post-fix judgement
 
-After remediation, Plug-A-Pro is materially closer to an honest matching platform for informal and semi-formal service providers.
+After remediation, Plug A Pro is materially closer to an honest matching platform for informal and semi-formal service providers.
 
 In accessible runtime scope, the platform now:
 
@@ -45,7 +45,7 @@ In accessible runtime scope, the platform now:
 
 ### Bottom line
 
-Plug-A-Pro now behaves more like:
+Plug A Pro now behaves more like:
 
 - a transparent matching platform with platform-recorded trust signals
 
@@ -104,7 +104,7 @@ Evidence:
 
 Misalignment existed mainly in user-facing trust language, not in the core domain flow.
 
-### B. Does any part of the implementation accidentally imply Plug-A-Pro has vetted or guaranteed providers when it has not?
+### B. Does any part of the implementation accidentally imply Plug A Pro has vetted or guaranteed providers when it has not?
 
 `Yes, pre-fix. Mostly corrected in accessible runtime scope.`
 
@@ -280,8 +280,8 @@ Added a reusable provider trust explanation so customer-facing profile and reque
 
 - which information is supplied by the provider
 - which information is provider-shared evidence
-- which information is recorded by Plug-A-Pro through platform activity
-- which things Plug-A-Pro does not claim unless explicitly stated
+- which information is recorded by Plug A Pro through platform activity
+- which things Plug A Pro does not claim unless explicitly stated
 
 Added optional provider evidence capture and display for:
 
@@ -428,7 +428,7 @@ Known unrelated issue:
 
 ## 10. Final Recommendation
 
-Plug-A-Pro should currently present itself as:
+Plug A Pro should currently present itself as:
 
 - a matching and coordination platform for independent service providers and customers
 

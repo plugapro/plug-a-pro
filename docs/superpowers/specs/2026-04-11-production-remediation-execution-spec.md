@@ -1,4 +1,4 @@
-# Plug-A-Pro Production Remediation Execution Spec
+# Plug A Pro Production Remediation Execution Spec
 
 **Date:** 2026-04-11
 **Status:** Ready for execution
@@ -33,7 +33,7 @@ Use these documents as the requirements and product-intent baseline:
 
 The implementation must preserve these business outcomes:
 
-- Plug-A-Pro is a marketplace, not a workforce-dispatch SaaS.
+- Plug A Pro is a marketplace, not a workforce-dispatch SaaS.
 - Matching is a platform-side flow triggered by job creation.
 - Admin/ops should spend time on exceptions, not on normal intake.
 - Customer booking behavior must be channel-consistent across WhatsApp and web/PWA.
@@ -339,7 +339,7 @@ Do not claim completion unless the booking journey is channel-consistent and the
 
 ## 12. Logging Requirement
 
-When Claude Code finishes, it must write an OpenBrain knowledge log for project `Plug-A-Pro` with tags similar to:
+When Claude Code finishes, it must write an OpenBrain knowledge log for project `Plug A Pro` with tags similar to:
 
 - `domain:engineering`
 - `production-hardening`

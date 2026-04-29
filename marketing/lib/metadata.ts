@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const siteConfig = {
   venture: "plug-a-pro",
-  name: "Plug-A-Pro",
+  name: "Plug A Pro",
   description:
     "Find nearby handymen and home-job workers via WhatsApp. Get written quotes, choose who to book, and keep the job record in one place.",
   url: "https://plugapro.co.za", // TODO: update with production URL

@@ -21,7 +21,7 @@ import { WhatsAppTextLink } from "@/components/marketing/WhatsAppTextLink";
 export const metadata: Metadata = buildMetadata({
   title: "Services",
   description:
-    "Plug-A-Pro matches you to nearby workers for plumbing, painting, garden work, handyman jobs, appliance repairs, electrical, and DIY assistance.",
+    "Plug A Pro matches you to nearby workers for plumbing, painting, garden work, handyman jobs, appliance repairs, electrical, and DIY assistance.",
 });
 
 const SERVICES: {
@@ -141,7 +141,7 @@ export default function ServicesPage() {
           Small jobs done right
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          Plug-A-Pro matches you to nearby workers for a wide range of small home jobs. Describe what you need — we&apos;ll find the right person.
+          Plug A Pro matches you to nearby workers for a wide range of small home jobs. Describe what you need — we&apos;ll find the right person.
         </p>
         <p className="text-sm font-medium mt-6 mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}

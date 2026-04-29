@@ -178,7 +178,7 @@ model Provider {
 - [ ] **Step 3.2: Run migration**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service
 npx prisma migrate dev --name add_provider_available_now
 ```
 
@@ -304,7 +304,7 @@ describe('handleProviderJourneyFlow', () => {
 - [ ] **Step 4.2: Run test to confirm it fails (TDD)**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service
 npx jest provider-journey --no-coverage 2>&1 | head -20
 ```
 
@@ -710,7 +710,7 @@ async function notifyCustomerStatusChange(
 - [ ] **Step 4.4: Run tests**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service
 npx jest provider-journey --no-coverage 2>&1 | tail -15
 ```
 
@@ -1096,7 +1096,7 @@ The `pj_view_jobs` button in provider journey needs routing. In `handleProviderJ
 - [ ] **Step 6.8: Build + type-check**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service
 npx tsc --noEmit 2>&1 | head -20
 ```
 
@@ -1324,7 +1324,7 @@ export async function GET(request: Request) {
 
 Check if `vercel.json` exists:
 ```bash
-cat /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/vercel.json 2>/dev/null || echo "NOT FOUND"
+cat /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/vercel.json 2>/dev/null || echo "NOT FOUND"
 ```
 
 If it exists, add to crons array. If not, create:
@@ -1495,7 +1495,7 @@ git commit -m "feat(ops): add admin WhatsApp alert functions for no-match, drop,
 - [ ] **Step 11.1: Run full test suite**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service
 npx jest --no-coverage 2>&1 | tail -20
 ```
 
@@ -1526,14 +1526,14 @@ git push origin feat/marketing-mvp-refinement
 - [ ] **Step 11.5: Deploy to production**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro && vercel --prod 2>&1 | tail -5
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro && vercel --prod 2>&1 | tail -5
 ```
 
 - [ ] **Step 11.6: Log to OpenBrain**
 
 ```bash
 cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "feature — WhatsApp marketplace journeys full implementation (2026-03-31)" \
   --tags "whatsapp,provider,matching,flows" \

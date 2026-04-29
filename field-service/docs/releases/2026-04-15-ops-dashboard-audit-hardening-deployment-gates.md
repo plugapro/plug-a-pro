@@ -18,7 +18,7 @@
 ```bash
 cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "release kickoff — ops dashboard audit hardening (2026-04-15)" \
   --tags "deployment,release,production" \
@@ -123,7 +123,7 @@ pnpm brain -- knowledge add \
 ```bash
 cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "release gate update — ops dashboard audit hardening gate <n> (2026-04-15)" \
   --tags "deployment,release,production" \
@@ -135,7 +135,7 @@ pnpm brain -- knowledge add \
 ```bash
 cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "release close-out — ops dashboard audit hardening (2026-04-15)" \
   --tags "deployment,release,production" \

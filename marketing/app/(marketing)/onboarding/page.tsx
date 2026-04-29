@@ -5,7 +5,7 @@ import { OnboardingForm } from "@/components/marketing/OnboardingForm";
 export const metadata: Metadata = buildMetadata({
   title: "Get started",
   description:
-    "Register with your cell phone number, tell Plug-A-Pro whether you need a service or offer one, and continue onboarding on WhatsApp.",
+    "Register with your cell phone number, tell Plug A Pro whether you need a service or offer one, and continue onboarding on WhatsApp.",
 });
 
 export default function OnboardingPage() {

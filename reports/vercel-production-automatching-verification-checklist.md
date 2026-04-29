@@ -8,7 +8,7 @@ This checklist is for an operator who has:
 - production database access
 - optional WhatsApp / Meta delivery visibility
 
-Its purpose is to confirm whether Plug-A-Pro auto-matching is actually firing successfully in production, not just whether the code exists.
+Its purpose is to confirm whether Plug A Pro auto-matching is actually firing successfully in production, not just whether the code exists.
 
 ## Scope Being Verified
 
@@ -22,12 +22,12 @@ Production success means all three are working end to end.
 
 ## Known Implementation Points
 
-- Cron route: [field-service/app/api/cron/match-leads/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/app/api/cron/match-leads/route.ts#L1)
-- Cron schedule: [field-service/vercel.json](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/vercel.json#L1)
-- Immediate dispatch on request submit: [field-service/lib/whatsapp-flows/job-request.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/whatsapp-flows/job-request.ts#L326)
-- Matching logic: [field-service/lib/matching-engine.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/matching-engine.ts#L1)
-- Lead notification message: [field-service/lib/whatsapp-bot.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/lib/whatsapp-bot.ts#L483)
-- Matching-related schema: [field-service/prisma/schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/prisma/schema.prisma#L155)
+- Cron route: [field-service/app/api/cron/match-leads/route.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/app/api/cron/match-leads/route.ts#L1)
+- Cron schedule: [field-service/vercel.json](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/vercel.json#L1)
+- Immediate dispatch on request submit: [field-service/lib/whatsapp-flows/job-request.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/whatsapp-flows/job-request.ts#L326)
+- Matching logic: [field-service/lib/matching-engine.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/matching-engine.ts#L1)
+- Lead notification message: [field-service/lib/whatsapp-bot.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/lib/whatsapp-bot.ts#L483)
+- Matching-related schema: [field-service/prisma/schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/prisma/schema.prisma#L155)
 
 ## Vercel Verification Checklist
 
@@ -136,7 +136,7 @@ Fail condition:
 
 ### `job_requests`
 
-Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/prisma/schema.prisma#L155)
+Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/prisma/schema.prisma#L155)
 
 Key fields:
 
@@ -156,7 +156,7 @@ Relevant statuses:
 
 ### `leads`
 
-Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/prisma/schema.prisma#L180)
+Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/prisma/schema.prisma#L180)
 
 Key fields:
 
@@ -177,7 +177,7 @@ Relevant statuses:
 
 ### `matches`
 
-Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/prisma/schema.prisma#L199)
+Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/prisma/schema.prisma#L199)
 
 Key fields:
 
@@ -199,7 +199,7 @@ Relevant statuses:
 
 ### `message_events`
 
-Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/prisma/schema.prisma#L467)
+Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/prisma/schema.prisma#L467)
 
 Purpose:
 
@@ -220,7 +220,7 @@ Key fields:
 
 ### `inbound_whatsapp_messages`
 
-Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/field-service/prisma/schema.prisma#L491)
+Defined in [schema.prisma](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/field-service/prisma/schema.prisma#L491)
 
 Purpose:
 

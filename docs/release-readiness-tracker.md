@@ -1,4 +1,4 @@
-# Plug-A-Pro — Release Readiness Tracker
+# Plug A Pro — Release Readiness Tracker
 
 > **Updated:** 2026-04-08
 > **Branch:** `feat/whatsapp-marketing-preferences`
@@ -90,7 +90,7 @@ curl -s "https://graph.facebook.com/v21.0/${WHATSAPP_WABA_ID}/message_templates?
 | Files changed | `marketing/__tests__/lib/chat-context.test.ts` |
 | Evidence | `16 passed` — all tests pass |
 
-**Root cause:** Stale placeholder assertion `expect(prompt).toContain("My Product")` — actual product name is `Plug-A-Pro`. Fixed by updating the assertion.
+**Root cause:** Stale placeholder assertion `expect(prompt).toContain("My Product")` — actual product name is `Plug A Pro`. Fixed by updating the assertion.
 
 ---
 

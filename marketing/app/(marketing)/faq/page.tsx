@@ -10,13 +10,13 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "FAQ",
   description:
-    "Frequently asked questions about Plug-A-Pro. For customers looking for home-job help and workers looking for local jobs.",
+    "Frequently asked questions about Plug A Pro. For customers looking for home-job help and workers looking for local jobs.",
 });
 
 const CUSTOMER_FAQS = [
   {
-    q: "What is Plug-A-Pro?",
-    a: "Plug-A-Pro connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and Plug-A-Pro keeps the quote, booking, and job updates in one written record.",
+    q: "What is Plug A Pro?",
+    a: "Plug A Pro connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and Plug A Pro keeps the quote, booking, and job updates in one written record.",
   },
   {
     q: "What types of jobs can I get help with?",
@@ -28,7 +28,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "Will the worker see my phone number?",
-    a: "Not by default. Plug-A-Pro handles the initial intake, matching, quote approval, and job updates from the platform number. If you and the worker want to share direct contact details later, that happens by choice.",
+    a: "Not by default. Plug A Pro handles the initial intake, matching, quote approval, and job updates from the platform number. If you and the worker want to share direct contact details later, that happens by choice.",
   },
   {
     q: "How do quotes work?",
@@ -36,7 +36,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "What happens if something goes wrong?",
-    a: "Contact Plug-A-Pro support on WhatsApp with a description of the issue and any photos. We'll follow up within 2 hours during business hours. We review the written quote, job history, before-and-after photos, and communication records. If the issue is about scope or price, the written record is the reference point. We aim to resolve disputes within 5 business days and will keep you updated as the process moves forward.",
+    a: "Contact Plug A Pro support on WhatsApp with a description of the issue and any photos. We'll follow up within 2 hours during business hours. We review the written quote, job history, before-and-after photos, and communication records. If the issue is about scope or price, the written record is the reference point. We aim to resolve disputes within 5 business days and will keep you updated as the process moves forward.",
   },
   {
     q: "Started a DIY project and got stuck?",
@@ -55,11 +55,11 @@ const WORKER_FAQS = [
   },
   {
     q: "How do I register?",
-    a: "Message the Plug-A-Pro WhatsApp number or fill in the web form. Tell us your name, what you do, which suburbs you cover, and your general availability. Your application is reviewed before you start receiving leads.",
+    a: "Message the Plug A Pro WhatsApp number or fill in the web form. Tell us your name, what you do, which suburbs you cover, and your general availability. Your application is reviewed before you start receiving leads.",
   },
   {
     q: "How do leads work?",
-    a: "When a customer job matches your skills and area, you receive a WhatsApp notification with the job category, suburb, and urgency. You accept or decline. If you accept, you get the full address and move forward to inspection or quoting through Plug-A-Pro.",
+    a: "When a customer job matches your skills and area, you receive a WhatsApp notification with the job category, suburb, and urgency. You accept or decline. If you accept, you get the full address and move forward to inspection or quoting through Plug A Pro.",
   },
   {
     q: "What information does the customer see about me?",

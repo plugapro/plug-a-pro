@@ -120,14 +120,14 @@ Meta rejected this with error `"Leading or trailing params not allowed"` — `{{
 Approved body used for registration:
 
 ```
-Hi {{1}}, your Plug-A-Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!
+Hi {{1}}, your Plug A Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!
 ```
 
 > **Note:** The body registered with Meta now differs from what is in `lib/messaging-templates.ts`. Once Meta approves this template, update `messaging-templates.ts` to match the registered body to avoid variable-mapping mismatches at send time.
 
 ### Display name
 
-"PlugAPro" was auto-rejected by Meta. "Plug-A-Pro" was submitted as a replacement and is currently showing "In review" status in Meta Business Manager (Edit button is disabled, indicating manual review is in progress).
+"PlugAPro" was auto-rejected by Meta. "Plug A Pro" was submitted as a replacement and is currently showing "In review" status in Meta Business Manager (Edit button is disabled, indicating manual review is in progress).
 
 ---
 

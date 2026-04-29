@@ -188,7 +188,7 @@ Next:
 ```bash
 cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "release gate update — main 631a2bd production rollout (2026-04-15)" \
   --tags "deployment,release,production" \

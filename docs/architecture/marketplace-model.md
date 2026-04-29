@@ -1,4 +1,4 @@
-# Plug-A-Pro — Corrected Marketplace Architecture
+# Plug A Pro — Corrected Marketplace Architecture
 **Date:** 2026-03-27
 **Status:** Authoritative baseline — supersedes all prior B2B SaaS framing
 
@@ -44,7 +44,7 @@ It is NOT a field service management SaaS sold to plumbing or electrical compani
 
 ### Core positioning
 
-> "Plug-A-Pro connects everyday people to nearby independent handymen and home-job workers for small jobs, inspections, repairs, and DIY help. Get matched on WhatsApp. Pay a fair price. Trust who shows up."
+> "Plug A Pro connects everyday people to nearby independent handymen and home-job workers for small jobs, inspections, repairs, and DIY help. Get matched on WhatsApp. Pay a fair price. Trust who shows up."
 
 ### What changed in marketing (all components rewritten)
 
@@ -110,7 +110,7 @@ Footer:
 
 | Area | Current assumption | Why it is wrong | Corrected marketplace design |
 |------|--------------------|-----------------|------------------------------|
-| **Core model** | Multi-tenant B2B SaaS (`Business` as tenant) | The platform IS the business; no business tenants | Single-tenant platform; all entities belong to Plug-A-Pro |
+| **Core model** | Multi-tenant B2B SaaS (`Business` as tenant) | The platform IS the business; no business tenants | Single-tenant platform; all entities belong to Plug A Pro |
 | **Provider identity** | `Technician` scoped to `Business` via FK | Independent workers are not employees of a business | `Provider` entity at platform level; no businessId |
 | **Customer identity** | `Customer` scoped to `Business` via FK | Platform customers are not owned by any tenant | `Customer` entity at platform level |
 | **Job assignment** | Admin manually assigns technician from their pool | Platform does not own workers; workers self-select | Platform broadcasts lead to matched providers; first acceptance wins |
@@ -459,14 +459,14 @@ Use a virtual number proxy (e.g., Twilio number masking) so both parties appear 
 
 ```
 Customer wants to communicate with accepted provider:
-  → They message the Plug-A-Pro WhatsApp bot
+  → They message the Plug A Pro WhatsApp bot
   → Bot identifies the active job and routes the message to the provider via WhatsApp
   → Provider's reply comes back through the bot to the customer
 
 Provider needs to ask customer a question:
   → Provider uses the platform messaging interface (app or WhatsApp command)
   → Platform sends the message to the customer from the platform number
-  → Customer sees: "Message from your matched handyman via Plug-A-Pro: [message]"
+  → Customer sees: "Message from your matched handyman via Plug A Pro: [message]"
 
 Key risks:
   → Provider may extract contact details from metadata or find customer's address
@@ -482,7 +482,7 @@ Key risks:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         PLUG-A-PRO PLATFORM                         │
+│                         PLUG A PRO PLATFORM                         │
 │                                                                     │
 │  ┌───────────────┐  ┌────────────────┐  ┌───────────────────────┐  │
 │  │  Marketing    │  │  Customer PWA  │  │  Provider PWA         │  │
@@ -726,7 +726,7 @@ All marketing components rewritten to reflect a **dual-sided marketplace** for h
 
 ### What the corrected business model is
 
-**Plug-A-Pro is a marketplace.** The platform connects everyday South African homeowners to nearby independent handymen and home-job workers. It earns by taking a small commission per completed job from the provider side. Customers use it for free. Workers gain access to structured, vetted demand. The platform earns trust on both sides through mediated communication, structured quotes, photo evidence, and verified reviews.
+**Plug A Pro is a marketplace.** The platform connects everyday South African homeowners to nearby independent handymen and home-job workers. It earns by taking a small commission per completed job from the provider side. Customers use it for free. Workers gain access to structured, vetted demand. The platform earns trust on both sides through mediated communication, structured quotes, photo evidence, and verified reviews.
 
 ### What architecture shape now makes sense
 

@@ -1,8 +1,8 @@
-# Plug-A-Pro Marketing Site — Marketplace Realignment Plan
+# Plug A Pro Marketing Site — Marketplace Realignment Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rewrite every marketing surface so Plug-A-Pro is clearly positioned as a marketplace connecting customers to independent home-job workers — not a B2B field service SaaS sold to businesses.
+**Goal:** Rewrite every marketing surface so Plug A Pro is clearly positioned as a marketplace connecting customers to independent home-job workers — not a B2B field service SaaS sold to businesses.
 
 **Architecture:** Pure content and component changes within `marketing/`. No new packages, no new routes except `/for-workers`. The existing shadcn/ui + Tailwind v4 + Lucide React conventions are kept throughout. All CTAs use the `Button` component with `nativeButton={false} render={<Link href="..." />}` API. Typecheck (`npx tsc --noEmit`) is the primary verification gate after each task.
 
@@ -46,7 +46,7 @@ In `marketing/lib/metadata.ts`, change the `description` field:
 ```ts
 export const siteConfig = {
   venture: "plug-a-pro",
-  name: "Plug-A-Pro",
+  name: "Plug A Pro",
   description:
     "Find nearby handymen and home-job workers via WhatsApp. Get quotes, book help, and get the job done — safely and simply.",
   url: "https://plugapro.co.za", // TODO: update with production URL
@@ -63,7 +63,7 @@ export const siteConfig = {
 - [ ] **Step 1.2: Verify typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -71,7 +71,7 @@ Expected: no errors.
 - [ ] **Step 1.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add lib/metadata.ts
 git commit -m "content: update siteConfig description to marketplace framing"
 ```
@@ -110,7 +110,7 @@ export function Hero() {
           Get home help in minutes — not weeks
         </h1>
         <p className="text-xl text-muted-foreground mb-3 max-w-2xl mx-auto">
-          Plug-A-Pro connects you to nearby handymen and home-job workers for
+          Plug A Pro connects you to nearby handymen and home-job workers for
           small repairs, odd jobs, garden work, painting, and more. Message on
           WhatsApp. Get matched. Get it done.
         </p>
@@ -150,7 +150,7 @@ export function Hero() {
 - [ ] **Step 2.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -158,7 +158,7 @@ Expected: no errors.
 - [ ] **Step 2.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/Hero.tsx
 git commit -m "content: rewrite Hero for marketplace — dual-audience CTAs"
 ```
@@ -308,7 +308,7 @@ export function ProblemStatement() {
 - [ ] **Step 3.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -316,7 +316,7 @@ Expected: no errors.
 - [ ] **Step 3.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/ProblemStatement.tsx
 git commit -m "content: rewrite ProblemStatement with dual customer/provider framing"
 ```
@@ -380,7 +380,7 @@ export function WhoItsFor() {
               Any small home job — sorted
             </h2>
             <p className="text-muted-foreground max-w-xl">
-              Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug-A-Pro matches you with a nearby worker who can do the job.
+              Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug A Pro matches you with a nearby worker who can do the job.
             </p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -419,7 +419,7 @@ export function WhoItsFor() {
               Get steady local work — on your terms
             </h2>
             <p className="text-muted-foreground mb-6">
-              If you have practical skills and need access to paying customers, Plug-A-Pro brings the jobs to you. No formal business structure needed — just your skills and a smartphone.
+              If you have practical skills and need access to paying customers, Plug A Pro brings the jobs to you. No formal business structure needed — just your skills and a smartphone.
             </p>
             <ul className="space-y-2">
               {WORKER_TYPES.map((type) => (
@@ -465,7 +465,7 @@ export function WhoItsFor() {
 - [ ] **Step 4.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -473,7 +473,7 @@ Expected: no errors.
 - [ ] **Step 4.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/WhoItsFor.tsx
 git commit -m "content: rewrite WhoItsFor with dual customer/worker audience sections"
 ```
@@ -567,7 +567,7 @@ export function HowItWorksSteps() {
 - [ ] **Step 5.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -575,7 +575,7 @@ Expected: no errors.
 - [ ] **Step 5.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/HowItWorksSteps.tsx
 git commit -m "content: rewrite HowItWorksSteps — marketplace flow Describe→Match→Done"
 ```
@@ -607,7 +607,7 @@ const TRUST_POINTS: {
   {
     icon: Phone,
     title: "Your number stays private",
-    body: "By default, your personal WhatsApp number is not shared with the other party. All messages go through the Plug-A-Pro platform.",
+    body: "By default, your personal WhatsApp number is not shared with the other party. All messages go through the Plug A Pro platform.",
   },
   {
     icon: UserCheck,
@@ -685,7 +685,7 @@ export function TrustSafety() {
 - [ ] **Step 6.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -693,7 +693,7 @@ Expected: no errors.
 - [ ] **Step 6.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/TrustSafety.tsx
 git commit -m "feat: add TrustSafety component — anonymity, screening, photos, disputes"
 ```
@@ -794,7 +794,7 @@ export function Features() {
 - [ ] **Step 7.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -802,7 +802,7 @@ Expected: no errors.
 - [ ] **Step 7.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/Features.tsx
 git commit -m "content: rewrite Features — marketplace features replacing B2B dispatch features"
 ```
@@ -907,7 +907,7 @@ export function OperatingModel() {
 - [ ] **Step 8.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -915,7 +915,7 @@ Expected: no errors.
 - [ ] **Step 8.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/OperatingModel.tsx
 git commit -m "content: rewrite OperatingModel — dual-side customer/worker view"
 ```
@@ -945,7 +945,7 @@ const TESTIMONIALS = [
   },
   {
     quote:
-      "I started building a deck but got completely stuck on the concrete footing. Found someone through Plug-A-Pro who sorted it in two hours. He finished the whole thing the next weekend.",
+      "I started building a deck but got completely stuck on the concrete footing. Found someone through Plug A Pro who sorted it in two hours. He finished the whole thing the next weekend.",
     author: "Ryan K.",
     role: "DIYer, Centurion",
   },
@@ -986,7 +986,7 @@ export function SocialProof() {
 - [ ] **Step 9.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -994,7 +994,7 @@ Expected: no errors.
 - [ ] **Step 9.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/SocialProof.tsx
 git commit -m "content: rewrite SocialProof — consumer + worker testimonials"
 ```
@@ -1020,7 +1020,7 @@ export function CTAStrip() {
           Need home help? Or want steady work?
         </h2>
         <p className="text-muted-foreground">
-          Plug-A-Pro is built for both sides. Customers get trustworthy local help. Workers get structured access to paying jobs.
+          Plug A Pro is built for both sides. Customers get trustworthy local help. Workers get structured access to paying jobs.
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button
@@ -1048,7 +1048,7 @@ export function CTAStrip() {
 - [ ] **Step 10.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1056,7 +1056,7 @@ Expected: no errors.
 - [ ] **Step 10.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/CTAStrip.tsx
 git commit -m "content: rewrite CTAStrip — dual-audience close"
 ```
@@ -1119,7 +1119,7 @@ export function Nav() {
 - [ ] **Step 11.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1127,7 +1127,7 @@ Expected: no errors.
 - [ ] **Step 11.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/shared/Nav.tsx
 git commit -m "content: update Nav — marketplace links, request help CTA"
 ```
@@ -1178,7 +1178,7 @@ export default function HomePage() {
 - [ ] **Step 12.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1186,7 +1186,7 @@ Expected: no errors.
 - [ ] **Step 12.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add app/\(marketing\)/page.tsx
 git commit -m "content: update homepage — add TrustSafety, remove SaaS pricing section"
 ```
@@ -1208,7 +1208,7 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "How It Works",
   description:
-    "See how Plug-A-Pro connects customers to nearby home-job workers — from describing the job to getting it done safely.",
+    "See how Plug A Pro connects customers to nearby home-job workers — from describing the job to getting it done safely.",
 });
 
 const CUSTOMER_STEPS = [
@@ -1216,7 +1216,7 @@ const CUSTOMER_STEPS = [
     step: "1",
     title: "Describe your job",
     detail:
-      "Send a message to the Plug-A-Pro WhatsApp number or use the web form. Tell us what needs doing, where you are, and your preferred timing. Attach a photo if it helps — especially useful for repairs and DIY rescues.",
+      "Send a message to the Plug A Pro WhatsApp number or use the web form. Tell us what needs doing, where you are, and your preferred timing. Attach a photo if it helps — especially useful for repairs and DIY rescues.",
   },
   {
     step: "2",
@@ -1342,7 +1342,7 @@ export default function HowItWorksPage() {
           The full picture
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          How Plug-A-Pro works
+          How Plug A Pro works
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
           Two flows. One platform. From a WhatsApp message to a completed job — safely and simply.
@@ -1367,7 +1367,7 @@ export default function HowItWorksPage() {
               Your number stays private
             </p>
             <p>
-              Neither party's personal WhatsApp number is shared by default. All communication goes through the Plug-A-Pro platform — the customer's address is only revealed to the worker in stages, as the job progresses through acceptance and confirmation.
+              Neither party's personal WhatsApp number is shared by default. All communication goes through the Plug A Pro platform — the customer's address is only revealed to the worker in stages, as the job progresses through acceptance and confirmation.
             </p>
           </div>
         </div>
@@ -1382,7 +1382,7 @@ export default function HowItWorksPage() {
 - [ ] **Step 13.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1390,7 +1390,7 @@ Expected: no errors.
 - [ ] **Step 13.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add app/\(marketing\)/how-it-works/page.tsx
 git commit -m "content: rewrite how-it-works — marketplace customer and worker flows"
 ```
@@ -1415,7 +1415,7 @@ import { Smartphone, MapPin, Star, ShieldCheck } from "lucide-react";
 export const metadata: Metadata = buildMetadata({
   title: "For Workers",
   description:
-    "Register as a home-job worker on Plug-A-Pro. Get matched to local customers, receive structured leads, submit quotes, and build your reputation.",
+    "Register as a home-job worker on Plug A Pro. Get matched to local customers, receive structured leads, submit quotes, and build your reputation.",
 });
 
 const BENEFITS = [
@@ -1446,7 +1446,7 @@ const HOW_TO_JOIN = [
     step: "1",
     title: "Register",
     detail:
-      "Message the Plug-A-Pro WhatsApp number or fill in the form below. Tell us your name, the types of jobs you do, which suburbs you cover, and your availability.",
+      "Message the Plug A Pro WhatsApp number or fill in the form below. Tell us your name, the types of jobs you do, which suburbs you cover, and your availability.",
   },
   {
     step: "2",
@@ -1474,7 +1474,7 @@ export default function ForWorkersPage() {
           Your skills. Steady local work.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          Plug-A-Pro brings paying home-job customers to you. Register once, set your areas and skills, and start receiving matched leads on WhatsApp.
+          Plug A Pro brings paying home-job customers to you. Register once, set your areas and skills, and start receiving matched leads on WhatsApp.
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button nativeButton={false} render={<Link href="/waitlist" />} size="lg">
@@ -1604,7 +1604,7 @@ export default function ForWorkersPage() {
 - [ ] **Step 14.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1612,7 +1612,7 @@ Expected: no errors.
 - [ ] **Step 14.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add app/\(marketing\)/for-workers/page.tsx
 git commit -m "feat: add /for-workers page — provider benefits, onboarding steps, registration CTA"
 ```
@@ -1645,7 +1645,7 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "Services",
   description:
-    "Plug-A-Pro matches you to nearby workers for plumbing, painting, garden work, handyman jobs, appliance repairs, electrical, and DIY assistance.",
+    "Plug A Pro matches you to nearby workers for plumbing, painting, garden work, handyman jobs, appliance repairs, electrical, and DIY assistance.",
 });
 
 const SERVICES: {
@@ -1763,7 +1763,7 @@ export default function ServicesPage() {
           Small jobs done right
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          Plug-A-Pro matches you to nearby workers for a wide range of small home jobs. Describe what you need — we'll find the right person.
+          Plug A Pro matches you to nearby workers for a wide range of small home jobs. Describe what you need — we'll find the right person.
         </p>
       </div>
 
@@ -1835,7 +1835,7 @@ export default function ServicesPage() {
 - [ ] **Step 15.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1843,7 +1843,7 @@ Expected: no errors.
 - [ ] **Step 15.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add app/\(marketing\)/solutions/page.tsx
 git commit -m "content: rewrite Solutions as Services — job categories from customer perspective"
 ```
@@ -1870,13 +1870,13 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "FAQ",
   description:
-    "Frequently asked questions about Plug-A-Pro — for customers looking for home-job help and workers looking for local jobs.",
+    "Frequently asked questions about Plug A Pro — for customers looking for home-job help and workers looking for local jobs.",
 });
 
 const CUSTOMER_FAQS = [
   {
-    q: "What is Plug-A-Pro?",
-    a: "Plug-A-Pro is a marketplace that connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and the whole process — quoting, booking, tracking, and payment — happens through the platform.",
+    q: "What is Plug A Pro?",
+    a: "Plug A Pro is a marketplace that connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and the whole process — quoting, booking, tracking, and payment — happens through the platform.",
   },
   {
     q: "What types of jobs can I get help with?",
@@ -1888,7 +1888,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "Will the worker see my phone number?",
-    a: "Not by default. All communication at the matching and quoting stage goes through the Plug-A-Pro platform. Your personal number is only shared if you and the worker explicitly agree to direct contact.",
+    a: "Not by default. All communication at the matching and quoting stage goes through the Plug A Pro platform. Your personal number is only shared if you and the worker explicitly agree to direct contact.",
   },
   {
     q: "How do quotes work?",
@@ -1896,7 +1896,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "What happens if something goes wrong?",
-    a: "Raise a dispute through the platform. We have the full job record — status history, photos, quotes, and messages. Disputes are reviewed and resolved by the Plug-A-Pro team.",
+    a: "Raise a dispute through the platform. We have the full job record — status history, photos, quotes, and messages. Disputes are reviewed and resolved by the Plug A Pro team.",
   },
   {
     q: "Started a DIY project and got stuck?",
@@ -1915,7 +1915,7 @@ const WORKER_FAQS = [
   },
   {
     q: "How do I register?",
-    a: "Message the Plug-A-Pro WhatsApp number or fill in the web form. Tell us your name, what you do, which suburbs you cover, and your general availability. Your application is reviewed before you start receiving leads.",
+    a: "Message the Plug A Pro WhatsApp number or fill in the web form. Tell us your name, what you do, which suburbs you cover, and your general availability. Your application is reviewed before you start receiving leads.",
   },
   {
     q: "How do leads work?",
@@ -1982,7 +1982,7 @@ export default function FAQPage() {
 - [ ] **Step 16.2: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -1990,7 +1990,7 @@ Expected: no errors.
 - [ ] **Step 16.3: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add app/\(marketing\)/faq/page.tsx
 git commit -m "content: rewrite FAQ — dual-audience questions for customers and workers"
 ```
@@ -2005,7 +2005,7 @@ git commit -m "content: rewrite FAQ — dual-audience questions for customers an
 - [ ] **Step 17.1: Check if pricing page exists**
 
 ```bash
-ls /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing/app/\(marketing\)/pricing/page.tsx 2>&1
+ls /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing/app/\(marketing\)/pricing/page.tsx 2>&1
 ```
 
 If the file does not exist, skip to step 17.3. If it exists, continue to step 17.2.
@@ -2021,7 +2021,7 @@ import { Button } from "@/components/ui/button";
 export const metadata: Metadata = buildMetadata({
   title: "Pricing",
   description:
-    "Plug-A-Pro is in early access. Join free — we'll let you know how pricing works before it affects you.",
+    "Plug A Pro is in early access. Join free — we'll let you know how pricing works before it affects you.",
 });
 
 export default function PricingPage() {
@@ -2032,7 +2032,7 @@ export default function PricingPage() {
       </p>
       <h1 className="text-4xl font-bold mb-4">Free to join during early access</h1>
       <p className="text-muted-foreground mb-4">
-        Plug-A-Pro is currently in early access. Customers can request help and workers can receive leads at no charge while we validate the platform.
+        Plug A Pro is currently in early access. Customers can request help and workers can receive leads at no charge while we validate the platform.
       </p>
       <p className="text-muted-foreground mb-10">
         When we introduce monetisation — for providers, for customers, or both — we&apos;ll communicate it clearly before it takes effect. No surprises.
@@ -2058,7 +2058,7 @@ export default function PricingPage() {
 - [ ] **Step 17.3: Typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors.
@@ -2066,7 +2066,7 @@ Expected: no errors.
 - [ ] **Step 17.4: Commit**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add app/\(marketing\)/pricing/page.tsx
 git commit -m "content: replace pricing page with early-access / waitlist framing"
 ```
@@ -2078,7 +2078,7 @@ git commit -m "content: replace pricing page with early-access / waitlist framin
 - [ ] **Step 18.1: Run full typecheck**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1
 ```
 
 Expected: no errors. If there are errors, fix them before proceeding.
@@ -2086,7 +2086,7 @@ Expected: no errors. If there are errors, fix them before proceeding.
 - [ ] **Step 18.2: Run build**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npm run build 2>&1 | tail -30
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npm run build 2>&1 | tail -30
 ```
 
 Expected: build completes with no errors. Type errors will fail the build.
@@ -2094,7 +2094,7 @@ Expected: build completes with no errors. Type errors will fail the build.
 - [ ] **Step 18.3: Start dev server for visual review**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing && npm run dev
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npm run dev
 ```
 
 Visit `http://localhost:3000` and verify:
@@ -2111,7 +2111,7 @@ Visit `http://localhost:3000` and verify:
 - [ ] **Step 18.4: Final commit if any last-minute fixes were made**
 
 ```bash
-cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add -p
 git commit -m "fix: final build and visual review corrections"
 ```

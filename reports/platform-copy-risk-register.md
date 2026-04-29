@@ -1,4 +1,4 @@
-# Plug-A-Pro Copy Risk Register
+# Plug A Pro Copy Risk Register
 
 Date: 2026-04-10
 
@@ -37,12 +37,12 @@ The following phrasing direction is now the preferred pattern:
 - `application reviewed for marketplace participation`
 - `provider-supplied profile details`
 - `platform-recorded completed jobs, quotes, and reviews`
-- `Plug-A-Pro does not claim licensing, background checks, or workmanship guarantees unless a specific field says so`
+- `Plug A Pro does not claim licensing, background checks, or workmanship guarantees unless a specific field says so`
 - `risk-reduction through records, traceability, and customer approvals`
 
 ## 4. Residual Legal / Product Decisions Requiring Human Input
 
-1. Will Plug-A-Pro ever operate a real verification programme?
+1. Will Plug A Pro ever operate a real verification programme?
 2. If yes, which checks are in scope:
    - identity
    - licence
@@ -58,7 +58,7 @@ The following phrasing direction is now the preferred pattern:
 
 ## 5. Copy Governance Recommendation
 
-Before launch and before future marketing pushes, Plug-A-Pro should maintain a blocked-terms list unless a documented process supports each claim.
+Before launch and before future marketing pushes, Plug A Pro should maintain a blocked-terms list unless a documented process supports each claim.
 
 Blocked umbrella terms by default:
 
@@ -78,4 +78,4 @@ Allowed only when narrowed and evidenced:
 - `trade certificate uploaded`
 - `licence reviewed`
 - `platform-recorded completed jobs`
-- `customer reviews collected through Plug-A-Pro`
+- `customer reviews collected through Plug A Pro`

@@ -5,7 +5,7 @@ import { CTAStrip } from "@/components/marketing/CTAStrip";
 export const metadata: Metadata = buildMetadata({
   title: "How It Works",
   description:
-    "See how Plug-A-Pro connects customers to nearby home-job workers. From describing the job to getting it done.",
+    "See how Plug A Pro connects customers to nearby home-job workers. From describing the job to getting it done.",
 });
 
 const CUSTOMER_STEPS = [
@@ -13,7 +13,7 @@ const CUSTOMER_STEPS = [
     step: "1",
     title: "Describe your job",
     detail:
-      "Send a message to the Plug-A-Pro WhatsApp number or use the web form. Tell us what needs doing, where you are, and your preferred timing. Attach a photo if it helps. Especially useful for repairs and DIY rescues.",
+      "Send a message to the Plug A Pro WhatsApp number or use the web form. Tell us what needs doing, where you are, and your preferred timing. Attach a photo if it helps. Especially useful for repairs and DIY rescues.",
   },
   {
     step: "2",
@@ -70,7 +70,7 @@ const WORKER_STEPS = [
     step: "4",
     title: "Say yes or no to the job",
     detail:
-      "If you can do it, tap to accept. You'll then see the full address and move into Plug-A-Pro's inspection or quoting flow for that job.",
+      "If you can do it, tap to accept. You'll then see the full address and move into Plug A Pro's inspection or quoting flow for that job.",
   },
   {
     step: "5",
@@ -139,7 +139,7 @@ export default function HowItWorksPage() {
           The full picture
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          How Plug-A-Pro works
+          How Plug A Pro works
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
           Two flows. One platform. From a WhatsApp message to a completed job.
@@ -164,7 +164,7 @@ export default function HowItWorksPage() {
               Your number stays private
             </p>
             <p>
-              Neither party&apos;s personal WhatsApp number is shared by default. Plug-A-Pro keeps the intake, quote approval, and job updates on record while the customer&apos;s address is shared with the worker in stages as the job moves forward.
+              Neither party&apos;s personal WhatsApp number is shared by default. Plug A Pro keeps the intake, quote approval, and job updates on record while the customer&apos;s address is shared with the worker in stages as the job moves forward.
             </p>
           </div>
         </div>

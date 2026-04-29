@@ -7,7 +7,7 @@ export type ProviderApplicationApprovalNotificationResult =
   | { status: 'skipped'; reason: 'already_sent' | 'send_in_progress' | 'not_found' }
 
 export function buildProviderApplicationApprovedMessage(name: string): string {
-  return `✅ *Application Approved!*\n\nHi *${name}*, your Plug A Pro application has been approved!\n\nYou'll start receiving job leads on this number. Reply *menu* to check your status anytime.`
+  return `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\nDefault availability: *Available now*\n\nYou can update your working hours in the Worker Portal.\n\nReply *menu* to check your status anytime.`
 }
 
 export async function notifyProviderApplicationApprovedOnce(params: {

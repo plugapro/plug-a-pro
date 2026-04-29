@@ -1,4 +1,4 @@
-# Plug-A-Pro Marketing Site — QA Checklist
+# Plug A Pro Marketing Site — QA Checklist
 
 Date: 2026-03-27
 
@@ -36,8 +36,8 @@ Date: 2026-03-27
 
 ## Content Accuracy
 
-- [ ] siteConfig.name renders as "Plug-A-Pro" throughout
-- [ ] Nav logo shows "Plug-A-Pro"
+- [ ] siteConfig.name renders as "Plug A Pro" throughout
+- [ ] Nav logo shows "Plug A Pro"
 - [ ] Nav links: Solutions, How it works, Pricing
 - [ ] Hero H1: "Book a technician in minutes — via WhatsApp"
 - [ ] Pricing tiers: Starter R 999/mo, Growth R 2 499/mo, Enterprise Custom
@@ -54,7 +54,7 @@ Date: 2026-03-27
 
 ## SEO
 
-- [ ] `<title>` on homepage reflects "Plug-A-Pro"
+- [ ] `<title>` on homepage reflects "Plug A Pro"
 - [ ] Meta descriptions are meaningful (not placeholder)
 - [ ] Solutions page metadata does not mention cleaning
 

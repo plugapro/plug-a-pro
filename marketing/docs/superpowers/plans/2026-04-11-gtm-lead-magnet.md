@@ -161,9 +161,9 @@ Replace with:
 Find:
 ```typescript
 const journeyPrefill: Record<string, string> = {
-  customer: "Hi, I want to register as a customer and book services through Plug-A-Pro.",
-  provider: "Hi, I want to join Plug-A-Pro as a service provider.",
-  both: "Hi, I want to join Plug-A-Pro as both a customer and service provider.",
+  customer: "Hi, I want to register as a customer and book services through Plug A Pro.",
+  provider: "Hi, I want to join Plug A Pro as a service provider.",
+  both: "Hi, I want to join Plug A Pro as both a customer and service provider.",
 };
 ```
 
