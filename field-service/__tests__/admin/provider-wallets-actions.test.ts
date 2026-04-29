@@ -103,6 +103,7 @@ describe('provider wallet admin actions', () => {
       entity: 'ProviderWallet',
       entityId: 'wallet-1',
       requiredRole: ['OPS'],
+      excludedRole: ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'],
       reason: 'Reversal after ops review',
     }))
   })
@@ -136,6 +137,7 @@ describe('provider wallet admin actions', () => {
       entity: 'ProviderWallet',
       entityId: 'wallet-1',
       requiredRole: ['OPS'],
+      excludedRole: ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'],
       reason: 'Abuse review',
     }))
   })
@@ -169,6 +171,7 @@ describe('provider wallet admin actions', () => {
       entity: 'ProviderWallet',
       entityId: 'wallet-1',
       requiredRole: ['OPS'],
+      excludedRole: ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'],
       reason: 'Review resolved',
     }))
   })

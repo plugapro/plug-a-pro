@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getProviderWalletLedgerEntries } from '@/lib/provider-wallet'
 import {
@@ -18,6 +19,8 @@ import {
 } from '../actions'
 
 export const metadata = buildMetadata({ title: 'Credit Top-up Review', noIndex: true })
+
+const PAYMENT_ADMIN_FLAG = 'admin.crud.payments'
 
 const STATUS_STYLES: Record<PaymentIntentStatus, 'warning' | 'info' | 'success' | 'danger' | 'neutral'> = {
   CREATED: 'neutral',
@@ -82,7 +85,8 @@ export default async function ProviderCreditPaymentDetailPage({
   params: Promise<{ id: string }>
   searchParams?: Promise<{ message?: string }>
 }) {
-  await requireAdmin()
+  const admin = await requireAdmin()
+  const paymentActionsEnabled = await isEnabled(PAYMENT_ADMIN_FLAG, { userId: admin.id })
   const { id } = await params
   const { message } = searchParams ? await searchParams : {}
   const banner = messageText(message)
@@ -142,6 +146,13 @@ export default async function ProviderCreditPaymentDetailPage({
             : 'border-emerald-300 bg-emerald-50 text-emerald-900'
         }`}>
           {banner}
+        </div>
+      ) : null}
+
+      {!paymentActionsEnabled ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Manual EFT reconciliation actions are disabled by feature flag
+          <span className="font-mono"> {PAYMENT_ADMIN_FLAG}</span>.
         </div>
       ) : null}
 

@@ -7,9 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 
 export const metadata = buildMetadata({ title: 'Credit Top-ups', noIndex: true })
+
+const PAYMENT_ADMIN_FLAG = 'admin.crud.payments'
 
 const STATUS_OPTIONS: (PaymentIntentStatus | 'ALL')[] = [
   'ALL',
@@ -58,7 +61,8 @@ export default async function ProviderCreditPaymentsPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string; amount?: string }>
 }) {
-  await requireAdmin()
+  const admin = await requireAdmin()
+  const paymentActionsEnabled = await isEnabled(PAYMENT_ADMIN_FLAG, { userId: admin.id })
   const { q = '', status = 'PENDING_PAYMENT', amount = '' } = await searchParams
   const statusFilter = STATUS_OPTIONS.includes(status as PaymentIntentStatus)
     && status !== 'ALL'
@@ -110,6 +114,13 @@ export default async function ProviderCreditPaymentsPage({
           <Link href="/admin/payments">Booking payments</Link>
         </Button>
       </div>
+
+      {!paymentActionsEnabled ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Manual EFT reconciliation actions are disabled by feature flag
+          <span className="font-mono"> {PAYMENT_ADMIN_FLAG}</span>.
+        </div>
+      ) : null}
 
       <form className="grid gap-3 rounded-xl border bg-card p-4 md:grid-cols-[1fr_180px_140px_auto]">
         <Input

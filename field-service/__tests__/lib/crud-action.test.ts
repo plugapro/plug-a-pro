@@ -69,6 +69,13 @@ describe('crudAction', () => {
       expect(meetsRoleRequirement('TRUST', ['ADMIN', 'OWNER'])).toBe(false)
       expect(meetsRoleRequirement('OPS', ['ADMIN', 'OWNER'])).toBe(false)
       expect(meetsRoleRequirement('FINANCE', [...reconcileRoles], ['TRUST'])).toBe(true)
+
+      const opsOnlyExclusions = ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'] as const
+      expect(meetsRoleRequirement('OPS', ['OPS'], [...opsOnlyExclusions])).toBe(true)
+      expect(meetsRoleRequirement('FINANCE', ['OPS'], [...opsOnlyExclusions])).toBe(false)
+      expect(meetsRoleRequirement('TRUST', ['OPS'], [...opsOnlyExclusions])).toBe(false)
+      expect(meetsRoleRequirement('ADMIN', ['OPS'], [...opsOnlyExclusions])).toBe(false)
+      expect(meetsRoleRequirement('OWNER', ['OPS'], [...opsOnlyExclusions])).toBe(false)
     })
   })
 

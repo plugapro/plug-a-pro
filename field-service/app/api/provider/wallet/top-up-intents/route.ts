@@ -8,6 +8,7 @@ import {
 
 type CreateTopUpIntentBody = {
   amountCents?: unknown
+  /** Backward-compatible JSON client path; normalized then validated as cents. */
   amountRand?: unknown
   metadata?: unknown
 }

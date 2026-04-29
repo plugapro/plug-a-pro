@@ -36,7 +36,7 @@ const PUBLIC_PATHS = [
 ]
 
 // Routes that require provider role
-const PROVIDER_PATHS = ['/provider', '/technician']
+const PROVIDER_PATHS = ['/provider', '/technician', '/api/provider']
 
 // Routes that require active AdminUser access
 const ADMIN_PATHS = ['/admin']

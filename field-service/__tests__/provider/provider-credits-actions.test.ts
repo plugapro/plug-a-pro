@@ -176,4 +176,45 @@ describe('provider credits server actions', () => {
       paymentReference: 'PAP-7842-9F3K',
     })
   })
+
+  it('redirects form submissions to the newly created top-up instructions', async () => {
+    await arrangeProvider()
+    const { createManualEftTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
+    ;(createManualEftTopUpIntent as any).mockResolvedValue({
+      intent: {
+        id: 'intent-1',
+        status: 'PENDING_PAYMENT',
+      },
+      instructions: {
+        amountCents: 10_000,
+        amountFormatted: 'R 100,00',
+        currency: 'ZAR',
+        creditsToIssue: 5,
+        paymentReference: 'PAP-7842-9F3K',
+        expiresAt: null,
+        bankAccount: {
+          accountName: 'Plug-A-Pro Holdings',
+          bankName: 'Pilot Bank',
+          accountNumber: '123456789',
+          branchCode: '250655',
+          accountType: 'Business current account',
+        },
+      },
+    })
+
+    const { createProviderTopUpIntentFormAction } = await import(
+      '../../app/(provider)/provider/credits/actions'
+    )
+    const formData = new FormData()
+    formData.set('amountCents', '10000')
+
+    await expect(createProviderTopUpIntentFormAction(formData)).rejects.toThrow(
+      'redirect:/provider/credits?intent=intent-1',
+    )
+    expect(createManualEftTopUpIntent).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      providerCellphone: '+27821234567',
+    })
+  })
 })

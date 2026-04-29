@@ -12,6 +12,7 @@ import {
   approveLeadUnlockDisputeInTransaction,
   rejectLeadUnlockDisputeInTransaction,
 } from '@/lib/lead-unlock-disputes'
+import { ProviderWalletError } from '@/lib/provider-wallet'
 
 const FLAG = 'admin.crud.payments'
 const DISPUTE_ROLES = ['OPS', 'FINANCE', 'TRUST', 'ADMIN', 'OWNER'] as const
@@ -39,6 +40,10 @@ function toCrudConflict(error: unknown): never {
     if (error.code === 'NOT_FOUND') {
       throw new CrudActionError('NOT_FOUND', error.message)
     }
+    throw new CrudActionError('CONFLICT', error.message)
+  }
+
+  if (error instanceof ProviderWalletError) {
     throw new CrudActionError('CONFLICT', error.message)
   }
 

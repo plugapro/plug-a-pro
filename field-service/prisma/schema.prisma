@@ -373,6 +373,8 @@ model Lead {
 
 model LeadUnlock {
   id                  String           @id @default(cuid())
+  // One unlock per dispatched Lead. This relies on the current 1:1 Lead
+  // dispatch model; revisit before introducing pooled multi-provider dispatch.
   leadId              String           @unique
   providerId          String
   matchId             String?

@@ -41,6 +41,15 @@ vi.mock('../../lib/lead-unlock-disputes', () => ({
   rejectLeadUnlockDisputeInTransaction: vi.fn(),
 }))
 
+vi.mock('../../lib/provider-wallet', () => ({
+  ProviderWalletError: class ProviderWalletError extends Error {
+    constructor(public readonly code: string, message: string) {
+      super(message)
+      this.name = 'ProviderWalletError'
+    }
+  },
+}))
+
 describe('lead unlock dispute admin actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -158,6 +167,32 @@ describe('lead unlock dispute admin actions', () => {
       }),
     ).rejects.toMatchObject({
       code: 'CONFLICT',
+    } satisfies Partial<InstanceType<typeof CrudActionError>>)
+  })
+
+  it('maps suspended-wallet refund failures to an action conflict', async () => {
+    await arrangeAdmin()
+    await executeCrudActionWith({})
+    const { CrudActionError } = await import('../../lib/crud-action')
+    const { approveLeadUnlockDisputeInTransaction } = await import('../../lib/lead-unlock-disputes')
+    const { ProviderWalletError } = await import('../../lib/provider-wallet')
+
+    ;(approveLeadUnlockDisputeInTransaction as any).mockRejectedValue(
+      new ProviderWalletError('WALLET_NOT_ACTIVE', 'Provider wallet is suspended.'),
+    )
+
+    const { approveLeadUnlockDisputeAction } = await import(
+      '../../app/(admin)/admin/lead-unlock-disputes/actions'
+    )
+
+    await expect(
+      approveLeadUnlockDisputeAction({
+        disputeId: 'dispute-1',
+        adminNotes: 'Invalid number confirmed',
+      }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: 'Provider wallet is suspended.',
     } satisfies Partial<InstanceType<typeof CrudActionError>>)
   })
 
