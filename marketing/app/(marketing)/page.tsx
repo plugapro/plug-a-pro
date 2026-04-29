@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/metadata";
 import { Hero } from "@/components/marketing/Hero";
 import { ProblemStatement } from "@/components/marketing/ProblemStatement";
+import { ProviderStorySection } from "@/components/marketing/ProviderStorySection";
 import { WhoItsFor } from "@/components/marketing/WhoItsFor";
 import { HowItWorksSteps } from "@/components/marketing/HowItWorksSteps";
 import { OperatingModel } from "@/components/marketing/OperatingModel";
@@ -20,6 +21,7 @@ export default function HomePage() {
       <ScrollDepthTracker />
       <div id="section-hero"><Hero /></div>
       <div id="section-problem"><ProblemStatement /></div>
+      <div id="section-provider-story"><ProviderStorySection /></div>
       <div id="section-how-it-works"><HowItWorksSteps /></div>
       <div id="section-who-its-for"><WhoItsFor /></div>
       <div id="section-trust"><TrustSafety /></div>

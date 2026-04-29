@@ -2,6 +2,24 @@
 
 Updated: 2026-03-27
 
+## 2026-04-29 — Provider story media section
+
+Added a homepage storytelling section, `ProviderStorySection`, directly after the problem statement. The section uses five local campaign images of roadside service signs to explain the Plug A Pro mission respectfully: local skill already exists, and the platform helps make that skill easier for customers to discover digitally.
+
+Implementation decisions:
+- Used local images under `public/images/provider-story/` instead of remote URLs, so no `next.config.ts` image-domain change is required.
+- Used `next/image` with fixed intrinsic dimensions and responsive `sizes` to avoid layout shift.
+- Kept copy focused on dignity and practical local-commerce visibility. No guaranteed-income or guaranteed-leads claims were added.
+- Added customer and provider WhatsApp CTAs using the existing WhatsApp link helpers and analytics events.
+- Mobile layout shows copy first, then a horizontal image gallery. Desktop layout uses a two-column editorial collage plus a four-step journey row.
+
+Images added:
+- `public/images/provider-story/plumbing-electrical-carpentry.jpg`
+- `public/images/provider-story/handyman-painting-tiling.jpg`
+- `public/images/provider-story/roofing-waterproofing-gutters.jpg`
+- `public/images/provider-story/welding-gates-burglar-bars.jpg`
+- `public/images/provider-story/paving-tiling-renovations.jpg`
+
 ## lib/metadata.ts — siteConfig
 
 | Field | Before | After |
