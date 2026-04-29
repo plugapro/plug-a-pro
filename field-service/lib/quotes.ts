@@ -68,6 +68,8 @@ export async function createBookingArtifactsForApprovedQuote(
     } | null
     scheduledDate: Date
     estimatedDurationMinutes?: number | null
+    isTestJob?: boolean
+    cohortName?: string | null
     source: 'quote_approval' | 'assignment_acceptance'
   }
 ) {
@@ -92,7 +94,13 @@ export async function createBookingArtifactsForApprovedQuote(
   })
 
   await tx.job.create({
-    data: { bookingId: booking.id, providerId: params.providerId, status: 'SCHEDULED' },
+    data: {
+      bookingId: booking.id,
+      providerId: params.providerId,
+      status: 'SCHEDULED',
+      isTestJob: Boolean(params.isTestJob),
+      cohortName: params.cohortName ?? null,
+    },
   })
 
   await tx.technicianScheduleItem.updateMany({
@@ -220,6 +228,8 @@ export async function processQuoteDecision(
         scheduledDate,
         estimatedDurationMinutes:
           Math.round((quote.estimatedHours ?? 0) * 60) || MATCHING_CONFIG.defaultDurationMinutes,
+        isTestJob: quote.match.jobRequest.isTestRequest,
+        cohortName: quote.match.jobRequest.cohortName,
         source: 'quote_approval',
       })
 

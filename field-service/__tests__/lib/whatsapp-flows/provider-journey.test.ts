@@ -36,7 +36,7 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 }))
 
 vi.mock('@/lib/provider-lead-access', () => ({
-  getProviderLeadAccessUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/leads/access/token'),
+  getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/provider/jobs/job-request-1/handover?token=token'),
 }))
 
 import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey'
@@ -377,7 +377,7 @@ describe('handleProviderJourneyFlow', () => {
         '+27711111111',
         expect.stringContaining('Next step: *Confirm arrival time*'),
         'View Job',
-        'https://app.plugapro.co.za/leads/access/token',
+        'https://app.plugapro.co.za/provider/jobs/job-request-1/handover?token=token',
         expect.any(Object),
       )
       expect(result.nextStep).toBe('done')

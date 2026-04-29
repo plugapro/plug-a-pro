@@ -201,11 +201,16 @@ async function loadHeroSection(
       paymentExceptionCount,
       disputeCount,
     ] = await Promise.all([
-      client.jobRequest.count({ where: { status: 'PENDING_VALIDATION' } }),
-      client.jobRequest.count({ where: { status: { in: ['OPEN', 'MATCHING'] } } }),
-      client.job.count({ where: { status: { in: ACTIVE_FIELD_STATUSES } } }),
-      client.job.count({ where: { status: { in: FIELD_EXCEPTION_STATUSES } } }),
-      client.payment.count({ where: { status: { in: PAYMENT_EXCEPTION_STATUSES } } }),
+      client.jobRequest.count({ where: { status: 'PENDING_VALIDATION', isTestRequest: false } }),
+      client.jobRequest.count({ where: { status: { in: ['OPEN', 'MATCHING'] }, isTestRequest: false } }),
+      client.job.count({ where: { status: { in: ACTIVE_FIELD_STATUSES }, isTestJob: false } }),
+      client.job.count({ where: { status: { in: FIELD_EXCEPTION_STATUSES }, isTestJob: false } }),
+      client.payment.count({
+        where: {
+          status: { in: PAYMENT_EXCEPTION_STATUSES },
+          booking: { match: { jobRequest: { isTestRequest: false } } },
+        },
+      }),
       client.dispute.count({ where: { status: { in: OPEN_DISPUTE_STATUSES } } }),
     ])
 
@@ -302,14 +307,14 @@ async function loadQueueSection(
       quoteCount,
     ] = await Promise.all([
       client.jobRequest.findMany({
-        where: { status: 'PENDING_VALIDATION' },
+        where: { status: 'PENDING_VALIDATION', isTestRequest: false },
         select: jobRequestSummarySelect,
         orderBy: { createdAt: 'asc' },
         take: 6,
       }),
-      client.jobRequest.count({ where: { status: 'PENDING_VALIDATION' } }),
+      client.jobRequest.count({ where: { status: 'PENDING_VALIDATION', isTestRequest: false } }),
       client.jobRequest.findMany({
-        where: { status: { in: ['OPEN', 'MATCHING'] } },
+        where: { status: { in: ['OPEN', 'MATCHING'] }, isTestRequest: false },
         select: {
           ...jobRequestSummarySelect,
           match: { select: { provider: { select: { name: true } } } },
@@ -318,9 +323,9 @@ async function loadQueueSection(
         orderBy: { createdAt: 'asc' },
         take: 6,
       }),
-      client.jobRequest.count({ where: { status: { in: ['OPEN', 'MATCHING'] } } }),
+      client.jobRequest.count({ where: { status: { in: ['OPEN', 'MATCHING'] }, isTestRequest: false } }),
       client.quote.findMany({
-        where: { status: { in: ['PENDING', 'REVISED'] } },
+        where: { status: { in: ['PENDING', 'REVISED'] }, match: { jobRequest: { isTestRequest: false } } },
         select: {
           id: true,
           amount: true,
@@ -337,7 +342,9 @@ async function loadQueueSection(
         orderBy: { createdAt: 'asc' },
         take: 6,
       }),
-      client.quote.count({ where: { status: { in: ['PENDING', 'REVISED'] } } }),
+      client.quote.count({
+        where: { status: { in: ['PENDING', 'REVISED'] }, match: { jobRequest: { isTestRequest: false } } },
+      }),
     ])
 
     const [
@@ -652,33 +659,45 @@ async function loadTrendSection(
 
     const [requests, matches, quotes, bookings, completed, paid, revenue,
            reqByDay, bookingsByDay, completedByDay] = await Promise.all([
-      client.jobRequest.count({ where: { createdAt: { gte: from, lte: to } } }),
-      client.match.count({ where: { createdAt: { gte: from, lte: to } } }),
-      client.quote.count({ where: { createdAt: { gte: from, lte: to } } }),
-      client.booking.count({ where: { createdAt: { gte: from, lte: to } } }),
-      client.job.count({ where: { status: 'COMPLETED', completedAt: { gte: from, lte: to } } }),
-      client.payment.count({ where: { status: 'PAID', paidAt: { gte: from, lte: to } } }),
+      client.jobRequest.count({ where: { createdAt: { gte: from, lte: to }, isTestRequest: false } }),
+      client.match.count({ where: { createdAt: { gte: from, lte: to }, jobRequest: { isTestRequest: false } } }),
+      client.quote.count({ where: { createdAt: { gte: from, lte: to }, match: { jobRequest: { isTestRequest: false } } } }),
+      client.booking.count({ where: { createdAt: { gte: from, lte: to }, match: { jobRequest: { isTestRequest: false } } } }),
+      client.job.count({ where: { status: 'COMPLETED', isTestJob: false, completedAt: { gte: from, lte: to } } }),
+      client.payment.count({
+        where: {
+          status: 'PAID',
+          paidAt: { gte: from, lte: to },
+          booking: { match: { jobRequest: { isTestRequest: false } } },
+        },
+      }),
       client.payment.aggregate({
-        where: { status: 'PAID', paidAt: { gte: from, lte: to } },
+        where: {
+          status: 'PAID',
+          paidAt: { gte: from, lte: to },
+          booking: { match: { jobRequest: { isTestRequest: false } } },
+        },
         _sum: { amount: true },
       }),
       // Daily series — only for ranges that benefit from a chart (>1 day)
       client.$queryRaw<DailyCountRow[]>`
         SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*)::bigint AS count
         FROM "job_requests"
-        WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}
+        WHERE "createdAt" >= ${from} AND "createdAt" <= ${to} AND "isTestRequest" = false
         GROUP BY day ORDER BY day ASC
       `,
       client.$queryRaw<DailyCountRow[]>`
-        SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*)::bigint AS count
-        FROM "bookings"
-        WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}
+        SELECT DATE_TRUNC('day', b."createdAt") AS day, COUNT(*)::bigint AS count
+        FROM "bookings" b
+        JOIN "matches" m ON m.id = b."matchId"
+        JOIN "job_requests" jr ON jr.id = m."jobRequestId"
+        WHERE b."createdAt" >= ${from} AND b."createdAt" <= ${to} AND jr."isTestRequest" = false
         GROUP BY day ORDER BY day ASC
       `,
       client.$queryRaw<DailyCountRow[]>`
         SELECT DATE_TRUNC('day', "completedAt") AS day, COUNT(*)::bigint AS count
         FROM "jobs"
-        WHERE status = 'COMPLETED' AND "completedAt" >= ${from} AND "completedAt" <= ${to}
+        WHERE status = 'COMPLETED' AND "isTestJob" = false AND "completedAt" >= ${from} AND "completedAt" <= ${to}
         GROUP BY day ORDER BY day ASC
       `,
     ])
@@ -729,8 +748,13 @@ async function loadExceptionSection(
 ): Promise<SectionResult<OpsDashboardExceptionSection>> {
   try {
     const [fieldCount, paymentCount, disputeCount] = await Promise.all([
-      client.job.count({ where: { status: { in: FIELD_EXCEPTION_STATUSES } } }),
-      client.payment.count({ where: { status: { in: PAYMENT_EXCEPTION_STATUSES } } }),
+      client.job.count({ where: { status: { in: FIELD_EXCEPTION_STATUSES }, isTestJob: false } }),
+      client.payment.count({
+        where: {
+          status: { in: PAYMENT_EXCEPTION_STATUSES },
+          booking: { match: { jobRequest: { isTestRequest: false } } },
+        },
+      }),
       client.dispute.count({ where: { status: { in: OPEN_DISPUTE_STATUSES } } }),
     ])
     return { ok: true, data: { totalExceptions: fieldCount + paymentCount + disputeCount }, error: null }

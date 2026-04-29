@@ -8,7 +8,7 @@ import { transitionJob } from '../jobs'
 import { promptCustomersForNewProviderAvailability } from '../matching/customer-recontact'
 import { recordAuditLog } from '../audit'
 import { AUDIT_ENTITY } from '../audit-entities'
-import { getProviderLeadAccessUrlByLeadId } from '../provider-lead-access'
+import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
 import { normalizePhone } from '../utils'
 import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
@@ -699,6 +699,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
   const activeJobs = await db.job.findMany({
     where: {
       providerId: provider.id,
+      isTestJob: Boolean(provider.isTestUser),
       status: { in: [...ACTIVE_JOB_STATUSES] },
     },
     include: {
@@ -724,6 +725,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
   const acceptedLeads = (await db.lead.findMany({
     where: {
       providerId: provider.id,
+      isTestLead: Boolean(provider.isTestUser),
       status: 'ACCEPTED',
       jobRequest: {
         status: { notIn: ['EXPIRED', 'CANCELLED'] },
@@ -761,6 +763,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
     ? ((await db.lead.findMany({
         where: {
           providerId: provider.id,
+          isTestLead: Boolean(provider.isTestUser),
           status: { in: ['SENT', 'VIEWED'] },
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         },
@@ -1018,7 +1021,7 @@ async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promi
     statusLabel: status,
     nextStep,
   })
-  const leadUrl = await getProviderLeadAccessUrlByLeadId(lead.id)
+  const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
   const body =
     `📋 *${category} — ${suburb}*\n\n` +
     `Customer: *${customer}*\n` +

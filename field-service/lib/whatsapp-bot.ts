@@ -30,6 +30,7 @@ import {
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
 import { applyOptIn, applyOptOut } from './whatsapp-policy'
 import { normalizePhone } from './utils'
+import { createTestCohortContext } from './internal-test-cohort'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
@@ -865,6 +866,7 @@ async function processInboundMessageUnlocked(
 // ─── Conversation state ───────────────────────────────────────────────────────
 
 async function loadConversation(phone: string) {
+  const cohort = createTestCohortContext(phone)
   // Use upsert to avoid P2002 when two concurrent webhook deliveries for the same
   // new user both attempt `create` after seeing no existing record.
   return db.conversation.upsert({
@@ -874,9 +876,13 @@ async function loadConversation(phone: string) {
       flow: 'idle',
       step: 'welcome',
       data: {},
+      isTestSession: cohort.isTestUser,
+      cohortName: cohort.cohortName,
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
     },
-    update: {}, // no-op when the record already exists
+    update: cohort.isTestUser
+      ? { isTestSession: true, cohortName: cohort.cohortName }
+      : {}, // no-op for live records when the record already exists
   })
 }
 
@@ -886,6 +892,7 @@ async function saveConversation(params: {
   step: FlowStep
   data: ConversationData
 }): Promise<void> {
+  const cohort = createTestCohortContext(params.phone)
   await db.conversation.upsert({
     where: { phone: params.phone },
     create: {
@@ -893,12 +900,15 @@ async function saveConversation(params: {
       flow: params.flow,
       step: params.step,
       data: params.data as Prisma.InputJsonValue,
+      isTestSession: cohort.isTestUser,
+      cohortName: cohort.cohortName,
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
     },
     update: {
       flow: params.flow,
       step: params.step,
       data: params.data as Prisma.InputJsonValue,
+      ...(cohort.isTestUser ? { isTestSession: true, cohortName: cohort.cohortName } : {}),
       expiresAt: new Date(Date.now() + CONVERSATION_TTL_MS),
     },
   })
@@ -1140,6 +1150,7 @@ export async function notifyProviderNewJob(params: {
   description: string      // short job description
   customerInitial: string  // first name only
   expiresInMinutes?: number
+  isTestLead?: boolean
 }): Promise<void> {
   const { sendCtaUrl } = await import('./whatsapp-interactive')
   const { getProviderLeadAccessUrlByLeadId } = await import('./provider-lead-access')
@@ -1159,6 +1170,14 @@ export async function notifyProviderNewJob(params: {
     'View Lead',
     leadUrl,
     { footer: 'Accept, inspect, or decline from the lead page' },
+    {
+      templateName: 'interactive:new_lead_available',
+      metadata: {
+        leadId: params.leadId,
+        isTestLead: Boolean(params.isTestLead),
+        isTestRequest: Boolean(params.isTestLead),
+      },
+    },
   )
 }
 
@@ -1426,6 +1445,10 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
         await sendLeadInsufficientCreditsMessage(phone, leadId, result.currentCreditBalance ?? 0)
         return
       }
+      if (result.reason === 'PROVIDER_NOT_APPROVED') {
+        await sendText(phone, "Your provider application is still under review. You'll be able to receive and accept leads once approved.")
+        return
+      }
       const message =
         result.reason === 'TAKEN'
           ? '⚠️ Another provider has already accepted this job.'
@@ -1436,14 +1459,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
       return
     }
 
-    const quoteUrl = `${appUrl}/technician/quotes/${result.matchId}`
-    await sendCtaUrl(
-      phone,
-      `✅ *Build your quote*\n\nAdd your labour cost, materials (if any), and estimated time — the customer will receive it for approval.`,
-      'Submit Quote',
-      quoteUrl,
-      { footer: 'Quote will be sent to the customer for approval' }
-    )
+    // acceptLead owns the post-match customer/provider messages for every accept channel.
     return
   }
 
@@ -1807,6 +1823,10 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
   if (!result.ok) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
       await sendLeadInsufficientCreditsMessage(phone, lead.id, result.currentCreditBalance ?? 0)
+      return
+    }
+    if (result.reason === 'PROVIDER_NOT_APPROVED') {
+      await sendText(phone, "Your provider application is still under review. You'll be able to receive and accept leads once approved.")
       return
     }
     if (result.reason === 'EXPIRED') {

@@ -175,9 +175,40 @@ describe('createJobRequest', () => {
         userId: 'user-abc',
         phone: '+27821234567',
         name: 'Test Customer',
+        isTestUser: false,
+        cohortName: null,
       },
       select: { id: true },
     })
+  })
+
+  it('marks internal staff customer requests with the test cohort', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-test' })
+    tx.address.create.mockResolvedValue({ id: 'addr-test' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-test' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({
+      ...BASE_PARAMS,
+      phone: '0823035070',
+    })
+
+    expect(tx.customer.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { phone: '+27823035070' },
+      create: expect.objectContaining({
+        phone: '+27823035070',
+        isTestUser: true,
+        cohortName: 'internal_staff_test',
+      }),
+    }))
+    expect(tx.jobRequest.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        customerId: 'cust-test',
+        isTestRequest: true,
+        cohortName: 'internal_staff_test',
+      }),
+    }))
   })
 
   it('triggers orchestrateMatch fire-and-forget via after() after commit', async () => {

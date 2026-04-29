@@ -19,6 +19,7 @@ export interface CandidateInput {
   suburb: string
   city: string
   regionKey?: string | null
+  isTestRequest?: boolean
 }
 
 export interface DispatchResult {
@@ -34,6 +35,8 @@ type LegacyDispatchJobRequest = {
   category: string
   title: string
   description: string
+  isTestRequest: boolean
+  cohortName: string | null
   customer: { name: string } | null
   address: {
     suburb: string | null
@@ -61,6 +64,8 @@ async function loadLegacyDispatchJobRequest(jobRequestId: string): Promise<Legac
       category: true,
       title: true,
       description: true,
+      isTestRequest: true,
+      cohortName: true,
       customer: {
         select: {
           name: true,
@@ -94,6 +99,7 @@ async function dispatchLeadsLegacy(jobRequestId: string): Promise<DispatchResult
     suburb,
     city,
     regionKey: jobRequest.address?.locationNode?.regionKey ?? null,
+    isTestRequest: jobRequest.isTestRequest,
   })
 
   if (candidates.length === 0) {
@@ -120,6 +126,8 @@ async function dispatchLeadsLegacy(jobRequestId: string): Promise<DispatchResult
         jobRequestId,
         providerId: candidate.id,
         status: 'SENT',
+        isTestLead: jobRequest.isTestRequest,
+        cohortName: jobRequest.cohortName,
         expiresAt: new Date(Date.now() + MATCHING_CONFIG.offerTtlMinutes * 60_000),
       },
       select: {
@@ -319,6 +327,7 @@ type LeadRejected = {
     | 'TAKEN'
     | 'INSUFFICIENT_CREDITS'
     | 'KYC_REQUIRED'
+    | 'PROVIDER_NOT_APPROVED'
     | 'WALLET_SUSPENDED'
     | 'CONCURRENT_UNLOCK'
   currentCreditBalance?: number
@@ -328,7 +337,12 @@ export type LeadAcceptanceResult = LeadAccepted | LeadRejected
 
 export async function findCandidateProviders(input: CandidateInput) {
   const providers = await db.provider.findMany({
-    where: { active: true, verified: true },
+    where: {
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      isTestUser: Boolean(input.isTestRequest),
+    },
     select: {
       id: true,
       phone: true,

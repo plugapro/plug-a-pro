@@ -16,7 +16,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     status: 'SENT',
     sentAt: new Date('2026-04-29T10:00:00.000Z'),
     expiresAt: new Date('2026-04-29T11:00:00.000Z'),
-    provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000' },
+    provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: true, status: 'ACTIVE' },
     unlock: null,
     jobRequest: {
       id: 'job-request-1',
@@ -51,7 +51,34 @@ describe('provider lead access tokens', () => {
     const verified = verifyProviderLeadAccessToken(token)
     expect(verified).toMatchObject({
       status: 'active',
-      payload: { leadId: 'lead-1', providerId: 'provider-1' },
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        scopes: ['view_lead', 'unlock_lead', 'accept_lead', 'decline_lead'],
+      },
+    })
+  })
+
+  it('builds a scoped accepted-job handover URL', async () => {
+    const { getProviderSignedJobHandoverUrl, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+
+    const url = await getProviderSignedJobHandoverUrl({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'job-request-1',
+      providerPhone: '+27820000000',
+    })
+
+    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/provider\/jobs\/job-request-1\/handover\?token=/)
+    const token = decodeURIComponent(url!.split('token=')[1])
+    expect(verifyProviderLeadAccessToken(token)).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'job-request-1',
+        scopes: expect.arrayContaining(['view_job', 'confirm_arrival', 'contact_customer']),
+      },
     })
   })
 
@@ -80,6 +107,19 @@ describe('provider lead access tokens', () => {
     const resolved = await resolveProviderLeadAccessToken(token)
 
     expect(resolved.status).toBe('invalid')
+  })
+
+  it('rejects active tokens for inactive providers', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({
+      provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000', active: false, status: 'SUSPENDED' },
+    }))
+
+    await expect(resolveProviderLeadAccessToken(token)).resolves.toMatchObject({
+      status: 'invalid',
+      lead: null,
+    })
   })
 
   it('withholds customer PII, full address, and attachments before unlock', async () => {

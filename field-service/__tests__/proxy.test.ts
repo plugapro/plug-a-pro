@@ -114,4 +114,35 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBeNull()
     expect(res.headers.get('x-user-role')).toBe('owner')
   })
+
+  it('allows signed one-job WhatsApp routes without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/jobs/jr-1/handover?token=signed-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps account-level provider routes behind OTP login', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/credits'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fcredits&next=%2Fprovider%2Fcredits',
+    )
+  })
+
+  it('allows signed provider contact-customer API without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/provider/leads/lead-1/contact-customer?leadToken=signed-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
 })

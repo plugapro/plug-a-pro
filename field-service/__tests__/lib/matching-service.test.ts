@@ -17,7 +17,7 @@ const {
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
     },
-    provider: { findMany: vi.fn(), findUniqueOrThrow: vi.fn() },
+    provider: { findMany: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn() },
     dispatchDecision: {
       create: vi.fn(),
       update: vi.fn(),
@@ -365,6 +365,13 @@ describe('matching service', () => {
       makeProvider('provider-alternative', 'Alternative Pro'),
       makeProvider('provider-preferred', 'Preferred Pro'),
     ])
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'VERIFIED',
+    })
 
     const result = await rankCandidatesForJobRequest('jr-2')
 
@@ -372,27 +379,23 @@ describe('matching service', () => {
     expect(result.candidates[0].scoreBreakdown.customerPreference).toBe(1)
   })
 
-  it('keeps active providers eligible even when marketplace review is still pending', async () => {
+  it('excludes providers whose marketplace approval is still pending', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest('AUTO_ASSIGN'))
-    mockDb.provider.findMany.mockResolvedValue([
-      makeProvider('provider-pending-review', 'Pending Review Pro', { verified: false }),
-    ])
+    mockDb.provider.findMany.mockResolvedValue([])
 
     const result = await rankCandidatesForJobRequest('jr-pending-review')
 
     expect(mockDb.provider.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { active: true },
+        where: expect.objectContaining({
+          active: true,
+          verified: true,
+          status: 'ACTIVE',
+        }),
       }),
     )
-    expect(result.eligibleCount).toBe(1)
-    expect(result.candidates[0].providerId).toBe('provider-pending-review')
-    expect(result.candidates[0].feasibilityNotes).toContain(
-      'Profile is still pending marketplace review',
-    )
-    expect(result.candidates[0].scoreBreakdown.reasons).toContain(
-      'Profile pending marketplace review',
-    )
+    expect(result.eligibleCount).toBe(0)
+    expect(result.candidates).toEqual([])
   })
 
   it('emits specific equipment reason codes for missing requirements', async () => {
@@ -583,6 +586,41 @@ describe('matching service', () => {
     expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
     expect(mockDb.match.create).not.toHaveBeenCalled()
     expect(mockInitializeBookingPayment).not.toHaveBeenCalled()
+  })
+
+  it('blocks assignment acceptance when the provider is not approved', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: false,
+      verified: false,
+      status: 'APPLICATION_PENDING',
+      kycStatus: 'NOT_STARTED',
+    })
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'PROVIDER_NOT_APPROVED',
+    })
+    expect(mockDb.providerWallet.findUnique).not.toHaveBeenCalled()
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    expect(mockDb.match.create).not.toHaveBeenCalled()
   })
 
   it('logs a manual override and still creates an assignment hold', async () => {

@@ -1,5 +1,6 @@
-import type { MessageStatus } from '@prisma/client'
+import type { MessageStatus, Prisma } from '@prisma/client'
 import { db } from './db'
+import { isCohortMismatch, isInternalTestPhone, testEventFields } from './internal-test-cohort'
 
 const SENT_OR_BETTER: MessageStatus[] = ['SENT', 'DELIVERED', 'READ']
 
@@ -10,11 +11,63 @@ export async function logOutboundMessage(params: {
   body?: string | null
   externalId?: string | null
   metadata?: Record<string, unknown>
+  isTestEvent?: boolean
+  allowTestCohortOverride?: boolean
 }) {
   const customer = await db.customer.findUnique({
     where: { phone: params.to },
     select: { id: true },
   }).catch(() => null)
+
+  const metadata = params.metadata ?? {}
+  const hasExplicitCohortMarker =
+    'isTestEvent' in metadata ||
+    'isTestRequest' in metadata ||
+    'isTestJob' in metadata ||
+    'isTestLead' in metadata
+  const inferredTestEvent =
+    params.isTestEvent ??
+    (hasExplicitCohortMarker
+      ? Boolean(metadata.isTestEvent) ||
+        Boolean(metadata.isTestRequest) ||
+        Boolean(metadata.isTestJob) ||
+        Boolean(metadata.isTestLead)
+      : isInternalTestPhone(params.to))
+
+  if (isCohortMismatch({
+    subjectIsTest: inferredTestEvent,
+    recipientPhone: params.to,
+    allowTestOverride: params.allowTestCohortOverride,
+  })) {
+    await db.messageEvent.create({
+      data: {
+        bookingId: params.bookingId ?? undefined,
+        customerId: customer?.id,
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: params.templateName ?? undefined,
+        body: params.body ?? undefined,
+        to: params.to,
+        status: 'FAILED',
+        failureReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
+        metadata: {
+          ...metadata,
+          recipientIsTestUser: isInternalTestPhone(params.to),
+          blockedReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
+        } as Prisma.InputJsonValue,
+        ...testEventFields(inferredTestEvent),
+      },
+    })
+    console.warn('[test-cohort] outbound WhatsApp blocked', {
+      code: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
+      to: params.to,
+      templateName: params.templateName,
+      subject_is_test: inferredTestEvent,
+      recipient_is_test: isInternalTestPhone(params.to),
+      trace_id: metadata.traceId ?? metadata.trace_id ?? null,
+    })
+    throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
+  }
 
   await db.messageEvent.create({
     data: {
@@ -27,7 +80,8 @@ export async function logOutboundMessage(params: {
       externalId: params.externalId ?? undefined,
       status: 'SENT',
       sentAt: new Date(),
-      metadata: (params.metadata ?? {}) as Record<string, never>,
+      metadata: metadata as Prisma.InputJsonValue,
+      ...testEventFields(inferredTestEvent),
     },
   })
 }

@@ -1,6 +1,7 @@
 import { normalizePhone } from './utils'
 import { syncProviderSkills } from './provider-skills'
 import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-guard'
+import { createTestCohortContext } from './internal-test-cohort'
 
 type ProviderRecordSyncClient = {
   provider: {
@@ -161,6 +162,8 @@ export async function syncProviderRecord(
   input: SyncProviderRecordInput,
 ) {
   const phone = normalizePhone(input.phone)
+  const cohort = createTestCohortContext(phone)
+  const leadEligible = input.active && input.verified
   const existing = await client.provider.findUnique({
     where: { phone },
     select: { id: true },
@@ -171,12 +174,12 @@ export async function syncProviderRecord(
       name: input.name,
       skills: input.skills,
       serviceAreas: input.serviceAreas,
-      active: input.active,
-      availableNow: input.availableNow,
+      active: leadEligible,
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
+      availableNow: leadEligible && input.availableNow,
       verified: input.verified,
-      // Transition status to ACTIVE on approval — keeps provider.status in sync
-      // with the application approval so the provider is immediately match-eligible.
-      ...(input.verified && { status: 'ACTIVE' }),
+      status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
     }
 
     if (input.userId) {
@@ -215,18 +218,21 @@ export async function syncProviderRecord(
     await client.$executeRawUnsafe(
       `
         insert into providers
-          ("id", "phone", "name", "email", "bio", "skills", "serviceAreas", "active", "verified", "availableNow", "avatarUrl", "createdAt", "updatedAt", "userId")
+          ("id", "phone", "name", "email", "bio", "skills", "serviceAreas", "active", "verified", "availableNow", "isTestUser", "cohortName", "status", "avatarUrl", "createdAt", "updatedAt", "userId")
         values
-          ($1, $2, $3, null, null, $4, $5, $6, $7, $8, null, $9, $10, $11)
+          ($1, $2, $3, null, null, $4, $5, $6, $7, $8, $9, $10, $11, null, $12, $13, $14)
       `,
       id,
       phone,
       input.name,
       input.skills,
       input.serviceAreas,
-      input.active,
+      leadEligible,
       input.verified,
-      input.availableNow,
+      leadEligible && input.availableNow,
+      cohort.isTestUser,
+      cohort.cohortName,
+      input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
       now,
       now,
       input.userId ?? null,
@@ -240,10 +246,12 @@ export async function syncProviderRecord(
         userId: input.userId ?? null,
         skills: input.skills,
         serviceAreas: input.serviceAreas,
-        active: input.active,
-        availableNow: input.availableNow,
+        active: leadEligible,
+        isTestUser: cohort.isTestUser,
+        cohortName: cohort.cohortName,
+        availableNow: leadEligible && input.availableNow,
         verified: input.verified,
-        ...(input.verified && { status: 'ACTIVE' }),
+        status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
       },
     })
   }

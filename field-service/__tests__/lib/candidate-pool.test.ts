@@ -14,7 +14,7 @@ describe('loadCandidatePool', () => {
     vi.clearAllMocks()
   })
 
-  it('includes active providers that are not formally marketplace-reviewed yet', async () => {
+  it('loads only active approved providers from direct scan', async () => {
     mockDb.provider.findMany.mockResolvedValue([
       {
         id: 'provider-1',
@@ -26,8 +26,10 @@ describe('loadCandidatePool', () => {
         reliabilityScore: 0.5,
         averageRating: 0,
         active: true,
-        verified: false,
+        verified: true,
         availableNow: true,
+        isTestUser: false,
+        cohortName: null,
         lastKnownLat: null,
         lastKnownLng: null,
         liveStatus: null,
@@ -51,11 +53,55 @@ describe('loadCandidatePool', () => {
     expect(candidates[0]).toMatchObject({
       id: 'provider-1',
       active: true,
-      verified: false,
+      verified: true,
       availableNow: true,
     })
     expect(mockDb.provider.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.not.objectContaining({ verified: true }),
+      where: expect.objectContaining({ isTestUser: false }),
+    }))
+    expect(mockDb.provider.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ verified: true, status: 'ACTIVE' }),
+    }))
+  })
+
+  it('loads only internal test providers for test requests', async () => {
+    mockDb.provider.findMany.mockResolvedValue([
+      {
+        id: 'provider-test',
+        name: 'Internal Test',
+        phone: '+27823035070',
+        skills: ['plumbing'],
+        serviceAreas: ['Sandton'],
+        maxTravelMinutes: 60,
+        reliabilityScore: 0.5,
+        averageRating: 0,
+        active: true,
+        verified: true,
+        availableNow: true,
+        isTestUser: true,
+        cohortName: 'internal_staff_test',
+        lastKnownLat: null,
+        lastKnownLng: null,
+        liveStatus: null,
+      },
+    ])
+
+    const { loadCandidatePool } = await import('@/lib/matching/candidate-pool')
+    await loadCandidatePool({
+      category: 'plumbing',
+      address: {
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        lat: null,
+        lng: null,
+        locationNodeId: null,
+      },
+      usePool: false,
+      isTestRequest: true,
+    })
+
+    expect(mockDb.provider.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ isTestUser: true }),
     }))
   })
 })

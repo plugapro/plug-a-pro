@@ -6,7 +6,11 @@ import { Button } from '@/components/ui/button'
 import { ArrivalSubmitButton } from '@/components/provider/ArrivalSubmitButton'
 import { getCategoryPolicy } from '@/lib/service-category-policy'
 import { db } from '@/lib/db'
-import { resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
+import {
+  providerLeadTokenAllowsScope,
+  resolveProviderLeadAccessToken,
+  verifyProviderLeadAccessToken,
+} from '@/lib/provider-lead-access'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { LeadUnlockError, unlockLeadForProvider } from '@/lib/lead-unlocks'
 import {
@@ -25,6 +29,11 @@ async function acceptLeadWithToken(formData: FormData) {
   const token = String(formData.get('token') ?? '')
   const inspectionNeeded = formData.get('inspectionNeeded') === 'true'
 
+  const verified = verifyProviderLeadAccessToken(token)
+  if (verified.status !== 'active' || !providerLeadTokenAllowsScope(verified.payload, 'accept_lead')) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+  }
+
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
     redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
@@ -36,7 +45,7 @@ async function acceptLeadWithToken(formData: FormData) {
   }
 
   const { acceptLead } = await import('@/lib/matching-engine')
-  const result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'whatsapp' })
+  const result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa' })
 
   if (!result.ok) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
@@ -44,6 +53,9 @@ async function acceptLeadWithToken(formData: FormData) {
     }
     if (result.reason === 'KYC_REQUIRED') {
       redirect(`/leads/access/${encodeURIComponent(token)}?error=kyc`)
+    }
+    if (result.reason === 'PROVIDER_NOT_APPROVED') {
+      redirect(`/leads/access/${encodeURIComponent(token)}?error=approval`)
     }
     redirect(`/leads/access/${encodeURIComponent(token)}?error=${result.reason.toLowerCase()}`)
   }
@@ -54,6 +66,11 @@ async function acceptLeadWithToken(formData: FormData) {
 async function unlockLeadWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
+
+  const verified = verifyProviderLeadAccessToken(token)
+  if (verified.status !== 'active' || !providerLeadTokenAllowsScope(verified.payload, 'unlock_lead')) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+  }
 
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
@@ -80,6 +97,11 @@ async function unlockLeadWithToken(formData: FormData) {
 async function declineLeadWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
+
+  const verified = verifyProviderLeadAccessToken(token)
+  if (verified.status !== 'active' || !providerLeadTokenAllowsScope(verified.payload, 'decline_lead')) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+  }
 
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
@@ -407,6 +429,12 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
+        {isAccepted && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            You&apos;re viewing this job through a secure WhatsApp link. This link only gives access to this job.
+          </div>
+        )}
+
         {resolvedSearchParams.unlocked && (
           <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
             Lead unlocked. Full customer and job details are now available.
@@ -452,6 +480,12 @@ export default async function ProviderLeadAccessPage({
         {resolvedSearchParams.error === 'kyc' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             KYC must be approved before unlocking full customer details.
+          </div>
+        )}
+
+        {resolvedSearchParams.error === 'approval' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Your provider application is still under review. You can accept leads once your profile is approved.
           </div>
         )}
 
@@ -707,9 +741,12 @@ export default async function ProviderLeadAccessPage({
                 </a>
               </Button>
               {jr.match?.id && (
-                <Button asChild size="lg" variant="outline" className="w-full">
-                  <a href={`/provider/quotes/${jr.match.id}`}>Build Quote</a>
-                </Button>
+                <div className="rounded-md border bg-card px-3 py-3 text-sm text-muted-foreground">
+                  <p>Please sign in to manage all jobs, build quotes, or update your profile.</p>
+                  <Button asChild size="lg" variant="outline" className="mt-3 w-full">
+                    <a href={`/provider/quotes/${jr.match.id}`}>Sign in</a>
+                  </Button>
+                </div>
               )}
             </>
           ) : !isUnlocked ? (
@@ -724,7 +761,7 @@ export default async function ProviderLeadAccessPage({
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="false" />
               <Button type="submit" size="lg" className="w-full">
-                Accept &amp; Build Quote
+                Accept Job
               </Button>
             </form>
           )}

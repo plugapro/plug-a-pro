@@ -434,7 +434,10 @@ export default async function AdminDispatchPage({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="font-medium">{jobRequest.title}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{jobRequest.title}</p>
+                        {jobRequest.isTestRequest ? <Badge variant="warning">Test Cohort</Badge> : null}
+                      </div>
                       <p className="text-xs text-muted-foreground">{jobRequest.customer.name}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -480,7 +483,10 @@ export default async function AdminDispatchPage({
                 <CardHeader className="space-y-1">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <CardTitle className="text-base">{selectedRequest.title}</CardTitle>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CardTitle className="text-base">{selectedRequest.title}</CardTitle>
+                        {selectedRequest.isTestRequest ? <Badge variant="warning">Test Cohort</Badge> : null}
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         {selectedRequest.category} · {selectedRequest.customer.name} ·{' '}
                         {selectedRequest.address

@@ -7,9 +7,11 @@ import {
   type ArrivalValidationErrorCode,
 } from './arrival-availability'
 import {
-  getProviderLeadAccessUrl,
+  getProviderSignedJobHandoverUrl,
   resolveProviderLeadAccessToken,
   verifyProviderLeadAccessToken,
+  providerLeadTokenAllowsScope,
+  type ProviderLeadAccessScope,
 } from './provider-lead-access'
 
 type AcceptedLeadAction = 'customer_contacted' | 'on_the_way' | 'arrived' | 'started' | 'completed'
@@ -89,6 +91,14 @@ async function resolveAcceptedLeadFromToken(params: { token: string; leadId: str
   return loadAcceptedLead(params.leadId)
 }
 
+function tokenAllowsAcceptedJobScope(params: {
+  token: string
+  scope: ProviderLeadAccessScope
+}) {
+  const verified = verifyProviderLeadAccessToken(params.token)
+  return verified.status === 'active' && providerLeadTokenAllowsScope(verified.payload, params.scope)
+}
+
 async function notifyCustomer(params: {
   phone: string
   text: string
@@ -121,6 +131,15 @@ export async function saveAcceptedLeadArrival(params: {
   | { ok: false; reason: SaveArrivalErrorCode | 'UNAVAILABLE' | 'INVALID_TIME'; message: string; traceId: string }
 > {
   const traceId = createTraceId()
+  if (!tokenAllowsAcceptedJobScope({ token: params.token, scope: 'confirm_arrival' })) {
+    return {
+      ok: false as const,
+      reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB',
+      message: 'This secure job link is not allowed to update arrival times.',
+      traceId,
+    }
+  }
+
   const lead = await resolveAcceptedLeadFromToken({ leadId: params.leadId, token: params.token })
   if (!lead) {
     return {
@@ -346,6 +365,17 @@ export async function markAcceptedLeadAction(params: {
   token: string
   action: AcceptedLeadAction
 }) {
+  const scopeByAction: Record<AcceptedLeadAction, ProviderLeadAccessScope> = {
+    customer_contacted: 'mark_customer_contacted',
+    on_the_way: 'mark_on_the_way',
+    arrived: 'mark_arrived',
+    started: 'start_job',
+    completed: 'complete_job',
+  }
+  if (!tokenAllowsAcceptedJobScope({ token: params.token, scope: scopeByAction[params.action] })) {
+    return { ok: false as const, reason: 'UNAVAILABLE' as const }
+  }
+
   const lead = await resolveAcceptedLeadFromToken({ leadId: params.leadId, token: params.token })
   if (!lead) return { ok: false as const, reason: 'UNAVAILABLE' as const }
 
@@ -448,9 +478,11 @@ export async function sendFreshAcceptedJobLink(params: { token: string }) {
   const match = lead.jobRequest.match
   if (!match) return { ok: false as const, reason: 'UNAVAILABLE' as const }
 
-  const url = await getProviderLeadAccessUrl({
+  const url = await getProviderSignedJobHandoverUrl({
     leadId: lead.id,
     providerId: lead.providerId,
+    jobRequestId: lead.jobRequestId,
+    providerPhone: lead.provider.phone,
   })
   if (!url) return { ok: false as const, reason: 'NO_URL' as const }
 

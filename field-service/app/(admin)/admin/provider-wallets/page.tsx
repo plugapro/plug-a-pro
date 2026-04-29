@@ -52,6 +52,7 @@ export default async function ProviderWalletsPage({
       name: true,
       phone: true,
       email: true,
+      isTestUser: true,
       kycStatus: true,
       wallet: true,
       _count: {
@@ -124,7 +125,10 @@ export default async function ProviderWalletsPage({
               return (
                 <tr key={provider.id} className="hover:bg-muted/30">
                   <td className="px-4 py-3">
-                    <p className="font-medium">{provider.name}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{provider.name}</p>
+                      {provider.isTestUser ? <Badge variant="warning">Test Cohort</Badge> : null}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {provider.phone} · {provider.email ?? 'No email'} · KYC {cleanStatus(provider.kycStatus)}
                     </p>

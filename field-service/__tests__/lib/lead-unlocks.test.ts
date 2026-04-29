@@ -65,10 +65,13 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     provider: {
       id: 'provider-1',
       kycStatus: 'VERIFIED',
+      isTestUser: false,
     },
     jobRequest: {
       id: 'job-request-1',
       status: 'MATCHING',
+      isTestRequest: false,
+      cohortName: null,
       match: null,
     },
     ...overrides,
@@ -274,6 +277,68 @@ describe('lead unlock service', () => {
     ).rejects.toMatchObject({
       code: 'INSUFFICIENT_CREDITS',
     } satisfies Partial<LeadUnlockError>)
+  })
+
+  it('blocks test lead unlocks when no promo/test credits are available', async () => {
+    state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 0 })
+    state.lead = makeLead({
+      provider: {
+        id: 'provider-1',
+        kycStatus: 'VERIFIED',
+        isTestUser: true,
+      },
+      jobRequest: {
+        id: 'job-request-1',
+        status: 'MATCHING',
+        isTestRequest: true,
+        cohortName: 'internal_staff_test',
+        match: null,
+      },
+    })
+
+    await expect(unlockLeadForProvider('lead-1', 'provider-1')).rejects.toMatchObject({
+      code: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    } satisfies Partial<LeadUnlockError>)
+
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+  })
+
+  it('records test lead unlocks against promo/test credits instead of paid revenue', async () => {
+    state.wallet = makeWallet({ paidCreditBalance: 0, promoCreditBalance: 1 })
+    state.lead = makeLead({
+      provider: {
+        id: 'provider-1',
+        kycStatus: 'VERIFIED',
+        isTestUser: true,
+      },
+      jobRequest: {
+        id: 'job-request-1',
+        status: 'MATCHING',
+        isTestRequest: true,
+        cohortName: 'internal_staff_test',
+        match: null,
+      },
+    })
+
+    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+
+    expect(result.alreadyUnlocked).toBe(false)
+    expect(mockDb.providerWallet.updateMany).toHaveBeenCalled()
+    expect(result.unlock).toMatchObject({
+      isTestUnlock: true,
+      cohortName: 'internal_staff_test',
+    })
+    expect(result.ledgerEntries[0]).toMatchObject({
+      entryType: 'LEAD_UNLOCK_DEBIT',
+      creditType: 'PROMO',
+      referenceType: 'test_lead_unlock',
+    })
+    expect(state.wallet).toMatchObject({
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
+    })
   })
 
   it('blocks leads assigned to another provider', async () => {

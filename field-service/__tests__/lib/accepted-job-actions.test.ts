@@ -17,7 +17,8 @@ vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/provider-lead-access', () => ({
   resolveProviderLeadAccessToken: mockResolveToken,
   verifyProviderLeadAccessToken: mockVerifyToken,
-  getProviderLeadAccessUrl: mockGetAccessUrl,
+  getProviderSignedJobHandoverUrl: mockGetAccessUrl,
+  providerLeadTokenAllowsScope: () => true,
 }))
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: mockSendText,
@@ -72,6 +73,10 @@ describe('accepted job actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockResolveToken.mockResolvedValue({ status: 'active', lead: { id: 'lead-1' } })
+    mockVerifyToken.mockReturnValue({
+      status: 'active',
+      payload: { leadId: 'lead-1', providerId: 'provider-1', scopes: ['view_job', 'confirm_arrival', 'mark_on_the_way', 'mark_arrived', 'start_job', 'complete_job', 'mark_customer_contacted', 'contact_customer'] },
+    })
     mockDb.lead.findUnique.mockResolvedValue(acceptedLead())
     mockDb.match.update.mockResolvedValue({})
     mockDb.auditLog.create.mockResolvedValue({})
@@ -203,12 +208,77 @@ describe('accepted job actions', () => {
     expect(mockDb.match.update).not.toHaveBeenCalled()
   })
 
+  it('rejects an arrival window where end time is before start time', async () => {
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      plannedArrivalStart: new Date('2026-04-30T15:00:00+02:00'),
+      plannedArrivalEnd: new Date('2026-04-30T13:00:00+02:00'),
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'ARRIVAL_END_BEFORE_START',
+    })
+    expect(mockDb.match.update).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalled()
+  })
+
+  it('returns PROVIDER_NOT_ASSIGNED_TO_JOB when the lead has no associated match', async () => {
+    // loadAcceptedLead returns null when jobRequest.match is null,
+    // so saveAcceptedLeadArrival surfaces PROVIDER_NOT_ASSIGNED_TO_JOB.
+    mockDb.lead.findUnique.mockResolvedValue({
+      ...acceptedLead(),
+      jobRequest: {
+        ...acceptedLead().jobRequest,
+        match: null,
+      },
+    })
+
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB',
+    })
+    expect(mockDb.match.update).not.toHaveBeenCalled()
+  })
+
+  it('returns CUSTOMER_NOTIFICATION_FAILED and saves the window when WhatsApp throws', async () => {
+    mockSendText.mockRejectedValue(new Error('WhatsApp API timeout'))
+
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'signed-token',
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'CUSTOMER_NOTIFICATION_FAILED',
+    })
+    // The match update still happened before the notification attempt
+    expect(mockDb.match.update).toHaveBeenCalledWith({
+      where: { id: 'match-1' },
+      data: expect.objectContaining({
+        plannedArrivalStart: plannedStart,
+        plannedArrivalEnd: plannedEnd,
+      }),
+    })
+  })
+
   it('sends a fresh signed job link for an expired accepted-job token', async () => {
     mockVerifyToken.mockReturnValue({
       status: 'expired',
       payload: { leadId: 'lead-1', providerId: 'provider-1' },
     })
-    mockGetAccessUrl.mockResolvedValue('https://app.plugapro.co.za/leads/access/fresh-token')
+    mockGetAccessUrl.mockResolvedValue('https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=fresh-token')
 
     const result = await sendFreshAcceptedJobLink({ token: 'expired-token' })
 
@@ -217,7 +287,7 @@ describe('accepted job actions', () => {
       '+27770000001',
       expect.stringContaining('fresh secure link'),
       'View Job',
-      'https://app.plugapro.co.za/leads/access/fresh-token',
+      'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=fresh-token',
       expect.any(Object),
       expect.objectContaining({
         templateName: 'post_match_provider_fresh_job_link',

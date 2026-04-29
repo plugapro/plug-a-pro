@@ -199,7 +199,13 @@ async function approveApplication(formData: FormData) {
       phone: app.phone,
       name: app.name,
       approved: true,
-    }).catch(() => {})
+    }).catch((error) => {
+      console.error('[applications] approval WhatsApp notification failed', {
+        applicationId: app.id,
+        phone: app.phone,
+        error,
+      })
+    })
   }
 
   if (approval.data?.providerId) {

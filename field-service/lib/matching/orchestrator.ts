@@ -91,6 +91,7 @@ export async function orchestrateMatch(
     const rawCandidates = await loadCandidatePool({
       category: jobRequest.category,
       address: jobRequest.address,
+      isTestRequest: jobRequest.isTestRequest,
       limit: 30,
       usePool: useCandidatePool,
     })

@@ -204,6 +204,8 @@ export async function linkCustomerAccount(params: {
   name?: string     // Optionally update name if it's still the WhatsApp placeholder
 }): Promise<{ id: string; isNew: boolean }> {
   const { db } = await import('./db')
+  const { createTestCohortContext } = await import('./internal-test-cohort')
+  const cohort = createTestCohortContext(params.phone)
 
   // Check if this userId is already linked (idempotent)
   const alreadyLinked = await db.customer.findUnique({
@@ -219,7 +221,10 @@ export async function linkCustomerAccount(params: {
 
   if (existing) {
     // Link: set userId on the existing record
-    const updates: { userId: string; name?: string } = { userId: params.userId }
+    const updates: { userId: string; name?: string; isTestUser?: boolean; cohortName?: string | null } = {
+      userId: params.userId,
+      ...(cohort.isTestUser ? { isTestUser: true, cohortName: cohort.cohortName } : {}),
+    }
     // Only overwrite name if it's still the default placeholder
     if (params.name && existing.name === 'WhatsApp Customer') {
       updates.name = params.name
@@ -237,6 +242,8 @@ export async function linkCustomerAccount(params: {
       userId: params.userId,
       phone: params.phone,
       name: params.name ?? 'Customer',
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
     },
   })
   return { id: created.id, isNew: true }

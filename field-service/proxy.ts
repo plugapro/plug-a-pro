@@ -35,6 +35,10 @@ const PUBLIC_PATHS = [
   '/api/health',           // monitoring probe — must be reachable without a session cookie
 ]
 
+const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/
+const PUBLIC_CUSTOMER_HANDOVER_ROUTE = /^\/customer\/requests\/[^/]+\/provider-handover$/
+const PUBLIC_SIGNED_PROVIDER_API_ROUTE = /^\/api\/provider\/leads\/[^/]+\/contact-customer$/
+
 // Routes that require provider role
 const PROVIDER_PATHS = ['/provider', '/technician', '/api/provider']
 
@@ -152,6 +156,10 @@ export async function proxy(request: NextRequest) {
 }
 
 function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_SIGNED_JOB_ROUTE.test(pathname)) return true
+  if (PUBLIC_CUSTOMER_HANDOVER_ROUTE.test(pathname)) return true
+  if (PUBLIC_SIGNED_PROVIDER_API_ROUTE.test(pathname)) return true
+
   return PUBLIC_PATHS.some((path) => {
     if (path === '/') return pathname === '/'
     return pathname === path || pathname.startsWith(`${path}/`)

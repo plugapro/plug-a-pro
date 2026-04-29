@@ -8,6 +8,7 @@
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-messages
 
 import { logOutboundMessage } from './message-events'
+import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
 
 const API_VERSION = 'v21.0'
 
@@ -39,6 +40,37 @@ async function post(body: object): Promise<string> {
   return data.messages?.[0]?.id ?? ''
 }
 
+function assertCohortSendAllowed(to: string, context?: OutboundInteractiveContext) {
+  const metadata = context?.metadata ?? {}
+  const hasExplicitCohortMarker =
+    'isTestEvent' in metadata ||
+    'isTestRequest' in metadata ||
+    'isTestJob' in metadata ||
+    'isTestLead' in metadata
+  const isTestEvent =
+    hasExplicitCohortMarker
+      ? Boolean(metadata.isTestEvent) ||
+        Boolean(metadata.isTestRequest) ||
+        Boolean(metadata.isTestJob) ||
+        Boolean(metadata.isTestLead)
+      : isInternalTestPhone(to)
+
+  if (isCohortMismatch({
+    subjectIsTest: isTestEvent,
+    recipientPhone: to,
+    allowTestOverride: Boolean(metadata.allowTestCohortOverride),
+  })) {
+    console.warn('[test-cohort] outbound WhatsApp blocked before send', {
+      code: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
+      to,
+      templateName: context?.templateName,
+      subject_is_test: isTestEvent,
+      trace_id: metadata.traceId ?? metadata.trace_id ?? null,
+    })
+    throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
+  }
+}
+
 // ─── Text ─────────────────────────────────────────────────────────────────────
 
 export async function sendText(
@@ -46,6 +78,7 @@ export async function sendText(
   text: string,
   context?: OutboundInteractiveContext
 ): Promise<string> {
+  assertCohortSendAllowed(to, context)
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -80,6 +113,7 @@ export async function sendButtons(
   options?: { header?: string; footer?: string },
   context?: OutboundInteractiveContext
 ): Promise<string> {
+  assertCohortSendAllowed(to, context)
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -131,6 +165,7 @@ export async function sendList(
   options?: { header?: string; footer?: string; buttonLabel?: string },
   context?: OutboundInteractiveContext
 ): Promise<string> {
+  assertCohortSendAllowed(to, context)
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -170,6 +205,7 @@ export async function sendCtaUrl(
   options?: { header?: string; footer?: string },
   context?: OutboundInteractiveContext
 ): Promise<string> {
+  assertCohortSendAllowed(to, context)
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',

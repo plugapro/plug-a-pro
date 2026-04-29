@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { normalizePhone } from '@/lib/utils'
+import { createTestCohortContext } from '@/lib/internal-test-cohort'
 import {
   awardKycApprovedPromoCreditsInTransaction,
   evaluateAndAwardProviderProfileCompletionPromoCreditsInTransaction,
@@ -148,6 +149,7 @@ export async function createProviderAction(input: CreateProviderInput) {
         )
       }
 
+      const cohort = createTestCohortContext(data.phone)
       const provider = await tx.provider.create({
         data: {
           name: data.name,
@@ -162,6 +164,8 @@ export async function createProviderAction(input: CreateProviderInput) {
             : [],
           status: 'APPLICATION_PENDING',
           active: true,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
           availableNow: true,
           verified: false,
         },

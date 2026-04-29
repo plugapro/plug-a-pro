@@ -44,6 +44,9 @@ async function acceptLead(formData: FormData) {
     if (result.reason === 'KYC_REQUIRED') {
       redirect(`/provider/leads/${leadId}?unlockError=kyc`)
     }
+    if (result.reason === 'PROVIDER_NOT_APPROVED') {
+      redirect(`/provider/leads/${leadId}?unlockError=approval`)
+    }
     // Lead expired or taken — go back to leads list with the status visible
     redirect('/provider/leads')
   }
@@ -226,7 +229,13 @@ export default async function LeadDetailPage({
         </div>
       )}
 
-      {resolvedSearchParams.unlockError && !['credits', 'kyc'].includes(resolvedSearchParams.unlockError) && (
+      {resolvedSearchParams.unlockError === 'approval' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Your provider application is still under review. You can accept leads once your profile is approved.
+        </div>
+      )}
+
+      {resolvedSearchParams.unlockError && !['credits', 'kyc', 'approval'].includes(resolvedSearchParams.unlockError) && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           This lead could not be unlocked. It may no longer be available.
         </div>

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
+    provider: { findUnique: vi.fn() },
     lead: { findMany: vi.fn() },
   },
 }))
@@ -13,6 +14,7 @@ vi.mock('../../lib/db', () => ({
 describe('provider lead list', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDb.provider.findUnique.mockResolvedValue({ isTestUser: false })
   })
 
   it('fetches only preview-safe address fields and truncates descriptions before rendering', async () => {
@@ -35,6 +37,10 @@ describe('provider lead list', () => {
     const result = await getProviderLeadListForProvider('provider-1')
 
     expect(mockDb.lead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        providerId: 'provider-1',
+        isTestLead: false,
+      }),
       select: expect.objectContaining({
         jobRequest: {
           select: expect.objectContaining({
@@ -56,5 +62,20 @@ describe('provider lead list', () => {
     expect(result[0].shortDescription).toContain('...')
     expect(JSON.stringify(result)).not.toContain(sensitiveTail)
     expect(JSON.stringify(result)).not.toContain('+27821234567')
+  })
+
+  it('shows only test leads to internal test providers', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ isTestUser: true })
+    mockDb.lead.findMany.mockResolvedValue([])
+
+    const { getProviderLeadListForProvider } = await import('../../lib/provider-lead-list')
+    await getProviderLeadListForProvider('provider-test')
+
+    expect(mockDb.lead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        providerId: 'provider-test',
+        isTestLead: true,
+      }),
+    }))
   })
 })

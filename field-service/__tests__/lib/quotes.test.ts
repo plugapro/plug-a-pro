@@ -134,7 +134,13 @@ describe('processQuoteDecision', () => {
     })
     expect(mockDb.booking.create).toHaveBeenCalledOnce()
     expect(mockDb.job.create).toHaveBeenCalledWith({
-      data: { bookingId: 'booking-1', providerId: 'provider-1', status: 'SCHEDULED' },
+      data: {
+        bookingId: 'booking-1',
+        providerId: 'provider-1',
+        status: 'SCHEDULED',
+        isTestJob: false,
+        cohortName: null,
+      },
     })
   })
 })

@@ -50,8 +50,9 @@ describe('reconcileProviderRecordsFromApplications', () => {
         data: expect.objectContaining({
           phone: '+27799887766',
           verified: false,
-          active: true,
-          availableNow: true,
+          active: false,
+          availableNow: false,
+          status: 'APPLICATION_PENDING',
         }),
       }),
     )
@@ -88,6 +89,7 @@ describe('reconcileProviderRecordsFromApplications', () => {
         verified: true,
         active: true,
         availableNow: true,
+        status: 'ACTIVE',
       }),
     })
     expect(client.providerApplication.updateMany).toHaveBeenCalledWith({
@@ -133,6 +135,7 @@ describe('reconcileProviderRecordsFromApplications', () => {
         verified: true,
         active: true,
         availableNow: true,
+        status: 'ACTIVE',
       }),
     })
     expect(client.providerApplication.updateMany).toHaveBeenCalledWith({

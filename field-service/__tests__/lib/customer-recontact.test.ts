@@ -41,7 +41,8 @@ describe('new provider rematch checks', () => {
       reliabilityScore: 0.5,
       averageRating: 0,
       active: true,
-      verified: false,
+      verified: true,
+      status: 'ACTIVE',
       availableNow: true,
       lastKnownLat: null,
       lastKnownLng: null,
@@ -52,7 +53,7 @@ describe('new provider rematch checks', () => {
     mockDb.jobRequest.update.mockResolvedValue({})
   })
 
-  it('prompts customers for recently expired jobs even when the provider is not formally verified', async () => {
+  it('prompts customers for recently expired jobs when the provider is approved', async () => {
     mockDb.jobRequest.findMany.mockResolvedValue([
       {
         id: 'jr-expired',
@@ -127,5 +128,31 @@ describe('new provider rematch checks', () => {
 
     expect(result).toEqual({ dispatchedOpenJobs: 1, promptedExpiredJobs: 0, templateFallbacks: 0 })
     expect(mockOrchestrateMatch).toHaveBeenCalledWith('jr-open', { triggeredBy: 'cron' })
+  })
+
+  it('does not prompt customers for a pending provider profile', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-pending',
+      name: 'Pending Pro',
+      phone: '+27820000000',
+      skills: ['plumbing'],
+      serviceAreas: ['Sandton'],
+      maxTravelMinutes: 60,
+      reliabilityScore: 0.5,
+      averageRating: 0,
+      active: false,
+      verified: false,
+      status: 'APPLICATION_PENDING',
+      availableNow: false,
+      lastKnownLat: null,
+      lastKnownLng: null,
+      liveStatus: null,
+    })
+
+    const { promptCustomersForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
+    const result = await promptCustomersForNewProviderAvailability('provider-pending')
+
+    expect(result).toEqual({ prompted: 0, templateFallbacks: 0 })
+    expect(mockDb.jobRequest.findMany).not.toHaveBeenCalled()
   })
 })

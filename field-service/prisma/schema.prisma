@@ -25,6 +25,8 @@ model Customer {
   name      String
   notes     String?
   active    Boolean  @default(true)
+  isTestUser Boolean @default(false)
+  cohortName String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -165,6 +167,8 @@ model Provider {
   evidenceNote String?
   portfolioUrls String[] @default([])
   active       Boolean  @default(true)
+  isTestUser   Boolean  @default(false)
+  cohortName   String?
   availableNow Boolean  @default(true)   // currently online and accepting leads
   verified     Boolean  @default(false) // internal lead-eligibility flag after marketplace review; not a public guarantee
   averageRating Float   @default(0)
@@ -227,6 +231,7 @@ model Provider {
   promoAwards               ProviderPromoAward[]
 
   @@index([active, verified])
+  @@index([isTestUser])
   @@map("providers")
 }
 
@@ -271,6 +276,8 @@ model ProviderApplication {
   evidenceNote     String?
   evidenceFileUrls String[]          @default([])
   idNumber         String?           // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
+  isTestUser       Boolean           @default(false)
+  cohortName       String?
   status       ApplicationStatus @default(PENDING)
   notes        String?           // admin review notes
   reviewedAt   DateTime?
@@ -285,6 +292,7 @@ model ProviderApplication {
   attachments Attachment[]
 
   @@index([approvalWhatsappSentAt])
+  @@index([isTestUser, status])
   @@map("provider_applications")
 }
 
@@ -315,6 +323,8 @@ model JobRequest {
   customerAccessTokenExpiresAt DateTime?
   customerAccessTokenRevokedAt DateTime?
   latestDispatchDecisionId String?
+  isTestRequest Boolean @default(false)
+  cohortName String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt   DateTime?        // if no match within window, mark EXPIRED
   customerNoMatchNotifiedAt DateTime?
@@ -339,6 +349,7 @@ model JobRequest {
   dispatchDecisions DispatchDecision[]
 
   @@index([status, createdAt])
+  @@index([isTestRequest, status])
   @@map("job_requests")
 }
 
@@ -358,6 +369,8 @@ model Lead {
   respondedAt  DateTime?
   expiresAt    DateTime?  // provider must respond within this window
   reminderSentAt DateTime? // set once when the 1-hour reminder WhatsApp is sent
+  isTestLead Boolean @default(false)
+  cohortName String?
 
   jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
   provider   Provider   @relation(fields: [providerId], references: [id])
@@ -368,6 +381,7 @@ model Lead {
 
   @@unique([jobRequestId, providerId])
   @@index([jobRequestId, status])
+  @@index([isTestLead, status])
   @@map("leads")
 }
 
@@ -381,6 +395,8 @@ model LeadUnlock {
   creditsCharged      Int
   creditTypeBreakdown Json             @default("{}")
   status              LeadUnlockStatus @default(UNLOCKED)
+  isTestUnlock        Boolean          @default(false)
+  cohortName          String?
   unlockedAt          DateTime         @default(now())
   disputeReason       LeadUnlockDisputeReason?
   disputeNotes        String?
@@ -399,6 +415,7 @@ model LeadUnlock {
 
   @@index([providerId, unlockedAt])
   @@index([matchId])
+  @@index([isTestUnlock])
   @@map("lead_unlocks")
 }
 
@@ -534,6 +551,8 @@ model Job {
   bookingId      String    @unique
   providerId     String
   status         JobStatus @default(SCHEDULED)
+  isTestJob      Boolean   @default(false)
+  cohortName     String?
   notes          String?
   completionNote String?
   arrivedAt      DateTime?
@@ -718,6 +737,8 @@ model WalletLedgerEntry {
   entryType                  WalletLedgerEntryType
   creditType                 WalletCreditType
   amountCredits              Int
+  isTestTransaction          Boolean               @default(false)
+  cohortName                 String?
   balanceAfterPaidCredits    Int
   balanceAfterPromoCredits   Int
   referenceType              String
@@ -733,6 +754,7 @@ model WalletLedgerEntry {
   @@index([walletId, createdAt])
   @@index([providerId, createdAt])
   @@index([referenceType, referenceId])
+  @@index([isTestTransaction, createdAt])
   @@map("wallet_ledger_entries")
 }
 
@@ -1038,6 +1060,8 @@ model MessageEvent {
   readAt        DateTime?
   failureReason String?
   metadata      Json           @default("{}")
+  isTestEvent   Boolean        @default(false)
+  cohortName    String?
   createdAt     DateTime       @default(now())
 
   customer Customer? @relation(fields: [customerId], references: [id])
@@ -1083,6 +1107,8 @@ model WhatsappPreferenceLog {
 model Conversation {
   id                String    @id @default(cuid())
   phone             String    @unique // E.164 WhatsApp number — one session per number
+  isTestSession     Boolean   @default(false)
+  cohortName        String?
   flow              String    // 'idle' | 'job_request' | 'registration' | 'status' | 'help'
   step              String    // current step within the flow
   data              Json      @default("{}") // accumulated session data
@@ -1106,6 +1132,8 @@ model AuditLog {
   before     Json?
   after      Json?
   reason     String?  // human-readable rationale for the action
+  isTestEvent Boolean @default(false)
+  cohortName String?
   ipAddress  String?
   userAgent  String?
   timestamp  DateTime @default(now())

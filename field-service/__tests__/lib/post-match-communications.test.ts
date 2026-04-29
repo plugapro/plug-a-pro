@@ -19,18 +19,20 @@ vi.mock('@/lib/provider-lead-access', async () => {
   const actual = await vi.importActual<typeof import('@/lib/provider-lead-access')>('@/lib/provider-lead-access')
   return {
     ...actual,
-    getProviderLeadAccessUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/leads/access/signed-token'),
+    getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token'),
     resolveProviderLeadAccessToken: vi.fn(),
+    verifyProviderLeadAccessToken: vi.fn().mockReturnValue({ status: 'active', payload: { scopes: ['contact_customer'] } }),
+    providerLeadTokenAllowsScope: vi.fn().mockReturnValue(true),
   }
 })
 
 vi.mock('@/lib/customer-provider-handover-access', () => ({
-  getCustomerProviderHandoverUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/requests/handover/customer-token'),
+  getCustomerProviderHandoverUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/customer/requests/jr-12345678/provider-handover?token=customer-token'),
 }))
 
 import { db } from '@/lib/db'
 import { sendButtons, sendCtaUrl, sendText } from '@/lib/whatsapp-interactive'
-import { getProviderLeadAccessUrlByLeadId, resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
+import { getProviderSignedJobHandoverUrlByLeadId, resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
 import {
   buildAcceptedLeadContactUrl,
   buildAcceptedLeadContactUrlForProvider,
@@ -64,7 +66,7 @@ describe('post-match communications', () => {
     ;(db.messageEvent.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
     ;(db.customer.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'cust-1' })
     ;(db.auditLog.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
-    ;(getProviderLeadAccessUrlByLeadId as ReturnType<typeof vi.fn>).mockResolvedValue('https://app.plugapro.co.za/leads/access/signed-token')
+    ;(getProviderSignedJobHandoverUrlByLeadId as ReturnType<typeof vi.fn>).mockResolvedValue('https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token')
   })
 
   it('sends a named customer notification and provider post-acceptance job message', async () => {
@@ -75,7 +77,7 @@ describe('post-match communications', () => {
       '+27820000001',
       expect.stringContaining('Provider contact:\n+27770000001'),
       'View Provider',
-      'https://app.plugapro.co.za/requests/handover/customer-token',
+      'https://app.plugapro.co.za/customer/requests/jr-12345678/provider-handover?token=customer-token',
       expect.any(Object),
       expect.objectContaining({
         templateName: 'post_match_customer_provider_accepted',
@@ -86,7 +88,7 @@ describe('post-match communications', () => {
       '+27770000001',
       expect.stringContaining("You've unlocked this lead using *1 credit*"),
       'View Job',
-      'https://app.plugapro.co.za/leads/access/signed-token',
+      'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),
       expect.objectContaining({
         templateName: 'post_match_provider_job_accepted',
@@ -97,7 +99,7 @@ describe('post-match communications', () => {
       '+27770000001',
       expect.stringContaining('Customer contact:\nStephanie Nkosi\n+27820000001'),
       'View Job',
-      'https://app.plugapro.co.za/leads/access/signed-token',
+      'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),
       expect.any(Object),
     )
@@ -153,5 +155,54 @@ describe('post-match communications', () => {
       leadId: 'lead-1',
       providerPhone: '+27779999999',
     })).resolves.toBeNull()
+  })
+
+  it('sends no notifications when the lead is not found', async () => {
+    ;(db.lead.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+    await notifyPostMatchAcceptance({ leadId: 'lead-missing', providerId: 'provider-1', matchId: 'match-1' })
+
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendCtaUrl).not.toHaveBeenCalled()
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('sends no notifications when providerId does not match the lead', async () => {
+    ;(db.lead.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...mockLead,
+      providerId: 'provider-OTHER',
+    })
+
+    await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendCtaUrl).not.toHaveBeenCalled()
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('falls back to sendText for provider message when signed job URL is unavailable', async () => {
+    const { getProviderSignedJobHandoverUrlByLeadId } = await import('@/lib/provider-lead-access')
+    ;(getProviderSignedJobHandoverUrlByLeadId as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+    await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+    expect(sendText).toHaveBeenCalledWith(
+      '+27770000001',
+      expect.stringContaining('Customer contact:\nStephanie Nkosi\n+27820000001'),
+      expect.objectContaining({ templateName: 'post_match_provider_job_accepted' }),
+    )
+  })
+
+  it('falls back to sendText for customer message when handover URL is unavailable', async () => {
+    const { getCustomerProviderHandoverUrl } = await import('@/lib/customer-provider-handover-access')
+    ;(getCustomerProviderHandoverUrl as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+    await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+    expect(sendText).toHaveBeenCalledWith(
+      '+27820000001',
+      expect.stringContaining('Plumbing'),
+      expect.objectContaining({ templateName: 'post_match_customer_provider_accepted' }),
+    )
   })
 })

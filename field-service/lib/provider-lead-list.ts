@@ -18,9 +18,14 @@ function formatArea(address: { suburb: string | null; city: string | null } | nu
 }
 
 export async function getProviderLeadListForProvider(providerId: string): Promise<ProviderLeadListItem[]> {
+  const provider = await db.provider.findUnique({
+    where: { id: providerId },
+    select: { isTestUser: true },
+  })
   const leads = await db.lead.findMany({
     where: {
       providerId,
+      isTestLead: Boolean(provider?.isTestUser),
       status: { in: ['SENT', 'VIEWED'] },
     },
     select: {

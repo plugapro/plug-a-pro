@@ -108,7 +108,7 @@ export async function getCustomerProviderHandoverUrl(params: {
   if (!appUrl) return null
 
   const token = createCustomerProviderHandoverToken(params)
-  return `${appUrl}/requests/handover/${encodeURIComponent(token)}`
+  return `${appUrl}/customer/requests/${encodeURIComponent(params.jobRequestId)}/provider-handover?token=${encodeURIComponent(token)}`
 }
 
 export async function resolveCustomerProviderHandoverToken(token: string) {

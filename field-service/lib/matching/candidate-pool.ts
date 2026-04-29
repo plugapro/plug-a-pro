@@ -20,6 +20,8 @@ export type CandidatePoolEntry = {
   reliabilityScore: number
   averageRating: number
   active: boolean
+  isTestUser?: boolean
+  cohortName?: string | null
   verified: boolean
   availableNow: boolean
   lastKnownLat: number | null
@@ -44,6 +46,7 @@ type LoadCandidatePoolParams = {
     locationNodeId?: string | null
     provinceKey?: string | null
   }
+  isTestRequest?: boolean
   limit?: number
   usePool?: boolean
 }
@@ -57,7 +60,7 @@ export async function loadCandidatePool(
   const categorySlug = category.trim().toLowerCase()
 
   if (usePool) {
-    const poolResults = await loadFromPool({ categorySlug, address, limit })
+    const poolResults = await loadFromPool({ categorySlug, address, limit, isTestRequest: Boolean(params.isTestRequest) })
     if (poolResults.length > 0) {
       console.log('[candidate-pool] pool.hit', { categorySlug, count: poolResults.length })
       return poolResults
@@ -65,15 +68,16 @@ export async function loadCandidatePool(
     console.warn('[candidate-pool] pool.miss — falling back to direct scan', { categorySlug })
   }
 
-  return loadFromDirectScan({ category, address, limit })
+  return loadFromDirectScan({ category, address, limit, isTestRequest: Boolean(params.isTestRequest) })
 }
 
 async function loadFromPool(params: {
   categorySlug: string
   address: LoadCandidatePoolParams['address']
   limit: number
+  isTestRequest: boolean
 }): Promise<CandidatePoolEntry[]> {
-  const { categorySlug, address, limit } = params
+  const { categorySlug, address, limit, isTestRequest } = params
   const staleThreshold = new Date(Date.now() - POOL_STALE_MINUTES * 60_000)
 
   // Try suburb-level node first, then province-level fallback
@@ -83,7 +87,7 @@ async function loadFromPool(params: {
   const rows = await db.$queryRaw<Array<{
     id: string; name: string; phone: string; skills: string[]; serviceAreas: string[]
     maxTravelMinutes: number; reliabilityScore: number; averageRating: number
-    active: boolean; verified: boolean; availableNow: boolean
+    active: boolean; verified: boolean; availableNow: boolean; isTestUser: boolean; cohortName: string | null
     lastKnownLat: number | null; lastKnownLng: number | null
     isOnline: boolean | null; liveLocationLat: number | null; liveLocationLng: number | null
     lastHeartbeatAt: Date | null; scoreBase: number
@@ -91,7 +95,7 @@ async function loadFromPool(params: {
     SELECT DISTINCT ON (p.id)
       p.id, p.name, p.phone, p.skills, p."serviceAreas",
       p."maxTravelMinutes", p."reliabilityScore", p."averageRating",
-      p.active, p.verified, p."availableNow",
+      p.active, p.verified, p."availableNow", p."isTestUser", p."cohortName",
       p."lastKnownLat", p."lastKnownLng",
       pls."isOnline", pls."lastLocationLat" AS "liveLocationLat",
       pls."lastLocationLng" AS "liveLocationLng", pls."lastHeartbeatAt",
@@ -103,6 +107,9 @@ async function loadFromPool(params: {
       cp."categorySlug" = ${categorySlug}
       AND cp."lastRefreshed" > ${staleThreshold}
       AND p.active = true
+      AND p."isTestUser" = ${isTestRequest}
+      AND p.verified = true
+      AND p.status = 'ACTIVE'
       AND (
         (${locationNodeId}::text IS NOT NULL AND cp."locationNodeId" = ${locationNodeId})
         OR
@@ -119,6 +126,7 @@ async function loadFromDirectScan(params: {
   category: string
   address: LoadCandidatePoolParams['address']
   limit: number
+  isTestRequest: boolean
 }): Promise<CandidatePoolEntry[]> {
   const { category, limit } = params
   const categorySlug = category.trim().toLowerCase()
@@ -128,10 +136,14 @@ async function loadFromDirectScan(params: {
   const providers = await (db as any).provider.findMany({
     where: {
       active: true,
+      verified: true,
+      status: 'ACTIVE',
+      isTestUser: params.isTestRequest,
       skills: { has: category },
     },
     select: {
       id: true, name: true, phone: true, skills: true, serviceAreas: true,
+      isTestUser: true, cohortName: true,
       maxTravelMinutes: true, reliabilityScore: true, averageRating: true,
       active: true, verified: true, availableNow: true,
       lastKnownLat: true, lastKnownLng: true,
@@ -148,7 +160,7 @@ async function loadFromDirectScan(params: {
   }) as Array<{
     id: string; name: string; phone: string; skills: string[]; serviceAreas: string[]
     maxTravelMinutes: number; reliabilityScore: number; averageRating: number
-    active: boolean; verified: boolean; availableNow: boolean
+    active: boolean; verified: boolean; availableNow: boolean; isTestUser: boolean; cohortName: string | null
     lastKnownLat: number | null; lastKnownLng: number | null
     liveStatus?: { isOnline: boolean; lastLocationLat: number | null; lastLocationLng: number | null; lastHeartbeatAt: Date | null } | null
   }>

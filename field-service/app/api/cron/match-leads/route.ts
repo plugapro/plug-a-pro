@@ -142,7 +142,38 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1e. Expire OPEN job requests that have passed their expiresAt deadline.
+  // 1e. Retry approved provider application WhatsApp confirmations that were
+  // missed because Meta, network, or a prior deploy failed after DB approval.
+  try {
+    const approvedMissingNotifications = await db.providerApplication.findMany({
+      where: {
+        status: 'APPROVED',
+        approvalWhatsappSentAt: null,
+        OR: [
+          { approvalWhatsappSendStartedAt: null },
+          { approvalWhatsappSendStartedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) } },
+        ],
+      },
+      select: { id: true, phone: true, name: true },
+      take: 25,
+    })
+
+    for (const app of approvedMissingNotifications) {
+      await notifyProviderApplicationApprovedOnce({
+        applicationId: app.id,
+        phone: app.phone,
+        name: app.name,
+      }).catch((err: unknown) => {
+        console.error(`[cron/match-leads:${reqId}] Failed to retry approval notification ${app.id}:`, err)
+        results.errors++
+      })
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error retrying approval notifications:`, err)
+    results.errors++
+  }
+
+  // 1f. Expire OPEN job requests that have passed their expiresAt deadline.
   // Only processes jobs where expiresAt was explicitly set (legacy jobs without
   // the field are ignored). Notify customer after each transition.
   try {

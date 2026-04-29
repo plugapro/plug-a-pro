@@ -119,12 +119,15 @@ export async function unlockLeadForProvider(
             select: {
               id: true,
               kycStatus: true,
+              isTestUser: true,
             },
           },
           jobRequest: {
             select: {
               id: true,
               status: true,
+              isTestRequest: true,
+              cohortName: true,
               match: { select: { id: true, providerId: true } },
             },
           },
@@ -150,6 +153,19 @@ export async function unlockLeadForProvider(
 
       assertLeadAvailable(lead)
 
+      const wallet = await tx.providerWallet.findUnique({
+        where: { providerId },
+        select: { paidCreditBalance: true, promoCreditBalance: true },
+      })
+      const currentCreditBalance = (wallet?.paidCreditBalance ?? 0) + (wallet?.promoCreditBalance ?? 0)
+      if (currentCreditBalance < LEAD_UNLOCK_COST_CREDITS) {
+        throw new LeadUnlockError(
+          'INSUFFICIENT_CREDITS',
+          'You need at least 1 Plug-A-Pro Credit to unlock this lead.',
+          currentCreditBalance,
+        )
+      }
+
       // Create the unlock marker before debiting. The unique leadId constraint
       // prevents double-tap races from charging the same lead twice.
       const unlock = await tx.leadUnlock.create({
@@ -159,6 +175,8 @@ export async function unlockLeadForProvider(
           matchId: lead.jobRequest.match?.id ?? null,
           creditsCharged: LEAD_UNLOCK_COST_CREDITS,
           creditTypeBreakdown: {},
+          isTestUnlock: lead.jobRequest.isTestRequest || lead.provider.isTestUser,
+          cohortName: lead.jobRequest.cohortName,
           status: 'UNLOCKED',
         },
       })
@@ -170,12 +188,15 @@ export async function unlockLeadForProvider(
           providerId,
           LEAD_UNLOCK_COST_CREDITS,
           {
-            referenceType: 'lead_unlock',
+            referenceType: lead.jobRequest.isTestRequest || lead.provider.isTestUser
+              ? 'test_lead_unlock'
+              : 'lead_unlock',
             referenceId: unlock.id,
-            description: `Lead unlock ${lead.id.slice(-8).toUpperCase()}`,
+            description: `${lead.jobRequest.isTestRequest || lead.provider.isTestUser ? 'Test lead unlock' : 'Lead unlock'} ${lead.id.slice(-8).toUpperCase()}`,
             metadata: {
               leadId: lead.id,
               jobRequestId: lead.jobRequestId,
+              ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
             },
             createdBy: providerId,
           },
@@ -262,12 +283,15 @@ export async function unlockLeadForProviderInTransaction(
         select: {
           id: true,
           kycStatus: true,
+          isTestUser: true,
         },
       },
       jobRequest: {
         select: {
           id: true,
           status: true,
+          isTestRequest: true,
+          cohortName: true,
           match: { select: { id: true, providerId: true } },
         },
       },
@@ -293,6 +317,7 @@ export async function unlockLeadForProviderInTransaction(
 
   assertLeadAvailable(lead)
 
+  const isTestUnlock = lead.jobRequest.isTestRequest || lead.provider.isTestUser
   const wallet = await tx.providerWallet.findUnique({
     where: { providerId },
     select: { paidCreditBalance: true, promoCreditBalance: true },
@@ -313,6 +338,8 @@ export async function unlockLeadForProviderInTransaction(
       matchId: lead.jobRequest.match?.id ?? null,
       creditsCharged: LEAD_UNLOCK_COST_CREDITS,
       creditTypeBreakdown: {},
+      isTestUnlock,
+      cohortName: lead.jobRequest.cohortName,
       status: 'UNLOCKED',
     },
   })
@@ -324,12 +351,13 @@ export async function unlockLeadForProviderInTransaction(
       providerId,
       LEAD_UNLOCK_COST_CREDITS,
       {
-        referenceType: 'lead_unlock',
+        referenceType: isTestUnlock ? 'test_lead_unlock' : 'lead_unlock',
         referenceId: unlock.id,
-        description: `Lead unlock ${lead.id.slice(-8).toUpperCase()}`,
+        description: `${isTestUnlock ? 'Test lead unlock' : 'Lead unlock'} ${lead.id.slice(-8).toUpperCase()}`,
         metadata: {
           leadId: lead.id,
           jobRequestId: lead.jobRequestId,
+          ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
         },
         createdBy: providerId,
       },

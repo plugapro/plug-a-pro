@@ -35,7 +35,10 @@ export type MatchingJobRequest = Pick<
   | 'autoCreateBookingOnAssignment'
   | 'status'
   | 'expiresAt'
->
+> & {
+  isTestRequest?: boolean
+  cohortName?: string | null
+}
 
 export type MatchingAddress = {
   street: string
@@ -55,6 +58,7 @@ export type MatchingProvider = Pick<
   | 'name'
   | 'phone'
   | 'active'
+  | 'status'
   | 'availableNow'
   | 'verified'
   | 'skills'
@@ -77,6 +81,8 @@ export type MatchingProvider = Pick<
   | 'lastKnownLocationAt'
   | 'equipmentTags'
   | 'vehicleTypes'
+  | 'isTestUser'
+  | 'cohortName'
 > & {
   technicianSkills: TechnicianSkill[]
   technicianCertifications: TechnicianCertification[]
@@ -201,6 +207,7 @@ export type OfferResolutionResult =
         | 'TAKEN'
         | 'INSUFFICIENT_CREDITS'
         | 'KYC_REQUIRED'
+        | 'PROVIDER_NOT_APPROVED'
         | 'WALLET_SUSPENDED'
         | 'CONCURRENT_UNLOCK'
       currentCreditBalance?: number

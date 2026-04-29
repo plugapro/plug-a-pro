@@ -438,6 +438,7 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
       averageRating: true,
       active: true,
       verified: true,
+      status: true,
       availableNow: true,
       lastKnownLat: true,
       lastKnownLng: true,
@@ -452,7 +453,7 @@ export async function promptCustomersForNewProviderAvailability(providerId: stri
     },
   })
 
-  if (!provider || !provider.active || !provider.availableNow) {
+  if (!provider || !provider.active || !provider.verified || provider.status !== 'ACTIVE' || !provider.availableNow) {
     return { prompted: 0, templateFallbacks: 0 }
   }
 

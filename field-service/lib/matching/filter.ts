@@ -288,7 +288,13 @@ export async function filterEligibleProviders(
     adminEquipRows,
   ] = await Promise.all([
     (db as any).provider?.findMany?.({
-      where: { id: { in: providerIds } },
+      where: {
+        id: { in: providerIds },
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        isTestUser: Boolean(jobRequest.isTestRequest),
+      },
       select: {
         id: true,
         completedJobsCount: true,
@@ -404,6 +410,14 @@ export async function filterEligibleProviders(
 
   for (const candidate of rawCandidates) {
     const metrics = metricsById.get(candidate.id)
+    if (!metrics) {
+      filteredOut.push({
+        providerId: candidate.id,
+        providerName: candidate.name,
+        filteredReasonCodes: ['TEST_COHORT_MISMATCH'],
+      })
+      continue
+    }
     const techSkills = skillsById.get(candidate.id) ?? []
     const techCerts = certsById.get(candidate.id) ?? []
     const serviceAreas = areasById.get(candidate.id) ?? []

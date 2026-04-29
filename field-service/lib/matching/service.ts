@@ -208,6 +208,8 @@ function buildMatchingJobRequest(record: {
   customerAcceptedAmount: Prisma.Decimal | null
   customerAcceptedScope: string | null
   autoCreateBookingOnAssignment: boolean
+  isTestRequest: boolean
+  cohortName: string | null
   status: MatchingJobRequest['status']
   expiresAt?: Date | null
   customer?: { id: string; name: string; phone: string } | null
@@ -241,6 +243,8 @@ function buildMatchingJobRequest(record: {
     customerAcceptedAmount: record.customerAcceptedAmount,
     customerAcceptedScope: record.customerAcceptedScope,
     autoCreateBookingOnAssignment: record.autoCreateBookingOnAssignment,
+    isTestRequest: record.isTestRequest,
+    cohortName: record.cohortName,
     status: record.status,
     expiresAt: record.expiresAt ?? null,
     customer: record.customer ?? { id: record.customerId, name: 'Customer', phone: '' },
@@ -282,6 +286,8 @@ export async function loadMatchingJobRequest(client: any, jobRequestId: string) 
       customerAcceptedAmount: true,
       customerAcceptedScope: true,
       autoCreateBookingOnAssignment: true,
+      isTestRequest: true,
+      cohortName: true,
       status: true,
       expiresAt: true,
       customer: {
@@ -634,14 +640,22 @@ async function loadMatchingContext(jobRequestId: string) {
   }
 
   const baseProviders = await db.provider.findMany({
-    where: { active: true },
+    where: {
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      isTestUser: jobRequest.isTestRequest,
+    },
     select: {
       id: true,
       name: true,
       phone: true,
+      isTestUser: true,
+      cohortName: true,
       active: true,
       availableNow: true,
       verified: true,
+      status: true,
       skills: true,
       serviceAreas: true,
     },
@@ -1376,6 +1390,8 @@ async function createOfferForAttempt(params: {
       matchAttemptId: params.matchAttemptId,
       assignmentHoldId: hold.id,
       status: 'SENT',
+      isTestLead: jobRequest.isTestRequest,
+      cohortName: jobRequest.cohortName,
       expiresAt,
     },
     update: {
@@ -1383,6 +1399,8 @@ async function createOfferForAttempt(params: {
       matchAttemptId: params.matchAttemptId,
       assignmentHoldId: hold.id,
       status: 'SENT',
+      isTestLead: jobRequest.isTestRequest,
+      cohortName: jobRequest.cohortName,
       sentAt: new Date(),
       respondedAt: null,
       expiresAt,
@@ -1433,6 +1451,7 @@ async function createOfferForAttempt(params: {
     leadId: lead.id,
     category: jobRequest.category,
     area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
+    isTestLead: jobRequest.isTestRequest,
     description: jobRequest.title || jobRequest.description || jobRequest.category,
     customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
     expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
@@ -1683,6 +1702,29 @@ export async function acceptAssignmentOffer(params: {
       return { ok: false as const, reason: 'EXPIRED' }
     }
 
+    const provider = await tx.provider.findUnique({
+      where: { id: params.providerId },
+      select: {
+        id: true,
+        active: true,
+        verified: true,
+        status: true,
+        kycStatus: true,
+      },
+    })
+    if (!provider) return { ok: false as const, reason: 'FORBIDDEN' }
+    if (!provider.active || !provider.verified || provider.status !== 'ACTIVE') {
+      console.warn('[matching] provider blocked from accepting lead because profile is not approved', {
+        trace_id: traceId,
+        provider_id: params.providerId,
+        lead_id: params.leadId,
+        provider_active: provider.active,
+        provider_verified: provider.verified,
+        provider_status: provider.status,
+      })
+      return { ok: false as const, reason: 'PROVIDER_NOT_APPROVED' }
+    }
+
     const existingMatch = await tx.match.findUnique({
       where: { jobRequestId: lead.jobRequestId },
     })
@@ -1886,6 +1928,8 @@ export async function acceptAssignmentOffer(params: {
         address: jobRequest.address,
         scheduledDate: requestWindow.startAt,
         estimatedDurationMinutes: jobRequest.estimatedDurationMinutes,
+        isTestJob: jobRequest.isTestRequest,
+        cohortName: jobRequest.cohortName,
         source: 'assignment_acceptance',
       })
 
@@ -1978,6 +2022,7 @@ export async function acceptAssignmentOffer(params: {
         | 'TAKEN'
         | 'INSUFFICIENT_CREDITS'
         | 'KYC_REQUIRED'
+        | 'PROVIDER_NOT_APPROVED'
         | 'WALLET_SUSPENDED'
         | 'CONCURRENT_UNLOCK',
     }

@@ -71,8 +71,8 @@ describe('customer provider handover access tokens', () => {
       providerId: 'provider-1',
       jobRequestId: 'job-request-1',
     })
-    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/requests\/handover\//)
-    const token = decodeURIComponent(url!.split('/requests/handover/')[1])
+    expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/customer\/requests\/job-request-1\/provider-handover\?token=/)
+    const token = decodeURIComponent(url!.split('token=')[1])
 
     expect(verifyCustomerProviderHandoverToken(token)).toMatchObject({
       status: 'active',

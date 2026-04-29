@@ -2,7 +2,11 @@ import { db } from './db'
 import { recordAuditLog } from './audit'
 import { AUDIT_ENTITY } from './audit-entities'
 import { getCustomerProviderHandoverUrl } from './customer-provider-handover-access'
-import { getProviderLeadAccessUrlByLeadId } from './provider-lead-access'
+import {
+  getProviderSignedJobHandoverUrlByLeadId,
+  providerLeadTokenAllowsScope,
+  verifyProviderLeadAccessToken,
+} from './provider-lead-access'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -99,11 +103,12 @@ export async function notifyPostMatchAcceptance(params: {
 
   const customer = lead.jobRequest.customer
   const provider = lead.provider
+  const isTestLead = Boolean((lead as { isTestLead?: boolean }).isTestLead)
   const ref = lead.jobRequest.id.slice(-8).toUpperCase()
   const customerName = firstName(customer.name)
   const category = lead.jobRequest.category
   const address = addressLabel(lead.jobRequest.address)
-  const leadUrl = await getProviderLeadAccessUrlByLeadId(lead.id)
+  const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
   const customerHandoverUrl = await getCustomerProviderHandoverUrl({
     leadId: lead.id,
     providerId: provider.id,
@@ -134,6 +139,8 @@ export async function notifyPostMatchAcceptance(params: {
         providerId: provider.id,
         customerId: customer.id,
         handoverUrlCreated: Boolean(customerHandoverUrl),
+        isTestLead,
+        isTestRequest: isTestLead,
       },
     }
 
@@ -165,7 +172,7 @@ export async function notifyPostMatchAcceptance(params: {
       `Preferred availability: *${preferredAvailability}*\n` +
       `Ref: *${ref}*\n\n` +
       `Customer contact:\n${customer.name}\n${customer.phone}\n\n` +
-      `Open the job to view full details, notes, and photos.`
+      `You can manage this job from the link below. No login is needed for this job link.`
 
     if (leadUrl) {
       await sendCtaUrl(
@@ -184,6 +191,8 @@ export async function notifyPostMatchAcceptance(params: {
             leadUnlockId: lead.unlock?.id,
             creditTransactionId: params.creditTransactionId ?? null,
             customerContactReleased: true,
+            isTestLead,
+            isTestRequest: isTestLead,
           },
         },
       )
@@ -198,6 +207,8 @@ export async function notifyPostMatchAcceptance(params: {
           leadUnlockId: lead.unlock?.id,
           creditTransactionId: params.creditTransactionId ?? null,
           customerContactReleased: true,
+          isTestLead,
+          isTestRequest: isTestLead,
         },
       })
     }
@@ -222,6 +233,8 @@ export async function notifyPostMatchAcceptance(params: {
           providerId: provider.id,
           leadUnlockId: lead.unlock?.id,
           creditTransactionId: params.creditTransactionId ?? null,
+          isTestLead,
+          isTestRequest: isTestLead,
         },
       },
     )
@@ -264,6 +277,14 @@ export async function buildAcceptedLeadContactUrl(params: {
   token: string
 }) {
   const { resolveProviderLeadAccessToken } = await import('./provider-lead-access')
+  const verified = verifyProviderLeadAccessToken(params.token)
+  if (
+    verified.status !== 'active' ||
+    !providerLeadTokenAllowsScope(verified.payload, 'contact_customer')
+  ) {
+    return null
+  }
+
   const resolved = await resolveProviderLeadAccessToken(params.token)
   if (resolved.status !== 'active' || !resolved.lead || resolved.lead.id !== params.leadId) {
     return null

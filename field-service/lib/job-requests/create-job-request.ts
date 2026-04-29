@@ -13,6 +13,7 @@ import { getJobRequestAccessUrl } from '../job-request-access'
 import { normalizePhone } from '../utils'
 import { openCase } from '../cases'
 import { MATCHING_CONFIG } from '../matching/config'
+import { createTestCohortContext, testRequestFields } from '../internal-test-cohort'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -69,6 +70,7 @@ export async function createJobRequest(
   // +27…. A mismatch causes linkCustomerAccount to miss existing records.
   const phone = normalizePhone(params.phone)
   params = { ...params, phone }
+  const cohort = createTestCohortContext(phone)
 
   const categoryRequirements = await resolveCategoryRequirements({
     category: params.category,
@@ -124,6 +126,8 @@ export async function createJobRequest(
               userId: params.userId,
               phone: params.phone,
               name: params.customerName ?? 'Customer',
+              isTestUser: cohort.isTestUser,
+              cohortName: cohort.cohortName,
             },
             select: { id: true },
           })
@@ -135,8 +139,10 @@ export async function createJobRequest(
         create: {
           phone: params.phone,
           name: params.customerName ?? 'WhatsApp Customer',
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
         },
-        update: {},
+        update: cohort.isTestUser ? { isTestUser: true, cohortName: cohort.cohortName } : {},
         select: { id: true },
       })
     }
@@ -205,6 +211,7 @@ export async function createJobRequest(
             : undefined,
         customerAcceptedScope: params.customerAcceptedScope?.trim() || undefined,
         autoCreateBookingOnAssignment,
+        ...testRequestFields(cohort.isTestUser),
       },
       select: { id: true },
     })
@@ -234,13 +241,20 @@ export async function createJobRequest(
         // Notify customer so they know their request is received, even if not yet matched
         const customer = await db.customer.findUnique({
           where: { id: result.customerId },
-          select: { phone: true, name: true },
+          select: { phone: true, name: true, isTestUser: true },
         })
         if (customer?.phone) {
           const { sendText } = await import('../whatsapp-interactive')
           await sendText(
             customer.phone,
-            `✅ *Request received!*\n\nHi *${(customer.name ?? 'there').split(' ')[0]}*, your service request has been submitted. We're searching for a suitable provider in your area and will notify you as soon as one accepts.\n\nReply *Hi* anytime to check the status.`
+            `✅ *Request received!*\n\nHi *${(customer.name ?? 'there').split(' ')[0]}*, your service request has been submitted. We're searching for a suitable provider in your area and will notify you as soon as one accepts.\n\nReply *Hi* anytime to check the status.`,
+            {
+              templateName: 'interactive:request_received_no_match',
+              metadata: {
+                jobRequestId: result.jobRequestId,
+                isTestRequest: customer.isTestUser,
+              },
+            }
           ).catch(() => {})
         }
       }
