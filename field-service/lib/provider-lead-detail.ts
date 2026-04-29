@@ -96,8 +96,8 @@ function formatFullAddress(
   ].filter(Boolean).join(', ')
 }
 
-function previewNotes(description: string) {
-  const trimmed = description.trim()
+export function previewNotes(description: string | null | undefined) {
+  const trimmed = description?.trim() ?? ''
   if (!trimmed) return null
   return trimmed.length <= 180 ? trimmed : `${trimmed.slice(0, 180).trim()}...`
 }

@@ -213,7 +213,7 @@ describe('provider credit reconciliation service', () => {
     })
   })
 
-  it('keeps the credited wallet transaction when the WhatsApp receipt fails', async () => {
+  it('does not emit payment credited WhatsApp from the lib-level credit path', async () => {
     mockNotifyPaymentCredited.mockRejectedValue(new Error('WhatsApp unavailable'))
 
     const result = await creditPaymentIntent('intent-1', 'admin-user-1', {
@@ -230,7 +230,7 @@ describe('provider credit reconciliation service', () => {
       creditType: 'PAID',
       amountCredits: 5,
     })
-    expect(mockNotifyPaymentCredited).toHaveBeenCalledWith('intent-1')
+    expect(mockNotifyPaymentCredited).not.toHaveBeenCalled()
   })
 
   it('fails safely when the same payment intent is credited twice', async () => {
@@ -257,6 +257,25 @@ describe('provider credit reconciliation service', () => {
     ).rejects.toMatchObject({
       code: 'INVALID_STATUS',
     } satisfies Partial<ProviderCreditReconciliationError>)
+  })
+
+  it('rejects crediting an expired payment intent', async () => {
+    state.intent = makeIntent({
+      status: 'PENDING_PAYMENT',
+      expiresAt: new Date('2026-04-28T10:05:00.000Z'),
+    })
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-29T10:05:00.000Z'))
+
+    await expect(
+      creditPaymentIntent('intent-1', 'admin-user-1', { adminNote: 'Funds confirmed late' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_STATUS',
+    } satisfies Partial<ProviderCreditReconciliationError>)
+
+    expect(mockDb.providerWallet.update).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 
   it('rejects statement matches when the bank amount differs from the intent amount', async () => {

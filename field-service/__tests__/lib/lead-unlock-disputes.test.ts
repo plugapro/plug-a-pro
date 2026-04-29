@@ -252,6 +252,107 @@ describe('lead unlock disputes service', () => {
     })
   })
 
+  it('preserves a mixed promo and paid debit split when approving a refund', async () => {
+    state.unlock = makeUnlock({
+      status: 'DISPUTED',
+      creditsCharged: 2,
+      creditTypeBreakdown: { promo: 1, paid: 1 },
+    })
+    state.dispute = makeDispute({ reason: 'WRONG_CATEGORY' })
+    state.ledgerEntries = [
+      {
+        id: 'debit-entry-1',
+        walletId: 'wallet-1',
+        providerId: 'provider-1',
+        entryType: 'LEAD_UNLOCK_DEBIT',
+        creditType: 'PROMO',
+        amountCredits: 1,
+        referenceType: 'lead_unlock',
+        referenceId: 'unlock-1',
+      },
+      {
+        id: 'debit-entry-2',
+        walletId: 'wallet-1',
+        providerId: 'provider-1',
+        entryType: 'LEAD_UNLOCK_DEBIT',
+        creditType: 'PAID',
+        amountCredits: 1,
+        referenceType: 'lead_unlock',
+        referenceId: 'unlock-1',
+      },
+    ]
+
+    const result = await approveLeadUnlockDispute('dispute-1', 'admin-1', 'Wrong category confirmed')
+
+    expect(result.wallet).toMatchObject({
+      paidCreditBalance: 1,
+      promoCreditBalance: 1,
+    })
+    expect(result.ledgerEntries).toHaveLength(2)
+    expect(result.ledgerEntries.map((entry) => [entry.creditType, entry.amountCredits])).toEqual([
+      ['PROMO', 1],
+      ['PAID', 1],
+    ])
+    expect(result.ledgerEntries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entryType: 'LEAD_REFUND_CREDIT',
+        creditType: 'PROMO',
+        referenceType: 'lead_unlock_dispute',
+        referenceId: 'dispute-1',
+      }),
+      expect.objectContaining({
+        entryType: 'LEAD_REFUND_CREDIT',
+        creditType: 'PAID',
+        referenceType: 'lead_unlock_dispute',
+        referenceId: 'dispute-1',
+      }),
+    ]))
+  })
+
+  it('uses stored JSON breakdown when original debit ledger entries are missing', async () => {
+    state.unlock = makeUnlock({
+      status: 'DISPUTED',
+      creditsCharged: 2,
+      creditTypeBreakdown: { promo: 1, paid: 1 },
+    })
+    state.dispute = makeDispute({ reason: 'WRONG_LOCATION' })
+    state.ledgerEntries = []
+
+    const result = await approveLeadUnlockDispute('dispute-1', 'admin-1', 'Wrong area confirmed')
+
+    expect(result.wallet).toMatchObject({
+      paidCreditBalance: 1,
+      promoCreditBalance: 1,
+    })
+    expect(result.ledgerEntries.map((entry) => [entry.creditType, entry.amountCredits])).toEqual([
+      ['PROMO', 1],
+      ['PAID', 1],
+    ])
+  })
+
+  it('falls back to promo-only refund when no debit provenance exists', async () => {
+    state.unlock = makeUnlock({
+      status: 'DISPUTED',
+      creditsCharged: 2,
+      creditTypeBreakdown: {},
+    })
+    state.dispute = makeDispute({ reason: 'CUSTOMER_DID_NOT_REQUEST' })
+    state.ledgerEntries = []
+
+    const result = await approveLeadUnlockDispute('dispute-1', 'admin-1', 'Customer denied request')
+
+    expect(result.wallet).toMatchObject({
+      paidCreditBalance: 0,
+      promoCreditBalance: 2,
+    })
+    expect(result.ledgerEntries).toHaveLength(1)
+    expect(result.ledgerEntries[0]).toMatchObject({
+      entryType: 'LEAD_REFUND_CREDIT',
+      creditType: 'PROMO',
+      amountCredits: 2,
+    })
+  })
+
   it('rejects a dispute without changing wallet balance', async () => {
     state.unlock = makeUnlock({ status: 'DISPUTED' })
     state.dispute = makeDispute()

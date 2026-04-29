@@ -1,7 +1,7 @@
 // ─── Vercel Blob — file storage helpers ──────────────────────────────────────
 // Used for: job request evidence, completion photos, quote attachments, and avatars.
 
-import { put, del } from '@vercel/blob'
+import { put, del, get } from '@vercel/blob'
 import { db } from './db'
 
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -115,6 +115,32 @@ export async function uploadQuoteAttachment(params: {
   })
 
   return blob.url
+}
+
+export async function uploadProviderPaymentProof(params: {
+  paymentIntentId: string
+  file: File
+}): Promise<string> {
+  validateFile(params.file)
+
+  const ext = params.file.name.split('.').pop() ?? 'bin'
+  const key = `provider-credit-payments/${params.paymentIntentId}/${Date.now()}-proof.${ext}`
+
+  const blob = await put(key, params.file, {
+    access: 'private',
+    addRandomSuffix: true,
+    contentType: params.file.type,
+    cacheControlMaxAge: 60,
+  })
+
+  return blob.url
+}
+
+export async function getProviderPaymentProof(url: string) {
+  return get(url, {
+    access: 'private',
+    useCache: false,
+  })
 }
 
 // ─── Delete ───────────────────────────────────────────────────────────────────

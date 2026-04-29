@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
+import { getProviderWalletLedgerEntries } from '@/lib/provider-wallet'
 import {
   adjustProviderCreditsFormAction,
   reactivateProviderWalletFormAction,
@@ -77,11 +78,19 @@ function formatCurrency(amountCents: number) {
 
 function ledgerAmount(entry: { entryType: string; amountCredits: number }) {
   const signed = entry.entryType === 'LEAD_UNLOCK_DEBIT' ||
+    // Forward-compatible debit types; backing jobs are not implemented yet.
     entry.entryType === 'PROMO_EXPIRY' ||
     entry.entryType === 'PAYMENT_REVERSAL'
     ? -Math.abs(entry.amountCredits)
     : entry.amountCredits
   return `${signed > 0 ? '+' : ''}${signed}`
+}
+
+function ledgerCreditTypeLabel(entry: { entryType: string; creditType: string; amountCredits: number }) {
+  if (entry.amountCredits === 0 && entry.entryType.startsWith('WALLET_')) {
+    return 'Status event'
+  }
+  return entry.creditType
 }
 
 function messageText(message?: string) {
@@ -164,11 +173,7 @@ export default async function ProviderWalletDetailPage({
 
   if (!provider) notFound()
 
-  const ledgerEntries = await db.walletLedgerEntry.findMany({
-    where: { providerId: provider.id },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-  })
+  const ledgerEntries = await getProviderWalletLedgerEntries(provider.id, { limit: 50 })
 
   const walletStatus = provider.wallet?.status ?? 'NO_WALLET'
   const paidCredits = provider.wallet?.paidCreditBalance ?? 0
@@ -248,7 +253,7 @@ export default async function ProviderWalletDetailPage({
                         <td className="px-3 py-2 text-muted-foreground">{formatDate(entry.createdAt)}</td>
                         <td className="px-3 py-2">
                           <p className="font-medium">{cleanStatus(entry.entryType)}</p>
-                          <p className="text-xs text-muted-foreground">{entry.creditType}</p>
+                          <p className="text-xs text-muted-foreground">{ledgerCreditTypeLabel(entry)}</p>
                         </td>
                         <td className="px-3 py-2 font-medium">{ledgerAmount(entry)}</td>
                         <td className="px-3 py-2">

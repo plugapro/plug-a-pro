@@ -242,6 +242,70 @@ export const TEMPLATES = {
       'Hi {{1}}, thank you for applying to Plug A Pro. Unfortunately we are unable to onboard you {{2}}. You are welcome to apply again in the future.',
   },
 
+  // ─── Provider wallet and paid lead lifecycle ─────────────────────────────
+
+  wallet_low_balance: {
+    name: 'wallet_low_balance',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent when a provider wallet reaches one remaining credit',
+    // {{1}} remaining credits, {{2}} top-up amount, {{3}} credits issued
+    example:
+      'You have {{1}} Plug-A-Pro Credit left. Top up now so you do not miss new leads. {{2}} = {{3}} credits.',
+  },
+
+  wallet_zero_balance_lead: {
+    name: 'wallet_zero_balance_lead',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent when a matched lead is available but the provider wallet has no credits',
+    // {{1}} current credits, {{2}} minimum top-up amount
+    example:
+      'New matched lead available, but your wallet has {{1}} credits. Top up {{2}} to unlock this and future leads.',
+  },
+
+  wallet_payment_intent_created: {
+    name: 'wallet_payment_intent_created',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent after a provider creates a manual EFT wallet top-up intent',
+    // {{1}} amount, {{2}} credits, {{3}} account name, {{4}} bank, {{5}} account number,
+    // {{6}} branch code, {{7}} account type, {{8}} payment reference
+    example:
+      'Plug-A-Pro Credits top-up created: {{1}} = {{2}} credits. EFT to {{3}}, {{4}}, account {{5}}, branch {{6}}, {{7}}. Use exact reference: {{8}}. Credits are issued after Plug-A-Pro confirms the payment.',
+  },
+
+  wallet_payment_credited: {
+    name: 'wallet_payment_credited',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent after admin reconciliation credits a provider wallet top-up',
+    // {{1}} credits issued
+    example:
+      'Payment received. Your wallet has been credited with {{1}} Plug-A-Pro Credits.',
+  },
+
+  lead_unlock_provider: {
+    name: 'lead_unlock_provider',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a provider after paid credits unlock customer lead details',
+    // {{1}} category, {{2}} customer name, {{3}} customer phone, {{4}} address,
+    // {{5}} preferred time, {{6}} details
+    example:
+      'Lead unlocked: {{1}}. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}',
+  },
+
+  lead_unlock_customer_intro: {
+    name: 'lead_unlock_customer_intro',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer after a provider unlocks their lead details',
+    // {{1}} provider name
+    example:
+      'Good news — we matched you with {{1}}. They may contact you shortly.',
+  },
+
 } as const
 
 export type TemplateName = keyof typeof TEMPLATES

@@ -30,6 +30,7 @@ vi.mock('../../lib/db', () => ({
 
 vi.mock('../../lib/provider-wallet', () => ({
   getProviderWalletBalance: vi.fn(),
+  getProviderWalletLedgerEntries: vi.fn(),
 }))
 
 vi.mock('../../lib/provider-credit-payment-intents', () => ({
@@ -86,8 +87,9 @@ describe('provider credits server actions', () => {
   })
 
   it('queries ledger entries only for the authenticated provider and omits internal metadata', async () => {
-    const { db } = await arrangeProvider()
-    ;(db.walletLedgerEntry.findMany as any).mockResolvedValue([
+    await arrangeProvider()
+    const { getProviderWalletLedgerEntries } = await import('../../lib/provider-wallet')
+    ;(getProviderWalletLedgerEntries as any).mockResolvedValue([
       {
         id: 'entry-1',
         entryType: 'ADMIN_ADJUSTMENT',
@@ -105,16 +107,7 @@ describe('provider credits server actions', () => {
     const { getProviderWalletLedger } = await import('../../app/(provider)/provider/credits/actions')
     const ledger = await getProviderWalletLedger()
 
-    expect(db.walletLedgerEntry.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { providerId: 'provider-1' },
-        select: expect.not.objectContaining({
-          metadata: true,
-          createdBy: true,
-          description: true,
-        }),
-      }),
-    )
+    expect(getProviderWalletLedgerEntries).toHaveBeenCalledWith('provider-1', { limit: 20 })
     expect(ledger[0]).toEqual({
       id: 'entry-1',
       occurredAt: '2026-04-29T12:00:00.000Z',

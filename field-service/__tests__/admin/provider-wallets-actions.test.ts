@@ -106,4 +106,70 @@ describe('provider wallet admin actions', () => {
       reason: 'Reversal after ops review',
     }))
   })
+
+  it('wraps wallet suspension in an audited wallet action', async () => {
+    const { requireAdmin } = await import('../../lib/auth')
+    const { crudAction } = await import('../../lib/crud-action')
+    const { db } = await import('../../lib/db')
+    ;(requireAdmin as any).mockResolvedValue({
+      id: 'supabase-admin-1',
+      adminUserId: 'admin-1',
+    })
+    ;(db.providerWallet.findUnique as any).mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-1',
+      status: 'ACTIVE',
+    })
+    ;(crudAction as any).mockResolvedValue({ ok: true, data: { walletId: 'wallet-1', status: 'SUSPENDED' } })
+
+    const { suspendProviderWalletAction } = await import(
+      '../../app/(admin)/admin/provider-wallets/actions'
+    )
+
+    await suspendProviderWalletAction({
+      providerId: 'provider-1',
+      reason: 'Abuse review',
+    })
+
+    expect(crudAction).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'provider_wallet.suspend',
+      entity: 'ProviderWallet',
+      entityId: 'wallet-1',
+      requiredRole: ['OPS'],
+      reason: 'Abuse review',
+    }))
+  })
+
+  it('wraps wallet reactivation in an audited wallet action', async () => {
+    const { requireAdmin } = await import('../../lib/auth')
+    const { crudAction } = await import('../../lib/crud-action')
+    const { db } = await import('../../lib/db')
+    ;(requireAdmin as any).mockResolvedValue({
+      id: 'supabase-admin-1',
+      adminUserId: 'admin-1',
+    })
+    ;(db.providerWallet.findUnique as any).mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-1',
+      status: 'SUSPENDED',
+    })
+    ;(crudAction as any).mockResolvedValue({ ok: true, data: { walletId: 'wallet-1', status: 'ACTIVE' } })
+
+    const { reactivateProviderWalletAction } = await import(
+      '../../app/(admin)/admin/provider-wallets/actions'
+    )
+
+    await reactivateProviderWalletAction({
+      providerId: 'provider-1',
+      reason: 'Review resolved',
+    })
+
+    expect(crudAction).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'provider_wallet.reactivate',
+      entity: 'ProviderWallet',
+      entityId: 'wallet-1',
+      requiredRole: ['OPS'],
+      reason: 'Review resolved',
+    }))
+  })
 })

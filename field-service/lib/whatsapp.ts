@@ -933,7 +933,7 @@ async function logMessage(params: {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface WhatsAppComponent {
+export interface WhatsAppComponent {
   type: 'header' | 'body' | 'button'
   parameters: Array<{ type: 'text'; text: string } | { type: 'image'; image: { link: string } }>
   sub_type?: string

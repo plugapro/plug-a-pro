@@ -96,13 +96,21 @@ function formatZar(amountCents: number) {
   }).format(amountCents / 100)
 }
 
-function getManualEftBankAccountInstructions(): ManualEftBankAccountInstructions {
+function requireEnv(name: string) {
+  const value = process.env[name]?.trim()
+  if (!value) {
+    throw new Error(`Missing required manual EFT bank account configuration: ${name}`)
+  }
+  return value
+}
+
+export function getManualEftBankAccountInstructions(): ManualEftBankAccountInstructions {
   return {
-    accountName: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_NAME ?? 'Plug-A-Pro Credits',
-    bankName: process.env.PROVIDER_CREDIT_EFT_BANK_NAME ?? 'Configure bank name',
-    accountNumber: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER ?? 'Configure account number',
-    branchCode: process.env.PROVIDER_CREDIT_EFT_BRANCH_CODE ?? 'Configure branch code',
-    accountType: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_TYPE ?? 'Business current account',
+    accountName: requireEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME'),
+    bankName: requireEnv('PROVIDER_CREDIT_EFT_BANK_NAME'),
+    accountNumber: requireEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER'),
+    branchCode: requireEnv('PROVIDER_CREDIT_EFT_BRANCH_CODE'),
+    accountType: requireEnv('PROVIDER_CREDIT_EFT_ACCOUNT_TYPE'),
   }
 }
 
@@ -143,7 +151,10 @@ async function createUniquePaymentReference(
   )
 }
 
-function buildManualEftInstructions(intent: PaymentIntent): ManualEftTopUpInstructions {
+function buildManualEftInstructions(
+  intent: PaymentIntent,
+  bankAccount = getManualEftBankAccountInstructions(),
+): ManualEftTopUpInstructions {
   return {
     amountCents: intent.amountCents,
     amountFormatted: formatZar(intent.amountCents),
@@ -151,7 +162,7 @@ function buildManualEftInstructions(intent: PaymentIntent): ManualEftTopUpInstru
     creditsToIssue: intent.creditsToIssue,
     paymentReference: intent.paymentReference,
     expiresAt: intent.expiresAt,
-    bankAccount: getManualEftBankAccountInstructions(),
+    bankAccount,
   }
 }
 
@@ -161,6 +172,7 @@ export async function createManualEftTopUpIntent(
   const creditsToIssue = creditsForAmount(input.amountCents)
   const referenceGenerator = input.referenceGenerator ?? generateManualEftPaymentReference
   const now = input.now ?? new Date()
+  const bankAccount = getManualEftBankAccountInstructions()
 
   const result = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
@@ -196,7 +208,7 @@ export async function createManualEftTopUpIntent(
 
     return {
       intent,
-      instructions: buildManualEftInstructions(intent),
+      instructions: buildManualEftInstructions(intent, bankAccount),
     }
   })
 

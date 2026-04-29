@@ -187,6 +187,11 @@ function sensitiveLead(lead: any) {
 describe('provider credit wallet and paid lead monetisation integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug-A-Pro Credits')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_BANK_NAME', 'Test Bank')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER', '123456789')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_BRANCH_CODE', '250655')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_TYPE', 'Business current account')
     vi.stubEnv('PROVIDER_CREDIT_EFT_INTENT_EXPIRY_DAYS', '7')
 
     state.providers = new Map([[

@@ -308,6 +308,7 @@ export default async function ProviderLeadAccessPage({
   const lead = resolved.lead
   const jr = lead.jobRequest
   const addr = jr.address
+  const customer = jr.customer
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
   const isAccepted = lead.status === 'ACCEPTED'
   const isDeclined = lead.status === 'DECLINED'
@@ -351,7 +352,16 @@ export default async function ProviderLeadAccessPage({
     ? [addr.suburb, addr.city].filter(Boolean).join(', ')
     : 'Area on file'
   const fullArea = addr
-    ? [addr.street, addr.suburb, addr.city, addr.province].filter(Boolean).join(', ')
+    ? [
+        'unitNumber' in addr ? addr.unitNumber : null,
+        'complexName' in addr ? addr.complexName : null,
+        'street' in addr ? addr.street : null,
+        'addressLine1' in addr ? addr.addressLine1 : null,
+        'addressLine2' in addr ? addr.addressLine2 : null,
+        addr.suburb,
+        addr.city,
+        'province' in addr ? addr.province : null,
+      ].filter(Boolean).join(', ')
     : 'Location on file'
   const preferredWindow = formatWindow(jr.requestedWindowStart, jr.requestedWindowEnd) ??
     (jr.requestedArrivalLatest ? `Before ${format(jr.requestedArrivalLatest, 'EEE, d MMM · HH:mm')}` : 'Flexible')
@@ -435,11 +445,11 @@ export default async function ProviderLeadAccessPage({
               <p className="font-medium">{estimatedValue}</p>
             </div>
           )}
-          {isUnlocked && (
+          {customer && (
             <div className="px-4 py-3 space-y-0.5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer contact</p>
-              <p className="font-medium">{jr.customer.name}</p>
-              <p className="text-sm text-muted-foreground">{jr.customer.phone}</p>
+              <p className="font-medium">{customer.name}</p>
+              <p className="text-sm text-muted-foreground">{customer.phone}</p>
             </div>
           )}
           {isAccepted && plannedWindow && (
@@ -463,7 +473,7 @@ export default async function ProviderLeadAccessPage({
               </p>
             </div>
           )}
-          {isUnlocked && jr.attachments.length > 0 && (
+          {jr.attachments.length > 0 && (
             <div className="px-4 py-3 space-y-2">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer photos</p>
               <div className="grid grid-cols-2 gap-2">

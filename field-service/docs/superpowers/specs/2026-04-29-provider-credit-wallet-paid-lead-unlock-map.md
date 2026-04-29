@@ -1,11 +1,19 @@
 # Provider Credit Wallet and Paid Lead Unlock Implementation Map
 
-**Date:** 2026-04-29  
-**Project:** Plug A Pro — field-service  
-**Status:** Analysis plus wallet ledger foundation  
+**Date:** 2026-04-29
+**Project:** Plug A Pro — field-service
+**Status:** Implemented pilot with post-implementation addenda
 **Scope:** Provider credit wallet, manual EFT top-up flow, paid lead unlocks, promo credits, refunds/disputes, WhatsApp notifications, and provider/admin UI sequencing.
 
-This note is intended for OpenBrain ingestion and future implementation planning. The paid lead unlock product is not complete; the wallet ledger foundation described in the addendum has been added.
+This note began as an OpenBrain implementation map and now also contains post-implementation addenda. Sections 1-13 preserve the original planning context; where they conflict with shipped code, the implementation snapshot and addenda are canonical.
+
+Canonical implementation references:
+
+- Plan: `docs/superpowers/plans/2026-04-29-provider-credit-wallet-paid-lead-unlock.md`
+- Snapshot: `docs/superpowers/specs/2026-04-29-provider-credit-wallet-paid-lead-unlock-implementation-snapshot.md`
+- Accurate addenda in this file: sections 17-22.
+
+Reader note: sections 7-10 are pre-implementation proposals and are intentionally retained for history. They are not the final Prisma schema, service map, route map, or PR sequence.
 
 ---
 
@@ -249,11 +257,18 @@ Existing payment admin patterns:
 - `app/(admin)/admin/payments/page.tsx`
 - `app/(admin)/admin/payments/actions.ts`
 
-Recommendation:
+Original recommendation:
 
 - Wallet admin actions should be implemented in a dedicated action file and use `crudAction()`.
 - Finance-sensitive actions should require `FINANCE`, `ADMIN`, or `OWNER`.
 - Operational claim/release flows can reuse `OpsQueueAssignment` and `Case` later if needed.
+
+Implemented policy:
+
+- Manual EFT reconciliation actions use `RECONCILE_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER']` with `excludedRole: ['TRUST']` in `app/(admin)/admin/provider-credit-payments/actions.ts`.
+- Wallet management actions use `MANAGE_WALLET_ROLES = ['OPS']`, which acts as an all-admin floor under the current hierarchy model.
+- Lead unlock dispute actions use `DISPUTE_ROLES = ['OPS', 'FINANCE', 'TRUST', 'ADMIN', 'OWNER']`.
+- `crudAction()` remains the atomic audit wrapper for admin wallet/payment/dispute mutations and writes both `AuditLog` and `AdminAuditEvent`.
 
 ---
 
@@ -286,15 +301,23 @@ Outbound audit:
 - all wallet/top-up/unlock messages should create `MessageEvent` rows through existing helpers.
 - use `metadata` for `providerId`, `walletPaymentIntentId`, `walletLedgerEntryId`, `leadId`, `unlockId`, and `amount`.
 
-Recommendation:
+Original recommendation:
 
 - Emit WhatsApp notifications after DB transactions commit.
 - Notification failure must not roll back wallet credit/debit state.
 - Use free-form interactive messages only inside the 24-hour window; otherwise add templates later if production delivery requires them.
 
+Implemented policy:
+
+- Wallet and lead lifecycle notifications use registered template sends through `sendTemplate()` in `lib/provider-wallet-notifications.ts`.
+- Template inventory lives in `lib/messaging-templates.ts` with provider wallet and lead unlock templates.
+- Notification delivery remains post-commit/fire-and-forget and idempotent through `MessageEvent.metadata.idempotencyKey`.
+
 ---
 
 ## 7. Proposed Data Model
+
+> Superseded proposal. This section records the original design sketch and does not match the final Prisma schema. Use section 21 and `docs/superpowers/specs/2026-04-29-provider-credit-wallet-paid-lead-unlock-implementation-snapshot.md` for implementation-grade model names, fields, enum values, and constraints.
 
 ### ProviderWallet
 
@@ -502,6 +525,8 @@ Statuses:
 
 ## 8. Service Layer Map
 
+> Superseded proposal. Final service names differ from this section. Current core files are `lib/provider-wallet.ts`, `lib/provider-credit-payment-intents.ts`, `lib/provider-credit-reconciliation.ts`, `lib/lead-unlocks.ts`, `lib/lead-unlock-disputes.ts`, `lib/provider-promo-awards.ts`, `lib/provider-wallet-notifications.ts`, `lib/provider-lead-detail.ts`, and `lib/provider-lead-access.ts`.
+
 New service files:
 
 - `lib/provider-wallet.ts`
@@ -533,6 +558,8 @@ All wallet writes must go through service functions. Do not mutate wallet balanc
 ---
 
 ## 9. Files That Need to Change
+
+> Superseded proposal. This section is retained as planning history. Current route paths use `/provider/credits`, `/provider/leads/[leadId]`, `/leads/access/[token]`, `/admin/provider-wallets`, `/admin/provider-credit-payments`, and `/admin/lead-unlock-disputes`.
 
 ### Schema and migrations
 
@@ -600,6 +627,8 @@ Do not add public wallet mutation APIs unless needed.
 ---
 
 ## 10. PR-Sized Implementation Sequence
+
+> Superseded proposal. The implementation was delivered as an integrated pilot with later hardening passes. See the implementation plan and snapshot linked at the top of this file for current state.
 
 ### PR 1 — Wallet ledger foundations
 
@@ -790,7 +819,7 @@ npm run build
 
 ## 13. OpenBrain Logging Payload
 
-Suggested OpenBrain entry after this analysis is accepted:
+Historical OpenBrain entry from the original analysis, retained only to show what was logged during planning. Do not run this entry for the shipped implementation; use the current payload below.
 
 ```bash
 cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle\ Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
@@ -799,7 +828,19 @@ pnpm brain -- knowledge add \
   --domain "engineering" \
   --title "implementation map — provider credit wallet and paid lead unlock (2026-04-29)" \
   --tags "wallet,ledger,provider,lead-unlock,payments,whatsapp,admin" \
-  --content "Analysed field-service app for provider credit wallet and paid lead unlock. Source of truth: Provider.id + Provider.userId/phone for identity, lib/matching/service.ts for lead assignment, Lead/AssignmentHold/MatchAttempt/Match for matching state, Provider.kycStatus for KYC, MessageEvent via whatsapp helpers for notifications. Existing Payment is booking/customer-payment oriented and must not be reused for provider wallet. Recommended ledger-first wallet with ProviderWallet, ProviderWalletLedgerEntry, ProviderWalletPaymentIntent, LeadUnlock, ProviderPromoCreditAward. Implementation sequence: wallet ledger, EFT intents, admin reconciliation, lead unlock charging, promo credits, refunds/disputes, WhatsApp notifications, provider/admin UI."
+  --content "Historical planning payload superseded by the implementation snapshot entry below."
+```
+
+Current post-implementation OpenBrain entry should use the shipped model and service names:
+
+```bash
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle\ Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
+pnpm brain -- knowledge add \
+  --project "Plug A Pro" \
+  --domain "engineering" \
+  --title "implementation snapshot - provider credit wallet and paid lead unlock (2026-04-29)" \
+  --tags "wallet,ledger,provider,lead-unlock,payments,whatsapp,admin,docs" \
+  --content "Shipped provider credit wallet pilot uses ProviderWallet, WalletLedgerEntry, PaymentIntent, LeadUnlock, LeadUnlockDispute, and ProviderPromoAward. Wallet mutations are centralized in lib/provider-wallet.ts. Manual EFT top-ups use lib/provider-credit-payment-intents.ts and lib/provider-credit-reconciliation.ts, with admin actions under /admin/provider-credit-payments. Provider wallet admin lives under /admin/provider-wallets. Provider lead previews are query-gated through lib/provider-lead-detail.ts and lib/provider-lead-access.ts. WhatsApp wallet and lead notifications use registered provider templates through sendTemplate and MessageEvent idempotency metadata."
 ```
 
 ---
@@ -963,7 +1004,8 @@ Pre-unlock provider preview includes service category, suburb/city, preferred ti
   - payment credited receipt
   - provider lead unlock confirmation
   - customer intro after provider unlock
-- Notification delivery uses the existing WhatsApp interactive sender and records `MessageEvent` rows directly.
+- Notification delivery uses registered WhatsApp templates through `sendTemplate()` and records `MessageEvent` rows directly.
+- Provider wallet and lead unlock templates are registered in `lib/messaging-templates.ts`.
 - Core wallet and lead transactions do not depend on WhatsApp delivery success.
 
 ### Hook Points
@@ -974,7 +1016,7 @@ Pre-unlock provider preview includes service category, suburb/city, preferred ti
   - `lead_unlock:provider_confirmation`
   - `lead_unlock:customer_intro`
   - `wallet:low_balance` when the post-unlock balance is 1 credit
-- Provider wallet summary balance checks trigger `wallet:low_balance` when total available credits are 1.
+- Lead unlock post-commit hooks trigger `wallet:low_balance` when total available credits are 1. Provider wallet summary reads do not send WhatsApp messages.
 - Lead dispatch triggers `wallet:zero_balance_lead_available` when a matched lead is created for a provider with 0 credits.
 
 ### Idempotency and Failure Handling
@@ -983,12 +1025,14 @@ Pre-unlock provider preview includes service category, suburb/city, preferred ti
 - Delivery checks for existing `SENT`, `DELIVERED`, or `READ` messages with the same `templateName`, `to`, and `metadata.idempotencyKey`.
 - Send failures are logged as `FAILED` `MessageEvent` rows and do not throw back into wallet ledger, payment reconciliation, dispatch, or unlock transactions.
 - Payment credited and top-up actions may be retried safely because the notification layer dedupes already-sent messages.
+- Dispatch CTA/action sends now preflight successful `MessageEvent` rows by recipient, template, and `jobRequestId` to avoid duplicate provider messages on redispatch.
 
 ### Data Safety
 
 - Lead preview dispatch still uses preview-safe job details.
 - Full customer contact and address are included only in the post-unlock provider confirmation.
 - Customer intro includes provider name only and does not expose provider wallet or internal payment details.
+- Payment proof uploads use private Vercel Blob storage and admin access is proxied through an authenticated proof route.
 
 ### Verification
 
@@ -1074,6 +1118,24 @@ Ops can inspect and manage provider wallets at:
 
 Admin adjustments require a reason and confirmation. Positive and negative adjustments create `ADMIN_ADJUSTMENT` ledger entries; negative adjustments cannot make paid or promo balances negative. Suspension and reactivation are audited through the existing `crudAction` path.
 
+Current status changes also write zero-credit wallet ledger rows:
+
+- `WALLET_SUSPENDED`
+- `WALLET_REACTIVATED`
+
+These rows preserve the provider-scoped wallet timeline without changing balances. They include the reason and admin actor in ledger metadata.
+
+Manual EFT reconciliation uses `RECONCILE_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER']` with `TRUST` explicitly excluded through `crudAction.excludedRole`. This preserves the existing hierarchy model while preventing Trust & Safety admins from crediting or failing provider EFT intents.
+
+### Provider Lead Preview Safety
+
+Provider lead preview data is safe by default:
+
+- `lib/provider-lead-detail.ts` uses a two-stage query for authenticated PWA lead details.
+- `lib/provider-lead-access.ts` uses the same two-stage model for signed WhatsApp token links.
+- Locked leads return only preview-safe fields, suburb/city, empty attachments, `customer: null`, and a truncated description.
+- Customer name, customer phone, exact address fields, and attachments are fetched only after a `LeadUnlock` exists.
+
 ### Known Limitations
 
 - Credit pricing is fixed in code and not yet category-, suburb-, urgency-, or demand-based.
@@ -1081,8 +1143,8 @@ Admin adjustments require a reason and confirmation. Positive and negative adjus
 - Manual EFT reconciliation is human-operated; bank statement ingestion and matching are not automated.
 - Payment references can still be mistyped by providers and require admin review.
 - Promo expiry exists as a ledger type but does not yet have a scheduled expiry job.
-- Wallet suspension blocks new debits but does not yet trigger provider WhatsApp or in-app notifications.
-- Typecheck remains affected by older unrelated Vitest global and fixture typing issues outside the wallet implementation.
+- Wallet suspension blocks new debits and is recorded in wallet ledger status rows, but does not yet trigger provider WhatsApp or in-app notifications.
+- TypeScript passes with `npx tsc --noEmit --pretty false` as of the final hardening pass.
 
 ### Future Enhancements
 
@@ -1110,12 +1172,12 @@ Final pilot hardening added regression coverage across the provider credit walle
 
 ### Security and Reliability Checks Covered
 
-- Provider lead preview remains customer-data safe before unlock through `lib/provider-lead-detail.ts`.
+- Provider lead preview remains customer-data safe before unlock through `lib/provider-lead-detail.ts` and `lib/provider-lead-access.ts`.
 - Provider wallet reads and top-up intents continue to resolve provider identity server-side from the authenticated provider context.
 - Duplicate lead unlock attempts do not double charge.
 - Duplicate payment crediting remains blocked by `PaymentIntent.status` and `creditedAt` guards.
 - Wallet negative-balance attempts remain blocked by optimistic `ProviderWallet.updateMany` predicates.
-- Wallet mutations for top-ups, lead unlocks, refunds, promo awards, and admin adjustments run inside Prisma transactions.
+- Wallet mutations for top-ups, lead unlocks, refunds, promo awards, admin adjustments, suspension, and reactivation run inside Prisma transactions.
 - WhatsApp delivery failures are caught after committed wallet/payment/unlock operations and do not corrupt ledger state.
 
 ### Verification Status
@@ -1132,7 +1194,7 @@ git diff --check
 
 Results:
 
-- Vitest: 86 passed, 1 skipped; 711 passed tests, 4 todo.
+- Vitest: 90 passed, 1 skipped; 757 passed tests, 4 todo.
 - ESLint: passed with the existing React Hook Form compiler warning in `components/admin/crud/form.tsx`.
 - TypeScript: passed.
 - Prisma schema validation: passed.
@@ -1142,5 +1204,5 @@ Results:
 
 - The integration test explicitly documents the product rule that promo credits are consumed before paid credits. A paid-credit lead debit only happens after promo credits are exhausted.
 - Manual EFT reconciliation remains human-operated; automated bank matching remains a future enhancement.
-- Wallet suspension blocks lead unlock debits but does not yet emit a provider notification.
+- Wallet suspension blocks lead unlock debits and writes a wallet status ledger row, but does not yet emit a provider notification.
 - The wallet ledger is append-only by service convention and schema usage, but there is not yet a dedicated database trigger preventing direct row edits by privileged database users.

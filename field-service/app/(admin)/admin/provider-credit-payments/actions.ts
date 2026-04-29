@@ -12,9 +12,11 @@ import {
   creditPaymentIntentInTransaction,
   reconcilePaymentIntentInTransaction,
 } from '@/lib/provider-credit-reconciliation'
+import { ProviderWalletError } from '@/lib/provider-wallet'
 
 const FLAG = 'admin.crud.payments'
 const RECONCILE_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
+const RECONCILE_EXCLUDED_ROLES = ['TRUST'] as const
 
 const ReconcileTopUpSchema = z.object({
   paymentIntentId: z.string().min(1),
@@ -63,6 +65,9 @@ function toActionConflict(error: unknown): never {
     }
     throw new CrudActionError('CONFLICT', error.message)
   }
+  if (error instanceof ProviderWalletError) {
+    throw new CrudActionError('CONFLICT', error.message)
+  }
   throw error
 }
 
@@ -77,6 +82,7 @@ export async function reconcileTopUpIntentAction(input: ReconcileTopUpInput) {
     entityId: input.paymentIntentId,
     action: 'provider_credit_payment_intent.reconcile',
     requiredRole: [...RECONCILE_ROLES],
+    excludedRole: [...RECONCILE_EXCLUDED_ROLES],
     requiredFlag: FLAG,
     schema: ReconcileTopUpSchema,
     input,
@@ -117,6 +123,7 @@ export async function creditTopUpIntentAction(input: CreditTopUpInput) {
     entityId: input.paymentIntentId,
     action: 'provider_credit_payment_intent.credit_wallet',
     requiredRole: [...RECONCILE_ROLES],
+    excludedRole: [...RECONCILE_EXCLUDED_ROLES],
     requiredFlag: FLAG,
     schema: CreditTopUpSchema,
     input,
@@ -154,6 +161,7 @@ export async function creditTopUpIntentAction(input: CreditTopUpInput) {
 }
 
 export async function failTopUpIntentAction(input: FailTopUpInput) {
+  await requireAdmin()
   const before = await db.paymentIntent.findUnique({
     where: { id: input.paymentIntentId },
   })
@@ -163,6 +171,7 @@ export async function failTopUpIntentAction(input: FailTopUpInput) {
     entityId: input.paymentIntentId,
     action: 'provider_credit_payment_intent.mark_failed',
     requiredRole: [...RECONCILE_ROLES],
+    excludedRole: [...RECONCILE_EXCLUDED_ROLES],
     requiredFlag: FLAG,
     schema: FailTopUpSchema,
     input,
@@ -195,6 +204,7 @@ export async function failTopUpIntentAction(input: FailTopUpInput) {
 }
 
 export async function addTopUpIntentNoteAction(input: AddNoteInput) {
+  await requireAdmin()
   const before = await db.paymentIntent.findUnique({
     where: { id: input.paymentIntentId },
   })
@@ -204,6 +214,7 @@ export async function addTopUpIntentNoteAction(input: AddNoteInput) {
     entityId: input.paymentIntentId,
     action: 'provider_credit_payment_intent.add_note',
     requiredRole: [...RECONCILE_ROLES],
+    excludedRole: [...RECONCILE_EXCLUDED_ROLES],
     requiredFlag: FLAG,
     schema: AddNoteSchema,
     input,

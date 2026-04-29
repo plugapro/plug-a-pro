@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from './db'
+import { previewNotes } from './provider-lead-detail'
 
 const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
 
@@ -130,14 +131,31 @@ export async function resolveProviderLeadAccessToken(token: string) {
 
   const lead = await db.lead.findUnique({
     where: { id: verified.payload.leadId },
-    include: {
+    select: {
+      id: true,
+      providerId: true,
+      jobRequestId: true,
+      status: true,
+      sentAt: true,
+      expiresAt: true,
       provider: { select: { id: true, name: true, phone: true } },
       unlock: true,
       jobRequest: {
-        include: {
-          customer: { select: { id: true, name: true, phone: true } },
-          address: true,
-          attachments: { orderBy: { createdAt: 'asc' } },
+        select: {
+          id: true,
+          category: true,
+          title: true,
+          description: true,
+          requestedWindowStart: true,
+          requestedWindowEnd: true,
+          requestedArrivalLatest: true,
+          customerAcceptedAmount: true,
+          address: {
+            select: {
+              suburb: true,
+              city: true,
+            },
+          },
           match: {
             select: {
               id: true,
@@ -161,7 +179,58 @@ export async function resolveProviderLeadAccessToken(token: string) {
     return { status: 'invalid' as const, lead: null, payload: verified.payload }
   }
 
-  return { status: 'active' as const, lead, payload: verified.payload }
+  const scopedLead = {
+    ...lead,
+    jobRequest: {
+      ...lead.jobRequest,
+      description: lead.unlock
+        ? lead.jobRequest.description
+        : previewNotes(lead.jobRequest.description) ?? '',
+      customer: null as { id: string; name: string; phone: string } | null,
+      attachments: [] as Array<{ id: string; caption: string | null; label: string | null }>,
+    },
+  }
+
+  if (lead.unlock) {
+    const sensitiveLead = await db.lead.findUnique({
+      where: { id: lead.id },
+      select: {
+        jobRequest: {
+          select: {
+            customer: { select: { id: true, name: true, phone: true } },
+            address: {
+              select: {
+                street: true,
+                addressLine1: true,
+                addressLine2: true,
+                complexName: true,
+                unitNumber: true,
+                suburb: true,
+                city: true,
+                province: true,
+              },
+            },
+            attachments: {
+              orderBy: { createdAt: 'asc' },
+              select: {
+                id: true,
+                caption: true,
+                label: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    if (sensitiveLead) {
+      scopedLead.jobRequest.customer = sensitiveLead.jobRequest.customer
+      scopedLead.jobRequest.address = sensitiveLead.jobRequest.address
+      scopedLead.jobRequest.attachments = sensitiveLead.jobRequest.attachments
+    }
+  }
+
+  return { status: 'active' as const, lead: scopedLead, payload: verified.payload }
 }
 
 export async function resolveProviderLeadAttachmentScope(token: string) {

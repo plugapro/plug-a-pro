@@ -50,6 +50,11 @@ vi.mock('../../lib/provider-wallet-notifications', () => ({
 describe('provider credit payment intents', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug-A-Pro Credits')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_BANK_NAME', 'Test Bank')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER', '123456789')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_BRANCH_CODE', '250655')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_TYPE', 'Business current account')
     vi.stubEnv('PROVIDER_CREDIT_EFT_INTENT_EXPIRY_DAYS', '7')
 
     state.provider = { id: 'provider-1', phone: '+27821234567' }
@@ -167,5 +172,20 @@ describe('provider credit payment intents', () => {
     expect(mockDb.providerWallet.update).not.toHaveBeenCalled()
     expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
     expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+  })
+
+  it('fails before creating an intent when manual EFT bank config is missing', async () => {
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER', '')
+
+    await expect(
+      createManualEftTopUpIntent({
+        providerId: 'provider-1',
+        amountCents: 20_000,
+        referenceGenerator: () => 'PAP-3333-DCBA',
+      }),
+    ).rejects.toThrow('Missing required manual EFT bank account configuration')
+
+    expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
+    expect(state.intents).toHaveLength(0)
   })
 })

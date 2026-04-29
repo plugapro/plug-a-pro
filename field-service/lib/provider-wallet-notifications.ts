@@ -1,11 +1,17 @@
 import type { MessageStatus } from '@prisma/client'
 import { db } from './db'
+import type { TemplateName } from './messaging-templates'
+import { getManualEftBankAccountInstructions } from './provider-credit-payment-intents'
+import { sendTemplate } from './whatsapp'
+import type { WhatsAppComponent } from './whatsapp'
 
 const SENT_OR_BETTER: MessageStatus[] = ['SENT', 'DELIVERED', 'READ']
 
 type NotificationPayload = {
   to: string
   templateName: string
+  whatsappTemplate: TemplateName
+  templateParameters: string[]
   body: string
   idempotencyKey: string
   metadata: Record<string, unknown>
@@ -148,6 +154,19 @@ export function buildCustomerIntroMessage(params: {
   return `Good news — we matched you with ${params.providerName}. They may contact you shortly.`
 }
 
+function templateBodyComponents(parameters: string[]): WhatsAppComponent[] {
+  return [
+    {
+      type: 'body',
+      parameters: parameters.map((text) => ({ type: 'text', text })),
+    },
+  ]
+}
+
+function noExtraNotes(description?: string | null) {
+  return description?.trim() || 'No extra notes'
+}
+
 async function hasSentNotification(payload: NotificationPayload) {
   const existing = await db.messageEvent.findFirst({
     where: {
@@ -189,8 +208,11 @@ async function sendNotification(payload: NotificationPayload) {
   if (await hasSentNotification(payload)) return { sent: false, skipped: 'duplicate' as const }
 
   try {
-    const { sendText } = await import('./whatsapp-interactive')
-    const externalId = await sendText(payload.to, payload.body)
+    const externalId = await sendTemplate({
+      to: payload.to,
+      template: payload.whatsappTemplate,
+      components: templateBodyComponents(payload.templateParameters),
+    })
 
     await db.messageEvent.create({
       data: {
@@ -243,6 +265,8 @@ export async function notifyProviderLowBalance(providerId: string, sourceId?: st
   await sendNotification({
     to: provider.phone,
     templateName: 'wallet:low_balance',
+    whatsappTemplate: 'wallet_low_balance',
+    templateParameters: ['1', 'R100', '5'],
     body: buildLowBalanceWarningMessage(),
     idempotencyKey: `wallet:low_balance:${provider.id}:${balanceVersion}`,
     metadata: {
@@ -272,6 +296,8 @@ export async function notifyProviderZeroBalanceLeadAvailable(params: {
   await sendNotification({
     to: provider.phone,
     templateName: 'wallet:zero_balance_lead_available',
+    whatsappTemplate: 'wallet_zero_balance_lead',
+    templateParameters: ['0', 'R100'],
     body: buildZeroBalanceLeadAvailableMessage(),
     idempotencyKey: `wallet:zero_balance_lead_available:${params.leadId}`,
     metadata: {
@@ -292,19 +318,25 @@ export async function notifyProviderPaymentIntentCreated(paymentIntentId: string
 
   if (!intent?.provider.phone) return
 
-  const bankAccount = {
-    accountName: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_NAME ?? 'Plug-A-Pro Credits',
-    bankName: process.env.PROVIDER_CREDIT_EFT_BANK_NAME ?? 'Configure bank name',
-    accountNumber: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER ?? 'Configure account number',
-    branchCode: process.env.PROVIDER_CREDIT_EFT_BRANCH_CODE ?? 'Configure branch code',
-    accountType: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_TYPE ?? 'Business current account',
-  }
+  const bankAccount = getManualEftBankAccountInstructions()
+  const amountFormatted = formatZarFromCents(intent.amountCents)
 
   await sendNotification({
     to: intent.providerCellphone ?? intent.provider.phone,
     templateName: 'wallet:payment_intent_created',
+    whatsappTemplate: 'wallet_payment_intent_created',
+    templateParameters: [
+      amountFormatted,
+      String(intent.creditsToIssue),
+      bankAccount.accountName,
+      bankAccount.bankName,
+      bankAccount.accountNumber,
+      bankAccount.branchCode,
+      bankAccount.accountType,
+      intent.paymentReference,
+    ],
     body: buildPaymentIntentCreatedMessage({
-      amountFormatted: formatZarFromCents(intent.amountCents),
+      amountFormatted,
       creditsToIssue: intent.creditsToIssue,
       paymentReference: intent.paymentReference,
       bankAccount,
@@ -331,6 +363,8 @@ export async function notifyProviderPaymentCredited(paymentIntentId: string) {
   await sendNotification({
     to: intent.provider.phone,
     templateName: 'wallet:payment_credited',
+    whatsappTemplate: 'wallet_payment_credited',
+    templateParameters: [String(intent.creditsToIssue)],
     body: buildPaymentCreditedMessage(intent.creditsToIssue),
     idempotencyKey: `wallet:payment_credited:${intent.id}`,
     metadata: {
@@ -389,6 +423,15 @@ export async function notifyLeadUnlocked(unlockId: string) {
     sendNotification({
       to: context.providerPhone,
       templateName: 'lead_unlock:provider_confirmation',
+      whatsappTemplate: 'lead_unlock_provider',
+      templateParameters: [
+        context.category,
+        context.customerName,
+        context.customerPhone,
+        context.fullAddress,
+        context.preferredWindow,
+        noExtraNotes(context.description),
+      ],
       body: buildLeadUnlockedProviderMessage(context),
       idempotencyKey: `lead_unlock:provider_confirmation:${context.unlockId}`,
       metadata: {
@@ -402,6 +445,8 @@ export async function notifyLeadUnlocked(unlockId: string) {
       to: context.customerPhone,
       customerId: context.customerId,
       templateName: 'lead_unlock:customer_intro',
+      whatsappTemplate: 'lead_unlock_customer_intro',
+      templateParameters: [context.providerName],
       body: buildCustomerIntroMessage({ providerName: context.providerName }),
       idempotencyKey: `lead_unlock:customer_intro:${context.unlockId}`,
       metadata: {

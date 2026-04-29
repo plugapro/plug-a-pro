@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
+import { getProviderWalletLedgerEntries } from '@/lib/provider-wallet'
 import {
   addTopUpIntentNoteFormAction,
   creditTopUpIntentFormAction,
@@ -103,18 +104,18 @@ export default async function ProviderCreditPaymentDetailPage({
 
   if (!intent) notFound()
 
-  const ledgerEntries = await db.walletLedgerEntry.findMany({
-    where: {
-      referenceType: 'payment_intent',
-      referenceId: intent.id,
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 10,
+  const ledgerEntries = await getProviderWalletLedgerEntries(intent.providerId, {
+    referenceType: 'payment_intent',
+    referenceId: intent.id,
+    limit: 10,
   })
 
   const canMatch = ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'].includes(intent.status)
   const canCredit = ['PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'].includes(intent.status)
   const canFail = intent.status !== 'CREDITED'
+  const proofDownloadHref = intent.proofOfPaymentUrl
+    ? `/api/admin/provider-credit-payments/${intent.id}/proof`
+    : null
 
   return (
     <div className="space-y-6">
@@ -176,9 +177,9 @@ export default async function ProviderCreditPaymentDetailPage({
               <div>
                 <dt className="text-muted-foreground">Proof of payment</dt>
                 <dd>
-                  {intent.proofOfPaymentUrl ? (
+                  {proofDownloadHref ? (
                     <a
-                      href={intent.proofOfPaymentUrl}
+                      href={proofDownloadHref}
                       className="text-primary underline-offset-4 hover:underline"
                       target="_blank"
                       rel="noreferrer"

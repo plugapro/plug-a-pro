@@ -43,12 +43,20 @@ export type ProviderWalletBalance = {
   status: ProviderWallet['status']
 }
 
+export type ProviderWalletLedgerEntryOptions = {
+  limit?: number
+  cursor?: string
+  referenceType?: string
+  referenceId?: string
+}
+
 export type WalletMutationResult = {
   wallet: ProviderWallet
   ledgerEntries: WalletLedgerEntry[]
 }
 
 type WalletTx = Prisma.TransactionClient
+type WalletLedgerEntryType = WalletLedgerEntry['entryType'] | 'WALLET_SUSPENDED' | 'WALLET_REACTIVATED'
 
 function assertPositiveIntegerCredits(amountCredits: number) {
   if (!Number.isInteger(amountCredits) || amountCredits <= 0) {
@@ -115,7 +123,7 @@ async function createLedgerEntry(
   params: {
     walletId: string
     providerId: string
-    entryType: WalletLedgerEntry['entryType']
+    entryType: WalletLedgerEntryType
     creditType: WalletCreditType
     amountCredits: number
     balanceAfterPaidCredits: number
@@ -127,7 +135,7 @@ async function createLedgerEntry(
     data: {
       walletId: params.walletId,
       providerId: params.providerId,
-      entryType: params.entryType,
+      entryType: params.entryType as WalletLedgerEntry['entryType'],
       creditType: params.creditType,
       amountCredits: params.amountCredits,
       balanceAfterPaidCredits: params.balanceAfterPaidCredits,
@@ -308,6 +316,25 @@ export async function getProviderWalletBalance(
 ): Promise<ProviderWalletBalance> {
   const wallet = await getOrCreateProviderWallet(providerId)
   return toBalance(wallet)
+}
+
+export async function getProviderWalletLedgerEntries(
+  providerId: string,
+  options: ProviderWalletLedgerEntryOptions = {},
+): Promise<WalletLedgerEntry[]> {
+  const limit = Math.min(Math.max(options.limit ?? 20, 1), 100)
+  const where: Prisma.WalletLedgerEntryWhereInput = {
+    providerId,
+    ...(options.referenceType ? { referenceType: options.referenceType } : {}),
+    ...(options.referenceId ? { referenceId: options.referenceId } : {}),
+  }
+
+  return db.walletLedgerEntry.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
+  })
 }
 
 export async function creditPaidCredits(
@@ -517,13 +544,34 @@ export async function suspendProviderWalletInTransaction(
   adminUserId: string,
 ) {
   assertAdminReason(reason)
-  void adminUserId
   const wallet = await getOrCreateProviderWalletInTx(tx, providerId)
 
-  return tx.providerWallet.update({
+  const updatedWallet = await tx.providerWallet.update({
     where: { id: wallet.id },
     data: { status: 'SUSPENDED' },
   })
+
+  await createLedgerEntry(tx, {
+    walletId: updatedWallet.id,
+    providerId,
+    entryType: 'WALLET_SUSPENDED',
+    creditType: 'PROMO',
+    amountCredits: 0,
+    balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
+    balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
+    reference: {
+      referenceType: 'wallet_status',
+      referenceId: updatedWallet.id,
+      description: `Wallet suspended: ${reason.trim()}`,
+      metadata: {
+        reason: reason.trim(),
+        suspendedBy: adminUserId,
+      },
+      createdBy: adminUserId,
+    },
+  })
+
+  return updatedWallet
 }
 
 export async function suspendProviderWallet(
@@ -543,13 +591,34 @@ export async function reactivateProviderWalletInTransaction(
   adminUserId: string,
 ) {
   assertAdminReason(reason)
-  void adminUserId
   const wallet = await getOrCreateProviderWalletInTx(tx, providerId)
 
-  return tx.providerWallet.update({
+  const updatedWallet = await tx.providerWallet.update({
     where: { id: wallet.id },
     data: { status: 'ACTIVE' },
   })
+
+  await createLedgerEntry(tx, {
+    walletId: updatedWallet.id,
+    providerId,
+    entryType: 'WALLET_REACTIVATED',
+    creditType: 'PROMO',
+    amountCredits: 0,
+    balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
+    balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
+    reference: {
+      referenceType: 'wallet_status',
+      referenceId: updatedWallet.id,
+      description: `Wallet reactivated: ${reason.trim()}`,
+      metadata: {
+        reason: reason.trim(),
+        reactivatedBy: adminUserId,
+      },
+      createdBy: adminUserId,
+    },
+  })
+
+  return updatedWallet
 }
 
 export async function reactivateProviderWallet(

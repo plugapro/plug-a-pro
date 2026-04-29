@@ -49,3 +49,31 @@ export async function hasSuccessfulMessageForBooking(params: {
 
   return Boolean(existing)
 }
+
+export async function hasSuccessfulMessageForRecipient(params: {
+  to: string
+  templateName: string
+  metadataPath?: string[]
+  metadataEquals?: string
+  since?: Date
+}) {
+  const existing = await db.messageEvent.findFirst({
+    where: {
+      to: params.to,
+      templateName: params.templateName,
+      status: { in: SENT_OR_BETTER },
+      ...(params.since ? { createdAt: { gte: params.since } } : {}),
+      ...(params.metadataPath && params.metadataEquals
+        ? {
+            metadata: {
+              path: params.metadataPath,
+              equals: params.metadataEquals,
+            },
+          }
+        : {}),
+    },
+    select: { id: true },
+  })
+
+  return Boolean(existing)
+}

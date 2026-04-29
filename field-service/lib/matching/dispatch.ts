@@ -4,6 +4,7 @@
 // remains active and the provider can still be notified by retry.
 
 import { db } from '@/lib/db'
+import { hasSuccessfulMessageForRecipient } from '@/lib/message-events'
 import { getProviderLeadAccessUrl } from '@/lib/provider-lead-access'
 import { notifyProviderZeroBalanceLeadAvailable } from '@/lib/provider-wallet-notifications'
 import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
@@ -47,7 +48,7 @@ export async function dispatchMatchLead(params: {
   const titleLine = jobRequest.title ? `*${jobRequest.title}*\n` : ''
   const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
   const actionsBody = `Quick response for *${category}* in *${suburb}*.`
-  const msgMeta = { jobRequestId: jobRequest.id, holdId: hold.id, providerId: provider.id }
+  const msgMeta = { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: provider.id }
   const leadUrl = await getProviderLeadAccessUrl({
     leadId: lead.id,
     providerId: provider.id,
@@ -67,9 +68,22 @@ export async function dispatchMatchLead(params: {
     })
   })
 
+  const ctaAlreadySent = await hasSuccessfulMessageForRecipient({
+    to: provider.phone,
+    templateName: 'dispatch:job_lead',
+    metadataPath: ['jobRequestId'],
+    metadataEquals: jobRequest.id,
+  })
+  const actionsAlreadySent = await hasSuccessfulMessageForRecipient({
+    to: provider.phone,
+    templateName: 'dispatch:job_lead_actions',
+    metadataPath: ['jobRequestId'],
+    metadataEquals: jobRequest.id,
+  })
+
   if (!leadUrl) {
     console.error('[dispatch] Missing provider lead URL — hold still active', msgMeta)
-    await db.messageEvent.create({
+    if (!ctaAlreadySent) await db.messageEvent.create({
       data: {
         channel: 'WHATSAPP',
         direction: 'OUTBOUND',
@@ -82,7 +96,7 @@ export async function dispatchMatchLead(params: {
         metadata: msgMeta as object,
       },
     }).catch(() => {})
-  } else {
+  } else if (!ctaAlreadySent) {
     await sendCtaUrl(
       provider.phone,
       body,
@@ -112,6 +126,8 @@ export async function dispatchMatchLead(params: {
       }).catch(() => {})
     })
   }
+
+  if (actionsAlreadySent) return
 
   await sendButtons(
     provider.phone,

@@ -16,6 +16,7 @@ import {
 } from '@/lib/provider-wallet'
 
 const MANAGE_WALLET_ROLES = ['OPS'] as const
+const MANAGE_WALLET_EXCLUDED_ROLES = ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'] as const
 
 const AdjustProviderCreditsSchema = z.object({
   providerId: z.string().min(1),
@@ -74,6 +75,7 @@ export async function adjustProviderCreditsAction(input: AdjustProviderCreditsIn
     entityId: before?.id ?? input.providerId,
     action: 'provider_wallet.admin_adjustment',
     requiredRole: [...MANAGE_WALLET_ROLES],
+    excludedRole: [...MANAGE_WALLET_EXCLUDED_ROLES],
     schema: AdjustProviderCreditsSchema,
     input,
     before: before ?? undefined,
@@ -117,6 +119,7 @@ export async function suspendProviderWalletAction(input: WalletStatusInput) {
     entityId: before?.id ?? input.providerId,
     action: 'provider_wallet.suspend',
     requiredRole: [...MANAGE_WALLET_ROLES],
+    excludedRole: [...MANAGE_WALLET_EXCLUDED_ROLES],
     schema: WalletStatusSchema,
     input,
     before: before ?? undefined,
@@ -152,6 +155,7 @@ export async function reactivateProviderWalletAction(input: WalletStatusInput) {
     entityId: before?.id ?? input.providerId,
     action: 'provider_wallet.reactivate',
     requiredRole: [...MANAGE_WALLET_ROLES],
+    excludedRole: [...MANAGE_WALLET_EXCLUDED_ROLES],
     schema: WalletStatusSchema,
     input,
     before: before ?? undefined,

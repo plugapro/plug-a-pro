@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { CrudActionError, crudAction } from '../../lib/crud-action'
+import { CrudActionError, crudAction, meetsRoleRequirement } from '../../lib/crud-action'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +60,18 @@ beforeEach(() => {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('crudAction', () => {
+  describe('role requirements', () => {
+    it('supports explicit role exclusions on top of hierarchy checks', () => {
+      const reconcileRoles = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
+
+      expect(meetsRoleRequirement('TRUST', [...reconcileRoles])).toBe(true)
+      expect(meetsRoleRequirement('TRUST', [...reconcileRoles], ['TRUST'])).toBe(false)
+      expect(meetsRoleRequirement('TRUST', ['ADMIN', 'OWNER'])).toBe(false)
+      expect(meetsRoleRequirement('OPS', ['ADMIN', 'OWNER'])).toBe(false)
+      expect(meetsRoleRequirement('FINANCE', [...reconcileRoles], ['TRUST'])).toBe(true)
+    })
+  })
+
   describe('unauthenticated', () => {
     it('throws UNAUTHENTICATED when session is null', async () => {
       mockGetSession.mockResolvedValue(null)
@@ -91,6 +103,24 @@ describe('crudAction', () => {
       mockAdminUserFindUnique.mockResolvedValue(ADMIN_ADMIN_USER)
       const result = await crudAction({ ...baseOpts, requiredRole: ['ADMIN'] })
       expect(result.ok).toBe(true)
+    })
+
+    it('throws UNAUTHORIZED when actor is explicitly excluded', async () => {
+      mockGetSession.mockResolvedValue(ADMIN_SESSION)
+      mockAdminUserFindUnique.mockResolvedValue({
+        id: 'admin-user-cuid-trust',
+        role: 'TRUST',
+        active: true,
+      } as any)
+      await expect(
+        crudAction({
+          ...baseOpts,
+          requiredRole: ['OPS', 'FINANCE', 'ADMIN', 'OWNER'],
+          excludedRole: ['TRUST'],
+        }),
+      ).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+      })
     })
 
     it('rejects legacy admin metadata when no AdminUser row exists', async () => {

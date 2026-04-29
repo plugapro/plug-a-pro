@@ -4,6 +4,8 @@ import { creditPaidCreditsInTransaction } from './provider-wallet'
 import { awardFirstTopUpPromoCreditsInTransaction } from './provider-promo-awards'
 
 const CREDITABLE_STATUSES = ['PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'] as const
+// CREATED is reserved for future gateway-initiated intents. Manual EFT intents
+// currently start at PENDING_PAYMENT.
 const MATCHABLE_STATUSES = ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'] as const
 
 type ReconciliationErrorCode =
@@ -82,6 +84,13 @@ function assertCreditableStatus(intent: PaymentIntent) {
     throw new ProviderCreditReconciliationError(
       'INVALID_STATUS',
       `Cannot credit a ${intent.status.toLowerCase()} payment intent.`,
+    )
+  }
+
+  if (intent.expiresAt && intent.expiresAt.getTime() < Date.now()) {
+    throw new ProviderCreditReconciliationError(
+      'INVALID_STATUS',
+      'This payment intent has expired.',
     )
   }
 }
@@ -171,19 +180,9 @@ export async function creditPaymentIntent(
   adminUserId: string,
   options: CreditPaymentIntentOptions = {},
 ) {
-  const result = await db.$transaction(async (tx) => (
+  return db.$transaction(async (tx) => (
     creditPaymentIntentInTransaction(tx, paymentIntentId, adminUserId, options)
   ))
-
-  const { notifyProviderPaymentCredited } = await import('./provider-wallet-notifications')
-  notifyProviderPaymentCredited(result.intent.id).catch((error: unknown) => {
-    console.error('[provider-credit-reconciliation] payment credited WhatsApp notification failed', {
-      paymentIntentId: result.intent.id,
-      error,
-    })
-  })
-
-  return result
 }
 
 export async function creditPaymentIntentInTransaction(

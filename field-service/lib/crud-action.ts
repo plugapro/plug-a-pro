@@ -31,7 +31,12 @@ const ROLE_HIERARCHY: Record<Role, number> = {
   OWNER: 5,
 }
 
-function meetsRoleRequirement(actorRole: Role, required: Role[]): boolean {
+export function meetsRoleRequirement(
+  actorRole: Role,
+  required: Role[],
+  excluded: Role[] = [],
+): boolean {
+  if (excluded.includes(actorRole)) return false
   const level = ROLE_HIERARCHY[actorRole]
   return required.some((r) => level >= ROLE_HIERARCHY[r])
 }
@@ -64,6 +69,8 @@ interface CrudActionOptions<TInput, TOutput> {
   action: string
   /** Minimum roles allowed. The actor must satisfy at least one. */
   requiredRole: Role[]
+  /** Roles explicitly denied even when they satisfy the hierarchy floor. */
+  excludedRole?: Role[]
   /** Feature flag key that must be enabled before the action runs. */
   requiredFlag?: string
   /** Zod schema to validate raw input. Required when input is provided. */
@@ -115,7 +122,10 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
     })
     .catch(() => null)
 
-  if (!adminUser?.active || !meetsRoleRequirement(adminUser.role, opts.requiredRole)) {
+  if (
+    !adminUser?.active ||
+    !meetsRoleRequirement(adminUser.role, opts.requiredRole, opts.excludedRole)
+  ) {
     throw new CrudActionError(
       'UNAUTHORIZED',
       `Requires one of [${opts.requiredRole.join(', ')}]. Actor has: ${adminUser?.role ?? 'none'}.`

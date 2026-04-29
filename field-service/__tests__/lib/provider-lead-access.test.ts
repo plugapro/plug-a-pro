@@ -8,6 +8,32 @@ const { mockDb } = vi.hoisted(() => ({
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 
+function makeLead(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'lead-1',
+    providerId: 'provider-1',
+    jobRequestId: 'job-request-1',
+    status: 'SENT',
+    sentAt: new Date('2026-04-29T10:00:00.000Z'),
+    expiresAt: new Date('2026-04-29T11:00:00.000Z'),
+    provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27820000000' },
+    unlock: null,
+    jobRequest: {
+      id: 'job-request-1',
+      category: 'Plumbing',
+      title: 'Leaking pipe',
+      description: `${'Preview-safe notes. '.repeat(14)}Gate code 1234 and exact unit details after unlock.`,
+      requestedWindowStart: null,
+      requestedWindowEnd: null,
+      requestedArrivalLatest: null,
+      customerAcceptedAmount: null,
+      address: { suburb: 'Sandton', city: 'Johannesburg' },
+      match: null,
+    },
+    ...overrides,
+  }
+}
+
 describe('provider lead access tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -54,5 +80,83 @@ describe('provider lead access tokens', () => {
     const resolved = await resolveProviderLeadAccessToken(token)
 
     expect(resolved.status).toBe('invalid')
+  })
+
+  it('withholds customer PII, full address, and attachments before unlock', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+    const serialized = JSON.stringify(resolved)
+
+    expect(resolved).toMatchObject({
+      status: 'active',
+      lead: {
+        id: 'lead-1',
+        unlock: null,
+        jobRequest: {
+          customer: null,
+          address: { suburb: 'Sandton', city: 'Johannesburg' },
+          attachments: [],
+        },
+      },
+    })
+    expect(mockDb.lead.findUnique).toHaveBeenCalledTimes(1)
+    expect(mockDb.lead.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({
+        jobRequest: {
+          select: expect.not.objectContaining({
+            customer: expect.anything(),
+            attachments: expect.anything(),
+          }),
+        },
+      }),
+    }))
+    expect(serialized).not.toContain('Nomsa Dlamini')
+    expect(serialized).not.toContain('+27821234567')
+    expect(serialized).not.toContain('12 Exact Street')
+    expect(serialized).not.toContain('photo-private')
+    expect(serialized).not.toContain('Gate code 1234')
+  })
+
+  it('loads sensitive lead fields only after unlock', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique
+      .mockResolvedValueOnce(makeLead({
+        unlock: { id: 'unlock-1', providerId: 'provider-1' },
+      }))
+      .mockResolvedValueOnce({
+        jobRequest: {
+          customer: { id: 'customer-1', name: 'Nomsa Dlamini', phone: '+27821234567' },
+          address: {
+            street: '12 Exact Street',
+            addressLine1: 'Block B',
+            addressLine2: null,
+            complexName: 'Hidden Complex',
+            unitNumber: 'Unit 7',
+            suburb: 'Sandton',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+          },
+          attachments: [{ id: 'photo-private', caption: 'Leak', label: 'before' }],
+        },
+      })
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(mockDb.lead.findUnique).toHaveBeenCalledTimes(2)
+    expect(resolved.lead?.jobRequest.customer).toMatchObject({
+      name: 'Nomsa Dlamini',
+      phone: '+27821234567',
+    })
+    expect(resolved.lead?.jobRequest.address).toMatchObject({
+      street: '12 Exact Street',
+      unitNumber: 'Unit 7',
+    })
+    expect(resolved.lead?.jobRequest.attachments).toEqual([
+      { id: 'photo-private', caption: 'Leak', label: 'before' },
+    ])
   })
 })

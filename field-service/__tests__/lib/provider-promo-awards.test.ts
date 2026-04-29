@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   PRE_PAYMENT_PROMO_CREDIT_CAP,
+  PROVIDER_PROMO_CREDIT_REWARDS,
   awardFirstCompletedJobWithCustomerRatingPromoCredits,
   awardFirstTopUpPromoCreditsInTransaction,
   awardPromoCreditsForMilestone,
@@ -269,6 +270,46 @@ describe('provider promo award service', () => {
     expect(state.ledgerEntries).toHaveLength(0)
   })
 
+  it('keeps configured pre-payment rewards aligned with the cap', () => {
+    const prePaymentRewardTotal =
+      PROVIDER_PROMO_CREDIT_REWARDS.MOBILE_VERIFIED +
+      PROVIDER_PROMO_CREDIT_REWARDS.PROFILE_COMPLETED +
+      PROVIDER_PROMO_CREDIT_REWARDS.KYC_APPROVED
+
+    expect(prePaymentRewardTotal).toBe(PRE_PAYMENT_PROMO_CREDIT_CAP)
+  })
+
+  it('allows pre-payment awards above the cap after a credited top-up exists', async () => {
+    state.promoAwards = [{
+      id: 'award-existing',
+      providerId: 'provider-1',
+      awardType: 'MOBILE_VERIFIED',
+      creditsAwarded: PRE_PAYMENT_PROMO_CREDIT_CAP,
+      status: 'AWARDED',
+      referenceType: 'test',
+      referenceId: 'existing',
+      metadata: {},
+    }]
+    state.paymentIntents = [{
+      id: 'intent-1',
+      providerId: 'provider-1',
+      status: 'CREDITED',
+      creditedAt: new Date('2026-04-29T09:00:00.000Z'),
+    }]
+
+    const result = await awardPromoCreditsForMilestone(
+      'provider-1',
+      'KYC_APPROVED',
+      milestoneReference({ referenceType: 'provider_kyc', referenceId: 'provider-1' }),
+    )
+
+    expect(result.awarded).toBe(true)
+    expect(result.award).toMatchObject({
+      awardType: 'KYC_APPROVED',
+      creditsAwarded: 5,
+    })
+  })
+
   it('awards profile completion only when the profile is at least 80 percent complete with a photo', async () => {
     state.provider = makeProvider({ avatarUrl: null })
 
@@ -290,6 +331,50 @@ describe('provider promo award service', () => {
       awardType: 'PROFILE_COMPLETED',
       creditsAwarded: 2,
     })
+  })
+
+  it('requires at least six of seven profile completion signals and a photo', async () => {
+    state.provider = makeProvider({ serviceAreas: [], technicianServiceAreas: [] })
+    const sixSignals = await evaluateAndAwardProviderProfileCompletionPromoCredits(
+      'provider-1',
+      milestoneReference({ referenceType: 'provider', referenceId: 'provider-1' }),
+    )
+    expect(sixSignals.awarded).toBe(true)
+    expect(sixSignals.award?.metadata).toMatchObject({ completionPercent: 86 })
+
+    state.promoAwards = []
+    state.ledgerEntries = []
+    state.wallet = makeWallet()
+    state.provider = makeProvider({
+      bio: null,
+      serviceAreas: [],
+      technicianServiceAreas: [],
+    })
+    const fiveSignals = await evaluateAndAwardProviderProfileCompletionPromoCredits(
+      'provider-1',
+      milestoneReference({ referenceType: 'provider', referenceId: 'provider-1' }),
+    )
+
+    expect(fiveSignals.awarded).toBe(false)
+    expect(fiveSignals.skippedReason).toBe('CONDITION_NOT_MET')
+  })
+
+  it('does not double-award KYC approval after re-verification', async () => {
+    const first = await awardPromoCreditsForMilestone(
+      'provider-1',
+      'KYC_APPROVED',
+      milestoneReference({ referenceType: 'provider_kyc', referenceId: 'provider-1' }),
+    )
+    const second = await awardPromoCreditsForMilestone(
+      'provider-1',
+      'KYC_APPROVED',
+      milestoneReference({ referenceType: 'provider_kyc', referenceId: 'provider-1-reverified' }),
+    )
+
+    expect(first.awarded).toBe(true)
+    expect(second.awarded).toBe(false)
+    expect(second.skippedReason).toBe('DUPLICATE')
+    expect(state.promoAwards.filter((award) => award.awardType === 'KYC_APPROVED')).toHaveLength(1)
   })
 
   it('awards the first top-up bonus only when there is no earlier credited top-up', async () => {
@@ -334,6 +419,27 @@ describe('provider promo award service', () => {
     expect(result.award).toMatchObject({
       awardType: 'FIRST_COMPLETED_JOB',
       creditsAwarded: 3,
+    })
+  })
+
+  it('awards first completed job credits on the first rated completed job even when earlier completed jobs were unrated', async () => {
+    state.jobs = [
+      { id: 'job-1', providerId: 'provider-1', status: 'COMPLETED' },
+      { id: 'job-2', providerId: 'provider-1', status: 'COMPLETED' },
+    ]
+    state.reviews = [{ id: 'review-2', jobId: 'job-2', reviewerType: 'CUSTOMER' }]
+
+    const result = await awardFirstCompletedJobWithCustomerRatingPromoCredits(
+      'provider-1',
+      'job-2',
+      'review-2',
+    )
+
+    expect(result.awarded).toBe(true)
+    expect(result.award).toMatchObject({
+      awardType: 'FIRST_COMPLETED_JOB',
+      referenceType: 'review',
+      referenceId: 'review-2',
     })
   })
 })

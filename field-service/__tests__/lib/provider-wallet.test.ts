@@ -6,6 +6,7 @@ import {
   creditPromoCredits,
   debitCreditsForLeadUnlock,
   getOrCreateProviderWallet,
+  getProviderWalletLedgerEntries,
   getProviderWalletBalance,
   reactivateProviderWallet,
   refundCredits,
@@ -31,6 +32,7 @@ const { mockDb, state } = vi.hoisted(() => {
     },
     walletLedgerEntry: {
       create: vi.fn(),
+      findMany: vi.fn(),
     },
   }
 
@@ -136,6 +138,7 @@ describe('provider wallet service', () => {
       state.entries.push(entry)
       return entry
     })
+    mockDb.walletLedgerEntry.findMany.mockResolvedValue([])
   })
 
   it('creates a provider wallet automatically when needed', async () => {
@@ -165,6 +168,27 @@ describe('provider wallet service', () => {
       promoCreditBalance: 3,
       totalCreditBalance: 10,
       status: 'ACTIVE',
+    })
+  })
+
+  it('reads provider ledger entries through the wallet module seam', async () => {
+    await getProviderWalletLedgerEntries('provider-1', {
+      limit: 50,
+      cursor: 'entry-cursor',
+      referenceType: 'payment_intent',
+      referenceId: 'intent-1',
+    })
+
+    expect(mockDb.walletLedgerEntry.findMany).toHaveBeenCalledWith({
+      where: {
+        providerId: 'provider-1',
+        referenceType: 'payment_intent',
+        referenceId: 'intent-1',
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      cursor: { id: 'entry-cursor' },
+      skip: 1,
     })
   })
 
@@ -384,6 +408,21 @@ describe('provider wallet service', () => {
       paidCreditBalance: 3,
       promoCreditBalance: 2,
     })
+    expect(state.entries.at(-1)).toMatchObject({
+      entryType: 'WALLET_SUSPENDED',
+      creditType: 'PROMO',
+      amountCredits: 0,
+      balanceAfterPaidCredits: 3,
+      balanceAfterPromoCredits: 2,
+      referenceType: 'wallet_status',
+      referenceId: 'wallet-1',
+      description: 'Wallet suspended: Abuse review',
+      createdBy: 'admin-1',
+      metadata: {
+        reason: 'Abuse review',
+        suspendedBy: 'admin-1',
+      },
+    })
 
     await expect(
       debitCreditsForLeadUnlock('provider-1', 1, reference({
@@ -399,6 +438,21 @@ describe('provider wallet service', () => {
       status: 'ACTIVE',
       paidCreditBalance: 3,
       promoCreditBalance: 2,
+    })
+    expect(state.entries.at(-1)).toMatchObject({
+      entryType: 'WALLET_REACTIVATED',
+      creditType: 'PROMO',
+      amountCredits: 0,
+      balanceAfterPaidCredits: 3,
+      balanceAfterPromoCredits: 2,
+      referenceType: 'wallet_status',
+      referenceId: 'wallet-1',
+      description: 'Wallet reactivated: Review resolved',
+      createdBy: 'admin-1',
+      metadata: {
+        reason: 'Review resolved',
+        reactivatedBy: 'admin-1',
+      },
     })
 
     await expect(

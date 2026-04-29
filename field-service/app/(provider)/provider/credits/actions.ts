@@ -5,8 +5,14 @@ import { redirect } from 'next/navigation'
 import { type WalletCreditType, type WalletLedgerEntryType } from '@prisma/client'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
-import { getProviderWalletBalance } from '@/lib/provider-wallet'
-import { createManualEftTopUpIntent } from '@/lib/provider-credit-payment-intents'
+import {
+  getProviderWalletBalance,
+  getProviderWalletLedgerEntries,
+} from '@/lib/provider-wallet'
+import {
+  createManualEftTopUpIntent,
+  getManualEftBankAccountInstructions,
+} from '@/lib/provider-credit-payment-intents'
 
 const ESTIMATED_CREDITS_PER_LEAD_UNLOCK = 1
 const LEDGER_LIMIT = 20
@@ -80,9 +86,18 @@ function ledgerLabel(entryType: WalletLedgerEntryType) {
     case 'ADMIN_ADJUSTMENT':
       return 'Wallet adjustment'
     case 'PROMO_EXPIRY':
+      // Forward-compatible display label. Promo expiry is not fired until the
+      // expiry job is implemented.
       return 'Promo credits expired'
     case 'PAYMENT_REVERSAL':
+      // Forward-compatible display label. Payment reversals are not fired until
+      // bank/gateway reversal handling is implemented.
       return 'Payment reversal'
+    default:
+      return String(entryType)
+        .split('_')
+        .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+        .join(' ')
   }
 }
 
@@ -128,16 +143,6 @@ export async function getProviderWalletSummary(): Promise<ProviderWalletSummary>
   const provider = await getAuthenticatedProvider()
   const balance = await getProviderWalletBalance(provider.id)
 
-  if (balance.totalCreditBalance === 1) {
-    const { notifyProviderLowBalance } = await import('@/lib/provider-wallet-notifications')
-    notifyProviderLowBalance(provider.id).catch((error: unknown) => {
-      console.error('[provider/credits/actions] low balance WhatsApp notification failed', {
-        providerId: provider.id,
-        error,
-      })
-    })
-  }
-
   return {
     totalAvailableCredits: balance.totalCreditBalance,
     paidCredits: balance.paidCreditBalance,
@@ -150,22 +155,7 @@ export async function getProviderWalletSummary(): Promise<ProviderWalletSummary>
 
 export async function getProviderWalletLedger(): Promise<ProviderWalletLedgerItem[]> {
   const provider = await getAuthenticatedProvider()
-  const entries = await db.walletLedgerEntry.findMany({
-    where: { providerId: provider.id },
-    select: {
-      id: true,
-      entryType: true,
-      creditType: true,
-      amountCredits: true,
-      balanceAfterPaidCredits: true,
-      balanceAfterPromoCredits: true,
-      referenceType: true,
-      referenceId: true,
-      createdAt: true,
-    },
-    orderBy: { createdAt: 'desc' },
-    take: LEDGER_LIMIT,
-  })
+  const entries = await getProviderWalletLedgerEntries(provider.id, { limit: LEDGER_LIMIT })
 
   return entries.map((entry) => {
     const signedAmountCredits = isDebit(entry.entryType)
@@ -212,13 +202,7 @@ export async function getProviderTopUpIntentInstructions(
     creditsToIssue: intent.creditsToIssue,
     paymentReference: intent.paymentReference,
     expiresAt: intent.expiresAt?.toISOString() ?? null,
-    bankAccount: {
-      accountName: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_NAME ?? 'Plug-A-Pro Credits',
-      bankName: process.env.PROVIDER_CREDIT_EFT_BANK_NAME ?? 'Configure bank name',
-      accountNumber: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER ?? 'Configure account number',
-      branchCode: process.env.PROVIDER_CREDIT_EFT_BRANCH_CODE ?? 'Configure branch code',
-      accountType: process.env.PROVIDER_CREDIT_EFT_ACCOUNT_TYPE ?? 'Business current account',
-    },
+    bankAccount: getManualEftBankAccountInstructions(),
   }
 }
 
