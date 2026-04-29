@@ -177,10 +177,10 @@ describe('buildCheckoutPayload', () => {
     expect(payload.fields.payment_method).toBe('cc')
   })
 
-  it('maps PAYFAST_EFT to "eft"', () => {
+  it('maps PAYFAST_EFT to "ef" (not "eft")', () => {
     const config = makeConfig()
     const payload = buildCheckoutPayload({ ...makeIntent(), paymentMethod: 'PAYFAST_EFT' }, makeProvider(), config)
-    expect(payload.fields.payment_method).toBe('eft')
+    expect(payload.fields.payment_method).toBe('ef')
   })
 
   it('maps PAYFAST_SCODE to "sc"', () => {

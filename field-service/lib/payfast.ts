@@ -30,7 +30,9 @@ import { createHash, timingSafeEqual } from 'crypto'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type PayfastPaymentMethod = 'cc' | 'eft' | 'sc'
+// Payfast payment method codes — confirmed from developer docs 2026-04-29.
+// Note: EFT code is "ef", NOT "eft". Using "eft" silently breaks checkout.
+export type PayfastPaymentMethod = 'cc' | 'ef' | 'sc'
 
 /**
  * All fields sent in the Payfast checkout form POST.
@@ -80,28 +82,35 @@ const PAYFAST_SANDBOX_URL = 'https://sandbox.payfast.co.za/eng/process'
 //
 // These are the known Payfast notification server IP addresses.
 // Source: https://developers.payfast.co.za/docs (Notify IP section).
-// Update this list when Payfast adds or changes notify servers.
+// Last verified: 2026-04-29. Update this list when Payfast changes ranges.
 //
-// Live IPs cover the 197.97.145.144/28 range.
+// Ranges included:
+//   197.97.145.144/28  (197.97.145.144 – 197.97.145.159)
+//   41.74.179.192/27   (41.74.179.192  – 41.74.179.223)
+//   102.216.36.0/28    (102.216.36.0   – 102.216.36.15)
+//   102.216.36.128/28  (102.216.36.128 – 102.216.36.143)
+//   144.126.193.139    (single host)
 // Sandbox: IP validation is skipped when PAYFAST_SANDBOX=true.
 
+function expandCidr(base: string, start: number, end: number): string[] {
+  return Array.from({ length: end - start + 1 }, (_, i) => {
+    const parts = base.split('.')
+    parts[3] = String(start + i)
+    return parts.join('.')
+  })
+}
+
 const PAYFAST_LIVE_NOTIFY_IPS = new Set([
-  '197.97.145.144',
-  '197.97.145.145',
-  '197.97.145.146',
-  '197.97.145.147',
-  '197.97.145.148',
-  '197.97.145.149',
-  '197.97.145.150',
-  '197.97.145.151',
-  '197.97.145.152',
-  '197.97.145.153',
-  '197.97.145.154',
-  '197.97.145.155',
-  '197.97.145.156',
-  '197.97.145.157',
-  '197.97.145.158',
-  '197.97.145.159',
+  // 197.97.145.144/28
+  ...expandCidr('197.97.145.0', 144, 159),
+  // 41.74.179.192/27
+  ...expandCidr('41.74.179.0', 192, 223),
+  // 102.216.36.0/28
+  ...expandCidr('102.216.36.0', 0, 15),
+  // 102.216.36.128/28
+  ...expandCidr('102.216.36.0', 128, 143),
+  // Single host
+  '144.126.193.139',
 ])
 
 // ─── Configuration ─────────────────────────────────────────────────────────────
@@ -159,7 +168,7 @@ export function generateSignature(
 
 const PAYMENT_METHOD_MAP: Record<string, PayfastPaymentMethod> = {
   PAYFAST_CARD: 'cc',
-  PAYFAST_EFT: 'eft',
+  PAYFAST_EFT: 'ef',   // "ef" confirmed — NOT "eft"
   PAYFAST_SCODE: 'sc',
 }
 
