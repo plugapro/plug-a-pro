@@ -193,5 +193,14 @@ export type OfferResolutionResult =
     }
   | {
       ok: false
-      reason: 'NOT_FOUND' | 'FORBIDDEN' | 'EXPIRED' | 'TAKEN'
+      reason:
+        | 'NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'EXPIRED'
+        | 'TAKEN'
+        | 'INSUFFICIENT_CREDITS'
+        | 'KYC_REQUIRED'
+        | 'WALLET_SUSPENDED'
+        | 'CONCURRENT_UNLOCK'
+      currentCreditBalance?: number
     }

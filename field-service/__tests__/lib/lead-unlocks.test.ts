@@ -30,6 +30,7 @@ const { mockDb, mockNotifyLeadUnlocked, mockNotifyLowBalance, state } = vi.hoist
       update: vi.fn(),
     },
     providerWallet: {
+      findUnique: vi.fn(),
       upsert: vi.fn(),
       updateMany: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -125,6 +126,7 @@ describe('lead unlock service', () => {
       return state.lead
     })
 
+    mockDb.providerWallet.findUnique.mockImplementation(async () => state.wallet)
     mockDb.providerWallet.upsert.mockImplementation(async () => state.wallet)
     mockDb.providerWallet.updateMany.mockImplementation(async (args: any) => {
       const paidDecrement = args.data.paidCreditBalance?.decrement ?? 0

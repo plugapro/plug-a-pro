@@ -34,15 +34,16 @@ async function acceptLead(formData: FormData) {
   const provider = await db.provider.findUnique({ where: { userId: session.id } })
   if (!provider) redirect('/provider')
 
-  const unlock = await db.leadUnlock.findUnique({ where: { leadId } })
-  if (!unlock || unlock.providerId !== provider.id) {
-    redirect(`/provider/leads/${leadId}?unlockError=required`)
-  }
-
   const { acceptLead: accept } = await import('@/lib/matching-engine')
-  const result = await accept({ leadId, providerId: provider.id, inspectionNeeded })
+  const result = await accept({ leadId, providerId: provider.id, inspectionNeeded, source: 'pwa' })
 
   if (!result.ok) {
+    if (result.reason === 'INSUFFICIENT_CREDITS') {
+      redirect(`/provider/leads/${leadId}?unlockError=credits`)
+    }
+    if (result.reason === 'KYC_REQUIRED') {
+      redirect(`/provider/leads/${leadId}?unlockError=kyc`)
+    }
     // Lead expired or taken — go back to leads list with the status visible
     redirect('/provider/leads')
   }

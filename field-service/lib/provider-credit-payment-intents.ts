@@ -333,5 +333,15 @@ export async function createPayfastTopUpIntent(
     config,
   )
 
+  // Non-blocking WhatsApp notification — failure must not prevent the
+  // provider from reaching the Payfast checkout page.
+  const { notifyProviderPayfastTopUpInitiated } = await import('./provider-wallet-notifications')
+  notifyProviderPayfastTopUpInitiated(intent.id).catch((error: unknown) => {
+    console.error('[provider-credit-payment-intents] Payfast topup initiated WhatsApp notification failed', {
+      intentId: intent.id,
+      error,
+    })
+  })
+
   return { intent, checkout }
 }

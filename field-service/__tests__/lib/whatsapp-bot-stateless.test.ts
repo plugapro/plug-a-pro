@@ -143,11 +143,38 @@ describe('processInboundMessage stateless notification replies', () => {
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
-    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1' })
+    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
     expect(mockSendButtons).not.toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Your session timed out'),
       expect.any(Array),
+    )
+  })
+
+  it('blocks WhatsApp assignment accept when the provider has zero credits', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
+    mockAcceptLead.mockResolvedValue({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+
+    await processInboundMessage(buttonMessage('accept:hold-1'))
+
+    expect(mockAcceptLead).toHaveBeenCalledWith({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      source: 'whatsapp',
+    })
+    expect(mockSendButtons).toHaveBeenCalledWith(
+      PHONE,
+      '🔒 This lead requires 1 credit to unlock.\n\nYour current balance: 0 credits.\n\nPlease top up to accept this lead.',
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'provider_top_up_credits', title: 'Top Up Credits' }),
+        expect.objectContaining({ id: 'match_inspect_lead-1', title: 'View Lead' }),
+        expect.objectContaining({ id: 'back_home', title: 'Main Menu' }),
+      ]),
     )
   })
 

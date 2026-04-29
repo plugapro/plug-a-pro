@@ -3,7 +3,14 @@ import { db } from './db'
 import { creditPaidCreditsInTransaction } from './provider-wallet'
 import { awardFirstTopUpPromoCreditsInTransaction } from './provider-promo-awards'
 
-const CREDITABLE_STATUSES = ['PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'] as const
+const CREDITABLE_STATUSES = [
+  'PENDING_PAYMENT',
+  'PROOF_UPLOADED',
+  'MATCHED_ON_STATEMENT',
+  // ITN_RECEIVED: Payfast confirmed payment but wallet crediting failed (rare).
+  // Admin can manually trigger the credit as a recovery mechanism.
+  'ITN_RECEIVED',
+] as const
 // CREATED is reserved for future gateway-initiated intents. Manual EFT intents
 // currently start at PENDING_PAYMENT.
 const MATCHABLE_STATUSES = ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'] as const
@@ -96,6 +103,8 @@ function assertCreditableStatus(intent: PaymentIntent) {
 }
 
 function assertCreditHasReconciliationTrail(intent: PaymentIntent, adminNote?: string | null) {
+  // Payfast gateway intents carry the ITN as their reconciliation trail.
+  if (intent.itnReceivedAt) return
   if (intent.bankStatementReference?.trim() || adminNote?.trim()) return
 
   throw new ProviderCreditReconciliationError(
@@ -232,7 +241,9 @@ export async function creditPaymentIntentInTransaction(
     {
       referenceType: 'payment_intent',
       referenceId: intent.id,
-      description: `Manual EFT top-up ${intent.paymentReference}`,
+      description: intent.paymentMethod.startsWith('PAYFAST_')
+        ? `Payfast gateway top-up ${intent.paymentReference} — admin credit`
+        : `Manual EFT top-up ${intent.paymentReference}`,
       metadata: {
         paymentReference: intent.paymentReference,
         bankStatementReference: intent.bankStatementReference,

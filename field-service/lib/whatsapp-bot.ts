@@ -89,6 +89,7 @@ function isStatelessNotificationReply(
   return (
     id === 'back_home' ||
     id === 'session_restart' ||
+    id === 'provider_top_up_credits' ||
     id.startsWith('mdc_') ||
     id.startsWith('accept:') ||
     id.startsWith('decline:') ||
@@ -389,6 +390,7 @@ async function processInboundMessageUnlocked(
       'provider_status',
       'provider_application_status',
       'provider_update_application',
+      'provider_top_up_credits',
     ].includes(reply.id))
 
     // Session expired mid-flow — offer contextual resume instead of silently resetting
@@ -445,6 +447,17 @@ async function processInboundMessageUnlocked(
     if (reply.id === 'back_home' || reply.id === 'session_restart') {
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (reply.id === 'provider_top_up_credits') {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+      await sendCtaUrl(
+        phone,
+        'Top up your Plug-A-Pro Credits to unlock and accept paid leads.',
+        'Top Up Credits',
+        `${appUrl}/provider/credits`,
+      )
       return
     }
 
@@ -1339,9 +1352,13 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
   if (buttonId.startsWith('match_accept_')) {
     const { acceptLead } = await import('./matching-engine')
-    const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: false })
+    const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: false, source: 'whatsapp' })
 
     if (!result.ok) {
+      if (result.reason === 'INSUFFICIENT_CREDITS') {
+        await sendLeadInsufficientCreditsMessage(phone, leadId, result.currentCreditBalance ?? 0)
+        return
+      }
       const message =
         result.reason === 'TAKEN'
           ? '⚠️ Another provider has already accepted this job.'
@@ -1701,9 +1718,13 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
   }
 
   const { acceptLead } = await import('./matching-engine')
-  const result = await acceptLead({ leadId: lead.id, providerId: provider.id })
+  const result = await acceptLead({ leadId: lead.id, providerId: provider.id, source: 'whatsapp' })
 
   if (!result.ok) {
+    if (result.reason === 'INSUFFICIENT_CREDITS') {
+      await sendLeadInsufficientCreditsMessage(phone, lead.id, result.currentCreditBalance ?? 0)
+      return
+    }
     if (result.reason === 'EXPIRED') {
       await sendText(phone, "⏰ This lead has expired — the offer window closed before your response. New leads will come through as jobs arise.")
     } else if (result.reason === 'TAKEN') {
@@ -1715,6 +1736,23 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
   }
 
   // acceptLead owns the post-match customer/provider messages for every accept channel.
+}
+
+async function sendLeadInsufficientCreditsMessage(
+  phone: string,
+  leadId: string,
+  currentCreditBalance: number,
+): Promise<void> {
+  const { sendButtons } = await import('./whatsapp-interactive')
+  await sendButtons(
+    phone,
+    `🔒 This lead requires 1 credit to unlock.\n\nYour current balance: ${currentCreditBalance} credit${currentCreditBalance === 1 ? '' : 's'}.\n\nPlease top up to accept this lead.`,
+    [
+      { id: 'provider_top_up_credits', title: 'Top Up Credits' },
+      { id: `match_inspect_${leadId}`, title: 'View Lead' },
+      { id: 'back_home', title: 'Main Menu' },
+    ],
+  )
 }
 
 async function handlePostMatchContactCustomer(phone: string, buttonId: string): Promise<void> {

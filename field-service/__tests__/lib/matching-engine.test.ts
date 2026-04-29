@@ -108,6 +108,28 @@ describe('matching-engine compatibility wrappers', () => {
     })
   })
 
+  it('acceptLead does not notify the customer when unlock credit validation fails', async () => {
+    mockAcceptAssignmentOffer.mockResolvedValue({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+
+    const result = await acceptLead({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+    expect(mockAcceptAssignmentOffer).toHaveBeenCalledWith({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      source: 'whatsapp',
+    })
+    expect(mockNotifyPostMatchAcceptance).not.toHaveBeenCalled()
+  })
+
   it('dispatchLeads propagates non-schema errors from the assignment service', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue({ id: 'jr-1', status: 'OPEN' })
     mockRunAssignmentForJobRequest.mockRejectedValue(new Error('Service unavailable'))

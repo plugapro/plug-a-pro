@@ -3,6 +3,7 @@ import {
   buildCustomerIntroMessage,
   buildLeadUnlockedProviderMessage,
   buildLowBalanceWarningMessage,
+  buildPayfastTopUpInitiatedMessage,
   buildPaymentCreditedMessage,
   buildPaymentIntentCreatedMessage,
   buildZeroBalanceLeadAvailableMessage,
@@ -74,5 +75,42 @@ describe('provider wallet notification message builders', () => {
     expect(buildCustomerIntroMessage({ providerName: 'Sipho Pro' })).toBe(
       'Good news — we matched you with Sipho Pro. They may contact you shortly.',
     )
+  })
+
+  describe('buildPayfastTopUpInitiatedMessage', () => {
+    it('includes the formatted amount and credit count', () => {
+      const message = buildPayfastTopUpInitiatedMessage({
+        amountFormatted: 'R 100,00',
+        creditsToIssue: 5,
+      })
+      expect(message).toContain('R 100,00')
+      expect(message).toContain('5 credits')
+    })
+
+    it('includes the checkout instruction', () => {
+      const message = buildPayfastTopUpInitiatedMessage({
+        amountFormatted: 'R 200,00',
+        creditsToIssue: 10,
+      })
+      expect(message).toContain('Complete your payment on the checkout page')
+    })
+
+    it('includes the pending confirmation note', () => {
+      const message = buildPayfastTopUpInitiatedMessage({
+        amountFormatted: 'R 500,00',
+        creditsToIssue: 25,
+      })
+      expect(message).toContain('Credits will appear in your wallet once Payfast confirms payment')
+    })
+
+    it('does not contain bank account details', () => {
+      const message = buildPayfastTopUpInitiatedMessage({
+        amountFormatted: 'R 100,00',
+        creditsToIssue: 5,
+      })
+      expect(message).not.toContain('Account name')
+      expect(message).not.toContain('Branch code')
+      expect(message).not.toContain('Use exact reference')
+    })
   })
 })

@@ -137,6 +137,17 @@ export function buildPaymentCreditedMessage(creditsIssued: number) {
   return `Payment received. Your wallet has been credited with ${creditsIssued} Plug-A-Pro Credits.`
 }
 
+export function buildPayfastTopUpInitiatedMessage(params: {
+  amountFormatted: string
+  creditsToIssue: number
+}) {
+  return compactLines([
+    `Your Plug-A-Pro top-up of ${params.amountFormatted} (${params.creditsToIssue} credits) has been initiated.`,
+    'Complete your payment on the checkout page.',
+    'Credits will appear in your wallet once Payfast confirms payment.',
+  ])
+}
+
 export function buildLeadUnlockedProviderMessage(params: LeadUnlockNotificationContext) {
   return compactLines([
     `Lead unlocked: ${params.category}`,
@@ -346,6 +357,48 @@ export async function notifyProviderPaymentIntentCreated(paymentIntentId: string
       providerId: intent.providerId,
       paymentIntentId: intent.id,
       paymentReference: intent.paymentReference,
+      amountCents: intent.amountCents,
+      creditsToIssue: intent.creditsToIssue,
+    },
+  })
+}
+
+/**
+ * Send a WhatsApp notification when a Payfast gateway top-up is initiated.
+ * Only fires for Payfast payment methods (PAYFAST_CARD / PAYFAST_EFT / PAYFAST_SCODE).
+ * Failure is non-blocking — the checkout flow must not depend on this succeeding.
+ *
+ * NOTE: The `wallet_payfast_topup_initiated` WhatsApp template requires approval
+ * before messages are delivered in production.
+ */
+export async function notifyProviderPayfastTopUpInitiated(paymentIntentId: string) {
+  const intent = await db.paymentIntent.findUnique({
+    where: { id: paymentIntentId },
+    include: { provider: { select: { id: true, phone: true } } },
+  })
+
+  if (!intent) return
+  const phone = intent.providerCellphone ?? intent.provider.phone
+  if (!phone) return
+  if (!intent.paymentMethod.startsWith('PAYFAST_')) return
+
+  const amountFormatted = formatZarFromCents(intent.amountCents)
+
+  await sendNotification({
+    to: phone,
+    templateName: 'wallet:payfast_topup_initiated',
+    whatsappTemplate: 'wallet_payfast_topup_initiated',
+    templateParameters: [amountFormatted, String(intent.creditsToIssue)],
+    body: buildPayfastTopUpInitiatedMessage({
+      amountFormatted,
+      creditsToIssue: intent.creditsToIssue,
+    }),
+    idempotencyKey: `wallet:payfast_topup_initiated:${intent.id}`,
+    metadata: {
+      providerId: intent.providerId,
+      paymentIntentId: intent.id,
+      paymentReference: intent.paymentReference,
+      paymentMethod: intent.paymentMethod,
       amountCents: intent.amountCents,
       creditsToIssue: intent.creditsToIssue,
     },

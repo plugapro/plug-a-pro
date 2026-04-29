@@ -24,6 +24,10 @@ vi.mock('@/lib/provider-lead-access', async () => {
   }
 })
 
+vi.mock('@/lib/customer-provider-handover-access', () => ({
+  getCustomerProviderHandoverUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/requests/handover/customer-token'),
+}))
+
 import { db } from '@/lib/db'
 import { sendButtons, sendCtaUrl, sendText } from '@/lib/whatsapp-interactive'
 import { getProviderLeadAccessUrlByLeadId, resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
@@ -39,11 +43,16 @@ const mockLead = {
   jobRequestId: 'jr-12345678',
   status: 'ACCEPTED',
   provider: { id: 'provider-1', name: 'Jacob Hesser', phone: '+27770000001' },
+  unlock: { id: 'unlock-1', creditsCharged: 1, unlockedAt: new Date('2026-04-29T10:00:00.000Z') },
   jobRequest: {
     id: 'jr-12345678',
     category: 'Plumbing',
     customer: { id: 'cust-1', name: 'Stephanie Nkosi', phone: '+27820000001' },
     address: { street: '14 Main Road', suburb: 'Bromhof', city: 'Johannesburg', province: 'Gauteng' },
+    requestedWindowStart: new Date('2026-04-30T08:00:00.000Z'),
+    requestedWindowEnd: new Date('2026-04-30T10:00:00.000Z'),
+    requestedArrivalLatest: null,
+    match: { id: 'match-1', providerId: 'provider-1', status: 'MATCHED', createdAt: new Date('2026-04-29T10:01:00.000Z') },
   },
 }
 
@@ -61,18 +70,21 @@ describe('post-match communications', () => {
   it('sends a named customer notification and provider post-acceptance job message', async () => {
     await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
 
-    expect(sendText).toHaveBeenCalledWith(
+    expect(sendText).not.toHaveBeenCalled()
+    expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27820000001',
-      expect.stringContaining('Jacob Hesser from Plug A Pro'),
+      expect.stringContaining('Provider contact:\n+27770000001'),
+      'View Provider',
+      'https://app.plugapro.co.za/requests/handover/customer-token',
+      expect.any(Object),
       expect.objectContaining({
         templateName: 'post_match_customer_provider_accepted',
         metadata: expect.objectContaining({ leadId: 'lead-1', matchId: 'match-1' }),
       }),
     )
-    expect(sendText).not.toHaveBeenCalledWith('+27820000001', expect.stringContaining('A provider has accepted'), expect.anything())
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
-      expect.stringContaining('Your client *Stephanie* has been notified'),
+      expect.stringContaining("You've unlocked this lead using *1 credit*"),
       'View Job',
       'https://app.plugapro.co.za/leads/access/signed-token',
       expect.any(Object),
@@ -83,7 +95,7 @@ describe('post-match communications', () => {
     )
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
-      expect.stringContaining('Address: *14 Main Road, Bromhof, Johannesburg, Gauteng*'),
+      expect.stringContaining('Customer contact:\nStephanie Nkosi\n+27820000001'),
       'View Job',
       'https://app.plugapro.co.za/leads/access/signed-token',
       expect.any(Object),
@@ -91,7 +103,7 @@ describe('post-match communications', () => {
     )
     expect(sendButtons).toHaveBeenCalledWith(
       '+27770000001',
-      expect.stringContaining('contact the customer shortly'),
+      expect.stringContaining('Customer contact is released'),
       [{ id: 'post_match_contact:lead-1', title: 'Contact Customer' }],
       expect.any(Object),
       expect.objectContaining({

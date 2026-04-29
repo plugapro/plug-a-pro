@@ -26,17 +26,20 @@ async function acceptLeadWithToken(formData: FormData) {
   }
 
   const lead = resolved.lead
-  if (!lead.unlock) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=unlock_required`)
-  }
   if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
     redirect(`/leads/access/${encodeURIComponent(token)}?error=closed`)
   }
 
   const { acceptLead } = await import('@/lib/matching-engine')
-  const result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded })
+  const result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'whatsapp' })
 
   if (!result.ok) {
+    if (result.reason === 'INSUFFICIENT_CREDITS') {
+      redirect(`/leads/access/${encodeURIComponent(token)}?error=credits`)
+    }
+    if (result.reason === 'KYC_REQUIRED') {
+      redirect(`/leads/access/${encodeURIComponent(token)}?error=kyc`)
+    }
     redirect(`/leads/access/${encodeURIComponent(token)}?error=${result.reason.toLowerCase()}`)
   }
 
@@ -386,7 +389,7 @@ export default async function ProviderLeadAccessPage({
       <main className="mx-auto max-w-lg px-4 py-6 pb-36 space-y-5">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            New Lead · {lead.id.slice(-8).toUpperCase()}
+            {isAccepted ? 'Accepted Job' : 'New Lead'} · {lead.id.slice(-8).toUpperCase()}
           </p>
           <h1 className="text-xl font-semibold">{jr.title || jr.category}</h1>
           {acceptedStage && (
@@ -429,6 +432,31 @@ export default async function ProviderLeadAccessPage({
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Category</p>
             <p className="font-medium">{jr.category}</p>
           </div>
+          <div className="px-4 py-3 space-y-0.5">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Job reference</p>
+            <p className="font-medium">{jr.id.slice(-8).toUpperCase()}</p>
+          </div>
+          <div className="px-4 py-3 space-y-0.5">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Current status</p>
+            <p className="font-medium">{acceptedStage ?? lead.status.replaceAll('_', ' ').toLowerCase()}</p>
+          </div>
+          {lead.unlock && (
+            <div className="px-4 py-3 space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Credit unlock</p>
+              <p className="font-medium">
+                {lead.unlock.creditsCharged} credit{lead.unlock.creditsCharged === 1 ? '' : 's'} used
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Unlocked {format(lead.unlock.unlockedAt, 'HH:mm, d MMM yyyy')}
+              </p>
+            </div>
+          )}
+          {isAccepted && jr.match?.createdAt && (
+            <div className="px-4 py-3 space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Accepted</p>
+              <p className="font-medium">{format(jr.match.createdAt, 'HH:mm, d MMM yyyy')}</p>
+            </div>
+          )}
           <div className="px-4 py-3 space-y-0.5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">
               {isUnlocked ? 'Full location' : 'Area preview'}
@@ -543,7 +571,7 @@ export default async function ProviderLeadAccessPage({
                 <textarea name="note" rows={3} className="w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional arrival note" />
               </label>
               <Button type="submit" className="w-full" disabled={actionDisabled}>
-                Save arrival &amp; mark scheduled
+                Confirm Arrival Time
               </Button>
             </form>
           </div>

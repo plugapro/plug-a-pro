@@ -13,6 +13,7 @@ import {
   type ProviderTopUpIntentInstructions,
   type ProviderWalletLedgerItem,
 } from './actions'
+import { PayfastPackageSelector } from './PayfastPackageSelector'
 
 export const metadata = buildMetadata({ title: 'Plug-A-Pro Credits', noIndex: true })
 
@@ -123,7 +124,7 @@ function ActivityRow({ item }: { item: ProviderWalletLedgerItem }) {
 export default async function ProviderCreditsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ intent?: string }>
+  searchParams?: Promise<{ intent?: string; topup?: string }>
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : {}
   const [summary, ledger, instructions] = await Promise.all([
@@ -133,6 +134,8 @@ export default async function ProviderCreditsPage({
       ? getProviderTopUpIntentInstructions(resolvedSearchParams.intent)
       : Promise.resolve(null),
   ])
+
+  const topupParam = resolvedSearchParams.topup
 
   return (
     <div className="mx-auto max-w-lg space-y-5 px-4 py-6 pb-24">
@@ -174,15 +177,49 @@ export default async function ProviderCreditsPage({
         </CardContent>
       </Card>
 
+      {/* Payfast return-URL banners */}
+      {topupParam === 'success' ? (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <p className="font-medium">Payment submitted</p>
+          <p className="mt-1 text-emerald-800">
+            Your credits will appear in your wallet once Payfast confirms the payment — this usually takes a few seconds.
+          </p>
+        </div>
+      ) : null}
+
+      {topupParam === 'cancelled' ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-medium">Payment not completed</p>
+          <p className="mt-1 text-amber-800">
+            Your wallet was not charged. Select a package below to try again.
+          </p>
+        </div>
+      ) : null}
+
+      {/* Manual EFT instructions (if a manual intent was just created) */}
       {instructions ? <EftInstructions instructions={instructions} /> : null}
 
+      {/* Payfast top-up — primary */}
       <Card>
         <CardHeader>
-          <CardTitle>Top up</CardTitle>
+          <CardTitle>Top up with Payfast</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Minimum top-up is R100. Manual EFT top-ups are credited after funds are confirmed.
+            Pay instantly by card, EFT, or scan to pay. Credits are issued automatically once your payment is confirmed.
+          </p>
+          <PayfastPackageSelector />
+        </CardContent>
+      </Card>
+
+      {/* Manual EFT — secondary */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Manual EFT</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Manual EFT top-ups are credited after funds are confirmed by our finance team (1–2 business days).
           </p>
           <div className="grid gap-2">
             {TOP_UP_OPTIONS.map((option) => (
@@ -195,7 +232,7 @@ export default async function ProviderCreditsPage({
                       {option.credits} Plug-A-Pro Credits
                     </span>
                   </span>
-                  <span>Choose</span>
+                  <span>Get instructions</span>
                 </Button>
               </form>
             ))}

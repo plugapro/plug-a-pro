@@ -1,6 +1,7 @@
 import { db } from './db'
 import { recordAuditLog } from './audit'
 import { AUDIT_ENTITY } from './audit-entities'
+import { getCustomerProviderHandoverUrl } from './customer-provider-handover-access'
 import { getProviderLeadAccessUrlByLeadId } from './provider-lead-access'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
@@ -14,12 +15,38 @@ function providerDisplayName(providerName: string | null | undefined) {
   return name ? `${name} from Plug A Pro` : 'Your Plug A Pro provider'
 }
 
-function areaLabel(address: { suburb?: string | null; city?: string | null } | null | undefined) {
-  return [address?.suburb, address?.city].filter(Boolean).join(', ') || 'Location on ticket'
-}
-
 function addressLabel(address: { street?: string | null; suburb?: string | null; city?: string | null; province?: string | null } | null | undefined) {
   return [address?.street, address?.suburb, address?.city, address?.province].filter(Boolean).join(', ') || 'View the signed job link for the address'
+}
+
+function preferredAvailabilityLabel(jobRequest: {
+  requestedWindowStart?: Date | null
+  requestedWindowEnd?: Date | null
+  requestedArrivalLatest?: Date | null
+}) {
+  const dateTime = new Intl.DateTimeFormat('en-ZA', {
+    timeZone: 'Africa/Johannesburg',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const timeOnly = new Intl.DateTimeFormat('en-ZA', {
+    timeZone: 'Africa/Johannesburg',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+  if (jobRequest.requestedWindowStart) {
+    const start = dateTime.format(jobRequest.requestedWindowStart)
+    const end = jobRequest.requestedWindowEnd ? timeOnly.format(jobRequest.requestedWindowEnd) : null
+    return end ? `${start}-${end}` : start
+  }
+  if (jobRequest.requestedArrivalLatest) {
+    return `Before ${dateTime.format(jobRequest.requestedArrivalLatest)}`
+  }
+  return 'Flexible'
 }
 
 function whatsappDirectUrl(phone: string, message: string) {
@@ -56,10 +83,12 @@ export async function notifyPostMatchAcceptance(params: {
     where: { id: params.leadId },
     include: {
       provider: { select: { id: true, name: true, phone: true } },
+      unlock: { select: { id: true, creditsCharged: true, unlockedAt: true } },
       jobRequest: {
         include: {
           customer: { select: { id: true, name: true, phone: true } },
           address: { select: { street: true, suburb: true, city: true, province: true } },
+          match: { select: { id: true, providerId: true, status: true, createdAt: true } },
         },
       },
     },
@@ -70,12 +99,17 @@ export async function notifyPostMatchAcceptance(params: {
   const customer = lead.jobRequest.customer
   const provider = lead.provider
   const ref = lead.jobRequest.id.slice(-8).toUpperCase()
-  const providerName = provider.name?.trim() || 'your Plug A Pro provider'
   const customerName = firstName(customer.name)
   const category = lead.jobRequest.category
-  const area = areaLabel(lead.jobRequest.address)
   const address = addressLabel(lead.jobRequest.address)
   const leadUrl = await getProviderLeadAccessUrlByLeadId(lead.id)
+  const customerHandoverUrl = await getCustomerProviderHandoverUrl({
+    leadId: lead.id,
+    providerId: provider.id,
+    jobRequestId: lead.jobRequestId,
+  })
+  const preferredAvailability = preferredAvailabilityLabel(lead.jobRequest)
+  const creditsCharged = lead.unlock?.creditsCharged ?? 1
 
   const { sendText, sendCtaUrl, sendButtons } = await import('./whatsapp-interactive')
 
@@ -84,19 +118,36 @@ export async function notifyPostMatchAcceptance(params: {
     templateName: 'post_match_customer_provider_accepted',
     leadId: lead.id,
   }))) {
-    await sendText(
-      customer.phone,
-      `🎉 *Great news, ${customerName}!*\n\n*${providerDisplayName(provider.name)}* has accepted your *${category}* request.\n\n${providerName} will be in touch shortly to confirm the details and next steps.\n\nReply *status* anytime to check your booking.`,
-      {
-        templateName: 'post_match_customer_provider_accepted',
-        metadata: {
-          leadId: lead.id,
-          jobRequestId: lead.jobRequestId,
-          matchId: params.matchId,
-          providerId: provider.id,
-        },
+    const customerBody =
+      `🎉 *Great news, ${customerName}!*\n\n` +
+      `*${providerDisplayName(provider.name)}* has accepted your *${category}* request.\n\n` +
+      `They will contact you shortly to confirm the visit details.\n\n` +
+      `Provider contact:\n${provider.phone}\n\n` +
+      `Ref: *${ref}*`
+    const customerContext = {
+      templateName: 'post_match_customer_provider_accepted',
+      metadata: {
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        matchId: params.matchId,
+        providerId: provider.id,
+        customerId: customer.id,
+        handoverUrlCreated: Boolean(customerHandoverUrl),
       },
-    )
+    }
+
+    if (customerHandoverUrl) {
+      await sendCtaUrl(
+        customer.phone,
+        customerBody,
+        'View Provider',
+        customerHandoverUrl,
+        { footer: 'Secure link for this request only.' },
+        customerContext,
+      )
+    } else {
+      await sendText(customer.phone, customerBody, customerContext)
+    }
   }
 
   if (provider.phone && !(await hasSentPostMatchMessage({
@@ -106,13 +157,14 @@ export async function notifyPostMatchAcceptance(params: {
   }))) {
     const body =
       `✅ *Job accepted! — ${firstName(provider.name)}*\n\n` +
-      `Your client *${customerName}* has been notified that you accepted the *${category}* job.\n\n` +
-      `Please confirm when you plan to arrive.\n\n` +
+      `You've unlocked this lead using *${creditsCharged} credit${creditsCharged === 1 ? '' : 's'}*.\n\n` +
+      `Client: *${customer.name}*\n` +
       `Service: *${category}*\n` +
-      `Area: *${area}*\n` +
       `Address: *${address}*\n` +
+      `Preferred availability: *${preferredAvailability}*\n` +
       `Ref: *${ref}*\n\n` +
-      `Open the job to view full details, customer notes, photos, and update your arrival time.`
+      `Customer contact:\n${customer.name}\n${customer.phone}\n\n` +
+      `Open the job to view full details, notes, and photos.`
 
     if (leadUrl) {
       await sendCtaUrl(
@@ -120,7 +172,7 @@ export async function notifyPostMatchAcceptance(params: {
         body,
         'View Job',
         leadUrl,
-        { footer: 'Customer contact is released only after acceptance' },
+        { footer: 'Secure link for this accepted job only.' },
         {
           templateName: 'post_match_provider_job_accepted',
           metadata: {
@@ -128,6 +180,8 @@ export async function notifyPostMatchAcceptance(params: {
             jobRequestId: lead.jobRequestId,
             matchId: params.matchId,
             providerId: provider.id,
+            leadUnlockId: lead.unlock?.id,
+            customerContactReleased: true,
           },
         },
       )
@@ -139,6 +193,8 @@ export async function notifyPostMatchAcceptance(params: {
           jobRequestId: lead.jobRequestId,
           matchId: params.matchId,
           providerId: provider.id,
+          leadUnlockId: lead.unlock?.id,
+          customerContactReleased: true,
         },
       })
     }
@@ -151,9 +207,9 @@ export async function notifyPostMatchAcceptance(params: {
   }))) {
     await sendButtons(
       provider.phone,
-      'Next action: contact the customer shortly to confirm the details. This handover is logged on the ticket.',
+      `Customer contact is released for this accepted job. Tap below to open WhatsApp with ${customerName}.`,
       [{ id: `post_match_contact:${lead.id}`, title: 'Contact Customer' }],
-      { footer: 'Use this only after accepting the job.' },
+      { footer: 'This contact handover is logged on the ticket.' },
       {
         templateName: 'post_match_provider_next_actions',
         metadata: {
@@ -161,10 +217,28 @@ export async function notifyPostMatchAcceptance(params: {
           jobRequestId: lead.jobRequestId,
           matchId: params.matchId,
           providerId: provider.id,
+          leadUnlockId: lead.unlock?.id,
         },
       },
     )
   }
+
+  console.info('[post-match] accepted lead handover notifications processed', {
+    lead_id: lead.id,
+    job_request_id: lead.jobRequestId,
+    match_id: params.matchId,
+    provider_id: provider.id,
+    customer_id: customer.id,
+    credit_transaction_id: lead.unlock?.id ?? null,
+    lead_unlock_id: lead.unlock?.id ?? null,
+    customer_notification_result: customer.phone ? 'attempted' : 'skipped_no_phone',
+    provider_notification_result: provider.phone ? 'attempted' : 'skipped_no_phone',
+    signed_link_generation_result: {
+      provider_view_job: Boolean(leadUrl),
+      customer_view_provider: Boolean(customerHandoverUrl),
+    },
+    trace_id: `handover_${lead.id}_${params.matchId}`,
+  })
 
   await recordAuditLog({
     actorId: provider.id,

@@ -160,6 +160,7 @@ export async function resolveProviderLeadAccessToken(token: string) {
             select: {
               id: true,
               status: true,
+              createdAt: true,
               customerContactedAt: true,
               plannedArrivalStart: true,
               plannedArrivalEnd: true,

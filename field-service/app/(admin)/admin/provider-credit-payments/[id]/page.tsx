@@ -116,8 +116,14 @@ export default async function ProviderCreditPaymentDetailPage({
     limit: 10,
   })
 
-  const canMatch = ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'].includes(intent.status)
-  const canCredit = ['PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'].includes(intent.status)
+  const isPayfastIntent = ['PAYFAST_CARD', 'PAYFAST_EFT', 'PAYFAST_SCODE'].includes(intent.paymentMethod)
+  // Matching (bank statement reconciliation) applies to manual EFT only.
+  const canMatch = !isPayfastIntent && ['CREATED', 'PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'].includes(intent.status)
+  // Payfast intents can be manually credited when stuck in PENDING_PAYMENT or
+  // ITN_RECEIVED (ITN arrived but automatic crediting failed).
+  const canCredit = isPayfastIntent
+    ? ['PENDING_PAYMENT', 'ITN_RECEIVED'].includes(intent.status)
+    : ['PENDING_PAYMENT', 'PROOF_UPLOADED', 'MATCHED_ON_STATEMENT'].includes(intent.status)
   const canFail = intent.status !== 'CREDITED'
   const proofDownloadHref = intent.proofOfPaymentUrl
     ? `/api/admin/provider-credit-payments/${intent.id}/proof`
@@ -180,30 +186,38 @@ export default async function ProviderCreditPaymentDetailPage({
                 <dd className="font-medium">{intent.creditsToIssue} paid credits</dd>
               </div>
               <div>
+                <dt className="text-muted-foreground">Payment method</dt>
+                <dd className="font-mono text-xs">{intent.paymentMethod}</dd>
+              </div>
+              <div>
                 <dt className="text-muted-foreground">Payment reference</dt>
                 <dd className="font-mono">{intent.paymentReference}</dd>
               </div>
-              <div>
-                <dt className="text-muted-foreground">Bank statement reference</dt>
-                <dd className="font-mono">{intent.bankStatementReference ?? 'Not matched'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Proof of payment</dt>
-                <dd>
-                  {proofDownloadHref ? (
-                    <a
-                      href={proofDownloadHref}
-                      className="text-primary underline-offset-4 hover:underline"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open proof
-                    </a>
-                  ) : (
-                    'Not uploaded'
-                  )}
-                </dd>
-              </div>
+              {!isPayfastIntent ? (
+                <>
+                  <div>
+                    <dt className="text-muted-foreground">Bank statement reference</dt>
+                    <dd className="font-mono">{intent.bankStatementReference ?? 'Not matched'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Proof of payment</dt>
+                    <dd>
+                      {proofDownloadHref ? (
+                        <a
+                          href={proofDownloadHref}
+                          className="text-primary underline-offset-4 hover:underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open proof
+                        </a>
+                      ) : (
+                        'Not uploaded'
+                      )}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
               <div>
                 <dt className="text-muted-foreground">Current wallet balance</dt>
                 <dd className="font-medium">
@@ -221,10 +235,17 @@ export default async function ProviderCreditPaymentDetailPage({
                 <span>Created</span>
                 <span className="text-muted-foreground">{formatDate(intent.createdAt)}</span>
               </li>
-              <li className="flex justify-between gap-4">
-                <span>Matched on statement</span>
-                <span className="text-muted-foreground">{formatDate(intent.paidAt)}</span>
-              </li>
+              {isPayfastIntent ? (
+                <li className="flex justify-between gap-4">
+                  <span>ITN received</span>
+                  <span className="text-muted-foreground">{formatDate(intent.itnReceivedAt)}</span>
+                </li>
+              ) : (
+                <li className="flex justify-between gap-4">
+                  <span>Matched on statement</span>
+                  <span className="text-muted-foreground">{formatDate(intent.paidAt)}</span>
+                </li>
+              )}
               <li className="flex justify-between gap-4">
                 <span>Credited</span>
                 <span className="text-muted-foreground">{formatDate(intent.creditedAt)}</span>
@@ -235,6 +256,32 @@ export default async function ProviderCreditPaymentDetailPage({
               </li>
             </ol>
           </div>
+
+          {isPayfastIntent ? (
+            <div className="rounded-xl border bg-card p-4">
+              <h2 className="font-semibold">Payfast ITN data</h2>
+              <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+                <div>
+                  <dt className="text-muted-foreground">ITN payment status</dt>
+                  <dd className="font-mono text-xs">{intent.itnPaymentStatus ?? 'Not received'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">ITN amount (gross)</dt>
+                  <dd className="font-medium">
+                    {intent.itnAmountCents != null ? formatCurrency(intent.itnAmountCents) : 'Not received'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">ITN received at</dt>
+                  <dd className="text-muted-foreground">{formatDate(intent.itnReceivedAt)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Ledger entry ID</dt>
+                  <dd className="font-mono text-xs">{intent.creditedLedgerEntryId ?? 'Not credited'}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
 
           <div className="rounded-xl border bg-card p-4">
             <h2 className="font-semibold">Admin note</h2>
@@ -263,52 +310,55 @@ export default async function ProviderCreditPaymentDetailPage({
         </section>
 
         <aside className="space-y-4">
-          <form action={reconcileTopUpIntentFormAction} className="space-y-3 rounded-xl border bg-card p-4">
-            <input type="hidden" name="paymentIntentId" value={intent.id} />
-            <h2 className="font-semibold">Mark as matched</h2>
-            <p className="text-sm text-muted-foreground">
-              Use this after the exact payment reference appears on the bank statement.
-            </p>
-            <Input
-              name="bankStatementReference"
-              defaultValue={intent.bankStatementReference ?? intent.paymentReference}
-              placeholder="Bank statement reference"
-              disabled={!canMatch}
-              required
-            />
-            <Input
-              name="statementAmountRand"
-              type="number"
-              min="0"
-              step="0.01"
-              defaultValue={(intent.amountCents / 100).toFixed(2)}
-              disabled={!canMatch}
-              required
-            />
-            <textarea
-              name="adminNote"
-              className="min-h-20 w-full rounded-xl border bg-background px-3 py-2 text-sm"
-              placeholder="Admin note"
-              disabled={!canMatch}
-            />
-            <Button type="submit" disabled={!canMatch} className="w-full">
-              Mark matched
-            </Button>
-          </form>
+          {!isPayfastIntent ? (
+            <form action={reconcileTopUpIntentFormAction} className="space-y-3 rounded-xl border bg-card p-4">
+              <input type="hidden" name="paymentIntentId" value={intent.id} />
+              <h2 className="font-semibold">Mark as matched</h2>
+              <p className="text-sm text-muted-foreground">
+                Use this after the exact payment reference appears on the bank statement.
+              </p>
+              <Input
+                name="bankStatementReference"
+                defaultValue={intent.bankStatementReference ?? intent.paymentReference}
+                placeholder="Bank statement reference"
+                disabled={!canMatch}
+                required
+              />
+              <Input
+                name="statementAmountRand"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={(intent.amountCents / 100).toFixed(2)}
+                disabled={!canMatch}
+                required
+              />
+              <textarea
+                name="adminNote"
+                className="min-h-20 w-full rounded-xl border bg-background px-3 py-2 text-sm"
+                placeholder="Admin note"
+                disabled={!canMatch}
+              />
+              <Button type="submit" disabled={!canMatch} className="w-full">
+                Mark matched
+              </Button>
+            </form>
+          ) : null}
 
           <form action={creditTopUpIntentFormAction} className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
             <input type="hidden" name="paymentIntentId" value={intent.id} />
             <h2 className="font-semibold text-emerald-950">Credit wallet</h2>
             <p className="text-sm text-emerald-900">
-              Confirm this will add {intent.creditsToIssue} paid Plug-A-Pro Credits to {intent.provider.name}.
-              This action cannot be repeated.
+              {isPayfastIntent
+                ? `Manually credit ${intent.creditsToIssue} paid Plug-A-Pro Credits to ${intent.provider.name}. Use only when the ITN was verified but automatic crediting failed.`
+                : `Confirm this will add ${intent.creditsToIssue} paid Plug-A-Pro Credits to ${intent.provider.name}. This action cannot be repeated.`}
             </p>
             <textarea
               name="adminNote"
               className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 text-sm"
-              placeholder="Credit note"
+              placeholder={isPayfastIntent ? 'Reason for manual credit' : 'Credit note'}
               disabled={!canCredit}
-              required
+              required={isPayfastIntent}
             />
             <Button type="submit" disabled={!canCredit} className="w-full">
               Confirm and credit wallet

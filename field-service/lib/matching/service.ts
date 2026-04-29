@@ -18,6 +18,7 @@ import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
 import { releaseProviderCapacity } from './reservation'
 import { sendText } from '../whatsapp-interactive'
+import { LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
 import type {
   CoverageTier,
   DispatchActor,
@@ -1632,9 +1633,14 @@ export async function acceptAssignmentOffer(params: {
   leadId: string
   providerId: string
   inspectionNeeded?: boolean
+  source?: 'whatsapp' | 'pwa' | 'api'
 }): Promise<OfferResolutionResult> {
   const acceptStart = Date.now()
-  const transactionResult = await db.$transaction(async (tx) => {
+  const traceId = `${params.source ?? 'api'}:${params.leadId}:${Date.now().toString(36)}`
+  let transactionResult
+
+  try {
+    transactionResult = await db.$transaction(async (tx) => {
     const lead = await tx.lead.findUnique({
       where: { id: params.leadId },
       include: {
@@ -1698,6 +1704,19 @@ export async function acceptAssignmentOffer(params: {
       return { ok: false as const, reason: 'TAKEN' }
     }
 
+    const walletBefore = await tx.providerWallet.findUnique({
+      where: { providerId: params.providerId },
+      select: { paidCreditBalance: true, promoCreditBalance: true },
+    })
+    const currentCreditBalance =
+      (walletBefore?.paidCreditBalance ?? 0) + (walletBefore?.promoCreditBalance ?? 0)
+    const unlockBefore = await tx.leadUnlock.findUnique({
+      where: { leadId: lead.id },
+      select: { id: true, providerId: true },
+    })
+    const unlockResult = await unlockLeadForProviderInTransaction(tx, lead.id, params.providerId)
+    const alreadyUnlocked = Boolean(unlockBefore) || unlockResult.alreadyUnlocked
+
     if (existingMatch && existingMatch.providerId === params.providerId) {
       await tx.lead.update({
         where: { id: lead.id },
@@ -1720,6 +1739,11 @@ export async function acceptAssignmentOffer(params: {
         bookingId: null,
         assignmentHoldId: lead.assignmentHold.id,
         nextOfferedProviderId: null,
+        alreadyUnlocked,
+        creditTransactionId: unlockResult.ledgerEntries.at(-1)?.id ?? null,
+        currentCreditBalance,
+        leadStatusBefore: lead.status,
+        leadStatusAfter: 'ACCEPTED',
       }
     }
 
@@ -1756,6 +1780,26 @@ export async function acceptAssignmentOffer(params: {
         providerId: params.providerId,
         status: params.inspectionNeeded ? 'INSPECTION_SCHEDULED' : 'MATCHED',
         inspectionNeeded: params.inspectionNeeded === true,
+      },
+    })
+
+    await tx.auditLog.create({
+      data: {
+        actorId: params.providerId,
+        actorRole: 'provider',
+        action: 'lead.accept',
+        entityType: 'Lead',
+        entityId: lead.id,
+        before: {
+          status: lead.status,
+          jobRequestId: lead.jobRequestId,
+        },
+        after: {
+          status: 'ACCEPTED',
+          matchId: match.id,
+          leadUnlockId: unlockResult.unlock.id,
+          source: params.source ?? 'api',
+        },
       },
     })
 
@@ -1860,15 +1904,97 @@ export async function acceptAssignmentOffer(params: {
       category: jobRequest.category,
       assignmentHoldId: lead.assignmentHold.id,
       nextOfferedProviderId: null,
+      alreadyUnlocked,
+      creditTransactionId: unlockResult.ledgerEntries.at(-1)?.id ?? null,
+      currentCreditBalance,
+      leadStatusBefore: lead.status,
+      leadStatusAfter: 'ACCEPTED',
     }
-  })
+    })
+  } catch (error) {
+    if (error instanceof LeadUnlockError) {
+      const reason = error.code === 'LEAD_NOT_AVAILABLE'
+        ? 'EXPIRED'
+        : error.code === 'INSUFFICIENT_CREDITS'
+          ? 'INSUFFICIENT_CREDITS'
+          : error.code === 'KYC_REQUIRED'
+            ? 'KYC_REQUIRED'
+            : error.code === 'WALLET_SUSPENDED'
+              ? 'WALLET_SUSPENDED'
+              : error.code === 'CONCURRENT_UNLOCK'
+                ? 'CONCURRENT_UNLOCK'
+                : error.code === 'FORBIDDEN'
+                  ? 'FORBIDDEN'
+                  : 'TAKEN'
+      console.info('[matching] lead unlock/accept blocked', {
+        provider_id: params.providerId,
+        lead_id: params.leadId,
+        source: params.source ?? 'api',
+        current_credit_balance: error.currentCreditBalance,
+        already_unlocked: false,
+        result: reason,
+        trace_id: traceId,
+      })
+      return {
+        ok: false,
+        reason,
+        currentCreditBalance: error.currentCreditBalance,
+      }
+    }
+
+    if (
+      error != null &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    ) {
+      console.info('[matching] lead unlock/accept blocked by concurrent match', {
+        provider_id: params.providerId,
+        lead_id: params.leadId,
+        source: params.source ?? 'api',
+        result: 'TAKEN',
+        trace_id: traceId,
+      })
+      return { ok: false, reason: 'TAKEN' }
+    }
+
+    throw error
+  }
 
   if (!transactionResult.ok) {
+    console.info('[matching] lead unlock/accept blocked', {
+      provider_id: params.providerId,
+      lead_id: params.leadId,
+      source: params.source ?? 'api',
+      result: transactionResult.reason,
+      trace_id: traceId,
+    })
     return {
       ok: false,
-      reason: transactionResult.reason as 'NOT_FOUND' | 'FORBIDDEN' | 'EXPIRED' | 'TAKEN',
+      reason: transactionResult.reason as
+        | 'NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'EXPIRED'
+        | 'TAKEN'
+        | 'INSUFFICIENT_CREDITS'
+        | 'KYC_REQUIRED'
+        | 'WALLET_SUSPENDED'
+        | 'CONCURRENT_UNLOCK',
     }
   }
+
+  console.info('[matching] lead unlock/accept attempt', {
+    provider_id: params.providerId,
+    lead_id: params.leadId,
+    source: params.source ?? 'api',
+    current_credit_balance: transactionResult.currentCreditBalance,
+    already_unlocked: transactionResult.alreadyUnlocked,
+    lead_status_before: transactionResult.leadStatusBefore,
+    lead_status_after: transactionResult.leadStatusAfter,
+    credit_transaction_id: transactionResult.creditTransactionId,
+    result: 'ACCEPTED',
+    trace_id: traceId,
+  })
 
   if (
     transactionResult.bookingId &&

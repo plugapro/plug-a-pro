@@ -20,6 +20,7 @@ export class LeadUnlockError extends Error {
   constructor(
     public readonly code: LeadUnlockErrorCode,
     message: string,
+    public readonly currentCreditBalance?: number,
   ) {
     super(message)
     this.name = 'LeadUnlockError'
@@ -230,5 +231,130 @@ export async function unlockLeadForProvider(
     }
 
     throw error
+  }
+}
+
+export async function unlockLeadForProviderInTransaction(
+  tx: Prisma.TransactionClient,
+  leadId: string,
+  providerId: string,
+): Promise<UnlockLeadForProviderResult> {
+  const existingUnlock = await tx.leadUnlock.findUnique({
+    where: { leadId },
+  })
+
+  if (existingUnlock) {
+    if (existingUnlock.providerId !== providerId) {
+      throw new LeadUnlockError('FORBIDDEN', 'This lead belongs to another provider.')
+    }
+
+    return {
+      unlock: existingUnlock,
+      ledgerEntries: [],
+      alreadyUnlocked: true,
+    }
+  }
+
+  const lead = await tx.lead.findUnique({
+    where: { id: leadId },
+    include: {
+      provider: {
+        select: {
+          id: true,
+          kycStatus: true,
+        },
+      },
+      jobRequest: {
+        select: {
+          id: true,
+          status: true,
+          match: { select: { id: true, providerId: true } },
+        },
+      },
+    },
+  })
+
+  if (!lead) throw new LeadUnlockError('NOT_FOUND', 'Lead not found.')
+  if (lead.providerId !== providerId) {
+    throw new LeadUnlockError('FORBIDDEN', 'This lead belongs to another provider.')
+  }
+  if (lead.provider.kycStatus !== 'VERIFIED') {
+    throw new LeadUnlockError(
+      'KYC_REQUIRED',
+      'KYC must be approved before unlocking full customer details.',
+    )
+  }
+  if (
+    lead.jobRequest.match &&
+    lead.jobRequest.match.providerId !== providerId
+  ) {
+    throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead has already been matched.')
+  }
+
+  assertLeadAvailable(lead)
+
+  const wallet = await tx.providerWallet.findUnique({
+    where: { providerId },
+    select: { paidCreditBalance: true, promoCreditBalance: true },
+  })
+  const currentCreditBalance = (wallet?.paidCreditBalance ?? 0) + (wallet?.promoCreditBalance ?? 0)
+  if (currentCreditBalance < LEAD_UNLOCK_COST_CREDITS) {
+    throw new LeadUnlockError(
+      'INSUFFICIENT_CREDITS',
+      'You need at least 1 Plug-A-Pro Credit to unlock this lead.',
+      currentCreditBalance,
+    )
+  }
+
+  const unlock = await tx.leadUnlock.create({
+    data: {
+      leadId: lead.id,
+      providerId,
+      matchId: lead.jobRequest.match?.id ?? null,
+      creditsCharged: LEAD_UNLOCK_COST_CREDITS,
+      creditTypeBreakdown: {},
+      status: 'UNLOCKED',
+    },
+  })
+
+  let debitResult
+  try {
+    debitResult = await debitCreditsForLeadUnlockInTransaction(
+      tx,
+      providerId,
+      LEAD_UNLOCK_COST_CREDITS,
+      {
+        referenceType: 'lead_unlock',
+        referenceId: unlock.id,
+        description: `Lead unlock ${lead.id.slice(-8).toUpperCase()}`,
+        metadata: {
+          leadId: lead.id,
+          jobRequestId: lead.jobRequestId,
+        },
+        createdBy: providerId,
+      },
+    )
+  } catch (error) {
+    mapWalletError(error)
+  }
+
+  const updatedUnlock = await tx.leadUnlock.update({
+    where: { id: unlock.id },
+    data: {
+      creditTypeBreakdown: toJson(creditBreakdown(debitResult.ledgerEntries)),
+    },
+  })
+
+  if (lead.status === 'SENT') {
+    await tx.lead.update({
+      where: { id: lead.id },
+      data: { status: 'VIEWED' },
+    })
+  }
+
+  return {
+    unlock: updatedUnlock,
+    ledgerEntries: debitResult.ledgerEntries,
+    alreadyUnlocked: false,
   }
 }

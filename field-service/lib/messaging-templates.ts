@@ -285,6 +285,17 @@ export const TEMPLATES = {
       'Payment received. Your wallet has been credited with {{1}} Plug-A-Pro Credits.',
   },
 
+  wallet_payfast_topup_initiated: {
+    name: 'wallet_payfast_topup_initiated',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent after a provider initiates a Payfast gateway top-up (card, EFT, or SCode)',
+    // {{1}} amount formatted (e.g. "R100.00"), {{2}} credits to issue
+    // NOTE: WhatsApp template approval required before live sends succeed.
+    example:
+      'Your Plug-A-Pro top-up of {{1}} ({{2}} credits) has been initiated. Complete your payment on the checkout page. Credits will appear in your wallet once Payfast confirms payment.',
+  },
+
   lead_unlock_provider: {
     name: 'lead_unlock_provider',
     language: 'en_ZA',

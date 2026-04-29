@@ -41,6 +41,15 @@ const {
       findFirst: vi.fn(),
     },
     lead: { upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+    leadUnlock: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    providerWallet: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
+    walletLedgerEntry: { create: vi.fn() },
+    auditLog: { create: vi.fn() },
     quote: { create: vi.fn() },
     booking: { create: vi.fn() },
     job: { create: vi.fn(), findMany: vi.fn() },
@@ -90,6 +99,52 @@ describe('matching service', () => {
     mockDb.assignmentHold.findFirst.mockResolvedValue(null)
     mockDb.lead.upsert.mockResolvedValue({ id: 'lead-1' })
     mockDb.lead.update.mockResolvedValue({})
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
+    mockDb.leadUnlock.create.mockResolvedValue({
+      id: 'unlock-1',
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      creditsCharged: 1,
+      creditTypeBreakdown: {},
+      status: 'UNLOCKED',
+    })
+    mockDb.leadUnlock.update.mockImplementation(async (args: any) => ({
+      id: args.where.id,
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      creditsCharged: 1,
+      creditTypeBreakdown: args.data.creditTypeBreakdown,
+      status: 'UNLOCKED',
+    }))
+    mockDb.providerWallet.findUnique.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 1,
+    })
+    mockDb.providerWallet.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 1,
+    })
+    mockDb.providerWallet.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.providerWallet.findUniqueOrThrow.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
+    })
+    mockDb.walletLedgerEntry.create.mockResolvedValue({
+      id: 'ledger-1',
+      entryType: 'LEAD_UNLOCK_DEBIT',
+      creditType: 'PROMO',
+      amountCredits: 1,
+    })
+    mockDb.auditLog.create.mockResolvedValue({})
     mockDb.quote.create.mockResolvedValue({ id: 'quote-1' })
     mockDb.booking.create.mockResolvedValue({ id: 'booking-1' })
     mockDb.job.create.mockResolvedValue({})
@@ -428,7 +483,19 @@ describe('matching service', () => {
   })
 
   it('creates a booking immediately when the category allows direct booking and the customer accepted the amount', async () => {
-    mockDb.lead.findUnique.mockResolvedValue({
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: { id: 'provider-preferred', kycStatus: 'VERIFIED' },
+      jobRequest: {
+        id: 'jr-generic',
+        status: 'OPEN',
+        match: null,
+      },
+    } : {
       id: 'lead-1',
       providerId: 'provider-preferred',
       jobRequestId: 'jr-generic',
@@ -467,6 +534,55 @@ describe('matching service', () => {
     }
     expect(mockDb.quote.create).toHaveBeenCalled()
     expect(mockInitializeBookingPayment).toHaveBeenCalled()
+  })
+
+  it('blocks assignment acceptance when the provider has no lead credits', async () => {
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: { id: 'provider-preferred', kycStatus: 'VERIFIED' },
+      jobRequest: {
+        id: 'jr-generic',
+        status: 'OPEN',
+        match: null,
+      },
+    } : {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.providerWallet.findUnique.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
+    })
+    mockDb.match.findUnique.mockResolvedValue(null)
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    expect(mockDb.match.create).not.toHaveBeenCalled()
+    expect(mockInitializeBookingPayment).not.toHaveBeenCalled()
   })
 
   it('logs a manual override and still creates an assignment hold', async () => {

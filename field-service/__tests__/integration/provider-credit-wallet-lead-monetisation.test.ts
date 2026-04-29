@@ -32,6 +32,7 @@ const { mockDb, mockNotifications, state } = vi.hoisted(() => {
     $transaction: vi.fn(),
     provider: { findUnique: vi.fn() },
     providerWallet: {
+      findUnique: vi.fn(),
       upsert: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -221,6 +222,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       return { ...provider, wallet: state.wallets.get(provider.id) ?? null }
     })
 
+    mockDb.providerWallet.findUnique.mockImplementation(async (args: any) => state.wallets.get(args.where.providerId) ?? null)
     mockDb.providerWallet.upsert.mockImplementation(async (args: any) => wallet(args.create.providerId))
     mockDb.providerWallet.update.mockImplementation(async (args: any) => {
       const current = [...state.wallets.values()].find((item) => item.id === args.where.id)

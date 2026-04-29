@@ -180,6 +180,7 @@ export default async function ProviderCreditPaymentsPage({
               <th className="px-4 py-3 text-left font-medium">Payment reference</th>
               <th className="px-4 py-3 text-left font-medium">Provider</th>
               <th className="px-4 py-3 text-left font-medium">Cellphone</th>
+              <th className="px-4 py-3 text-left font-medium">Method</th>
               <th className="px-4 py-3 text-left font-medium">Amount</th>
               <th className="px-4 py-3 text-left font-medium">Credits</th>
               <th className="px-4 py-3 text-left font-medium">Status</th>
@@ -190,7 +191,7 @@ export default async function ProviderCreditPaymentsPage({
           <tbody className="divide-y">
             {intents.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                   No provider top-up intents found.
                 </td>
               </tr>
@@ -205,6 +206,7 @@ export default async function ProviderCreditPaymentsPage({
                 <td className="px-4 py-3 font-mono text-xs">
                   {intent.providerCellphone ?? intent.provider.phone}
                 </td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">{intent.paymentMethod.replace('PAYFAST_', 'PF ').replace('_', ' ')}</td>
                 <td className="px-4 py-3 font-medium">{formatCurrency(intent.amountCents)}</td>
                 <td className="px-4 py-3">{intent.creditsToIssue}</td>
                 <td className="px-4 py-3">

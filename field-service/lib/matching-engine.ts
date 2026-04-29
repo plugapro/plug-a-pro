@@ -311,7 +311,16 @@ type LeadAccepted = {
 
 type LeadRejected = {
   ok: false
-  reason: 'NOT_FOUND' | 'FORBIDDEN' | 'EXPIRED' | 'TAKEN'
+  reason:
+    | 'NOT_FOUND'
+    | 'FORBIDDEN'
+    | 'EXPIRED'
+    | 'TAKEN'
+    | 'INSUFFICIENT_CREDITS'
+    | 'KYC_REQUIRED'
+    | 'WALLET_SUSPENDED'
+    | 'CONCURRENT_UNLOCK'
+  currentCreditBalance?: number
 }
 
 export type LeadAcceptanceResult = LeadAccepted | LeadRejected
@@ -404,6 +413,7 @@ export async function acceptLead(params: {
   leadId: string
   providerId: string
   inspectionNeeded?: boolean
+  source?: 'whatsapp' | 'pwa' | 'api'
 }): Promise<LeadAcceptanceResult> {
   const result = await acceptAssignmentOffer(params)
   if (!result.ok) return result
@@ -435,6 +445,7 @@ export async function declineLead(params: {
   const result = await rejectAssignmentOffer(params)
   if (!result.ok) {
     if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') return { ok: true }
+    if (result.reason !== 'NOT_FOUND' && result.reason !== 'FORBIDDEN') return { ok: true }
     return { ok: false, reason: result.reason }
   }
   return { ok: true }
