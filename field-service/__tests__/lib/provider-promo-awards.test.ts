@@ -246,6 +246,55 @@ describe('provider promo award service', () => {
     expect(state.wallet.promoCreditBalance).toBe(3)
   })
 
+  it('awards 10 onboarding test credits to selected internal staff numbers', async () => {
+    state.provider = makeProvider({ phone: '+27764010810' })
+
+    const result = await awardPromoCreditsForMilestone(
+      'provider-1',
+      'MOBILE_VERIFIED',
+      milestoneReference(),
+    )
+
+    expect(result.awarded).toBe(true)
+    expect(result.award).toMatchObject({
+      awardType: 'MOBILE_VERIFIED',
+      creditsAwarded: 10,
+    })
+    expect(result.wallet).toMatchObject({ promoCreditBalance: 10 })
+    expect(result.ledgerEntries[0]).toMatchObject({
+      entryType: 'PROMO_CREDIT',
+      creditType: 'PROMO',
+      amountCredits: 10,
+    })
+  })
+
+  it('does not add profile or KYC pre-payment credits after an internal 10-credit onboarding award', async () => {
+    state.provider = makeProvider({ phone: '+27823035070' })
+
+    const mobileAward = await awardPromoCreditsForMilestone(
+      'provider-1',
+      'MOBILE_VERIFIED',
+      milestoneReference(),
+    )
+    const profileAward = await evaluateAndAwardProviderProfileCompletionPromoCredits(
+      'provider-1',
+      milestoneReference({ referenceType: 'provider', referenceId: 'provider-1' }),
+    )
+    const kycAward = await awardPromoCreditsForMilestone(
+      'provider-1',
+      'KYC_APPROVED',
+      milestoneReference({ referenceType: 'provider_kyc', referenceId: 'provider-1' }),
+    )
+
+    expect(mobileAward.awarded).toBe(true)
+    expect(profileAward.awarded).toBe(false)
+    expect(profileAward.skippedReason).toBe('PRE_PAYMENT_CAP_REACHED')
+    expect(kycAward.awarded).toBe(false)
+    expect(kycAward.skippedReason).toBe('PRE_PAYMENT_CAP_REACHED')
+    expect(state.wallet.promoCreditBalance).toBe(10)
+    expect(state.ledgerEntries).toHaveLength(1)
+  })
+
   it('enforces the pre-payment promo credit cap', async () => {
     state.promoAwards = [{
       id: 'award-existing',

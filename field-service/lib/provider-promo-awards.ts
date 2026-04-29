@@ -6,6 +6,10 @@ import {
   type WalletLedgerEntry,
 } from '@prisma/client'
 import { db } from './db'
+import {
+  INTERNAL_TEST_ONBOARDING_CREDITS,
+  isInternalTestOnboardingCreditPhone,
+} from './internal-test-cohort'
 import { creditPromoCreditsInTransaction } from './provider-wallet'
 
 export const PRE_PAYMENT_PROMO_CREDIT_CAP = 10
@@ -61,6 +65,10 @@ export type ProviderPromoAwardResult = {
 }
 
 type PromoAwardTx = Prisma.TransactionClient
+type PromoAwardProvider = {
+  id: string
+  phone: string | null
+}
 
 function assertPromoAwardReference(reference: PromoAwardReference) {
   if (!reference.referenceType.trim() || !reference.referenceId.trim()) {
@@ -94,10 +102,13 @@ function emptyResult(
   }
 }
 
-async function providerExists(tx: PromoAwardTx, providerId: string) {
+async function getProviderForPromoAward(
+  tx: PromoAwardTx,
+  providerId: string,
+): Promise<PromoAwardProvider> {
   const provider = await tx.provider.findUnique({
     where: { id: providerId },
-    select: { id: true },
+    select: { id: true, phone: true },
   })
 
   if (!provider) {
@@ -106,6 +117,16 @@ async function providerExists(tx: PromoAwardTx, providerId: string) {
       `Provider ${providerId} not found.`,
     )
   }
+
+  return provider
+}
+
+function creditsForAwardType(awardType: ProviderPromoAwardType, provider: PromoAwardProvider) {
+  if (awardType === 'MOBILE_VERIFIED' && isInternalTestOnboardingCreditPhone(provider.phone)) {
+    return INTERNAL_TEST_ONBOARDING_CREDITS
+  }
+
+  return PROVIDER_PROMO_CREDIT_REWARDS[awardType]
 }
 
 async function hasCreditedTopUp(tx: PromoAwardTx, providerId: string) {
@@ -160,15 +181,14 @@ export async function awardPromoCreditsForMilestoneInTransaction(
 ): Promise<ProviderPromoAwardResult> {
   assertPromoAwardReference(reference)
 
-  const creditsToAward = PROVIDER_PROMO_CREDIT_REWARDS[awardType]
+  const provider = await getProviderForPromoAward(tx, providerId)
+  const creditsToAward = creditsForAwardType(awardType, provider)
   if (!creditsToAward) {
     throw new ProviderPromoAwardError(
       'UNKNOWN_AWARD_TYPE',
       `Unsupported provider promo award type: ${awardType}.`,
     )
   }
-
-  await providerExists(tx, providerId)
 
   const existingAward = await tx.providerPromoAward.findUnique({
     where: { providerId_awardType: { providerId, awardType } },

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   INTERNAL_TEST_COHORT_NAME,
+  INTERNAL_TEST_ONBOARDING_CREDITS,
+  INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS,
   INTERNAL_TEST_PHONE_NUMBERS,
   createTestCohortContext,
+  isInternalTestOnboardingCreditPhone,
   isInternalTestPhone,
 } from '@/lib/internal-test-cohort'
 
@@ -54,5 +57,24 @@ describe('internal test cohort', () => {
       cohortName: null,
       normalizedPhone: '+27821234567',
     })
+  })
+
+  it('detects the internal staff numbers that receive 10 onboarding test credits', () => {
+    expect(INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS).toEqual([
+      '+27823035070',
+      '+27764010810',
+    ])
+    expect(INTERNAL_TEST_ONBOARDING_CREDITS).toBe(10)
+
+    for (const input of ['0823035070', '27823035070', '+27823035070']) {
+      expect(isInternalTestOnboardingCreditPhone(input)).toBe(true)
+    }
+    for (const input of ['0764010810', '27764010810', '+27764010810']) {
+      expect(isInternalTestOnboardingCreditPhone(input)).toBe(true)
+    }
+
+    expect(isInternalTestOnboardingCreditPhone('0773923802')).toBe(false)
+    expect(isInternalTestOnboardingCreditPhone('0824978565')).toBe(false)
+    expect(isInternalTestOnboardingCreditPhone('+27821234567')).toBe(false)
   })
 })

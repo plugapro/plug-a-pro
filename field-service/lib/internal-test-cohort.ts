@@ -11,7 +11,17 @@ export const INTERNAL_TEST_PHONE_NUMBERS = [
   '+27827006695',
 ] as const
 
+export const INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS = [
+  '+27823035070',
+  '+27764010810',
+] as const
+
+export const INTERNAL_TEST_ONBOARDING_CREDITS = 10
+
 const INTERNAL_TEST_PHONE_SET = new Set<string>(INTERNAL_TEST_PHONE_NUMBERS)
+const INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_SET = new Set<string>(
+  INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS,
+)
 
 export type TestCohortContext = {
   isTestUser: boolean
@@ -22,6 +32,13 @@ export type TestCohortContext = {
 export function isInternalTestPhone(phoneNumber: string | null | undefined): boolean {
   if (!phoneNumber) return false
   return INTERNAL_TEST_PHONE_SET.has(normalizePhone(phoneNumber))
+}
+
+export function isInternalTestOnboardingCreditPhone(
+  phoneNumber: string | null | undefined,
+): boolean {
+  if (!phoneNumber) return false
+  return INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_SET.has(normalizePhone(phoneNumber))
 }
 
 export function createTestCohortContext(phoneNumber: string | null | undefined): TestCohortContext {
