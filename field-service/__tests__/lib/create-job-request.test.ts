@@ -79,9 +79,12 @@ function makeTx() {
       upsert: vi.fn(),
     },
     address: {
+      findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(),
     },
     jobRequest: {
+      // Default: no existing active request — dedup guard passes through
+      findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(),
     },
   }

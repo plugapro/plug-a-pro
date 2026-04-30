@@ -39,6 +39,8 @@ import {
   resolveWhatsAppIdentity,
   type WhatsAppSavedAddress,
 } from '../whatsapp-identity'
+import { createTraceId } from '../support-diagnostics'
+import { DuplicateActiveRequestError } from '../job-requests/create-job-request'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
@@ -246,6 +248,8 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleLegacyCollectSuburb(ctx)
     case 'confirm_address':
       return handleLegacyConfirmAddress(ctx)
+    case 'collect_issue_description':
+      return handleCollectIssueDescription(ctx)
     case 'collect_availability':
       return handleCollectAvailability(ctx)
     case 'confirm_job_request':
@@ -367,7 +371,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
               { id: 'addr_new', title: 'Add new address' },
             ]
           )
-          return { nextStep: 'collect_address', nextData: { ...baseData, ...addressData } }
+          return { nextStep: 'collect_address', nextData: { ...baseData, ...addressData, savedAddressId: savedAddress.id } }
         }
       }
 
@@ -409,8 +413,8 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'addr_same') {
-    // addrLocationNodeId + addressLine1 are already in ctx.data — go to availability
-    return handleCollectAvailability(ctx)
+    // addrLocationNodeId + addressLine1 are already in ctx.data — collect issue description next
+    return handleCollectIssueDescription(ctx)
   }
 
   if (ctx.reply.id?.startsWith('addr_saved_')) {
@@ -434,9 +438,9 @@ async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_address_street' }
     }
 
-    return handleCollectAvailability({
+    return handleCollectIssueDescription({
       ...ctx,
-      data: { ...ctx.data, ...addressData },
+      data: { ...ctx.data, ...addressData, savedAddressId: addressId },
     })
   }
 
@@ -720,7 +724,7 @@ async function handleAddrConfirm(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'addr_yes') {
-    return handleCollectAvailability(ctx)
+    return handleCollectIssueDescription(ctx)
   }
 
   // Unknown reply — resend confirmation
@@ -734,6 +738,52 @@ async function handleAddrConfirm(ctx: FlowContext): Promise<FlowResult> {
     ]
   )
   return { nextStep: 'addr_confirm' }
+}
+
+// ─── Description helpers ──────────────────────────────────────────────────────
+
+/**
+ * Builds the JobRequest.description from the two free-text fields captured
+ * during the WhatsApp flow.  Either part can be absent.
+ */
+function buildDescription(issueDescription?: string, availabilityNote?: string): string {
+  const parts: string[] = []
+  if (issueDescription) parts.push(issueDescription)
+  if (availabilityNote) parts.push(`Preferred availability: ${availabilityNote}`)
+  return parts.join('\n\n')
+}
+
+// ─── Issue description capture ────────────────────────────────────────────────
+
+/**
+ * Prompts the customer for a free-text description of their problem.
+ * Called inline (immediately after address confirmation) so ctx.reply still
+ * carries the address-step button id — in that case we just show the prompt
+ * and wait for the next message.
+ */
+async function handleCollectIssueDescription(ctx: FlowContext): Promise<FlowResult> {
+  // Inline entry from address steps: reply id is addr_* — just show the prompt.
+  const comingFromAddressStep = Boolean(ctx.reply.id?.startsWith('addr_'))
+  const text = ctx.reply.text?.trim()
+
+  if (comingFromAddressStep || !text) {
+    const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
+    await sendText(
+      ctx.phone,
+      `📝 *Describe the ${category} issue*\n\nIn a few sentences, tell us what needs to be done.\n\n_Example: "My kitchen tap is dripping and needs a new washer."_`,
+    )
+    return { nextStep: 'collect_issue_description' }
+  }
+
+  if (text.length < 5) {
+    await sendText(
+      ctx.phone,
+      '❗ Please describe the issue in a little more detail so the worker knows what to expect.',
+    )
+    return { nextStep: 'collect_issue_description' }
+  }
+
+  return handleCollectAvailability({ ...ctx, data: { ...ctx.data, issueDescription: text } })
 }
 
 // ─── Availability ─────────────────────────────────────────────────────────────
@@ -800,13 +850,14 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
-  const { selectedCategory, address, availabilityNote } = ctx.data
+  const { selectedCategory, address, issueDescription, availabilityNote } = ctx.data
   const photoCount = (ctx.data.photoAttachmentIds ?? []).length
+  const descriptionLine = issueDescription ? `\n📝 ${issueDescription}` : ''
   const photoLine = photoCount > 0 ? `\n📸 Photos: *${photoCount} attached*` : ''
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}\n🗓 ${availabilityNote}${photoLine}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}${photoLine}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },
@@ -975,49 +1026,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
   try {
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
 
-    // ── Dedup guard: detect retry after a previous send-error ─────────────────
-    // If the customer already has an active job request for this category it
-    // means their previous submission succeeded in the DB but the confirmation
-    // message failed to deliver. Update the availability note and return early
-    // so we don't create a duplicate.
-    const existingActive = await db.jobRequest.findFirst({
-      where: {
-        customer: { phone: ctx.phone },
-        category,
-        status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING'] },
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, description: true, status: true, customerId: true },
-    })
-
-    if (existingActive) {
-      const latestDescription = ctx.data.availabilityNote
-        ? `Preferred availability: ${ctx.data.availabilityNote}`
-        : existingActive.description
-
-      if (latestDescription !== existingActive.description) {
-        await db.jobRequest.update({
-          where: { id: existingActive.id },
-          data: { description: latestDescription },
-        })
-      }
-
-      const ref = existingActive.id.slice(-8).toUpperCase()
-      const statusLine =
-        existingActive.status === 'MATCHING'
-          ? "We've notified nearby providers and are waiting for one to accept."
-          : "We're still searching for a suitable provider in your area."
-
-      await sendText(
-        ctx.phone,
-        `ℹ️ *You have an active ${ctx.data.selectedCategory ?? category} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`
-      )
-
-      return {
-        nextStep: 'done',
-        nextData: { jobRequestId: existingActive.id, customerId: existingActive.customerId },
-      }
-    }
+    // Dedup is now enforced inside createJobRequest.$transaction via
+    // DuplicateActiveRequestError — handled in the catch block below.
 
     const categoryRequirements = await resolveCategoryRequirements({ category })
 
@@ -1049,9 +1059,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         title: ctx.data.selectedCategory ?? category,
-        description: ctx.data.availabilityNote
-          ? `Preferred availability: ${ctx.data.availabilityNote}`
-          : '',
+        description: buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote),
+        existingAddressId: ctx.data.savedAddressId ?? undefined,
         street: resolvedAddr.street,
         addressLine1: resolvedAddr.addressLine1,
         addressLine2: resolvedAddr.addressLine2,
@@ -1072,9 +1081,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         title: ctx.data.selectedCategory ?? category,
-        description: ctx.data.availabilityNote
-          ? `Preferred availability: ${ctx.data.availabilityNote}`
-          : '',
+        description: buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote),
         street:   ctx.data.addressStreet ?? addrParts[0] ?? '',
         suburb:   ctx.data.addressSuburb ?? addrParts[1] ?? '',
         city:     ctx.data.addressCity   ?? addrParts[2] ?? addrParts[1] ?? '',
@@ -1089,15 +1096,39 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     // TODO: Add a cron sweep (e.g. in match-leads/route.ts) to delete Attachment rows where
     //       label='customer_photo', jobRequestId IS NULL, and createdAt < NOW() - 24h.
     //       These are orphans from abandoned WhatsApp sessions.
-    if (ctx.data.photoAttachmentIds?.length) {
-      await db.attachment.updateMany({
-        where: { id: { in: ctx.data.photoAttachmentIds }, jobRequestId: null },
-        data: { jobRequestId: result.jobRequestId },
-      }).catch((err) => console.error('[job-request-flow] photo attachment backfill failed:', err))
+    let photosLinked = 0
+    const expectedPhotos = ctx.data.photoAttachmentIds?.length ?? 0
+    if (expectedPhotos > 0) {
+      try {
+        const backfillResult = await db.attachment.updateMany({
+          where: { id: { in: ctx.data.photoAttachmentIds }, jobRequestId: null },
+          data: { jobRequestId: result.jobRequestId },
+        })
+        photosLinked = backfillResult.count
+        if (photosLinked !== expectedPhotos) {
+          console.warn('[job-request-flow] photo backfill partial', {
+            jobRequestId: result.jobRequestId,
+            expected: expectedPhotos,
+            linked: photosLinked,
+          })
+        }
+      } catch (err) {
+        console.error('[job-request-flow] photo attachment backfill failed:', {
+          jobRequestId: result.jobRequestId,
+          err,
+        })
+        // photosLinked stays 0 — success message will omit photo count
+      }
     }
 
+    const photoNote = photosLinked > 0
+      ? `\n📸 ${photosLinked} photo${photosLinked === 1 ? '' : 's'} attached.`
+      : expectedPhotos > 0 && photosLinked === 0
+        ? '\n⚠️ Photos could not be attached — add them via the ticket link.'
+        : ''
+
     const successMessage =
-      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\n` +
+      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*${photoNote}\n\n` +
       `We're finding you a nearby worker — you'll get a WhatsApp update when matched.` +
       (categoryRequirements.policy.bookingOnAssignment
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
@@ -1146,8 +1177,33 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
     return { nextStep: 'done', nextData: { jobRequestId: result.jobRequestId, customerId: result.customerId } }
   } catch (err) {
+    // ── Duplicate active request ───────────────────────────────────────────────
+    if (err instanceof DuplicateActiveRequestError) {
+      const ref = err.existingId.slice(-8).toUpperCase()
+      const statusLine =
+        err.existingStatus === 'MATCHING'
+          ? "We've notified nearby providers and are waiting for one to accept."
+          : "We're still searching for a suitable provider in your area."
+
+      // Patch description if we now have richer data from the customer
+      const latestDescription = buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote)
+      if (latestDescription && latestDescription !== err.existingDescription) {
+        await db.jobRequest.update({
+          where: { id: err.existingId },
+          data: { description: latestDescription },
+        }).catch((e) => console.error('[job-request-flow] dedup description patch failed:', e))
+      }
+
+      await sendText(
+        ctx.phone,
+        `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`,
+      )
+      return { nextStep: 'done', nextData: { jobRequestId: err.existingId, customerId: err.customerId } }
+    }
+
     const errorMessage = err instanceof Error ? err.message : String(err)
-    console.error('[job-request-flow] Create job request error:', err)
+    const traceId = createTraceId('req')
+    console.error('[job-request-flow] Create job request error:', { traceId, err })
 
     // In pilot mode, append a truncated technical error to the WhatsApp message
     // so failures can be triaged without needing server logs. Disable by removing
@@ -1158,7 +1214,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
     await sendText(
       ctx.phone,
-      `😔 Something went wrong submitting your request. Please try again or contact us directly.${debugSuffix}`
+      `😔 Something went wrong submitting your request. Please try again or contact us directly.\n\n_Ref: ${traceId}_${debugSuffix}`
     )
     return { nextStep: 'done' }
   }

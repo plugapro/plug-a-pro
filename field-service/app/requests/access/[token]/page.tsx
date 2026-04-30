@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveJobRequestAccessToken } from '@/lib/job-request-access'
+import { createTraceId } from '@/lib/support-diagnostics'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
@@ -23,14 +24,23 @@ export default async function TicketAccessPage({
 
   if (result.status !== 'active' || !result.jobRequest) {
     const expired = result.status === 'expired'
+    const code = expired ? 'TICKET_EXPIRED' : 'TICKET_INVALID'
+    const traceId = createTraceId('tkt')
     return (
       <div className="mx-auto max-w-lg space-y-4 px-4 py-10">
         <Card>
           <CardContent className="space-y-3 px-4 py-5 text-sm">
-            <p className="font-medium">{expired ? 'This ticket link has expired' : 'This ticket link is invalid'}</p>
-            <p className="text-muted-foreground">
-              For your privacy, direct ticket links only open a single request and can expire or be revoked.
+            <p className="font-semibold">
+              {expired ? 'This ticket link has expired' : 'This ticket link is invalid'}
             </p>
+            <p className="text-muted-foreground">
+              For your privacy, direct ticket links can expire or be revoked. Sign in to view all your tickets.
+            </p>
+            <div className="rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
+              <span className="mr-2 font-semibold">Code:</span>{code}
+              <br />
+              <span className="mr-2 font-semibold">Ref:</span>{traceId}
+            </div>
           </CardContent>
         </Card>
         <div className="space-y-3">

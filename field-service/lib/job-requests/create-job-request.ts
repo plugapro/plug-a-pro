@@ -44,6 +44,9 @@ export interface CreateJobRequestParams {
   requiredVehicleTypes?: string[]
 
   // Address
+  // Supply existingAddressId to reuse a saved address (skips address.create).
+  // The address must belong to the resolved customer — verified inside the transaction.
+  existingAddressId?: string | null
   street: string
   addressLine1?: string | null
   addressLine2?: string | null
@@ -61,6 +64,23 @@ export interface CreateJobRequestResult {
   jobRequestId: string
   customerId: string
   ticketUrl: string | null
+}
+
+/**
+ * Thrown when an active job request for the same phone + category already exists.
+ * The caller should surface this as a "you already have a pending request" message
+ * rather than showing a generic error.
+ */
+export class DuplicateActiveRequestError extends Error {
+  constructor(
+    public readonly existingId: string,
+    public readonly customerId: string,
+    public readonly existingStatus: string,
+    public readonly existingDescription: string,
+  ) {
+    super('DUPLICATE_ACTIVE_REQUEST')
+    this.name = 'DuplicateActiveRequestError'
+  }
 }
 
 export async function createJobRequest(
@@ -100,6 +120,28 @@ export async function createJobRequest(
 
   // Atomic: customer upsert + address + jobRequest in one transaction
   const result = await db.$transaction(async (tx) => {
+    // ── Idempotency guard: reject duplicate active requests within the transaction ──
+    // Running this check inside the transaction (rather than outside as a
+    // pre-flight query) closes the race window where two concurrent submits both
+    // pass a pre-check and then both create a JobRequest row.
+    const existingActive = await tx.jobRequest.findFirst({
+      where: {
+        customer: { phone: params.phone },
+        category: params.category,
+        status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, description: true, status: true, customerId: true },
+    })
+    if (existingActive) {
+      throw new DuplicateActiveRequestError(
+        existingActive.id,
+        existingActive.customerId,
+        existingActive.status,
+        existingActive.description ?? '',
+      )
+    }
+
     // Resolve or create customer — support both userId-keyed (web) and
     // phone-keyed (WhatsApp) lookups so duplicate records never appear.
     let customer: { id: string }
@@ -156,25 +198,60 @@ export async function createJobRequest(
       })
     }
 
-    const address = await tx.address.create({
-      data: {
-        customerId: customer.id,
-        street:     params.street,
-        addressLine1: params.addressLine1?.trim() || null,
-        addressLine2: params.addressLine2?.trim() || null,
-        complexName: params.complexName?.trim() || null,
-        unitNumber: params.unitNumber?.trim() || null,
-        suburb:     params.suburb,
-        region:     params.region?.trim() || null,
-        city:       params.city,
-        province:   params.province,
-        postalCode: params.postalCode ?? null,
-        lat:        geo?.lat ?? null,
-        lng:        geo?.lng ?? null,
-        locationNodeId: resolvedLocationNodeId ?? null,
-      },
-      select: { id: true },
-    })
+    // Reuse a saved address if the caller supplies an existingAddressId that
+    // belongs to this customer.  Fall back to creating a new address row when
+    // the ID is absent, cannot be found, or belongs to a different customer.
+    let address: { id: string }
+    if (params.existingAddressId) {
+      const existing = await tx.address.findFirst({
+        where: { id: params.existingAddressId, customerId: customer.id },
+        select: { id: true },
+      })
+      if (existing) {
+        address = existing
+      } else {
+        // ID not found or ownership mismatch — create fresh to stay consistent
+        address = await tx.address.create({
+          data: {
+            customerId: customer.id,
+            street:     params.street,
+            addressLine1: params.addressLine1?.trim() || null,
+            addressLine2: params.addressLine2?.trim() || null,
+            complexName: params.complexName?.trim() || null,
+            unitNumber: params.unitNumber?.trim() || null,
+            suburb:     params.suburb,
+            region:     params.region?.trim() || null,
+            city:       params.city,
+            province:   params.province,
+            postalCode: params.postalCode ?? null,
+            lat:        geo?.lat ?? null,
+            lng:        geo?.lng ?? null,
+            locationNodeId: resolvedLocationNodeId ?? null,
+          },
+          select: { id: true },
+        })
+      }
+    } else {
+      address = await tx.address.create({
+        data: {
+          customerId: customer.id,
+          street:     params.street,
+          addressLine1: params.addressLine1?.trim() || null,
+          addressLine2: params.addressLine2?.trim() || null,
+          complexName: params.complexName?.trim() || null,
+          unitNumber: params.unitNumber?.trim() || null,
+          suburb:     params.suburb,
+          region:     params.region?.trim() || null,
+          city:       params.city,
+          province:   params.province,
+          postalCode: params.postalCode ?? null,
+          lat:        geo?.lat ?? null,
+          lng:        geo?.lng ?? null,
+          locationNodeId: resolvedLocationNodeId ?? null,
+        },
+        select: { id: true },
+      })
+    }
 
     const autoCreateBookingOnAssignment =
       categoryRequirements.policy.bookingOnAssignment &&

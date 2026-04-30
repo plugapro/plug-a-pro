@@ -33,6 +33,7 @@ export type FlowStep =
   // Legacy steps — kept only for in-flight conversations at deploy time
   | 'collect_address_suburb'    // LEGACY: typed suburb → then prompts city
   | 'confirm_address'           // LEGACY: receives typed city, assembles + confirms full address
+  | 'collect_issue_description' // free-text issue description (inserted after address, before availability)
   | 'collect_availability'
   | 'confirm_job_request'
   | 'collect_photos'            // optional customer photo upload before confirm
@@ -110,6 +111,8 @@ export interface ConversationData {
   addressSuburb?: string        // legacy: free-text suburb
   addressCity?: string          // legacy: free-text city
   hasSavedAddress?: boolean     // true = a previous address was offered to reuse
+  savedAddressId?: string       // DB Address.id of the saved address selected by customer (skip re-create)
+  issueDescription?: string     // free-text issue description captured before availability step
   availabilityNote?: string     // free-text preferred availability from customer
   photoAttachmentIds?: string[] // Attachment IDs for customer job photos (backfilled onto job request after creation)
   jobRequestId?: string

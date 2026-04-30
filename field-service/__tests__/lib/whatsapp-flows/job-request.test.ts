@@ -62,9 +62,13 @@ vi.mock('@/lib/service-area-guard', () => ({
   addToServiceAreaWaitlist: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('@/lib/job-requests/create-job-request', () => ({
-  createJobRequest: vi.fn(),
-}))
+vi.mock('@/lib/job-requests/create-job-request', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/job-requests/create-job-request')>()
+  return {
+    ...actual,
+    createJobRequest: vi.fn(),
+  }
+})
 
 vi.mock('@/lib/structured-address', () => ({
   resolveStructuredAddressCapture: vi.fn(),
@@ -564,7 +568,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       )
     })
 
-    it('carries addrLocationNodeId through addr_same → availability', async () => {
+    it('carries addrLocationNodeId through addr_same → collect_issue_description', async () => {
       const result = await handleJobRequestFlow(
         makeCtx('collect_address', 'addr_same', undefined, {
           addrLocationNodeId: 'sub_sandton',
@@ -572,8 +576,8 @@ describe('WhatsApp job-request flow — structured address', () => {
         })
       )
 
-      // Should jump straight to availability (nextStep: confirm_job_request)
-      expect(result.nextStep).toBe('confirm_job_request')
+      // addr_same now routes to issue description before availability
+      expect(result.nextStep).toBe('collect_issue_description')
     })
   })
 
@@ -798,19 +802,17 @@ describe('WhatsApp job-request flow — structured address', () => {
       })
     })
 
-    it('returns done without calling createJobRequest when an active request exists', async () => {
-      ;(db.jobRequest.findFirst as any).mockResolvedValue({
-        id: 'jr_existing1234',
-        description: 'Preferred availability: As soon as possible',
-        status: 'OPEN',
-        customerId: 'cust_001',
-      })
+    it('returns done when createJobRequest throws DuplicateActiveRequestError', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: As soon as possible'
+        )
+      )
 
       const result = await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
       )
 
-      expect(createJobRequestModule.createJobRequest).not.toHaveBeenCalled()
       expect(result.nextStep).toBe('done')
       expect(result.nextData).toMatchObject({
         jobRequestId: 'jr_existing1234',
@@ -819,12 +821,11 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
 
     it('sends the "already received" message when an active request is detected', async () => {
-      ;(db.jobRequest.findFirst as any).mockResolvedValue({
-        id: 'jr_existing1234',
-        description: 'Preferred availability: As soon as possible',
-        status: 'OPEN',
-        customerId: 'cust_001',
-      })
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: As soon as possible'
+        )
+      )
 
       await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
@@ -842,12 +843,11 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
 
     it('mentions provider-searching status line for OPEN status', async () => {
-      ;(db.jobRequest.findFirst as any).mockResolvedValue({
-        id: 'jr_abc12345',
-        description: '',
-        status: 'OPEN',
-        customerId: 'cust_001',
-      })
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_abc12345', 'cust_001', 'OPEN', ''
+        )
+      )
 
       await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
@@ -860,12 +860,11 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
 
     it('mentions providers-notified status line for MATCHING status', async () => {
-      ;(db.jobRequest.findFirst as any).mockResolvedValue({
-        id: 'jr_abc12345',
-        description: '',
-        status: 'MATCHING',
-        customerId: 'cust_001',
-      })
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_abc12345', 'cust_001', 'MATCHING', ''
+        )
+      )
 
       await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
@@ -878,12 +877,11 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
 
     it('updates description when availability note differs from existing', async () => {
-      ;(db.jobRequest.findFirst as any).mockResolvedValue({
-        id: 'jr_existing1234',
-        description: 'Preferred availability: This week',  // old note
-        status: 'OPEN',
-        customerId: 'cust_001',
-      })
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: This week'  // old note
+        )
+      )
 
       await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, {
@@ -901,12 +899,11 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
 
     it('does NOT call update when description is unchanged', async () => {
-      ;(db.jobRequest.findFirst as any).mockResolvedValue({
-        id: 'jr_existing1234',
-        description: 'Preferred availability: As soon as possible',
-        status: 'OPEN',
-        customerId: 'cust_001',
-      })
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: As soon as possible'
+        )
+      )
 
       await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
@@ -929,7 +926,6 @@ describe('WhatsApp job-request flow — structured address', () => {
     }
 
     beforeEach(() => {
-      ;(db.jobRequest.findFirst as any).mockResolvedValue(null) // no existing active request
       ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue({
         street: '14 Main Road, Sandton',
         addressLine1: '14 Main Road',

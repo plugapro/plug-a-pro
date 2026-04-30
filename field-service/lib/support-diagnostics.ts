@@ -3,12 +3,14 @@ import { normalizePhone } from './utils'
 
 export type DiagnosticCode =
   | 'PROVIDER_NOT_FOUND'
+  | 'PROVIDER_NOT_APPROVED'
   | 'INVALID_PHONE_NUMBER'
   | 'UNSUPPORTED_COUNTRY_CODE'
   | 'OTP_DELIVERY_FAILED'
   | 'OTP_PROVIDER_TIMEOUT'
   | 'OTP_PROVIDER_UNAVAILABLE'
   | 'OTP_PROVIDER_BAD_RESPONSE'
+  | 'OTP_PROVIDER_AUTH_FAILED'
   | 'RATE_LIMITED'
   | 'PROVIDER_INACTIVE'
   | 'JOB_LINK_EXPIRED'
@@ -18,6 +20,11 @@ export type DiagnosticCode =
   | 'JOB_REASSIGNED'
   | 'JOB_CANCELLED'
   | 'UNKNOWN_AUTH_ERROR'
+  // Customer-flow codes
+  | 'REQUEST_SUBMISSION_FAILED'
+  | 'PHOTO_UPLOAD_FAILED'
+  | 'TICKET_EXPIRED'
+  | 'TICKET_INVALID'
 
 export function createTraceId(prefix = 'req') {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12)}`
