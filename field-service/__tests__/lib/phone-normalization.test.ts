@@ -12,6 +12,7 @@ describe('normalizeOtpPhoneNumber', () => {
     ['27823035070', '+27823035070'],
     ['27 82 303 5070', '+27823035070'],
     ['+27823035070', '+27823035070'],
+    ['+27 82 303 5070', '+27823035070'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizeOtpPhoneNumber(input, 'ZA')).toMatchObject({
       ok: true,

@@ -437,13 +437,12 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(body.error.traceId).toMatch(/^auth_/)
   })
 
-  it('returns PROVIDER_NOT_APPROVED for pending provider accounts', async () => {
+  it.each([
+    ['UNDER_REVIEW', 'prov-under-review'],
+    ['APPLICATION_PENDING', 'prov-pending'],
+  ])('returns PROVIDER_NOT_APPROVED for provider with status %s', async (status, id) => {
     const { db } = await import('@/lib/db')
-    ;(db.provider.findUnique as any).mockResolvedValue({
-      id: 'prov-pending',
-      active: true,
-      status: 'UNDER_REVIEW',
-    })
+    ;(db.provider.findUnique as any).mockResolvedValue({ id, active: true, status })
 
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
@@ -458,7 +457,7 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(res.status).toBe(403)
     expect(body.error).toMatchObject({
       code: 'PROVIDER_NOT_APPROVED',
-      providerId: 'prov-pending',
+      providerId: id,
       mobileChecked: '+27823035070',
     })
   })
