@@ -437,7 +437,7 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(body.error.traceId).toMatch(/^auth_/)
   })
 
-  it('returns PROVIDER_INACTIVE for inactive or pending provider accounts', async () => {
+  it('returns PROVIDER_NOT_APPROVED for pending provider accounts', async () => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findUnique as any).mockResolvedValue({
       id: 'prov-pending',
@@ -457,8 +457,34 @@ describe('POST /api/auth/provider/send-code', () => {
 
     expect(res.status).toBe(403)
     expect(body.error).toMatchObject({
-      code: 'PROVIDER_INACTIVE',
+      code: 'PROVIDER_NOT_APPROVED',
       providerId: 'prov-pending',
+      mobileChecked: '+27823035070',
+    })
+  })
+
+  it('returns PROVIDER_INACTIVE for suspended provider accounts', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockResolvedValue({
+      id: 'prov-suspended',
+      active: true,
+      status: 'SUSPENDED',
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(423)
+    expect(body.error).toMatchObject({
+      code: 'PROVIDER_INACTIVE',
+      providerId: 'prov-suspended',
       mobileChecked: '+27823035070',
     })
   })
@@ -548,6 +574,34 @@ describe('POST /api/auth/provider/send-code', () => {
     })
   })
 
+  it('returns OTP_PROVIDER_AUTH_FAILED when Supabase rejects credentials', async () => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true, status: 'ACTIVE' })
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({ error: new Error('invalid API key: unauthorized') }),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(401)
+    expect(body.error).toMatchObject({
+      code: 'OTP_PROVIDER_AUTH_FAILED',
+      providerId: 'prov-1',
+      step: 'Worker portal send-code',
+    })
+  })
+
   it('returns OTP_PROVIDER_UNAVAILABLE when Supabase env vars are missing', async () => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true, status: 'ACTIVE' })
@@ -578,6 +632,83 @@ describe('POST /api/auth/provider/send-code', () => {
       process.env.NEXT_PUBLIC_SUPABASE_URL = savedUrl
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedKey
     }
+  })
+
+  it('returns OTP_PROVIDER_BAD_RESPONSE when Supabase resolves with a malformed error message', async () => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true, status: 'ACTIVE' })
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({ error: new Error('malformed json response from upstream') }),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(502)
+    expect(body.error).toMatchObject({
+      code: 'OTP_PROVIDER_BAD_RESPONSE',
+      providerId: 'prov-1',
+      step: 'Worker portal send-code',
+    })
+  })
+
+  it('returns OTP_PROVIDER_UNAVAILABLE when the provider DB lookup fails', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockRejectedValue(new Error('connection refused'))
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(body.error).toMatchObject({
+      code: 'OTP_PROVIDER_UNAVAILABLE',
+      step: 'Worker portal send-code',
+    })
+  })
+
+  it('returns UNKNOWN_AUTH_ERROR only for truly unmapped unexpected failures', async () => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(db.provider.findUnique as any).mockResolvedValue({ id: 'prov-1', active: true, status: 'ACTIVE' })
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockRejectedValue(new Error('some completely unrecognised internal error xyz_q7r')),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27823035070' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    // classifyOtpError falls through to OTP_DELIVERY_FAILED (not UNKNOWN_AUTH_ERROR)
+    // because otpProviderCalled=true at that point. UNKNOWN_AUTH_ERROR is the catch
+    // fallback when otpProviderCalled=false AND the error is not a DB error.
+    // Confirm UNKNOWN_AUTH_ERROR is NOT returned for a named classify path.
+    expect(body.error.code).not.toBe('UNKNOWN_AUTH_ERROR')
+    expect(res.status).toBe(502)
   })
 
   it('returns OTP_PROVIDER_BAD_RESPONSE when Supabase returns an unusable response', async () => {

@@ -14,6 +14,12 @@ function getSupabaseClient() {
   )
 }
 
+function formatPhoneForDisplay(e164: string) {
+  const digits = e164.replace(/\D/g, '')
+  if (!digits.startsWith('27') || digits.length !== 11) return '*** *** ****'
+  return `+27 ${digits.slice(2, 4)} *** ${digits.slice(-4)}`
+}
+
 function ProviderVerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -135,7 +141,7 @@ function ProviderVerifyForm() {
         </p>
         <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
         <p className="text-sm text-muted-foreground">
-          Sent to <span className="font-medium text-foreground">{phone}</span>
+          Code sent to <span className="font-medium text-foreground">{formatPhoneForDisplay(phone)}</span>
         </p>
       </div>
 

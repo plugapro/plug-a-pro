@@ -22,8 +22,10 @@ function reasonFor(code: DiagnosticCode) {
       return 'Only South African mobile numbers are enabled for worker portal OTP sign-in.'
     case 'PROVIDER_NOT_FOUND':
       return 'No provider account was found for this mobile number.'
+    case 'PROVIDER_NOT_APPROVED':
+      return 'Your provider application must be approved before you can sign in to the Worker Portal.'
     case 'PROVIDER_INACTIVE':
-      return 'This provider account is not active yet.'
+      return 'This provider account is not active.'
     case 'RATE_LIMITED':
       return 'Too many login code requests were made. Please wait a few minutes and try again.'
     case 'OTP_PROVIDER_TIMEOUT':
@@ -32,6 +34,8 @@ function reasonFor(code: DiagnosticCode) {
       return 'The OTP provider is temporarily unavailable or phone login is not enabled.'
     case 'OTP_PROVIDER_BAD_RESPONSE':
       return 'The OTP provider returned an invalid response.'
+    case 'OTP_PROVIDER_AUTH_FAILED':
+      return 'OTP service authentication failed.'
     case 'OTP_DELIVERY_FAILED':
       return 'OTP delivery failed.'
     default:
@@ -82,6 +86,18 @@ function classifyOtpError(error: unknown): DiagnosticCode {
   }
   if (lower.includes('rate') || lower.includes('limit') || lower.includes('too many')) {
     return 'RATE_LIMITED'
+  }
+  if (
+    lower.includes('auth') ||
+    lower.includes('unauthorized') ||
+    lower.includes('forbidden') ||
+    lower.includes('invalid api key') ||
+    lower.includes('invalid key') ||
+    lower.includes('jwt') ||
+    lower.includes('apikey') ||
+    lower.includes('api key')
+  ) {
+    return 'OTP_PROVIDER_AUTH_FAILED'
   }
   if (
     lower.includes('bad response') ||
@@ -168,10 +184,33 @@ export async function POST(request: NextRequest) {
     phone = normalized.e164
     countryCode = normalized.countryCode
 
-    const provider = await db.provider.findUnique({
-      where: { phone },
-      select: { id: true, active: true, status: true },
-    })
+    let provider: { id: string; active: boolean; status: string } | null
+    try {
+      provider = await db.provider.findUnique({
+        where: { phone },
+        select: { id: true, active: true, status: true },
+      })
+    } catch (dbError) {
+      console.error('[provider-send-code] provider lookup failed', {
+        trace_id: traceId,
+        rawPhone,
+        normalizedPhone: phone,
+        countryCode,
+        providerLookupResult: 'db_error',
+        otpProviderCalled,
+        safeErrorMessage: safeErrorMessage(dbError),
+        stack: dbError instanceof Error ? dbError.stack : undefined,
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      return errorPayload({
+        code: 'OTP_PROVIDER_UNAVAILABLE',
+        traceId,
+        phone,
+        countryCode,
+        status: 503,
+      })
+    }
     providerId = provider?.id
 
     if (!provider) {
@@ -187,6 +226,30 @@ export async function POST(request: NextRequest) {
         step: STEP,
       })
       return errorPayload({ code: 'PROVIDER_NOT_FOUND', traceId, phone, countryCode, status: 404 })
+    }
+
+    if (provider.status === 'APPLICATION_PENDING' || provider.status === 'UNDER_REVIEW') {
+      console.warn('[provider-send-code] provider not approved', {
+        trace_id: traceId,
+        rawPhone,
+        normalizedPhone: phone,
+        countryCode,
+        providerLookupResult: 'found_not_approved',
+        providerId,
+        active: provider.active,
+        providerStatus: provider.status,
+        otpProviderCalled,
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      return errorPayload({
+        code: 'PROVIDER_NOT_APPROVED',
+        traceId,
+        phone,
+        countryCode,
+        providerId,
+        status: 403,
+      })
     }
 
     if (!provider.active || provider.status !== 'ACTIVE') {
@@ -209,7 +272,7 @@ export async function POST(request: NextRequest) {
         phone,
         countryCode,
         providerId,
-        status: 403,
+        status: 423,
       })
     }
 
@@ -291,7 +354,13 @@ export async function POST(request: NextRequest) {
         phone,
         countryCode,
         providerId,
-        status: code === 'RATE_LIMITED' ? 429 : code === 'OTP_PROVIDER_TIMEOUT' ? 504 : 502,
+        status: code === 'RATE_LIMITED'
+          ? 429
+          : code === 'OTP_PROVIDER_TIMEOUT'
+            ? 504
+            : code === 'OTP_PROVIDER_AUTH_FAILED'
+              ? 401
+              : 502,
       })
     }
 
@@ -319,7 +388,6 @@ export async function POST(request: NextRequest) {
       providerLookupResult: providerId ? 'found' : 'unknown',
       otpProviderCalled,
       otpProviderStatus: otpProviderCalled ? code : 'not_called_or_unknown',
-      error,
       safeErrorMessage: safeErrorMessage(error),
       stack: error instanceof Error ? error.stack : undefined,
       timestamp: timestamp(),
@@ -331,7 +399,11 @@ export async function POST(request: NextRequest) {
       phone: phone || rawPhone,
       countryCode,
       providerId,
-      status: code === 'OTP_PROVIDER_TIMEOUT' ? 504 : code === 'UNKNOWN_AUTH_ERROR' ? 500 : 502,
+      status: code === 'OTP_PROVIDER_TIMEOUT'
+        ? 504
+        : code === 'UNKNOWN_AUTH_ERROR'
+          ? 500
+          : 502,
     })
   }
 }

@@ -21,8 +21,76 @@ type SendCodeError = {
   providerId?: string
 }
 
+type ApiSendCodeError = Partial<SendCodeError> & {
+  code?: string
+  reason?: string
+}
+
 function createClientTraceId() {
   return `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function formatPhoneForDisplay(e164: string | undefined) {
+  if (!e164) return undefined
+  const digits = e164.replace(/\D/g, '')
+  if (!digits.startsWith('27') || digits.length !== 11) return undefined
+  return `+27 ${digits.slice(2, 4)} *** ${digits.slice(-4)}`
+}
+
+function fallbackCodeForStatus(status: number) {
+  switch (status) {
+    case 400:
+      return 'UNSUPPORTED_COUNTRY_CODE'
+    case 401:
+      return 'OTP_PROVIDER_AUTH_FAILED'
+    case 403:
+      return 'PROVIDER_NOT_APPROVED'
+    case 423:
+      return 'PROVIDER_INACTIVE'
+    case 404:
+      return 'PROVIDER_NOT_FOUND'
+    case 422:
+      return 'INVALID_PHONE_NUMBER'
+    case 429:
+      return 'RATE_LIMITED'
+    case 502:
+      return 'OTP_PROVIDER_BAD_RESPONSE'
+    case 503:
+      return 'OTP_PROVIDER_UNAVAILABLE'
+    case 504:
+      return 'OTP_PROVIDER_TIMEOUT'
+    default:
+      return 'UNKNOWN_AUTH_ERROR'
+  }
+}
+
+function fallbackReasonForCode(code: string) {
+  switch (code) {
+    case 'PROVIDER_NOT_FOUND':
+      return 'No provider account was found for this mobile number.'
+    case 'PROVIDER_NOT_APPROVED':
+      return 'Your provider application must be approved before you can sign in to the Worker Portal.'
+    case 'PROVIDER_INACTIVE':
+      return 'This provider account is not active.'
+    case 'INVALID_PHONE_NUMBER':
+      return 'Enter a valid South African mobile number.'
+    case 'UNSUPPORTED_COUNTRY_CODE':
+      return 'Only South African mobile numbers are enabled for worker portal OTP sign-in.'
+    case 'OTP_PROVIDER_AUTH_FAILED':
+      return 'OTP service authentication failed.'
+    case 'OTP_PROVIDER_BAD_RESPONSE':
+      return 'The OTP service returned an invalid response.'
+    case 'OTP_PROVIDER_TIMEOUT':
+      return 'OTP delivery timed out.'
+    case 'OTP_PROVIDER_UNAVAILABLE':
+      return 'The OTP provider is temporarily unavailable or phone login is not enabled.'
+    case 'OTP_DELIVERY_FAILED':
+      return 'OTP delivery failed.'
+    case 'RATE_LIMITED':
+      return 'Too many login code requests were made. Please wait a few minutes and try again.'
+    default:
+      return 'The sign-in service did not return a usable response.'
+  }
 }
 
 export default function ProviderSignInPage() {
@@ -42,6 +110,7 @@ export default function ProviderSignInPage() {
     code: string
     traceId: string
     mobileChecked?: string
+    phoneMasked?: string
     countryCode?: string
   }): SendCodeError {
     return {
@@ -52,6 +121,7 @@ export default function ProviderSignInPage() {
       traceId: params.traceId,
       time: new Date().toISOString(),
       mobileChecked: params.mobileChecked,
+      phoneMasked: params.phoneMasked,
       countryCode: params.countryCode,
     }
   }
@@ -86,17 +156,24 @@ export default function ProviderSignInPage() {
       const payload = await response.json().catch(() => ({})) as {
         ok?: boolean
         phone?: string
-        error?: SendCodeError
+        error?: ApiSendCodeError
       }
 
       if (!response.ok || !payload.ok || !payload.phone) {
-        setError(payload.error ?? localError({
-          reason: 'The sign-in service did not return a usable response.',
-          code: 'UNKNOWN_AUTH_ERROR',
-          traceId,
-          mobileChecked: normalized.e164,
-          countryCode,
-        }))
+        const fallbackCode = fallbackCodeForStatus(response.status)
+        const errorCode = payload.error?.code ?? fallbackCode
+        setError({
+          title: payload.error?.title ?? "We couldn't send your login code.",
+          reason: payload.error?.reason ?? fallbackReasonForCode(errorCode),
+          code: errorCode,
+          step: payload.error?.step ?? 'Worker portal send-code',
+          traceId: payload.error?.traceId ?? traceId,
+          time: payload.error?.time ?? new Date().toISOString(),
+          mobileChecked: payload.error?.mobileChecked,
+          phoneMasked: payload.error?.phoneMasked ?? formatPhoneForDisplay(normalized.e164),
+          countryCode: payload.error?.countryCode ?? countryCode,
+          providerId: payload.error?.providerId,
+        })
         return
       }
 
@@ -108,7 +185,7 @@ export default function ProviderSignInPage() {
         reason: 'The browser could not reach the sign-in service. Please try again or contact support with this screenshot.',
         code: 'OTP_PROVIDER_UNAVAILABLE',
         traceId,
-        mobileChecked: normalized.e164,
+        phoneMasked: formatPhoneForDisplay(normalized.e164),
         countryCode,
       }))
     } finally {
@@ -146,7 +223,7 @@ export default function ProviderSignInPage() {
               id="phone"
               type="tel"
               inputMode="tel"
-              placeholder="82 303 5070"
+              placeholder="81 234 5678"
               value={phone}
               onChange={(e) => {
                 setPhone(e.target.value)
@@ -158,7 +235,7 @@ export default function ProviderSignInPage() {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            South Africa is selected for OTP sign-in. You can enter 0823035070, 27823035070, or +27823035070.
+            South Africa is selected for OTP sign-in. You can enter 081 234 5678, 27812345678, or +27812345678.
           </p>
         </div>
 
@@ -168,7 +245,7 @@ export default function ProviderSignInPage() {
             <p>{error.reason}</p>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-destructive/90">
               <dt>Error code</dt><dd className="text-right font-medium">{error.code}</dd>
-              {(error.mobileChecked || error.phoneMasked) && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.mobileChecked ?? error.phoneMasked}</dd></>}
+              {(error.phoneMasked || error.mobileChecked) && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.phoneMasked ?? error.mobileChecked}</dd></>}
               {error.countryCode && <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></>}
               {error.providerId && <><dt>Provider ID</dt><dd className="text-right font-medium">{error.providerId}</dd></>}
               <dt>Step</dt><dd className="text-right font-medium">{error.step}</dd>
