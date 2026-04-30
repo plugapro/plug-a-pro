@@ -12,6 +12,7 @@ import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
 import { reconcileProviderRecordsFromApplications, syncProviderRecord } from '@/lib/provider-record'
+import { syncProviderSkills } from '@/lib/provider-skills'
 import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-application-notifications'
 import { awardMobileVerifiedPromoCreditsInTransaction } from '@/lib/provider-promo-awards'
 import { expireStaleQuotes } from '@/lib/quotes'
@@ -99,6 +100,10 @@ export async function GET(request: Request) {
             active: true,
             availableNow: true,
             verified: true,
+            // Enrichment must not run inside the transaction — a caught DB error inside those
+            // helpers puts the PostgreSQL connection in ABORTED state even when swallowed at the
+            // JS level, causing all subsequent tx queries to fail. Run enrichment post-commit below.
+            skipEnrichment: true,
           })
 
           const update = await tx.providerApplication.updateMany({
@@ -119,6 +124,15 @@ export async function GET(request: Request) {
           }
         })
         if (!approved) continue
+
+        // Post-commit enrichment — run on real db client, not tx
+        const approvedProviderId = providerId
+        if (approvedProviderId) {
+          syncProviderSkills(db, approvedProviderId, app.skills).catch((err: unknown) => {
+            console.error(`[cron/match-leads:${reqId}] post-commit skills sync failed for provider ${approvedProviderId}:`, err)
+          })
+        }
+
         await notifyProviderApplicationApprovedOnce({
           applicationId: app.id,
           phone: app.phone,
@@ -126,9 +140,9 @@ export async function GET(request: Request) {
         }).catch((err: unknown) => {
           console.error(`[cron/match-leads:${reqId}] Failed to notify auto-approved provider ${app.id}:`, err)
         })
-        if (providerId) {
-          await checkJobsForNewProviderAvailability(providerId).catch((err: unknown) => {
-            console.error(`[cron/match-leads:${reqId}] new-provider job check failed for ${providerId}:`, err)
+        if (approvedProviderId) {
+          await checkJobsForNewProviderAvailability(approvedProviderId).catch((err: unknown) => {
+            console.error(`[cron/match-leads:${reqId}] new-provider job check failed for ${approvedProviderId}:`, err)
           })
         }
         results.autoApproved++
