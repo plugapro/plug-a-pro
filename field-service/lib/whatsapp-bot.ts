@@ -35,7 +35,11 @@ import { createTestCohortContext } from './internal-test-cohort'
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
 const CUSTOMER_PHOTO_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS) || 800
-const PROVIDER_EVIDENCE_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || 800
+// 3 s default: WhatsApp delivers batch-selected images as separate events that
+// can arrive over 1–3 s. 800 ms caused premature batch flush when the first 3
+// of 5 images arrived before the remaining 2, producing a "3 files received"
+// confirmation that the user acted on before the rest landed.
+const PROVIDER_EVIDENCE_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || 3000
 const CITY_TEXT_SUPERSEDE_WINDOW_MS = Number(process.env.WHATSAPP_CITY_TEXT_SUPERSEDE_WINDOW_MS) || 800
 const phoneMessageQueues = new Map<string, Promise<void>>()
 const customerPhotoBatches = new Map<string, {

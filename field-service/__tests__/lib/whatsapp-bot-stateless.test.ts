@@ -369,7 +369,9 @@ describe('processInboundMessage provider evidence batching', () => {
     const second = processInboundMessage(evidenceImageMessage('ev-2'))
     const third = processInboundMessage(evidenceImageMessage('ev-3'))
 
-    await vi.advanceTimersByTimeAsync(801)
+    // PROVIDER_EVIDENCE_BATCH_WINDOW_MS is 3000 ms (increased from 800 ms to
+    // allow WhatsApp time to deliver all batch-selected images before flushing)
+    await vi.advanceTimersByTimeAsync(3001)
     await Promise.all([first, second, third])
 
     expect(handleRegistrationFlow).toHaveBeenCalledTimes(3)

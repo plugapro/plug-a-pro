@@ -11,8 +11,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const mockDb = {
+    $transaction: vi.fn(),
     customer: {
       findFirst: vi.fn().mockResolvedValue(null),
     },
@@ -26,10 +27,16 @@ vi.mock('@/lib/db', () => ({
       createMany: vi.fn(),
     },
     attachment: {
-      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn(),
     },
-  },
-}))
+    auditLog: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  }
+  mockDb.$transaction.mockImplementation(async (callback) => callback(mockDb))
+  return { db: mockDb }
+})
 
 vi.mock('@/lib/whatsapp-media', () => ({
   downloadAndStoreWhatsAppMedia: vi.fn().mockResolvedValue({ attachmentId: 'att_mock_001' }),
@@ -71,11 +78,27 @@ import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 import { normalizePhone } from '@/lib/utils'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
+import * as whatsapp from '@/lib/whatsapp'
 import * as providerRecord from '@/lib/provider-record'
 import * as whatsappMedia from '@/lib/whatsapp-media'
 import * as locationNodes from '@/lib/location-nodes'
 
 const phone = '+27821234567'
+
+function resetDbMocks() {
+  ;(db.$transaction as ReturnType<typeof vi.fn>).mockImplementation(async (callback: (tx: typeof db) => unknown) => callback(db as any))
+  ;(db.customer.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+  ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+  ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'app_default_12345678' })
+  ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+  ;(db.attachment.findMany as ReturnType<typeof vi.fn>).mockImplementation(async (args: any) => (
+    (args.where.id.in as string[]).map((id) => ({ id, providerApplicationId: null }))
+  ))
+  ;(db.attachment.updateMany as ReturnType<typeof vi.fn>).mockImplementation(async (args: any) => ({
+    count: (args.where.id.in as string[]).length,
+  }))
+  ;(db.auditLog.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
+}
 
 function makeCtx(step: string, replyId?: string, replyText?: string, data: object = {}) {
   return {
@@ -95,6 +118,7 @@ function makeCtx(step: string, replyId?: string, replyText?: string, data: objec
 describe('registration flow — duplicate prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDbMocks()
   })
 
   // ── startRegistration ──────────────────────────────────────────────────────
@@ -201,7 +225,13 @@ describe('registration flow — duplicate prevention', () => {
       )
 
       expect(result.nextStep).toBe('done')
-      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('provider profile is already on file'))
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('already submitted'),
+        expect.any(Array),
+        undefined,
+        expect.any(Object),
+      )
       expect(db.providerApplication.create).not.toHaveBeenCalled()
       expect(providerRecord.syncProviderRecord).not.toHaveBeenCalled()
     })
@@ -218,9 +248,12 @@ describe('registration flow — duplicate prevention', () => {
       )
 
       expect(result.nextStep).toBe('done')
-      expect(wa.sendText).toHaveBeenCalledWith(
+      expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
         expect.stringContaining('already registered'),
+        expect.any(Array),
+        undefined,
+        expect.any(Object),
       )
       expect(db.providerApplication.create).not.toHaveBeenCalled()
       expect(providerRecord.syncProviderRecord).not.toHaveBeenCalled()
@@ -248,7 +281,95 @@ describe('registration flow — duplicate prevention', () => {
           }),
         })
       )
-      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('Profile submitted'))
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('Application submitted'),
+        expect.any(Array),
+        undefined,
+        expect.any(Object),
+      )
+    })
+
+    it('creates application with five uploaded files and links every attachment', async () => {
+      const evidenceFileUrls = ['att_1', 'att_2', 'att_3', 'att_4', 'att_5']
+
+      const result = await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, {
+          ...dataWithFullProfile,
+          evidenceFileUrls,
+        })
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(db.attachment.findMany).toHaveBeenCalledWith({
+        where: { id: { in: evidenceFileUrls } },
+        select: { id: true, providerApplicationId: true },
+      })
+      expect(db.providerApplication.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            evidenceFileUrls,
+            status: 'PENDING',
+          }),
+        })
+      )
+      expect(db.attachment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: { in: evidenceFileUrls }, providerApplicationId: null },
+          data: { providerApplicationId: 'app_default_12345678' },
+        })
+      )
+    })
+
+    it('keeps progress and returns a structured error when uploaded files are not ready', async () => {
+      ;(db.attachment.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        { id: 'att_1', providerApplicationId: null },
+        { id: 'att_2', providerApplicationId: null },
+        { id: 'att_3', providerApplicationId: null },
+      ])
+
+      const result = await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, {
+          ...dataWithFullProfile,
+          evidenceFileUrls: ['att_1', 'att_2', 'att_3', 'att_4', 'att_5'],
+        })
+      )
+
+      expect(result.nextStep).toBe('reg_pending')
+      expect(result.nextData).toMatchObject(dataWithFullProfile)
+      expect(providerRecord.syncProviderRecord).not.toHaveBeenCalled()
+      expect(db.providerApplication.create).not.toHaveBeenCalled()
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'),
+        expect.any(Array),
+        undefined,
+        expect.any(Object),
+      )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('Trace ID: provider_app_submit_'),
+        expect.any(Array),
+        undefined,
+        expect.any(Object),
+      )
+    })
+
+    it('does not roll back submitted application when the WhatsApp confirmation send fails after commit', async () => {
+      ;(wa.sendButtons as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Meta unavailable'))
+
+      const result = await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, dataWithFullProfile)
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(db.providerApplication.create).toHaveBeenCalledOnce()
+      expect(db.auditLog.create).toHaveBeenCalledOnce()
+      expect(whatsapp.sendTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          template: 'technician_application_received',
+        })
+      )
     })
 
     it('passes normalized phone (E.164) to syncProviderRecord and create', async () => {
@@ -291,7 +412,13 @@ describe('registration flow — duplicate prevention', () => {
       )
 
       expect(result.nextStep).toBe('done')
-      expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('provider profile is already on file'))
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('already submitted'),
+        expect.any(Array),
+        undefined,
+        expect.any(Object),
+      )
     })
   })
 })
@@ -299,6 +426,7 @@ describe('registration flow — duplicate prevention', () => {
 describe('registration flow — numbered bulk skill selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDbMocks()
   })
 
   it('shows a numbered text list of skills (not an interactive list) after name is collected', async () => {
@@ -553,6 +681,7 @@ describe('registration flow — numbered bulk skill selection', () => {
 describe('registration flow — evidence file uploads', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDbMocks()
   })
 
   function makeMediaCtx(mediaType: 'image' | 'document', mediaId = 'media_abc123') {
@@ -766,6 +895,11 @@ describe('registration flow — evidence file uploads', () => {
 // Provider replies with comma-separated numbers; global 1-based numbering across pages.
 
 describe('registration flow — numbered bulk suburb selection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetDbMocks()
+  })
+
   // Mirror the mock: 20 fake suburbs as stored in session ctx.data after the first prompt
   const fakeSuburbs = Array.from({ length: 20 }, (_, i) => ({ id: `sub_${i}`, label: `Suburb ${i + 1}` }))
 
@@ -780,6 +914,7 @@ describe('registration flow — numbered bulk suburb selection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDbMocks()
   })
 
   it('shows a numbered text list (not interactive list) after region is selected', async () => {

@@ -38,8 +38,138 @@ export const REGISTRATION_TRIGGERS = [
 const PROVIDER_SKILL_OPTIONS = SERVICE_CATEGORY_OPTIONS.filter(o => o.tag !== 'other')
 const MAX_EVIDENCE_FILES = 5
 
+type ProviderApplicationSubmitErrorCode =
+  | 'PROVIDER_APPLICATION_VALIDATION_FAILED'
+  | 'PROVIDER_APPLICATION_ALREADY_EXISTS'
+  | 'PROVIDER_APPLICATION_FILES_MISSING'
+  | 'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'
+  | 'PROVIDER_APPLICATION_FILE_LINK_FAILED'
+  | 'PROVIDER_APPLICATION_SKILLS_INVALID'
+  | 'PROVIDER_APPLICATION_AREAS_INVALID'
+  | 'PROVIDER_APPLICATION_AVAILABILITY_INVALID'
+  | 'PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED'
+  | 'PROVIDER_APPLICATION_SUBMIT_FAILED'
+  | 'PROVIDER_APPLICATION_UNKNOWN_ERROR'
+
+class ProviderApplicationSubmitError extends Error {
+  constructor(
+    public readonly code: ProviderApplicationSubmitErrorCode,
+    message: string,
+    public readonly details: Record<string, unknown> = {},
+  ) {
+    super(message)
+    this.name = 'ProviderApplicationSubmitError'
+  }
+}
+
+type ProviderApplicationSubmitResult =
+  | { outcome: 'created'; applicationId: string; providerId: string; ref: string }
+  | { outcome: 'existing_pending'; applicationId: string; ref: string }
+  | { outcome: 'existing_approved'; applicationId: string; ref: string }
+
 function uniqueStrings(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
+}
+
+function createSubmitTraceId() {
+  return `provider_app_submit_${crypto.randomUUID().slice(0, 12)}`
+}
+
+function firstName(name: string | null | undefined) {
+  return name?.trim().split(/\s+/)[0] || 'there'
+}
+
+function errorCodeFromUnknown(error: unknown): ProviderApplicationSubmitErrorCode {
+  if (error instanceof ProviderApplicationSubmitError) return error.code
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    error.code.startsWith('P')
+  ) {
+    return 'PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED'
+  }
+  return 'PROVIDER_APPLICATION_UNKNOWN_ERROR'
+}
+
+function safeErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+function validateSubmitData(ctx: FlowContext) {
+  const name = ctx.data.name?.trim()
+  const skills = uniqueStrings(ctx.data.skills ?? [])
+  const invalidSkills = skills.filter((skill) => !resolveServiceCategoryTag(skill))
+  const locationNodeIds = uniqueStrings(ctx.data.locationNodeIds ?? [])
+  const serviceAreas = uniqueStrings(ctx.data.serviceAreas ?? [])
+  const selectedSuburbLabels = uniqueStrings(ctx.data.selectedSuburbLabels ?? [])
+  const selectedRegionLabels = uniqueStrings(ctx.data.selectedRegionLabels ?? [])
+  const availability = uniqueStrings(ctx.data.availability ?? [])
+  const evidenceAttachmentIds = uniqueStrings(ctx.data.evidenceFileUrls ?? []).slice(0, MAX_EVIDENCE_FILES)
+
+  if (!name || name.length < 2) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_VALIDATION_FAILED',
+      'Provider application requires a valid name.',
+      { missingField: 'name' },
+    )
+  }
+
+  if (skills.length === 0) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_SKILLS_INVALID',
+      'Provider application requires at least one valid skill.',
+      { selectedSkillsCount: 0 },
+    )
+  }
+
+  if (invalidSkills.length > 0) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_SKILLS_INVALID',
+      'Provider application contains unsupported skills.',
+      { invalidSkills },
+    )
+  }
+
+  if (
+    locationNodeIds.length === 0 &&
+    serviceAreas.length === 0 &&
+    selectedSuburbLabels.length === 0 &&
+    selectedRegionLabels.length === 0
+  ) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_AREAS_INVALID',
+      'Provider application requires at least one service area.',
+      { selectedAreasCount: 0 },
+    )
+  }
+
+  if (availability.length === 0) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_AVAILABILITY_INVALID',
+      'Provider application requires availability.',
+      { selectedAvailabilityCount: 0 },
+    )
+  }
+
+  return {
+    name,
+    skills,
+    availability,
+    evidenceAttachmentIds,
+    resolvedAreaLabels: locationNodeIds.length > 0
+      ? (selectedSuburbLabels.length ? selectedSuburbLabels : selectedRegionLabels.length ? selectedRegionLabels : serviceAreas)
+      : serviceAreas,
+    locationNodeIds,
+  }
+}
+
+function formatAvailabilityLabel(availability: string[] | undefined) {
+  return (availability?.length ?? 0) >= 7 ? 'Any day'
+    : (availability?.length ?? 0) >= 6 ? 'Mon–Sat'
+    : 'Weekdays only'
 }
 
 async function sendEvidenceFileProgress(phone: string, count: number) {
@@ -1042,120 +1172,221 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_pending' }
   }
 
+  const traceId = createSubmitTraceId()
+  const normalizedPhone = normalizePhone(ctx.phone)
+
   try {
-    const availLabel =
-      (ctx.data.availability?.length ?? 0) >= 7 ? 'Any day'
-      : (ctx.data.availability?.length ?? 0) >= 6 ? 'Mon–Sat'
-      : 'Weekdays only'
-
-    // ── Idempotency guard: prevent duplicate application on double-tap ─────────
-    // Race condition: user taps "Submit" twice (or retries quickly). Check for
-    // an existing active application before creating a new record.
-    const normalizedPhone = normalizePhone(ctx.phone)
+    const submitData = validateSubmitData(ctx)
     const cohort = createTestCohortContext(normalizedPhone)
-    const existingApp = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
+    const sessionUploadedFileCount = submitData.evidenceAttachmentIds.length
 
-    if (existingApp?.status === 'APPROVED') {
-      await sendText(
-        ctx.phone,
-        `✅ You're already registered as a Plug A Pro worker. You'll receive job leads through this number.\n\nReply *menu* to return to the main menu.`
-      )
-      return { nextStep: 'done' }
-    }
-
-    if (existingApp?.status === 'PENDING') {
-      const ref = existingApp.id.slice(-8).toUpperCase()
-      await sendText(
-        ctx.phone,
-      `⏳ Your provider profile is already on file.\n\nRef: *${ref}*\n\nReply *jobs* to check leads or *menu* anytime to return to the main menu.`
-      )
-      return { nextStep: 'done' }
-    }
-
-    const resolvedAreaLabels = ctx.data.locationNodeIds && (ctx.data.locationNodeIds as string[]).length > 0
-      ? ((ctx.data.selectedSuburbLabels as string[] | undefined)?.length
-          ? (ctx.data.selectedSuburbLabels as string[])
-          : (ctx.data.selectedRegionLabels as string[] | undefined) ?? ctx.data.serviceAreas ?? [])
-      : (ctx.data.serviceAreas ?? [])
-
-    const providerId = await syncProviderRecord(db, {
-      phone: normalizedPhone,
-      name: ctx.data.name ?? 'Unknown',
-      skills: ctx.data.skills ?? [],
-      serviceAreas: resolvedAreaLabels,
-      active: true,
-      availableNow: true,
-      verified: false,
-      locationNodeIds: ctx.data.locationNodeIds ?? [],
+    console.info('[registration-flow] provider application submit started', {
+      trace_id: traceId,
+      normalized_phone: normalizedPhone,
+      reply_id: ctx.reply.id ?? null,
+      selected_skills_count: submitData.skills.length,
+      selected_areas_count: submitData.resolvedAreaLabels.length,
+      selected_location_node_count: submitData.locationNodeIds.length,
+      uploaded_files_count_from_session: sessionUploadedFileCount,
+      is_test_user: cohort.isTestUser,
+      cohort_name: cohort.cohortName,
     })
 
-    // evidenceFileUrls holds Attachment IDs (not blob URLs) — created during evidence collection
-    // with providerApplicationId=null; we backfill the FK below after the application is created.
-    const evidenceAttachmentIds = ctx.data.evidenceFileUrls ?? []
+    const submitResult: ProviderApplicationSubmitResult = await db.$transaction(async (tx) => {
+      const existingApp = await findLatestActiveProviderApplicationByPhone(tx as typeof db, normalizedPhone)
+      if (existingApp?.status === 'APPROVED') {
+        return {
+          outcome: 'existing_approved',
+          applicationId: existingApp.id,
+          ref: existingApp.id.slice(-8).toUpperCase(),
+        }
+      }
+      if (existingApp?.status === 'PENDING') {
+        return {
+          outcome: 'existing_pending',
+          applicationId: existingApp.id,
+          ref: existingApp.id.slice(-8).toUpperCase(),
+        }
+      }
 
-    let application: { id: string }
-    try {
-      application = await db.providerApplication.create({
+      if (submitData.evidenceAttachmentIds.length > 0) {
+        const attachments = await tx.attachment.findMany({
+          where: { id: { in: submitData.evidenceAttachmentIds } },
+          select: { id: true, providerApplicationId: true },
+        })
+        const foundAttachmentIds = new Set(attachments.map((attachment) => attachment.id))
+        const missingAttachmentIds = submitData.evidenceAttachmentIds.filter((id) => !foundAttachmentIds.has(id))
+
+        console.info('[registration-flow] provider application attachment validation', {
+          trace_id: traceId,
+          normalized_phone: normalizedPhone,
+          expected_files_count: submitData.evidenceAttachmentIds.length,
+          saved_files_count: attachments.length,
+          missing_files_count: missingAttachmentIds.length,
+        })
+
+        if (missingAttachmentIds.length > 0) {
+          throw new ProviderApplicationSubmitError(
+            'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY',
+            'One or more uploaded provider application files are not available yet.',
+            {
+              expectedFiles: submitData.evidenceAttachmentIds.length,
+              savedFiles: attachments.length,
+            },
+          )
+        }
+
+        const alreadyLinkedElsewhere = attachments.filter((attachment) => attachment.providerApplicationId)
+        if (alreadyLinkedElsewhere.length > 0) {
+          throw new ProviderApplicationSubmitError(
+            'PROVIDER_APPLICATION_FILE_LINK_FAILED',
+            'One or more uploaded files are already linked to another provider application.',
+            { linkedFiles: alreadyLinkedElsewhere.length },
+          )
+        }
+      }
+
+      const providerId = await syncProviderRecord(tx as typeof db, {
+        phone: normalizedPhone,
+        name: submitData.name,
+        skills: submitData.skills,
+        serviceAreas: submitData.resolvedAreaLabels,
+        active: true,
+        availableNow: true,
+        verified: false,
+        locationNodeIds: submitData.locationNodeIds,
+      })
+
+      const application = await tx.providerApplication.create({
         data: {
           providerId,
           phone: normalizedPhone,
-          name: ctx.data.name ?? 'Unknown',
-          skills: ctx.data.skills ?? [],
-          serviceAreas: resolvedAreaLabels,
+          name: submitData.name,
+          skills: submitData.skills,
+          serviceAreas: submitData.resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
-          availability: availLabel,
+          availability: formatAvailabilityLabel(submitData.availability),
           evidenceNote: ctx.data.evidenceNote ?? null,
-          evidenceFileUrls: evidenceAttachmentIds,
+          evidenceFileUrls: submitData.evidenceAttachmentIds,
           isTestUser: cohort.isTestUser,
           cohortName: cohort.cohortName,
           status: 'PENDING',
         },
       })
-    } catch (error) {
-      const duplicateRace =
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 'P2002'
 
-      if (!duplicateRace) throw error
+      if (submitData.evidenceAttachmentIds.length > 0) {
+        const linked = await tx.attachment.updateMany({
+          where: {
+            id: { in: submitData.evidenceAttachmentIds },
+            providerApplicationId: null,
+          },
+          data: { providerApplicationId: application.id },
+        })
 
-      const racedExisting = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
-      if (!racedExisting) throw error
+        if (linked.count !== submitData.evidenceAttachmentIds.length) {
+          throw new ProviderApplicationSubmitError(
+            'PROVIDER_APPLICATION_FILE_LINK_FAILED',
+            'Uploaded provider application files could not all be linked.',
+            {
+              expectedFiles: submitData.evidenceAttachmentIds.length,
+              linkedFiles: linked.count,
+            },
+          )
+        }
+      }
 
-      const ref = racedExisting.id.slice(-8).toUpperCase()
-      await sendText(
+      await (tx as any).auditLog?.create?.({
+        data: {
+          actorId: normalizedPhone,
+          actorRole: 'provider_applicant',
+          action: 'provider_application.submit',
+          entityType: 'ProviderApplication',
+          entityId: application.id,
+          after: {
+            status: 'PENDING',
+            providerId,
+            selectedSkillsCount: submitData.skills.length,
+            selectedAreasCount: submitData.resolvedAreaLabels.length,
+            uploadedFilesCount: submitData.evidenceAttachmentIds.length,
+            traceId,
+          },
+          isTestEvent: cohort.isTestUser,
+          cohortName: cohort.cohortName,
+        },
+      })
+
+      return {
+        outcome: 'created',
+        applicationId: application.id,
+        providerId,
+        ref: application.id.slice(-8).toUpperCase(),
+      }
+    })
+
+    if (submitResult.outcome === 'existing_approved') {
+      await sendButtons(
         ctx.phone,
-      `⏳ Your provider profile is already on file.\n\nRef: *${ref}*\n\nReply *jobs* to check leads or *menu* anytime to return to the main menu.`
+        `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${submitResult.ref}*\n\nYou can manage jobs from the provider menu.`,
+        [
+          { id: 'provider_my_jobs', title: 'My Jobs' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+        undefined,
+        { metadata: { traceId, applicationId: submitResult.applicationId } },
       )
       return { nextStep: 'done' }
     }
 
-    const ref = application.id.slice(-8).toUpperCase()
-
-    // Backfill providerApplicationId on any evidence Attachments created during the flow.
-    // They were created with providerApplicationId=null (no app row existed yet).
-    if (evidenceAttachmentIds.length > 0) {
-      await db.attachment.updateMany({
-        where: { id: { in: evidenceAttachmentIds }, providerApplicationId: null },
-        data: { providerApplicationId: application.id },
-      }).catch((err: unknown) => {
-        console.error(`[registration-flow:handlePending] evidence attachment backfill failed for app ${application.id}:`, err)
-      })
+    if (submitResult.outcome === 'existing_pending') {
+      await sendButtons(
+        ctx.phone,
+        `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${submitResult.ref}*\n\nWe'll update you here once it's approved.`,
+        [
+          { id: 'provider_application_status', title: 'Check Status' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+        undefined,
+        { metadata: { traceId, applicationId: submitResult.applicationId } },
+      )
+      return { nextStep: 'done' }
     }
 
     const isComingSoonRegion = ctx.data.selectedRegionStatus === 'coming_soon'
-    await sendText(
-      ctx.phone,
-      isComingSoonRegion
-        ? `🎉 *Profile submitted!*\n\nThanks, *${ctx.data.name}* — this area is not live yet, but your profile has been saved.\n\nWe'll notify you when Plug A Pro opens leads in this region.\n\nRef: *${ref}*\n\nReply *jobs* anytime to check available work.`
-        : `🎉 *Profile submitted!*\n\nThanks, *${ctx.data.name}* — your provider profile is ready to receive suitable job leads while we keep your details on record.\n\nRef: *${ref}*\n\nReply *jobs* anytime to check available work.`
-    )
+    try {
+      await sendButtons(
+        ctx.phone,
+        isComingSoonRegion
+          ? `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nThis area is not live yet. We'll update you here when Plug A Pro opens leads in this region.`
+          : `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nWe'll review your application and update you here within 24 hours.`,
+        [
+          { id: 'provider_application_status', title: 'Check Status' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+        undefined,
+        { metadata: { traceId, applicationId: submitResult.applicationId } },
+      )
+    } catch (error) {
+      console.error('[registration-flow] provider application WhatsApp confirmation failed after commit', {
+        trace_id: traceId,
+        application_id: submitResult.applicationId,
+        error: safeErrorMessage(error),
+      })
+    }
+
+    console.info('[registration-flow] provider application submit committed', {
+      trace_id: traceId,
+      normalized_phone: normalizedPhone,
+      application_id: submitResult.applicationId,
+      provider_id: submitResult.providerId,
+      application_ref: submitResult.ref,
+      uploaded_files_count_from_session: sessionUploadedFileCount,
+      final_status: 'PENDING',
+    })
 
     // A new provider can unlock older unmatched demand, so check open and
     // recently expired jobs immediately instead of waiting for the next cron run.
-    checkJobsForNewProviderAvailability(providerId).catch((err) => {
-      console.error(`[registration-flow] new-provider job check failed for provider ${providerId}:`, err)
+    checkJobsForNewProviderAvailability(submitResult.providerId).catch((err) => {
+      console.error(`[registration-flow] new-provider job check failed for provider ${submitResult.providerId}:`, err)
     })
 
     // Send template confirmation (covers the case where >24h passes before we reply)
@@ -1167,9 +1398,15 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       to: ctx.phone,
       template: 'technician_application_received',
       components: [
-        { type: 'body', parameters: [{ type: 'text', text: ctx.data.name ?? 'Applicant' }, { type: 'text', text: ref }] },
+        { type: 'body', parameters: [{ type: 'text', text: ctx.data.name ?? 'Applicant' }, { type: 'text', text: submitResult.ref }] },
       ],
-    }).catch(() => {}) // non-blocking
+    }).catch((error: unknown) => {
+      console.error('[registration-flow] provider application template confirmation failed', {
+        trace_id: traceId,
+        application_id: submitResult.applicationId,
+        error: safeErrorMessage(error),
+      })
+    }) // non-blocking
 
     // Notify admin of new application (non-blocking)
     const { sendAdminNewApplication } = await import('../whatsapp')
@@ -1180,17 +1417,71 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       serviceAreas: ctx.data.locationNodeIds?.length
         ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
         : (ctx.data.serviceAreas ?? []),
-      applicationId: application.id,
-    }).catch(() => {})
+      applicationId: submitResult.applicationId,
+    }).catch((error: unknown) => {
+      console.error('[registration-flow] admin new application notification failed', {
+        trace_id: traceId,
+        application_id: submitResult.applicationId,
+        error: safeErrorMessage(error),
+      })
+    })
 
     return { nextStep: 'done' }
   } catch (err) {
-    console.error('[registration-flow] Submit error:', err)
-    await sendText(
+    const duplicateRace =
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      err.code === 'P2002'
+
+    if (duplicateRace) {
+      const racedExisting = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
+      if (racedExisting) {
+        const ref = racedExisting.id.slice(-8).toUpperCase()
+        await sendButtons(
+          ctx.phone,
+          racedExisting.status === 'APPROVED'
+            ? `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${ref}*\n\nYou can manage jobs from the provider menu.`
+            : `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nWe'll update you here once it's approved.`,
+          [
+            { id: racedExisting.status === 'APPROVED' ? 'provider_my_jobs' : 'provider_application_status', title: racedExisting.status === 'APPROVED' ? 'My Jobs' : 'Check Status' },
+            { id: 'back_home', title: 'Main Menu' },
+          ],
+          undefined,
+          { metadata: { traceId, applicationId: racedExisting.id, recoveredFrom: 'P2002' } },
+        )
+        return { nextStep: 'done' }
+      }
+    }
+
+    const errorCode = errorCodeFromUnknown(err)
+    console.error('[registration-flow] provider application submit failed', {
+      trace_id: traceId,
+      normalized_phone: normalizedPhone,
+      reply_id: ctx.reply.id ?? null,
+      selected_skills_count: ctx.data.skills?.length ?? 0,
+      selected_areas_count: ctx.data.locationNodeIds?.length ?? ctx.data.serviceAreas?.length ?? 0,
+      uploaded_files_count_from_session: ctx.data.evidenceFileUrls?.length ?? 0,
+      error_code: errorCode,
+      error_message: safeErrorMessage(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    })
+    const detail =
+      err instanceof ProviderApplicationSubmitError && err.code === 'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'
+        ? `\n\nExpected files: ${err.details.expectedFiles ?? 'unknown'}\nSaved files: ${err.details.savedFiles ?? 'unknown'}`
+        : ''
+    await sendButtons(
       ctx.phone,
-      '😔 Something went wrong submitting your application. Please try again or reply *join* to restart.'
+      `😔 We couldn't submit your application.\n\nReason: ${err instanceof ProviderApplicationSubmitError ? err.message : 'An unexpected submit error occurred.'}${detail}\n\nError code: ${errorCode}\nTrace ID: ${traceId}\n\nYour progress is saved. Please try Submit again or choose Edit.`,
+      [
+        { id: 'submit_yes', title: 'Try Again' },
+        { id: 'reg_edit', title: 'Edit Application' },
+        { id: 'provider_support', title: 'Contact Support' },
+      ],
+      undefined,
+      { metadata: { traceId, errorCode } },
     )
-    return { nextStep: 'done' }
+    return { nextStep: 'reg_pending', nextData: ctx.data }
   }
 }
 
