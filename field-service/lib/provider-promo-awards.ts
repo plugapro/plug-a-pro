@@ -8,6 +8,8 @@ import {
 import { db } from './db'
 import {
   INTERNAL_TEST_ONBOARDING_CREDITS,
+  INTERNAL_TEST_COHORT_NAME,
+  isInternalTestPhone,
   isInternalTestOnboardingCreditPhone,
 } from './internal-test-cohort'
 import { creditPromoCreditsInTransaction } from './provider-wallet'
@@ -183,6 +185,7 @@ export async function awardPromoCreditsForMilestoneInTransaction(
 
   const provider = await getProviderForPromoAward(tx, providerId)
   const creditsToAward = creditsForAwardType(awardType, provider)
+  const isTestAward = isInternalTestPhone(provider.phone)
   if (!creditsToAward) {
     throw new ProviderPromoAwardError(
       'UNKNOWN_AWARD_TYPE',
@@ -239,6 +242,8 @@ export async function awardPromoCreditsForMilestoneInTransaction(
         ...(reference.metadata ?? {}),
       },
       createdBy: reference.createdBy,
+      isTestTransaction: isTestAward,
+      cohortName: isTestAward ? INTERNAL_TEST_COHORT_NAME : null,
     },
   )
 

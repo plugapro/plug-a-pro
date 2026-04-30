@@ -383,6 +383,8 @@ describe('lead unlock service', () => {
       entryType: 'LEAD_UNLOCK_DEBIT',
       creditType: 'PROMO',
       referenceType: 'test_lead_unlock',
+      isTestTransaction: true,
+      cohortName: 'internal_staff_test',
     })
     expect(state.wallet).toMatchObject({
       paidCreditBalance: 0,

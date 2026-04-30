@@ -33,6 +33,8 @@ export type WalletReference = {
   description?: string
   metadata?: Record<string, unknown>
   createdBy?: string | null
+  isTestTransaction?: boolean
+  cohortName?: string | null
 }
 
 export type ProviderWalletBalance = {
@@ -126,6 +128,8 @@ async function createLedgerEntry(
     entryType: WalletLedgerEntryType
     creditType: WalletCreditType
     amountCredits: number
+    balanceBeforePaidCredits: number
+    balanceBeforePromoCredits: number
     balanceAfterPaidCredits: number
     balanceAfterPromoCredits: number
     reference: WalletReference
@@ -138,12 +142,20 @@ async function createLedgerEntry(
       entryType: params.entryType as WalletLedgerEntry['entryType'],
       creditType: params.creditType,
       amountCredits: params.amountCredits,
+      isTestTransaction: params.reference.isTestTransaction ?? false,
+      cohortName: params.reference.cohortName ?? null,
       balanceAfterPaidCredits: params.balanceAfterPaidCredits,
       balanceAfterPromoCredits: params.balanceAfterPromoCredits,
       referenceType: params.reference.referenceType,
       referenceId: params.reference.referenceId,
       description: params.reference.description,
-      metadata: toJson(params.reference.metadata),
+      metadata: toJson({
+        ...(params.reference.metadata ?? {}),
+        balanceBeforePaidCredits: params.balanceBeforePaidCredits,
+        balanceBeforePromoCredits: params.balanceBeforePromoCredits,
+        balanceAfterPaidCredits: params.balanceAfterPaidCredits,
+        balanceAfterPromoCredits: params.balanceAfterPromoCredits,
+      }),
       createdBy: params.reference.createdBy ?? undefined,
     },
   })
@@ -174,6 +186,8 @@ export async function creditPaidCreditsInTransaction(
     entryType: 'TOPUP_CREDIT',
     creditType: 'PAID',
     amountCredits,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
     balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
     balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
     reference,
@@ -207,6 +221,8 @@ export async function creditPromoCreditsInTransaction(
     entryType: 'PROMO_CREDIT',
     creditType: 'PROMO',
     amountCredits,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
     balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
     balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
     reference,
@@ -278,6 +294,8 @@ export async function debitCreditsForLeadUnlockInTransaction(
         entryType: 'LEAD_UNLOCK_DEBIT',
         creditType: 'PROMO',
         amountCredits: promoDebit,
+        balanceBeforePaidCredits: wallet.paidCreditBalance,
+        balanceBeforePromoCredits: wallet.promoCreditBalance,
         balanceAfterPaidCredits: wallet.paidCreditBalance,
         balanceAfterPromoCredits: balanceAfterPromoDebit,
         reference,
@@ -293,6 +311,8 @@ export async function debitCreditsForLeadUnlockInTransaction(
         entryType: 'LEAD_UNLOCK_DEBIT',
         creditType: 'PAID',
         amountCredits: paidDebit,
+        balanceBeforePaidCredits: wallet.paidCreditBalance,
+        balanceBeforePromoCredits: balanceAfterPromoDebit,
         balanceAfterPaidCredits: balanceAfterPaidDebit,
         balanceAfterPromoCredits: balanceAfterPromoDebit,
         reference,
@@ -419,6 +439,8 @@ export async function refundCreditsInTransaction(
     entryType: 'LEAD_REFUND_CREDIT',
     creditType,
     amountCredits,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
     balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
     balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
     reference,
@@ -501,6 +523,8 @@ export async function adjustProviderCreditsInTransaction(
     entryType: 'ADMIN_ADJUSTMENT',
     creditType,
     amountCredits,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
     balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
     balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
     reference: {
@@ -557,6 +581,8 @@ export async function suspendProviderWalletInTransaction(
     entryType: 'WALLET_SUSPENDED',
     creditType: 'PROMO',
     amountCredits: 0,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
     balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
     balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
     reference: {
@@ -604,6 +630,8 @@ export async function reactivateProviderWalletInTransaction(
     entryType: 'WALLET_REACTIVATED',
     creditType: 'PROMO',
     amountCredits: 0,
+    balanceBeforePaidCredits: wallet.paidCreditBalance,
+    balanceBeforePromoCredits: wallet.promoCreditBalance,
     balanceAfterPaidCredits: updatedWallet.paidCreditBalance,
     balanceAfterPromoCredits: updatedWallet.promoCreditBalance,
     reference: {

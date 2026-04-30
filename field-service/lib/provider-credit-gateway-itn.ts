@@ -53,6 +53,7 @@ export async function creditProviderWalletFromGatewayItn(
       status: true,
       creditedAt: true,
       itnPaymentStatus: true,
+      provider: { select: { isTestUser: true, cohortName: true } },
     },
   })
 
@@ -105,6 +106,8 @@ export async function creditProviderWalletFromGatewayItn(
             itnPaymentStatus: intent.itnPaymentStatus,
           },
           createdBy: 'payfast-itn',
+          isTestTransaction: intent.provider.isTestUser,
+          cohortName: intent.provider.cohortName,
         },
       )
 

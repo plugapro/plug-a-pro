@@ -201,6 +201,10 @@ export async function creditPaymentIntentInTransaction(
   options: CreditPaymentIntentOptions = {},
 ) {
   const intent = await getPaymentIntentForUpdate(tx, paymentIntentId)
+  const provider = await tx.provider.findUnique({
+    where: { id: intent.providerId },
+    select: { isTestUser: true, cohortName: true },
+  })
   assertCreditableStatus(intent)
   assertCreditHasReconciliationTrail(intent, options.adminNote)
 
@@ -250,6 +254,8 @@ export async function creditPaymentIntentInTransaction(
         amountCents: intent.amountCents,
       },
       createdBy: adminUserId,
+      isTestTransaction: provider?.isTestUser ?? false,
+      cohortName: provider?.cohortName ?? null,
     },
   )
 

@@ -265,6 +265,8 @@ describe('provider promo award service', () => {
       entryType: 'PROMO_CREDIT',
       creditType: 'PROMO',
       amountCredits: 10,
+      isTestTransaction: true,
+      cohortName: 'internal_staff_test',
     })
   })
 

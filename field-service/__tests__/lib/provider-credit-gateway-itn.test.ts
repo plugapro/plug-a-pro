@@ -92,6 +92,7 @@ function makeIntent(overrides: Record<string, unknown> = {}) {
     status: 'ITN_RECEIVED',
     creditedAt: null,
     itnPaymentStatus: 'COMPLETE',
+    provider: { isTestUser: false, cohortName: null },
     ...overrides,
   }
 }

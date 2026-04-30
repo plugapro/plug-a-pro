@@ -196,6 +196,8 @@ describe('provider wallet service', () => {
     const result = await creditPaidCredits('provider-1', 5, reference({
       referenceType: 'manual_eft',
       referenceId: 'eft-1',
+      isTestTransaction: true,
+      cohortName: 'internal_staff_test',
     }))
 
     expect(result.wallet.paidCreditBalance).toBe(5)
@@ -209,6 +211,15 @@ describe('provider wallet service', () => {
       balanceAfterPromoCredits: 0,
       referenceType: 'manual_eft',
       referenceId: 'eft-1',
+      isTestTransaction: true,
+      cohortName: 'internal_staff_test',
+      metadata: {
+        source: 'unit-test',
+        balanceBeforePaidCredits: 0,
+        balanceBeforePromoCredits: 0,
+        balanceAfterPaidCredits: 5,
+        balanceAfterPromoCredits: 0,
+      },
     })
   })
 

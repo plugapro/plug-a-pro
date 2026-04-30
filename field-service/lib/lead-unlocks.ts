@@ -242,6 +242,8 @@ export async function unlockLeadForProvider(
               ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
             },
             createdBy: providerId,
+            isTestTransaction: lead.jobRequest.isTestRequest || lead.provider.isTestUser,
+            cohortName: lead.jobRequest.cohortName,
           },
         )
       } catch (error) {
@@ -434,6 +436,8 @@ export async function unlockLeadForProviderInTransaction(
           ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
         },
         createdBy: providerId,
+        isTestTransaction: isTestUnlock,
+        cohortName: lead.jobRequest.cohortName,
       },
     )
   } catch (error) {
