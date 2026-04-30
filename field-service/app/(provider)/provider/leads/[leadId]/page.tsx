@@ -41,9 +41,6 @@ async function acceptLead(formData: FormData) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
       redirect(`/provider/leads/${leadId}?unlockError=credits`)
     }
-    if (result.reason === 'KYC_REQUIRED') {
-      redirect(`/provider/leads/${leadId}?unlockError=kyc`)
-    }
     if (result.reason === 'PROVIDER_NOT_APPROVED') {
       redirect(`/provider/leads/${leadId}?unlockError=approval`)
     }
@@ -63,14 +60,16 @@ async function unlockLead(formData: FormData) {
   if (!provider) redirect('/provider')
 
   try {
-    await unlockLeadForProvider(leadId, provider.id)
+    await unlockLeadForProvider(leadId, provider.id, { source: 'pwa' })
   } catch (error) {
     if (error instanceof LeadUnlockError) {
       const reason = error.code === 'INSUFFICIENT_CREDITS'
         ? 'credits'
-        : error.code === 'KYC_REQUIRED'
-          ? 'kyc'
-          : 'unavailable'
+        : error.code === 'PROVIDER_NOT_APPROVED'
+          ? 'approval'
+          : error.code === 'PROVIDER_NOT_ACTIVE'
+            ? 'inactive'
+            : 'unavailable'
       redirect(`/provider/leads/${leadId}?unlockError=${reason}`)
     }
     throw error
@@ -166,7 +165,6 @@ export default async function LeadDetailPage({
     !unlockDispute,
   )
   const totalCreditBalance = lead.wallet.totalCredits
-  const kycApproved = lead.provider.kycStatus === 'VERIFIED'
   const hasEnoughCredits = totalCreditBalance >= lead.unlockCostCredits
 
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
@@ -223,9 +221,9 @@ export default async function LeadDetailPage({
         </div>
       )}
 
-      {resolvedSearchParams.unlockError === 'kyc' && (
+      {resolvedSearchParams.unlockError === 'inactive' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          KYC must be approved before unlocking full customer details.
+          Your provider profile is not active, so you cannot unlock leads right now.
         </div>
       )}
 
@@ -235,7 +233,7 @@ export default async function LeadDetailPage({
         </div>
       )}
 
-      {resolvedSearchParams.unlockError && !['credits', 'kyc', 'approval'].includes(resolvedSearchParams.unlockError) && (
+      {resolvedSearchParams.unlockError && !['credits', 'inactive', 'approval'].includes(resolvedSearchParams.unlockError) && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           This lead could not be unlocked. It may no longer be available.
         </div>
@@ -417,11 +415,7 @@ export default async function LeadDetailPage({
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t px-4 py-4 space-y-2 safe-bottom">
           {!isUnlocked ? (
             <>
-              {!kycApproved ? (
-                <Button asChild size="lg" className="w-full">
-                  <Link href="/provider/profile">Complete KYC to Unlock</Link>
-                </Button>
-              ) : !hasEnoughCredits ? (
+              {!hasEnoughCredits ? (
                 <Button asChild size="lg" className="w-full">
                   <Link href="/provider/credits">Top Up to Unlock</Link>
                 </Button>
@@ -429,7 +423,7 @@ export default async function LeadDetailPage({
                 <form action={unlockLead}>
                   <input type="hidden" name="leadId" value={leadId} />
                   <Button type="submit" size="lg" className="w-full">
-                    Unlock Lead
+                    Unlock lead for 1 Plug-A-Pro Credit
                   </Button>
                 </form>
               )}

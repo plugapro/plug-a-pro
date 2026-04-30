@@ -1124,6 +1124,37 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('1 photo received'), expect.any(Array))
   })
 
+  it('duplicate media ID arriving as the last item in a suppressed batch sends one confirmation with the correct count', async () => {
+    // Simulates: batch of 2 webhooks — first is a new photo, second is a duplicate of the first.
+    // The batch flush calls this handler twice: first with suppress=true, second with suppress=false.
+    // The duplicate guard must not inflate the count on the final (unsuppressed) call.
+    const data = { ...baseData, photoAttachmentIds: [], photoMediaIds: [] }
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_dup' })
+
+    // First call: new media, suppressed (not the last in batch)
+    const first = await handleJobRequestFlow({
+      ...makePhotoCtx(undefined, undefined, data, 'image', 'media-dup'),
+      suppressCustomerPhotoProgress: true,
+      customerPhotoBatchSize: 2,
+    } as any)
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledTimes(1)
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+
+    // Second call: same media ID, unsuppressed (last in batch) — should deduplicate
+    const second = await handleJobRequestFlow({
+      ...makePhotoCtx(undefined, undefined, first.nextData as any, 'image', 'media-dup'),
+      suppressCustomerPhotoProgress: false,
+      customerPhotoBatchSize: 2,
+    } as any)
+
+    // Download must not happen again
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledTimes(1)
+    // Exactly one confirmation sent, reflecting only the 1 actually stored photo
+    expect(wa.sendButtons).toHaveBeenCalledTimes(1)
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('1 photo received'), expect.any(Array))
+    expect(second.nextData?.photoAttachmentIds).toEqual(['att_dup'])
+  })
+
   it('shows Done-only button when 5th photo is added (max reached)', async () => {
     ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_005' })
     const data = { ...baseData, photoAttachmentIds: ['att_001', 'att_002', 'att_003', 'att_004'] }

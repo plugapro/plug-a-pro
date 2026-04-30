@@ -197,7 +197,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
 
     state.providers = new Map([[
       'provider-1',
-      { id: 'provider-1', phone: '+27821234567', kycStatus: 'VERIFIED' },
+      { id: 'provider-1', phone: '+27821234567', kycStatus: 'VERIFIED', active: true, verified: true, status: 'ACTIVE' },
     ]])
     state.wallets = new Map()
     state.leads = new Map([

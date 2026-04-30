@@ -40,6 +40,10 @@ const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 3
 // of 5 images arrived before the remaining 2, producing a "3 files received"
 // confirmation that the user acted on before the rest landed.
 const MEDIA_UPLOAD_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_MEDIA_UPLOAD_BATCH_WINDOW_MS) || 3000
+// Each window can be tuned independently via its own env var.
+// Note: WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS only affects the provider path —
+// setting it does NOT change the customer window. Use WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS
+// to adjust customer batching, or WHATSAPP_MEDIA_UPLOAD_BATCH_WINDOW_MS to adjust both.
 const CUSTOMER_PHOTO_BATCH_WINDOW_MS =
   Number(process.env.WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS) || MEDIA_UPLOAD_BATCH_WINDOW_MS
 const PROVIDER_EVIDENCE_BATCH_WINDOW_MS =
@@ -254,7 +258,6 @@ function flushCustomerPhotoBatch(phone: string) {
   console.info('[whatsapp-bot] customer photo batch flushing', {
     trace_id: batchId,
     normalized_phone: phone,
-    batch_id: batchId,
     files_received: batch.messages.length,
     whatsapp_message_ids: batch.messages.map((message) => message.id),
     whatsapp_media_ids: batch.messages.map((message) => message.image?.id ?? null),

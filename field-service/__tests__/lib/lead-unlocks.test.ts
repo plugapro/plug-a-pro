@@ -64,7 +64,10 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     expiresAt: new Date('2030-04-29T10:00:00.000Z'),
     provider: {
       id: 'provider-1',
-      kycStatus: 'VERIFIED',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'NOT_STARTED',
       isTestUser: false,
     },
     jobRequest: {
@@ -255,15 +258,57 @@ describe('lead unlock service', () => {
     expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
   })
 
-  it('blocks providers without approved KYC', async () => {
+  it('allows approved providers to unlock without KYC approval', async () => {
     state.lead = makeLead({
-      provider: { id: 'provider-1', kycStatus: 'SUBMITTED' },
+      provider: {
+        id: 'provider-1',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'REJECTED',
+        isTestUser: false,
+      },
     })
 
-    await expect(
-      unlockLeadForProvider('lead-1', 'provider-1'),
-    ).rejects.toMatchObject({
-      code: 'KYC_REQUIRED',
+    const result = await unlockLeadForProvider('lead-1', 'provider-1')
+
+    expect(result.alreadyUnlocked).toBe(false)
+    expect(mockDb.providerWallet.updateMany).toHaveBeenCalled()
+  })
+
+  it('blocks providers whose application is not approved', async () => {
+    state.lead = makeLead({
+      provider: {
+        id: 'provider-1',
+        active: true,
+        verified: false,
+        status: 'UNDER_REVIEW',
+        kycStatus: 'VERIFIED',
+        isTestUser: false,
+      },
+    })
+
+    await expect(unlockLeadForProvider('lead-1', 'provider-1')).rejects.toMatchObject({
+      code: 'PROVIDER_NOT_APPROVED',
+    } satisfies Partial<LeadUnlockError>)
+
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('blocks inactive or suspended providers', async () => {
+    state.lead = makeLead({
+      provider: {
+        id: 'provider-1',
+        active: false,
+        verified: true,
+        status: 'SUSPENDED',
+        kycStatus: 'VERIFIED',
+        isTestUser: false,
+      },
+    })
+
+    await expect(unlockLeadForProvider('lead-1', 'provider-1')).rejects.toMatchObject({
+      code: 'PROVIDER_NOT_ACTIVE',
     } satisfies Partial<LeadUnlockError>)
 
     expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
@@ -284,7 +329,9 @@ describe('lead unlock service', () => {
     state.lead = makeLead({
       provider: {
         id: 'provider-1',
-        kycStatus: 'VERIFIED',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
         isTestUser: true,
       },
       jobRequest: {
@@ -310,7 +357,9 @@ describe('lead unlock service', () => {
     state.lead = makeLead({
       provider: {
         id: 'provider-1',
-        kycStatus: 'VERIFIED',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
         isTestUser: true,
       },
       jobRequest: {

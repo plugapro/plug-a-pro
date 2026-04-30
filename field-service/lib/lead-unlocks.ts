@@ -10,7 +10,8 @@ export const LEAD_UNLOCK_COST_CREDITS = 1
 type LeadUnlockErrorCode =
   | 'NOT_FOUND'
   | 'FORBIDDEN'
-  | 'KYC_REQUIRED'
+  | 'PROVIDER_NOT_APPROVED'
+  | 'PROVIDER_NOT_ACTIVE'
   | 'LEAD_NOT_AVAILABLE'
   | 'INSUFFICIENT_CREDITS'
   | 'WALLET_SUSPENDED'
@@ -31,6 +32,12 @@ export type UnlockLeadForProviderResult = {
   unlock: LeadUnlock
   ledgerEntries: WalletLedgerEntry[]
   alreadyUnlocked: boolean
+}
+
+type LeadUnlockContext = {
+  source?: 'whatsapp' | 'pwa' | 'api'
+  traceId?: string
+  idempotencyKey?: string
 }
 
 function creditBreakdown(ledgerEntries: WalletLedgerEntry[]) {
@@ -65,6 +72,26 @@ function assertLeadAvailable(lead: {
   }
 }
 
+function assertProviderCanUnlock(provider: {
+  active: boolean
+  verified: boolean
+  status: string
+}) {
+  if (!provider.active || provider.status === 'SUSPENDED' || provider.status === 'ARCHIVED' || provider.status === 'BANNED') {
+    throw new LeadUnlockError(
+      'PROVIDER_NOT_ACTIVE',
+      'Your provider profile is not active, so you cannot unlock leads right now.',
+    )
+  }
+
+  if (!provider.verified || provider.status !== 'ACTIVE') {
+    throw new LeadUnlockError(
+      'PROVIDER_NOT_APPROVED',
+      'Your provider application must be approved before you can unlock leads.',
+    )
+  }
+}
+
 function mapWalletError(error: unknown): never {
   if (error instanceof ProviderWalletError && error.code === 'INSUFFICIENT_FUNDS') {
     throw new LeadUnlockError(
@@ -93,6 +120,7 @@ function mapWalletError(error: unknown): never {
 export async function unlockLeadForProvider(
   leadId: string,
   providerId: string,
+  context: LeadUnlockContext = {},
 ): Promise<UnlockLeadForProviderResult> {
   const existingUnlock = await db.leadUnlock.findUnique({
     where: { leadId },
@@ -118,7 +146,9 @@ export async function unlockLeadForProvider(
           provider: {
             select: {
               id: true,
-              kycStatus: true,
+              active: true,
+              verified: true,
+              status: true,
               isTestUser: true,
             },
           },
@@ -138,12 +168,7 @@ export async function unlockLeadForProvider(
       if (lead.providerId !== providerId) {
         throw new LeadUnlockError('FORBIDDEN', 'This lead belongs to another provider.')
       }
-      if (lead.provider.kycStatus !== 'VERIFIED') {
-        throw new LeadUnlockError(
-          'KYC_REQUIRED',
-          'KYC must be approved before unlocking full customer details.',
-        )
-      }
+      assertProviderCanUnlock(lead.provider)
       if (
         lead.jobRequest.match &&
         lead.jobRequest.match.providerId !== providerId
@@ -158,6 +183,20 @@ export async function unlockLeadForProvider(
         select: { paidCreditBalance: true, promoCreditBalance: true },
       })
       const currentCreditBalance = (wallet?.paidCreditBalance ?? 0) + (wallet?.promoCreditBalance ?? 0)
+      const traceId = context.traceId ?? `unlock_${lead.id}_${Date.now().toString(36)}`
+      console.info('[lead-unlocks] lead unlock attempt', {
+        trace_id: traceId,
+        provider_id: providerId,
+        provider_status: lead.provider.status,
+        provider_credit_balance: currentCreditBalance,
+        lead_id: lead.id,
+        lead_ref: lead.id.slice(-8).toUpperCase(),
+        lead_status: lead.status,
+        already_unlocked: false,
+        source: context.source ?? 'api',
+        result: currentCreditBalance >= LEAD_UNLOCK_COST_CREDITS ? 'VALIDATED' : 'INSUFFICIENT_CREDITS',
+        error_code: currentCreditBalance >= LEAD_UNLOCK_COST_CREDITS ? null : 'INSUFFICIENT_CREDITS',
+      })
       if (currentCreditBalance < LEAD_UNLOCK_COST_CREDITS) {
         throw new LeadUnlockError(
           'INSUFFICIENT_CREDITS',
@@ -195,7 +234,11 @@ export async function unlockLeadForProvider(
             description: `${lead.jobRequest.isTestRequest || lead.provider.isTestUser ? 'Test lead unlock' : 'Lead unlock'} ${lead.id.slice(-8).toUpperCase()}`,
             metadata: {
               leadId: lead.id,
+              leadRef: lead.id.slice(-8).toUpperCase(),
               jobRequestId: lead.jobRequestId,
+              source: context.source ?? 'api',
+              ...(context.traceId ? { traceId: context.traceId } : {}),
+              ...(context.idempotencyKey ? { idempotencyKey: context.idempotencyKey } : {}),
               ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
             },
             createdBy: providerId,
@@ -218,6 +261,21 @@ export async function unlockLeadForProvider(
           data: { status: 'VIEWED' },
         })
       }
+
+      console.info('[lead-unlocks] lead unlock committed', {
+        trace_id: traceId,
+        provider_id: providerId,
+        provider_status: lead.provider.status,
+        provider_credit_balance: debitResult.wallet.paidCreditBalance + debitResult.wallet.promoCreditBalance,
+        lead_id: lead.id,
+        lead_ref: lead.id.slice(-8).toUpperCase(),
+        lead_status: lead.status,
+        already_unlocked: false,
+        source: context.source ?? 'api',
+        result: 'UNLOCKED',
+        error_code: null,
+        credit_transaction_id: debitResult.ledgerEntries.at(-1)?.id ?? null,
+      })
 
       return {
         unlock: updatedUnlock,
@@ -259,6 +317,7 @@ export async function unlockLeadForProviderInTransaction(
   tx: Prisma.TransactionClient,
   leadId: string,
   providerId: string,
+  context: LeadUnlockContext = {},
 ): Promise<UnlockLeadForProviderResult> {
   const existingUnlock = await tx.leadUnlock.findUnique({
     where: { leadId },
@@ -282,7 +341,9 @@ export async function unlockLeadForProviderInTransaction(
       provider: {
         select: {
           id: true,
-          kycStatus: true,
+          active: true,
+          verified: true,
+          status: true,
           isTestUser: true,
         },
       },
@@ -302,12 +363,7 @@ export async function unlockLeadForProviderInTransaction(
   if (lead.providerId !== providerId) {
     throw new LeadUnlockError('FORBIDDEN', 'This lead belongs to another provider.')
   }
-  if (lead.provider.kycStatus !== 'VERIFIED') {
-    throw new LeadUnlockError(
-      'KYC_REQUIRED',
-      'KYC must be approved before unlocking full customer details.',
-    )
-  }
+  assertProviderCanUnlock(lead.provider)
   if (
     lead.jobRequest.match &&
     lead.jobRequest.match.providerId !== providerId
@@ -323,6 +379,20 @@ export async function unlockLeadForProviderInTransaction(
     select: { paidCreditBalance: true, promoCreditBalance: true },
   })
   const currentCreditBalance = (wallet?.paidCreditBalance ?? 0) + (wallet?.promoCreditBalance ?? 0)
+  const traceId = context.traceId ?? `unlock_${lead.id}_${Date.now().toString(36)}`
+  console.info('[lead-unlocks] lead unlock attempt', {
+    trace_id: traceId,
+    provider_id: providerId,
+    provider_status: lead.provider.status,
+    provider_credit_balance: currentCreditBalance,
+    lead_id: lead.id,
+    lead_ref: lead.id.slice(-8).toUpperCase(),
+    lead_status: lead.status,
+    already_unlocked: false,
+    source: context.source ?? 'api',
+    result: currentCreditBalance >= LEAD_UNLOCK_COST_CREDITS ? 'VALIDATED' : 'INSUFFICIENT_CREDITS',
+    error_code: currentCreditBalance >= LEAD_UNLOCK_COST_CREDITS ? null : 'INSUFFICIENT_CREDITS',
+  })
   if (currentCreditBalance < LEAD_UNLOCK_COST_CREDITS) {
     throw new LeadUnlockError(
       'INSUFFICIENT_CREDITS',
@@ -356,7 +426,11 @@ export async function unlockLeadForProviderInTransaction(
         description: `${isTestUnlock ? 'Test lead unlock' : 'Lead unlock'} ${lead.id.slice(-8).toUpperCase()}`,
         metadata: {
           leadId: lead.id,
+          leadRef: lead.id.slice(-8).toUpperCase(),
           jobRequestId: lead.jobRequestId,
+          source: context.source ?? 'api',
+          ...(context.traceId ? { traceId: context.traceId } : {}),
+          ...(context.idempotencyKey ? { idempotencyKey: context.idempotencyKey } : {}),
           ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
         },
         createdBy: providerId,
@@ -379,6 +453,21 @@ export async function unlockLeadForProviderInTransaction(
       data: { status: 'VIEWED' },
     })
   }
+
+  console.info('[lead-unlocks] lead unlock committed', {
+    trace_id: traceId,
+    provider_id: providerId,
+    provider_status: lead.provider.status,
+    provider_credit_balance: debitResult.wallet.paidCreditBalance + debitResult.wallet.promoCreditBalance,
+    lead_id: lead.id,
+    lead_ref: lead.id.slice(-8).toUpperCase(),
+    lead_status: lead.status,
+    already_unlocked: false,
+    source: context.source ?? 'api',
+    result: 'UNLOCKED',
+    error_code: null,
+    credit_transaction_id: debitResult.ledgerEntries.at(-1)?.id ?? null,
+  })
 
   return {
     unlock: updatedUnlock,

@@ -1709,7 +1709,6 @@ export async function acceptAssignmentOffer(params: {
         active: true,
         verified: true,
         status: true,
-        kycStatus: true,
       },
     })
     if (!provider) return { ok: false as const, reason: 'FORBIDDEN' }
@@ -1756,7 +1755,11 @@ export async function acceptAssignmentOffer(params: {
       where: { leadId: lead.id },
       select: { id: true, providerId: true },
     })
-    const unlockResult = await unlockLeadForProviderInTransaction(tx, lead.id, params.providerId)
+    const unlockResult = await unlockLeadForProviderInTransaction(tx, lead.id, params.providerId, {
+      source: params.source ?? 'api',
+      traceId,
+      idempotencyKey: `${params.source ?? 'api'}:${params.providerId}:${lead.id}:unlock_accept_lead`,
+    })
     const alreadyUnlocked = Boolean(unlockBefore) || unlockResult.alreadyUnlocked
 
     if (existingMatch && existingMatch.providerId === params.providerId) {
@@ -1961,8 +1964,8 @@ export async function acceptAssignmentOffer(params: {
         ? 'EXPIRED'
         : error.code === 'INSUFFICIENT_CREDITS'
           ? 'INSUFFICIENT_CREDITS'
-          : error.code === 'KYC_REQUIRED'
-            ? 'KYC_REQUIRED'
+          : error.code === 'PROVIDER_NOT_APPROVED' || error.code === 'PROVIDER_NOT_ACTIVE'
+            ? 'PROVIDER_NOT_APPROVED'
             : error.code === 'WALLET_SUSPENDED'
               ? 'WALLET_SUSPENDED'
               : error.code === 'CONCURRENT_UNLOCK'
@@ -2021,7 +2024,6 @@ export async function acceptAssignmentOffer(params: {
         | 'EXPIRED'
         | 'TAKEN'
         | 'INSUFFICIENT_CREDITS'
-        | 'KYC_REQUIRED'
         | 'PROVIDER_NOT_APPROVED'
         | 'WALLET_SUSPENDED'
         | 'CONCURRENT_UNLOCK',

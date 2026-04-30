@@ -492,7 +492,13 @@ describe('matching service', () => {
       jobRequestId: 'jr-generic',
       status: 'SENT',
       expiresAt: new Date(Date.now() + 60_000),
-      provider: { id: 'provider-preferred', kycStatus: 'VERIFIED' },
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
       jobRequest: {
         id: 'jr-generic',
         status: 'OPEN',
@@ -546,7 +552,13 @@ describe('matching service', () => {
       jobRequestId: 'jr-generic',
       status: 'SENT',
       expiresAt: new Date(Date.now() + 60_000),
-      provider: { id: 'provider-preferred', kycStatus: 'VERIFIED' },
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
       jobRequest: {
         id: 'jr-generic',
         status: 'OPEN',

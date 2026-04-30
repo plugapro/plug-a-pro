@@ -62,6 +62,26 @@ vi.mock('@/lib/whatsapp', () => ({ sendProviderAssigned: vi.fn() }))
 vi.mock('@/lib/post-match-communications', () => ({
   buildAcceptedLeadContactUrlForProvider: mockBuildAcceptedLeadContactUrlForProvider,
 }))
+vi.mock('@/lib/whatsapp-identity', () => ({
+  resolveWhatsAppIdentity: vi.fn().mockResolvedValue({
+    role: 'unknown',
+    normalizedPhone: '+27821234567',
+    phoneVariants: ['+27821234567'],
+    customerId: null,
+    providerId: null,
+    applicationId: null,
+    displayName: null,
+    firstName: null,
+    savedAddresses: [],
+    providerStatus: null,
+    applicationStatus: null,
+    activeJobCount: 0,
+    isPaused: false,
+    conflict: false,
+    traceId: 'test-trace',
+  }),
+  phoneLookupVariants: (phone: string) => [phone],
+}))
 
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { handleJobRequestFlow } from '@/lib/whatsapp-flows/job-request'

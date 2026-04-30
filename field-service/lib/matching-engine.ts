@@ -45,7 +45,6 @@ type LeadRejected = {
     | 'EXPIRED'
     | 'TAKEN'
     | 'INSUFFICIENT_CREDITS'
-    | 'KYC_REQUIRED'
     | 'PROVIDER_NOT_APPROVED'
     | 'WALLET_SUSPENDED'
     | 'CONCURRENT_UNLOCK'

@@ -1,5 +1,4 @@
 import type {
-  KycStatus,
   LeadStatus,
   LeadUnlockDispute,
   LeadUnlockStatus,
@@ -28,7 +27,6 @@ export type ProviderLeadDetail = {
   isUnlocked: boolean
   provider: {
     id: string
-    kycStatus: KycStatus
   }
   wallet: {
     paidCredits: number
@@ -116,7 +114,6 @@ export async function getProviderLeadDetailForProvider(
       where: { id: providerId },
       select: {
         id: true,
-        kycStatus: true,
         wallet: {
           select: {
             paidCreditBalance: true,
@@ -232,7 +229,6 @@ export async function getProviderLeadDetailForProvider(
     isUnlocked,
     provider: {
       id: provider.id,
-      kycStatus: provider.kycStatus,
     },
     wallet: {
       paidCredits,

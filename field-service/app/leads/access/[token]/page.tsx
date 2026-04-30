@@ -51,9 +51,6 @@ async function acceptLeadWithToken(formData: FormData) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
       redirect(`/leads/access/${encodeURIComponent(token)}?error=credits`)
     }
-    if (result.reason === 'KYC_REQUIRED') {
-      redirect(`/leads/access/${encodeURIComponent(token)}?error=kyc`)
-    }
     if (result.reason === 'PROVIDER_NOT_APPROVED') {
       redirect(`/leads/access/${encodeURIComponent(token)}?error=approval`)
     }
@@ -78,14 +75,16 @@ async function unlockLeadWithToken(formData: FormData) {
   }
 
   try {
-    await unlockLeadForProvider(resolved.lead.id, resolved.lead.providerId)
+    await unlockLeadForProvider(resolved.lead.id, resolved.lead.providerId, { source: 'pwa' })
   } catch (error) {
     if (error instanceof LeadUnlockError) {
       const reason = error.code === 'INSUFFICIENT_CREDITS'
         ? 'credits'
-        : error.code === 'KYC_REQUIRED'
-          ? 'kyc'
-          : 'unavailable'
+        : error.code === 'PROVIDER_NOT_APPROVED'
+          ? 'approval'
+          : error.code === 'PROVIDER_NOT_ACTIVE'
+            ? 'inactive'
+            : 'unavailable'
       redirect(`/leads/access/${encodeURIComponent(token)}?error=${reason}`)
     }
     throw error
@@ -477,9 +476,9 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {resolvedSearchParams.error === 'kyc' && (
+        {resolvedSearchParams.error === 'inactive' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            KYC must be approved before unlocking full customer details.
+            Your provider profile is not active, so you cannot unlock leads right now.
           </div>
         )}
 
