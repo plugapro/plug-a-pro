@@ -3,24 +3,31 @@ import Link from "next/link";
 const STEPS = [
   {
     number: "01",
-    title: "Describe your job",
+    title: "Customer sends the request",
     description:
-      "Send a message on WhatsApp or use the app. Tell us what needs doing, where you are, and share a photo if helpful. Takes under 3 minutes.",
-    detail: "Works on any phone with WhatsApp. No app download needed.",
+      "Start on WhatsApp or the PWA. Tell Plug A Pro what needs doing, where the job is, when you prefer the work to happen, and add photos if helpful.",
+    detail: "A structured request is created for operations review and matching.",
   },
   {
     number: "02",
-    title: "Get matched to a nearby worker",
+    title: "Ops reviews and matches",
     description:
-      "We find available workers near you whose profile matches that type of job. A lead is sent to matching workers. The first to accept, or the one you choose, takes the job.",
-    detail: "Your personal number is not shared at this stage.",
+      "The request enters the dispatch queue. Plug A Pro checks the job details and routes it to approved providers whose skills, areas, and availability fit.",
+    detail: "Pending, rejected, inactive, or suspended providers are not part of live matching.",
   },
   {
     number: "03",
-    title: "Agree on price, book, done",
+    title: "Provider unlocks before accepting",
     description:
-      "The worker visits to inspect if needed, or sends a quote directly. You approve before any work starts. Payment follows the written quote and booking flow used for that job.",
-    detail: "Extra work requires your explicit approval before it begins.",
+      "The provider receives a WhatsApp lead preview, opens a secure job link, and unlocks the lead with credits before full customer details are released.",
+    detail: "If there are not enough credits, the provider must top up before accepting.",
+  },
+  {
+    number: "04",
+    title: "Handover, quote, and job updates",
+    description:
+      "After acceptance, both sides get the right handover details. The provider can contact the customer, submit a quote, update job status, and request approval for extra work when needed.",
+    detail: "Customers receive WhatsApp updates as the job moves forward.",
   },
 ];
 
@@ -38,7 +45,7 @@ export function HowItWorksSteps() {
             From job to done, in a few taps
           </h2>
         </div>
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {STEPS.map((step) => (
             <div key={step.number} className="relative">
               <div
