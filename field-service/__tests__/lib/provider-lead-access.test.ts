@@ -220,6 +220,53 @@ describe('provider lead access tokens', () => {
     })
   })
 
+  it('grants decline_lead scope on lead response tokens', async () => {
+    const { createProviderLeadAccessToken, providerLeadTokenAllowsScope, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    const { payload } = verifyProviderLeadAccessToken(token)
+
+    expect(providerLeadTokenAllowsScope(payload, 'decline_lead')).toBe(true)
+  })
+
+  it('denies decline_lead scope on accepted-job handover tokens', async () => {
+    const { getProviderSignedJobHandoverUrl, verifyProviderLeadAccessToken, providerLeadTokenAllowsScope } = await import('@/lib/provider-lead-access')
+
+    const url = await getProviderSignedJobHandoverUrl({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'job-request-1',
+      providerPhone: '+27820000000',
+    })
+    const token = decodeURIComponent(url!.split('token=')[1])
+    const { payload } = verifyProviderLeadAccessToken(token)
+
+    expect(providerLeadTokenAllowsScope(payload, 'decline_lead')).toBe(false)
+  })
+
+  it('resolves a DECLINED lead so the caller can route to the already-closed idempotency path', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({ status: 'DECLINED' }))
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    // status stays 'active' — the caller inspects lead.status to determine the idempotency path.
+    // declineLeadWithToken checks lead.status === 'DECLINED' and redirects to ?declined=already.
+    expect(resolved.status).toBe('active')
+    expect(resolved.lead?.status).toBe('DECLINED')
+  })
+
+  it('marks token invalid when the lead is not found in the database', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-missing', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(null)
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(resolved.status).toBe('invalid')
+    expect(resolved.lead).toBeNull()
+  })
+
   it('loads sensitive lead fields only after unlock', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })

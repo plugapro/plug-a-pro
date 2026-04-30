@@ -340,10 +340,13 @@ async function declineLeadWithToken(formData: FormData) {
   }
 
   const lead = resolved.lead
-  if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
+  if (lead.status === 'DECLINED') {
+    redirect(`/leads/access/${encodeURIComponent(token)}?declined=already&actionTraceId=${encodeURIComponent(traceId)}`)
+  }
+  if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED') {
     redirectLeadActionError(token, {
       error: 'closed',
-      errorCode: lead.expiresAt && lead.expiresAt <= new Date() ? 'LEAD_EXPIRED' : 'LEAD_ALREADY_ACCEPTED',
+      errorCode: lead.status === 'ACCEPTED' ? 'LEAD_ALREADY_ACCEPTED' : 'LEAD_EXPIRED',
       action: 'decline',
       traceId,
       message: 'This lead can no longer be declined.',
@@ -378,9 +381,21 @@ async function declineLeadWithToken(formData: FormData) {
     })
   }
   if (!result.ok) {
+    const errorCode = result.reason === 'NOT_FOUND' ? 'LEAD_NOT_FOUND' : 'PROVIDER_LEAD_ACCESS_DENIED'
+    console.error('[leads/access] decline lead action blocked', {
+      trace_id: traceId,
+      lead_id: lead.id,
+      lead_ref: lead.id.slice(-8).toUpperCase(),
+      job_ref: lead.jobRequestId.slice(-8).toUpperCase(),
+      provider_id: lead.providerId,
+      source: 'pwa_signed_link',
+      action: 'decline',
+      result: 'blocked',
+      error_code: errorCode,
+    })
     redirectLeadActionError(token, {
       error: 'decline_failed',
-      errorCode: result.reason === 'NOT_FOUND' ? 'LEAD_NOT_FOUND' : 'PROVIDER_LEAD_ACCESS_DENIED',
+      errorCode,
       action: 'decline',
       traceId,
       message: 'This lead could not be declined.',

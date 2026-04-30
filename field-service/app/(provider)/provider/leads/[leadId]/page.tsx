@@ -132,6 +132,15 @@ async function declineLead(formData: FormData) {
 
   if (!result.ok) {
     const code = result.reason === 'NOT_FOUND' ? 'LEAD_NOT_FOUND' : 'PROVIDER_LEAD_ACCESS_DENIED'
+    console.error('[provider/leads] decline lead action blocked', {
+      trace_id: traceId,
+      lead_id: leadId,
+      provider_id: provider.id,
+      source: 'pwa_authenticated',
+      action: 'decline',
+      result: 'blocked',
+      error_code: code,
+    })
     redirect(`/provider/leads/${leadId}?declineError=${code}&traceId=${encodeURIComponent(traceId)}`)
   }
 
@@ -521,7 +530,7 @@ export default async function LeadDetailPage({
               className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
               pendingLabel="Declining..."
             >
-              Skip
+              Decline
             </LeadActionSubmitButton>
           </form>
         </div>

@@ -147,6 +147,39 @@ describe('matching-engine compatibility wrappers', () => {
     expect(result).toEqual({ ok: true, alreadyClosed: true })
   })
 
+  it('declineLead signals alreadyClosed for TAKEN offers (lead grabbed by another provider)', async () => {
+    mockRejectAssignmentOffer.mockResolvedValue({ ok: false, reason: 'TAKEN' })
+
+    const result = await declineLead({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(result).toEqual({ ok: true, alreadyClosed: true })
+  })
+
+  it('declineLead returns ok:true without alreadyClosed on a successful decline', async () => {
+    mockRejectAssignmentOffer.mockResolvedValue({ ok: true })
+
+    const result = await declineLead({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(result).toEqual({ ok: true })
+    expect(result).not.toHaveProperty('alreadyClosed')
+  })
+
+  it('declineLead returns NOT_FOUND when the lead does not belong to this provider', async () => {
+    mockRejectAssignmentOffer.mockResolvedValue({ ok: false, reason: 'NOT_FOUND' })
+
+    const result = await declineLead({ leadId: 'lead-missing', providerId: 'provider-1' })
+
+    expect(result).toEqual({ ok: false, reason: 'NOT_FOUND' })
+  })
+
+  it('declineLead returns FORBIDDEN when provider access is denied', async () => {
+    mockRejectAssignmentOffer.mockResolvedValue({ ok: false, reason: 'FORBIDDEN' })
+
+    const result = await declineLead({ leadId: 'lead-1', providerId: 'provider-other' })
+
+    expect(result).toEqual({ ok: false, reason: 'FORBIDDEN' })
+  })
+
   it('expireStaleLeads expires all active assignment holds that timed out', async () => {
     mockProcessPendingAssignmentWorkflows.mockResolvedValue({
       processed: 2,
