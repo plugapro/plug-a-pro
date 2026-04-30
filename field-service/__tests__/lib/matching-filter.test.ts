@@ -139,9 +139,10 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   })
 
   it('excludes provider with OFFER_COOLDOWN_ACTIVE when they timed out within 12h', async () => {
-    // $queryRaw: first call = cooldown (timed-out row present), second = daily jobs (empty)
+    // $queryRaw: first = cooldown (timed-out row present), second = declined (empty), third = daily jobs (empty)
     mockDb.$queryRaw
       .mockResolvedValueOnce([{ providerId: 'p1' }])   // timedOutRows
+      .mockResolvedValueOnce([])                        // declinedLeadRows
       .mockResolvedValueOnce([])                        // dailyJobRows
 
     const { eligible, filteredOut } = await filterEligibleProviders(
@@ -155,9 +156,10 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   })
 
   it('does not exclude provider who timed out more than 12h ago', async () => {
-    // $queryRaw: cooldown returns empty (outside window), daily jobs empty
+    // $queryRaw: cooldown empty, declined empty, daily jobs empty
     mockDb.$queryRaw
       .mockResolvedValueOnce([])   // timedOutRows — no rows within cooldown window
+      .mockResolvedValueOnce([])   // declinedLeadRows
       .mockResolvedValueOnce([])   // dailyJobRows
 
     const { eligible, filteredOut } = await filterEligibleProviders(
@@ -172,8 +174,9 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
 
   it('excludes provider whose only structured service area is coming soon/inactive', async () => {
     mockDb.$queryRaw
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])   // timedOutRows
+      .mockResolvedValueOnce([])   // declinedLeadRows
+      .mockResolvedValueOnce([])   // dailyJobRows
     mockDb.technicianServiceArea.findMany.mockResolvedValue([{
       providerId: 'p1',
       label: 'Sandton',
@@ -198,9 +201,10 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   })
 
   it('excludes provider with DAILY_MAX_REACHED when dailyJobs >= hardDailyMax', async () => {
-    // $queryRaw: cooldown empty, daily jobs = 2 (hardDailyMax is 2)
+    // $queryRaw: cooldown empty, declined empty, daily jobs = 2 (hardDailyMax is 2)
     mockDb.$queryRaw
       .mockResolvedValueOnce([])                                            // timedOutRows
+      .mockResolvedValueOnce([])                                            // declinedLeadRows
       .mockResolvedValueOnce([{ providerId: 'p1', cnt: BigInt(2) }])       // dailyJobRows
 
     const { eligible, filteredOut } = await filterEligibleProviders(
@@ -214,9 +218,10 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
   })
 
   it('includes dailyAssignedJobs in eligible provider', async () => {
-    // $queryRaw: cooldown empty, daily jobs = 1 (below hardDailyMax of 2)
+    // $queryRaw: cooldown empty, declined empty, daily jobs = 1 (below hardDailyMax of 2)
     mockDb.$queryRaw
       .mockResolvedValueOnce([])                                            // timedOutRows
+      .mockResolvedValueOnce([])                                            // declinedLeadRows
       .mockResolvedValueOnce([{ providerId: 'p1', cnt: BigInt(1) }])       // dailyJobRows
 
     const { eligible } = await filterEligibleProviders(
@@ -227,6 +232,36 @@ describe('filterEligibleProviders — cooldown and daily-load', () => {
     expect(eligible).toHaveLength(1)
     expect(eligible[0].dailyAssignedJobs).toBe(1)
   })
+
+  it('excludes provider with PROVIDER_PREVIOUSLY_DECLINED when they declined this job', async () => {
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])                         // timedOutRows — no cooldown
+      .mockResolvedValueOnce([{ providerId: 'p1' }])    // declinedLeadRows — p1 previously declined
+      .mockResolvedValueOnce([])                         // dailyJobRows
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(0)
+    const filtered = filteredOut.find((f) => f.providerId === 'p1')
+    expect(filtered?.filteredReasonCodes).toContain('PROVIDER_PREVIOUSLY_DECLINED')
+  })
+
+  it('does not exclude a provider who declined a different job', async () => {
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])                         // timedOutRows
+      .mockResolvedValueOnce([{ providerId: 'p2' }])    // declinedLeadRows — different provider
+      .mockResolvedValueOnce([])                         // dailyJobRows
+
+    const { eligible } = await filterEligibleProviders(
+      [makeCandidate({ id: 'p1' })],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(1)
+  })
 })
 
 describe('filterEligibleProviders — provider availability controls', () => {
@@ -234,8 +269,9 @@ describe('filterEligibleProviders — provider availability controls', () => {
     vi.clearAllMocks()
     setupDefaultBatchMocks()
     mockDb.$queryRaw
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])   // timedOutRows
+      .mockResolvedValueOnce([])   // declinedLeadRows
+      .mockResolvedValueOnce([])   // dailyJobRows
   })
 
   it('excludes a paused provider even if their legacy availableNow flag is still true', async () => {
@@ -380,9 +416,10 @@ describe('filterEligibleProviders — near-miss bucket', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setupDefaultBatchMocks()
-    // Default: no cooldown, no daily cap
+    // Default: no cooldown, no declined, no daily cap
     mockDb.$queryRaw
       .mockResolvedValueOnce([])   // timedOutRows
+      .mockResolvedValueOnce([])   // declinedLeadRows
       .mockResolvedValueOnce([])   // dailyJobRows
   })
 

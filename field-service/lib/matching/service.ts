@@ -1376,6 +1376,18 @@ async function createOfferForAttempt(params: {
 
   const jobRequest = await loadMatchingJobRequest(db, params.jobRequestId)
 
+  // Guard: do not re-activate a lead that the provider has already explicitly declined
+  const existingLeadForGuard = await db.lead.findUnique({
+    where: { jobRequestId_providerId: { jobRequestId: params.jobRequestId, providerId: params.providerId } },
+    select: { id: true, status: true },
+  })
+  if (existingLeadForGuard?.status === 'DECLINED') {
+    throw Object.assign(
+      new Error('PROVIDER_PREVIOUSLY_DECLINED'),
+      { code: 'PROVIDER_PREVIOUSLY_DECLINED', jobRequestId: params.jobRequestId, providerId: params.providerId }
+    )
+  }
+
   const lead = await db.lead.upsert({
     where: {
       jobRequestId_providerId: {
@@ -1486,6 +1498,30 @@ async function createOfferForAttempt(params: {
         console.error('[matching] Failed to send job_offer template to provider:', error)
       })
     }
+  }
+
+  // Quick-response action buttons — same credit copy and Unlock & Accept / Decline
+  // buttons as the dispatch.ts path so providers always see a consistent UI.
+  if (interactiveDelivered) {
+    const { sendButtons } = await import('../whatsapp-interactive')
+    const suburb = jobRequest.address?.suburb ?? 'your area'
+    const category = jobRequest.category
+    const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nUnlocking this lead uses 1 credit.`
+    await sendButtons(
+      provider.phone,
+      actionsBody,
+      [
+        { id: `accept:${hold.id}`, title: 'Unlock & Accept' },
+        { id: `decline:${hold.id}`, title: 'Decline' },
+      ],
+      undefined,
+      {
+        templateName: 'interactive:new_lead_actions',
+        metadata: { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: params.providerId },
+      }
+    ).catch((error) => {
+      console.error('[matching] Failed to send lead action buttons to provider:', error)
+    })
   }
 
   return { hold, lead }

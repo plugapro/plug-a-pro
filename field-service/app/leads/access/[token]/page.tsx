@@ -1180,12 +1180,21 @@ export default async function ProviderLeadAccessPage({
               </Button>
             </>
           ) : !isUnlocked ? (
-            <form action={unlockLeadWithToken}>
-              <input type="hidden" name="token" value={token} />
-              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Unlocking lead...">
-                Unlock lead for 1 Plug-A-Pro Credit
-              </LeadActionSubmitButton>
-            </form>
+            <>
+              <form action={acceptLeadWithToken}>
+                <input type="hidden" name="token" value={token} />
+                <input type="hidden" name="inspectionNeeded" value="false" />
+                <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting job...">
+                  Use 1 Credit &amp; Accept
+                </LeadActionSubmitButton>
+              </form>
+              <form action={unlockLeadWithToken}>
+                <input type="hidden" name="token" value={token} />
+                <LeadActionSubmitButton size="lg" variant="outline" className="w-full" pendingLabel="Unlocking lead...">
+                  Unlock to view details first
+                </LeadActionSubmitButton>
+              </form>
+            </>
           ) : (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
@@ -1196,12 +1205,12 @@ export default async function ProviderLeadAccessPage({
             </form>
           )}
 
-          {!isAccepted && !isDeclined && isUnlocked && showInspectionOption && (
+          {!isAccepted && !isDeclined && showInspectionOption && (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="true" />
               <LeadActionSubmitButton size="lg" variant="outline" className="w-full" pendingLabel="Accepting...">
-                Inspection First
+                {isUnlocked ? 'Inspection First' : 'Use 1 Credit & Inspect First'}
               </LeadActionSubmitButton>
             </form>
           )}

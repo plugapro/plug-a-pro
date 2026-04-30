@@ -369,6 +369,14 @@ export async function filterEligibleProviders(
   `.catch(() => [] as Array<{ providerId: string }>)
   const timedOutProviderIds = new Set(timedOutRows.map((r) => r.providerId))
 
+  // ── Declined: exclude providers who explicitly declined this job ──────────────
+  const declinedLeadRows = await db.$queryRaw<Array<{ providerId: string }>>`
+    SELECT DISTINCT "providerId" FROM leads
+    WHERE "jobRequestId" = ${jobRequest.id}
+    AND status = 'DECLINED'
+  `.catch(() => [] as Array<{ providerId: string }>)
+  const declinedProviderIds = new Set(declinedLeadRows.map((r) => r.providerId))
+
   // ── Daily-load: count same-day accepted/active matches per provider ───────────
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
@@ -466,6 +474,11 @@ export async function filterEligibleProviders(
     // Cooldown: provider already ghosted this job recently — skip for 12h
     if (timedOutProviderIds.has(candidate.id)) {
       filteredReasonCodes.push('OFFER_COOLDOWN_ACTIVE')
+    }
+
+    // Declined: provider explicitly declined this job — never re-offer
+    if (declinedProviderIds.has(candidate.id)) {
+      filteredReasonCodes.push('PROVIDER_PREVIOUSLY_DECLINED')
     }
 
     // Daily-load hard cap: provider has hit their maximum for today

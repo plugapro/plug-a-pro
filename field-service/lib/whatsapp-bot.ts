@@ -30,6 +30,7 @@ import {
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
 import { applyOptIn, applyOptOut } from './whatsapp-policy'
 import { normalizePhone } from './utils'
+import { createTraceId } from './support-diagnostics'
 import { createTestCohortContext } from './internal-test-cohort'
 import { resolveWhatsAppIdentity } from './whatsapp-identity'
 
@@ -1928,7 +1929,11 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     } else if (result.reason === 'TAKEN') {
       await sendText(phone, "⚡ This job was just assigned to another provider. New leads will come through as jobs arise.")
     } else {
-      await sendText(phone, "😔 Something went wrong processing your acceptance. Please try again or contact support.")
+      const traceId = createTraceId('wbot')
+      console.error('[whatsapp-bot] handleAssignmentHoldAcceptance unexpected failure', {
+        traceId, phone, holdId, reason: result.reason,
+      })
+      await sendText(phone, `😔 Something went wrong processing your acceptance. Please try again or contact support.\n\n_Ref: ${traceId}_`)
     }
     return
   }
@@ -2009,16 +2014,27 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
     return
   }
 
-  const { declineLead } = await import('./matching-engine')
-  await declineLead({ leadId: lead.id, providerId: provider.id })
+  try {
+    const { declineLead } = await import('./matching-engine')
+    await declineLead({ leadId: lead.id, providerId: provider.id })
 
-  const { releaseProviderCapacity } = await import('./matching/reservation')
-  await releaseProviderCapacity(provider.id).catch(() => {})
+    const { releaseProviderCapacity } = await import('./matching/reservation')
+    await releaseProviderCapacity(provider.id).catch(() => {})
 
-  await sendText(
-    phone,
-    `Understood — lead passed (${reason}). We'll keep matching this job with other providers. New leads will come through as they arise.`
-  )
+    await sendText(
+      phone,
+      `Understood — lead passed (${reason}). We'll keep matching this job with other providers. New leads will come through as they arise.`
+    )
+  } catch (error) {
+    const traceId = createTraceId('wbot')
+    console.error('[whatsapp-bot] handleAssignmentHoldDecline failed', {
+      traceId, phone, holdId, reason, leadId: lead.id, providerId: provider.id, error,
+    })
+    await sendText(
+      phone,
+      `😔 Something went wrong recording your decline. Please try again or contact support.\n\n_Ref: ${traceId}_`
+    ).catch(() => {})
+  }
 }
 
 // ─── Backwards-compat alias ───────────────────────────────────────────────────

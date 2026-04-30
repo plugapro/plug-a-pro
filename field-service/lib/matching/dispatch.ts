@@ -20,6 +20,20 @@ export async function dispatchMatchLead(params: {
 }): Promise<void> {
   const { jobRequest, hold, provider } = params
 
+  // Guard: do not re-activate a lead that the provider has already explicitly declined
+  const existingLead = await db.lead.findUnique({
+    where: { jobRequestId_providerId: { jobRequestId: jobRequest.id, providerId: provider.id } },
+    select: { id: true, status: true },
+  })
+  if (existingLead?.status === 'DECLINED') {
+    console.warn('[dispatch] Skipping lead dispatch — provider already declined this job', {
+      jobRequestId: jobRequest.id,
+      providerId: provider.id,
+      leadId: existingLead.id,
+    })
+    return
+  }
+
   // Create Lead record — upsert to handle idempotent re-dispatch
   const lead = await db.lead.upsert({
     where: { jobRequestId_providerId: { jobRequestId: jobRequest.id, providerId: provider.id } },
