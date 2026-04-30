@@ -1853,16 +1853,16 @@ export async function acceptAssignmentOffer(params: {
       data: { status: 'MATCHED' },
     })
 
-    await tx.dispatchDecision.updateMany({
-      where: {
-        id: lead.dispatchDecisionId ?? undefined,
-      },
-      data: {
-        status: 'ASSIGNED',
-        selectedProviderId: params.providerId,
-        selectedMatchAttemptId: lead.matchAttemptId ?? undefined,
-      },
-    })
+    if (lead.dispatchDecisionId) {
+      await tx.dispatchDecision.updateMany({
+        where: { id: lead.dispatchDecisionId },
+        data: {
+          status: 'ASSIGNED',
+          selectedProviderId: params.providerId,
+          selectedMatchAttemptId: lead.matchAttemptId ?? undefined,
+        },
+      })
+    }
 
     await tx.lead.updateMany({
       where: {
@@ -2048,12 +2048,21 @@ export async function acceptAssignmentOffer(params: {
     transactionResult.paymentAmount != null &&
     transactionResult.paymentAmount > 0
   ) {
-    await initializeBookingPayment({
+    // Fire-and-forget: payment init runs after the transaction commits.
+    // A failure here must not surface as a WhatsApp/PWA error — the accept
+    // already succeeded and the credit was charged. Ops can reconcile via logs.
+    initializeBookingPayment({
       bookingId: transactionResult.bookingId,
       amountRand: transactionResult.paymentAmount,
       customerEmail: null,
       customerPhone: transactionResult.customerPhone,
       description: `${transactionResult.category} booking`,
+    }).catch((err: unknown) => {
+      console.error('[matching] post-commit payment init failed', {
+        booking_id: transactionResult.bookingId,
+        trace_id: traceId,
+        error: err instanceof Error ? err.message : String(err),
+      })
     })
   }
 

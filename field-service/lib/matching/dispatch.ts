@@ -47,7 +47,7 @@ export async function dispatchMatchLead(params: {
   })
   const titleLine = jobRequest.title ? `*${jobRequest.title}*\n` : ''
   const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
-  const actionsBody = `Quick response for *${category}* in *${suburb}*.`
+  const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nUnlocking this lead uses 1 credit.`
   const msgMeta = { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: provider.id }
   const leadUrl = await getProviderLeadAccessUrl({
     leadId: lead.id,
@@ -133,7 +133,7 @@ export async function dispatchMatchLead(params: {
     provider.phone,
     actionsBody,
     [
-      { id: `accept:${hold.id}`, title: 'Accept' },
+      { id: `accept:${hold.id}`, title: 'Unlock & Accept' },
       { id: `decline:${hold.id}`, title: 'Decline' },
     ],
     undefined,

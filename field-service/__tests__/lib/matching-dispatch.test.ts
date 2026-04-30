@@ -106,9 +106,9 @@ describe('dispatchMatchLead WhatsApp notification', () => {
 
     expect(mockSendButtons).toHaveBeenCalledWith(
       '+27820000000',
-      expect.not.stringContaining('http'),
+      expect.stringContaining('1 credit'),
       [
-        { id: 'accept:hold-1', title: 'Accept' },
+        { id: 'accept:hold-1', title: 'Unlock & Accept' },
         { id: 'decline:hold-1', title: 'Decline' },
       ],
       undefined,

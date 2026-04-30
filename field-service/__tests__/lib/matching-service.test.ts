@@ -545,6 +545,94 @@ describe('matching service', () => {
     expect(mockInitializeBookingPayment).toHaveBeenCalled()
   })
 
+  it('does not call dispatchDecision.updateMany when lead has no dispatch decision', async () => {
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
+      jobRequest: { id: 'jr-generic', status: 'OPEN', match: null },
+    } : {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: null,    // ← no dispatch decision
+      matchAttemptId: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: null,
+    })
+    mockDb.match.findUnique.mockResolvedValue(null)
+    mockDb.match.create.mockResolvedValue({ id: 'match-1' })
+
+    const result = await acceptAssignmentOffer({ leadId: 'lead-1', providerId: 'provider-preferred' })
+
+    expect(result.ok).toBe(true)
+    // Guard must prevent updateMany firing with an empty where clause
+    expect(mockDb.dispatchDecision.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('accepts the lead and returns ok: true even when post-commit payment init throws', async () => {
+    mockInitializeBookingPayment.mockRejectedValueOnce(new Error('PSP timeout'))
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
+      jobRequest: { id: 'jr-generic', status: 'OPEN', match: null },
+    } : {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.match.findUnique.mockResolvedValue(null)
+    mockDb.match.create.mockResolvedValue({ id: 'match-1' })
+    mockDb.jobRequest.findUniqueOrThrow.mockResolvedValue({
+      ...makeJobRequest('AUTO_ASSIGN'),
+      category: 'Handyman',
+      customerAcceptedAmount: 850,
+      customerAcceptedScope: 'Install shelves',
+      autoCreateBookingOnAssignment: true,
+    })
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      ...makeJobRequest('AUTO_ASSIGN'),
+      category: 'Handyman',
+      customerAcceptedAmount: 850,
+      customerAcceptedScope: 'Install shelves',
+      autoCreateBookingOnAssignment: true,
+    })
+
+    // Must not throw even though initializeBookingPayment rejects
+    const result = await acceptAssignmentOffer({ leadId: 'lead-1', providerId: 'provider-preferred' })
+
+    expect(result.ok).toBe(true)
+    // Payment init was attempted (fire-and-forget)
+    await vi.waitFor(() => expect(mockInitializeBookingPayment).toHaveBeenCalled())
+  })
+
   it('blocks assignment acceptance when the provider has no lead credits', async () => {
     mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
       id: 'lead-1',
