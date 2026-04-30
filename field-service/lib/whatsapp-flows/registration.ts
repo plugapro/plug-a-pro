@@ -9,6 +9,7 @@ import { syncProviderRecord, upsertStructuredServiceAreas } from '../provider-re
 import { syncProviderSkills } from '../provider-skills'
 import { checkJobsForNewProviderAvailability } from '../matching/customer-recontact'
 import { normalizePhone } from '../utils'
+import { phoneLookupVariants } from '../whatsapp-identity'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
 import { createTestCohortContext } from '../internal-test-cohort'
 import {
@@ -240,15 +241,7 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
 
 async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   // A known provider should never be sent through duplicate registration.
-  const { normalizePhone } = await import('../utils')
-  const normalizedPhone = normalizePhone(ctx.phone)
-  const digits = normalizedPhone.replace(/\D/g, '')
-  const phoneVariants = Array.from(new Set([
-    normalizedPhone,
-    digits ? `+${digits}` : null,
-    digits || null,
-    digits.startsWith('27') ? `0${digits.slice(2)}` : null,
-  ].filter(Boolean) as string[]))
+  const phoneVariants = phoneLookupVariants(ctx.phone)
 
   const existingProvider = await (db as any).provider?.findFirst?.({
     where: { phone: { in: phoneVariants } },
@@ -279,7 +272,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const existingCustomer = await db.customer.findFirst({
-    where: { phone: normalizedPhone },
+    where: { phone: { in: phoneVariants } },
     select: { id: true },
   })
   if (existingCustomer) {
@@ -1175,6 +1168,13 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
   const traceId = createSubmitTraceId()
   const normalizedPhone = normalizePhone(ctx.phone)
+  const digits = normalizedPhone.replace(/\D/g, '')
+  const phoneVariants = Array.from(new Set([
+    normalizedPhone,
+    digits ? `+${digits}` : null,
+    digits || null,
+    digits.startsWith('27') ? `0${digits.slice(2)}` : null,
+  ].filter(Boolean) as string[]))
 
   try {
     const submitData = validateSubmitData(ctx)
@@ -1194,6 +1194,18 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     })
 
     const submitResult: ProviderApplicationSubmitResult = await db.$transaction(async (tx) => {
+      const existingCustomer = await tx.customer.findFirst({
+        where: { phone: { in: phoneVariants } },
+        select: { id: true },
+      })
+      if (existingCustomer) {
+        throw new ProviderApplicationSubmitError(
+          'PROVIDER_APPLICATION_ALREADY_EXISTS',
+          'This number is already registered as a customer on Plug A Pro.',
+          { customerId: existingCustomer.id },
+        )
+      }
+
       const existingApp = await findLatestActiveProviderApplicationByPhone(tx as typeof db, normalizedPhone)
       if (existingApp?.status === 'APPROVED') {
         return {

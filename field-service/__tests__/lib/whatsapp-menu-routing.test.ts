@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
   db: {
+    conversation: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(),
+    },
     provider: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -16,6 +20,9 @@ vi.mock('@/lib/db', () => ({
     customer: {
       findFirst: vi.fn().mockResolvedValue(null),
     },
+    address: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     jobRequest: {
       findFirst: vi.fn().mockResolvedValue(null),
       update: vi.fn().mockResolvedValue({}),
@@ -27,6 +34,26 @@ vi.mock('@/lib/db', () => ({
 }))
 
 vi.mock('@/lib/whatsapp-interactive', () => ({
+  parseInbound: vi.fn((message: any) => {
+    if (message.type === 'interactive') {
+      if (message.interactive?.type === 'button_reply') {
+        return {
+          type: 'button_reply',
+          id: message.interactive.button_reply?.id,
+          title: message.interactive.button_reply?.title,
+        }
+      }
+      if (message.interactive?.type === 'list_reply') {
+        return {
+          type: 'list_reply',
+          id: message.interactive.list_reply?.id,
+          title: message.interactive.list_reply?.title,
+        }
+      }
+    }
+    if (message.type === 'text') return { type: 'text', text: message.text?.body?.trim() }
+    return { type: 'other' }
+  }),
   sendText: vi.fn().mockResolvedValue(undefined),
   sendButtons: vi.fn().mockResolvedValue(undefined),
   sendList: vi.fn().mockResolvedValue(undefined),
@@ -76,6 +103,7 @@ vi.mock('@/lib/matching/customer-recontact', () => ({
 
 import { showMainMenu } from '@/lib/whatsapp-flows/job-request'
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
+import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
 
@@ -92,6 +120,13 @@ describe('role-aware WhatsApp main menu routing', () => {
     vi.mocked(db.providerApplication.findFirst).mockResolvedValue(null)
     vi.mocked(db.job.count).mockResolvedValue(0)
     vi.mocked(db.customer.findFirst).mockResolvedValue(null)
+    vi.mocked(db.conversation.upsert).mockResolvedValue({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    } as any)
   })
 
   it('keeps Find Work for unknown users', async () => {
@@ -129,7 +164,32 @@ describe('role-aware WhatsApp main menu routing', () => {
       expect.objectContaining({ id: 'provider_update_application' }),
     ]))
     expect(rows).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'book' }),
       expect.objectContaining({ id: 'find_work' }),
+    ]))
+  })
+
+  it('shows customer-only menu for existing customers', async () => {
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'cust_1',
+      phone: PHONE,
+      name: 'Sheila Dube',
+      addresses: [],
+    } as any)
+
+    await showMainMenu(PHONE)
+
+    const body = vi.mocked(wa.sendList).mock.calls[0][1]
+    const rows = listRows()
+    expect(body).toContain('Hi Sheila')
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'book' }),
+      expect.objectContaining({ id: 'status' }),
+      expect.objectContaining({ id: 'help' }),
+    ]))
+    expect(rows).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'find_work' }),
+      expect.objectContaining({ id: 'provider_available_jobs' }),
     ]))
   })
 
@@ -161,6 +221,7 @@ describe('role-aware WhatsApp main menu routing', () => {
       expect.objectContaining({ id: 'provider_worker_portal' }),
     ]))
     expect(rows).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'book' }),
       expect.objectContaining({ id: 'find_work' }),
     ]))
   })
@@ -211,6 +272,7 @@ describe('role-aware WhatsApp main menu routing', () => {
       expect.objectContaining({ id: 'provider_support' }),
     ]))
     expect(rows).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'book' }),
       expect.objectContaining({ id: 'provider_available_jobs' }),
       expect.objectContaining({ id: 'find_work' }),
     ]))
@@ -254,6 +316,58 @@ describe('role-aware WhatsApp main menu routing', () => {
       expect.arrayContaining([
         expect.objectContaining({ id: 'provider_my_jobs' }),
       ]),
+    )
+  })
+
+  it('blocks stale Find Work actions for existing customers', async () => {
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'cust_1',
+      phone: PHONE,
+      name: 'Sheila Dube',
+      addresses: [],
+    } as any)
+
+    await processInboundMessage({
+      id: 'wamid-find-work',
+      from: PHONE,
+      type: 'interactive',
+      timestamp: '1',
+      interactive: { type: 'button_reply', button_reply: { id: 'find_work', title: 'Find Work' } } as any,
+    } as any)
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('already registered as a customer'),
+    )
+    expect(db.providerApplication.create).not.toHaveBeenCalled()
+  })
+
+  it('blocks stale Request a Service actions for existing providers', async () => {
+    vi.mocked(db.provider.findFirst).mockResolvedValue({
+      id: 'prv_1',
+      name: 'Jacob Hesser',
+      phone: PHONE,
+      status: 'ACTIVE',
+      active: true,
+      verified: true,
+      availableNow: true,
+      suspendedUntil: null,
+      suspendedReason: null,
+      skills: [],
+      serviceAreas: [],
+    } as any)
+
+    await processInboundMessage({
+      id: 'wamid-book',
+      from: PHONE,
+      type: 'interactive',
+      timestamp: '1',
+      interactive: { type: 'button_reply', button_reply: { id: 'book', title: 'Request a Service' } } as any,
+    } as any)
+
+    expect(wa.sendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('registered as a Plug A Pro provider'),
     )
   })
 })

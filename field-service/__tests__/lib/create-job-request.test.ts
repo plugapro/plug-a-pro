@@ -12,6 +12,9 @@ const {
 } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
+    provider: {
+      findFirst: vi.fn(),
+    },
   },
   mockResolveCategoryRequirements: vi.fn(),
   mockDispatchLeads: vi.fn(),
@@ -96,6 +99,7 @@ describe('createJobRequest', () => {
     })
     mockGeocodeAddress.mockResolvedValue({ lat: -26.1, lng: 27.9 })
     mockGetJobRequestAccessUrl.mockResolvedValue(null)
+    mockDb.provider.findFirst.mockResolvedValue(null)
     mockDispatchLeads.mockResolvedValue({
       noMatch: false,
       leadsDispatched: 1,
@@ -119,6 +123,13 @@ describe('createJobRequest', () => {
     expect(tx.address.create).toHaveBeenCalledOnce()
     expect(tx.jobRequest.create).toHaveBeenCalledOnce()
     expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-1', ticketUrl: null })
+  })
+
+  it('blocks customer request creation when the phone belongs to a provider', async () => {
+    mockDb.provider.findFirst.mockResolvedValue({ id: 'prv_1', status: 'ACTIVE' })
+
+    await expect(createJobRequest(BASE_PARAMS)).rejects.toThrow('PHONE_ROLE_CONFLICT_PROVIDER')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 
   it('reuses an existing web customer by userId when present', async () => {

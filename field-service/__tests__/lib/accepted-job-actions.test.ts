@@ -31,8 +31,14 @@ import {
   sendFreshAcceptedJobLink,
 } from '@/lib/accepted-job-actions'
 
-const plannedStart = new Date('2026-04-30T15:30:00+02:00')
-const plannedEnd = new Date('2026-04-30T16:00:00+02:00')
+function futureAt(hour: number, minute = 0) {
+  const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  date.setHours(hour, minute, 0, 0)
+  return date
+}
+
+const plannedStart = futureAt(15, 30)
+const plannedEnd = futureAt(16, 0)
 
 function acceptedLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -136,8 +142,8 @@ describe('accepted job actions', () => {
     const result = await saveAcceptedLeadArrival({
       leadId: 'lead-1',
       token: 'signed-token',
-      plannedArrivalStart: new Date('2026-04-30T09:00:00+02:00'),
-      plannedArrivalEnd: new Date('2026-04-30T10:00:00+02:00'),
+      plannedArrivalStart: futureAt(9, 0),
+      plannedArrivalEnd: futureAt(10, 0),
     })
 
     expect(result).toMatchObject({

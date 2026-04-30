@@ -14,6 +14,7 @@ import { normalizePhone } from '../utils'
 import { openCase } from '../cases'
 import { MATCHING_CONFIG } from '../matching/config'
 import { createTestCohortContext, testRequestFields } from '../internal-test-cohort'
+import { phoneLookupVariants } from '../whatsapp-identity'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -71,6 +72,14 @@ export async function createJobRequest(
   const phone = normalizePhone(params.phone)
   params = { ...params, phone }
   const cohort = createTestCohortContext(phone)
+
+  const providerForPhone = await (db as any).provider?.findFirst?.({
+    where: { phone: { in: phoneLookupVariants(phone) } },
+    select: { id: true, status: true },
+  }) ?? null
+  if (providerForPhone) {
+    throw new Error('PHONE_ROLE_CONFLICT_PROVIDER')
+  }
 
   const categoryRequirements = await resolveCategoryRequirements({
     category: params.category,

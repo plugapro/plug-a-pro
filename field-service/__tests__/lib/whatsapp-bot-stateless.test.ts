@@ -298,7 +298,9 @@ describe('processInboundMessage customer photo batching', () => {
     const second = processInboundMessage(imageMessage('media-2'))
     const third = processInboundMessage(imageMessage('media-3'))
 
-    await vi.advanceTimersByTimeAsync(801)
+    // Customer photo batching uses the shared 3000 ms media debounce window so
+    // WhatsApp can deliver batch-selected images before the confirmation flushes.
+    await vi.advanceTimersByTimeAsync(3001)
     await Promise.all([first, second, third])
 
     expect(handleJobRequestFlow).toHaveBeenCalledTimes(3)
@@ -308,6 +310,63 @@ describe('processInboundMessage customer photo batching', () => {
     expect(calls[2][0]).toMatchObject({ suppressCustomerPhotoProgress: false, customerPhotoBatchSize: 3 })
     expect(storedConversation.data.photoAttachmentIds).toEqual(['att-media-1', 'att-media-2', 'att-media-3'])
     expect(storedConversation.data.photoMediaIds).toEqual(['media-1', 'media-2', 'media-3'])
+  })
+
+  it('keeps customer photos in one batch when the second webhook arrives after the old 800 ms window', async () => {
+    let storedConversation = {
+      phone: PHONE,
+      flow: 'job_request',
+      step: 'collect_photos',
+      data: {
+        selectedCategory: 'Plumbing',
+        address: '14 Main Rd, Sandton',
+        availabilityNote: 'As soon as possible',
+        photoAttachmentIds: [],
+        photoMediaIds: [],
+      },
+      expiresAt: new Date(Date.now() + 60_000),
+    }
+
+    mockDb.conversation.findUnique.mockImplementation(async () => storedConversation)
+    mockDb.conversation.upsert.mockImplementation(async (args: any) => {
+      if (args.update && ('flow' in args.update || 'step' in args.update || 'data' in args.update)) {
+        storedConversation = {
+          ...storedConversation,
+          flow: args.update.flow,
+          step: args.update.step,
+          data: args.update.data,
+          expiresAt: args.update.expiresAt,
+        }
+      }
+      return storedConversation
+    })
+
+    ;(handleJobRequestFlow as ReturnType<typeof vi.fn>).mockImplementation(async (ctx: any) => {
+      const mediaId = ctx.reply.mediaId
+      const photoAttachmentIds = [...(ctx.data.photoAttachmentIds ?? []), `att-${mediaId}`]
+      const photoMediaIds = [...(ctx.data.photoMediaIds ?? []), mediaId]
+      return {
+        nextStep: 'collect_photos',
+        nextData: { photoAttachmentIds, photoMediaIds },
+      }
+    })
+
+    const first = processInboundMessage(imageMessage('media-late-1'))
+    await vi.advanceTimersByTimeAsync(1200)
+    expect(handleJobRequestFlow).not.toHaveBeenCalled()
+
+    const second = processInboundMessage(imageMessage('media-late-2'))
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(handleJobRequestFlow).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2)
+    await Promise.all([first, second])
+
+    expect(handleJobRequestFlow).toHaveBeenCalledTimes(2)
+    const calls = (handleJobRequestFlow as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls[0][0]).toMatchObject({ suppressCustomerPhotoProgress: true, customerPhotoBatchSize: 2 })
+    expect(calls[1][0]).toMatchObject({ suppressCustomerPhotoProgress: false, customerPhotoBatchSize: 2 })
+    expect(storedConversation.data.photoAttachmentIds).toEqual(['att-media-late-1', 'att-media-late-2'])
   })
 })
 

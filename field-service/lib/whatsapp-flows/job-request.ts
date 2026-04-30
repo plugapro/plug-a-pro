@@ -35,7 +35,10 @@ import {
   resolveStructuredAddressCapture,
   InvalidStructuredAddressError,
 } from '../structured-address'
-import { normalizePhone } from '../utils'
+import {
+  resolveWhatsAppIdentity,
+  type WhatsAppSavedAddress,
+} from '../whatsapp-identity'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
@@ -59,23 +62,6 @@ const JOB_CATEGORIES = [
 // WhatsApp list cap is 10 rows total per message.
 // When paging is needed we use 8 item rows + up to 2 nav rows.
 const PAGE_SIZE = 8
-const ACTIVE_PROVIDER_JOB_STATUSES = [
-  'SCHEDULED',
-  'EN_ROUTE',
-  'ARRIVED',
-  'STARTED',
-  'PAUSED',
-  'AWAITING_APPROVAL',
-  'PENDING_COMPLETION_CONFIRMATION',
-] as const
-
-function phoneLookupVariants(phone: string) {
-  const normalized = normalizePhone(phone)
-  const digits = normalized.replace(/\D/g, '')
-  const local = digits.startsWith('27') ? `0${digits.slice(2)}` : null
-  return Array.from(new Set([normalized, digits ? `+${digits}` : null, digits || null, local].filter(Boolean) as string[]))
-}
-
 function firstName(name?: string | null) {
   return name?.trim().split(/\s+/)[0] || 'there'
 }
@@ -84,99 +70,39 @@ function applicationRef(id: string) {
   return id.slice(-8).toUpperCase()
 }
 
-async function resolveProviderMenuContext(phone: string) {
-  const normalizedPhone = normalizePhone(phone)
-  const variants = phoneLookupVariants(phone)
-  const traceId = crypto.randomUUID().slice(0, 8)
-  const provider = await (db as any).provider?.findFirst?.({
-    where: { phone: { in: variants } },
-    select: {
-      id: true,
-      phone: true,
-      name: true,
-      status: true,
-      active: true,
-      verified: true,
-      availableNow: true,
-      suspendedUntil: true,
-      suspendedReason: true,
-      skills: true,
-      serviceAreas: true,
-      technicianAvailability: {
-        select: {
-          availabilityMode: true,
-          availabilityState: true,
-          breakUntil: true,
-          emergencyAvailable: true,
-        },
-      },
-    },
-  }) ?? null
+function savedAddressDisplay(address: Pick<WhatsAppSavedAddress, 'addressLine1' | 'street' | 'suburb' | 'city' | 'province'>) {
+  return [
+    address.addressLine1 ?? address.street,
+    address.suburb,
+    address.city,
+    address.province,
+  ].filter(Boolean).join(', ')
+}
 
-  const application = provider
-    ? null
-    : await (db as any).providerApplication?.findFirst?.({
-        where: {
-          phone: { in: variants },
-          status: { in: ['PENDING', 'APPROVED'] },
-        },
-        orderBy: { submittedAt: 'desc' },
-        select: {
-          id: true,
-          phone: true,
-          name: true,
-          status: true,
-          skills: true,
-          serviceAreas: true,
-          experience: true,
-          availability: true,
-          providerId: true,
-          submittedAt: true,
-        },
-      }) ?? null
+function savedAddressShortLabel(address: Pick<WhatsAppSavedAddress, 'addressLine1' | 'street' | 'suburb'>) {
+  return [address.addressLine1 ?? address.street, address.suburb].filter(Boolean).join(', ').slice(0, 24)
+}
 
-  const isInactiveProvider = Boolean(provider) && (
-    !provider.active ||
-    ['SUSPENDED', 'ARCHIVED', 'BANNED'].includes(provider.status) ||
-    (provider.suspendedUntil != null && provider.suspendedUntil > new Date())
-  )
-  const isPendingProvider = Boolean(provider) && ['APPLICATION_PENDING', 'UNDER_REVIEW'].includes(provider.status)
-  const isActiveProvider = Boolean(provider) && !isInactiveProvider && !isPendingProvider && provider.status === 'ACTIVE'
-  let activeJobCount = 0
-  if (isActiveProvider && typeof (db as any).job?.count === 'function') {
-    activeJobCount = await (db as any).job.count({
-      where: {
-        providerId: provider.id,
-        status: { in: [...ACTIVE_PROVIDER_JOB_STATUSES] },
-      },
-    }).catch(() => 0)
+async function savedAddressToConversationData(address: WhatsAppSavedAddress) {
+  if (!address.locationNodeId) return null
+
+  const selection = await getStructuredAddressSelection(address.locationNodeId)
+  if (!selection) return null
+
+  const streetLine = address.addressLine1 ?? address.street
+  const display = [streetLine, selection.suburb, selection.city].filter(Boolean).join(', ')
+
+  return {
+    addressLine1: streetLine,
+    addrLocationNodeId: address.locationNodeId,
+    addrCityLabel: selection.city,
+    addrSuburbLabel: selection.suburb,
+    addrRegionLabel: selection.region,
+    addrProvinceLabel: selection.province,
+    addrPostalCode: selection.postalCode,
+    address: display,
+    hasSavedAddress: true,
   }
-
-  const status =
-    isInactiveProvider ? 'inactive_provider' :
-    isPendingProvider ? 'pending_provider' :
-    isActiveProvider ? 'active_provider' :
-    application?.status === 'PENDING' ? 'pending_application' :
-    application?.status === 'APPROVED' ? 'approved_application' :
-    'unknown'
-  const isPaused =
-    Boolean(provider) &&
-    (!provider.availableNow ||
-      provider.technicianAvailability?.availabilityMode === 'PAUSED' ||
-      provider.technicianAvailability?.availabilityState === 'PAUSED' ||
-      provider.technicianAvailability?.availabilityState === 'OFFLINE')
-
-  console.info('[whatsapp-menu] resolved sender', {
-    traceId,
-    inboundPhone: phone,
-    normalizedPhone,
-    providerId: provider?.id ?? null,
-    applicationId: application?.id ?? null,
-    providerStatus: provider?.status ?? application?.status ?? 'not_registered',
-    outboundMenuType: status,
-  })
-
-  return { traceId, normalizedPhone, status, provider, application, activeJobCount, isPaused }
 }
 
 // ─── Paging helper ────────────────────────────────────────────────────────────
@@ -384,62 +310,71 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     const categoryEntry = JOB_CATEGORIES.find((c) => c.id === ctx.reply.id)
     const category = categoryEntry?.label ?? ctx.reply.title ?? ''
 
-    const existingCustomer = await db.customer.findUnique({
-      where: { phone: ctx.phone },
-      select: { name: true, id: true },
-    })
+    const identity = await resolveWhatsAppIdentity(ctx.phone)
+    if (identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive') {
+      await sendText(
+        ctx.phone,
+        `This number is registered as a Plug A Pro provider.\n\nFor now, provider and customer profiles must use separate WhatsApp numbers.\n\nPlease request a service using a different number.`
+      )
+      await showMainMenu(ctx.phone)
+      return { nextStep: 'done' }
+    }
+
     const PLACEHOLDER_NAMES = new Set(['WhatsApp Customer', 'Customer'])
-    const isFirstBooking = !existingCustomer || PLACEHOLDER_NAMES.has(existingCustomer.name)
+    const isKnownCustomer = identity.role === 'customer' && Boolean(identity.customerId)
+    const hasUsableName = Boolean(identity.displayName && !PLACEHOLDER_NAMES.has(identity.displayName))
+    const isFirstBooking = !isKnownCustomer || !hasUsableName
 
     if (!isFirstBooking) {
-      const lastAddress = await db.address.findFirst({
-        where: { customerId: existingCustomer!.id },
-        orderBy: { createdAt: 'desc' },
-      })
-
       const baseData = {
         selectedCategory: category,
         category,
-        customerName: existingCustomer?.name,
+        customerId: identity.customerId,
+        customerName: identity.displayName,
         isFirstBooking: false,
       }
 
-      if (lastAddress?.locationNodeId) {
-        // Structured saved address — verify it's still valid and offer reuse
-        const selection = await getStructuredAddressSelection(lastAddress.locationNodeId)
-        if (selection) {
-          const streetLine = lastAddress.addressLine1 ?? lastAddress.street
-          const display = [streetLine, selection.suburb, selection.city].filter(Boolean).join(', ')
+      const savedAddresses = identity.savedAddresses
+      if (savedAddresses.length > 1) {
+        await sendList(
+          ctx.phone,
+          `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nWhich address is this ${category} service for?`,
+          [{
+            title: 'Saved addresses',
+            rows: [
+              ...savedAddresses.slice(0, 9).map((address) => ({
+                id: `addr_saved_${address.id}`,
+                title: savedAddressShortLabel(address) || 'Saved address',
+                description: savedAddressDisplay(address).slice(0, 72),
+              })),
+              { id: 'addr_new', title: 'Add new address' },
+            ],
+          }],
+          { buttonLabel: 'Choose Address' },
+        )
+        return { nextStep: 'collect_address', nextData: baseData }
+      }
+
+      const savedAddress = savedAddresses[0]
+      if (savedAddress) {
+        const addressData = await savedAddressToConversationData(savedAddress)
+        if (addressData) {
           await sendButtons(
             ctx.phone,
-            `📍 *Where do you need the ${category} work done?*\n\nLast used:\n_${display}_`,
+            `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nIs this service for your saved address?\n\n_${savedAddressDisplay(savedAddress)}_`,
             [
-              { id: 'addr_same', title: '📍 Same address' },
-              { id: 'addr_new', title: '✏️ New address' },
+              { id: 'addr_same', title: 'Yes, use this' },
+              { id: 'addr_new', title: 'Add new address' },
             ]
           )
-          return {
-            nextStep: 'collect_address',
-            nextData: {
-              ...baseData,
-              addressLine1: streetLine,
-              addrLocationNodeId: lastAddress.locationNodeId,
-              addrCityLabel: selection.city,
-              addrSuburbLabel: selection.suburb,
-              addrRegionLabel: selection.region,
-              addrProvinceLabel: selection.province,
-              addrPostalCode: selection.postalCode,
-              address: display,
-              hasSavedAddress: true,
-            },
-          }
+          return { nextStep: 'collect_address', nextData: { ...baseData, ...addressData } }
         }
       }
 
       // Legacy address (no locationNodeId) or unresolvable node — force new entry
       await sendText(
         ctx.phone,
-        `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+        `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nNo saved structured address is ready for this request yet.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
       )
       return { nextStep: 'collect_address_street', nextData: baseData }
     }
@@ -476,6 +411,33 @@ async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'addr_same') {
     // addrLocationNodeId + addressLine1 are already in ctx.data — go to availability
     return handleCollectAvailability(ctx)
+  }
+
+  if (ctx.reply.id?.startsWith('addr_saved_')) {
+    const addressId = ctx.reply.id.slice('addr_saved_'.length)
+    const address = await db.address.findFirst({
+      where: { id: addressId, customerId: ctx.data.customerId },
+    })
+
+    if (!address) {
+      await sendText(ctx.phone, '❗ I could not find that saved address. Please choose another address or add a new one.')
+      return { nextStep: 'collect_address' }
+    }
+
+    const addressData = await savedAddressToConversationData(address as WhatsAppSavedAddress)
+    if (!addressData) {
+      const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
+      await sendText(
+        ctx.phone,
+        `That saved address needs to be re-confirmed.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+      )
+      return { nextStep: 'collect_address_street' }
+    }
+
+    return handleCollectAvailability({
+      ...ctx,
+      data: { ...ctx.data, ...addressData },
+    })
   }
 
   // addr_new or any other reply — start new structured address entry
@@ -864,15 +826,21 @@ async function sendCustomerPhotoProgress(phone: string, count: number) {
   const remaining = MAX_CUSTOMER_PHOTOS - count
 
   if (remaining <= 0) {
-    await sendButtons(
+    const outboundId = await sendButtons(
       phone,
       `✅ *${MAX_CUSTOMER_PHOTOS} photos received.* Maximum reached.\n\nContinue to the next step?`,
       [{ id: 'photos_done', title: '✅ Continue' }]
     )
+    console.info('[job-request-flow] customer photo confirmation sent', {
+      normalized_phone: phone,
+      final_count_shown: MAX_CUSTOMER_PHOTOS,
+      remaining_slots: 0,
+      outbound_confirmation_message_id: outboundId || null,
+    })
     return
   }
 
-  await sendButtons(
+  const outboundId = await sendButtons(
     phone,
     `✅ *${count} photo${count === 1 ? '' : 's'} received.* You can add ${remaining} more or continue.`,
     [
@@ -880,6 +848,12 @@ async function sendCustomerPhotoProgress(phone: string, count: number) {
       { id: 'photos_add_more', title: '📷 Add more photos' },
     ]
   )
+  console.info('[job-request-flow] customer photo confirmation sent', {
+    normalized_phone: phone,
+    final_count_shown: count,
+    remaining_slots: remaining,
+    outbound_confirmation_message_id: outboundId || null,
+  })
 }
 
 async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
@@ -1268,25 +1242,37 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
 // ─── Exported helpers ─────────────────────────────────────────────────────────
 
 export async function showMainMenu(phone: string): Promise<void> {
-  const menu = await resolveProviderMenuContext(phone)
+  const menu = await resolveWhatsAppIdentity(phone)
 
-  if (menu.status === 'pending_application' || menu.status === 'pending_provider') {
-    const application = menu.application
-    const name = firstName(menu.provider?.name ?? application?.name)
-    const ref = application?.id ? applicationRef(application.id) : 'Pending'
+  if (menu.role === 'customer') {
+    const name = menu.firstName ?? firstName(menu.displayName)
 
     await sendList(
       phone,
-      `Hi ${name}, your Plug A Pro provider application is still under review.\n\nRef: *${ref}*\n\nWe'll notify you here once it's approved.`,
+      `Hi ${name}, welcome back to Plug A Pro.\n\nWhat would you like to do?`,
       [
         {
           title: 'Services',
           rows: [
             { id: 'book', title: 'Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
-            { id: 'status', title: 'My Request', description: 'Track or manage an existing booking' },
+            { id: 'status', title: 'My Requests', description: 'Track or manage existing requests' },
             { id: 'help', title: 'Get Help', description: 'FAQs, pricing, support' },
           ],
         },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
+  if (menu.role === 'provider_pending') {
+    const name = menu.firstName ?? firstName(menu.displayName)
+    const ref = menu.applicationId ? applicationRef(menu.applicationId) : 'Pending'
+
+    await sendList(
+      phone,
+      `Hi ${name}, your Plug A Pro provider application is still under review.\n\nRef: *${ref}*\n\nWe'll notify you here once it's approved.`,
+      [
         {
           title: 'Provider',
           rows: [
@@ -1301,8 +1287,8 @@ export async function showMainMenu(phone: string): Promise<void> {
     return
   }
 
-  if (menu.status === 'active_provider' || menu.status === 'approved_application') {
-    const name = firstName(menu.provider?.name ?? menu.application?.name)
+  if (menu.role === 'provider') {
+    const name = menu.firstName ?? firstName(menu.displayName)
     const activeJobsLine = menu.activeJobCount > 0
       ? `\n\nYou have *${menu.activeJobCount} active job${menu.activeJobCount === 1 ? '' : 's'}*.`
       : ''
@@ -1317,14 +1303,6 @@ export async function showMainMenu(phone: string): Promise<void> {
       phone,
       `Welcome back, ${name}.${statusLine}${activeJobsLine}\n\nWhat would you like to do?`,
       [
-        {
-          title: 'Services',
-          rows: [
-            { id: 'book', title: 'Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
-            { id: 'status', title: 'My Request', description: 'Track or manage an existing booking' },
-            { id: 'help', title: 'Get Help', description: 'FAQs, pricing, support' },
-          ],
-        },
         {
           title: 'Provider',
           rows: [
@@ -1342,21 +1320,13 @@ export async function showMainMenu(phone: string): Promise<void> {
     return
   }
 
-  if (menu.status === 'inactive_provider') {
-    const name = firstName(menu.provider?.name)
+  if (menu.role === 'provider_inactive') {
+    const name = menu.firstName ?? firstName(menu.displayName)
 
     await sendList(
       phone,
       `Hi ${name}, your provider profile is currently inactive.\n\nYou won't receive new job leads until this is resolved.`,
       [
-        {
-          title: 'Services',
-          rows: [
-            { id: 'book', title: 'Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
-            { id: 'status', title: 'My Request', description: 'Track or manage an existing booking' },
-            { id: 'help', title: 'Get Help', description: 'FAQs, pricing, support' },
-          ],
-        },
         {
           title: 'Provider',
           rows: [

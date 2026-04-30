@@ -31,15 +31,19 @@ import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/type
 import { applyOptIn, applyOptOut } from './whatsapp-policy'
 import { normalizePhone } from './utils'
 import { createTestCohortContext } from './internal-test-cohort'
+import { resolveWhatsAppIdentity } from './whatsapp-identity'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
-const CUSTOMER_PHOTO_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS) || 800
 // 3 s default: WhatsApp delivers batch-selected images as separate events that
 // can arrive over 1–3 s. 800 ms caused premature batch flush when the first 3
 // of 5 images arrived before the remaining 2, producing a "3 files received"
 // confirmation that the user acted on before the rest landed.
-const PROVIDER_EVIDENCE_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || 3000
+const MEDIA_UPLOAD_BATCH_WINDOW_MS = Number(process.env.WHATSAPP_MEDIA_UPLOAD_BATCH_WINDOW_MS) || 3000
+const CUSTOMER_PHOTO_BATCH_WINDOW_MS =
+  Number(process.env.WHATSAPP_CUSTOMER_PHOTO_BATCH_WINDOW_MS) || MEDIA_UPLOAD_BATCH_WINDOW_MS
+const PROVIDER_EVIDENCE_BATCH_WINDOW_MS =
+  Number(process.env.WHATSAPP_PROVIDER_EVIDENCE_BATCH_WINDOW_MS) || MEDIA_UPLOAD_BATCH_WINDOW_MS
 const CITY_TEXT_SUPERSEDE_WINDOW_MS = Number(process.env.WHATSAPP_CITY_TEXT_SUPERSEDE_WINDOW_MS) || 800
 const phoneMessageQueues = new Map<string, Promise<void>>()
 const customerPhotoBatches = new Map<string, {
@@ -196,6 +200,13 @@ function enqueueCustomerPhotoBatch(phone: string, message: InboundMessage): Prom
       existing.waiters.push({ resolve, reject })
       clearTimeout(existing.timer)
       existing.timer = setTimeout(() => flushCustomerPhotoBatch(phone), CUSTOMER_PHOTO_BATCH_WINDOW_MS)
+      console.info('[whatsapp-bot] customer photo batch refreshed', {
+        normalized_phone: phone,
+        whatsapp_message_id: message.id,
+        whatsapp_media_id: message.image?.id ?? null,
+        batch_size: existing.messages.length,
+        batch_window_ms: CUSTOMER_PHOTO_BATCH_WINDOW_MS,
+      })
       return
     }
 
@@ -205,6 +216,13 @@ function enqueueCustomerPhotoBatch(phone: string, message: InboundMessage): Prom
       timer: setTimeout(() => flushCustomerPhotoBatch(phone), CUSTOMER_PHOTO_BATCH_WINDOW_MS),
     }
     customerPhotoBatches.set(phone, batch)
+    console.info('[whatsapp-bot] customer photo batch started', {
+      normalized_phone: phone,
+      whatsapp_message_id: message.id,
+      whatsapp_media_id: message.image?.id ?? null,
+      batch_size: 1,
+      batch_window_ms: CUSTOMER_PHOTO_BATCH_WINDOW_MS,
+    })
   })
 }
 
@@ -232,6 +250,15 @@ function flushCustomerPhotoBatch(phone: string) {
   const batch = customerPhotoBatches.get(phone)
   if (!batch) return
   customerPhotoBatches.delete(phone)
+  const batchId = `customer_photo_${crypto.randomUUID().slice(0, 12)}`
+  console.info('[whatsapp-bot] customer photo batch flushing', {
+    trace_id: batchId,
+    normalized_phone: phone,
+    batch_id: batchId,
+    files_received: batch.messages.length,
+    whatsapp_message_ids: batch.messages.map((message) => message.id),
+    whatsapp_media_ids: batch.messages.map((message) => message.image?.id ?? null),
+  })
 
   enqueuePhoneMessageBatch(phone, batch.messages, 'customer_photo')
     .then(() => batch.waiters.forEach((waiter) => waiter.resolve()))
@@ -462,6 +489,66 @@ async function processInboundMessageUnlocked(
       'provider_update_application',
       'provider_top_up_credits',
     ].includes(reply.id))
+    const identity = await resolveWhatsAppIdentity(phone)
+    const selectedMenuPath = reply.id ?? rawText ?? 'unknown'
+    const isCustomerRole = identity.role === 'customer'
+    const isProviderRole = identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive'
+    const isCustomerJourneyAction = Boolean(
+      ['book', 'browse_categories', 'status', 'my_booking', 'start_reschedule', 'start_cancel'].includes(reply.id ?? '') ||
+      flow === 'job_request' ||
+      flow === 'status' ||
+      flow === 'reschedule' ||
+      flow === 'cancel'
+    )
+    const isProviderJourneyAction = Boolean(
+      reply.id === 'find_work' ||
+      isRegistration ||
+      isProviderMenuReply ||
+      PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) ||
+      flow === 'registration' ||
+      flow === 'provider_journey' ||
+      flow === 'provider_job'
+    )
+
+    if (isProviderRole && isCustomerJourneyAction && !isStatelessReply) {
+      console.info('[whatsapp-bot] blocked provider from customer journey', {
+        traceId: identity.traceId,
+        messageId: message.id,
+        rawPhone: message.from,
+        normalizedPhone: phone,
+        resolvedRole: identity.role,
+        providerId: identity.providerId ?? null,
+        selectedMenuPath,
+        blockedRoleConflict: true,
+      })
+      await sendText(
+        phone,
+        `This number is registered as a Plug A Pro provider.\n\nFor now, provider and customer profiles must use separate WhatsApp numbers.\n\nPlease request a service using a different number.`
+      )
+      await showMainMenu(phone)
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (isCustomerRole && isProviderJourneyAction && !isStatelessReply) {
+      console.info('[whatsapp-bot] blocked customer from provider journey', {
+        traceId: identity.traceId,
+        messageId: message.id,
+        rawPhone: message.from,
+        normalizedPhone: phone,
+        resolvedRole: identity.role,
+        customerId: identity.customerId ?? null,
+        selectedMenuPath,
+        blockedRoleConflict: true,
+      })
+      await sendText(
+        phone,
+        `This number is already registered as a customer on Plug A Pro.\n\nFor now, customers and providers must use separate WhatsApp numbers.\n\nPlease apply as a provider using a different number.`
+      )
+      await showMainMenu(phone)
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
 
     // Session expired mid-flow — offer contextual resume instead of silently resetting
     // Stateless notification replies must bypass this guard: these button IDs carry

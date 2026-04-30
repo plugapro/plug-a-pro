@@ -200,6 +200,23 @@ describe('registration flow — duplicate prevention', () => {
       )
       expect(result.nextStep).toBe('pj_toggle_available')
     })
+
+    it('blocks registration and sends conflict message when phone already belongs to a customer', async () => {
+      // No provider/application — the inner customer guard in startRegistration should fire
+      ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+      ;(db.customer.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'cust_abc123',
+      })
+
+      const result = await handleRegistrationFlow(makeCtx('reg_start'))
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('already registered as a customer'),
+      )
+      expect(result.nextStep).toBe('done')
+      expect(db.providerApplication.create).not.toHaveBeenCalled()
+    })
   })
 
   // ── handlePending (submit step) ────────────────────────────────────────────

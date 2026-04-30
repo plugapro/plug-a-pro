@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/db', () => ({
   db: {
     customer: {
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
       updateMany: vi.fn(),
       upsert: vi.fn(),
@@ -152,6 +153,7 @@ function makeCtx(
 describe('WhatsApp job-request flow — structured address', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ;(db.customer.findFirst as any).mockResolvedValue(null)
     ;(locationNodes.getProvinces as any).mockResolvedValue(PROVINCES)
     ;(locationNodes.getCities as any).mockResolvedValue(CITIES_GAUTENG)
     ;(locationNodes.getRegions as any).mockResolvedValue(REGIONS_JHB)
@@ -470,7 +472,22 @@ describe('WhatsApp job-request flow — structured address', () => {
 
   describe('returning customer — structured saved address', () => {
     beforeEach(() => {
-      ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust_1', name: 'Zanele' })
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_1',
+        name: 'Zanele',
+        addresses: [{
+          id: 'addr_1',
+          street: '14 Main Road, Sandton',
+          addressLine1: '14 Main Road',
+          suburb: 'Sandton',
+          region: 'JHB North',
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: '2196',
+          locationNodeId: 'sub_sandton',
+          isDefault: true,
+        }],
+      })
       ;(db.address.findFirst as any).mockResolvedValue({
         id: 'addr_1',
         street: '14 Main Road, Sandton',
@@ -485,13 +502,66 @@ describe('WhatsApp job-request flow — structured address', () => {
       const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
 
       expect(locationNodes.getStructuredAddressSelection).toHaveBeenCalledWith('sub_sandton')
+      expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
       expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Last used'),
+        expect.stringContaining('welcome back'),
         expect.arrayContaining([expect.objectContaining({ id: 'addr_same' })]),
       )
       expect(result.nextStep).toBe('collect_address')
       expect(result.nextData).toMatchObject({ addrLocationNodeId: 'sub_sandton' })
+    })
+
+    it('asks an existing customer to choose when multiple saved addresses exist', async () => {
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_1',
+        name: 'Sheila Dube',
+        addresses: [
+          {
+            id: 'addr_1',
+            street: '21 Jump Street',
+            addressLine1: '21 Jump Street',
+            suburb: 'Bromhof',
+            region: 'JHB West',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postalCode: '2188',
+            locationNodeId: 'sub_bromhof',
+            isDefault: true,
+          },
+          {
+            id: 'addr_2',
+            street: '12 Example Road',
+            addressLine1: '12 Example Road',
+            suburb: 'Randpark Ridge',
+            region: 'JHB West',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postalCode: '2169',
+            locationNodeId: 'sub_randpark',
+            isDefault: false,
+          },
+        ],
+      })
+
+      const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
+
+      expect(result.nextStep).toBe('collect_address')
+      expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Which address'),
+        expect.arrayContaining([
+          expect.objectContaining({
+            rows: expect.arrayContaining([
+              expect.objectContaining({ id: 'addr_saved_addr_1' }),
+              expect.objectContaining({ id: 'addr_saved_addr_2' }),
+              expect.objectContaining({ id: 'addr_new' }),
+            ]),
+          }),
+        ]),
+        expect.any(Object),
+      )
     })
 
     it('carries addrLocationNodeId through addr_same → availability', async () => {
@@ -511,7 +581,22 @@ describe('WhatsApp job-request flow — structured address', () => {
 
   describe('returning customer — legacy address (no locationNodeId)', () => {
     beforeEach(() => {
-      ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust_2', name: 'Sipho' })
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_2',
+        name: 'Sipho',
+        addresses: [{
+          id: 'addr_old',
+          street: 'Old Street, Soweto',
+          addressLine1: null,
+          suburb: 'Soweto',
+          region: null,
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: null,
+          locationNodeId: null,
+          isDefault: false,
+        }],
+      })
       ;(db.address.findFirst as any).mockResolvedValue({
         id: 'addr_old',
         street: 'Old Street, Soweto',
@@ -997,6 +1082,21 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     expect(wa.sendButtons).not.toHaveBeenCalled()
   })
 
+  it('sends one final 2-photo confirmation for the last image in a batch', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_002' })
+    const data = {
+      ...baseData,
+      photoAttachmentIds: ['att_001'],
+      photoMediaIds: ['media-1'],
+    }
+
+    await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-2'))
+
+    const body: string = (wa.sendButtons as any).mock.calls.at(-1)[1]
+    expect(body).toContain('2 photos received')
+    expect(body).toContain('add 3 more')
+  })
+
   it('accumulates multiple image uploads with correct total count', async () => {
     ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ attachmentId: 'att_001' })
@@ -1028,6 +1128,9 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_005' })
     const data = { ...baseData, photoAttachmentIds: ['att_001', 'att_002', 'att_003', 'att_004'] }
     await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-xyz'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('5 photos received')
+    expect(body).toContain('Maximum reached')
     const buttons: { id: string }[] = (wa.sendButtons as any).mock.calls[0][2]
     expect(buttons).toHaveLength(1)
     expect(buttons[0].id).toBe('photos_done')
