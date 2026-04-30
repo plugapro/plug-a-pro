@@ -3,14 +3,17 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { LeadActionSubmitButton } from '@/components/provider/LeadActionSubmitButton'
 import { formatDistanceToNow, format } from 'date-fns'
 import { getCategoryPolicy } from '@/lib/service-category-policy'
 import { LeadUnlockError, unlockLeadForProvider } from '@/lib/lead-unlocks'
+import { createTraceId, safeErrorMessage } from '@/lib/support-diagnostics'
 import {
   ProviderLeadDetailError,
   getProviderLeadDetailForProvider,
@@ -104,14 +107,35 @@ async function declineLead(formData: FormData) {
   'use server'
   const session = await requireProvider()
   const leadId = String(formData.get('leadId') ?? '')
+  const traceId = createTraceId('lead_decline')
 
   const provider = await db.provider.findUnique({ where: { userId: session.id } })
   if (!provider) redirect('/provider')
 
   const { declineLead: decline } = await import('@/lib/matching-engine')
-  await decline({ leadId, providerId: provider.id })
+  let result: Awaited<ReturnType<typeof decline>>
+  try {
+    result = await decline({ leadId, providerId: provider.id })
+  } catch (error) {
+    if (isRedirectError(error)) throw error
+    console.error('[provider/leads] decline lead action failed', {
+      trace_id: traceId,
+      lead_id: leadId,
+      provider_id: provider.id,
+      source: 'pwa_authenticated',
+      action: 'decline',
+      error_code: 'UNKNOWN_LEAD_ACTION_ERROR',
+      error: safeErrorMessage(error),
+    })
+    redirect(`/provider/leads/${leadId}?declineError=UNKNOWN_LEAD_ACTION_ERROR&traceId=${encodeURIComponent(traceId)}`)
+  }
 
-  redirect('/provider/leads')
+  if (!result.ok) {
+    const code = result.reason === 'NOT_FOUND' ? 'LEAD_NOT_FOUND' : 'PROVIDER_LEAD_ACCESS_DENIED'
+    redirect(`/provider/leads/${leadId}?declineError=${code}&traceId=${encodeURIComponent(traceId)}`)
+  }
+
+  redirect(`/provider/leads/${leadId}?declined=1&traceId=${encodeURIComponent(traceId)}`)
 }
 
 export default async function LeadDetailPage({
@@ -119,7 +143,7 @@ export default async function LeadDetailPage({
   searchParams,
 }: {
   params: Promise<{ leadId: string }>
-  searchParams?: Promise<{ unlockError?: string; unlocked?: string; dispute?: string }>
+  searchParams?: Promise<{ unlockError?: string; unlocked?: string; dispute?: string; declined?: string; declineError?: string; traceId?: string }>
 }) {
   const session = await requireProvider()
   const { leadId } = await params
@@ -203,6 +227,44 @@ export default async function LeadDetailPage({
       {isResponded && (
         <div className="rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           You have already {lead.status === 'ACCEPTED' ? 'accepted' : 'declined'} this lead.
+        </div>
+      )}
+
+      {resolvedSearchParams.declined && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <p className="font-medium">Lead declined</p>
+          <p className="mt-1">We&apos;ll offer this lead to another provider.</p>
+          <p className="mt-2 text-xs font-medium uppercase tracking-wide text-emerald-800">
+            Ref: {lead.id.slice(-8).toUpperCase()}
+          </p>
+          {resolvedSearchParams.traceId ? (
+            <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.traceId}</p>
+          ) : null}
+          <div className="mt-4 grid gap-2">
+            <Button asChild size="sm" variant="outline" className="bg-background">
+              <Link href="/provider/leads">Available Jobs</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline" className="bg-background">
+              <Link href="/provider">Main Menu</Link>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {resolvedSearchParams.declineError && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <p className="font-medium">We could not decline this lead.</p>
+          <p className="mt-1">
+            {resolvedSearchParams.declineError === 'PROVIDER_LEAD_ACCESS_DENIED'
+              ? 'You do not have access to decline this lead.'
+              : resolvedSearchParams.declineError === 'LEAD_NOT_FOUND'
+                ? 'This lead could not be found.'
+                : 'The decline action could not be completed.'}
+          </p>
+          <p className="mt-2 text-xs">
+            Error code: {resolvedSearchParams.declineError}
+            {resolvedSearchParams.traceId ? ` · Trace ID: ${resolvedSearchParams.traceId}` : ''}
+          </p>
         </div>
       )}
 
@@ -422,9 +484,9 @@ export default async function LeadDetailPage({
               ) : (
                 <form action={unlockLead}>
                   <input type="hidden" name="leadId" value={leadId} />
-                  <Button type="submit" size="lg" className="w-full">
+                  <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Unlocking lead...">
                     Unlock lead for 1 Plug-A-Pro Credit
-                  </Button>
+                  </LeadActionSubmitButton>
                 </form>
               )}
               <p className="text-center text-xs text-muted-foreground">
@@ -435,9 +497,9 @@ export default async function LeadDetailPage({
             <form action={acceptLead} className="space-y-2">
               <input type="hidden" name="leadId" value={leadId} />
               <input type="hidden" name="inspectionNeeded" value="false" />
-              <Button type="submit" size="lg" className="w-full">
+              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting job...">
                 Accept and build quote
-              </Button>
+              </LeadActionSubmitButton>
             </form>
           )}
 
@@ -445,22 +507,22 @@ export default async function LeadDetailPage({
             <form action={acceptLead}>
               <input type="hidden" name="leadId" value={leadId} />
               <input type="hidden" name="inspectionNeeded" value="true" />
-              <Button type="submit" size="lg" variant="outline" className="w-full">
+              <LeadActionSubmitButton size="lg" variant="outline" className="w-full" pendingLabel="Accepting...">
                 Inspection first
-              </Button>
+              </LeadActionSubmitButton>
             </form>
           )}
 
           <form action={declineLead}>
             <input type="hidden" name="leadId" value={leadId} />
-            <Button
-              type="submit"
+            <LeadActionSubmitButton
               size="lg"
               variant="ghost"
               className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+              pendingLabel="Declining..."
             >
               Skip
-            </Button>
+            </LeadActionSubmitButton>
           </form>
         </div>
       )}

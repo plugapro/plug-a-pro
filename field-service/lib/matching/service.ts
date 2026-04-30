@@ -2214,10 +2214,20 @@ export async function rejectAssignmentOffer(params: {
     })
   })
 
-  const next = await offerNextRankedCandidate({
-    jobRequestId: lead.jobRequestId,
-    dispatchDecisionId: lead.dispatchDecisionId!,
-  })
+  let nextOfferedProviderId: string | null = null
+  if (lead.dispatchDecisionId) {
+    const next = await offerNextRankedCandidate({
+      jobRequestId: lead.jobRequestId,
+      dispatchDecisionId: lead.dispatchDecisionId,
+    })
+    nextOfferedProviderId = next.nextOfferedProviderId
+  } else {
+    console.warn('[matching] declined lead has no dispatch decision; skipping next-provider offer', {
+      leadId: lead.id,
+      jobRequestId: lead.jobRequestId,
+      providerId: params.providerId,
+    })
+  }
 
   emitMatchEvent({
     event: 'match.declined',
@@ -2232,7 +2242,7 @@ export async function rejectAssignmentOffer(params: {
     responseOutcome: 'REJECTED',
     matchId: null,
     assignmentHoldId: lead.assignmentHold.id,
-    nextOfferedProviderId: next.nextOfferedProviderId,
+    nextOfferedProviderId,
   }
 }
 

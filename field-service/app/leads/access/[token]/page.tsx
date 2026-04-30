@@ -1,9 +1,12 @@
 export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
+import { isRedirectError } from 'next/dist/client/components/redirect-error'
+import Link from 'next/link'
 import { format, formatDistanceToNow } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { ArrivalSubmitButton } from '@/components/provider/ArrivalSubmitButton'
+import { LeadActionSubmitButton } from '@/components/provider/LeadActionSubmitButton'
 import { getCategoryPolicy } from '@/lib/service-category-policy'
 import { db } from '@/lib/db'
 import {
@@ -22,39 +25,205 @@ import {
   saveAcceptedLeadArrival,
   sendFreshAcceptedJobLink,
 } from '@/lib/accepted-job-actions'
-import { createTraceId, maskPhone, timestamp, type DiagnosticCode } from '@/lib/support-diagnostics'
+import { createTraceId, maskPhone, safeErrorMessage, timestamp, type DiagnosticCode } from '@/lib/support-diagnostics'
+
+type LeadActionErrorParams = {
+  error: string
+  errorCode: string
+  action: 'unlock' | 'accept' | 'decline'
+  traceId: string
+  message?: string
+  creditDeducted?: boolean
+}
+
+function redirectLeadActionError(token: string, params: LeadActionErrorParams): never {
+  const query = new URLSearchParams({
+    error: params.error,
+    errorCode: params.errorCode,
+    action: params.action,
+    actionTraceId: params.traceId,
+  })
+  if (params.message) query.set('errorMessage', params.message)
+  if (params.creditDeducted != null) query.set('creditDeducted', params.creditDeducted ? '1' : '0')
+  redirect(`/leads/access/${encodeURIComponent(token)}?${query.toString()}`)
+}
+
+function leadUnlockErrorParams(error: LeadUnlockError) {
+  switch (error.code) {
+    case 'INSUFFICIENT_CREDITS':
+      return {
+        error: 'credits',
+        errorCode: 'INSUFFICIENT_CREDITS',
+        message: error.message,
+      }
+    case 'PROVIDER_NOT_APPROVED':
+      return {
+        error: 'approval',
+        errorCode: 'PROVIDER_NOT_APPROVED',
+        message: error.message,
+      }
+    case 'PROVIDER_NOT_ACTIVE':
+      return {
+        error: 'inactive',
+        errorCode: 'PROVIDER_NOT_ACTIVE',
+        message: error.message,
+      }
+    case 'NOT_FOUND':
+      return {
+        error: 'not_found',
+        errorCode: 'LEAD_NOT_FOUND',
+        message: error.message,
+      }
+    case 'FORBIDDEN':
+      return {
+        error: 'denied',
+        errorCode: 'PROVIDER_LEAD_ACCESS_DENIED',
+        message: error.message,
+      }
+    case 'CONCURRENT_UNLOCK':
+      return {
+        error: 'duplicate',
+        errorCode: 'DUPLICATE_ACTION_IGNORED',
+        message: error.message,
+      }
+    case 'LEAD_NOT_AVAILABLE':
+      return {
+        error: 'unavailable',
+        errorCode: 'LEAD_ALREADY_ACCEPTED',
+        message: error.message,
+      }
+    case 'WALLET_SUSPENDED':
+      return {
+        error: 'ledger',
+        errorCode: 'CREDIT_LEDGER_WRITE_FAILED',
+        message: error.message,
+      }
+    default:
+      return {
+        error: 'unlock_failed',
+        errorCode: 'LEAD_UNLOCK_FAILED',
+        message: error.message,
+      }
+  }
+}
+
+function acceptErrorCode(reason: string) {
+  switch (reason) {
+    case 'INSUFFICIENT_CREDITS':
+      return 'INSUFFICIENT_CREDITS'
+    case 'PROVIDER_NOT_APPROVED':
+      return 'PROVIDER_NOT_APPROVED'
+    case 'EXPIRED':
+      return 'LEAD_EXPIRED'
+    case 'TAKEN':
+      return 'LEAD_ALREADY_ACCEPTED'
+    case 'NOT_FOUND':
+      return 'LEAD_NOT_FOUND'
+    case 'FORBIDDEN':
+      return 'PROVIDER_LEAD_ACCESS_DENIED'
+    default:
+      return 'LEAD_ACCEPTANCE_FAILED'
+  }
+}
 
 async function acceptLeadWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
   const inspectionNeeded = formData.get('inspectionNeeded') === 'true'
+  const traceId = createTraceId('lead_accept')
 
   const verified = verifyProviderLeadAccessToken(token)
   if (verified.status !== 'active' || !providerLeadTokenAllowsScope(verified.payload, 'accept_lead')) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+    redirectLeadActionError(token, {
+      error: 'invalid',
+      errorCode: 'INVALID_SIGNED_LINK',
+      action: 'accept',
+      traceId,
+      message: 'This secure lead link is invalid.',
+      creditDeducted: false,
+    })
   }
 
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+    redirectLeadActionError(token, {
+      error: 'invalid',
+      errorCode: 'INVALID_SIGNED_LINK',
+      action: 'accept',
+      traceId,
+      message: 'This secure lead link is invalid.',
+      creditDeducted: false,
+    })
   }
 
   const lead = resolved.lead
   if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=closed`)
+    redirectLeadActionError(token, {
+      error: 'closed',
+      errorCode: lead.expiresAt && lead.expiresAt <= new Date() ? 'LEAD_EXPIRED' : 'LEAD_ALREADY_ACCEPTED',
+      action: 'accept',
+      traceId,
+      message: 'This lead can no longer be accepted.',
+      creditDeducted: false,
+    })
   }
 
   const { acceptLead } = await import('@/lib/matching-engine')
-  const result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa' })
+  let result
+  try {
+    result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa' })
+  } catch (error) {
+    if (isRedirectError(error)) throw error
+    console.error('[leads/access] accept lead action failed', {
+      trace_id: traceId,
+      lead_id: lead.id,
+      lead_ref: lead.id.slice(-8).toUpperCase(),
+      job_ref: lead.jobRequestId.slice(-8).toUpperCase(),
+      provider_id: lead.providerId,
+      source: 'pwa_signed_link',
+      action: 'accept',
+      error_code: 'UNKNOWN_LEAD_ACTION_ERROR',
+      error: safeErrorMessage(error),
+    })
+    redirectLeadActionError(token, {
+      error: 'accept_failed',
+      errorCode: 'UNKNOWN_LEAD_ACTION_ERROR',
+      action: 'accept',
+      traceId,
+      message: 'We could not process this acceptance.',
+      creditDeducted: false,
+    })
+  }
 
   if (!result.ok) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
-      redirect(`/leads/access/${encodeURIComponent(token)}?error=credits`)
+      redirectLeadActionError(token, {
+        error: 'credits',
+        errorCode: 'INSUFFICIENT_CREDITS',
+        action: 'accept',
+        traceId,
+        message: 'This lead requires 1 Plug-A-Pro Credit to unlock.',
+        creditDeducted: false,
+      })
     }
     if (result.reason === 'PROVIDER_NOT_APPROVED') {
-      redirect(`/leads/access/${encodeURIComponent(token)}?error=approval`)
+      redirectLeadActionError(token, {
+        error: 'approval',
+        errorCode: 'PROVIDER_NOT_APPROVED',
+        action: 'accept',
+        traceId,
+        message: 'Your provider application must be approved before you can accept leads.',
+        creditDeducted: false,
+      })
     }
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=${result.reason.toLowerCase()}`)
+    redirectLeadActionError(token, {
+      error: result.reason.toLowerCase(),
+      errorCode: acceptErrorCode(result.reason),
+      action: 'accept',
+      traceId,
+      message: 'This lead could not be accepted.',
+      creditDeducted: false,
+    })
   }
 
   redirect(`/leads/access/${encodeURIComponent(token)}?accepted=1`)
@@ -63,58 +232,162 @@ async function acceptLeadWithToken(formData: FormData) {
 async function unlockLeadWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
+  const traceId = createTraceId('lead_unlock')
 
   const verified = verifyProviderLeadAccessToken(token)
   if (verified.status !== 'active' || !providerLeadTokenAllowsScope(verified.payload, 'unlock_lead')) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+    redirectLeadActionError(token, {
+      error: 'invalid',
+      errorCode: 'INVALID_SIGNED_LINK',
+      action: 'unlock',
+      traceId,
+      message: 'This secure lead link is invalid.',
+      creditDeducted: false,
+    })
   }
 
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+    redirectLeadActionError(token, {
+      error: 'invalid',
+      errorCode: 'INVALID_SIGNED_LINK',
+      action: 'unlock',
+      traceId,
+      message: 'This secure lead link is invalid.',
+      creditDeducted: false,
+    })
   }
 
+  let result
   try {
-    await unlockLeadForProvider(resolved.lead.id, resolved.lead.providerId, { source: 'pwa' })
+    result = await unlockLeadForProvider(resolved.lead.id, resolved.lead.providerId, {
+      source: 'pwa',
+      traceId,
+      idempotencyKey: `pwa_unlock_${resolved.lead.providerId}_${resolved.lead.id}`,
+    })
   } catch (error) {
+    if (isRedirectError(error)) throw error
     if (error instanceof LeadUnlockError) {
-      const reason = error.code === 'INSUFFICIENT_CREDITS'
-        ? 'credits'
-        : error.code === 'PROVIDER_NOT_APPROVED'
-          ? 'approval'
-          : error.code === 'PROVIDER_NOT_ACTIVE'
-            ? 'inactive'
-            : 'unavailable'
-      redirect(`/leads/access/${encodeURIComponent(token)}?error=${reason}`)
+      const params = leadUnlockErrorParams(error)
+      console.warn('[leads/access] unlock lead action blocked', {
+        trace_id: traceId,
+        lead_id: resolved.lead.id,
+        lead_ref: resolved.lead.id.slice(-8).toUpperCase(),
+        job_ref: resolved.lead.jobRequestId.slice(-8).toUpperCase(),
+        provider_id: resolved.lead.providerId,
+        source: 'pwa_signed_link',
+        action: 'unlock',
+        result: 'blocked',
+        error_code: params.errorCode,
+      })
+      redirectLeadActionError(token, {
+        ...params,
+        action: 'unlock',
+        traceId,
+        creditDeducted: false,
+      })
     }
-    throw error
+    console.error('[leads/access] unlock lead action failed', {
+      trace_id: traceId,
+      lead_id: resolved.lead.id,
+      lead_ref: resolved.lead.id.slice(-8).toUpperCase(),
+      job_ref: resolved.lead.jobRequestId.slice(-8).toUpperCase(),
+      provider_id: resolved.lead.providerId,
+      source: 'pwa_signed_link',
+      action: 'unlock',
+      error_code: 'UNKNOWN_LEAD_ACTION_ERROR',
+      error: safeErrorMessage(error),
+    })
+    redirectLeadActionError(token, {
+      error: 'unlock_failed',
+      errorCode: 'UNKNOWN_LEAD_ACTION_ERROR',
+      action: 'unlock',
+      traceId,
+      message: 'We could not unlock this lead.',
+      creditDeducted: false,
+    })
   }
-
-  redirect(`/leads/access/${encodeURIComponent(token)}?unlocked=1`)
+  redirect(`/leads/access/${encodeURIComponent(token)}?unlocked=${result.alreadyUnlocked ? 'already' : '1'}&actionTraceId=${encodeURIComponent(traceId)}`)
 }
 
 async function declineLeadWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
+  const traceId = createTraceId('lead_decline')
 
   const verified = verifyProviderLeadAccessToken(token)
   if (verified.status !== 'active' || !providerLeadTokenAllowsScope(verified.payload, 'decline_lead')) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+    redirectLeadActionError(token, {
+      error: 'invalid',
+      errorCode: 'INVALID_SIGNED_LINK',
+      action: 'decline',
+      traceId,
+      message: 'This secure lead link is invalid.',
+      creditDeducted: false,
+    })
   }
 
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=invalid`)
+    redirectLeadActionError(token, {
+      error: 'invalid',
+      errorCode: 'INVALID_SIGNED_LINK',
+      action: 'decline',
+      traceId,
+      message: 'This secure lead link is invalid.',
+      creditDeducted: false,
+    })
   }
 
   const lead = resolved.lead
   if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
-    redirect(`/leads/access/${encodeURIComponent(token)}?error=closed`)
+    redirectLeadActionError(token, {
+      error: 'closed',
+      errorCode: lead.expiresAt && lead.expiresAt <= new Date() ? 'LEAD_EXPIRED' : 'LEAD_ALREADY_ACCEPTED',
+      action: 'decline',
+      traceId,
+      message: 'This lead can no longer be declined.',
+      creditDeducted: false,
+    })
   }
 
   const { declineLead } = await import('@/lib/matching-engine')
-  await declineLead({ leadId: lead.id, providerId: lead.providerId })
-  redirect(`/leads/access/${encodeURIComponent(token)}?declined=1`)
+  let result
+  try {
+    result = await declineLead({ leadId: lead.id, providerId: lead.providerId })
+  } catch (error) {
+    if (isRedirectError(error)) throw error
+    console.error('[leads/access] decline lead action failed', {
+      trace_id: traceId,
+      lead_id: lead.id,
+      lead_ref: lead.id.slice(-8).toUpperCase(),
+      job_ref: lead.jobRequestId.slice(-8).toUpperCase(),
+      provider_id: lead.providerId,
+      source: 'pwa_signed_link',
+      action: 'decline',
+      error_code: 'UNKNOWN_LEAD_ACTION_ERROR',
+      error: safeErrorMessage(error),
+    })
+    redirectLeadActionError(token, {
+      error: 'decline_failed',
+      errorCode: 'UNKNOWN_LEAD_ACTION_ERROR',
+      action: 'decline',
+      traceId,
+      message: 'We could not decline this lead.',
+      creditDeducted: false,
+    })
+  }
+  if (!result.ok) {
+    redirectLeadActionError(token, {
+      error: 'decline_failed',
+      errorCode: result.reason === 'NOT_FOUND' ? 'LEAD_NOT_FOUND' : 'PROVIDER_LEAD_ACCESS_DENIED',
+      action: 'decline',
+      traceId,
+      message: 'This lead could not be declined.',
+      creditDeducted: false,
+    })
+  }
+  redirect(`/leads/access/${encodeURIComponent(token)}?declined=1&actionTraceId=${encodeURIComponent(traceId)}`)
 }
 
 async function saveArrivalWithToken(formData: FormData) {
@@ -264,7 +537,14 @@ export default async function ProviderLeadAccessPage({
   params: Promise<{ token: string }>
   searchParams?: Promise<{
     error?: string
+    errorCode?: string
+    errorMessage?: string
+    action?: string
+    actionTraceId?: string
+    creditDeducted?: string
     unlocked?: string
+    accepted?: string
+    declined?: string
     updated?: string
     scheduleError?: string
     scheduleMessage?: string
@@ -334,8 +614,10 @@ export default async function ProviderLeadAccessPage({
   const isAccepted = lead.status === 'ACCEPTED'
   const isDeclined = lead.status === 'DECLINED'
   const isUnlocked = Boolean(lead.unlock)
+  const leadRef = lead.id.slice(-8).toUpperCase()
+  const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
 
-  if ((isExpired && !isAccepted) || isDeclined) {
+  if (((isExpired && !isAccepted) || isDeclined) && !resolvedSearchParams.declined) {
     const traceId = createTraceId('job')
     const code: DiagnosticCode = isExpired ? 'JOB_LINK_EXPIRED' : 'JOB_ACCESS_DENIED'
     console.warn('[leads/access] signed lead link closed', {
@@ -358,7 +640,7 @@ export default async function ProviderLeadAccessPage({
           code,
           action: 'View Job',
           traceId,
-          jobRef: lead.jobRequestId.slice(-8).toUpperCase(),
+          jobRef,
           providerPhone: lead.provider.phone,
         }}
       />
@@ -402,6 +684,15 @@ export default async function ProviderLeadAccessPage({
     description: jr.description,
   })
   const defaultArrival = deriveDefaultArrivalWindow(customerAvailability)
+  const providerWallet = await db.providerWallet.findUnique({
+    where: { providerId: lead.providerId },
+    select: { paidCreditBalance: true, promoCreditBalance: true },
+  })
+  const providerCreditBalance = (providerWallet?.paidCreditBalance ?? 0) + (providerWallet?.promoCreditBalance ?? 0)
+  const supportWhatsAppDigits = process.env.SUPPORT_WHATSAPP_NUMBER?.replace(/\D/g, '')
+  const backToWhatsAppHref = supportWhatsAppDigits
+    ? `https://wa.me/${supportWhatsAppDigits}?text=${encodeURIComponent(`Hi, I declined lead ${jobRef}.`)}`
+    : null
 
   return (
     <div className="min-h-screen bg-background">
@@ -414,7 +705,7 @@ export default async function ProviderLeadAccessPage({
       <main className="mx-auto max-w-lg px-4 py-6 pb-36 space-y-5">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {isAccepted ? 'Accepted Job' : 'New Lead'} · {lead.id.slice(-8).toUpperCase()}
+            {isAccepted ? 'Accepted Job' : 'New Lead'} · Lead Ref {leadRef}
           </p>
           <h1 className="text-xl font-semibold">{jr.title || jr.category}</h1>
           {acceptedStage && (
@@ -434,9 +725,52 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {resolvedSearchParams.unlocked && (
+        {resolvedSearchParams.unlocked === '1' && (
           <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            Lead unlocked. Full customer and job details are now available.
+            <p className="font-medium">Lead unlocked.</p>
+            <p className="mt-1">
+              1 credit used. Balance remaining: {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
+            </p>
+            <p className="mt-1">Full customer and job details are now available.</p>
+            {resolvedSearchParams.actionTraceId ? (
+              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.actionTraceId}</p>
+            ) : null}
+          </div>
+        )}
+
+        {resolvedSearchParams.unlocked === 'already' && (
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            <p className="font-medium">This lead was already unlocked.</p>
+            <p className="mt-1">No extra credit was used. Balance remaining: {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.</p>
+            {resolvedSearchParams.actionTraceId ? (
+              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.actionTraceId}</p>
+            ) : null}
+          </div>
+        )}
+
+        {resolvedSearchParams.declined && (
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            <p className="font-medium">Lead declined</p>
+            <p className="mt-1">We&apos;ll offer this lead to another provider.</p>
+            <p className="mt-2 text-xs font-medium uppercase tracking-wide text-emerald-800">
+              Ref: {jobRef}
+            </p>
+            {resolvedSearchParams.actionTraceId ? (
+              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.actionTraceId}</p>
+            ) : null}
+            <div className="mt-4 grid gap-2">
+              {backToWhatsAppHref ? (
+                <Button asChild size="sm" className="bg-emerald-700 hover:bg-emerald-800">
+                  <a href={backToWhatsAppHref}>Back to WhatsApp</a>
+                </Button>
+              ) : null}
+              <Button asChild size="sm" variant="outline" className="bg-background">
+                <Link href="/provider/leads">Available Jobs</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="bg-background">
+                <Link href="/provider">Main Menu</Link>
+              </Button>
+            </div>
           </div>
         )}
 
@@ -472,27 +806,68 @@ export default async function ProviderLeadAccessPage({
 
         {resolvedSearchParams.error === 'credits' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            You need at least 1 Plug-A-Pro Credit to unlock this lead. Top up in the provider app and try again.
+            <p className="font-medium">This lead requires 1 Plug-A-Pro Credit to unlock.</p>
+            <p className="mt-1">
+              Your current balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
+            </p>
+            <p className="mt-1">Top up in the provider app and try again.</p>
+            {resolvedSearchParams.actionTraceId ? (
+              <p className="mt-2 text-xs text-amber-800">Error code: INSUFFICIENT_CREDITS · Trace ID: {resolvedSearchParams.actionTraceId}</p>
+            ) : (
+              <p className="mt-2 text-xs text-amber-800">Error code: INSUFFICIENT_CREDITS</p>
+            )}
           </div>
         )}
 
         {resolvedSearchParams.error === 'inactive' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Your provider profile is not active, so you cannot unlock leads right now.
+            <p>Your provider profile is not active, so you cannot unlock leads right now.</p>
+            <p className="mt-2 text-xs text-amber-800">
+              Error code: PROVIDER_NOT_ACTIVE
+              {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
+            </p>
           </div>
         )}
 
         {resolvedSearchParams.error === 'approval' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Your provider application is still under review. You can accept leads once your profile is approved.
+            <p>Your provider application must be approved before you can unlock leads.</p>
+            <p className="mt-2 text-xs text-amber-800">
+              Error code: PROVIDER_NOT_APPROVED
+              {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
+            </p>
           </div>
         )}
 
         {resolvedSearchParams.error === 'unlock_required' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Unlock this lead before accepting it.
+            <p>Unlock this lead before accepting it.</p>
+            <p className="mt-2 text-xs text-amber-800">Error code: LEAD_UNLOCK_REQUIRED</p>
           </div>
         )}
+
+        {resolvedSearchParams.error &&
+          !['credits', 'inactive', 'approval', 'unlock_required'].includes(resolvedSearchParams.error) && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <p className="font-medium">
+                {resolvedSearchParams.action === 'decline'
+                  ? 'We could not decline this lead.'
+                  : resolvedSearchParams.action === 'accept'
+                    ? 'We could not process this acceptance.'
+                    : 'We could not unlock this lead.'}
+              </p>
+              <p className="mt-1">
+                Reason: {resolvedSearchParams.errorMessage ?? 'The lead action could not be completed.'}
+              </p>
+              {resolvedSearchParams.creditDeducted === '0' ? (
+                <p className="mt-1">No credit was deducted.</p>
+              ) : null}
+              <p className="mt-2 text-xs">
+                Error code: {resolvedSearchParams.errorCode ?? 'UNKNOWN_LEAD_ACTION_ERROR'}
+                {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
+              </p>
+            </div>
+          )}
 
         <div className="rounded-lg border bg-card divide-y">
           <div className="px-4 py-3 space-y-0.5">
@@ -500,8 +875,12 @@ export default async function ProviderLeadAccessPage({
             <p className="font-medium">{jr.category}</p>
           </div>
           <div className="px-4 py-3 space-y-0.5">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Lead reference</p>
+            <p className="font-medium">{leadRef}</p>
+          </div>
+          <div className="px-4 py-3 space-y-0.5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Job reference</p>
-            <p className="font-medium">{jr.id.slice(-8).toUpperCase()}</p>
+            <p className="font-medium">{jobRef}</p>
           </div>
           <div className="px-4 py-3 space-y-0.5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Current status</p>
@@ -748,39 +1127,58 @@ export default async function ProviderLeadAccessPage({
                 </div>
               )}
             </>
+          ) : isDeclined ? (
+            <>
+              {backToWhatsAppHref ? (
+                <Button asChild size="lg" className="w-full">
+                  <a href={backToWhatsAppHref}>Back to WhatsApp</a>
+                </Button>
+              ) : null}
+              <Button asChild size="lg" variant={backToWhatsAppHref ? 'outline' : 'default'} className="w-full">
+                <Link href="/provider/leads">Available Jobs</Link>
+              </Button>
+              <Button asChild size="lg" variant="outline" className="w-full">
+                <Link href="/provider">Main Menu</Link>
+              </Button>
+            </>
           ) : !isUnlocked ? (
             <form action={unlockLeadWithToken}>
               <input type="hidden" name="token" value={token} />
-              <Button type="submit" size="lg" className="w-full">
+              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Unlocking lead...">
                 Unlock lead for 1 Plug-A-Pro Credit
-              </Button>
+              </LeadActionSubmitButton>
             </form>
           ) : (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="false" />
-              <Button type="submit" size="lg" className="w-full">
+              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting job...">
                 Accept Job
-              </Button>
+              </LeadActionSubmitButton>
             </form>
           )}
 
-          {!isAccepted && isUnlocked && showInspectionOption && (
+          {!isAccepted && !isDeclined && isUnlocked && showInspectionOption && (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="true" />
-              <Button type="submit" size="lg" variant="outline" className="w-full">
+              <LeadActionSubmitButton size="lg" variant="outline" className="w-full" pendingLabel="Accepting...">
                 Inspection First
-              </Button>
+              </LeadActionSubmitButton>
             </form>
           )}
 
-          {!isAccepted && (
+          {!isAccepted && !isDeclined && (
             <form action={declineLeadWithToken}>
               <input type="hidden" name="token" value={token} />
-              <Button type="submit" size="lg" variant="ghost" className="w-full text-destructive hover:text-destructive">
+              <LeadActionSubmitButton
+                size="lg"
+                variant="ghost"
+                className="w-full text-destructive hover:text-destructive"
+                pendingLabel="Declining..."
+              >
                 Decline
-              </Button>
+              </LeadActionSubmitButton>
             </form>
           )}
         </div>

@@ -3,6 +3,7 @@ import {
   acceptAssignmentOffer,
   manualOverrideAssignment,
   rankCandidatesForJobRequest,
+  rejectAssignmentOffer,
   runAssignmentForJobRequest,
 } from '../../lib/matching/service'
 
@@ -579,6 +580,46 @@ describe('matching service', () => {
     expect(result.ok).toBe(true)
     // Guard must prevent updateMany firing with an empty where clause
     expect(mockDb.dispatchDecision.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('declines an active offer without reoffering when lead has no dispatch decision', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: null,
+      matchAttemptId: null,
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: null,
+    })
+
+    const result = await rejectAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      responseOutcome: 'REJECTED',
+      matchId: null,
+      assignmentHoldId: 'hold-1',
+      nextOfferedProviderId: null,
+    })
+    expect(mockDb.lead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: { status: 'DECLINED', respondedAt: expect.any(Date) },
+    })
+    expect(mockDb.assignmentHold.update).toHaveBeenCalledWith({
+      where: { id: 'hold-1' },
+      data: {
+        status: 'REJECTED',
+        respondedAt: expect.any(Date),
+        releasedAt: expect.any(Date),
+        outcomeReasonCode: 'TECHNICIAN_REJECTED_OFFER',
+      },
+    })
+    expect(mockDb.dispatchDecision.findUnique).not.toHaveBeenCalled()
   })
 
   it('accepts the lead and returns ok: true even when post-commit payment init throws', async () => {
