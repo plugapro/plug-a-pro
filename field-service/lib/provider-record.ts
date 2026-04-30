@@ -31,7 +31,6 @@ type ProviderRecordSyncClient = {
       regionKey: string | null
     }>>
   }
-  $executeRawUnsafe?: (query: string, ...values: unknown[]) => Promise<unknown>
 }
 
 type ProviderApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
@@ -60,10 +59,17 @@ type SyncProviderRecordInput = {
   active: boolean
   availableNow: boolean
   verified: boolean
-  locationNodeIds?: string[]   // ADD: SUBURB node IDs for structured service areas
+  locationNodeIds?: string[]
+  /**
+   * When true, skip syncProviderSkills and upsertStructuredServiceAreas.
+   * Use this when calling inside a db.$transaction — a caught DB error inside those
+   * helpers puts the PostgreSQL connection in ABORTED state even if swallowed in JS,
+   * causing all subsequent tx queries to fail. Run enrichment after the tx commits instead.
+   */
+  skipEnrichment?: boolean
 }
 
-async function upsertStructuredServiceAreas(
+export async function upsertStructuredServiceAreas(
   client: ProviderRecordSyncClient,
   providerId: string,
   locationNodeIds: string[],
@@ -191,17 +197,19 @@ export async function syncProviderRecord(
       data,
     })
 
-    try {
-      await syncProviderSkills(client, existing.id, input.skills)
-    } catch (err) {
-      console.error('[provider-record] syncProviderSkills failed for provider', existing.id, err)
-    }
-
-    if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+    if (!input.skipEnrichment) {
       try {
-        await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
+        await syncProviderSkills(client, existing.id, input.skills)
       } catch (err) {
-        console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
+        console.error('[provider-record] syncProviderSkills failed for provider', existing.id, err)
+      }
+
+      if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+        try {
+          await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
+        } catch (err) {
+          console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
+        }
       }
     }
 
@@ -213,60 +221,36 @@ export async function syncProviderRecord(
   }
 
   const id = crypto.randomUUID()
-  if (client.$executeRawUnsafe) {
-    const now = new Date()
-    await client.$executeRawUnsafe(
-      `
-        insert into providers
-          ("id", "phone", "name", "email", "bio", "skills", "serviceAreas", "active", "verified", "availableNow", "isTestUser", "cohortName", "status", "avatarUrl", "createdAt", "updatedAt", "userId")
-        values
-          ($1, $2, $3, null, null, $4, $5, $6, $7, $8, $9, $10, $11, null, $12, $13, $14)
-      `,
+  await client.provider.createMany({
+    data: {
       id,
       phone,
-      input.name,
-      input.skills,
-      input.serviceAreas,
-      leadEligible,
-      input.verified,
-      leadEligible && input.availableNow,
-      cohort.isTestUser,
-      cohort.cohortName,
-      input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
-      now,
-      now,
-      input.userId ?? null,
-    )
-  } else {
-    await client.provider.createMany({
-      data: {
-        id,
-        phone,
-        name: input.name,
-        userId: input.userId ?? null,
-        skills: input.skills,
-        serviceAreas: input.serviceAreas,
-        active: leadEligible,
-        isTestUser: cohort.isTestUser,
-        cohortName: cohort.cohortName,
-        availableNow: leadEligible && input.availableNow,
-        verified: input.verified,
-        status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
-      },
-    })
-  }
+      name: input.name,
+      userId: input.userId ?? null,
+      skills: input.skills,
+      serviceAreas: input.serviceAreas,
+      active: leadEligible,
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
+      availableNow: leadEligible && input.availableNow,
+      verified: input.verified,
+      status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
+    },
+  })
 
-  try {
-    await syncProviderSkills(client, id, input.skills)
-  } catch (err) {
-    console.error('[provider-record] syncProviderSkills failed for provider', id, err)
-  }
-
-  if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+  if (!input.skipEnrichment) {
     try {
-      await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
+      await syncProviderSkills(client, id, input.skills)
     } catch (err) {
-      console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
+      console.error('[provider-record] syncProviderSkills failed for provider', id, err)
+    }
+
+    if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+      try {
+        await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
+      } catch (err) {
+        console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
+      }
     }
   }
 

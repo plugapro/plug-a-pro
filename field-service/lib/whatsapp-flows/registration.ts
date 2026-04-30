@@ -5,7 +5,8 @@
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import { db } from '../db'
-import { syncProviderRecord } from '../provider-record'
+import { syncProviderRecord, upsertStructuredServiceAreas } from '../provider-record'
+import { syncProviderSkills } from '../provider-skills'
 import { checkJobsForNewProviderAvailability } from '../matching/customer-recontact'
 import { normalizePhone } from '../utils'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
@@ -1255,6 +1256,11 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         availableNow: true,
         verified: false,
         locationNodeIds: submitData.locationNodeIds,
+        // Enrichment (syncProviderSkills, upsertStructuredServiceAreas) must not run
+        // inside the transaction — a caught DB error inside those helpers puts the
+        // PostgreSQL connection in ABORTED state even when swallowed at the JS level,
+        // causing all subsequent tx queries to fail. Run enrichment post-commit below.
+        skipEnrichment: true,
       })
 
       const application = await tx.providerApplication.create({
@@ -1349,6 +1355,27 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         { metadata: { traceId, applicationId: submitResult.applicationId } },
       )
       return { nextStep: 'done' }
+    }
+
+    if (submitResult.outcome === 'created') {
+      // Post-commit enrichment: skills and structured service areas are non-critical.
+      // Run on the real db client (not tx) so a transient error never rolls back the application.
+      syncProviderSkills(db, submitResult.providerId, submitData.skills).catch((err) =>
+        console.error('[registration-flow] post-commit skills sync failed', {
+          trace_id: traceId,
+          provider_id: submitResult.providerId,
+          error: safeErrorMessage(err),
+        })
+      )
+      if (submitData.locationNodeIds.length > 0) {
+        upsertStructuredServiceAreas(db, submitResult.providerId, submitData.locationNodeIds).catch((err) =>
+          console.error('[registration-flow] post-commit service areas sync failed', {
+            trace_id: traceId,
+            provider_id: submitResult.providerId,
+            error: safeErrorMessage(err),
+          })
+        )
+      }
     }
 
     const isComingSoonRegion = ctx.data.selectedRegionStatus === 'coming_soon'
