@@ -176,10 +176,10 @@ export async function acceptLead(params: {
 export async function declineLead(params: {
   leadId: string
   providerId: string
-}): Promise<{ ok: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
+}): Promise<{ ok: true; alreadyClosed?: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
   const result = await rejectAssignmentOffer(params)
   if (!result.ok) {
-    if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') return { ok: true }
+    if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') return { ok: true, alreadyClosed: true }
     if (result.reason !== 'NOT_FOUND' && result.reason !== 'FORBIDDEN') return { ok: true }
     return { ok: false, reason: result.reason }
   }

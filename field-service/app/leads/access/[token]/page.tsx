@@ -387,6 +387,9 @@ async function declineLeadWithToken(formData: FormData) {
       creditDeducted: false,
     })
   }
+  if (result.alreadyClosed) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?declined=already&actionTraceId=${encodeURIComponent(traceId)}`)
+  }
   redirect(`/leads/access/${encodeURIComponent(token)}?declined=1&actionTraceId=${encodeURIComponent(traceId)}`)
 }
 
@@ -748,10 +751,10 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {resolvedSearchParams.declined && (
+        {resolvedSearchParams.declined === '1' && (
           <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
             <p className="font-medium">Lead declined</p>
-            <p className="mt-1">We&apos;ll offer this lead to another provider.</p>
+            <p className="mt-1">We will send it to another provider.</p>
             <p className="mt-2 text-xs font-medium uppercase tracking-wide text-emerald-800">
               Ref: {jobRef}
             </p>
@@ -761,6 +764,26 @@ export default async function ProviderLeadAccessPage({
             <div className="mt-4 grid gap-2">
               {backToWhatsAppHref ? (
                 <Button asChild size="sm" className="bg-emerald-700 hover:bg-emerald-800">
+                  <a href={backToWhatsAppHref}>Back to WhatsApp</a>
+                </Button>
+              ) : null}
+              <Button asChild size="sm" variant="outline" className="bg-background">
+                <Link href="/provider/leads">Available Jobs</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="bg-background">
+                <Link href="/provider">Main Menu</Link>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {resolvedSearchParams.declined === 'already' && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-medium">Lead already closed</p>
+            <p className="mt-1">This lead has already expired or been taken. No action was needed.</p>
+            <div className="mt-4 grid gap-2">
+              {backToWhatsAppHref ? (
+                <Button asChild size="sm" className="bg-amber-700 hover:bg-amber-800">
                   <a href={backToWhatsAppHref}>Back to WhatsApp</a>
                 </Button>
               ) : null}

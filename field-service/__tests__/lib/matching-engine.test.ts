@@ -139,12 +139,12 @@ describe('matching-engine compatibility wrappers', () => {
     await expect(dispatchLeads('jr-1')).rejects.toThrow('Service unavailable')
   })
 
-  it('declineLead treats expired or taken offers as a no-op for compatibility', async () => {
+  it('declineLead treats expired or taken offers as a no-op and signals alreadyClosed', async () => {
     mockRejectAssignmentOffer.mockResolvedValue({ ok: false, reason: 'EXPIRED' })
 
     const result = await declineLead({ leadId: 'lead-1', providerId: 'provider-1' })
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, alreadyClosed: true })
   })
 
   it('expireStaleLeads expires all active assignment holds that timed out', async () => {
