@@ -1,7 +1,7 @@
 import { normalizePhone } from './utils'
 import { syncProviderSkills } from './provider-skills'
 import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-guard'
-import { createTestCohortContext } from './internal-test-cohort'
+import { INTERNAL_TEST_COHORT_NAME, createTestCohortContext } from './internal-test-cohort'
 
 type ProviderRecordSyncClient = {
   provider: {
@@ -45,6 +45,8 @@ type ProviderRecordReconcileClient = ProviderRecordSyncClient & {
       serviceAreas: string[]
       status: ProviderApplicationStatus
       providerId: string | null
+      isTestUser: boolean
+      cohortName: string | null
     }>>
     updateMany: (...args: any[]) => Promise<unknown>
   }
@@ -59,6 +61,8 @@ type SyncProviderRecordInput = {
   active: boolean
   availableNow: boolean
   verified: boolean
+  isTestUser?: boolean
+  cohortName?: string | null
   locationNodeIds?: string[]
   /**
    * When true, skip syncProviderSkills and upsertStructuredServiceAreas.
@@ -168,7 +172,9 @@ export async function syncProviderRecord(
   input: SyncProviderRecordInput,
 ) {
   const phone = normalizePhone(input.phone)
-  const cohort = createTestCohortContext(phone)
+  const phoneCohort = createTestCohortContext(phone)
+  const isTestUser = input.isTestUser ?? phoneCohort.isTestUser
+  const cohortName = input.cohortName ?? (isTestUser ? phoneCohort.cohortName ?? INTERNAL_TEST_COHORT_NAME : null)
   const leadEligible = input.active && input.verified
   const existing = await client.provider.findUnique({
     where: { phone },
@@ -181,8 +187,8 @@ export async function syncProviderRecord(
       skills: input.skills,
       serviceAreas: input.serviceAreas,
       active: leadEligible,
-      isTestUser: cohort.isTestUser,
-      cohortName: cohort.cohortName,
+      isTestUser,
+      cohortName,
       availableNow: leadEligible && input.availableNow,
       verified: input.verified,
       status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
@@ -230,8 +236,8 @@ export async function syncProviderRecord(
       skills: input.skills,
       serviceAreas: input.serviceAreas,
       active: leadEligible,
-      isTestUser: cohort.isTestUser,
-      cohortName: cohort.cohortName,
+      isTestUser,
+      cohortName,
       availableNow: leadEligible && input.availableNow,
       verified: input.verified,
       status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
@@ -279,6 +285,16 @@ export async function reconcileProviderRecordsFromApplications(
           status: 'APPROVED',
           provider: { is: { verified: false } },
         },
+        {
+          status: 'APPROVED',
+          isTestUser: true,
+          provider: { is: { isTestUser: false } },
+        },
+        {
+          status: 'APPROVED',
+          cohortName: { not: null },
+          provider: { is: { cohortName: null } },
+        },
       ],
     },
     select: {
@@ -289,6 +305,8 @@ export async function reconcileProviderRecordsFromApplications(
       serviceAreas: true,
       status: true,
       providerId: true,
+      isTestUser: true,
+      cohortName: true,
     },
     orderBy: { submittedAt: 'asc' },
     take: 100,
@@ -305,6 +323,8 @@ export async function reconcileProviderRecordsFromApplications(
       active: true,
       availableNow: true,
       verified: application.status === 'APPROVED',
+      isTestUser: application.isTestUser,
+      cohortName: application.cohortName,
     })
 
     await client.providerApplication.updateMany({

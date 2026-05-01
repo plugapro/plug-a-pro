@@ -67,6 +67,8 @@ const providerApplicationSelect = {
   notes: true,
   reviewedAt: true,
   reviewedById: true,
+  isTestUser: true,
+  cohortName: true,
   submittedAt: true,
 } as const
 
@@ -132,6 +134,8 @@ async function approveApplication(formData: FormData) {
         active: true,
         availableNow: true,
         verified: true,
+        isTestUser: app.isTestUser,
+        cohortName: app.cohortName,
       })
 
       if (authData?.user?.id) {
@@ -209,9 +213,9 @@ async function approveApplication(formData: FormData) {
   }
 
   if (approval.data?.providerId) {
-    const { promptCustomersForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
-    await promptCustomersForNewProviderAvailability(approval.data.providerId).catch((error) => {
-      console.error('[applications] customer recontact failed:', error)
+    const { checkJobsForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
+    await checkJobsForNewProviderAvailability(approval.data.providerId).catch((error) => {
+      console.error('[applications] new-provider availability check failed:', error)
     })
   }
 

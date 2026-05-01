@@ -1267,6 +1267,8 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         active: true,
         availableNow: true,
         verified: false,
+        isTestUser: cohort.isTestUser,
+        cohortName: cohort.cohortName,
         locationNodeIds: submitData.locationNodeIds,
         // Enrichment (syncProviderSkills, upsertStructuredServiceAreas) must not run
         // inside the transaction — a caught DB error inside those helpers puts the

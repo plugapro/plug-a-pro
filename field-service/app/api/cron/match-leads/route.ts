@@ -84,7 +84,7 @@ export async function GET(request: Request) {
         skills: { isEmpty: false },
         serviceAreas: { isEmpty: false },
       },
-      select: { id: true, phone: true, name: true, skills: true, serviceAreas: true },
+      select: { id: true, phone: true, name: true, skills: true, serviceAreas: true, isTestUser: true, cohortName: true },
       take: 50,
     })
 
@@ -102,6 +102,8 @@ export async function GET(request: Request) {
             active: true,
             availableNow: true,
             verified: true,
+            isTestUser: app.isTestUser,
+            cohortName: app.cohortName,
             // Enrichment must not run inside the transaction — a caught DB error inside those
             // helpers puts the PostgreSQL connection in ABORTED state even when swallowed at the
             // JS level, causing all subsequent tx queries to fail. Run enrichment post-commit below.
