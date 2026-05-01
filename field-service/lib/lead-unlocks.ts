@@ -3,6 +3,7 @@ import { db } from './db'
 import {
   ProviderWalletError,
   debitCreditsForLeadUnlockInTransaction,
+  type WalletMutationResult,
 } from './provider-wallet'
 
 export const LEAD_UNLOCK_COST_CREDITS = 1
@@ -220,7 +221,7 @@ export async function unlockLeadForProvider(
         },
       })
 
-      let debitResult
+      let debitResult: WalletMutationResult
       try {
         debitResult = await debitCreditsForLeadUnlockInTransaction(
           tx,
@@ -416,7 +417,7 @@ export async function unlockLeadForProviderInTransaction(
     },
   })
 
-  let debitResult
+  let debitResult: WalletMutationResult
   try {
     debitResult = await debitCreditsForLeadUnlockInTransaction(
       tx,

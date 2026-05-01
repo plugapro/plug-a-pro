@@ -1,6 +1,6 @@
 import { Prisma, type PaymentIntent } from '@prisma/client'
 import { db } from './db'
-import { creditPaidCreditsInTransaction } from './provider-wallet'
+import { creditPaidCreditsInTransaction, type WalletMutationResult } from './provider-wallet'
 import { awardFirstTopUpPromoCreditsInTransaction } from './provider-promo-awards'
 
 const CREDITABLE_STATUSES = [
@@ -238,7 +238,7 @@ export async function creditPaymentIntentInTransaction(
     )
   }
 
-  const walletResult = await creditPaidCreditsInTransaction(
+  const walletResult: WalletMutationResult = await creditPaidCreditsInTransaction(
     tx,
     intent.providerId,
     intent.creditsToIssue,
@@ -258,6 +258,13 @@ export async function creditPaymentIntentInTransaction(
       cohortName: provider?.cohortName ?? null,
     },
   )
+
+  // Link the ledger entry back to the intent for audit trail, matching the
+  // gateway ITN path (provider-credit-gateway-itn.ts).
+  await tx.paymentIntent.update({
+    where: { id: intent.id },
+    data: { creditedLedgerEntryId: walletResult.ledgerEntries[0].id },
+  })
 
   const promoAwardResult = await awardFirstTopUpPromoCreditsInTransaction(
     tx,

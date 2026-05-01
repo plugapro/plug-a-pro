@@ -181,7 +181,14 @@ export async function buildProviderCreditReconciliationReport(
     const key = `${entry.referenceType}:${entry.referenceId}`
     ledgerByReference.set(key, [...(ledgerByReference.get(key) ?? []), entry])
 
-    if (entry.isTestTransaction !== provider.isTestUser) {
+    // A non-test provider may legitimately unlock a test lead (e.g. during
+    // QA runs). Those entries carry isTestTransaction=true and referenceType
+    // 'test_lead_unlock'. Flagging them as a mismatch would be a false positive.
+    const isExpectedCrossTestEntry =
+      entry.isTestTransaction &&
+      entry.referenceType === 'test_lead_unlock' &&
+      !provider.isTestUser
+    if (!isExpectedCrossTestEntry && entry.isTestTransaction !== provider.isTestUser) {
       addIssue(issues, {
         code: 'TEST_LEDGER_FLAG_MISMATCH',
         severity: 'warning',
