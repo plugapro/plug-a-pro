@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'Provider Handover', noIndex: true })
 
@@ -18,7 +19,11 @@ function firstName(name: string | null | undefined) {
 }
 
 function formatArea(address: { suburb: string | null; city: string | null; province: string | null } | null) {
-  return [address?.suburb, address?.city, address?.province].filter(Boolean).join(', ') || 'Location on ticket'
+  return [
+    normaliseLocationDisplayName(address?.suburb),
+    normaliseLocationDisplayName(address?.city),
+    normaliseLocationDisplayName(address?.province),
+  ].filter(Boolean).join(', ') || 'Location on ticket'
 }
 
 function whatsappHref(phone: string, customerName: string, category: string) {

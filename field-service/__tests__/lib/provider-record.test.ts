@@ -427,6 +427,60 @@ describe('syncProviderRecord — pilot service-area activation', () => {
     )
   })
 
+  it('stores provider service areas and structured labels in display case', async () => {
+    const client = {
+      provider: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn(),
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      technicianSkill: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+      technicianServiceArea: {
+        upsert: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      locationNode: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'sub_ruimsig',
+            nodeType: 'SUBURB',
+            slug: 'gauteng__johannesburg__jhb_west__ruimsig',
+            label: 'ruimsig',
+            provinceKey: 'gauteng',
+            cityKey: 'johannesburg',
+            regionKey: 'jhb_west',
+          },
+        ]),
+      },
+    }
+
+    await syncProviderRecord(client as never, {
+      phone: '+27821234567',
+      name: 'Case Provider',
+      skills: ['Handyman'],
+      serviceAreas: ['ruimsig', 'greenstone hill'],
+      active: true,
+      availableNow: true,
+      verified: false,
+      locationNodeIds: ['sub_ruimsig'],
+    })
+
+    expect(client.provider.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ serviceAreas: ['Ruimsig', 'Greenstone Hill'] }),
+      }),
+    )
+    expect(client.technicianServiceArea.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ label: 'Ruimsig' }),
+        update: expect.objectContaining({ label: 'Ruimsig' }),
+      }),
+    )
+  })
+
   it('marks non-pilot structured coverage coming soon and inactive for matching', async () => {
     const client = {
       provider: {

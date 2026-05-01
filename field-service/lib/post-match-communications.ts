@@ -8,6 +8,7 @@ import {
   verifyProviderLeadAccessToken,
 } from './provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
+import { normaliseLocationDisplayName } from './location-format'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -21,7 +22,12 @@ function providerDisplayName(providerName: string | null | undefined) {
 }
 
 function addressLabel(address: { street?: string | null; suburb?: string | null; city?: string | null; province?: string | null } | null | undefined) {
-  return [address?.street, address?.suburb, address?.city, address?.province].filter(Boolean).join(', ') || 'View the signed job link for the address'
+  return [
+    address?.street,
+    normaliseLocationDisplayName(address?.suburb),
+    normaliseLocationDisplayName(address?.city),
+    normaliseLocationDisplayName(address?.province),
+  ].filter(Boolean).join(', ') || 'View the signed job link for the address'
 }
 
 function preferredAvailabilityLabel(jobRequest: {

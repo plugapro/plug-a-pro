@@ -131,6 +131,38 @@ describe('createJobRequest', () => {
     expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-1', ticketUrl: null })
   })
 
+  it('stores customer address locality fields in display case while preserving matching lookup', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({
+      ...BASE_PARAMS,
+      suburb: 'ruimsig',
+      region: 'jhb west',
+      city: 'johannesburg',
+      province: 'gauteng',
+    })
+
+    expect(mockGeocodeAddress).toHaveBeenCalledWith(expect.objectContaining({
+      suburb: 'Ruimsig',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+    }))
+    expect(tx.address.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          suburb: 'Ruimsig',
+          region: 'JHB West',
+          city: 'Johannesburg',
+          province: 'Gauteng',
+        }),
+      }),
+    )
+  })
+
   it('links pre-uploaded WhatsApp customer photos inside the intake transaction', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })

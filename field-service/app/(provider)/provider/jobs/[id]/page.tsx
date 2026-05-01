@@ -17,6 +17,7 @@ import { EvidenceUploader } from '@/components/technician/EvidenceUploader'
 import { ExtraWorkForm } from '@/components/technician/ExtraWorkForm'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'Job Detail', noIndex: true })
 
@@ -144,13 +145,13 @@ export default async function JobDetailPage({
             <Row label="Address">
               <a
                 href={`https://maps.google.com/?q=${encodeURIComponent(
-                  `${address.street}, ${address.suburb}, ${address.city}`
+                  `${address.street}, ${normaliseLocationDisplayName(address.suburb)}, ${normaliseLocationDisplayName(address.city)}`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-500 underline"
               >
-                {address.street}, {address.suburb}, {address.city}
+                {address.street}, {normaliseLocationDisplayName(address.suburb)}, {normaliseLocationDisplayName(address.city)}
               </a>
             </Row>
           )}

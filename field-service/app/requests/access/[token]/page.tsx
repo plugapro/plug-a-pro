@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'Ticket Details', noIndex: true })
 
@@ -95,7 +96,7 @@ export default async function TicketAccessPage({
           </div>
           {jobRequest.address && (
             <Row label="Address">
-              {jobRequest.address.street}, {jobRequest.address.suburb}, {jobRequest.address.city}
+              {jobRequest.address.street}, {normaliseLocationDisplayName(jobRequest.address.suburb)}, {normaliseLocationDisplayName(jobRequest.address.city)}
             </Row>
           )}
           <Row label="Created">

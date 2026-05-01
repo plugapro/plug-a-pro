@@ -23,6 +23,7 @@ import {
   deleteLocationNodeAction,
   updateLabelFromFormAction,
 } from './actions'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'Location Taxonomy', noIndex: true })
 
@@ -69,17 +70,22 @@ export default async function LocationsPage() {
     },
   })
 
+  const displayNodes = nodes.map((node) => ({
+    ...node,
+    label: normaliseLocationDisplayName(node.label),
+  }))
+
   const byType = {
-    PROVINCE: nodes.filter((n) => n.nodeType === 'PROVINCE'),
-    CITY: nodes.filter((n) => n.nodeType === 'CITY'),
-    REGION: nodes.filter((n) => n.nodeType === 'REGION'),
-    SUBURB: nodes.filter((n) => n.nodeType === 'SUBURB'),
+    PROVINCE: displayNodes.filter((n) => n.nodeType === 'PROVINCE'),
+    CITY: displayNodes.filter((n) => n.nodeType === 'CITY'),
+    REGION: displayNodes.filter((n) => n.nodeType === 'REGION'),
+    SUBURB: displayNodes.filter((n) => n.nodeType === 'SUBURB'),
   }
 
   const totalCities = byType.CITY.length
   const totalRegions = byType.REGION.length
   const totalSuburbs = byType.SUBURB.length
-  const totalAddresses = nodes.reduce((sum, n) => sum + n._count.addresses, 0)
+  const totalAddresses = displayNodes.reduce((sum, n) => sum + n._count.addresses, 0)
 
   return (
     <div>
@@ -133,7 +139,7 @@ export default async function LocationsPage() {
             <select id="create-parentId" name="parentId"
               className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
               <option value="">None (Province)</option>
-              {nodes.map((n) => (
+              {displayNodes.map((n) => (
                 <option key={n.id} value={n.id}>
                   [{n.nodeType}] {n.label}
                 </option>

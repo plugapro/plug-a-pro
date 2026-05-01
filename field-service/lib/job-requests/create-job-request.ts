@@ -15,6 +15,7 @@ import { openCase } from '../cases'
 import { MATCHING_CONFIG } from '../matching/config'
 import { createTestCohortContext, testRequestFields } from '../internal-test-cohort'
 import { phoneLookupVariants } from '../whatsapp-identity'
+import { normaliseLocationDisplayName } from '../location-format'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -111,6 +112,12 @@ export async function createJobRequest(
   params = { ...params, phone }
   const cohort = createTestCohortContext(phone)
   const photoAttachmentIds = uniqueAttachmentIds(params.photoAttachmentIds)
+  const locality = {
+    suburb: normaliseLocationDisplayName(params.suburb),
+    region: normaliseLocationDisplayName(params.region),
+    city: normaliseLocationDisplayName(params.city),
+    province: normaliseLocationDisplayName(params.province),
+  }
 
   const providerForPhone = await (db as any).provider?.findFirst?.({
     where: { phone: { in: phoneLookupVariants(phone) } },
@@ -130,12 +137,12 @@ export async function createJobRequest(
   // Geocode before the transaction — non-blocking, failure is safe to ignore
   const geo = await geocodeAddress({
     street:   params.street,
-    suburb:   params.suburb,
-    city:     params.city,
-    province: params.province,
+    suburb:   locality.suburb,
+    city:     locality.city,
+    province: locality.province,
   })
   const resolvedLocationNodeId =
-    params.locationNodeId ?? (await resolveSuburbNodeId(params.suburb, params.city))
+    params.locationNodeId ?? (await resolveSuburbNodeId(locality.suburb, locality.city))
 
   // Atomic: customer upsert + address + jobRequest in one transaction
   const result = await db.$transaction(async (tx) => {
@@ -238,10 +245,10 @@ export async function createJobRequest(
             addressLine2: params.addressLine2?.trim() || null,
             complexName: params.complexName?.trim() || null,
             unitNumber: params.unitNumber?.trim() || null,
-            suburb:     params.suburb,
-            region:     params.region?.trim() || null,
-            city:       params.city,
-            province:   params.province,
+            suburb:     locality.suburb,
+            region:     locality.region || null,
+            city:       locality.city,
+            province:   locality.province,
             postalCode: params.postalCode ?? null,
             lat:        geo?.lat ?? null,
             lng:        geo?.lng ?? null,
@@ -259,10 +266,10 @@ export async function createJobRequest(
           addressLine2: params.addressLine2?.trim() || null,
           complexName: params.complexName?.trim() || null,
           unitNumber: params.unitNumber?.trim() || null,
-          suburb:     params.suburb,
-          region:     params.region?.trim() || null,
-          city:       params.city,
-          province:   params.province,
+          suburb:     locality.suburb,
+          region:     locality.region || null,
+          city:       locality.city,
+          province:   locality.province,
           postalCode: params.postalCode ?? null,
           lat:        geo?.lat ?? null,
           lng:        geo?.lng ?? null,

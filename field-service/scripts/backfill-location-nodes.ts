@@ -16,6 +16,7 @@
 // Verify your data: SELECT DISTINCT "cityKey" FROM location_nodes WHERE "nodeType" = 'SUBURB';
 
 import { PrismaClient } from '@prisma/client'
+import { normaliseLocationDisplayName } from '../lib/location-format'
 
 // ─── Shared lookup helpers ────────────────────────────────────────────────────
 
@@ -143,7 +144,7 @@ async function backfillProviderServiceAreas(prisma: PrismaClient, nodeMap: Map<s
           providerId: provider.id,
           locationNodeId: nodeId,
           areaType: areaType as never,
-          label: node.label,
+          label: normaliseLocationDisplayName(node.label),
           provinceKey: node.provinceKey,
           cityKey: node.cityKey,
           regionKey: node.regionKey,
@@ -152,7 +153,7 @@ async function backfillProviderServiceAreas(prisma: PrismaClient, nodeMap: Map<s
         },
         update: {
           areaType: areaType as never,
-          label: node.label,
+          label: normaliseLocationDisplayName(node.label),
           provinceKey: node.provinceKey,
           cityKey: node.cityKey,
           regionKey: node.regionKey,

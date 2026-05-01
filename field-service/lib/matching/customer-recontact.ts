@@ -1,5 +1,6 @@
 import { format } from 'date-fns'
 import { db } from '../db'
+import { normaliseLocationDisplayName } from '../location-format'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { normalizePhone } from '../utils'
 import { sendSlotAvailable } from '../whatsapp'
@@ -66,7 +67,10 @@ function firstName(name: string | null | undefined) {
 
 function formatArea(jobRequest: Pick<MatchableJobRequestRecord, 'address'>) {
   if (!jobRequest.address) return 'your area'
-  return `${jobRequest.address.suburb}, ${jobRequest.address.city}`
+  return [
+    normaliseLocationDisplayName(jobRequest.address.suburb),
+    normaliseLocationDisplayName(jobRequest.address.city),
+  ].filter(Boolean).join(', ') || 'your area'
 }
 
 export function getRequestedMatchDeadline(jobRequest: RequestTiming) {

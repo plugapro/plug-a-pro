@@ -3,6 +3,7 @@
 // cities are captured on the waitlist and notified when the platform expands.
 
 import { db } from './db'
+import { normaliseLocationDisplayName } from './location-format'
 
 // ─── Active area gates ─────────────────────────────────────────────────────────
 // Expand these sets as the platform rolls out to new areas.
@@ -115,15 +116,18 @@ export async function addToServiceAreaWaitlist(params: {
   province?: string | null
   source: 'whatsapp' | 'pwa'
 }): Promise<void> {
+  const suburb = normaliseLocationDisplayName(params.suburb) || null
+  const city = normaliseLocationDisplayName(params.city)
+  const province = normaliseLocationDisplayName(params.province) || null
   await db.serviceAreaWaitlist.upsert({
-    where: { phone_city: { phone: params.phone, city: params.city } },
+    where: { phone_city: { phone: params.phone, city } },
     create: {
       phone: params.phone,
       name: params.name ?? null,
       category: params.category ?? null,
-      suburb: params.suburb ?? null,
-      city: params.city,
-      province: params.province ?? null,
+      suburb,
+      city,
+      province,
       source: params.source,
     },
     update: {
