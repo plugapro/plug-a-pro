@@ -10,6 +10,7 @@ import { JobCard } from '@/components/technician/JobCard'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { getProviderWalletBalance } from '@/lib/provider-wallet'
+import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 
 export const metadata = buildMetadata({ title: 'My Jobs', noIndex: true })
 
@@ -74,6 +75,7 @@ export default async function ProviderHomePage() {
     }),
     getProviderWalletBalance(provider.id),
   ])
+  const termsUrl = getProviderTermsUrl()
 
   return (
     <div className="px-4 py-6 space-y-6">
@@ -92,7 +94,7 @@ export default async function ProviderHomePage() {
               {walletBalance.totalCreditBalance}
             </p>
             <p className="text-sm text-muted-foreground">
-              Available to accept eligible leads
+              Each accepted lead uses 1 credit
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
@@ -101,7 +103,7 @@ export default async function ProviderHomePage() {
         </div>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="rounded-md border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Promo</p>
+            <p className="text-xs text-muted-foreground">Starter</p>
             <p className="text-lg font-semibold">{walletBalance.promoCreditBalance}</p>
           </div>
           <div className="rounded-md border bg-muted/30 p-3">
@@ -118,6 +120,10 @@ export default async function ProviderHomePage() {
 
         <Button asChild variant="outline" className="w-full">
           <Link href="/provider/credits">Top Up / View Credits</Link>
+        </Button>
+
+        <Button asChild variant="ghost" className="w-full">
+          <Link href={termsUrl}>Provider Terms & Credit Rules</Link>
         </Button>
       </div>
 

@@ -23,6 +23,7 @@ import {
   disputeLeadUnlockForProvider,
 } from '@/lib/lead-unlock-disputes'
 import type { LeadUnlockDisputeReason } from '@prisma/client'
+import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 
 export const metadata = buildMetadata({ title: 'Lead Details', noIndex: true })
 
@@ -172,6 +173,7 @@ export default async function LeadDetailPage({
     : null
   const isUnlocked = lead.isUnlocked
   const unlockDispute = lead.unlock?.dispute ?? null
+  const termsUrl = getProviderTermsUrl()
   const canDisputeUnlock = Boolean(
     lead.unlock &&
     lead.unlock.status === 'UNLOCKED' &&
@@ -269,6 +271,7 @@ export default async function LeadDetailPage({
       {resolvedSearchParams.acceptError === 'credits' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           You need {lead.unlockCostCredits} Plug-A-Pro Credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
+          Your current balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
           <Link href="/provider/credits" className="ml-1 font-medium underline underline-offset-4">
             Top up credits
           </Link>
@@ -324,7 +327,7 @@ export default async function LeadDetailPage({
           {hasEnoughCredits ? (
             <>
               <p className="mt-1">
-                Accepting this lead will use {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
+                Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
                 Your current balance is {totalCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
               </p>
               <p className="mt-1">Full customer details will be released only after acceptance succeeds.</p>
@@ -401,7 +404,7 @@ export default async function LeadDetailPage({
             <p className="text-lg font-semibold">{lead.wallet.paidCredits}</p>
           </div>
           <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Promo</p>
+            <p className="text-xs text-muted-foreground">Starter</p>
             <p className="text-lg font-semibold">{lead.wallet.promoCredits}</p>
           </div>
         </div>
@@ -409,7 +412,8 @@ export default async function LeadDetailPage({
           <div className="px-4 py-3 space-y-1 text-sm">
             <p className="font-medium">Accept cost: {lead.unlockCostCredits} Plug-A-Pro Credit</p>
             <p className="text-muted-foreground">
-              Credits are used when you accept verified matched leads. Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
+              Each accepted lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}. Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
+              Credit use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider terms and credit rules</Link>.
             </p>
           </div>
         )}

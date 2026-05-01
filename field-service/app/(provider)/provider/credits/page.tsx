@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildMetadata } from '@/lib/metadata'
+import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import {
   createProviderTopUpIntentFormAction,
   getProviderTopUpIntentInstructions,
@@ -114,7 +115,7 @@ function ActivityRow({ item }: { item: ProviderWalletLedgerItem }) {
           {signedCredits(item.signedAmountCredits)}
         </p>
         <Badge variant="outline" className="mt-1">
-          {item.creditType === 'PAID' ? 'Purchased' : 'Promo'}
+          {item.creditType === 'PAID' ? 'Purchased' : 'Starter'}
         </Badge>
       </div>
     </li>
@@ -136,6 +137,7 @@ export default async function ProviderCreditsPage({
   ])
 
   const topupParam = resolvedSearchParams.topup
+  const termsUrl = getProviderTermsUrl()
 
   return (
     <div className="mx-auto max-w-lg space-y-5 px-4 py-6 pb-24">
@@ -143,7 +145,7 @@ export default async function ProviderCreditsPage({
         <div>
           <h1 className="text-xl font-semibold">Plug-A-Pro Credits</h1>
           <p className="text-sm text-muted-foreground">
-            Credits are used to unlock verified matched leads.
+            Each accepted lead uses 1 credit. Full customer details unlock after acceptance.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -166,7 +168,7 @@ export default async function ProviderCreditsPage({
               <p className="text-lg font-semibold">{summary.paidCredits}</p>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Promo</p>
+              <p className="text-xs text-muted-foreground">Starter</p>
               <p className="text-lg font-semibold">{summary.promoCredits}</p>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
@@ -258,6 +260,14 @@ export default async function ProviderCreditsPage({
           )}
         </CardContent>
       </Card>
+
+      <p className="text-center text-xs text-muted-foreground">
+        Credit use is governed by the{' '}
+        <Link href={termsUrl} className="font-medium underline underline-offset-4">
+          provider terms and credit rules
+        </Link>
+        .
+      </p>
     </div>
   )
 }

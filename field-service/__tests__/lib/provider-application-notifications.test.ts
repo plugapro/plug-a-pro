@@ -77,17 +77,20 @@ describe('provider application approval notifications', () => {
     })
   })
 
-  it('builds approval copy that explains promo starter credits and balance', () => {
+  it('builds approval copy that explains starter credits, balance, and credit rules', () => {
     const message = buildProviderApplicationApprovedMessage('Jacob Hesser', {
       starterPromoCreditsAwarded: 3,
       paidCredits: 2,
       promoCredits: 3,
     })
 
-    expect(message).toContain('Starter credits awarded: *3 promo credits*')
+    expect(message).toContain('Starter credits awarded: *3 credits*')
     expect(message).toContain('Available balance: *5 credits*')
-    expect(message).toContain('Promo: *3* · Purchased: *2*')
-    expect(message).toContain('Credits are used when you accept eligible job leads')
+    expect(message).toContain('Starter/onboarding: *3* · Purchased: *2*')
+    expect(message).toContain('Each lead you accept uses 1 credit')
+    expect(message).toContain('Provider terms and credit rules')
+    expect(message).toContain('Worker Portal')
+    expect(message.toLowerCase()).not.toContain('promo pilot')
   })
 
   it('builds approval copy with top-up guidance when no starter credits were awarded', () => {
@@ -97,7 +100,7 @@ describe('provider application approval notifications', () => {
       promoCredits: 0,
     })
 
-    expect(message).toContain("Credit balance: *0 credits*. You'll need credits")
+    expect(message).toContain("Available balance: *0 credits*. You'll need credits")
     expect(message).not.toContain('Starter credits awarded')
   })
 

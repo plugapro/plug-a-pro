@@ -136,6 +136,16 @@ describe('proxy admin access', () => {
     )
   })
 
+  it('allows provider credit terms without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/terms/credits'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
   it('allows signed provider contact-customer API without an OTP session', async () => {
     const { proxy } = await import('../proxy')
 

@@ -162,7 +162,12 @@ describe('registration flow — duplicate prevention', () => {
 
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('Join Plug A Pro'),
+        expect.stringContaining('Each lead you accept uses 1 credit'),
+        expect.any(Array),
+      )
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining('provider terms and credit rules'),
         expect.any(Array),
       )
       expect(result.nextStep).toBe('reg_collect_name')
@@ -179,7 +184,7 @@ describe('registration flow — duplicate prevention', () => {
       // REJECTED is treated as no active application — shows the welcome prompt
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('Join Plug A Pro'),
+        expect.stringContaining('starter credits'),
         expect.any(Array),
       )
       expect(result.nextStep).toBe('reg_collect_name')
@@ -300,7 +305,7 @@ describe('registration flow — duplicate prevention', () => {
       )
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('Application submitted'),
+        expect.stringContaining('Approval is not automatic'),
         expect.any(Array),
         undefined,
         expect.any(Object),

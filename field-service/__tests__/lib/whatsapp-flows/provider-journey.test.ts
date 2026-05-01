@@ -105,7 +105,7 @@ describe('handleProviderJourneyFlow', () => {
       await handleProviderJourneyFlow(mockCtx('pj_menu'))
       expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Promo: *3* · Purchased: *2*'),
+        expect.stringContaining('Starter/onboarding: 3 · Purchased: 2'),
         expect.any(Array),
         expect.any(Object),
       )

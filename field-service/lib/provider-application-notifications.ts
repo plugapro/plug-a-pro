@@ -1,4 +1,9 @@
 import { db } from './db'
+import {
+  creditCountLabel,
+  getProviderTermsUrl,
+  getWorkerPortalUrl,
+} from './provider-credit-copy'
 
 const APPROVAL_NOTIFICATION_LOCK_STALE_MINUTES = 10
 
@@ -22,13 +27,13 @@ export function buildProviderApplicationApprovedMessage(
 ): string {
   const totalCredits = credits.paidCredits + credits.promoCredits
   const creditLine = credits.starterPromoCreditsAwarded > 0
-    ? `🎁 Starter credits awarded: *${credits.starterPromoCreditsAwarded} promo credit${credits.starterPromoCreditsAwarded === 1 ? '' : 's'}*\n💳 Available balance: *${totalCredits} credit${totalCredits === 1 ? '' : 's'}*`
-    : `💳 Credit balance: *${totalCredits} credit${totalCredits === 1 ? '' : 's'}*. You'll need credits to accept eligible job leads.`
+    ? `🎁 Starter credits awarded: *${creditCountLabel(credits.starterPromoCreditsAwarded)}*\n💳 Available balance: *${creditCountLabel(totalCredits)}*`
+    : `💳 Available balance: *${creditCountLabel(totalCredits)}*. You'll need credits to accept matched job leads.`
 
   const breakdownLine = totalCredits > 0
-    ? `\nPromo: *${credits.promoCredits}* · Purchased: *${credits.paidCredits}*`
+    ? `\nStarter/onboarding: *${credits.promoCredits}* · Purchased: *${credits.paidCredits}*`
     : ''
-  return `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nCredits are used when you accept eligible job leads. You can view your balance and credit history in the Worker Portal.\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`
+  return `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nEach lead you accept uses 1 credit. Full customer details unlock after acceptance.\n\nYou can view your credits, working hours, and jobs in the Worker Portal:\n${getWorkerPortalUrl('/provider')}\n\nProvider terms and credit rules:\n${getProviderTermsUrl()}\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`
 }
 
 async function getApprovalCreditSummary(applicationId: string): Promise<ProviderApprovalCreditSummary> {

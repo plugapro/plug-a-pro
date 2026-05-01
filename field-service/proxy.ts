@@ -21,6 +21,7 @@ const PUBLIC_PATHS = [
   '/verify',               // customer OTP verification + identity link
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
+  '/provider/terms',       // provider credit rules are linked before login/application
   '/technician-sign-in',   // legacy — kept for backward compat
   '/technician-verify',    // legacy — kept for backward compat
   '/admin-sign-in',        // admin / owner email+password

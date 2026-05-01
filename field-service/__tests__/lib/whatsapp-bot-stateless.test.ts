@@ -190,7 +190,7 @@ describe('processInboundMessage stateless notification replies', () => {
     })
     expect(mockSendButtons).toHaveBeenCalledWith(
       PHONE,
-      '🔒 This lead requires 1 credit to unlock.\n\nYour current balance: 0 credits.\n\nPlease top up in the Worker Portal to accept this lead.', // LEAD_UNLOCK_COST_CREDITS = 1
+      expect.stringContaining('You need 1 credit to accept this lead'),
       expect.arrayContaining([
         expect.objectContaining({ id: 'provider_top_up_credits', title: 'Top Up Credits' }),
         expect.objectContaining({ id: 'match_inspect_lead-1', title: 'View Lead' }),

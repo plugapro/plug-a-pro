@@ -35,6 +35,12 @@ import { createTestCohortContext } from './internal-test-cohort'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import { phoneLookupVariants, resolveWhatsAppIdentity } from './whatsapp-identity'
 import { normaliseLocationDisplayName } from './location-format'
+import {
+  buildInsufficientCreditsMessage,
+  creditCountLabel,
+  getWorkerPortalUrl,
+  providerCreditBreakdownLabel,
+} from './provider-credit-copy'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
@@ -628,12 +634,11 @@ async function processInboundMessageUnlocked(
     }
 
     if (reply.id === 'provider_top_up_credits') {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
       await sendCtaUrl(
         phone,
-        'Top up your Plug-A-Pro Credits to unlock and accept paid leads.',
+        'Top up your Plug-A-Pro Credits before accepting more matched leads.',
         'Top Up Credits',
-        `${appUrl}/provider/credits`,
+        getWorkerPortalUrl('/provider/credits'),
       )
       return
     }
@@ -1275,9 +1280,8 @@ export async function notifyProviderNewJob(params: {
     throw new Error(`Could not create provider lead access URL for lead ${params.leadId}`)
   }
 
-  const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
   const area = normaliseLocationDisplayName(params.area)
-  let creditLine = `Accepting this lead will use ${creditCost}.`
+  let creditLine = `Accepting this lead uses ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)}. Full customer details unlock after acceptance.`
   try {
     const lead = await db.lead.findUnique({
       where: { id: params.leadId },
@@ -1286,7 +1290,7 @@ export async function notifyProviderNewJob(params: {
     if (lead?.providerId) {
       const { getProviderWalletBalanceReadOnly } = await import('./provider-wallet')
       const balance = await getProviderWalletBalanceReadOnly(lead.providerId)
-      creditLine = `Accepting this lead will use ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
+      creditLine = `Accepting this lead uses ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)}. Full customer details unlock after acceptance.\nAvailable balance: ${creditCountLabel(balance.totalCreditBalance)} (${providerCreditBreakdownLabel(balance)}).`
     }
   } catch (error) {
     console.warn('[whatsapp-bot] unable to include provider credit balance in lead notification', {
@@ -1300,7 +1304,7 @@ export async function notifyProviderNewJob(params: {
     `🔔 *New Lead Available*\n\n*${params.category}* · ${area}\nRef: ${ref} · Expires in ${expiryLabel}\n\n${creditLine}\n\nTap below to view the lead preview and respond.`,
     'View Lead',
     leadUrl,
-    { footer: 'View the lead preview. Accepting uses 1 credit.' },
+    { footer: 'Preview first. Acceptance uses 1 credit.' },
     {
       templateName: 'interactive:new_lead_available',
       metadata: {
@@ -2085,10 +2089,12 @@ async function sendLeadInsufficientCreditsMessage(
   leadId: string,
   currentCreditBalance: number,
 ): Promise<void> {
-  const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
   await sendButtons(
     phone,
-    `🔒 This lead requires ${creditCost} to unlock.\n\nYour current balance: ${currentCreditBalance} credit${currentCreditBalance === 1 ? '' : 's'}.\n\nPlease top up in the Worker Portal to accept this lead.`,
+    buildInsufficientCreditsMessage({
+      availableCredits: currentCreditBalance,
+      creditsRequired: LEAD_UNLOCK_COST_CREDITS,
+    }),
     [
       { id: 'provider_top_up_credits', title: 'Top Up Credits' },
       { id: `match_inspect_${leadId}`, title: 'View Lead' },

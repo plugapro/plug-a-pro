@@ -96,7 +96,7 @@ describe('post-match communications', () => {
     )
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
-      expect.stringContaining("You've unlocked this lead using *1 credit*"),
+      expect.stringContaining('1 credit used.'),
       'View Job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),
@@ -107,7 +107,7 @@ describe('post-match communications', () => {
     )
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
-      expect.stringContaining('Remaining balance: *3 credits* (Promo: *1* · Purchased: *2*)'),
+      expect.stringContaining('Remaining balance: 3 credits (Starter/onboarding: 1 · Purchased: 2).'),
       'View Job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),

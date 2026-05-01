@@ -10,6 +10,7 @@ import { recordAuditLog } from '../audit'
 import { AUDIT_ENTITY } from '../audit-entities'
 import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
+import { creditCountLabel, providerCreditBreakdownLabel } from '../provider-credit-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
 import type { Prisma } from '@prisma/client'
@@ -82,7 +83,7 @@ function firstName(name?: string | null) {
 
 async function providerCreditBalanceLine(providerId: string) {
   const balance = await getProviderWalletBalanceReadOnly(providerId)
-  return `Credit balance: *${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'}* (Promo: *${balance.promoCreditBalance}* · Purchased: *${balance.paidCreditBalance}*)`
+  return `Credit balance: *${creditCountLabel(balance.totalCreditBalance)}* (${providerCreditBreakdownLabel(balance)})`
 }
 
 function providerPhoneVariants(phone: string) {
@@ -198,7 +199,7 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
 
   await sendList(
     ctx.phone,
-    `Welcome back, ${provider.name}.\n\n${statusLine}\n${creditLine}\n\nCredits are used when you accept eligible leads.\n\nWhat would you like to do?`,
+    `Welcome back, ${provider.name}.\n\n${statusLine}\n${creditLine}\n\nEach accepted lead uses 1 credit. Full customer details unlock after acceptance.\n\nWhat would you like to do?`,
     [{
       title: 'Provider',
       rows: [

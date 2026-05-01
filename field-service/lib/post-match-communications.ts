@@ -9,6 +9,7 @@ import {
 } from './provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { normaliseLocationDisplayName } from './location-format'
+import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -172,9 +173,14 @@ export async function notifyPostMatchAcceptance(params: {
     leadId: lead.id,
   }))) {
     const body =
-      `✅ *Job accepted! — ${firstName(provider.name)}*\n\n` +
-      `You've unlocked this lead using *${creditsCharged} credit${creditsCharged === 1 ? '' : 's'}*.\n` +
-      `Remaining balance: *${walletBalance.totalCreditBalance} credit${walletBalance.totalCreditBalance === 1 ? '' : 's'}* (Promo: *${walletBalance.promoCreditBalance}* · Purchased: *${walletBalance.paidCreditBalance}*).\n\n` +
+      `✅ *Lead accepted — ${firstName(provider.name)}*\n\n` +
+      `${buildLeadAcceptedCreditLine({
+        creditsUsed: creditsCharged,
+        remainingCredits: walletBalance.totalCreditBalance,
+        starterCredits: walletBalance.promoCreditBalance,
+        paidCredits: walletBalance.paidCreditBalance,
+      })}\n\n` +
+      `Full customer and job details are now available.\n\n` +
       `Client: *${customer.name}*\n` +
       `Service: *${category}*\n` +
       `Address: *${address}*\n` +

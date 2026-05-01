@@ -14,6 +14,12 @@ import { findLatestActiveProviderApplicationByPhone } from '../provider-applicat
 import { createTestCohortContext } from '../internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '../location-format'
 import {
+  PROVIDER_APPLY_BUTTON_TITLE,
+  PROVIDER_NOT_NOW_BUTTON_TITLE,
+  buildProviderApplicationSubmittedMessage,
+  buildProviderOnboardingIntroMessage,
+} from '../provider-credit-copy'
+import {
   SERVICE_CATEGORY_OPTIONS,
   resolveServiceCategoryTag,
 } from '../service-categories'
@@ -309,10 +315,10 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `👷 *Join Plug A Pro as a Service Provider*\n\nEarn money doing odd jobs, repairs, and once-off work in your area.\n\n*Here's how it works:*\n• Share your name, skills, and work area\n• We send suitable job leads\n• You send a simple quote or arrangement\n• You and the client arrange the work directly\n\nReady to join?`,
+    buildProviderOnboardingIntroMessage(),
     [
-      { id: 'reg_start', title: '✅ Yes, Apply Now' },
-      { id: 'reg_cancel', title: '❌ Not Now' },
+      { id: 'reg_start', title: PROVIDER_APPLY_BUTTON_TITLE },
+      { id: 'reg_cancel', title: PROVIDER_NOT_NOW_BUTTON_TITLE },
     ]
   )
   return { nextStep: 'reg_collect_name' }
@@ -1361,7 +1367,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     if (submitResult.outcome === 'existing_pending') {
       await sendButtons(
         ctx.phone,
-        `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${submitResult.ref}*\n\nWe'll update you here once it's approved.`,
+        `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${submitResult.ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
         [
           { id: 'provider_application_status', title: 'Check Status' },
           { id: 'back_home', title: 'Main Menu' },
@@ -1397,9 +1403,11 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     try {
       await sendButtons(
         ctx.phone,
-        isComingSoonRegion
-          ? `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nThis area is not live yet. We'll update you here when Plug A Pro opens leads in this region.\n\nIf approved later, your Worker Portal will show your credit balance and any starter promo credits awarded.`
-          : `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nWe'll review your application and update you here within 24 hours.\n\nIf approved, your Worker Portal will show your credit balance and any starter promo credits awarded.`,
+        buildProviderApplicationSubmittedMessage({
+          providerName: ctx.data.name,
+          applicationRef: submitResult.ref,
+          isComingSoonRegion,
+        }),
         [
           { id: 'provider_application_status', title: 'Check Status' },
           { id: 'back_home', title: 'Main Menu' },
@@ -1484,7 +1492,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           ctx.phone,
           racedExisting.status === 'APPROVED'
             ? `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${ref}*\n\nYou can manage jobs from the provider menu.`
-            : `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nWe'll update you here once it's approved.`,
+            : `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
           [
             { id: racedExisting.status === 'APPROVED' ? 'provider_my_jobs' : 'provider_application_status', title: racedExisting.status === 'APPROVED' ? 'My Jobs' : 'Check Status' },
             { id: 'back_home', title: 'Main Menu' },

@@ -22,6 +22,7 @@ import { hasSuccessfulMessageForRecipient } from '../message-events'
 import { createTraceId } from '../support-diagnostics'
 import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
 import { normaliseLocationDisplayName } from '../location-format'
+import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import type {
   CoverageTier,
   DispatchActor,
@@ -1622,8 +1623,7 @@ async function createOfferForAttempt(params: {
     const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
     const category = jobRequest.category
     const balance = await getProviderWalletBalanceReadOnly(params.providerId)
-    const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
-    const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nAccepting this lead uses ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
+    const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
     await sendButtons(
       provider.phone,
       actionsBody,

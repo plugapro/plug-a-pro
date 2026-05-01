@@ -26,6 +26,7 @@ import {
 } from '@/lib/accepted-job-actions'
 import { createTraceId, maskPhone, safeErrorMessage, timestamp, type DiagnosticCode } from '@/lib/support-diagnostics'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 
 type LeadActionErrorParams = {
   error: string
@@ -587,6 +588,7 @@ export default async function ProviderLeadAccessPage({
     select: { paidCreditBalance: true, promoCreditBalance: true },
   })
   const providerCreditBalance = (providerWallet?.paidCreditBalance ?? 0) + (providerWallet?.promoCreditBalance ?? 0)
+  const termsUrl = getProviderTermsUrl()
   const remainingCreditBalanceAfterAccept = providerCreditBalance - LEAD_UNLOCK_COST_CREDITS
   const hasEnoughCredits = providerCreditBalance >= LEAD_UNLOCK_COST_CREDITS
   const acceptedRemainingBalance =
@@ -729,7 +731,7 @@ export default async function ProviderLeadAccessPage({
             <p className="mt-1">
               Your current balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
-            <p className="mt-1">Please top up to continue. Customer contact and exact address details remain hidden.</p>
+            <p className="mt-1">Please top up in the Worker Portal to continue. Customer contact and exact address details remain hidden.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs text-amber-800">Error code: INSUFFICIENT_CREDITS · Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : (
@@ -800,10 +802,16 @@ export default async function ProviderLeadAccessPage({
             {hasEnoughCredits ? (
               <>
                 <p className="mt-1">
-                  Accepting this lead will use {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
+                  Accepting this lead uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
                   Your current balance is {providerCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
                 </p>
-                <p className="mt-1">Full customer details will be released only after acceptance succeeds.</p>
+                <p className="mt-1">
+                  Full customer details will be released only after acceptance succeeds. Credit use follows the{' '}
+                  <Link href={termsUrl} className="font-medium underline underline-offset-4">
+                    provider terms and credit rules
+                  </Link>
+                  .
+                </p>
               </>
             ) : (
               <>

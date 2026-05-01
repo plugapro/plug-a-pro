@@ -1402,7 +1402,7 @@ export async function showMainMenu(phone: string): Promise<void> {
       {
         title: 'For Service Providers',
         rows: [
-          { id: 'find_work', title: '👷 Find Work',         description: 'Apply to join as a service provider' },
+          { id: 'find_work', title: '👷 Find Work',         description: 'Apply, get reviewed, then accept leads with credits' },
         ],
       },
     ],
