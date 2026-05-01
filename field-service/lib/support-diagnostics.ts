@@ -25,6 +25,16 @@ export type DiagnosticCode =
   | 'PHOTO_UPLOAD_FAILED'
   | 'TICKET_EXPIRED'
   | 'TICKET_INVALID'
+  // Credits lifecycle codes
+  | 'INSUFFICIENT_CREDITS'
+  | 'CREDIT_WALLET_SUSPENDED'
+  | 'CREDIT_UNLOCK_FAILED'
+  | 'CREDIT_TOPUP_DUPLICATE_CALLBACK'
+  | 'CREDIT_TOPUP_PAYMENT_FAILED'
+  | 'CREDIT_BALANCE_NEGATIVE_BLOCKED'
+  | 'CREDIT_LEDGER_WRITE_FAILED'
+  | 'CREDIT_RECONCILIATION_MISMATCH'
+  | 'UNKNOWN_CREDIT_ERROR'
 
 export function createTraceId(prefix = 'req') {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12)}`

@@ -31,6 +31,7 @@ import {
   type PayfastItnPayload,
 } from '@/lib/payfast'
 import { creditProviderWalletFromGatewayItn } from '@/lib/provider-credit-gateway-itn'
+import { createTraceId } from '@/lib/support-diagnostics'
 
 // ─── Remote IP extraction ─────────────────────────────────────────────────────
 
@@ -61,12 +62,14 @@ async function parseItnBody(request: NextRequest): Promise<PayfastItnPayload | n
 // ─── ITN processing ──────────────────────────────────────────────────────────
 
 async function processItn(payload: PayfastItnPayload, remoteIp: string | null): Promise<void> {
+  const traceId = createTraceId('itn')
   const config = getPayfastConfig()
 
   // Steps 2-4: IP + signature + payment_status validation.
   const verification = verifyItn(payload, remoteIp, config)
   if (!verification.valid) {
     console.warn('[payfast-itn] ITN rejected by adapter verification', {
+      traceId,
       reason: verification.reason,
       remoteIp,
       m_payment_id: payload.m_payment_id,
@@ -77,7 +80,7 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
 
   const mPaymentId = payload.m_payment_id?.trim()
   if (!mPaymentId) {
-    console.warn('[payfast-itn] ITN missing m_payment_id')
+    console.warn('[payfast-itn] ITN missing m_payment_id', { traceId })
     return
   }
 
@@ -94,14 +97,16 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
   })
 
   if (!intent) {
-    console.warn('[payfast-itn] ITN for unknown m_payment_id', { m_payment_id: mPaymentId })
+    console.warn('[payfast-itn] ITN for unknown m_payment_id', { traceId, m_payment_id: mPaymentId })
     return
   }
 
   // Step 6: idempotency — already credited intents are silently ignored.
   if (intent.status === 'CREDITED' || intent.creditedAt) {
     console.info('[payfast-itn] duplicate ITN received for already-credited intent, ignoring', {
+      traceId,
       intentId: intent.id,
+      error_code: 'CREDIT_TOPUP_DUPLICATE_CALLBACK',
     })
     return
   }
@@ -109,8 +114,10 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
   // Non-creditable terminal statuses — log and return.
   if (intent.status === 'CANCELLED' || intent.status === 'FAILED' || intent.status === 'EXPIRED') {
     console.warn('[payfast-itn] ITN received for terminal intent status', {
+      traceId,
       intentId: intent.id,
       status: intent.status,
+      error_code: 'CREDIT_TOPUP_PAYMENT_FAILED',
     })
     return
   }
@@ -119,10 +126,12 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
   const itnAmountCents = parseItnAmountCents(payload.amount_gross)
   if (Number.isNaN(itnAmountCents) || itnAmountCents !== intent.amountCents) {
     console.error('[payfast-itn] amount_gross mismatch — marking intent FAILED', {
+      traceId,
       intentId: intent.id,
       expected: intent.amountCents,
       received: itnAmountCents,
       rawAmountGross: payload.amount_gross,
+      error_code: 'CREDIT_TOPUP_PAYMENT_FAILED',
     })
     await db.paymentIntent.update({
       where: { id: intent.id },
@@ -155,14 +164,17 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
 
   if (result.credited) {
     console.info('[payfast-itn] wallet credited successfully', {
+      traceId,
       intentId: intent.id,
       ledgerEntryId: result.ledgerEntryId,
     })
   } else {
     // Crediting returned false without throwing — log for ops visibility.
     console.warn('[payfast-itn] wallet not credited', {
+      traceId,
       intentId: intent.id,
       reason: result.reason,
+      error_code: 'CREDIT_LEDGER_WRITE_FAILED',
     })
   }
 }

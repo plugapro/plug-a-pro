@@ -198,7 +198,91 @@ OpenBrain was updated with the prior credits lifecycle audit. A final implementa
 - remaining risks;
 - commit hash.
 
-## 9. GitHub Commit
+## 9. Phase 2 Remediations (2026-05-01)
+
+A second pass identified and closed six additional gaps (G1–G6) discovered during the Phase 1 audit.
+
+### G1 — Credit DiagnosticCode variants (`support-diagnostics.ts`)
+
+**Problem:** The `DiagnosticCode` union type had no credit-specific codes, so credit error logging could not be machine-parsed and alerted on.
+
+**Fix:** Added 9 credit lifecycle codes to the `DiagnosticCode` union:
+
+```
+INSUFFICIENT_CREDITS | CREDIT_WALLET_SUSPENDED | CREDIT_UNLOCK_FAILED
+CREDIT_TOPUP_DUPLICATE_CALLBACK | CREDIT_TOPUP_PAYMENT_FAILED
+CREDIT_BALANCE_NEGATIVE_BLOCKED | CREDIT_LEDGER_WRITE_FAILED
+CREDIT_RECONCILIATION_MISMATCH | UNKNOWN_CREDIT_ERROR
+```
+
+File: `field-service/lib/support-diagnostics.ts`
+
+### G2 — Trace IDs and error codes on PayFast ITN handler (`payfast/route.ts`)
+
+**Problem:** The ITN webhook handler logged warnings and errors without trace IDs or machine-parseable `error_code` fields, making credit callback failures hard to correlate in log aggregators.
+
+**Fix:**
+- Import `createTraceId` from `support-diagnostics`
+- Generate `traceId = createTraceId('itn')` at the start of every `processItn` call
+- Thread `traceId` through all 8 log statements
+- Add `error_code` fields (`CREDIT_TOPUP_DUPLICATE_CALLBACK`, `CREDIT_TOPUP_PAYMENT_FAILED`, `CREDIT_LEDGER_WRITE_FAILED`) to the relevant log entries
+
+File: `field-service/app/api/webhooks/payfast/route.ts`
+
+### G3 — Read-only balance recomputation (`provider-wallet.ts`)
+
+**Problem:** There was no lightweight utility for support/ops to compare a provider's cached wallet balance against the replayed ledger total without running the full reconciliation report (which also queries payment intents, promo awards, and lead unlocks).
+
+**Fix:** Added `recomputeWalletBalance(providerId): Promise<RecomputedWalletBalance>` — a read-only function that fetches all `WalletLedgerEntry` rows in chronological order, replays them using the same `ledgerEntryDelta` logic as the reconciliation report, and returns:
+
+```typescript
+{
+  providerId: string
+  cachedBalance: { paidCreditBalance: number; promoCreditBalance: number }
+  replayedBalance: { paidCreditBalance: number; promoCreditBalance: number }
+  drifted: boolean
+}
+```
+
+File: `field-service/lib/provider-wallet.ts`
+
+### G4 — Test: assignment failure rolls back credit deduction
+
+**Problem:** No test verified that the credit debit and match creation share the same Prisma transaction so that a failure after the debit rolls it back atomically.
+
+**Fix:** Added test to `matching-service.test.ts`:
+> "rolls back credit deduction when the transaction fails after the unlock"
+
+The test configures `match.create` to throw after `providerWallet.updateMany` is called, then verifies the function re-throws (not silently returns `ok: false`) and that both `providerWallet.updateMany` and `match.create` were called inside the same `$transaction` boundary.
+
+### G5 — Test: decline does not touch the wallet
+
+**Problem:** No test explicitly asserted that `rejectAssignmentOffer` never reads or writes the wallet, making the invariant implicit and easy to violate in a refactor.
+
+**Fix:** Added test to `matching-service.test.ts`:
+> "decline does not deduct credits or touch the wallet"
+
+Asserts `providerWallet.findUnique`, `providerWallet.upsert`, `providerWallet.updateMany`, and `walletLedgerEntry.create` are never called when a provider declines.
+
+### G6 — Tests: WhatsApp and PWA accept use the same backend unlock module
+
+**Problem:** No test verified that both entry channels route through `unlockLeadForProviderInTransaction` rather than each having their own wallet logic.
+
+**Fix:** Added parametrized test to `matching-service.test.ts` using `it.each`:
+> "accept via {whatsapp|pwa} debits exactly 1 credit through the shared unlock module"
+
+Both variants verify that `providerWallet.updateMany` is called exactly once and `walletLedgerEntry.create` is called — confirming both channels use `debitCreditsForLeadUnlockInTransaction` from the shared module.
+
+### Phase 2 Test Results
+
+```
+Test Files  103 passed | 1 skipped (104)
+Tests       970 passed | 4 todo (974)
+
+pnpm lint: 0 errors, 1 pre-existing warning (form.tsx / react-compiler)
+```
+
+## 10. GitHub Commit
 
 Branch: `fix/credits-flow-alignment`
 

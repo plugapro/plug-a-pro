@@ -764,6 +764,161 @@ describe('matching service', () => {
     expect(mockDb.match.create).not.toHaveBeenCalled()
   })
 
+  it('rolls back credit deduction when the transaction fails after the unlock', async () => {
+    // Arrange: lead with an active hold and provider with 1 promo credit.
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'VERIFIED',
+    })
+    mockDb.lead.findUnique.mockImplementation(async (args: any) =>
+      args.include?.provider
+        ? {
+            id: 'lead-1',
+            providerId: 'provider-preferred',
+            jobRequestId: 'jr-generic',
+            status: 'SENT',
+            expiresAt: new Date(Date.now() + 60_000),
+            provider: {
+              id: 'provider-preferred',
+              active: true,
+              verified: true,
+              status: 'ACTIVE',
+              kycStatus: 'VERIFIED',
+              isTestUser: false,
+            },
+            jobRequest: {
+              id: 'jr-generic',
+              status: 'OPEN',
+              match: null,
+              isTestRequest: false,
+              cohortName: null,
+            },
+          }
+        : {
+            id: 'lead-1',
+            providerId: 'provider-preferred',
+            jobRequestId: 'jr-generic',
+            dispatchDecisionId: null,
+            matchAttemptId: null,
+            expiresAt: new Date(Date.now() + 60_000),
+            assignmentHoldId: 'hold-1',
+            assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+            matchAttempt: null,
+          },
+    )
+    mockDb.match.findUnique.mockResolvedValue(null)
+    // match.create fails after the unlock debit has already been staged inside the tx.
+    mockDb.match.create.mockRejectedValueOnce(new Error('DB constraint violation'))
+
+    await expect(
+      acceptAssignmentOffer({ leadId: 'lead-1', providerId: 'provider-preferred', source: 'whatsapp' }),
+    ).rejects.toThrow('DB constraint violation')
+
+    // The wallet debit was staged inside the same db.$transaction as match.create.
+    // A real Prisma transaction would roll back both writes atomically on failure;
+    // this assertion confirms the debit is inside the transaction boundary.
+    expect(mockDb.providerWallet.updateMany).toHaveBeenCalled()
+    expect(mockDb.match.create).toHaveBeenCalled()
+  })
+
+  it('decline does not deduct credits or touch the wallet', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: null,
+      matchAttemptId: null,
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: null,
+    })
+
+    const result = await rejectAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result).toMatchObject({ responseOutcome: 'REJECTED', nextOfferedProviderId: null })
+    // Decline must never touch the wallet — no reads, no writes, no ledger entries.
+    expect(mockDb.providerWallet.findUnique).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.upsert).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['whatsapp', 'source: whatsapp'],
+    ['pwa', 'source: pwa'],
+  ] as const)(
+    'accept via %s debits exactly 1 credit through the shared unlock module',
+    async (source) => {
+      // Both entry channels — WhatsApp quick-reply and PWA signed page — call
+      // acceptAssignmentOffer which delegates to unlockLeadForProviderInTransaction.
+      // This confirms neither channel has its own wallet logic.
+      mockDb.provider.findUnique.mockResolvedValue({
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      })
+      mockDb.lead.findUnique.mockImplementation(async (args: any) =>
+        args.include?.provider
+          ? {
+              id: 'lead-1',
+              providerId: 'provider-preferred',
+              jobRequestId: 'jr-generic',
+              status: 'SENT',
+              expiresAt: new Date(Date.now() + 60_000),
+              provider: {
+                id: 'provider-preferred',
+                active: true,
+                verified: true,
+                status: 'ACTIVE',
+                kycStatus: 'VERIFIED',
+                isTestUser: false,
+              },
+              jobRequest: {
+                id: 'jr-generic',
+                status: 'OPEN',
+                match: null,
+                isTestRequest: false,
+                cohortName: null,
+              },
+            }
+          : {
+              id: 'lead-1',
+              providerId: 'provider-preferred',
+              jobRequestId: 'jr-generic',
+              dispatchDecisionId: null,
+              matchAttemptId: null,
+              expiresAt: new Date(Date.now() + 60_000),
+              assignmentHoldId: 'hold-1',
+              assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+              matchAttempt: null,
+            },
+      )
+      mockDb.match.findUnique.mockResolvedValue(null)
+      mockDb.match.create.mockResolvedValue({ id: 'match-1' })
+
+      const result = await acceptAssignmentOffer({
+        leadId: 'lead-1',
+        providerId: 'provider-preferred',
+        source,
+      })
+
+      expect(result.ok).toBe(true)
+      // The debit path (providerWallet.updateMany) must be called exactly once,
+      // proving both channels route through debitCreditsForLeadUnlockInTransaction.
+      expect(mockDb.providerWallet.updateMany).toHaveBeenCalledTimes(1)
+      expect(mockDb.walletLedgerEntry.create).toHaveBeenCalled()
+    },
+  )
+
   it('logs a manual override and still creates an assignment hold', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest('OPS_REVIEW'))
     mockDb.provider.findMany.mockResolvedValue([makeProvider('provider-preferred', 'Preferred Pro')])

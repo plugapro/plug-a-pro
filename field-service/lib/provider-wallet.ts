@@ -658,3 +658,80 @@ export async function reactivateProviderWallet(
     return reactivateProviderWalletInTransaction(tx, providerId, reason, adminUserId)
   })
 }
+
+// ─── Balance recomputation ────────────────────────────────────────────────────
+
+export type RecomputedWalletBalance = {
+  providerId: string
+  cachedBalance: {
+    paidCreditBalance: number
+    promoCreditBalance: number
+  }
+  replayedBalance: {
+    paidCreditBalance: number
+    promoCreditBalance: number
+  }
+  /** True when cached and replayed balances diverge — indicates ledger drift. */
+  drifted: boolean
+}
+
+function ledgerEntryDelta(entryType: string, amountCredits: number): number {
+  switch (entryType) {
+    case 'TOPUP_CREDIT':
+    case 'PROMO_CREDIT':
+    case 'LEAD_REFUND_CREDIT':
+      return amountCredits
+    case 'LEAD_UNLOCK_DEBIT':
+    case 'PROMO_EXPIRY':
+    case 'PAYMENT_REVERSAL':
+      return -amountCredits
+    case 'ADMIN_ADJUSTMENT':
+      // amountCredits carries its own sign for adjustments (+/-)
+      return amountCredits
+    default:
+      // WALLET_SUSPENDED, WALLET_REACTIVATED, and unknown types do not change balance.
+      return 0
+  }
+}
+
+/**
+ * Read-only balance sanity check. Replays all WalletLedgerEntry rows for the
+ * provider in chronological order and returns both the replayed balance and the
+ * cached balance from ProviderWallet so ops/support can detect ledger drift
+ * without running the full reconciliation report.
+ */
+export async function recomputeWalletBalance(providerId: string): Promise<RecomputedWalletBalance> {
+  const [wallet, entries] = await Promise.all([
+    db.providerWallet.findUnique({ where: { providerId } }),
+    db.walletLedgerEntry.findMany({
+      where: { providerId },
+      orderBy: { createdAt: 'asc' },
+    }),
+  ])
+
+  let paidCreditBalance = 0
+  let promoCreditBalance = 0
+  for (const entry of entries) {
+    const delta = ledgerEntryDelta(entry.entryType, entry.amountCredits)
+    if (entry.creditType === 'PAID') {
+      paidCreditBalance += delta
+    } else {
+      promoCreditBalance += delta
+    }
+  }
+
+  const cachedBalance = {
+    paidCreditBalance: wallet?.paidCreditBalance ?? 0,
+    promoCreditBalance: wallet?.promoCreditBalance ?? 0,
+  }
+  const replayedBalance = { paidCreditBalance, promoCreditBalance }
+
+  return {
+    providerId,
+    cachedBalance,
+    replayedBalance,
+    drifted:
+      cachedBalance.paidCreditBalance !== replayedBalance.paidCreditBalance ||
+      cachedBalance.promoCreditBalance !== replayedBalance.promoCreditBalance,
+  }
+}
