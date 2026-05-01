@@ -122,7 +122,7 @@ export async function dispatchMatchLead(params: {
       body,
       'View Lead',
       leadUrl,
-      { footer: 'Accept, inspect, or decline from the lead page' },
+      { footer: 'View the lead preview. Accepting uses 1 credit.' },
       { templateName: 'dispatch:job_lead', metadata: msgMeta }
     ).catch(async (err: unknown) => {
       const failureReason = err instanceof Error ? err.message : String(err)
@@ -153,7 +153,7 @@ export async function dispatchMatchLead(params: {
     provider.phone,
     actionsBody,
     [
-      { id: `accept:${hold.id}`, title: 'Unlock & Accept' },
+      { id: `accept:${hold.id}`, title: 'Accept Lead' },
       { id: `decline:${hold.id}`, title: 'Decline' },
     ],
     undefined,

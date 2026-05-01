@@ -64,6 +64,13 @@ function makeLead(overrides: Record<string, unknown> = {}) {
         suburb: 'Sandton',
         city: 'Johannesburg',
       },
+      attachments: [
+        {
+          id: 'preview-photo-1',
+          caption: 'Tap photo',
+          label: 'customer_photo',
+        },
+      ],
     },
     ...overrides,
   }
@@ -112,7 +119,7 @@ describe('provider lead detail', () => {
     })
   })
 
-  it('returns only preview-safe lead data before unlock', async () => {
+  it('returns only preview-safe lead data before acceptance while allowing photos', async () => {
     const result = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
 
     expect(result).toMatchObject({
@@ -128,6 +135,13 @@ describe('provider lead detail', () => {
         jobType: 'Leaking bathroom tap',
         area: 'Sandton, Johannesburg',
         estimatedValue: 800,
+        attachments: [
+          {
+            id: 'preview-photo-1',
+            caption: 'Tap photo',
+            label: 'customer_photo',
+          },
+        ],
       },
       unlockedDetails: null,
     })
@@ -138,8 +152,9 @@ describe('provider lead detail', () => {
     expect(JSON.stringify(result)).not.toContain('Gate code 1234')
   })
 
-  it('returns sensitive customer details only after provider unlock', async () => {
+  it('returns sensitive customer details only after provider acceptance and credit spend', async () => {
     state.lead = makeLead({
+      status: 'ACCEPTED',
       unlock: {
         id: 'unlock-1',
         providerId: 'provider-1',
@@ -167,6 +182,27 @@ describe('provider lead detail', () => {
         },
       ],
     })
+  })
+
+  it('does not expose sensitive details for legacy unlock-only records before acceptance', async () => {
+    state.lead = makeLead({
+      status: 'VIEWED',
+      unlock: {
+        id: 'unlock-1',
+        providerId: 'provider-1',
+        status: 'UNLOCKED',
+        refundReason: null,
+        dispute: null,
+      },
+    })
+
+    const result = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
+
+    expect(mockDb.lead.findUnique).toHaveBeenCalledTimes(1)
+    expect(result?.isUnlocked).toBe(false)
+    expect(result?.unlockedDetails).toBeNull()
+    expect(JSON.stringify(result)).not.toContain('Nomsa Dlamini')
+    expect(JSON.stringify(result)).not.toContain('12 Exact Street')
   })
 
   it('blocks providers from loading another provider lead', async () => {

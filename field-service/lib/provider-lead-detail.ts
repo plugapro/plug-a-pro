@@ -50,6 +50,11 @@ export type ProviderLeadDetail = {
     requestedArrivalLatest: Date | null
     shortNotes: string | null
     estimatedValue: number | null
+    attachments: Array<{
+      id: string
+      caption: string | null
+      label: string | null
+    }>
   }
   unlockedDetails: {
     customerName: string
@@ -158,6 +163,14 @@ export async function getProviderLeadDetailForProvider(
                 city: true,
               },
             },
+            attachments: {
+              orderBy: { createdAt: 'asc' },
+              select: {
+                id: true,
+                caption: true,
+                label: true,
+              },
+            },
           },
         },
       },
@@ -170,7 +183,7 @@ export async function getProviderLeadDetailForProvider(
   }
 
   const providerUnlock = lead.unlock?.providerId === providerId ? lead.unlock : null
-  const isUnlocked = Boolean(providerUnlock)
+  const isUnlocked = lead.status === 'ACCEPTED' && Boolean(providerUnlock)
   const paidCredits = provider.wallet?.paidCreditBalance ?? 0
   const promoCredits = provider.wallet?.promoCreditBalance ?? 0
 
@@ -258,6 +271,7 @@ export async function getProviderLeadDetailForProvider(
       estimatedValue: lead.jobRequest.customerAcceptedAmount == null
         ? null
         : Number(lead.jobRequest.customerAcceptedAmount),
+      attachments: lead.jobRequest.attachments,
     },
     unlockedDetails,
   }

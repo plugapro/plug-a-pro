@@ -23,7 +23,6 @@ export type ProviderLeadAccessScope = typeof PROVIDER_LEAD_SCOPES[number]
 
 export const LEAD_RESPONSE_SCOPES: ProviderLeadAccessScope[] = [
   'view_lead',
-  'unlock_lead',
   'accept_lead',
   'decline_lead',
 ]
@@ -275,6 +274,16 @@ export async function resolveProviderLeadAccessToken(token: string) {
             select: {
               suburb: true,
               city: true,
+              province: true,
+              region: true,
+            },
+          },
+          attachments: {
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              caption: true,
+              label: true,
             },
           },
           match: {
@@ -312,19 +321,20 @@ export async function resolveProviderLeadAccessToken(token: string) {
     return { status: 'invalid' as const, lead: null, payload: verified.payload }
   }
 
+  const hasAcceptedUnlock = lead.status === 'ACCEPTED' && Boolean(lead.unlock)
   const scopedLead = {
     ...lead,
     jobRequest: {
       ...lead.jobRequest,
-      description: lead.unlock
+      description: hasAcceptedUnlock
         ? lead.jobRequest.description
         : previewNotes(lead.jobRequest.description) ?? '',
       customer: null as { id: string; name: string; phone: string } | null,
-      attachments: [] as Array<{ id: string; caption: string | null; label: string | null }>,
+      attachments: lead.jobRequest.attachments,
     },
   }
 
-  if (lead.unlock) {
+  if (hasAcceptedUnlock) {
     const sensitiveLead = await db.lead.findUnique({
       where: { id: lead.id },
       select: {
@@ -341,14 +351,7 @@ export async function resolveProviderLeadAccessToken(token: string) {
                 suburb: true,
                 city: true,
                 province: true,
-              },
-            },
-            attachments: {
-              orderBy: { createdAt: 'asc' },
-              select: {
-                id: true,
-                caption: true,
-                label: true,
+                region: true,
               },
             },
           },
@@ -359,7 +362,6 @@ export async function resolveProviderLeadAccessToken(token: string) {
     if (sensitiveLead) {
       scopedLead.jobRequest.customer = sensitiveLead.jobRequest.customer
       scopedLead.jobRequest.address = sensitiveLead.jobRequest.address
-      scopedLead.jobRequest.attachments = sensitiveLead.jobRequest.attachments
     }
   }
 
@@ -370,14 +372,6 @@ export async function resolveProviderLeadAttachmentScope(token: string) {
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
     return { status: resolved.status, jobRequestId: null, leadId: resolved.payload?.leadId ?? null }
-  }
-
-  if (!resolved.lead.unlock) {
-    return {
-      status: 'locked' as const,
-      jobRequestId: null,
-      leadId: resolved.lead.id,
-    }
   }
 
   return {

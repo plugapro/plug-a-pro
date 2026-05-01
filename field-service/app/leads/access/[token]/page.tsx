@@ -7,7 +7,6 @@ import { format, formatDistanceToNow } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { ArrivalSubmitButton } from '@/components/provider/ArrivalSubmitButton'
 import { LeadActionSubmitButton } from '@/components/provider/LeadActionSubmitButton'
-import { getCategoryPolicy } from '@/lib/service-category-policy'
 import { db } from '@/lib/db'
 import {
   providerLeadTokenAllowsScope,
@@ -15,7 +14,7 @@ import {
   verifyProviderLeadAccessToken,
 } from '@/lib/provider-lead-access'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
-import { LeadUnlockError, unlockLeadForProvider } from '@/lib/lead-unlocks'
+import { LEAD_UNLOCK_COST_CREDITS } from '@/lib/lead-unlocks'
 import {
   deriveDefaultArrivalWindow,
   getCustomerAvailabilitySummary,
@@ -31,7 +30,7 @@ import { normaliseLocationDisplayName } from '@/lib/location-format'
 type LeadActionErrorParams = {
   error: string
   errorCode: string
-  action: 'unlock' | 'accept' | 'decline'
+  action: 'accept' | 'decline'
   traceId: string
   message?: string
   creditDeducted?: boolean
@@ -49,65 +48,6 @@ function redirectLeadActionError(token: string, params: LeadActionErrorParams): 
   redirect(`/leads/access/${encodeURIComponent(token)}?${query.toString()}`)
 }
 
-function leadUnlockErrorParams(error: LeadUnlockError) {
-  switch (error.code) {
-    case 'INSUFFICIENT_CREDITS':
-      return {
-        error: 'credits',
-        errorCode: 'INSUFFICIENT_CREDITS',
-        message: error.message,
-      }
-    case 'PROVIDER_NOT_APPROVED':
-      return {
-        error: 'approval',
-        errorCode: 'PROVIDER_NOT_APPROVED',
-        message: error.message,
-      }
-    case 'PROVIDER_NOT_ACTIVE':
-      return {
-        error: 'inactive',
-        errorCode: 'PROVIDER_NOT_ACTIVE',
-        message: error.message,
-      }
-    case 'NOT_FOUND':
-      return {
-        error: 'not_found',
-        errorCode: 'LEAD_NOT_FOUND',
-        message: error.message,
-      }
-    case 'FORBIDDEN':
-      return {
-        error: 'denied',
-        errorCode: 'PROVIDER_LEAD_ACCESS_DENIED',
-        message: error.message,
-      }
-    case 'CONCURRENT_UNLOCK':
-      return {
-        error: 'duplicate',
-        errorCode: 'DUPLICATE_ACTION_IGNORED',
-        message: error.message,
-      }
-    case 'LEAD_NOT_AVAILABLE':
-      return {
-        error: 'unavailable',
-        errorCode: 'LEAD_ALREADY_ACCEPTED',
-        message: error.message,
-      }
-    case 'WALLET_SUSPENDED':
-      return {
-        error: 'ledger',
-        errorCode: 'CREDIT_LEDGER_WRITE_FAILED',
-        message: error.message,
-      }
-    default:
-      return {
-        error: 'unlock_failed',
-        errorCode: 'LEAD_UNLOCK_FAILED',
-        message: error.message,
-      }
-  }
-}
-
 function acceptErrorCode(reason: string) {
   switch (reason) {
     case 'INSUFFICIENT_CREDITS':
@@ -121,7 +61,11 @@ function acceptErrorCode(reason: string) {
     case 'NOT_FOUND':
       return 'LEAD_NOT_FOUND'
     case 'FORBIDDEN':
-      return 'PROVIDER_LEAD_ACCESS_DENIED'
+      return 'PROVIDER_NOT_AUTHORIZED'
+    case 'CONCURRENT_UNLOCK':
+      return 'DUPLICATE_ACTION_IGNORED'
+    case 'WALLET_SUSPENDED':
+      return 'CREDIT_DEDUCTION_FAILED'
     default:
       return 'LEAD_ACCEPTANCE_FAILED'
   }
@@ -130,7 +74,10 @@ function acceptErrorCode(reason: string) {
 async function acceptLeadWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
-  const inspectionNeeded = formData.get('inspectionNeeded') === 'true'
+  // The signed lead page has one paid action: accept the lead. Inspection-only
+  // unlocks are intentionally not exposed because they would spend a credit
+  // before the provider commits to the job.
+  const inspectionNeeded = false
   const traceId = createTraceId('lead_accept')
 
   const verified = verifyProviderLeadAccessToken(token)
@@ -159,12 +106,15 @@ async function acceptLeadWithToken(formData: FormData) {
 
   const lead = resolved.lead
   if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
+    const leadExpired = Boolean(lead.expiresAt && lead.expiresAt <= new Date())
     redirectLeadActionError(token, {
       error: 'closed',
-      errorCode: lead.expiresAt && lead.expiresAt <= new Date() ? 'LEAD_EXPIRED' : 'LEAD_ALREADY_ACCEPTED',
+      errorCode: leadExpired ? 'LEAD_EXPIRED' : 'LEAD_ALREADY_ACCEPTED',
       action: 'accept',
       traceId,
-      message: 'This lead can no longer be accepted.',
+      message: leadExpired
+        ? 'This lead has expired and can no longer be accepted. No credits were used.'
+        : 'This lead has already been accepted or closed. No credits were used.',
       creditDeducted: false,
     })
   }
@@ -203,7 +153,7 @@ async function acceptLeadWithToken(formData: FormData) {
         errorCode: 'INSUFFICIENT_CREDITS',
         action: 'accept',
         traceId,
-        message: 'This lead requires 1 Plug-A-Pro Credit to unlock.',
+        message: 'This lead requires 1 Plug-A-Pro Credit to accept.',
         creditDeducted: false,
       })
     }
@@ -227,88 +177,14 @@ async function acceptLeadWithToken(formData: FormData) {
     })
   }
 
-  redirect(`/leads/access/${encodeURIComponent(token)}?accepted=1`)
-}
-
-async function unlockLeadWithToken(formData: FormData) {
-  'use server'
-  const token = String(formData.get('token') ?? '')
-  const traceId = createTraceId('lead_unlock')
-
-  const verified = verifyProviderLeadAccessToken(token)
-  if (verified.status !== 'active' || !providerLeadTokenAllowsScope(verified.payload, 'unlock_lead')) {
-    redirectLeadActionError(token, {
-      error: 'invalid',
-      errorCode: 'INVALID_SIGNED_LINK',
-      action: 'unlock',
-      traceId,
-      message: 'This secure lead link is invalid.',
-      creditDeducted: false,
-    })
+  const query = new URLSearchParams({ accepted: '1', actionTraceId: traceId })
+  if (result.currentCreditBalance != null) {
+    query.set('remainingBalance', String(result.currentCreditBalance))
   }
-
-  const resolved = await resolveProviderLeadAccessToken(token)
-  if (resolved.status !== 'active' || !resolved.lead) {
-    redirectLeadActionError(token, {
-      error: 'invalid',
-      errorCode: 'INVALID_SIGNED_LINK',
-      action: 'unlock',
-      traceId,
-      message: 'This secure lead link is invalid.',
-      creditDeducted: false,
-    })
+  if (result.alreadyUnlocked) {
+    query.set('alreadyAccepted', '1')
   }
-
-  let result
-  try {
-    result = await unlockLeadForProvider(resolved.lead.id, resolved.lead.providerId, {
-      source: 'pwa',
-      traceId,
-      idempotencyKey: `pwa_unlock_${resolved.lead.providerId}_${resolved.lead.id}`,
-    })
-  } catch (error) {
-    if (isRedirectError(error)) throw error
-    if (error instanceof LeadUnlockError) {
-      const params = leadUnlockErrorParams(error)
-      console.warn('[leads/access] unlock lead action blocked', {
-        trace_id: traceId,
-        lead_id: resolved.lead.id,
-        lead_ref: resolved.lead.id.slice(-8).toUpperCase(),
-        job_ref: resolved.lead.jobRequestId.slice(-8).toUpperCase(),
-        provider_id: resolved.lead.providerId,
-        source: 'pwa_signed_link',
-        action: 'unlock',
-        result: 'blocked',
-        error_code: params.errorCode,
-      })
-      redirectLeadActionError(token, {
-        ...params,
-        action: 'unlock',
-        traceId,
-        creditDeducted: false,
-      })
-    }
-    console.error('[leads/access] unlock lead action failed', {
-      trace_id: traceId,
-      lead_id: resolved.lead.id,
-      lead_ref: resolved.lead.id.slice(-8).toUpperCase(),
-      job_ref: resolved.lead.jobRequestId.slice(-8).toUpperCase(),
-      provider_id: resolved.lead.providerId,
-      source: 'pwa_signed_link',
-      action: 'unlock',
-      error_code: 'UNKNOWN_LEAD_ACTION_ERROR',
-      error: safeErrorMessage(error),
-    })
-    redirectLeadActionError(token, {
-      error: 'unlock_failed',
-      errorCode: 'UNKNOWN_LEAD_ACTION_ERROR',
-      action: 'unlock',
-      traceId,
-      message: 'We could not unlock this lead.',
-      creditDeducted: false,
-    })
-  }
-  redirect(`/leads/access/${encodeURIComponent(token)}?unlocked=${result.alreadyUnlocked ? 'already' : '1'}&actionTraceId=${encodeURIComponent(traceId)}`)
+  redirect(`/leads/access/${encodeURIComponent(token)}?${query.toString()}`)
 }
 
 async function declineLeadWithToken(formData: FormData) {
@@ -561,8 +437,10 @@ export default async function ProviderLeadAccessPage({
     action?: string
     actionTraceId?: string
     creditDeducted?: string
-    unlocked?: string
     accepted?: string
+    alreadyAccepted?: string
+    remainingBalance?: string
+    confirmAccept?: string
     declined?: string
     updated?: string
     scheduleError?: string
@@ -632,7 +510,7 @@ export default async function ProviderLeadAccessPage({
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
   const isAccepted = lead.status === 'ACCEPTED'
   const isDeclined = lead.status === 'DECLINED'
-  const isUnlocked = Boolean(lead.unlock)
+  const hasAcceptedDetails = isAccepted && Boolean(lead.unlock)
   const leadRef = lead.id.slice(-8).toUpperCase()
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
 
@@ -690,8 +568,6 @@ export default async function ProviderLeadAccessPage({
   const estimatedValue = jr.customerAcceptedAmount != null
     ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(jr.customerAcceptedAmount))
     : null
-  const categoryPolicy = getCategoryPolicy(jr.category)
-  const showInspectionOption = !categoryPolicy.bookingOnAssignment
   const attachmentToken = encodeURIComponent(token)
   const acceptedStage = isAccepted ? deriveAcceptedStage(jr.match) : null
   const plannedWindow = isAccepted ? formatWindow(jr.match?.plannedArrivalStart, jr.match?.plannedArrivalEnd) : null
@@ -708,6 +584,13 @@ export default async function ProviderLeadAccessPage({
     select: { paidCreditBalance: true, promoCreditBalance: true },
   })
   const providerCreditBalance = (providerWallet?.paidCreditBalance ?? 0) + (providerWallet?.promoCreditBalance ?? 0)
+  const remainingCreditBalanceAfterAccept = providerCreditBalance - LEAD_UNLOCK_COST_CREDITS
+  const hasEnoughCredits = providerCreditBalance >= LEAD_UNLOCK_COST_CREDITS
+  const acceptedRemainingBalance =
+    resolvedSearchParams.remainingBalance != null && Number.isFinite(Number(resolvedSearchParams.remainingBalance))
+      ? Number(resolvedSearchParams.remainingBalance)
+      : providerCreditBalance
+  const confirmingAccept = resolvedSearchParams.confirmAccept === '1' && !isAccepted && !isDeclined
   const supportWhatsAppDigits = process.env.SUPPORT_WHATSAPP_NUMBER?.replace(/\D/g, '')
   const backToWhatsAppHref = supportWhatsAppDigits
     ? `https://wa.me/${supportWhatsAppDigits}?text=${encodeURIComponent(`Hi, I declined lead ${jobRef}.`)}`
@@ -744,23 +627,17 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {resolvedSearchParams.unlocked === '1' && (
+        {resolvedSearchParams.accepted === '1' && (
           <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            <p className="font-medium">Lead unlocked.</p>
-            <p className="mt-1">
-              1 credit used. Balance remaining: {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
-            </p>
+            <p className="font-medium">Lead accepted.</p>
+            {resolvedSearchParams.alreadyAccepted === '1' ? (
+              <p className="mt-1">You had already accepted this lead — no credit was used on this action.</p>
+            ) : (
+              <p className="mt-1">
+                1 credit used. Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
+              </p>
+            )}
             <p className="mt-1">Full customer and job details are now available.</p>
-            {resolvedSearchParams.actionTraceId ? (
-              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.actionTraceId}</p>
-            ) : null}
-          </div>
-        )}
-
-        {resolvedSearchParams.unlocked === 'already' && (
-          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            <p className="font-medium">This lead was already unlocked.</p>
-            <p className="mt-1">No extra credit was used. Balance remaining: {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
@@ -845,11 +722,11 @@ export default async function ProviderLeadAccessPage({
 
         {resolvedSearchParams.error === 'credits' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p className="font-medium">This lead requires 1 Plug-A-Pro Credit to unlock.</p>
+            <p className="font-medium">You need 1 Plug-A-Pro Credit to accept this lead.</p>
             <p className="mt-1">
               Your current balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
-            <p className="mt-1">Top up in the provider app and try again.</p>
+            <p className="mt-1">Please top up to continue. Customer contact and exact address details remain hidden.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs text-amber-800">Error code: INSUFFICIENT_CREDITS · Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : (
@@ -860,7 +737,7 @@ export default async function ProviderLeadAccessPage({
 
         {resolvedSearchParams.error === 'inactive' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p>Your provider profile is not active, so you cannot unlock leads right now.</p>
+            <p>Your provider profile is not active, so you cannot accept leads right now.</p>
             <p className="mt-2 text-xs text-amber-800">
               Error code: PROVIDER_NOT_ACTIVE
               {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
@@ -870,7 +747,7 @@ export default async function ProviderLeadAccessPage({
 
         {resolvedSearchParams.error === 'approval' && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p>Your provider application must be approved before you can unlock leads.</p>
+            <p>Your provider application must be approved before you can accept leads.</p>
             <p className="mt-2 text-xs text-amber-800">
               Error code: PROVIDER_NOT_APPROVED
               {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
@@ -878,22 +755,15 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {resolvedSearchParams.error === 'unlock_required' && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p>Unlock this lead before accepting it.</p>
-            <p className="mt-2 text-xs text-amber-800">Error code: LEAD_UNLOCK_REQUIRED</p>
-          </div>
-        )}
-
         {resolvedSearchParams.error &&
-          !['credits', 'inactive', 'approval', 'unlock_required'].includes(resolvedSearchParams.error) && (
+          !['credits', 'inactive', 'approval'].includes(resolvedSearchParams.error) && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               <p className="font-medium">
                 {resolvedSearchParams.action === 'decline'
                   ? 'We could not decline this lead.'
                   : resolvedSearchParams.action === 'accept'
                     ? 'We could not process this acceptance.'
-                    : 'We could not unlock this lead.'}
+                    : 'We could not process this lead action.'}
               </p>
               <p className="mt-1">
                 Reason: {resolvedSearchParams.errorMessage ?? 'The lead action could not be completed.'}
@@ -907,6 +777,42 @@ export default async function ProviderLeadAccessPage({
               </p>
             </div>
           )}
+
+        {!isAccepted && !isDeclined && (
+          <div className="rounded-lg border bg-card px-4 py-3 text-sm">
+            <p className="font-medium">Lead preview</p>
+            <p className="mt-1 text-muted-foreground">
+              Customer contact, exact street address, unit, complex and access details are hidden until you accept this lead.
+            </p>
+            <p className="mt-2">
+              Accepting this lead uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
+              Your current balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
+            </p>
+          </div>
+        )}
+
+        {confirmingAccept && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-950">
+            <p className="font-semibold">Confirm lead acceptance</p>
+            {hasEnoughCredits ? (
+              <>
+                <p className="mt-1">
+                  Accepting this lead will use {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
+                  Your current balance is {providerCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
+                </p>
+                <p className="mt-1">Full customer details will be released only after acceptance succeeds.</p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1">
+                  You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this lead.
+                  Your current balance is {providerCreditBalance}.
+                </p>
+                <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="rounded-lg border bg-card divide-y">
           <div className="px-4 py-3 space-y-0.5">
@@ -925,14 +831,14 @@ export default async function ProviderLeadAccessPage({
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Current status</p>
             <p className="font-medium">{acceptedStage ?? lead.status.replaceAll('_', ' ').toLowerCase()}</p>
           </div>
-          {lead.unlock && (
+          {hasAcceptedDetails && lead.unlock && (
             <div className="px-4 py-3 space-y-0.5">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Credit unlock</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Credit spend</p>
               <p className="font-medium">
                 {lead.unlock.creditsCharged} credit{lead.unlock.creditsCharged === 1 ? '' : 's'} used
               </p>
               <p className="text-sm text-muted-foreground">
-                Unlocked {format(lead.unlock.unlockedAt, 'HH:mm, d MMM yyyy')}
+                Accepted {format(lead.unlock.unlockedAt, 'HH:mm, d MMM yyyy')}
               </p>
             </div>
           )}
@@ -944,9 +850,9 @@ export default async function ProviderLeadAccessPage({
           )}
           <div className="px-4 py-3 space-y-0.5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">
-              {isUnlocked ? 'Full location' : 'Area preview'}
+              {hasAcceptedDetails ? 'Full location' : 'Area preview'}
             </p>
-            <p className="font-medium">{isUnlocked ? fullArea : previewArea}</p>
+            <p className="font-medium">{hasAcceptedDetails ? fullArea : previewArea}</p>
           </div>
           <div className="px-4 py-3 space-y-0.5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Preferred time</p>
@@ -958,7 +864,7 @@ export default async function ProviderLeadAccessPage({
               <p className="font-medium">{estimatedValue}</p>
             </div>
           )}
-          {customer && (
+          {hasAcceptedDetails && customer && (
             <div className="px-4 py-3 space-y-0.5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer contact</p>
               <p className="font-medium">{customer.name}</p>
@@ -977,10 +883,10 @@ export default async function ProviderLeadAccessPage({
           {jr.description && (
             <div className="px-4 py-3 space-y-0.5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                {isUnlocked ? 'Description' : 'Short description'}
+                {hasAcceptedDetails ? 'Description' : 'Short description'}
               </p>
               <p className="text-sm whitespace-pre-line">
-                {isUnlocked || jr.description.length <= 180
+                {hasAcceptedDetails || jr.description.length <= 180
                   ? jr.description
                   : `${jr.description.slice(0, 180).trim()}...`}
               </p>
@@ -1005,9 +911,9 @@ export default async function ProviderLeadAccessPage({
               </div>
             </div>
           )}
-          {!isUnlocked && (
+          {!hasAcceptedDetails && (
             <div className="px-4 py-3 text-sm text-muted-foreground">
-              Unlock this lead for 1 Plug-A-Pro Credit to view customer contact details, full address, and photos.
+              Accept this lead for {LEAD_UNLOCK_COST_CREDITS} Plug-A-Pro Credit to view customer contact details, exact address, and access instructions.
             </div>
           )}
           <div className="px-4 py-3 space-y-0.5">
@@ -1180,43 +1086,44 @@ export default async function ProviderLeadAccessPage({
                 <Link href="/provider">Main Menu</Link>
               </Button>
             </>
-          ) : !isUnlocked ? (
+          ) : !confirmingAccept ? (
             <>
-              <form action={acceptLeadWithToken}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="inspectionNeeded" value="false" />
-                <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting job...">
-                  Use 1 Credit &amp; Accept
-                </LeadActionSubmitButton>
-              </form>
-              <form action={unlockLeadWithToken}>
-                <input type="hidden" name="token" value={token} />
-                <LeadActionSubmitButton size="lg" variant="outline" className="w-full" pendingLabel="Unlocking lead...">
-                  Unlock to view details first
-                </LeadActionSubmitButton>
-              </form>
+              <Button asChild size="lg" className="w-full">
+                <Link href={`/leads/access/${encodeURIComponent(token)}?confirmAccept=1`}>
+                  Accept lead — uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}
+                </Link>
+              </Button>
             </>
-          ) : (
+          ) : hasEnoughCredits ? (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="false" />
-              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting job...">
-                Accept Job
+              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting lead...">
+                Confirm accept — use {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}
               </LeadActionSubmitButton>
             </form>
-          )}
-
-          {!isAccepted && !isDeclined && showInspectionOption && (
-            <form action={acceptLeadWithToken}>
-              <input type="hidden" name="token" value={token} />
-              <input type="hidden" name="inspectionNeeded" value="true" />
-              <LeadActionSubmitButton size="lg" variant="outline" className="w-full" pendingLabel="Accepting...">
-                {isUnlocked ? 'Inspection First' : 'Use 1 Credit & Inspect First'}
-              </LeadActionSubmitButton>
-            </form>
+          ) : (
+            <>
+              <Button asChild size="lg" className="w-full">
+                <Link href="/provider/credits">Top Up Credits</Link>
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this lead.
+              </p>
+            </>
           )}
 
           {!isAccepted && !isDeclined && (
+            <>
+              {confirmingAccept && (
+                <Button asChild size="lg" variant="outline" className="w-full">
+                  <Link href={`/leads/access/${encodeURIComponent(token)}`}>Back to preview</Link>
+                </Button>
+              )}
+            </>
+          )}
+
+          {!isAccepted && !isDeclined && !confirmingAccept && (
             <form action={declineLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <LeadActionSubmitButton

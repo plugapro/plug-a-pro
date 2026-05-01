@@ -30,6 +30,7 @@ const PUBLIC_PATHS = [
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET
   '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
+  '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
   '/api/auth/session',     // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',        // called client-side after OTP — no session cookie yet
   '/api/health',           // monitoring probe — must be reachable without a session cookie

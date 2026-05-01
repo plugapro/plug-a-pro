@@ -34,6 +34,8 @@ type LeadAccepted = {
   leadId: string
   matchId: string
   creditTransactionId?: string | null
+  currentCreditBalance?: number
+  alreadyUnlocked?: boolean
   inspectionNeeded: boolean
 }
 
@@ -171,6 +173,8 @@ export async function acceptLead(params: {
     leadId: params.leadId,
     matchId: result.matchId ?? '',
     creditTransactionId: result.creditTransactionId ?? null,
+    currentCreditBalance: result.currentCreditBalance,
+    alreadyUnlocked: result.alreadyUnlocked,
     inspectionNeeded: params.inspectionNeeded === true,
   }
 }
@@ -244,7 +248,7 @@ export async function sendLeadReminders(): Promise<number> {
         `⏰ *Reminder — Lead Still Available*\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
         'View Lead',
         leadUrl,
-        { footer: 'Accept, inspect, or decline from the lead page' },
+        { footer: 'View the lead preview. Accepting uses 1 credit.' },
       )
       await db.lead.update({ where: { id: lead.id }, data: { reminderSentAt: new Date() } })
       sent++
