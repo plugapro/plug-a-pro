@@ -44,6 +44,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
 describe('provider lead access tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.resetModules()
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
     process.env.PROVIDER_LEAD_APP_URL = 'https://app.plugapro.co.za'
   })
