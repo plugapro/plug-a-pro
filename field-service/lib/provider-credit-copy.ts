@@ -3,10 +3,21 @@ export const PROVIDER_APPLY_BUTTON_TITLE = 'Yes, Apply Now'
 export const PROVIDER_NOT_NOW_BUTTON_TITLE = 'Not Now'
 export const PROVIDER_ACCEPTED_LEAD_CREDIT_COST = 1
 
+const DEFAULT_PUBLIC_URL_ENV_VARS = ['APP_PUBLIC_URL', 'NEXT_PUBLIC_APP_URL']
+const PROVIDER_LEAD_PUBLIC_URL_ENV_VARS = [
+  'PROVIDER_LEAD_APP_URL',
+  'NEXT_PUBLIC_PROVIDER_LEAD_APP_URL',
+  ...DEFAULT_PUBLIC_URL_ENV_VARS,
+]
+
 type CreditBalanceBreakdown = {
   totalCreditBalance: number
   promoCreditBalance?: number
   paidCreditBalance?: number
+}
+
+type PublicUrlOptions = {
+  fallbackEnvNames?: string[]
 }
 
 function stripTrailingSlash(value: string) {
@@ -16,6 +27,109 @@ function stripTrailingSlash(value: string) {
 function configuredUrl(name: string) {
   const value = process.env[name]?.trim()
   return value || null
+}
+
+function getPublicUrlResolutionContext(envNames: string[]) {
+  const configured = envNames
+    .map((name) => ({
+      name,
+      value: configuredUrl(name),
+    }))
+    .find((item) => item.value)
+
+  if (!configured) return null
+  return configured
+}
+
+let publicUrlStartupLogged = false
+
+function logPublicUrlConfig(baseUrl: string | null, resolvedFrom: string | null) {
+  if (publicUrlStartupLogged) return
+  publicUrlStartupLogged = true
+
+  console.info('[provider-credit-copy] public app URL config', {
+    resolved: baseUrl ?? '(missing)',
+    resolvedFrom: resolvedFrom ?? 'none',
+    APP_PUBLIC_URL: configuredUrl('APP_PUBLIC_URL') ? '(set)' : '(missing)',
+    NEXT_PUBLIC_APP_URL: configuredUrl('NEXT_PUBLIC_APP_URL') ? '(set)' : '(missing)',
+    PROVIDER_LEAD_APP_URL: configuredUrl('PROVIDER_LEAD_APP_URL') ? '(set)' : '(missing)',
+    NEXT_PUBLIC_PROVIDER_LEAD_APP_URL: configuredUrl('NEXT_PUBLIC_PROVIDER_LEAD_APP_URL') ? '(set)' : '(missing)',
+  })
+}
+
+function getPublicAppUrlFromEnv(
+  path = '',
+  options: PublicUrlOptions = {},
+) {
+  const fallbackEnvNames = options.fallbackEnvNames && options.fallbackEnvNames.length > 0
+    ? options.fallbackEnvNames
+    : DEFAULT_PUBLIC_URL_ENV_VARS
+
+  const resolved = getPublicUrlResolutionContext(fallbackEnvNames)
+  const resolvedFrom = resolved?.name ?? null
+  const baseValue = stripTrailingSlash(resolved?.value ?? '')
+
+  logPublicUrlConfig(baseValue || null, resolvedFrom)
+
+  if (!baseValue) {
+    return { base: '', resolvedFrom }
+  }
+
+  if (!/^https?:\/\//.test(baseValue)) {
+    console.error(
+      '[provider-credit-copy] CONFIG ERROR: public app URL is not absolute and may break WhatsApp links.',
+      {
+        resolvedFrom,
+        value: baseValue,
+      },
+    )
+    return { base: '', resolvedFrom }
+  }
+
+  const host = (() => {
+    try {
+      return new URL(baseValue).hostname.toLowerCase()
+    } catch (error) {
+      console.error(
+        '[provider-credit-copy] CONFIG ERROR: public app URL could not be parsed.',
+        {
+          resolvedFrom,
+          value: baseValue,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      )
+      return ''
+    }
+  })()
+
+  if ((host === 'localhost' || host === '127.0.0.1') && process.env.NODE_ENV === 'production') {
+    console.error(
+      '[provider-credit-copy] CONFIG ERROR: public app URL contains localhost in production — WhatsApp links will be invalid.',
+      {
+        APP_PUBLIC_URL: process.env.APP_PUBLIC_URL ? '(set)' : '(not set)',
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ? '(set)' : '(not set)',
+        resolvedFrom,
+      },
+    )
+    return { base: '', resolvedFrom }
+  }
+
+  if (!baseValue.includes('://') || !baseValue.startsWith('http')) {
+    console.error('[provider-credit-copy] CONFIG ERROR: unexpected public app URL format.')
+    return { base: '', resolvedFrom }
+  }
+
+  if (process.env.NODE_ENV === 'production' && !process.env.APP_PUBLIC_URL && !process.env.NEXT_PUBLIC_APP_URL) {
+    console.error('[provider-credit-copy] CONFIG ERROR: APP_PUBLIC_URL or NEXT_PUBLIC_APP_URL must be set for production WhatsApp links.')
+    return { base: '', resolvedFrom }
+  }
+
+  if (process.env.NODE_ENV === 'production' && !process.env.APP_PUBLIC_URL) {
+    console.warn('[provider-credit-copy] CONFIG NOTE: APP_PUBLIC_URL is not set in production; using NEXT_PUBLIC_APP_URL fallback.')
+  }
+
+  const normalizedPath = path ? (path.startsWith('/') ? path : `/${path}`) : ''
+  return { base: baseValue, path: normalizedPath, resolvedFrom }
 }
 
 /**
@@ -28,42 +142,36 @@ function configuredUrl(name: string) {
  *                                target production URLs without changing client-side config.
  *   2. NEXT_PUBLIC_APP_URL     — Next.js client-visible variable; typically correct in Vercel
  *                                production builds but may be localhost in local dev.
- *   3. Empty string fallback   — callers receive '' and can degrade gracefully (bare-path text).
+ *   3. Empty string fallback   — callers receive '' and should not emit a broken public URL.
  *
- * Production guard: logs a configuration error if NODE_ENV=production and the resolved base
- * URL contains "localhost". Does not throw — the caller still gets the (broken) URL so the
- * message is sent rather than silently dropped, but ops will see the error in logs.
+ * Production guard:
+ * - Logs and blocks localhost in production URLs so no broken links are sent.
+ * - Returns '' if production has missing or malformed app URL configuration.
  */
 export function getPublicAppUrl(path = ''): string {
-  const base = stripTrailingSlash(
-    (process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '').trim()
-  )
+  const resolved = getPublicAppUrlFromEnv(path)
+  if (!resolved.base) return ''
+  return `${resolved.base}${resolved.path}`
+}
 
-  if (process.env.NODE_ENV === 'production' && base.includes('localhost')) {
-    console.error(
-      '[provider-credit-copy] CONFIG ERROR: public app URL contains localhost in production — ' +
-      'WhatsApp links will be broken. Set APP_PUBLIC_URL to the canonical public domain.',
-      {
-        APP_PUBLIC_URL: process.env.APP_PUBLIC_URL ? '(set)' : '(not set)',
-        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ? '(set)' : '(not set)',
-      }
-    )
-  }
-
-  if (!base) return ''
-
-  const normalizedPath = path ? (path.startsWith('/') ? path : `/${path}`) : ''
-  return `${base}${normalizedPath}`
+export function getPublicAppUrlWithOptions(path = '', options?: PublicUrlOptions): string {
+  const resolved = getPublicAppUrlFromEnv(path, options)
+  if (!resolved.base) return ''
+  return `${resolved.base}${resolved.path}`
 }
 
 export function getProviderTermsUrl(): string {
   const configured = configuredUrl('PROVIDER_TERMS_URL') ?? configuredUrl('NEXT_PUBLIC_PROVIDER_TERMS_URL')
   if (configured) return configured
-  return getPublicAppUrl(PROVIDER_TERMS_PATH) || PROVIDER_TERMS_PATH
+  return getPublicAppUrlWithOptions(PROVIDER_TERMS_PATH)
 }
 
 export function getWorkerPortalUrl(path = '/provider'): string {
-  return getPublicAppUrl(path) || path
+  return getPublicAppUrl(path)
+}
+
+export function getProviderLeadPublicAppUrl(path = ''): string {
+  return getPublicAppUrlWithOptions(path, { fallbackEnvNames: PROVIDER_LEAD_PUBLIC_URL_ENV_VARS })
 }
 
 export function creditCountLabel(count: number) {

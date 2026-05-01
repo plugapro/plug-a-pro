@@ -652,8 +652,7 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleWorkerPortal(ctx: FlowContext): Promise<FlowResult> {
-  const baseUrl = getPublicAppUrl()
-  const portalUrl = baseUrl.startsWith('http') ? `${baseUrl}/provider/availability` : ''
+  const portalUrl = getPublicAppUrl('/provider/availability')
   if (!portalUrl) {
     await sendText(ctx.phone, 'Open the Worker Portal and go to Provider > Availability to manage your detailed schedule.')
     return { nextStep: 'done' }

@@ -9,6 +9,7 @@ import type { JobStatus } from '@prisma/client'
 import { recordAuditLog } from './audit'
 import { getJobRequestAccessUrl } from './job-request-access'
 import { openCase } from './cases'
+import { getPublicAppUrl } from './provider-credit-copy'
 
 // ─── Valid transitions ────────────────────────────────────────────────────────
 
@@ -136,8 +137,9 @@ async function triggerSideEffects(params: {
   const providerName = job.provider?.name ?? 'Your provider'
 
   const customer = job.booking.match.jobRequest.customer
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
   const ticketUrl = appUrl ? await getJobRequestAccessUrl(job.booking.match.jobRequest.id) : null
+  const bookingUrl = appUrl ? `${appUrl}/bookings/${job.bookingId}` : null
 
   try {
     const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
@@ -165,7 +167,7 @@ async function triggerSideEffects(params: {
     if (toStatus === 'STARTED') {
       await sendText({
         to: customer.phone,
-        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\nTrack it here: ${ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`}`,
+        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\nTrack it here: ${ticketUrl ?? bookingUrl ?? 'your booking in the Plug A Pro app.'}`,
         bookingId: job.bookingId,
         templateName: 'freeform:job_started',
       })
@@ -179,7 +181,7 @@ async function triggerSideEffects(params: {
       })
       await sendText({
         to: customer.phone,
-        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nTap to confirm completion — no login needed:\n${completionUrl ?? ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`}`,
+        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nTap to confirm completion — no login needed:\n${completionUrl ?? ticketUrl ?? bookingUrl ?? 'Check your app for the booking details.'}`,
         bookingId: job.bookingId,
         templateName: 'freeform:completion_confirmation_request',
       })
@@ -190,7 +192,7 @@ async function triggerSideEffects(params: {
         bookingId: job.bookingId,
         customerName: customer.name,
         customerPhone: customer.phone,
-        invoiceUrl: ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`,
+      invoiceUrl: ticketUrl ?? bookingUrl ?? '',
       })
     }
   } catch (err) {
@@ -282,7 +284,11 @@ export async function createExtraWork(params: {
 
   // Send approval request via WhatsApp
   const { sendExtraWorkApproval } = await import('./whatsapp')
-  const approvalUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? '').trim()}/approve/${extra.approvalToken}`
+  const appUrl = getPublicAppUrl()
+  if (!appUrl) {
+    throw new Error('APP_PUBLIC_URL is required to build extra-work approval links')
+  }
+  const approvalUrl = `${appUrl}/approve/${extra.approvalToken}`
 
   await sendExtraWorkApproval({
     bookingId: params.bookingId,

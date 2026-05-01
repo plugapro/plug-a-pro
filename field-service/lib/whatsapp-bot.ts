@@ -1324,8 +1324,6 @@ export async function notifyProviderApplicationResult(params: {
   approved: boolean
   reason?: string
 }): Promise<void> {
-  const appUrl = getPublicAppUrl()
-
   if (params.approved) {
     if (params.applicationId) {
       const { notifyProviderApplicationApprovedOnce } = await import('./provider-application-notifications')
@@ -1338,12 +1336,26 @@ export async function notifyProviderApplicationResult(params: {
     }
 
     // Use sendCtaUrl so the provider can tap directly into their portal
-    const { sendCtaUrl } = await import('./whatsapp-interactive')
+    const { sendCtaUrl, sendText } = await import('./whatsapp-interactive')
+
+    const portalUrl = getPublicAppUrl('/provider')
+    if (!portalUrl) {
+      await sendText(
+        params.phone,
+        `🎉 *Congratulations, ${params.name}!*
+
+Your application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.
+
+Log in to complete your profile, set your schedule, and start responding to matching requests.`,
+      )
+      return
+    }
+
     await sendCtaUrl(
       params.phone,
       `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule, and start responding to matching requests.`,
       'Open Provider Portal',
-      `${appUrl}/provider`,
+      portalUrl,
       { footer: 'Welcome to the Plug A Pro network! 👋' }
     )
   } else {
@@ -1541,8 +1553,6 @@ async function handleCancelFlow(
 
 async function handleMatchLeadResponse(phone: string, buttonId: string): Promise<void> {
   const { sendButtons, sendCtaUrl, sendText } = await import('./whatsapp-interactive')
-  const appUrl = getPublicAppUrl()
-
   const leadId = buttonId
     .replace('match_accept_', '')
     .replace('match_inspect_', '')
@@ -1794,15 +1804,16 @@ async function handleProviderJobFlow(
     // No status change needed (already SCHEDULED); just confirm acceptance.
     // Prefer a scoped one-job WhatsApp link when this scheduled job originated
     // from a lead; fall back to the authenticated portal for legacy bookings.
-    const acceptedLeadId = job.booking.match.jobRequest.leads.find((lead) => lead.providerId === job.providerId)?.id
+  const acceptedLeadId = job.booking.match.jobRequest.leads.find((lead) => lead.providerId === job.providerId)?.id
+    const fallbackJobUrl = getPublicAppUrl(`/provider/jobs/${jobId}`)
     const jobUrl = acceptedLeadId
       ? await (await import('./provider-lead-access')).getProviderSignedJobHandoverUrl({
           leadId: acceptedLeadId,
           providerId: job.providerId,
           jobRequestId: job.booking.match.jobRequest.id,
           providerPhone: job.provider.phone,
-        }) ?? `${appUrl}/provider/jobs/${jobId}`
-      : `${appUrl}/provider/jobs/${jobId}`
+        }) ?? fallbackJobUrl
+      : fallbackJobUrl
     await sendCtaUrl(
       ctx.phone,
       `✅ *Job Confirmed!*\n\nYou can manage this job from the link below. No login is needed when a secure job link is available.`,
@@ -1875,8 +1886,7 @@ export async function sendQuoteToClient(params: {
   approvalToken: string
 }): Promise<void> {
   const { sendButtons } = await import('./whatsapp-interactive')
-  const appUrl = getPublicAppUrl()
-  const webLink = `${appUrl}/quotes/${params.approvalToken}`
+  const webLink = getPublicAppUrl(`/quotes/${params.approvalToken}`)
 
   const materialsLine = params.materialsCost > 0
     ? `\n• Materials: R ${params.materialsCost.toFixed(2)}`
@@ -1898,8 +1908,6 @@ export async function sendQuoteToClient(params: {
 
 async function handleCustomerQuoteResponse(phone: string, buttonId: string): Promise<void> {
   const { sendText } = await import('./whatsapp-interactive')
-  const appUrl = getPublicAppUrl()
-
   const quoteId = buttonId.replace('quote_accept_', '').replace('quote_decline_', '')
   const action = buttonId.startsWith('quote_accept_') ? 'approve' : 'decline'
 
@@ -1927,7 +1935,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
       result.provider.phone,
       `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
       'View Job',
-      `${appUrl}/technician`
+      getPublicAppUrl('/technician')
     ).catch(() => {})
     const { sendProviderAssigned } = await import('./whatsapp')
     await sendProviderAssigned({

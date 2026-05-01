@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from './db'
+import { getPublicAppUrl } from './provider-credit-copy'
 
 const CUSTOMER_HANDOVER_TTL_MS = 14 * 24 * 60 * 60 * 1000
 
@@ -53,10 +54,6 @@ function parsePayload(encodedPayload: string): CustomerProviderHandoverPayload |
   }
 }
 
-function getAppBaseUrl() {
-  return (process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
-}
-
 export function createCustomerProviderHandoverToken(params: {
   leadId: string
   providerId: string
@@ -104,7 +101,7 @@ export async function getCustomerProviderHandoverUrl(params: {
   jobRequestId: string
   expiresAt?: Date
 }) {
-  const appUrl = getAppBaseUrl()
+  const appUrl = getPublicAppUrl()
   if (!appUrl) return null
 
   const token = createCustomerProviderHandoverToken(params)

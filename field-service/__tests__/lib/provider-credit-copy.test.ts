@@ -85,11 +85,11 @@ describe('getWorkerPortalUrl', () => {
     expect(getWorkerPortalUrl('/provider/credits')).toBe('https://app.example.com/provider/credits')
   })
 
-  it('returns bare path when no base URL is configured', () => {
+  it('returns empty string when no base URL is configured', () => {
     vi.stubEnv('APP_PUBLIC_URL', '')
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
 
-    expect(getWorkerPortalUrl('/provider')).toBe('/provider')
+    expect(getWorkerPortalUrl('/provider')).toBe('')
   })
 })
 
@@ -104,13 +104,13 @@ describe('provider credit copy', () => {
     expect(getProviderTermsUrl()).toBe('https://terms.example.com/provider')
   })
 
-  it('uses a controlled fallback provider terms path when no URL is configured', () => {
+  it('returns empty terms URL when no base URL is configured', () => {
     vi.stubEnv('PROVIDER_TERMS_URL', '')
     vi.stubEnv('NEXT_PUBLIC_PROVIDER_TERMS_URL', '')
     vi.stubEnv('APP_PUBLIC_URL', '')
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
 
-    expect(getProviderTermsUrl()).toBe('/provider/terms/credits')
+    expect(getProviderTermsUrl()).toBe('')
   })
 
   it('builds a full terms URL from APP_PUBLIC_URL when specific vars are absent', () => {

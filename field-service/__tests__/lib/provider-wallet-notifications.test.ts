@@ -23,11 +23,11 @@ describe('provider wallet notification message builders', () => {
     expect(message).toContain('https://app.example.com/provider/credits')
   })
 
-  it('builds the low-balance warning copy with path fallback when NEXT_PUBLIC_APP_URL is absent', () => {
+  it('builds the low-balance warning copy with empty portal URL when NEXT_PUBLIC_APP_URL is absent', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
     const message = buildLowBalanceWarningMessage()
 
-    expect(message).toContain('/provider/credits')
+    expect(message).toContain('Top up now so you do not miss matched leads:')
     expect(message).not.toContain('https://')
   })
 

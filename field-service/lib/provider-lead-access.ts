@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'crypto'
 import { db } from './db'
 import { previewNotes } from './provider-lead-detail'
+import { getProviderLeadPublicAppUrl } from './provider-credit-copy'
 
 const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
 
@@ -96,16 +97,6 @@ function parsePayload(encodedPayload: string): ProviderLeadTokenPayload | null {
   }
 }
 
-function getProviderLeadBaseUrl() {
-  return (
-    process.env.PROVIDER_LEAD_APP_URL ||
-    process.env.NEXT_PUBLIC_PROVIDER_LEAD_APP_URL ||
-    process.env.APP_PUBLIC_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    ''
-  ).trim().replace(/\/+$/, '')
-}
-
 export function createProviderLeadAccessToken(params: {
   leadId: string
   providerId: string
@@ -182,7 +173,7 @@ export async function getProviderLeadAccessUrl(params: {
   scopes?: ProviderLeadAccessScope[]
   expiresAt?: Date
 }) {
-  const appUrl = getProviderLeadBaseUrl()
+  const appUrl = getProviderLeadPublicAppUrl()
   if (!appUrl) return null
 
   const token = createProviderLeadAccessToken({
@@ -199,7 +190,7 @@ export async function getProviderSignedJobHandoverUrl(params: {
   providerPhone?: string | null
   expiresAt?: Date
 }) {
-  const appUrl = getProviderLeadBaseUrl()
+  const appUrl = getProviderLeadPublicAppUrl()
   if (!appUrl) return null
 
   const token = createProviderLeadAccessToken({

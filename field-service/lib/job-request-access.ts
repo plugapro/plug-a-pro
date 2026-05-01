@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto'
 import { db } from './db'
+import { getPublicAppUrl } from './provider-credit-copy'
 
 const ACCESS_TOKEN_TTL_DAYS = 90
 
@@ -57,7 +58,7 @@ export async function ensureJobRequestAccessToken(jobRequestId: string) {
 }
 
 export async function getJobRequestAccessUrl(jobRequestId: string) {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
   if (!appUrl) return null
   const { token } = await ensureJobRequestAccessToken(jobRequestId)
   return `${appUrl}/requests/access/${token}`

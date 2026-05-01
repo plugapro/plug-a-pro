@@ -10,6 +10,7 @@ import { TEMPLATES, type TemplateName } from './messaging-templates'
 import { canSend } from './whatsapp-policy'
 import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
+import { getPublicAppUrl } from './provider-credit-copy'
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
@@ -828,7 +829,8 @@ export async function sendAdminNewApplication(params: {
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (!adminPhone) return // not configured — skip silently
 
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
+  if (!appUrl) return
   const reviewUrl = `${appUrl}/admin/applications`
   const skillList = params.skills.join(', ') || 'Not specified'
   const areaList = normaliseLocationDisplayNames(params.serviceAreas).join(', ') || 'Not specified'
@@ -1032,7 +1034,8 @@ export async function sendAdminNoMatch(params: {
 }): Promise<void> {
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (!adminPhone) return
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
+  if (!appUrl) return
 
   await sendText({
     to: adminPhone,
@@ -1047,7 +1050,8 @@ export async function sendAdminProviderDropped(params: {
 }): Promise<void> {
   const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER
   if (!adminPhone) return
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
+  if (!appUrl) return
 
   await sendText({
     to: adminPhone,

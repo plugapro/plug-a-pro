@@ -7,6 +7,7 @@
 // TTL:           48 hours (shorter than the 72h provider lead token)
 
 import { createHmac, timingSafeEqual } from 'crypto'
+import { getPublicAppUrl } from './provider-credit-copy'
 
 const TOKEN_TTL_MS = 48 * 60 * 60 * 1000
 
@@ -97,7 +98,7 @@ export function getJobCompletionUrl(params: {
   jobId: string
   customerId: string
 }): string | null {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '')
+  const appUrl = getPublicAppUrl()
   if (!appUrl) return null
   const token = createJobCompletionToken(params)
   return `${appUrl}/confirm-completion/${encodeURIComponent(token)}`

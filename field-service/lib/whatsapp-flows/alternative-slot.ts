@@ -25,8 +25,6 @@ import { db } from '../db'
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import type { SlotOption } from '../matching/types'
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
-
 // ── Public entry point — called by orchestrator on NO_MATCH ──────────────────
 
 export async function initiateAlternativeSlotNegotiation(params: {
