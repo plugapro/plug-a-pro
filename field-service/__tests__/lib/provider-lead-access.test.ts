@@ -27,7 +27,14 @@ function makeLead(overrides: Record<string, unknown> = {}) {
       requestedWindowEnd: null,
       requestedArrivalLatest: null,
       customerAcceptedAmount: null,
-      address: { suburb: 'Sandton', city: 'Johannesburg' },
+      address: { suburb: 'Sandton', city: 'Johannesburg', province: 'Gauteng', region: 'JHB North' },
+      attachments: [
+        {
+          id: 'photo-preview-1',
+          caption: 'Tap photo',
+          label: 'customer_photo',
+        },
+      ],
       match: null,
     },
     ...overrides,
@@ -122,7 +129,7 @@ describe('provider lead access tokens', () => {
     })
   })
 
-  it('withholds customer PII, full address, and attachments before unlock', async () => {
+  it('withholds customer PII and full address before acceptance while allowing preview photos', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
     mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
@@ -137,8 +144,14 @@ describe('provider lead access tokens', () => {
         unlock: null,
         jobRequest: {
           customer: null,
-          address: { suburb: 'Sandton', city: 'Johannesburg' },
-          attachments: [],
+          address: { suburb: 'Sandton', city: 'Johannesburg', province: 'Gauteng', region: 'JHB North' },
+          attachments: [
+            {
+              id: 'photo-preview-1',
+              caption: 'Tap photo',
+              label: 'customer_photo',
+            },
+          ],
         },
       },
     })
@@ -148,7 +161,7 @@ describe('provider lead access tokens', () => {
         jobRequest: {
           select: expect.not.objectContaining({
             customer: expect.anything(),
-            attachments: expect.anything(),
+            street: expect.anything(),
           }),
         },
       }),
@@ -156,7 +169,7 @@ describe('provider lead access tokens', () => {
     expect(serialized).not.toContain('Nomsa Dlamini')
     expect(serialized).not.toContain('+27821234567')
     expect(serialized).not.toContain('12 Exact Street')
-    expect(serialized).not.toContain('photo-private')
+    expect(serialized).toContain('photo-preview-1')
     expect(serialized).not.toContain('Gate code 1234')
   })
 
@@ -267,13 +280,15 @@ describe('provider lead access tokens', () => {
     expect(resolved.lead).toBeNull()
   })
 
-  it('loads sensitive lead fields only after unlock', async () => {
+  it('loads customer PII and full address after acceptance; attachments come from first query', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
     mockDb.lead.findUnique
       .mockResolvedValueOnce(makeLead({
+        status: 'ACCEPTED',
         unlock: { id: 'unlock-1', providerId: 'provider-1' },
       }))
+      // Second query fetches only customer PII + full address — attachments are NOT re-fetched
       .mockResolvedValueOnce({
         jobRequest: {
           customer: { id: 'customer-1', name: 'Nomsa Dlamini', phone: '+27821234567' },
@@ -287,7 +302,6 @@ describe('provider lead access tokens', () => {
             city: 'Johannesburg',
             province: 'Gauteng',
           },
-          attachments: [{ id: 'photo-private', caption: 'Leak', label: 'before' }],
         },
       })
 
@@ -302,8 +316,9 @@ describe('provider lead access tokens', () => {
       street: '12 Exact Street',
       unitNumber: 'Unit 7',
     })
+    // Attachments come from the first query (preview photos always available)
     expect(resolved.lead?.jobRequest.attachments).toEqual([
-      { id: 'photo-private', caption: 'Leak', label: 'before' },
+      { id: 'photo-preview-1', caption: 'Tap photo', label: 'customer_photo' },
     ])
   })
 })

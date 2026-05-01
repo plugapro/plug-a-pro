@@ -226,6 +226,48 @@ describe('processInboundMessage stateless notification replies', () => {
     )
   })
 
+  it('sends an expired-lead message when acceptLead returns EXPIRED', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
+    mockAcceptLead.mockResolvedValue({ ok: false, reason: 'EXPIRED' })
+
+    await processInboundMessage(buttonMessage('accept:hold-1'))
+
+    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('⏰ This lead has expired'),
+    )
+  })
+
+  it('sends a taken message when acceptLead returns TAKEN', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
+    mockAcceptLead.mockResolvedValue({ ok: false, reason: 'TAKEN' })
+
+    await processInboundMessage(buttonMessage('accept:hold-1'))
+
+    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('⚡ This job was just assigned to another provider'),
+    )
+  })
+
+  it('does not send an error message on successful accept — delegates success notification to acceptLead', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
+    mockAcceptLead.mockResolvedValue({ ok: true, matchId: 'match-1' })
+
+    await processInboundMessage(buttonMessage('accept:hold-1'))
+
+    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+    // Bot delegates success messaging (credit confirmation, job link) to acceptLead — no extra bot message
+    expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('Something went wrong'))
+    expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('expired'))
+    expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('insufficient'))
+  })
+
   it('processes quote acceptance buttons even when the previous conversation session expired mid-flow', async () => {
     mockProcessQuoteDecision.mockResolvedValue({ error: 'EXPIRED' })
 
