@@ -1894,10 +1894,12 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
 
 async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): Promise<void> {
   const { sendText } = await import('./whatsapp-interactive')
+  const traceId = createTraceId('wbot')
   const holdId = buttonId.slice('accept:'.length)
 
   const provider = await db.provider.findUnique({ where: { phone }, select: { id: true, name: true } })
   if (!provider) {
+    console.warn('[whatsapp-bot] accept: provider not found', { traceId, holdId })
     await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
     return
   }
@@ -1908,6 +1910,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     select: { id: true, jobRequestId: true },
   })
   if (!lead) {
+    console.warn('[whatsapp-bot] accept: lead not found for hold', { traceId, holdId, providerId: provider.id })
     await sendText(phone, "⚠️ This lead could not be found — it may have expired or already been taken. New leads will come through as jobs arise.")
     return
   }
@@ -1917,21 +1920,29 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
 
   if (!result.ok) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
+      console.warn('[whatsapp-bot] accept: insufficient credits', {
+        traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'INSUFFICIENT_CREDITS',
+      })
       await sendLeadInsufficientCreditsMessage(phone, lead.id, result.currentCreditBalance ?? 0)
       return
     }
     if (result.reason === 'PROVIDER_NOT_APPROVED') {
+      console.warn('[whatsapp-bot] accept: provider not approved', {
+        traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'PROVIDER_NOT_APPROVED',
+      })
       await sendText(phone, "Your provider application is still under review. You'll be able to receive and accept leads once approved.")
       return
     }
     if (result.reason === 'EXPIRED') {
+      console.info('[whatsapp-bot] accept: lead expired', { traceId, holdId, leadId: lead.id, providerId: provider.id })
       await sendText(phone, "⏰ This lead has expired — the offer window closed before your response. New leads will come through as jobs arise.")
     } else if (result.reason === 'TAKEN') {
+      console.info('[whatsapp-bot] accept: lead taken', { traceId, holdId, leadId: lead.id, providerId: provider.id })
       await sendText(phone, "⚡ This job was just assigned to another provider. New leads will come through as jobs arise.")
     } else {
-      const traceId = createTraceId('wbot')
-      console.error('[whatsapp-bot] handleAssignmentHoldAcceptance unexpected failure', {
-        traceId, phone, holdId, reason: result.reason,
+      console.error('[whatsapp-bot] accept: unexpected failure', {
+        traceId, holdId, leadId: lead.id, providerId: provider.id, reason: result.reason,
+        error_code: 'UNKNOWN_CREDIT_ERROR',
       })
       await sendText(phone, `😔 Something went wrong processing your acceptance. Please try again or contact support.\n\n_Ref: ${traceId}_`)
     }
@@ -1987,6 +1998,7 @@ async function handlePostMatchContactCustomer(phone: string, buttonId: string): 
 
 async function handleAssignmentHoldDecline(phone: string, buttonId: string): Promise<void> {
   const { sendText } = await import('./whatsapp-interactive')
+  const traceId = createTraceId('wbot')
 
   const colonIdx = buttonId.indexOf(':')
   const prefix = buttonId.slice(0, colonIdx)
@@ -2001,6 +2013,7 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
 
   const provider = await db.provider.findUnique({ where: { phone }, select: { id: true } })
   if (!provider) {
+    console.warn('[whatsapp-bot] decline: provider not found', { traceId, holdId })
     await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
     return
   }
@@ -2010,6 +2023,7 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
     select: { id: true },
   })
   if (!lead) {
+    console.info('[whatsapp-bot] decline: lead not found for hold (expired or already closed)', { traceId, holdId, providerId: provider.id })
     await sendText(phone, "Understood — we've noted your response. New leads will come through as jobs arise.")
     return
   }
@@ -2026,8 +2040,7 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
       `Understood — lead passed (${reason}). We'll keep matching this job with other providers. New leads will come through as they arise.`
     )
   } catch (error) {
-    const traceId = createTraceId('wbot')
-    console.error('[whatsapp-bot] handleAssignmentHoldDecline failed', {
+    console.error('[whatsapp-bot] decline: unexpected failure', {
       traceId, phone, holdId, reason, leadId: lead.id, providerId: provider.id, error,
     })
     await sendText(

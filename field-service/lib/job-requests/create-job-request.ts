@@ -58,6 +58,10 @@ export interface CreateJobRequestParams {
   province: string
   postalCode?: string | null
   locationNodeId?: string | null   // SUBURB node ID — null for legacy/WhatsApp paths
+
+  // WhatsApp photos are stored before the JobRequest exists. Link them inside
+  // this transaction so request creation and photo ownership stay consistent.
+  photoAttachmentIds?: string[]
 }
 
 export interface CreateJobRequestResult {
@@ -83,6 +87,20 @@ export class DuplicateActiveRequestError extends Error {
   }
 }
 
+export class JobRequestPhotoLinkError extends Error {
+  constructor(
+    public readonly expectedCount: number,
+    public readonly linkedCount: number,
+  ) {
+    super('JOB_REQUEST_PHOTO_LINK_FAILED')
+    this.name = 'JobRequestPhotoLinkError'
+  }
+}
+
+function uniqueAttachmentIds(ids: string[] | undefined) {
+  return Array.from(new Set((ids ?? []).map((id) => id.trim()).filter(Boolean)))
+}
+
 export async function createJobRequest(
   params: CreateJobRequestParams,
 ): Promise<CreateJobRequestResult> {
@@ -92,6 +110,7 @@ export async function createJobRequest(
   const phone = normalizePhone(params.phone)
   params = { ...params, phone }
   const cohort = createTestCohortContext(phone)
+  const photoAttachmentIds = uniqueAttachmentIds(params.photoAttachmentIds)
 
   const providerForPhone = await (db as any).provider?.findFirst?.({
     where: { phone: { in: phoneLookupVariants(phone) } },
@@ -301,6 +320,33 @@ export async function createJobRequest(
       },
       select: { id: true },
     })
+
+    if (photoAttachmentIds.length > 0) {
+      const linkResult = await tx.attachment.updateMany({
+        where: {
+          id: { in: photoAttachmentIds },
+          jobRequestId: null,
+          jobId: null,
+          providerApplicationId: null,
+          label: 'customer_photo',
+        },
+        data: { jobRequestId: jobRequest.id },
+      })
+
+      if (linkResult.count !== photoAttachmentIds.length) {
+        console.error('[create-job-request] photo attachment link mismatch', {
+          jobRequestId: jobRequest.id,
+          expected: photoAttachmentIds.length,
+          linked: linkResult.count,
+        })
+        throw new JobRequestPhotoLinkError(photoAttachmentIds.length, linkResult.count)
+      }
+
+      console.info('[create-job-request] customer photos linked', {
+        jobRequestId: jobRequest.id,
+        linked: linkResult.count,
+      })
+    }
 
     return { jobRequestId: jobRequest.id, customerId: customer.id }
   })

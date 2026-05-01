@@ -434,7 +434,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       expect(locationNodes.resolveSuburbNodeId).not.toHaveBeenCalled()
     })
 
-    it('backfills every uploaded customer photo onto the created job request', async () => {
+    it('passes uploaded customer photo IDs into transactional request creation', async () => {
       await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, {
           ...structuredData,
@@ -442,10 +442,31 @@ describe('WhatsApp job-request flow — structured address', () => {
         })
       )
 
-      expect(db.attachment.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['att_001', 'att_002', 'att_003'] }, jobRequestId: null },
-        data: { jobRequestId: 'jr_test123456' },
-      })
+      expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photoAttachmentIds: ['att_001', 'att_002', 'att_003'],
+        })
+      )
+      expect(db.attachment.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('returns to photo collection when transactional photo linking fails', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValueOnce(
+        new createJobRequestModule.JobRequestPhotoLinkError(1, 0),
+      )
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          photoAttachmentIds: ['att_001'],
+        }),
+      )
+
+      expect(result.nextStep).toBe('collect_photos')
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('could not safely attach your photo'),
+      )
     })
 
     it('falls back to status buttons when ticket CTA delivery fails after a successful submission', async () => {

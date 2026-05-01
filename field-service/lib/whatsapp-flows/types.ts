@@ -114,7 +114,7 @@ export interface ConversationData {
   savedAddressId?: string       // DB Address.id of the saved address selected by customer (skip re-create)
   issueDescription?: string     // free-text issue description captured before availability step
   availabilityNote?: string     // free-text preferred availability from customer
-  photoAttachmentIds?: string[] // Attachment IDs for customer job photos (backfilled onto job request after creation)
+  photoAttachmentIds?: string[] // Attachment IDs for customer job photos linked during request creation
   jobRequestId?: string
   matchId?: string
   category?: string

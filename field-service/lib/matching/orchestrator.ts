@@ -96,11 +96,27 @@ export async function orchestrateMatch(
       usePool: useCandidatePool,
     })
 
+    // Hard-exclude providers who already declined a lead for this job request.
+    // A fresh dispatch decision must not reselect a provider who explicitly declined
+    // in a prior dispatch window — this prevents offer storms on the same provider.
+    const declinedLeads = await db.lead.findMany({
+      where: { jobRequestId, status: 'DECLINED' },
+      select: { providerId: true },
+    })
+    const declinedProviderIds = new Set(declinedLeads.map((l) => l.providerId))
+    const declinedFilteredOut: FilteredProvider[] = rawCandidates
+      .filter((c) => declinedProviderIds.has(c.id))
+      .map((c) => ({ providerId: c.id, filteredReasonCodes: ['PROVIDER_PREVIOUSLY_DECLINED'] }))
+    const candidatesForFiltering = declinedProviderIds.size > 0
+      ? rawCandidates.filter((c) => !declinedProviderIds.has(c.id))
+      : rawCandidates
+
     // 2. Filter: area coverage, skills, certs, equipment, live status, capacity
-    const { eligible, filteredOut, nearMiss } = await filterEligibleProviders(
-      rawCandidates,
+    const { eligible, filteredOut: eligibilityFilteredOut, nearMiss } = await filterEligibleProviders(
+      candidatesForFiltering,
       jobRequest as Parameters<typeof filterEligibleProviders>[1]
     )
+    const filteredOut: FilteredProvider[] = [...declinedFilteredOut, ...eligibilityFilteredOut]
 
     if (eligible.length === 0) {
       const noMatchExplanation = nearMiss.length > 0

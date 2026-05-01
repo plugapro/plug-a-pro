@@ -40,7 +40,10 @@ import {
   type WhatsAppSavedAddress,
 } from '../whatsapp-identity'
 import { createTraceId } from '../support-diagnostics'
-import { DuplicateActiveRequestError } from '../job-requests/create-job-request'
+import {
+  DuplicateActiveRequestError,
+  JobRequestPhotoLinkError,
+} from '../job-requests/create-job-request'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
@@ -1025,6 +1028,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
   try {
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
+    const photoAttachmentIds = uniqueStrings(ctx.data.photoAttachmentIds ?? []).slice(0, MAX_CUSTOMER_PHOTOS)
 
     // Dedup is now enforced inside createJobRequest.$transaction via
     // DuplicateActiveRequestError — handled in the catch block below.
@@ -1072,6 +1076,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         province: resolvedAddr.province,
         postalCode: resolvedAddr.postalCode,
         locationNodeId: resolvedAddr.locationNodeId,
+        photoAttachmentIds,
       })
     } else {
       // ── Legacy path — old in-flight conversations only ────────────────────
@@ -1087,45 +1092,14 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         city:     ctx.data.addressCity   ?? addrParts[2] ?? addrParts[1] ?? '',
         province: addrParts[3] ?? '',
         locationNodeId: ctx.data.addressLocationNodeId ?? null,
+        photoAttachmentIds,
       })
     }
 
-    // Backfill jobRequestId on any customer photos uploaded during the flow.
-    // Photos are created with jobRequestId=null during the WhatsApp conversation and linked here
-    // once the JobRequest row exists.
-    // TODO: Add a cron sweep (e.g. in match-leads/route.ts) to delete Attachment rows where
-    //       label='customer_photo', jobRequestId IS NULL, and createdAt < NOW() - 24h.
-    //       These are orphans from abandoned WhatsApp sessions.
-    let photosLinked = 0
-    const expectedPhotos = ctx.data.photoAttachmentIds?.length ?? 0
-    if (expectedPhotos > 0) {
-      try {
-        const backfillResult = await db.attachment.updateMany({
-          where: { id: { in: ctx.data.photoAttachmentIds }, jobRequestId: null },
-          data: { jobRequestId: result.jobRequestId },
-        })
-        photosLinked = backfillResult.count
-        if (photosLinked !== expectedPhotos) {
-          console.warn('[job-request-flow] photo backfill partial', {
-            jobRequestId: result.jobRequestId,
-            expected: expectedPhotos,
-            linked: photosLinked,
-          })
-        }
-      } catch (err) {
-        console.error('[job-request-flow] photo attachment backfill failed:', {
-          jobRequestId: result.jobRequestId,
-          err,
-        })
-        // photosLinked stays 0 — success message will omit photo count
-      }
-    }
-
+    const photosLinked = photoAttachmentIds.length
     const photoNote = photosLinked > 0
       ? `\n📸 ${photosLinked} photo${photosLinked === 1 ? '' : 's'} attached.`
-      : expectedPhotos > 0 && photosLinked === 0
-        ? '\n⚠️ Photos could not be attached — add them via the ticket link.'
-        : ''
+      : ''
 
     const successMessage =
       `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*${photoNote}\n\n` +
@@ -1199,6 +1173,20 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`,
       )
       return { nextStep: 'done', nextData: { jobRequestId: err.existingId, customerId: err.customerId } }
+    }
+
+    if (err instanceof JobRequestPhotoLinkError) {
+      const traceId = createTraceId('req')
+      console.error('[job-request-flow] customer photo link failed:', {
+        traceId,
+        expected: err.expectedCount,
+        linked: err.linkedCount,
+      })
+      await sendText(
+        ctx.phone,
+        `😔 We received your request details, but could not safely attach your photo. Please try submitting again or type *skip* to continue without photos.\n\n_Ref: ${traceId}_`,
+      )
+      return { nextStep: 'collect_photos' }
     }
 
     const errorMessage = err instanceof Error ? err.message : String(err)

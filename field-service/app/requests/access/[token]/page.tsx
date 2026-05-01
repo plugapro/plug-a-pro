@@ -11,6 +11,7 @@ import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
+import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 
 export const metadata = buildMetadata({ title: 'Ticket Details', noIndex: true })
 
@@ -110,21 +111,21 @@ export default async function TicketAccessPage({
                 Photos
               </p>
               <div className="grid grid-cols-2 gap-2">
-                {jobRequest.attachments.map((photo) => (
-                  <a
-                    key={photo.id}
-                    href={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
-                      alt={photo.caption ?? photo.label ?? 'Job photo'}
+                {jobRequest.attachments.map((photo) => {
+                  const src = `/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`
+                  return (
+                    <AttachmentThumbnail
+                      key={photo.id}
+                      attachmentId={photo.id}
+                      src={src}
+                      href={src}
+                      alt={photo.caption ?? 'Customer photo'}
                       className="h-36 w-full rounded-lg object-cover"
+                      fallbackText="Photo unavailable"
+                      showDiagnostics={false}
                     />
-                  </a>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -199,15 +200,18 @@ export default async function TicketAccessPage({
               <div className="grid grid-cols-2 gap-2">
                 {booking.job.photos.map((photo) => (
                   <div key={photo.id} className="space-y-1">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <AttachmentThumbnail
+                      attachmentId={photo.id}
                       src={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
-                      alt={photo.caption ?? photo.label ?? 'Work evidence'}
+                      href={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
+                      alt={photo.caption ?? 'Work evidence'}
                       className="h-40 w-full rounded-lg object-cover"
+                      fallbackText="Photo unavailable"
+                      showDiagnostics={false}
                     />
-                    {(photo.caption || photo.label) && (
+                    {photo.caption && (
                       <p className="text-xs text-muted-foreground">
-                        {photo.caption ?? photo.label}
+                        {photo.caption}
                       </p>
                     )}
                   </div>

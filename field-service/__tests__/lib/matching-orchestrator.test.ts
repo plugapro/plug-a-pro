@@ -20,6 +20,7 @@ const {
       update: vi.fn(),
       findUnique: vi.fn(),
     },
+    lead: { findMany: vi.fn() },
   },
   mockLoadMatchingJobRequest: vi.fn(),
   mockLoadCandidatePool: vi.fn(),
@@ -126,6 +127,8 @@ describe('orchestrateMatch', () => {
     vi.clearAllMocks()
     mockIsEnabled.mockResolvedValue(false)
     mockDb.assignmentHold.findFirst.mockResolvedValue(null)
+    // Default: no declined leads for this job request
+    mockDb.lead.findMany.mockResolvedValue([])
     // Default: no alt-slot negotiation in flight
     mockDb.jobRequest.findUnique.mockResolvedValue({ altSlotNegotiationSentAt: null, altSlotNegotiationOutcome: null })
     mockDb.dispatchDecision.create.mockResolvedValue({ id: 'decision-1' })
@@ -288,6 +291,32 @@ describe('orchestrateMatch', () => {
     await orchestrateMatch('job-1', { triggeredBy: 'job_creation' })
 
     expect(mockLoadCandidatePool).toHaveBeenCalledWith(expect.objectContaining({ usePool: true }))
+  })
+
+  // ── Declined-provider exclusion ─────────────────────────────────────────────
+
+  it('excludes a provider who previously declined a lead for this job request', async () => {
+    const c1 = makeEligibleCandidate('provider-declined')
+    const c2 = makeEligibleCandidate('provider-fresh')
+    const hold = makeHold('job-1', 'provider-fresh')
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
+    mockLoadCandidatePool.mockResolvedValue([c1, c2])
+    // Simulate provider-declined having DECLINED a lead for job-1
+    mockDb.lead.findMany.mockResolvedValue([{ providerId: 'provider-declined' }])
+    // filterEligibleProviders will only see c2 (c1 is pre-filtered)
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [c2], filteredOut: [], nearMiss: [] })
+    mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-fresh', score: 0.85, rank: 1 }])
+    mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: c2 })
+
+    const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
+
+    expect(result.status).toBe('DISPATCHED')
+    expect((result as any).providerId).toBe('provider-fresh')
+    // filterEligibleProviders must NOT receive the declined provider
+    expect(mockFilterEligibleProviders).toHaveBeenCalledWith(
+      expect.not.arrayContaining([expect.objectContaining({ id: 'provider-declined' })]),
+      expect.anything(),
+    )
   })
 
   // ── Error handling ──────────────────────────────────────────────────────────

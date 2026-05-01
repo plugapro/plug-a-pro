@@ -207,6 +207,29 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     expect(mockHead).toHaveBeenCalledWith('https://blob.example.com/att-1')
   })
 
+  it('allows a valid ticket token to load a customer photo linked directly to that request', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveJobRequestAccessScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-1',
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      jobRequest: {
+        id: 'jr-1',
+        customer: { id: 'cust-db-id' },
+      },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeTokenRequest('token-123'), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    expect(mockFetch).toHaveBeenCalledWith('https://blob.example.com/download/att-1')
+    expect(res.headers.get('Content-Type')).toBe('image/jpeg')
+  })
+
   it('denies an unauthenticated request when the ticket token does not match the attachment job request', async () => {
     mockGetSession.mockResolvedValue(null)
     mockResolveJobRequestAccessScope.mockResolvedValue({

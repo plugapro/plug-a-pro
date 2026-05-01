@@ -87,6 +87,9 @@ function makeTx() {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(),
     },
+    attachment: {
+      updateMany: vi.fn(),
+    },
   }
 }
 
@@ -126,6 +129,44 @@ describe('createJobRequest', () => {
     expect(tx.address.create).toHaveBeenCalledOnce()
     expect(tx.jobRequest.create).toHaveBeenCalledOnce()
     expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-1', ticketUrl: null })
+  })
+
+  it('links pre-uploaded WhatsApp customer photos inside the intake transaction', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    tx.attachment.updateMany.mockResolvedValue({ count: 2 })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({ ...BASE_PARAMS, photoAttachmentIds: ['att-1', 'att-2', 'att-1'] })
+
+    expect(tx.attachment.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['att-1', 'att-2'] },
+        jobRequestId: null,
+        jobId: null,
+        providerApplicationId: null,
+        label: 'customer_photo',
+      },
+      data: { jobRequestId: 'jr-1' },
+    })
+  })
+
+  it('rolls back request creation when uploaded photos cannot all be linked', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    tx.attachment.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await expect(
+      createJobRequest({ ...BASE_PARAMS, photoAttachmentIds: ['att-1', 'att-2'] }),
+    ).rejects.toThrow('JOB_REQUEST_PHOTO_LINK_FAILED')
+
+    expect(tx.attachment.updateMany).toHaveBeenCalledOnce()
+    expect(mockOrchestrateMatch).not.toHaveBeenCalled()
   })
 
   it('blocks customer request creation when the phone belongs to a provider', async () => {

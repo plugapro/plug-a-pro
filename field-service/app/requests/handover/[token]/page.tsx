@@ -174,7 +174,9 @@ export default async function CustomerProviderHandoverPage({
                       attachmentId={photo.id}
                       src={src}
                       href={src}
-                      alt={photo.caption ?? photo.label ?? 'Request photo'}
+                      alt={photo.caption ?? 'Request photo'}
+                      fallbackText="Photo unavailable"
+                      showDiagnostics={false}
                     />
                   )
                 })}
