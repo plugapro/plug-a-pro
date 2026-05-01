@@ -8,6 +8,7 @@ import { hasSuccessfulMessageForRecipient } from '@/lib/message-events'
 import { getProviderLeadAccessUrl } from '@/lib/provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '@/lib/provider-wallet'
 import { LEAD_UNLOCK_COST_CREDITS } from '@/lib/lead-unlocks'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { notifyProviderZeroBalanceLeadAvailable } from '@/lib/provider-wallet-notifications'
 import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
 import type { CandidatePoolEntry } from './candidate-pool'
@@ -56,7 +57,7 @@ export async function dispatchMatchLead(params: {
   })
 
   // WhatsApp lead notification — non-blocking, failure does not roll back hold
-  const suburb = jobRequest.address?.suburb ?? 'your area'
+  const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
   const category = jobRequest.category
   const expiryStr = hold.expiresAt.toLocaleTimeString('en-ZA', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg',

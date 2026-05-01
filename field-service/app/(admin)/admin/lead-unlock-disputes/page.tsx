@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { type LeadUnlockDisputeStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { Textarea } from '@/components/ui/textarea'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
@@ -150,7 +151,7 @@ export default async function LeadUnlockDisputesPage({
           const jobRequest = dispute.leadUnlock.lead.jobRequest
           const address = jobRequest.address
           const location = address
-            ? [address.suburb, address.city].filter(Boolean).join(', ')
+            ? [normaliseLocationDisplayName(address.suburb), normaliseLocationDisplayName(address.city)].filter(Boolean).join(', ')
             : 'Location on file'
 
           return (

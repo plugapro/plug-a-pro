@@ -9,6 +9,7 @@ import { logOutboundMessage } from './message-events'
 import { TEMPLATES, type TemplateName } from './messaging-templates'
 import { canSend } from './whatsapp-policy'
 import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
+import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
@@ -750,7 +751,7 @@ export async function sendJobOffer(params: {
         parameters: [
           { type: 'text', text: params.providerFirstName },
           { type: 'text', text: params.serviceName },
-          { type: 'text', text: params.area },
+          { type: 'text', text: normaliseLocationDisplayName(params.area) },
           { type: 'text', text: params.scheduledWindow },
           { type: 'text', text: params.jobUrl },
         ],
@@ -830,7 +831,7 @@ export async function sendAdminNewApplication(params: {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   const reviewUrl = `${appUrl}/admin/applications`
   const skillList = params.skills.join(', ') || 'Not specified'
-  const areaList = params.serviceAreas.join(', ') || 'Not specified'
+  const areaList = normaliseLocationDisplayNames(params.serviceAreas).join(', ') || 'Not specified'
 
   try {
     const { sendCtaUrl } = await import('./whatsapp-interactive')
@@ -1035,7 +1036,7 @@ export async function sendAdminNoMatch(params: {
 
   await sendText({
     to: adminPhone,
-    text: `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${params.area}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed:\n${appUrl}/admin/dispatch`,
+    text: `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${normaliseLocationDisplayName(params.area)}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed:\n${appUrl}/admin/dispatch`,
   })
 }
 

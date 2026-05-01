@@ -1,6 +1,7 @@
 import type { LeadStatus } from '@prisma/client'
 import { db } from './db'
 import { previewNotes } from './provider-lead-detail'
+import { normaliseLocationDisplayName } from './location-format'
 
 export type ProviderLeadListItem = {
   id: string
@@ -14,7 +15,10 @@ export type ProviderLeadListItem = {
 
 function formatArea(address: { suburb: string | null; city: string | null } | null) {
   if (!address) return 'Area in app'
-  return [address.suburb, address.city].filter(Boolean).join(', ') || 'Area in app'
+  return [
+    normaliseLocationDisplayName(address.suburb),
+    normaliseLocationDisplayName(address.city),
+  ].filter(Boolean).join(', ') || 'Area in app'
 }
 
 export async function getProviderLeadListForProvider(providerId: string): Promise<ProviderLeadListItem[]> {

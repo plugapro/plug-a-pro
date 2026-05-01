@@ -12,6 +12,7 @@ import { normalizePhone } from '../utils'
 import { phoneLookupVariants } from '../whatsapp-identity'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
 import { createTestCohortContext } from '../internal-test-cohort'
+import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '../location-format'
 import {
   SERVICE_CATEGORY_OPTIONS,
   resolveServiceCategoryTag,
@@ -161,9 +162,9 @@ function validateSubmitData(ctx: FlowContext) {
     skills,
     availability,
     evidenceAttachmentIds,
-    resolvedAreaLabels: locationNodeIds.length > 0
+    resolvedAreaLabels: normaliseLocationDisplayNames(locationNodeIds.length > 0
       ? (selectedSuburbLabels.length ? selectedSuburbLabels : selectedRegionLabels.length ? selectedRegionLabels : serviceAreas)
-      : serviceAreas,
+      : serviceAreas),
     locationNodeIds,
   }
 }
@@ -957,8 +958,8 @@ async function handleCollectSuburbText(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_suburb_text' }
   }
 
-  const suburbLabel = typed.charAt(0).toUpperCase() + typed.slice(1)
-  const city = ctx.data.city ?? ''
+  const suburbLabel = normaliseLocationDisplayName(typed)
+  const city = normaliseLocationDisplayName(ctx.data.city)
   const area = city ? `${suburbLabel}, ${city}` : suburbLabel
 
   await sendExperiencePrompt(ctx.phone)
@@ -1455,9 +1456,9 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       applicantName: ctx.data.name ?? 'Unknown',
       applicantPhone: ctx.phone,
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.locationNodeIds?.length
+      serviceAreas: normaliseLocationDisplayNames(ctx.data.locationNodeIds?.length
         ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
-        : (ctx.data.serviceAreas ?? []),
+        : (ctx.data.serviceAreas ?? [])),
       applicationId: submitResult.applicationId,
     }).catch((error: unknown) => {
       console.error('[registration-flow] admin new application notification failed', {

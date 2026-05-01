@@ -5,6 +5,7 @@ import type {
 } from '@prisma/client'
 import { db } from './db'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
+import { normaliseLocationDisplayName } from './location-format'
 
 type ProviderLeadDetailErrorCode = 'FORBIDDEN'
 
@@ -65,7 +66,9 @@ export type ProviderLeadDetail = {
 }
 
 function formatArea(address: { suburb: string; city: string } | null) {
-  return address ? [address.suburb, address.city].filter(Boolean).join(', ') : 'Area on file'
+  return address
+    ? [normaliseLocationDisplayName(address.suburb), normaliseLocationDisplayName(address.city)].filter(Boolean).join(', ')
+    : 'Area on file'
 }
 
 function formatFullAddress(
@@ -88,9 +91,9 @@ function formatFullAddress(
     address.street,
     address.addressLine1,
     address.addressLine2,
-    address.suburb,
-    address.city,
-    address.province,
+    normaliseLocationDisplayName(address.suburb),
+    normaliseLocationDisplayName(address.city),
+    normaliseLocationDisplayName(address.province),
   ].filter(Boolean).join(', ')
 }
 

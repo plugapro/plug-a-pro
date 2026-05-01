@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ServiceAreaPicker } from '@/components/provider/ServiceAreaPicker'
 import { SkillPicker } from '@/components/provider/SkillPicker'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'My Profile', noIndex: true })
 
@@ -139,7 +140,7 @@ async function updateProfile(formData: FormData) {
             providerId: provider.id,
             locationNodeId: node.id,
             areaType: 'SUBURB' as const,
-            label: node.label,
+            label: normaliseLocationDisplayName(node.label),
             provinceKey: node.provinceKey,
             cityKey: node.cityKey,
             regionKey: node.regionKey,

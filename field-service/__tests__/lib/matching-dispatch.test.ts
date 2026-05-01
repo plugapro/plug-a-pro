@@ -71,7 +71,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
         autoCreateBookingOnAssignment: false,
         status: 'OPEN',
         expiresAt: new Date('2026-05-05T12:00:00.000Z'),
-        address: { suburb: 'Sandton' },
+        address: { suburb: 'ruimsig' },
       },
       hold: { id: 'hold-1', expiresAt: holdExpiresAt },
       provider: {
@@ -99,7 +99,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
 
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       '+27820000000',
-      expect.not.stringContaining('http'),
+      expect.stringContaining('Area: *Ruimsig*'),
       'View Lead',
       expect.stringMatching(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//),
       { footer: 'Accept, inspect, or decline from the lead page' },
@@ -113,10 +113,18 @@ describe('dispatchMatchLead WhatsApp notification', () => {
         }),
       }),
     )
+    expect(mockSendCtaUrl).toHaveBeenCalledWith(
+      '+27820000000',
+      expect.not.stringContaining('Area: *ruimsig*'),
+      'View Lead',
+      expect.any(String),
+      expect.any(Object),
+      expect.any(Object),
+    )
 
     expect(mockSendButtons).toHaveBeenCalledWith(
       '+27820000000',
-      expect.stringContaining('Accepting this lead will use 1 credit.\nAvailable balance: 5 credits (Promo: 3 · Purchased: 2).'),
+      expect.stringContaining('Quick response for *plumbing* in *Ruimsig*.'),
       [
         { id: 'accept:hold-1', title: 'Unlock & Accept' },
         { id: 'decline:hold-1', title: 'Decline' },

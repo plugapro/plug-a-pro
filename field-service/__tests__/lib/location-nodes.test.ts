@@ -258,6 +258,29 @@ describe('searchNodes', () => {
       }),
     )
   })
+
+  it('returns display-normalised labels without changing the search query', async () => {
+    mockDb.locationNode.findMany.mockResolvedValue([
+      {
+        id: 'sub-ruimsig',
+        slug: 'gauteng__johannesburg__jhb_west__ruimsig',
+        label: 'ruimsig',
+        nodeType: 'SUBURB',
+        provinceKey: 'gauteng',
+        cityKey: 'johannesburg',
+        regionKey: 'jhb_west',
+      },
+    ])
+
+    const result = await searchNodes('ruim')
+
+    expect(result[0].label).toBe('Ruimsig')
+    expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ label: { contains: 'ruim', mode: 'insensitive' } }),
+      }),
+    )
+  })
 })
 
 describe('resolveSuburbNodeId', () => {
@@ -335,6 +358,30 @@ describe('getStructuredAddressSelection', () => {
       postalCode: '2196',
     })
   })
+
+  it('normalises lowercase structured address labels before returning them', async () => {
+    mockDb.locationNode.findFirst.mockResolvedValue({
+      id: 'suburb-1',
+      label: 'ruimsig',
+      postalCode: '1724',
+      parent: {
+        label: 'jhb west',
+        parent: {
+          label: 'johannesburg',
+          parent: { label: 'gauteng' },
+        },
+      },
+    })
+
+    const result = await getStructuredAddressSelection('suburb-1')
+
+    expect(result).toEqual(expect.objectContaining({
+      suburb: 'Ruimsig',
+      region: 'JHB West',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+    }))
+  })
 })
 
 describe('resolveStructuredAddressByLabels', () => {
@@ -408,6 +455,24 @@ describe('createLocationNode', () => {
     expect(mockDb.locationNode.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ nodeType: 'PROVINCE', parentId: null }),
+      }),
+    )
+  })
+
+  it('normalises location labels before creating reference data', async () => {
+    mockDb.locationNode.findUnique.mockResolvedValue({ nodeType: 'REGION' })
+    mockDb.locationNode.create.mockResolvedValue({ id: 'sub-ruimsig', label: 'Ruimsig' })
+
+    await createLocationNode({
+      nodeType: 'SUBURB',
+      slug: 'gauteng__johannesburg__jhb_west__ruimsig',
+      label: 'ruimsig',
+      parentId: 'region-1',
+    })
+
+    expect(mockDb.locationNode.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ label: 'Ruimsig' }),
       }),
     )
   })
@@ -528,13 +593,13 @@ describe('updateLocationNode', () => {
   })
 
   it('calls update with provided fields only', async () => {
-    mockDb.locationNode.update.mockResolvedValue({ id: 'node-1', label: 'New Label' })
+    mockDb.locationNode.update.mockResolvedValue({ id: 'node-1', label: 'Greenstone Hill' })
 
-    await updateLocationNode('node-1', { label: 'New Label' })
+    await updateLocationNode('node-1', { label: 'greenstone hill' })
 
     expect(mockDb.locationNode.update).toHaveBeenCalledWith({
       where: { id: 'node-1' },
-      data: { label: 'New Label' },
+      data: { label: 'Greenstone Hill' },
     })
   })
 })

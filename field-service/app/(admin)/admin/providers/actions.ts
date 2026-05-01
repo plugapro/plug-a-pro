@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { normalizePhone } from '@/lib/utils'
 import { createTestCohortContext } from '@/lib/internal-test-cohort'
+import { normaliseLocationDisplayNames } from '@/lib/location-format'
 import {
   awardKycApprovedPromoCreditsInTransaction,
   evaluateAndAwardProviderProfileCompletionPromoCreditsInTransaction,
@@ -14,6 +15,12 @@ import type { KycStatus, ProviderStatus } from '@prisma/client'
 const FLAG = 'admin.crud.providers'
 const OPS_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
 const OWNER_ROLES = ['ADMIN', 'OWNER'] as const
+
+function parseServiceAreas(value: string | undefined) {
+  return normaliseLocationDisplayNames(
+    value ? value.split(',').map((area) => area.trim()).filter(Boolean) : [],
+  )
+}
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -159,9 +166,7 @@ export async function createProviderAction(input: CreateProviderInput) {
           skills: data.skills
             ? data.skills.split(',').map((skill) => skill.trim()).filter(Boolean)
             : [],
-          serviceAreas: data.serviceAreas
-            ? data.serviceAreas.split(',').map((area) => area.trim()).filter(Boolean)
-            : [],
+          serviceAreas: parseServiceAreas(data.serviceAreas),
           status: 'APPLICATION_PENDING',
           active: true,
           isTestUser: cohort.isTestUser,
@@ -221,9 +226,7 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
           skills: data.skills
             ? data.skills.split(',').map((skill) => skill.trim()).filter(Boolean)
             : [],
-          serviceAreas: data.serviceAreas
-            ? data.serviceAreas.split(',').map((area) => area.trim()).filter(Boolean)
-            : [],
+          serviceAreas: parseServiceAreas(data.serviceAreas),
         },
       })
 

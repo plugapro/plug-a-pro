@@ -2,6 +2,7 @@ import { normalizePhone } from './utils'
 import { syncProviderSkills } from './provider-skills'
 import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-guard'
 import { INTERNAL_TEST_COHORT_NAME, createTestCohortContext } from './internal-test-cohort'
+import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 
 type ProviderRecordSyncClient = {
   provider: {
@@ -101,6 +102,7 @@ export async function upsertStructuredServiceAreas(
     const suburbKey = isSuburb ? (node.slug.split('__').at(-1) ?? node.slug) : null
     const regionKey = node.regionKey ?? (node.nodeType === 'REGION' ? getRegionKeyFromSlug(node.slug) : null)
     const isActivePilotArea = getRegionServiceStatus({ regionKey, slug: node.slug }) === 'active'
+    const label = normaliseLocationDisplayName(node.label)
 
     await client.technicianServiceArea.upsert({
       where: {
@@ -113,7 +115,7 @@ export async function upsertStructuredServiceAreas(
         providerId,
         locationNodeId: node.id,
         areaType,
-        label: node.label,
+        label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,
         regionKey,
@@ -122,7 +124,7 @@ export async function upsertStructuredServiceAreas(
       },
       update: {
         areaType,
-        label: node.label,
+        label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,
         regionKey,
@@ -176,6 +178,7 @@ export async function syncProviderRecord(
   const isTestUser = input.isTestUser ?? phoneCohort.isTestUser
   const cohortName = input.cohortName ?? (isTestUser ? phoneCohort.cohortName ?? INTERNAL_TEST_COHORT_NAME : null)
   const leadEligible = input.active && input.verified
+  const serviceAreas = normaliseLocationDisplayNames(input.serviceAreas)
   const existing = await client.provider.findUnique({
     where: { phone },
     select: { id: true },
@@ -185,7 +188,7 @@ export async function syncProviderRecord(
     const data: Record<string, unknown> = {
       name: input.name,
       skills: input.skills,
-      serviceAreas: input.serviceAreas,
+      serviceAreas,
       active: leadEligible,
       isTestUser,
       cohortName,
@@ -234,7 +237,7 @@ export async function syncProviderRecord(
       name: input.name,
       userId: input.userId ?? null,
       skills: input.skills,
-      serviceAreas: input.serviceAreas,
+      serviceAreas,
       active: leadEligible,
       isTestUser,
       cohortName,
