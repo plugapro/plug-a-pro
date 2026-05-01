@@ -48,7 +48,9 @@ type LeadRejected = {
     | 'PROVIDER_NOT_APPROVED'
     | 'WALLET_SUSPENDED'
     | 'CONCURRENT_UNLOCK'
+    | 'LEAD_ACCEPTANCE_FAILED'
   currentCreditBalance?: number
+  traceId?: string
 }
 
 export type LeadAcceptanceResult = LeadAccepted | LeadRejected

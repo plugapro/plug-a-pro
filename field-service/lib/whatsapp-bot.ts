@@ -33,7 +33,8 @@ import { normalizePhone } from './utils'
 import { createTraceId } from './support-diagnostics'
 import { createTestCohortContext } from './internal-test-cohort'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
-import { resolveWhatsAppIdentity } from './whatsapp-identity'
+import { phoneLookupVariants, resolveWhatsAppIdentity } from './whatsapp-identity'
+import { normaliseLocationDisplayName } from './location-format'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
@@ -100,6 +101,20 @@ const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in',
 
 function firstName(name: string | null | undefined) {
   return (name?.trim() || 'there').split(/\s+/)[0]
+}
+
+async function findProviderByWhatsAppPhone(phone: string, select?: Prisma.ProviderSelect) {
+  const normalizedPhone = normalizePhone(phone)
+  const exact = await db.provider.findUnique({
+    where: { phone: normalizedPhone },
+    ...(select ? { select } : {}),
+  } as Prisma.ProviderFindUniqueArgs)
+  if (exact) return exact as any
+
+  return (db as any).provider.findFirst?.({
+    where: { phone: { in: phoneLookupVariants(phone) } },
+    ...(select ? { select } : {}),
+  }) ?? null
 }
 
 function isStatelessNotificationReply(
@@ -632,7 +647,7 @@ async function processInboundMessageUnlocked(
         [`mdc_other_${leadId}`]: 'Other',
       }
       const reason = reasonMap[reply.id] ?? 'Declined'
-      const provider = await db.provider.findUnique({ where: { phone } })
+      const provider = await findProviderByWhatsAppPhone(phone, { id: true })
       if (provider) {
         const { declineLead } = await import('./matching-engine')
         await declineLead({ leadId, providerId: provider.id })
@@ -650,7 +665,7 @@ async function processInboundMessageUnlocked(
     if (!reply.id && rawText === 'accept') {
       // ── Provider typed "accept" as text instead of tapping the button ─────────
       // Find the most recent pending (SENT/VIEWED) lead for this provider and accept it.
-      const providerForAccept = await db.provider.findUnique({ where: { phone }, select: { id: true } })
+      const providerForAccept = await findProviderByWhatsAppPhone(phone, { id: true })
       if (providerForAccept) {
         const activeLead = await db.lead.findFirst({
           where: {
@@ -1261,6 +1276,7 @@ export async function notifyProviderNewJob(params: {
   }
 
   const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
+  const area = normaliseLocationDisplayName(params.area)
   let creditLine = `Accepting this lead will use ${creditCost}.`
   try {
     const lead = await db.lead.findUnique({
@@ -1281,7 +1297,7 @@ export async function notifyProviderNewJob(params: {
 
   await sendCtaUrl(
     params.providerPhone,
-    `🔔 *New Lead Available*\n\n*${params.category}* · ${params.area}\nRef: ${ref} · Expires in ${expiryLabel}\n\n${creditLine}\n\nTap below to view the full job details and respond.`,
+    `🔔 *New Lead Available*\n\n*${params.category}* · ${area}\nRef: ${ref} · Expires in ${expiryLabel}\n\n${creditLine}\n\nTap below to view the full job details and respond.`,
     'View Lead',
     leadUrl,
     { footer: 'Accept, inspect, or decline from the lead page' },
@@ -1553,7 +1569,21 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
   if (buttonId.startsWith('match_accept_')) {
     const { acceptLead } = await import('./matching-engine')
-    const result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: false, source: 'whatsapp' })
+    let result
+    try {
+      result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: false, source: 'whatsapp' })
+    } catch (error) {
+      const traceId = createTraceId('wbot')
+      console.error('[whatsapp-bot] match accept: unhandled acceptLead exception', {
+        traceId,
+        leadId,
+        providerId: provider.id,
+        error_code: 'UNKNOWN_LEAD_ACCEPT_ERROR',
+        error: error instanceof Error ? error.message : String(error),
+      })
+      await sendText(phone, `😔 Something went wrong processing your acceptance. Please try again or contact support.\n\n_Ref: ${traceId}_`)
+      return
+    }
 
     if (!result.ok) {
       if (result.reason === 'INSUFFICIENT_CREDITS') {
@@ -1562,6 +1592,10 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
       }
       if (result.reason === 'PROVIDER_NOT_APPROVED') {
         await sendText(phone, "Your provider application is still under review. You'll be able to receive and accept leads once approved.")
+        return
+      }
+      if (result.reason === 'LEAD_ACCEPTANCE_FAILED') {
+        await sendText(phone, `😔 We couldn't accept this lead because of a technical issue. Please try again or contact support.\n\n_Ref: ${result.traceId ?? createTraceId('wbot')}_`)
         return
       }
       const message =
@@ -1664,13 +1698,13 @@ async function handleProviderJobFlow(
       const addr = req.address
       await sendButtons(
         ctx.phone,
-        `📋 *Your Active Job*\n\n${statusEmoji[j.status] ?? '📋'} ${req.category}\n📍 ${addr ? `${addr.street}, ${addr.suburb}` : 'See app'}\n${statusLabel[j.status] ?? j.status.replace(/_/g, ' ')}`,
+        `📋 *Your Active Job*\n\n${statusEmoji[j.status] ?? '📋'} ${req.category}\n📍 ${addr ? `${addr.street}, ${normaliseLocationDisplayName(addr.suburb)}` : 'See app'}\n${statusLabel[j.status] ?? j.status.replace(/_/g, ' ')}`,
         [{ id: `view_job_${j.id}`, title: '📋 View Details' }]
       )
     } else {
       const rows = activeJobs.map((j) => {
         const req = j.booking.match.jobRequest
-        const suburb = req.address?.suburb ?? 'TBA'
+        const suburb = normaliseLocationDisplayName(req.address?.suburb) || 'TBA'
         return {
           id: `view_job_${j.id}`,
           title: req.category.slice(0, 24),
@@ -1731,7 +1765,7 @@ async function handleProviderJobFlow(
 
   if (ctx.step === 'tech_job_view') {
     const addr = job.booking.match.jobRequest.address
-    const addrLabel = addr ? `${addr.street}, ${addr.suburb}` : 'Address in app'
+    const addrLabel = addr ? `${addr.street}, ${normaliseLocationDisplayName(addr.suburb)}` : 'Address in app'
     const categoryLabel = job.booking.match.jobRequest.category
 
     await sendButtons(
@@ -1913,13 +1947,26 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
 // Button ID format: `accept:{holdId}`
 
 async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): Promise<void> {
-  const { sendText } = await import('./whatsapp-interactive')
   const traceId = createTraceId('wbot')
   const holdId = buttonId.slice('accept:'.length)
+  if (!holdId.trim()) {
+    console.warn('[whatsapp-bot] accept: invalid WhatsApp payload', {
+      traceId,
+      buttonId,
+      error_code: 'WHATSAPP_PAYLOAD_INVALID',
+    })
+    await sendText(phone, `We couldn't read that lead response. Please use the latest lead message or reply *menu*.\n\n_Ref: ${traceId}_`)
+    return
+  }
 
-  const provider = await db.provider.findUnique({ where: { phone }, select: { id: true, name: true } })
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true })
   if (!provider) {
-    console.warn('[whatsapp-bot] accept: provider not found', { traceId, holdId })
+    console.warn('[whatsapp-bot] accept: provider not found', {
+      traceId,
+      holdId,
+      normalizedPhone: phone,
+      error_code: 'PROVIDER_NOT_FOUND',
+    })
     await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
     return
   }
@@ -1930,13 +1977,33 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     select: { id: true, jobRequestId: true },
   })
   if (!lead) {
-    console.warn('[whatsapp-bot] accept: lead not found for hold', { traceId, holdId, providerId: provider.id })
-    await sendText(phone, "⚠️ This lead could not be found — it may have expired or already been taken. New leads will come through as jobs arise.")
+    console.warn('[whatsapp-bot] accept: lead not found for hold', {
+      traceId,
+      holdId,
+      providerId: provider.id,
+      error_code: 'LEAD_INVITE_NOT_FOUND',
+    })
+    await sendText(phone, "⚠️ This lead invite could not be found. It may have expired or already been taken. New leads will come through as jobs arise.")
     return
   }
 
   const { acceptLead } = await import('./matching-engine')
-  const result = await acceptLead({ leadId: lead.id, providerId: provider.id, source: 'whatsapp' })
+  let result
+  try {
+    result = await acceptLead({ leadId: lead.id, providerId: provider.id, source: 'whatsapp' })
+  } catch (error) {
+    console.error('[whatsapp-bot] accept: unhandled acceptLead exception', {
+      traceId,
+      holdId,
+      leadId: lead.id,
+      jobRequestId: lead.jobRequestId,
+      providerId: provider.id,
+      error_code: 'UNKNOWN_LEAD_ACCEPT_ERROR',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    await sendText(phone, `😔 Something went wrong processing your acceptance. Please try again or contact support.\n\n_Ref: ${traceId}_`)
+    return
+  }
 
   if (!result.ok) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
@@ -1951,6 +2018,47 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
         traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'PROVIDER_NOT_APPROVED',
       })
       await sendText(phone, "Your provider application is still under review. You'll be able to receive and accept leads once approved.")
+      return
+    }
+    if (result.reason === 'WALLET_SUSPENDED') {
+      console.warn('[whatsapp-bot] accept: provider wallet suspended', {
+        traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'WALLET_SUSPENDED',
+      })
+      await sendText(phone, "Your credit wallet is not active right now, so this lead cannot be unlocked. Please contact support.")
+      return
+    }
+    if (result.reason === 'FORBIDDEN') {
+      console.warn('[whatsapp-bot] accept: provider not authorized for lead', {
+        traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'PROVIDER_NOT_AUTHORIZED_FOR_LEAD',
+      })
+      await sendText(phone, "⚠️ This lead was not assigned to this provider number. Please use the WhatsApp number that received the lead.")
+      return
+    }
+    if (result.reason === 'NOT_FOUND') {
+      console.warn('[whatsapp-bot] accept: lead not found', {
+        traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'LEAD_NOT_FOUND',
+      })
+      await sendText(phone, "⚠️ This lead could not be found. It may have expired or already been closed.")
+      return
+    }
+    if (result.reason === 'CONCURRENT_UNLOCK') {
+      console.warn('[whatsapp-bot] accept: concurrent unlock blocked', {
+        traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'DUPLICATE_ACCEPT_IGNORED',
+      })
+      await sendText(phone, "We're already processing this lead response. Please wait a moment and check your job messages.")
+      return
+    }
+    if (result.reason === 'LEAD_ACCEPTANCE_FAILED') {
+      const supportRef = result.traceId ?? traceId
+      console.error('[whatsapp-bot] accept: lead acceptance failed', {
+        traceId: supportRef,
+        holdId,
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        providerId: provider.id,
+        error_code: 'LEAD_ACCEPTANCE_FAILED',
+      })
+      await sendText(phone, `😔 We couldn't accept this lead because of a technical issue. Please try again or contact support.\n\n_Ref: ${supportRef}_`)
       return
     }
     if (result.reason === 'EXPIRED') {
@@ -1977,10 +2085,10 @@ async function sendLeadInsufficientCreditsMessage(
   leadId: string,
   currentCreditBalance: number,
 ): Promise<void> {
-  const { sendButtons } = await import('./whatsapp-interactive')
+  const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
   await sendButtons(
     phone,
-    `🔒 This lead requires 1 credit to unlock.\n\nYour current balance: ${currentCreditBalance} credit${currentCreditBalance === 1 ? '' : 's'}.\n\nPlease top up in the Worker Portal to accept this lead.`,
+    `🔒 This lead requires ${creditCost} to unlock.\n\nYour current balance: ${currentCreditBalance} credit${currentCreditBalance === 1 ? '' : 's'}.\n\nPlease top up in the Worker Portal to accept this lead.`,
     [
       { id: 'provider_top_up_credits', title: 'Top Up Credits' },
       { id: `match_inspect_${leadId}`, title: 'View Lead' },
