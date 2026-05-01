@@ -9,19 +9,15 @@ import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
 export const metadata = buildMetadata({ title: 'Request a Job' })
 
-const CATEGORIES = [
-  { slug: 'plumbing',    name: 'Plumbing',       description: 'Leaks, installations, drain clearing and more.' },
-  { slug: 'painting',    name: 'Painting',        description: 'Interior and exterior painting services.' },
-  { slug: 'garden',      name: 'Garden',          description: 'Lawn care, landscaping, and tree trimming.' },
-  { slug: 'handyman',    name: 'Handyman',        description: 'General repairs and odd jobs around the home.' },
-  { slug: 'appliances',  name: 'Appliances',      description: 'Repairs and installation of home appliances.' },
-  { slug: 'electrical',  name: 'Electrical',      description: 'Wiring, fault-finding, and compliance certificates.' },
-  { slug: 'diy',         name: 'DIY & Assembly',  description: 'Flat-pack assembly, shelving, and mounting.' },
-  { slug: 'roofing',     name: 'Roofing',         description: 'Roof repairs, waterproofing, and inspections.' },
-]
+const CATEGORIES = SERVICE_CATEGORY_OPTIONS.map((cat) => ({
+  slug: cat.tag,
+  name: cat.label,
+  description: cat.description,
+}))
 
 export default async function ServicesPage() {
   const session = await getSession()

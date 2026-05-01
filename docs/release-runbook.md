@@ -1,4 +1,4 @@
-# Plug-A-Pro — Release Runbook
+# Plug A Pro — Release Runbook
 
 > Version: 2026-04-06
 > Applies to: `field-service/` (marketplace app) and `marketing/` (site)

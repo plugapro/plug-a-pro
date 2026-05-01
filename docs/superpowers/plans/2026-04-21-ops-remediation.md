@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the five audit-identified blockers that prevent ops from running the Plug-A-Pro platform safely through real-world failures without engineering intervention.
+**Goal:** Close the five audit-identified blockers that prevent ops from running the Plug A Pro platform safely through real-world failures without engineering intervention.
 
 **Architecture:** Three delivery waves. Wave 1 (Tasks 1–4) unblocks pre-launch ops. Wave 2 (Tasks 5–6) hardens data stewardship and permissions. Wave 3 (Task 7) adds resilience and hygiene. Every task ships behind a feature flag and produces a green CI run.
 

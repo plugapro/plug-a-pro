@@ -14,7 +14,7 @@ export function OperatingModel() {
             WhatsApp is the front door. The app is the engine.
           </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Customers and workers both operate through the channels they already use. No friction, no app store.
+            Customers, providers, and operations each use the channel that fits the moment: WhatsApp for fast actions, the PWA for richer job detail, and admin tools for review and dispatch.
           </p>
         </div>
 
@@ -27,17 +27,17 @@ export function OperatingModel() {
               </div>
               <div>
                 <h3 className="font-bold text-lg">For customers</h3>
-                <p className="text-xs text-muted-foreground">Request, approve, and track</p>
+                <p className="text-xs text-muted-foreground">Request, approve, track, and confirm</p>
               </div>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
               {[
-                "Describe your job on WhatsApp in under 3 minutes",
-                "Receive a notification when a worker is matched",
-                "View the worker's profile and rating before accepting",
-                "Get the quote in writing. Approve before work starts.",
-                "Track live status: on the way, arrived, in progress",
-                "Pay after the job. Leave a review. Done.",
+                "Describe the job on WhatsApp or in the PWA",
+                "Add service, location, preferred time, notes, and photos",
+                "Operations reviews the request and dispatches it to eligible providers",
+                "Receive provider handover details after a provider unlocks and accepts",
+                "Approve quotes or extra work in writing",
+                "Track live status updates through WhatsApp",
               ].map((point) => (
                 <li key={point} className="flex items-start gap-2">
                   <span
@@ -59,17 +59,17 @@ export function OperatingModel() {
               </div>
               <div>
                 <h3 className="font-bold text-lg">For workers</h3>
-                <p className="text-xs text-muted-foreground">Accept leads, quote, earn</p>
+                <p className="text-xs text-muted-foreground">Apply, unlock, accept, and update</p>
               </div>
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
               {[
-                "Register via WhatsApp. No paperwork or app store needed.",
-                "Set your skills, areas, and availability once",
-                "Receive matched leads on WhatsApp. Accept or decline.",
-                "Submit structured quotes with photos directly from the app",
-                "Update job status from your phone as you work",
-                "Build your rating with every completed job",
+                "Complete provider onboarding on WhatsApp",
+                "Submit skills, service areas, availability, and evidence",
+                "Get approved before entering live marketplace matching",
+                "Check wallet credits and top up when needed",
+                "Open a secure lead preview, unlock with credits, then accept or decline",
+                "Quote, contact the customer, and update job status from your phone",
               ].map((point) => (
                 <li key={point} className="flex items-start gap-2">
                   <span
@@ -85,7 +85,7 @@ export function OperatingModel() {
         </div>
 
         <p className="text-center text-sm text-muted-foreground mt-8">
-          Both sides can also use the app for a richer view: quotes, photos, job history, and profile management.
+          Operations sits behind both journeys: reviewing applications, managing dispatch, monitoring quotes, checking wallet activity, and keeping marketplace access controlled.
         </p>
       </div>
     </section>

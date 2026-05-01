@@ -35,7 +35,7 @@ export default async function RatePage({
           },
         },
       },
-      job: { select: { id: true } },
+      job: { select: { id: true, providerId: true } },
     },
   })
 
@@ -48,6 +48,7 @@ export default async function RatePage({
   if (!booking.job) redirect(`/bookings/${id}`)
 
   const jobId = booking.job.id
+  const jobProviderId = booking.job.providerId
 
   // Already rated — redirect back
   const existing = await db.review.findFirst({
@@ -80,14 +81,24 @@ export default async function RatePage({
     })
     if (existingReview) redirect(`/bookings/${id}`)
 
-    await dbServer.review.create({
-      data: {
+    const { awardFirstCompletedJobWithCustomerRatingPromoCreditsInTransaction } = await import('@/lib/provider-promo-awards')
+    await dbServer.$transaction(async (tx) => {
+      const review = await tx.review.create({
+        data: {
+          jobId,
+          reviewerType: 'CUSTOMER',
+          customerId:   activeCustomer.id,
+          score,
+          comment,
+        },
+      })
+
+      await awardFirstCompletedJobWithCustomerRatingPromoCreditsInTransaction(
+        tx,
+        jobProviderId,
         jobId,
-        reviewerType: 'CUSTOMER',
-        customerId:   activeCustomer.id,
-        score,
-        comment,
-      },
+        review.id,
+      )
     })
 
     redirect(`/bookings/${id}`)

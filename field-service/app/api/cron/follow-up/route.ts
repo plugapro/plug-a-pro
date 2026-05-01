@@ -16,9 +16,14 @@ export async function GET(request: Request) {
 
   const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
-  // "~24h ago" window: 28h ago → 20h ago
-  const windowStart = new Date(now.getTime() - 28 * 60 * 60 * 1000)
-  const windowEnd   = new Date(now.getTime() - 20 * 60 * 60 * 1000)
+  // Widened from (28h, 20h) to (48h, 12h) to capture bookings completed later in the
+  // evening that were outside the original window.
+  const windowStart = new Date(now.getTime() - 48 * 60 * 60 * 1000)
+  const windowEnd   = new Date(now.getTime() - 12 * 60 * 60 * 1000)
+  // TODO: add a 72-96h second reminder pass once a `follow_up_reminder` WhatsApp
+  // template has been approved by Meta — the current `follow_up` template cannot be
+  // reused (blocked by hasSuccessfulMessageForBooking dedup), and freeform messages
+  // outside the 24h session window will fail to deliver.
 
   // Fetch completed bookings in window, excluding those that already have a rating
   const bookings = await db.booking.findMany({

@@ -8,9 +8,49 @@ import { db } from './db'
 import { logOutboundMessage } from './message-events'
 import { TEMPLATES, type TemplateName } from './messaging-templates'
 import { canSend } from './whatsapp-policy'
+import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
+import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
+
+function inferTestSubject(to: string, metadata?: Record<string, unknown>) {
+  const hasExplicitCohortMarker = Boolean(
+    metadata &&
+      ('isTestEvent' in metadata ||
+        'isTestRequest' in metadata ||
+        'isTestJob' in metadata ||
+        'isTestLead' in metadata)
+  )
+  if (!hasExplicitCohortMarker) return isInternalTestPhone(to)
+  return Boolean(
+    metadata?.isTestEvent ||
+      metadata?.isTestRequest ||
+      metadata?.isTestJob ||
+      metadata?.isTestLead
+  )
+}
+
+function assertCohortSendAllowed(
+  to: string,
+  context: { metadata?: Record<string, unknown>; allowTestCohortOverride?: boolean; templateName: string }
+) {
+  const subjectIsTest = inferTestSubject(to, context.metadata)
+  if (!isCohortMismatch({
+    subjectIsTest,
+    recipientPhone: to,
+    allowTestOverride: context.allowTestCohortOverride,
+  })) {
+    return
+  }
+
+  console.warn('[whatsapp] blocked test/live cohort mismatch', {
+    to,
+    template_name: context.templateName,
+    subject_is_test: subjectIsTest,
+  })
+  throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
+}
 
 function getConfig() {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
@@ -33,9 +73,16 @@ export async function sendTemplate(params: {
   template: TemplateName
   components?: WhatsAppComponent[]
   languageCode?: string
+  metadata?: Record<string, unknown>
+  allowTestCohortOverride?: boolean
 }): Promise<string> {
   const { accessToken, phoneNumberId } = getConfig()
   const templateDef = TEMPLATES[params.template]
+  assertCohortSendAllowed(params.to, {
+    metadata: params.metadata,
+    allowTestCohortOverride: params.allowTestCohortOverride,
+    templateName: params.template,
+  })
 
   const body = {
     messaging_product: 'whatsapp',
@@ -79,8 +126,14 @@ export async function sendText(params: {
   bookingId?: string
   templateName?: string
   metadata?: Record<string, unknown>
+  allowTestCohortOverride?: boolean
 }): Promise<string> {
   const { accessToken, phoneNumberId } = getConfig()
+  assertCohortSendAllowed(params.to, {
+    metadata: params.metadata,
+    allowTestCohortOverride: params.allowTestCohortOverride,
+    templateName: params.templateName ?? 'freeform:text',
+  })
 
   const response = await fetch(
     `${BASE_URL}/${phoneNumberId}/messages`,
@@ -698,7 +751,7 @@ export async function sendJobOffer(params: {
         parameters: [
           { type: 'text', text: params.providerFirstName },
           { type: 'text', text: params.serviceName },
-          { type: 'text', text: params.area },
+          { type: 'text', text: normaliseLocationDisplayName(params.area) },
           { type: 'text', text: params.scheduledWindow },
           { type: 'text', text: params.jobUrl },
         ],
@@ -778,7 +831,7 @@ export async function sendAdminNewApplication(params: {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
   const reviewUrl = `${appUrl}/admin/applications`
   const skillList = params.skills.join(', ') || 'Not specified'
-  const areaList = params.serviceAreas.join(', ') || 'Not specified'
+  const areaList = normaliseLocationDisplayNames(params.serviceAreas).join(', ') || 'Not specified'
 
   try {
     const { sendCtaUrl } = await import('./whatsapp-interactive')
@@ -933,7 +986,7 @@ async function logMessage(params: {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface WhatsAppComponent {
+export interface WhatsAppComponent {
   type: 'header' | 'body' | 'button'
   parameters: Array<{ type: 'text'; text: string } | { type: 'image'; image: { link: string } }>
   sub_type?: string
@@ -983,7 +1036,7 @@ export async function sendAdminNoMatch(params: {
 
   await sendText({
     to: adminPhone,
-    text: `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${params.area}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed:\n${appUrl}/admin/dispatch`,
+    text: `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${normaliseLocationDisplayName(params.area)}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed:\n${appUrl}/admin/dispatch`,
   })
 }
 

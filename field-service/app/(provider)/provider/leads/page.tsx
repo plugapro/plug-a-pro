@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { formatDistanceToNow } from 'date-fns'
+import { getProviderLeadListForProvider } from '@/lib/provider-lead-list'
 
 export const metadata = buildMetadata({ title: 'My Leads', noIndex: true })
 
@@ -24,18 +25,7 @@ export default async function ProviderLeadsPage() {
     )
   }
 
-  const leads = await db.lead.findMany({
-    where: {
-      providerId: provider.id,
-      status: { in: ['SENT', 'VIEWED'] },
-    },
-    include: {
-      jobRequest: {
-        include: { address: true },
-      },
-    },
-    orderBy: { sentAt: 'desc' },
-  })
+  const leads = await getProviderLeadListForProvider(provider.id)
 
   return (
     <div className="px-4 py-6 space-y-6">
@@ -58,10 +48,6 @@ export default async function ProviderLeadsPage() {
       ) : (
         <div className="space-y-3">
           {leads.map((lead) => {
-            const addr = lead.jobRequest.address
-            const area = addr
-              ? `${addr.suburb ?? ''}${addr.city ? `, ${addr.city}` : ''}`.trim()
-              : 'Area in app'
             const isExpired = lead.expiresAt && lead.expiresAt < new Date()
             const timeLeft = lead.expiresAt
               ? isExpired
@@ -77,8 +63,8 @@ export default async function ProviderLeadsPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-0.5">
-                    <p className="font-semibold text-foreground">{lead.jobRequest.category}</p>
-                    <p className="text-sm text-muted-foreground">{area}</p>
+                    <p className="font-semibold text-foreground">{lead.category}</p>
+                    <p className="text-sm text-muted-foreground">{lead.area}</p>
                   </div>
                   <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                     isExpired
@@ -91,9 +77,9 @@ export default async function ProviderLeadsPage() {
                   </span>
                 </div>
 
-                {lead.jobRequest.description && (
+                {lead.shortDescription && (
                   <p className="text-sm text-muted-foreground line-clamp-2">
-                    {lead.jobRequest.description}
+                    {lead.shortDescription}
                   </p>
                 )}
 

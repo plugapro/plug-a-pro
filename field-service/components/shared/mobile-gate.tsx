@@ -1,12 +1,12 @@
 'use client'
 
-// Blocks desktop viewport access to the customer PWA.
-// Renders children on mobile; shows a redirect message on wider screens.
+// Shows a dismissible banner on desktop viewports instead of blocking access.
+// The banner reminds users the app is optimised for mobile without preventing use.
 
-import { useSyncExternalStore } from 'react'
-import { AppLogo } from './app-logo'
+import { useSyncExternalStore, useState } from 'react'
 
 const MOBILE_BREAKPOINT = 768
+const SESSION_KEY = 'pap:mobile-banner-dismissed'
 
 function subscribe(onStoreChange: () => void) {
   const mq = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`)
@@ -18,25 +18,39 @@ function getSnapshot() {
   return window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`).matches
 }
 
+// Read sessionStorage in the lazy initializer so no setState-in-useEffect is needed.
+// Returns true (hidden) during SSR where window is undefined, preventing hydration mismatches.
+function getInitialDismissed(): boolean {
+  if (typeof window === 'undefined') return true
+  return sessionStorage.getItem(SESSION_KEY) === '1'
+}
+
 export function MobileGate({ children }: { children: React.ReactNode }) {
   const isDesktop = useSyncExternalStore(subscribe, getSnapshot, () => false)
+  const [dismissed, setDismissed] = useState(getInitialDismissed)
 
-  if (isDesktop) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-6 text-center">
-        <AppLogo />
-        <div className="max-w-sm space-y-3">
-          <h1 className="text-xl font-semibold">Open this on your phone</h1>
-          <p className="text-sm text-muted-foreground">
-            Plug A Pro is designed for mobile. Scan the QR code or open this link on your smartphone to get started.
-          </p>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          app.plugapro.co.za
-        </p>
-      </div>
-    )
+  function dismiss() {
+    sessionStorage.setItem(SESSION_KEY, '1')
+    setDismissed(true)
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {isDesktop && !dismissed && (
+        <div className="flex items-center justify-between gap-4 bg-muted border-b border-border px-4 py-2 text-sm text-muted-foreground">
+          <span>
+            Plug A Pro works best on mobile. Scan the QR code or open this link on your phone for the full experience.
+          </span>
+          <button
+            onClick={dismiss}
+            aria-label="Dismiss"
+            className="shrink-0 rounded px-2 py-0.5 text-xs hover:bg-muted-foreground/10 transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      {children}
+    </>
+  )
 }

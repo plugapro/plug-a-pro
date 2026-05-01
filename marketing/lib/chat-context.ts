@@ -10,7 +10,7 @@ Q: What is ${siteConfig.name}?
 A: ${siteConfig.description}
 
 Q: How does pricing work?
-A: Plug-A-Pro is currently free to join during early access. We will communicate any future pricing clearly before it takes effect. See /pricing.
+A: Plug A Pro is currently free to join during early access. We will communicate any future pricing clearly before it takes effect. See /pricing.
 
 Q: Is there a free trial?
 A: Early access is free right now, so there is no separate trial period.

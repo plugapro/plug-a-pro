@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
   </style>
 </head>
 <body>
-  <h1>Plug a Pro</h1>
+  <h1>Plug A Pro</h1>
   <p class="subtitle">Earnings Statement — ${esc(monthLabel)} &middot; ${esc(provider.name)}</p>
   <table>
     <thead>

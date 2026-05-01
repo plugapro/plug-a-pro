@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { LocationNodeType, LocationNode } from '@prisma/client'
 
 // ─── Exported Types ────────────────────────────────────────────────────────────
@@ -94,10 +95,7 @@ export type { LocationNode, LocationNodeType }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
-/** Capitalises the first letter of each word (e.g. "little falls" → "Little Falls"). */
-function toTitleCase(str: string): string {
-  return str.replace(/\b\w/g, (c) => c.toUpperCase())
-}
+const formatNodeLabel = normaliseLocationDisplayName
 
 // ─── Read Functions ────────────────────────────────────────────────────────────
 
@@ -111,7 +109,7 @@ export async function getProvinces(): Promise<ProvinceOption[]> {
     orderBy: { label: 'asc' },
     select: { id: true, slug: true, label: true },
   })
-  return nodes.map((n) => ({ id: n.id, slug: n.slug, label: toTitleCase(n.label) }))
+  return nodes.map((n) => ({ id: n.id, slug: n.slug, label: formatNodeLabel(n.label) }))
 }
 
 /**
@@ -131,7 +129,7 @@ export async function getCities(provinceKey?: string): Promise<CityOption[]> {
   return nodes.map((n) => ({
     id: n.id,
     slug: n.slug,
-    label: toTitleCase(n.label),
+    label: formatNodeLabel(n.label),
     provinceKey: n.provinceKey ?? '',
     cityKey: n.cityKey ?? '',
   }))
@@ -173,7 +171,7 @@ export async function getRegions(cityId: string): Promise<RegionOption[]> {
   return nodes.map((n) => ({
     id: n.id,
     slug: n.slug,
-    label: toTitleCase(n.label),
+    label: formatNodeLabel(n.label),
     provinceKey: n.provinceKey ?? '',
     cityKey: n.cityKey ?? '',
     regionKey: n.regionKey ?? '',
@@ -226,10 +224,10 @@ export async function getSuburbs(regionId: string): Promise<SuburbOption[]> {
   return nodes.map((n) => ({
     id: n.id,
     slug: n.slug,
-    label: toTitleCase(n.label),
-    regionLabel: toTitleCase(n.parent?.label ?? ''),
-    cityLabel: toTitleCase(n.parent?.parent?.label ?? ''),
-    provinceLabel: toTitleCase(n.parent?.parent?.parent?.label ?? ''),
+    label: formatNodeLabel(n.label),
+    regionLabel: formatNodeLabel(n.parent?.label ?? ''),
+    cityLabel: formatNodeLabel(n.parent?.parent?.label ?? ''),
+    provinceLabel: formatNodeLabel(n.parent?.parent?.parent?.label ?? ''),
     postalCode: n.postalCode ?? '',
     provinceKey: n.provinceKey ?? '',
     cityKey: n.cityKey ?? '',
@@ -272,7 +270,75 @@ export async function searchNodes(
     },
   })
 
-  return nodes
+  return nodes.map((node) => ({
+    ...node,
+    label: formatNodeLabel(node.label),
+  }))
+}
+
+/**
+ * Suburb-only full-text search for the booking combobox.
+ * Returns SUBURB nodes only (not REGION), with all parent labels and postalCode
+ * so the caller can populate the SuburbPicker.Selection interface directly.
+ * The existing searchNodes() function is preserved for other callers.
+ */
+export async function searchSuburbNodes(
+  q: string,
+  provinceKey?: string,
+): Promise<SuburbOption[]> {
+  if (q.length < 2) {
+    throw new Error('Search query must be at least 2 characters')
+  }
+
+  const nodes = await db.locationNode.findMany({
+    where: {
+      active: true,
+      nodeType: 'SUBURB',
+      label: { contains: q, mode: 'insensitive' },
+      ...(provinceKey ? { provinceKey } : {}),
+    },
+    orderBy: { label: 'asc' },
+    take: 20,
+    select: {
+      id: true,
+      slug: true,
+      label: true,
+      postalCode: true,
+      provinceKey: true,
+      cityKey: true,
+      regionKey: true,
+      lat: true,
+      lng: true,
+      parent: {
+        select: {
+          label: true,
+          parent: {
+            select: {
+              label: true,
+              parent: {
+                select: { label: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  return nodes.map((n) => ({
+    id: n.id,
+    slug: n.slug,
+    label: formatNodeLabel(n.label),
+    regionLabel: formatNodeLabel(n.parent?.label ?? ''),
+    cityLabel: formatNodeLabel(n.parent?.parent?.label ?? ''),
+    provinceLabel: formatNodeLabel(n.parent?.parent?.parent?.label ?? ''),
+    postalCode: n.postalCode ?? '',
+    provinceKey: n.provinceKey ?? '',
+    cityKey: n.cityKey ?? '',
+    regionKey: n.regionKey ?? '',
+    lat: n.lat,
+    lng: n.lng,
+  }))
 }
 
 /**
@@ -344,10 +410,10 @@ export async function getStructuredAddressSelection(
 
   return {
     locationNodeId: node.id,
-    suburb: node.label,
-    region: node.parent.label,
-    city: node.parent.parent.label,
-    province: node.parent.parent.parent.label,
+    suburb: formatNodeLabel(node.label),
+    region: formatNodeLabel(node.parent.label),
+    city: formatNodeLabel(node.parent.parent.label),
+    province: formatNodeLabel(node.parent.parent.parent.label),
     postalCode: node.postalCode,
   }
 }
@@ -407,10 +473,10 @@ export async function resolveStructuredAddressByLabels(input: {
 
   return {
     locationNodeId: node.id,
-    suburb: node.label,
-    region: node.parent.label,
-    city: node.parent.parent.label,
-    province: node.parent.parent.parent.label,
+    suburb: formatNodeLabel(node.label),
+    region: formatNodeLabel(node.parent.label),
+    city: formatNodeLabel(node.parent.parent.label),
+    province: formatNodeLabel(node.parent.parent.parent.label),
     postalCode: node.postalCode,
   }
 }
@@ -419,7 +485,8 @@ export async function resolveStructuredAddressByLabels(input: {
  * Get a single node by ID (any type).
  */
 export async function getLocationNode(id: string): Promise<LocationNode | null> {
-  return db.locationNode.findUnique({ where: { id } })
+  const node = await db.locationNode.findUnique({ where: { id } })
+  return node ? { ...node, label: formatNodeLabel(node.label) } : null
 }
 
 /**
@@ -432,7 +499,7 @@ export async function listLocationNodes(filter?: {
   regionKey?: string
   active?: boolean
 }): Promise<LocationNode[]> {
-  return db.locationNode.findMany({
+  const nodes = await db.locationNode.findMany({
     where: {
       ...(filter?.nodeType !== undefined ? { nodeType: filter.nodeType } : {}),
       ...(filter?.provinceKey !== undefined ? { provinceKey: filter.provinceKey } : {}),
@@ -442,6 +509,7 @@ export async function listLocationNodes(filter?: {
     },
     orderBy: [{ nodeType: 'asc' }, { label: 'asc' }],
   })
+  return nodes.map((node) => ({ ...node, label: formatNodeLabel(node.label) }))
 }
 
 // ─── Write Functions (Admin CRUD) ──────────────────────────────────────────────
@@ -502,7 +570,7 @@ export async function createLocationNode(data: {
     data: {
       nodeType: data.nodeType,
       slug: data.slug,
-      label: data.label,
+      label: formatNodeLabel(data.label),
       parentId: data.parentId,
       lat: data.lat ?? null,
       lng: data.lng ?? null,
@@ -530,7 +598,7 @@ export async function updateLocationNode(
   return db.locationNode.update({
     where: { id },
     data: {
-      ...(data.label !== undefined ? { label: data.label } : {}),
+      ...(data.label !== undefined ? { label: formatNodeLabel(data.label) } : {}),
       ...(data.lat !== undefined ? { lat: data.lat } : {}),
       ...(data.lng !== undefined ? { lng: data.lng } : {}),
       ...(data.radiusKm !== undefined ? { radiusKm: data.radiusKm } : {}),

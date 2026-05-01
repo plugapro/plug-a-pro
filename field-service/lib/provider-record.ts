@@ -1,5 +1,8 @@
 import { normalizePhone } from './utils'
 import { syncProviderSkills } from './provider-skills'
+import { getRegionServiceStatus, getRegionKeyFromSlug } from './service-area-guard'
+import { INTERNAL_TEST_COHORT_NAME, createTestCohortContext } from './internal-test-cohort'
+import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 
 type ProviderRecordSyncClient = {
   provider: {
@@ -10,6 +13,9 @@ type ProviderRecordSyncClient = {
   technicianServiceArea?: {
     upsert: (...args: any[]) => Promise<unknown>
     updateMany: (...args: any[]) => Promise<unknown>
+  }
+  technicianAvailability?: {
+    upsert: (...args: any[]) => Promise<unknown>
   }
   technicianSkill?: {
     upsert: (...args: any[]) => Promise<unknown>
@@ -26,7 +32,6 @@ type ProviderRecordSyncClient = {
       regionKey: string | null
     }>>
   }
-  $executeRawUnsafe?: (query: string, ...values: unknown[]) => Promise<unknown>
 }
 
 type ProviderApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
@@ -41,6 +46,8 @@ type ProviderRecordReconcileClient = ProviderRecordSyncClient & {
       serviceAreas: string[]
       status: ProviderApplicationStatus
       providerId: string | null
+      isTestUser: boolean
+      cohortName: string | null
     }>>
     updateMany: (...args: any[]) => Promise<unknown>
   }
@@ -55,10 +62,19 @@ type SyncProviderRecordInput = {
   active: boolean
   availableNow: boolean
   verified: boolean
-  locationNodeIds?: string[]   // ADD: SUBURB node IDs for structured service areas
+  isTestUser?: boolean
+  cohortName?: string | null
+  locationNodeIds?: string[]
+  /**
+   * When true, skip syncProviderSkills and upsertStructuredServiceAreas.
+   * Use this when calling inside a db.$transaction — a caught DB error inside those
+   * helpers puts the PostgreSQL connection in ABORTED state even if swallowed in JS,
+   * causing all subsequent tx queries to fail. Run enrichment after the tx commits instead.
+   */
+  skipEnrichment?: boolean
 }
 
-async function upsertStructuredServiceAreas(
+export async function upsertStructuredServiceAreas(
   client: ProviderRecordSyncClient,
   providerId: string,
   locationNodeIds: string[],
@@ -84,6 +100,9 @@ async function upsertStructuredServiceAreas(
     const isSuburb = node.nodeType === 'SUBURB'
     const areaType = isSuburb ? 'SUBURB' : 'REGION'
     const suburbKey = isSuburb ? (node.slug.split('__').at(-1) ?? node.slug) : null
+    const regionKey = node.regionKey ?? (node.nodeType === 'REGION' ? getRegionKeyFromSlug(node.slug) : null)
+    const isActivePilotArea = getRegionServiceStatus({ regionKey, slug: node.slug }) === 'active'
+    const label = normaliseLocationDisplayName(node.label)
 
     await client.technicianServiceArea.upsert({
       where: {
@@ -96,24 +115,58 @@ async function upsertStructuredServiceAreas(
         providerId,
         locationNodeId: node.id,
         areaType,
-        label: node.label,
+        label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,
-        regionKey: node.regionKey,
+        regionKey,
         suburbKey,
-        active: true,
+        active: isActivePilotArea,
       },
       update: {
         areaType,
-        label: node.label,
+        label,
         provinceKey: node.provinceKey,
         cityKey: node.cityKey,
-        regionKey: node.regionKey,
+        regionKey,
         suburbKey,
-        active: true,
+        active: isActivePilotArea,
       },
     })
   }
+}
+
+async function ensureDefaultProviderAvailability(
+  client: ProviderRecordSyncClient,
+  providerId: string,
+) {
+  if (!client.technicianAvailability) return
+
+  await client.technicianAvailability.upsert({
+    where: { providerId },
+    create: {
+      providerId,
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+      lastUpdatedBy: 'system',
+      lastUpdatedChannel: 'approval',
+      notes: 'Default availability after provider approval',
+    },
+    update: {
+      availabilityMode: 'ALWAYS_AVAILABLE',
+      availabilityState: 'AVAILABLE',
+      nextAvailableAt: null,
+      breakUntil: null,
+      pausedAt: null,
+      pauseReason: null,
+      emergencyAvailable: false,
+      sameDayAvailable: true,
+      lastUpdatedBy: 'system',
+      lastUpdatedChannel: 'approval',
+      notes: 'Default availability after provider approval',
+    },
+  })
 }
 
 export async function syncProviderRecord(
@@ -121,6 +174,11 @@ export async function syncProviderRecord(
   input: SyncProviderRecordInput,
 ) {
   const phone = normalizePhone(input.phone)
+  const phoneCohort = createTestCohortContext(phone)
+  const isTestUser = input.isTestUser ?? phoneCohort.isTestUser
+  const cohortName = input.cohortName ?? (isTestUser ? phoneCohort.cohortName ?? INTERNAL_TEST_COHORT_NAME : null)
+  const leadEligible = input.active && input.verified
+  const serviceAreas = normaliseLocationDisplayNames(input.serviceAreas)
   const existing = await client.provider.findUnique({
     where: { phone },
     select: { id: true },
@@ -130,10 +188,13 @@ export async function syncProviderRecord(
     const data: Record<string, unknown> = {
       name: input.name,
       skills: input.skills,
-      serviceAreas: input.serviceAreas,
-      active: input.active,
-      availableNow: input.availableNow,
+      serviceAreas,
+      active: leadEligible,
+      isTestUser,
+      cohortName,
+      availableNow: leadEligible && input.availableNow,
       verified: input.verified,
+      status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
     }
 
     if (input.userId) {
@@ -145,73 +206,65 @@ export async function syncProviderRecord(
       data,
     })
 
-    try {
-      await syncProviderSkills(client, existing.id, input.skills)
-    } catch (err) {
-      console.error('[provider-record] syncProviderSkills failed for provider', existing.id, err)
+    if (!input.skipEnrichment) {
+      try {
+        await syncProviderSkills(client, existing.id, input.skills)
+      } catch (err) {
+        console.error('[provider-record] syncProviderSkills failed for provider', existing.id, err)
+      }
+
+      if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+        try {
+          await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
+        } catch (err) {
+          console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
+        }
+      }
     }
 
-    if (input.locationNodeIds && input.locationNodeIds.length > 0) {
-      try {
-        await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
-      } catch (err) {
-        console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
-      }
+    if (input.verified) {
+      await ensureDefaultProviderAvailability(client, existing.id)
     }
 
     return existing.id
   }
 
   const id = crypto.randomUUID()
-  if (client.$executeRawUnsafe) {
-    const now = new Date()
-    await client.$executeRawUnsafe(
-      `
-        insert into providers
-          ("id", "phone", "name", "email", "bio", "skills", "serviceAreas", "active", "verified", "availableNow", "avatarUrl", "createdAt", "updatedAt", "userId")
-        values
-          ($1, $2, $3, null, null, $4, $5, $6, $7, $8, null, $9, $10, $11)
-      `,
+  await client.provider.createMany({
+    data: {
       id,
       phone,
-      input.name,
-      input.skills,
-      input.serviceAreas,
-      input.active,
-      input.verified,
-      input.availableNow,
-      now,
-      now,
-      input.userId ?? null,
-    )
-  } else {
-    await client.provider.createMany({
-      data: {
-        id,
-        phone,
-        name: input.name,
-        userId: input.userId ?? null,
-        skills: input.skills,
-        serviceAreas: input.serviceAreas,
-        active: input.active,
-        availableNow: input.availableNow,
-        verified: input.verified,
-      },
-    })
-  }
+      name: input.name,
+      userId: input.userId ?? null,
+      skills: input.skills,
+      serviceAreas,
+      active: leadEligible,
+      isTestUser,
+      cohortName,
+      availableNow: leadEligible && input.availableNow,
+      verified: input.verified,
+      status: input.verified ? 'ACTIVE' : 'APPLICATION_PENDING',
+    },
+  })
 
-  try {
-    await syncProviderSkills(client, id, input.skills)
-  } catch (err) {
-    console.error('[provider-record] syncProviderSkills failed for provider', id, err)
-  }
-
-  if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+  if (!input.skipEnrichment) {
     try {
-      await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
+      await syncProviderSkills(client, id, input.skills)
     } catch (err) {
-      console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
+      console.error('[provider-record] syncProviderSkills failed for provider', id, err)
     }
+
+    if (input.locationNodeIds && input.locationNodeIds.length > 0) {
+      try {
+        await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
+      } catch (err) {
+        console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
+      }
+    }
+  }
+
+  if (input.verified) {
+    await ensureDefaultProviderAvailability(client, id)
   }
 
   return id
@@ -226,8 +279,26 @@ export async function reconcileProviderRecordsFromApplications(
 
   const applications = await client.providerApplication.findMany({
     where: {
-      status: { in: ['PENDING', 'APPROVED'] },
-      providerId: null,
+      OR: [
+        {
+          status: { in: ['PENDING', 'APPROVED'] },
+          providerId: null,
+        },
+        {
+          status: 'APPROVED',
+          provider: { is: { verified: false } },
+        },
+        {
+          status: 'APPROVED',
+          isTestUser: true,
+          provider: { is: { isTestUser: false } },
+        },
+        {
+          status: 'APPROVED',
+          cohortName: { not: null },
+          provider: { is: { cohortName: null } },
+        },
+      ],
     },
     select: {
       id: true,
@@ -237,6 +308,8 @@ export async function reconcileProviderRecordsFromApplications(
       serviceAreas: true,
       status: true,
       providerId: true,
+      isTestUser: true,
+      cohortName: true,
     },
     orderBy: { submittedAt: 'asc' },
     take: 100,
@@ -253,6 +326,8 @@ export async function reconcileProviderRecordsFromApplications(
       active: true,
       availableNow: true,
       verified: application.status === 'APPROVED',
+      isTestUser: application.isTestUser,
+      cohortName: application.cohortName,
     })
 
     await client.providerApplication.updateMany({

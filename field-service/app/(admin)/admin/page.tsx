@@ -7,7 +7,7 @@ import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { cn } from '@/lib/utils'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
-import { getOpsDashboardSnapshot } from '@/lib/ops-dashboard/service'
+import { getOpsDashboardSnapshot, getMatchingHealthMetrics } from '@/lib/ops-dashboard/service'
 import { getQueueSlaConfig } from '@/lib/ops-dashboard/sla'
 import type { AssignmentRecord, OpsDashboardQueueCard, OpsDashboardRangePreset } from '@/lib/ops-dashboard/types'
 import { IncidentBar } from '@/components/admin/dashboard/IncidentBar'
@@ -37,7 +37,10 @@ export default async function AdminDashboardPage({
 }) {
   const admin = await requireAdmin()
   const resolvedParams = await searchParams
-  const snapshot = await getOpsDashboardSnapshot({ client: db, actorId: admin.id, searchParams: resolvedParams })
+  const [snapshot, matchingHealth] = await Promise.all([
+    getOpsDashboardSnapshot({ client: db, actorId: admin.id, searchParams: resolvedParams }),
+    getMatchingHealthMetrics(24).catch(() => null),
+  ])
   const refreshSearch = new URLSearchParams()
   for (const [key, value] of Object.entries(resolvedParams)) {
     if (typeof value === 'string') {
@@ -220,6 +223,55 @@ export default async function AdminDashboardPage({
           <QueueCard key={card.title} {...card} />
         ))}
       </section>
+
+      {matchingHealth && (
+        <section>
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="text-base">Matching health — last 24 h</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Dispatch decisions, hold outcomes, and queue depth from the orchestrator.
+                </p>
+              </div>
+              <Link href="/admin/dispatch" className="text-sm text-muted-foreground hover:underline">
+                Dispatch console →
+              </Link>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                <MatchingStatCell
+                  label="Dispatched"
+                  value={matchingHealth.dispatched}
+                  tone="default"
+                />
+                <MatchingStatCell
+                  label="No-match rate"
+                  value={`${(matchingHealth.noMatchRate * 100).toFixed(0)}%`}
+                  tone={matchingHealth.noMatchRate > 0.3 ? 'warning' : 'default'}
+                  sub={`${matchingHealth.noMatch} unmatched`}
+                />
+                <MatchingStatCell
+                  label="Expired holds"
+                  value={matchingHealth.holdsExpired}
+                  tone={matchingHealth.holdsExpired > 10 ? 'warning' : 'default'}
+                />
+                <MatchingStatCell
+                  label="Rematches"
+                  value={matchingHealth.rematches}
+                  tone="default"
+                />
+                <MatchingStatCell
+                  label="Open / active holds"
+                  value={`${matchingHealth.currentOpenJobs} / ${matchingHealth.currentActiveHolds}`}
+                  tone={matchingHealth.currentOpenJobs > 5 ? 'warning' : 'default'}
+                  sub="jobs / holds now"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
@@ -908,3 +960,28 @@ function assignmentBadgeVariant(
   if (currentActorId && assignment.claimedById === currentActorId) return 'brand'
   return 'warning'
 }
+
+function MatchingStatCell({
+  label,
+  value,
+  tone = 'default',
+  sub,
+}: {
+  label: string
+  value: string | number
+  tone?: 'default' | 'warning' | 'danger'
+  sub?: string
+}) {
+  const toneClass =
+    tone === 'danger' ? 'text-destructive' :
+    tone === 'warning' ? 'text-warning' :
+    'text-foreground'
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`text-2xl font-semibold tabular-nums ${toneClass}`}>{value}</p>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    </div>
+  )
+}
+

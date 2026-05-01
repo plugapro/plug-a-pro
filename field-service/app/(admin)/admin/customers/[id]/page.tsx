@@ -60,7 +60,7 @@ export default async function CustomerDetailPage({
   const { id } = await params
   const query = (await searchParams) ?? {}
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.customers', admin.id)
+  const crudEnabled = await isEnabled('admin.crud.customers', { userId: admin.id })
 
   const customer = await db.customer.findUnique({
     where: { id },

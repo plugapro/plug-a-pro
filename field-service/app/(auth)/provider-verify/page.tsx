@@ -14,6 +14,21 @@ function getSupabaseClient() {
   )
 }
 
+function formatPhoneForDisplay(e164: string) {
+  const digits = e164.replace(/\D/g, '')
+  if (!digits.startsWith('27') || digits.length !== 11) return '*** *** ****'
+  return `+27 ${digits.slice(2, 4)} *** ${digits.slice(-4)}`
+}
+
+function createClientTraceId() {
+  return `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+type VerifyError = {
+  message: string
+  traceId: string
+}
+
 function ProviderVerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -25,7 +40,7 @@ function ProviderVerifyForm() {
 
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<VerifyError | null>(null)
   const [resendCooldown, setResendCooldown] = useState(30)
   const [done, setDone] = useState(false)
   const submitRef = useRef(false)
@@ -49,6 +64,7 @@ function ProviderVerifyForm() {
   async function handleVerifyOtp(code: string) {
     setError(null)
     setLoading(true)
+    const traceId = createClientTraceId()
 
     try {
       const supabase = getSupabaseClient()
@@ -59,7 +75,7 @@ function ProviderVerifyForm() {
       })
 
       if (verifyError || !data.user) {
-        setError(getOtpVerifyErrorMessage(verifyError?.message))
+        setError({ message: getOtpVerifyErrorMessage(verifyError?.message), traceId })
         return
       }
 
@@ -70,19 +86,21 @@ function ProviderVerifyForm() {
         // the user knows what action to take instead of waiting for an approval that
         // may never come.
         if (role === 'customer') {
-          setError(
-            "This number is linked to a customer account. To become a service provider, please apply via WhatsApp — send \"Register\" to our business number."
-          )
+          setError({
+            message: "This number is linked to a customer account. To become a service provider, please apply via WhatsApp — send \"Register\" to our business number.",
+            traceId,
+          })
         } else {
-          setError(
-            "Your provider account hasn't been approved yet. Once your application is reviewed you'll receive a WhatsApp notification. If you haven't applied yet, send \"Register\" to our WhatsApp number."
-          )
+          setError({
+            message: "Your provider account hasn't been approved yet. Once your application is reviewed you'll receive a WhatsApp notification. If you haven't applied yet, send \"Register\" to our WhatsApp number.",
+            traceId,
+          })
         }
         return
       }
 
       if (data.session?.access_token) {
-        await fetch('/api/auth/session', {
+        const sessionRes = await fetch('/api/auth/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -90,6 +108,10 @@ function ProviderVerifyForm() {
             expiresIn: data.session.expires_in ?? 3600,
           }),
         })
+        if (!sessionRes.ok) {
+          setError({ message: 'Session could not be established. Please try again.', traceId })
+          return
+        }
       }
 
       // Mark as done before navigating so the form does not reappear while the
@@ -97,7 +119,7 @@ function ProviderVerifyForm() {
       setDone(true)
       router.replace(next)
     } catch {
-      setError('Something went wrong. Please try again.')
+      setError({ message: 'Something went wrong. Please try again.', traceId })
     } finally {
       setLoading(false)
     }
@@ -110,9 +132,18 @@ function ProviderVerifyForm() {
 
   async function handleResend() {
     if (resendCooldown > 0) return
-    const supabase = getSupabaseClient()
-    await supabase.auth.signInWithOtp({ phone })
-    setResendCooldown(30)
+    const traceId = createClientTraceId()
+    try {
+      const supabase = getSupabaseClient()
+      const { error: resendError } = await supabase.auth.signInWithOtp({ phone })
+      if (resendError) {
+        setError({ message: getOtpVerifyErrorMessage(resendError.message), traceId })
+        return
+      }
+      setResendCooldown(30)
+    } catch {
+      setError({ message: 'Could not resend code. Please try again.', traceId })
+    }
   }
 
   if (!phone) {
@@ -135,15 +166,20 @@ function ProviderVerifyForm() {
         </p>
         <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
         <p className="text-sm text-muted-foreground">
-          Sent to <span className="font-medium text-foreground">{phone}</span>
+          Code sent to <span className="font-medium text-foreground">{formatPhoneForDisplay(phone)}</span>
         </p>
       </div>
 
       {/* Form */}
       <form onSubmit={handleVerify} className="space-y-4">
-        <OtpInput value={otp} onChange={setOtp} disabled={loading} />
+        <OtpInput value={otp} onChange={(next) => { setError(null); setOtp(next) }} disabled={loading} />
 
-        {error && <p className="text-sm text-destructive text-center">{error}</p>}
+        {error && (
+          <div className="space-y-1 text-center">
+            <p className="text-sm text-destructive">{error.message}</p>
+            <p className="text-xs text-muted-foreground">Trace ID: {error.traceId}</p>
+          </div>
+        )}
 
         {loading && (
           <p className="text-sm text-muted-foreground text-center">Verifying…</p>

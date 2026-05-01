@@ -52,7 +52,7 @@ async function sendOtp(phone: string, otp: string): Promise<void> {
   const body = {
     messages: [
       {
-        content: `Your Plug-A-Pro code is ${otp}. Valid for 10 minutes. Do not share this code.`,
+        content: `Your Plug A Pro code is ${otp}. Valid for 10 minutes. Do not share this code.`,
         destination: phone,
       },
     ],

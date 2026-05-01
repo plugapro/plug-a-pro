@@ -1,7 +1,8 @@
 // POST /api/technician/jobs/[id]/status
-// Body: { toStatus: JobStatus }
+// Body: { toStatus: JobStatus; notes?: string }
 // Called from the provider job detail page status controls.
 // Enforces that the caller is the assigned provider for this job.
+// Optional notes are stored in JobStatusEvent for that transition.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
@@ -31,11 +32,16 @@ export async function POST(
 
   const { id: jobId } = await params
   const body = await request.json().catch(() => ({}))
-  const { toStatus } = body as { toStatus?: JobStatus }
+  const { toStatus, notes } = body as { toStatus?: JobStatus; notes?: unknown }
 
   if (!toStatus || !VALID_STATUSES.includes(toStatus)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
+
+  const safeNotes =
+    typeof notes === 'string' && notes.trim().length > 0
+      ? notes.trim().slice(0, 1000)
+      : undefined
 
   // Verify this provider owns the job
   const provider = await db.provider.findUnique({ where: { userId: session.id } })
@@ -48,28 +54,13 @@ export async function POST(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
-  if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
-    const photoCount = await db.attachment.count({
-      where: {
-        jobId,
-        mimeType: { startsWith: 'image/' },
-      },
-    })
-
-    if (photoCount === 0) {
-      return NextResponse.json(
-        { error: 'Add at least one work photo before marking the job complete.' },
-        { status: 422 },
-      )
-    }
-  }
-
   try {
     await transitionJob({
       jobId,
       toStatus,
       actorId: session.id,
       actorRole: 'provider',
+      notes: safeNotes,
     })
     return NextResponse.json({ status: 'ok' })
   } catch (err) {

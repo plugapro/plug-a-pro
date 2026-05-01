@@ -1,4 +1,4 @@
-# Plug-A-Pro Platform Alignment Gap Register
+# Plug A Pro Platform Alignment Gap Register
 
 Date: 2026-04-10
 
@@ -14,7 +14,7 @@ Date: 2026-04-10
 
 | ID | Severity | Area | Finding | Classification | Evidence | Status |
 |---|---|---|---|---|---|---|
-| PAG-001 | Critical | Product copy | Public runtime copy implied Plug-A-Pro had vetted or strongly assured providers | Dangerous / misleading | Marketing hero, trust page, customer landing, WhatsApp help, provider page labels pre-fix | `Fixed` |
+| PAG-001 | Critical | Product copy | Public runtime copy implied Plug A Pro had vetted or strongly assured providers | Dangerous / misleading | Marketing hero, trust page, customer landing, WhatsApp help, provider page labels pre-fix | `Fixed` |
 | PAG-002 | Critical | Provider trust semantics | `verified` semantics were easy to read as public verification although implementation only supported internal marketplace approval | Dangerous / misleading | `field-service/prisma/schema.prisma`, provider/admin surfaces | `Fixed in copy and labels; residual model gap remains` |
 | PAG-003 | High | Customer decision support | Provider profile did not sufficiently explain what was provider-supplied versus platform-recorded | Misaligned | Customer provider page and request surfaces pre-fix | `Fixed with provider trust note` |
 | PAG-004 | High | Payments | Launch-mode payment bypass could be read as real payment authorisation | Misaligned | `field-service/lib/payments.ts`, admin payment surfaces | `Fixed for current model and UI; residual legacy-record interpretation risk remains` |
@@ -62,7 +62,7 @@ Status: `Fixed`
 
 The following still need human product/legal/ops decisions:
 
-1. Should Plug-A-Pro introduce formal verification tiers later?
+1. Should Plug A Pro introduce formal verification tiers later?
 2. Should launch-mode payment records be split into a separate state from online authorisation?
 3. What provider evidence types should be customer-visible in the next release?
 4. How much dispute mediation should the platform operationally promise?

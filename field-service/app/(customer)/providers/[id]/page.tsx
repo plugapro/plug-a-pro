@@ -163,7 +163,7 @@ export default async function CustomerProviderProfilePage({
         <CardContent className="space-y-3 text-sm">
           {reviews.length === 0 ? (
             <p className="text-muted-foreground">
-              This provider has completed jobs through Plug-A-Pro, but no customer reviews are visible yet.
+              This provider has completed jobs through Plug A Pro, but no customer reviews are visible yet.
             </p>
           ) : (
             reviews.map((review) => {

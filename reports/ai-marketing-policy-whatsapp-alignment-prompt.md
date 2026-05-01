@@ -5,7 +5,7 @@ Date: 2026-04-11
 
 ## Purpose
 
-This prompt is designed for an AI agent to audit and improve Plug-A-Pro's:
+This prompt is designed for an AI agent to audit and improve Plug A Pro's:
 
 - marketing website
 - legal / policy content
@@ -17,7 +17,7 @@ This prompt is designed for an AI agent to audit and improve Plug-A-Pro's:
 
 The objective is to ensure all customer-facing and provider-facing content aligns with:
 
-- the actual Plug-A-Pro business model
+- the actual Plug A Pro business model
 - the marketplace responsibility boundary
 - the provider and customer personas already defined
 - the WhatsApp-first, mobile-first operating reality
@@ -29,23 +29,23 @@ This is not a generic content pass. It is a marketplace-model, persona-fit, and 
 
 The AI agent must use these documents as source intent:
 
-- [persona-clarification-document.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/persona-clarification-document.md#L1)
-- [mvp-scope-prioritisation-document.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/mvp-scope-prioritisation-document.md#L1)
-- [role-by-role-feature-requirements-matrix.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/role-by-role-feature-requirements-matrix.md#L1)
-- [whatsapp-journey-specification.md](/Users/shimane/Projects/Plug-A-Pro/docs/strategy/servicemen-app/whatsapp-journey-specification.md#L1)
-- [platform-responsibility-matrix.md](/Users/shimane/Projects/Plug-A-Pro/reports/platform-responsibility-matrix.md#L1)
-- [platform-responsibility-and-user-journey-sweep.md](/Users/shimane/Projects/Plug-A-Pro/reports/platform-responsibility-and-user-journey-sweep.md#L1)
-- [platform-copy-risk-register.md](/Users/shimane/Projects/Plug-A-Pro/reports/platform-copy-risk-register.md#L1)
-- [meta-whatsapp-external-copy-remediation-runbook.md](/Users/shimane/Projects/Plug-A-Pro/reports/meta-whatsapp-external-copy-remediation-runbook.md#L1)
+- [persona-clarification-document.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/strategy/servicemen-app/persona-clarification-document.md#L1)
+- [mvp-scope-prioritisation-document.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/strategy/servicemen-app/mvp-scope-prioritisation-document.md#L1)
+- [role-by-role-feature-requirements-matrix.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/strategy/servicemen-app/role-by-role-feature-requirements-matrix.md#L1)
+- [whatsapp-journey-specification.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/docs/strategy/servicemen-app/whatsapp-journey-specification.md#L1)
+- [platform-responsibility-matrix.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/reports/platform-responsibility-matrix.md#L1)
+- [platform-responsibility-and-user-journey-sweep.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/reports/platform-responsibility-and-user-journey-sweep.md#L1)
+- [platform-copy-risk-register.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/reports/platform-copy-risk-register.md#L1)
+- [meta-whatsapp-external-copy-remediation-runbook.md](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/reports/meta-whatsapp-external-copy-remediation-runbook.md#L1)
 
 ## Core Business Model To Enforce
 
-Plug-A-Pro is a matching platform between:
+Plug A Pro is a matching platform between:
 
 - customers with real-world service problems
 - independent service providers, many of whom may be informal workers
 
-Plug-A-Pro helps both sides:
+Plug A Pro helps both sides:
 
 - discover each other
 - share request detail
@@ -56,7 +56,7 @@ Plug-A-Pro helps both sides:
 - keep a written trace of key interactions
 - complete the transaction
 
-Plug-A-Pro is not, by default:
+Plug A Pro is not, by default:
 
 - the employer of the provider
 - the guarantor of provider safety
@@ -129,7 +129,7 @@ The AI must:
 3. Identify misleading or unsupported trust claims
 4. Identify copy that feels too generic, too formal, too corporate, or too e-commerce-like for the actual marketplace model
 5. Rewrite copy so it:
-   - fits the real Plug-A-Pro operating model
+   - fits the real Plug A Pro operating model
    - supports real customer trust decisions
    - supports realistic provider onboarding and participation
    - aligns with WhatsApp-first communication
@@ -195,7 +195,7 @@ The direction is partly true, but the wording is stronger than the underlying re
 
 ### Misleading
 
-The wording is likely to make users believe Plug-A-Pro has vetted, guaranteed, or enforced something it has not.
+The wording is likely to make users believe Plug A Pro has vetted, guaranteed, or enforced something it has not.
 
 ### Unsupported
 
@@ -224,7 +224,7 @@ Use language such as:
 - `provider-shared evidence`
 - `marketplace profile reviewed for participation`
 - `platform-recorded job history`
-- `reviews collected on Plug-A-Pro`
+- `reviews collected on Plug A Pro`
 - `quote, booking, and job details recorded in writing`
 - `compare the profile, evidence, and quote before proceeding`
 
@@ -251,8 +251,8 @@ Avoid umbrella trust labels unless the underlying verification is genuinely impl
 
 ### Policy Copy Must
 
-- define clearly what Plug-A-Pro facilitates, records, and supports
-- define clearly what Plug-A-Pro does not guarantee
+- define clearly what Plug A Pro facilitates, records, and supports
+- define clearly what Plug A Pro does not guarantee
 - avoid hidden overclaims in legal or support wording
 - align with actual dispute, payment, cancellation, and complaint capabilities
 
@@ -261,7 +261,7 @@ Avoid umbrella trust labels unless the underlying verification is genuinely impl
 - be short, clear, action-oriented
 - align with the role and stage in the journey
 - use WhatsApp for reassurance and prompts
-- avoid making the bot sound like Plug-A-Pro has stronger operational control than it really has
+- avoid making the bot sound like Plug A Pro has stronger operational control than it really has
 - support quote review, booking clarity, ETA confidence, payment clarity, and issue reporting
 
 ## Required Outputs
@@ -325,7 +325,7 @@ Flag anything that needs human decision because it touches:
 The AI's output must:
 
 - be practical, not generic
-- be specific to Plug-A-Pro's marketplace model
+- be specific to Plug A Pro's marketplace model
 - be specific to the personas already defined
 - separate customer-facing, provider-facing, and policy-facing issues
 - identify both copy risk and missing trust scaffolding
@@ -336,13 +336,13 @@ The AI's output must:
 Use the following prompt as the execution instruction for another AI agent.
 
 ```text
-You are acting as a senior marketplace copy auditor, trust-and-safety language reviewer, WhatsApp journey writer, policy clarity editor, and persona-alignment strategist for Plug-A-Pro.
+You are acting as a senior marketplace copy auditor, trust-and-safety language reviewer, WhatsApp journey writer, policy clarity editor, and persona-alignment strategist for Plug A Pro.
 
-Your task is to comb through the accessible Plug-A-Pro marketing website, policy content, help content, onboarding copy, and WhatsApp message/template surfaces, and assess whether the content truly matches the Plug-A-Pro business model and personas.
+Your task is to comb through the accessible Plug A Pro marketing website, policy content, help content, onboarding copy, and WhatsApp message/template surfaces, and assess whether the content truly matches the Plug A Pro business model and personas.
 
 You must use this as the governing business model:
 
-Plug-A-Pro is a matching platform between customers and independent service providers. Many providers may be informal workers rather than registered companies. The platform helps both parties discover each other, share request detail, view provider profiles, clarify scope, agree pricing, coordinate the work, and keep a written record of important steps. The platform must not imply that it guarantees provider safety, character, legality, licensing, or workmanship unless such verification is genuinely implemented and evidenced.
+Plug A Pro is a matching platform between customers and independent service providers. Many providers may be informal workers rather than registered companies. The platform helps both parties discover each other, share request detail, view provider profiles, clarify scope, agree pricing, coordinate the work, and keep a written record of important steps. The platform must not imply that it guarantees provider safety, character, legality, licensing, or workmanship unless such verification is genuinely implemented and evidenced.
 
 You must use this as the persona lens:
 

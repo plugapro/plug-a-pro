@@ -46,7 +46,7 @@ const ROLE_BADGE: Record<string, string> = {
 
 export default async function TeamPage() {
   const actor = await requireRole(['OWNER'])
-  const crudEnabled = await isEnabled('admin.users.v2', actor.id)
+  const crudEnabled = await isEnabled('admin.users.v2', { userId: actor.id })
 
   const admins = await db.adminUser.findMany({
     orderBy: [{ active: 'desc' }, { role: 'asc' }, { name: 'asc' }],

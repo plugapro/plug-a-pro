@@ -1,44 +1,28 @@
 export const dynamic = 'force-dynamic'
 
-import { notFound } from 'next/navigation'
-import Link from 'next/link'
-import { db } from '@/lib/db'
-import { buildMetadata } from '@/lib/metadata'
+import { redirect } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { format, formatDistanceToNow } from 'date-fns'
+import { getSession } from '@/lib/auth'
+import { createTraceId, timestamp } from '@/lib/support-diagnostics'
 
-export const metadata = buildMetadata({ title: 'Lead Details', noIndex: true })
-
-export default async function PublicLeadViewPage({
+export default async function LeadIdRedirectPage({
   params,
 }: {
   params: Promise<{ leadId: string }>
 }) {
   const { leadId } = await params
+  const session = await getSession()
 
-  const lead = await db.lead.findUnique({
-    where: { id: leadId },
-    include: {
-      jobRequest: {
-        include: {
-          address: { select: { suburb: true, city: true, province: true } },
-        },
-      },
-    },
+  if (session?.role === 'provider') {
+    redirect(`/provider/leads/${leadId}`)
+  }
+
+  const traceId = createTraceId('job')
+  console.warn('[leads/public] unsigned lead link opened without provider session', {
+    traceId,
+    leadId,
+    action: 'View Job',
   })
-
-  if (!lead) notFound()
-
-  const jr = lead.jobRequest
-  const addr = jr.address
-  const area = addr
-    ? [addr.suburb, addr.city, addr.province].filter(Boolean).join(', ')
-    : 'Location on file'
-
-  const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
-  const isResponded = lead.status === 'ACCEPTED' || lead.status === 'DECLINED'
-
-  const signInUrl = `/provider-sign-in?next=${encodeURIComponent(`/provider/leads/${leadId}`)}`
 
   return (
     <div className="min-h-screen bg-background">
@@ -47,73 +31,39 @@ export default async function PublicLeadViewPage({
           <p className="text-sm font-semibold">Plug A Pro</p>
         </div>
       </header>
-
-      <div className="mx-auto max-w-lg px-4 py-6 space-y-5">
-        <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            New Lead · {lead.id.slice(-8).toUpperCase()}
+      <main className="mx-auto max-w-lg px-4 py-8">
+        <div className="rounded-lg border bg-card px-4 py-5 space-y-3">
+          <h1 className="text-lg font-semibold">This job link is missing secure access.</h1>
+          <p className="text-sm text-muted-foreground">
+            Please open the latest WhatsApp message and tap the signed View Job button. For privacy, customer job details are not available from an unsigned public link.
           </p>
-          <h1 className="text-xl font-semibold">{jr.category}</h1>
-        </div>
-
-        {lead.expiresAt && (
-          <div className={`rounded-xl border px-4 py-3 text-sm ${
-            isExpired
-              ? 'border-destructive/30 bg-destructive/5 text-destructive'
-              : 'border-amber-200 bg-amber-50 text-amber-800'
-          }`}>
-            {isExpired
-              ? 'This lead has expired.'
-              : `Expires ${formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · ${format(lead.expiresAt, 'HH:mm, d MMM')}`}
-          </div>
-        )}
-
-        {isResponded && (
-          <div className="rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            You have already {lead.status === 'ACCEPTED' ? 'accepted' : 'declined'} this lead.
-          </div>
-        )}
-
-        <div className="rounded-xl border bg-card divide-y">
-          <div className="px-4 py-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Service</p>
-            <p className="font-medium">{jr.category}</p>
-          </div>
-          <div className="px-4 py-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Area</p>
-            <p className="font-medium">{area}</p>
-          </div>
-          {jr.description && (
-            <div className="px-4 py-3 space-y-0.5">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Description</p>
-              <p className="text-sm">{jr.description}</p>
+          <dl className="space-y-1 rounded-md bg-muted/50 p-3 text-xs">
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Error code</dt>
+              <dd className="text-right font-medium">JOB_LINK_INVALID</dd>
             </div>
-          )}
-          <div className="px-4 py-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Received</p>
-            <p className="text-sm text-muted-foreground">
-              {format(lead.sentAt, 'HH:mm, d MMM yyyy')}
-            </p>
-          </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Job ref</dt>
+              <dd className="text-right font-medium">{leadId.slice(-8).toUpperCase()}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Action</dt>
+              <dd className="text-right font-medium">View Job</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Time</dt>
+              <dd className="text-right font-medium">{timestamp()}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Trace ID</dt>
+              <dd className="text-right font-medium">{traceId}</dd>
+            </div>
+          </dl>
+          <Button asChild className="w-full">
+            <a href="/provider-sign-in">Open Worker Portal</a>
+          </Button>
         </div>
-
-        {!isExpired && !isResponded && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground text-center">
-              Sign in to accept or decline this lead
-            </p>
-            <Button asChild size="lg" className="w-full">
-              <Link href={signInUrl}>Sign in to respond</Link>
-            </Button>
-          </div>
-        )}
-
-        {isExpired && (
-          <p className="text-center text-sm text-muted-foreground">
-            New leads will be sent to you via WhatsApp as they come in.
-          </p>
-        )}
-      </div>
+      </main>
     </div>
   )
 }

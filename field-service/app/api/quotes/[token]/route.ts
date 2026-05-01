@@ -87,20 +87,18 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   return NextResponse.json({
     status: result.action,
     scheduledDate: result.action === 'approved' ? result.scheduledDate.toISOString() : null,
-    paymentMode: result.action === 'approved' ? result.payment.mode : null,
-    paymentStatus: result.action === 'approved' ? result.payment.status : null,
-    paymentUrl: result.action === 'approved' ? result.payment.checkoutUrl : null,
   })
 }
 
 async function notifyAfterDecision(result: {
   action: 'approved' | 'declined'
   bookingId?: string
-  provider: { phone: string; name: string }
+  provider: { id: string; phone: string; name: string }
   customer: { phone: string; name: string }
   category: string
   scheduledDate?: Date
   feedback?: string | null
+  jobRequestId?: string
 }) {
   const { sendText, sendCtaUrl } = await import('@/lib/whatsapp-interactive')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -112,12 +110,46 @@ async function notifyAfterDecision(result: {
     const dateStr = result.scheduledDate.toLocaleDateString('en-ZA', {
       weekday: 'short', day: 'numeric', month: 'short',
     })
+
+    // Resolve a signed no-login job handover link for the provider.
+    // Falls back to the generic portal if the lead or env is missing.
+    let jobUrl: string | null = null
+    if (result.jobRequestId && result.provider.id) {
+      try {
+        const [{ getProviderSignedJobHandoverUrl }, { db }] = await Promise.all([
+          import('@/lib/provider-lead-access'),
+          import('@/lib/db'),
+        ])
+        const lead = await db.lead.findFirst({
+          where: {
+            jobRequestId: result.jobRequestId,
+            providerId: result.provider.id,
+            status: 'ACCEPTED',
+          },
+          select: { id: true },
+        })
+        if (lead) {
+          jobUrl = await getProviderSignedJobHandoverUrl({
+            leadId: lead.id,
+            providerId: result.provider.id,
+            jobRequestId: result.jobRequestId,
+          })
+        }
+      } catch {
+        // Non-fatal — fall through to generic URL
+      }
+    }
+
     await sendCtaUrl(
       providerPhone,
-      `✅ *Quote Approved!*\n\n${category} job is confirmed for ${dateStr}.\n\nOpen the app to view full details:`,
+      `✅ *Quote Approved!*\n\n${category} job confirmed for ${dateStr}.\n\nOpen the job to view full details and update your status:`,
       'View Job',
-      `${appUrl}/technician`,
-      { footer: 'Navigate and update job status from the app' }
+      jobUrl ?? `${appUrl}/provider`,
+      {
+        footer: jobUrl
+          ? 'Secure link for this job · no login needed'
+          : 'Navigate and update job status from the app',
+      }
     ).catch(() => {})
     const { sendBookingConfirmation } = await import('@/lib/whatsapp')
     await sendBookingConfirmation({

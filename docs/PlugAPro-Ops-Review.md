@@ -1,10 +1,10 @@
-# Plug-A-Pro Operations Dashboard Review
+# Plug A Pro Operations Dashboard Review
 
 **Reviewer:** Product Operations / UX (acting)  
 **Surface reviewed:** `https://admin.plugapro.co.za/` (Ops admin)  
 **Date of walkthrough:** 19 April 2026  
 **Coverage:** Operations dashboard, Validation, Dispatch, Field Exceptions, Quotes, Bookings (incl. one detail), Matches, Applications, Providers (incl. one profile), Customers (incl. one profile), Categories, Locations, Disputes, Payments, Reports, Messages, Settings, Journey Flows.  
-**Scope note:** The brief talks about "subscribed users." Plug-A-Pro is a two-sided marketplace, not a subscription product, so I've read "subscribed users" as the closest analogues here: **customers** (people who request a service) and **providers** (people who fulfill it). I've reviewed both.
+**Scope note:** The brief talks about "subscribed users." Plug A Pro is a two-sided marketplace, not a subscription product, so I've read "subscribed users" as the closest analogues here: **customers** (people who request a service) and **providers** (people who fulfill it). I've reviewed both.
 
 ---
 

@@ -4,7 +4,7 @@
 
 ### Overall judgement
 
-Plug-A-Pro / ServiceMen has a materially implemented marketplace core, a meaningful admin control surface, and enough workflow depth to demonstrate the intended customer and provider journeys. It does **not** yet have a production-capable operations model.
+Plug A Pro / ServiceMen has a materially implemented marketplace core, a meaningful admin control surface, and enough workflow depth to demonstrate the intended customer and provider journeys. It does **not** yet have a production-capable operations model.
 
 Current operating maturity: **pre-production / emerging ops maturity**.
 
@@ -30,7 +30,7 @@ Current readiness statement: **ops can monitor and partially intervene, but cann
 
 ### Sources reviewed
 
-- OpenBrain project context, search results, and context packs for Plug-A-Pro / ServiceMen
+- OpenBrain project context, search results, and context packs for Plug A Pro / ServiceMen
 - Repository docs and prior sweeps
 - Prisma schema
 - Admin routes, server actions, service-layer logic, queue pages, and export APIs

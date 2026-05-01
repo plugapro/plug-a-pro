@@ -1,7 +1,7 @@
 {
-  "name": "Plug-A-Pro",
+  "name": "Plug A Pro",
   "short_name": "PlugAPro",
-  "description": "Request, track, and manage trusted field service jobs with Plug-A-Pro.",
+  "description": "Request, track, and manage trusted field service jobs with Plug A Pro.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f4f7fb",

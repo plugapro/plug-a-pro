@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   const actor = await requireRole(['ADMIN', 'OWNER'])
-  const enabled = await isEnabled('admin.crud.providers', actor.id)
+  const enabled = await isEnabled('admin.crud.providers', { userId: actor.id })
   if (!enabled) {
     return new Response('Feature flag disabled', { status: 403 })
   }
@@ -80,6 +80,7 @@ export async function GET(request: Request) {
       adminId: actor.adminUserId ?? actor.id,
       action: 'provider.export',
       entityType: AUDIT_ENTITY.PROVIDER,
+      entityId: 'bulk',
       metadata: { rowCount: rows.length, filters: { q, status, kyc, archived } },
       ipAddress: request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? null,
       userAgent: request.headers.get('user-agent') ?? null,

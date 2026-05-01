@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ─── WhatsApp template registration script ───────────────────────────────────
-// Registers Plug-A-Pro message templates via Meta Graph API.
+// Registers Plug A Pro message templates via Meta Graph API.
 //
 // As of 2026-04-08, all 21 production templates were registered against WABA
 // 104200042667877 (Kgolaentle Holdings, +27 69 355 2447). This script covered

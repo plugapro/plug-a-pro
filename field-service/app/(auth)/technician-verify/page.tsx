@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { OtpInput } from '@/components/ui/otp-input'
 import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
 import { getSafeNextPath } from '@/lib/safe-redirect'
 
@@ -122,19 +122,7 @@ function ProviderVerifyForm() {
 
       {/* Form */}
       <form onSubmit={handleVerify} className="space-y-4">
-        <Input
-          type="text"
-          inputMode="numeric"
-          pattern="\d{6}"
-          maxLength={6}
-          placeholder="123456"
-          value={otp}
-          onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-          required
-          autoFocus
-          disabled={loading}
-          className="h-16 bg-background border-input text-foreground placeholder:text-muted-foreground text-3xl tracking-widest text-center focus-visible:border-ring focus-visible:ring-ring/20"
-        />
+        <OtpInput value={otp} onChange={(next) => { setError(null); setOtp(next) }} disabled={loading} />
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 

@@ -3,6 +3,7 @@
 // cities are captured on the waitlist and notified when the platform expands.
 
 import { db } from './db'
+import { normaliseLocationDisplayName } from './location-format'
 
 // ─── Active area gates ─────────────────────────────────────────────────────────
 // Expand these sets as the platform rolls out to new areas.
@@ -20,6 +21,48 @@ export const ACTIVE_CITY_NODE_KEYS = new Set([
 export const ACTIVE_REGION_KEYS_SET = new Set([
   'jhb_west',
 ])
+
+export const ACTIVE_PILOT_REGION_LABEL = 'JHB West / Roodepoort'
+export const ACTIVE_PILOT_CITY_LABEL = 'Johannesburg'
+
+export type ServiceAreaStatus = 'active' | 'coming_soon'
+
+export function normalizeLocationKey(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+export function getRegionKeyFromSlug(slug: string | null | undefined): string {
+  return normalizeLocationKey(slug?.split('__').at(-1) ?? '')
+}
+
+export function getRegionServiceStatus(input: {
+  regionKey?: string | null
+  slug?: string | null
+}): ServiceAreaStatus {
+  const regionKey = normalizeLocationKey(input.regionKey) || getRegionKeyFromSlug(input.slug)
+  return isActiveRegion(regionKey) ? 'active' : 'coming_soon'
+}
+
+export function getCityServiceStatus(input: {
+  cityKey?: string | null
+}): ServiceAreaStatus {
+  return isActiveCity(normalizeLocationKey(input.cityKey)) ? 'active' : 'coming_soon'
+}
+
+export function describeCityServiceStatus(input: { cityKey?: string | null }): string {
+  return getCityServiceStatus(input) === 'active'
+    ? `🟢 Active pilot — ${ACTIVE_PILOT_REGION_LABEL}`
+    : '🔜 Coming soon — register now'
+}
+
+export function describeRegionServiceStatus(input: {
+  regionKey?: string | null
+  slug?: string | null
+}): string {
+  return getRegionServiceStatus(input) === 'active'
+    ? '🟢 Active pilot'
+    : '🔜 Coming soon — register now'
+}
 
 // Normalised city keys currently accepting new job requests (legacy guard — kept
 // for the `handleCollectAddress` fallback path that checks city label free-text).
@@ -73,21 +116,39 @@ export async function addToServiceAreaWaitlist(params: {
   province?: string | null
   source: 'whatsapp' | 'pwa'
 }): Promise<void> {
-  await db.serviceAreaWaitlist.upsert({
-    where: { phone_city: { phone: params.phone, city: params.city } },
-    create: {
+  const suburb = normaliseLocationDisplayName(params.suburb) || null
+  const city = normaliseLocationDisplayName(params.city)
+  const province = normaliseLocationDisplayName(params.province) || null
+  // Use case-insensitive findFirst so that existing rows stored with lowercase city
+  // (before normalisation was introduced) are matched correctly — the @@unique([phone, city])
+  // constraint is case-sensitive by default in Postgres.
+  const existing = await db.serviceAreaWaitlist.findFirst({
+    where: {
       phone: params.phone,
-      name: params.name ?? null,
-      category: params.category ?? null,
-      suburb: params.suburb ?? null,
-      city: params.city,
-      province: params.province ?? null,
-      source: params.source,
+      city: { equals: city, mode: 'insensitive' },
     },
-    update: {
-      // Update name/category in case they weren't captured the first time
-      ...(params.name ? { name: params.name } : {}),
-      ...(params.category ? { category: params.category } : {}),
-    },
+    select: { id: true },
   })
+  if (existing) {
+    await db.serviceAreaWaitlist.update({
+      where: { id: existing.id },
+      data: {
+        city, // normalise the stored city on touch
+        ...(params.name ? { name: params.name } : {}),
+        ...(params.category ? { category: params.category } : {}),
+      },
+    })
+  } else {
+    await db.serviceAreaWaitlist.create({
+      data: {
+        phone: params.phone,
+        name: params.name ?? null,
+        category: params.category ?? null,
+        suburb,
+        city,
+        province,
+        source: params.source,
+      },
+    })
+  }
 }

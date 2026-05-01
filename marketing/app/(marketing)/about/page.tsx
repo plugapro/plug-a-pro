@@ -7,21 +7,21 @@ import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
 export const metadata: Metadata = buildMetadata({
   title: "About",
   description:
-    "Plug-A-Pro connects homeowners to independent local workers for small home jobs, all through WhatsApp.",
+    "Plug A Pro connects homeowners to independent local workers for small home jobs, all through WhatsApp.",
 });
 
 export default function AboutPage() {
   return (
     <>
       <div className="py-24 max-w-3xl mx-auto px-4">
-        <h1 className="text-5xl font-bold mb-6">About Plug-A-Pro</h1>
+        <h1 className="text-5xl font-bold mb-6">About Plug A Pro</h1>
         <p className="text-muted-foreground text-xl mb-12">
           A marketplace connecting homeowners to independent local workers. Built for South Africa, runs on WhatsApp.
         </p>
         <div className="prose prose-zinc dark:prose-invert max-w-none">
           <h2>What we do</h2>
           <p>
-            When something breaks at home, finding a trustworthy person to fix it is harder than it should be. You either know someone, or you don&apos;t. Plug-A-Pro solves that.
+            When something breaks at home, finding a trustworthy person to fix it is harder than it should be. You either know someone, or you don&apos;t. Plug A Pro solves that.
           </p>
           <p>
             We match homeowners with skilled independent workers in their area: plumbers, painters, gardeners, handymen, appliance repairers, and more. Customers describe the job on WhatsApp. We find nearby available workers. Both sides connect, confirm, and get the job done.
@@ -32,7 +32,7 @@ export default function AboutPage() {
             South Africa has hundreds of thousands of skilled independent workers who earn their living job to job. Most find work through word of mouth, standing outside hardware stores, or WhatsApp groups. That&apos;s not a reliable pipeline.
           </p>
           <p>
-            Plug-A-Pro connects independent workers with local job leads matched to their skills and the areas they cover. No app to download. No monthly fees. Work comes to them on the WhatsApp they already use.
+            Plug A Pro connects independent workers with local job leads matched to their skills and the areas they cover. No app to download. No monthly fees. Work comes to them on the WhatsApp they already use.
           </p>
 
           <h2>How it works</h2>

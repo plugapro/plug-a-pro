@@ -11,6 +11,7 @@
 // row is created. handlePending backfills the FK once the application record exists.
 
 import { put } from '@vercel/blob'
+import { randomUUID } from 'crypto'
 import { db } from './db'
 
 const API_VERSION = 'v21.0'
@@ -27,8 +28,26 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   mediaId: string
   providerApplicationId?: string | null
   prefix?: string
+  label?: string
+  maxSizeBytes?: number
 }): Promise<{ attachmentId: string }> {
-  const { mediaId, providerApplicationId = null, prefix = 'evidence' } = params
+  const { mediaId, providerApplicationId = null, prefix = 'evidence', label = 'evidence', maxSizeBytes = MAX_EVIDENCE_SIZE } = params
+  const uploadedBy = `system:whatsapp:${mediaId}`
+  const traceId = randomUUID().slice(0, 8)
+
+  const existing = await db.attachment.findFirst({
+    where: { uploadedBy, label },
+    select: { id: true },
+  })
+  if (existing) {
+    console.info('[whatsapp-media] duplicate media delivery reused existing attachment', {
+      traceId,
+      mediaIdSuffix: mediaId.slice(-8),
+      attachmentId: existing.id,
+      label,
+    })
+    return { attachmentId: existing.id }
+  }
 
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
   if (!accessToken) throw new Error('Missing WHATSAPP_ACCESS_TOKEN')
@@ -45,11 +64,31 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   const meta = await metaRes.json() as { url: string; mime_type: string; file_size: number }
 
   if (!ALLOWED_EVIDENCE_TYPES[meta.mime_type]) {
+    console.warn('[whatsapp-media] rejected unsupported media type', {
+      traceId,
+      mediaIdSuffix: mediaId.slice(-8),
+      mimeType: meta.mime_type,
+      label,
+    })
     throw new Error(`Unsupported media type: ${meta.mime_type}`)
   }
-  if (meta.file_size > MAX_EVIDENCE_SIZE) {
-    throw new Error(`File too large: ${meta.file_size} bytes (max ${MAX_EVIDENCE_SIZE})`)
+  if (meta.file_size > maxSizeBytes) {
+    console.warn('[whatsapp-media] rejected oversized media', {
+      traceId,
+      mediaIdSuffix: mediaId.slice(-8),
+      sizeBytes: meta.file_size,
+      maxSizeBytes,
+      label,
+    })
+    throw new Error(`File too large: ${meta.file_size} bytes (max ${maxSizeBytes})`)
   }
+  console.info('[whatsapp-media] metadata resolved', {
+    traceId,
+    mediaIdSuffix: mediaId.slice(-8),
+    mimeType: meta.mime_type,
+    sizeBytes: meta.file_size,
+    label,
+  })
 
   // Step 2 — download binary
   const mediaRes = await fetch(meta.url, {
@@ -59,8 +98,19 @@ export async function downloadAndStoreWhatsAppMedia(params: {
     throw new Error(`WhatsApp media download failed: ${mediaRes.status}`)
   }
   const buffer = await mediaRes.arrayBuffer()
+  if (buffer.byteLength === 0) {
+    console.error('[whatsapp-media] downloaded empty media body', {
+      traceId,
+      mediaIdSuffix: mediaId.slice(-8),
+      label,
+    })
+    throw new Error('WhatsApp media download returned an empty file')
+  }
 
   // Step 3 — upload to Vercel Blob
+  // Blobs are stored as public for compatibility with the existing evidence upload
+  // architecture. The /api/attachments/[id] auth proxy is the canonical access path;
+  // addRandomSuffix ensures direct blob URLs are non-guessable.
   const ext = ALLOWED_EVIDENCE_TYPES[meta.mime_type]
   const pathname = `${prefix}/${mediaId.slice(-8)}.${ext}`
 
@@ -69,19 +119,34 @@ export async function downloadAndStoreWhatsAppMedia(params: {
     addRandomSuffix: true,       // prevents overwrite collisions on concurrent uploads
     contentType: meta.mime_type,
   })
+  console.info('[whatsapp-media] media uploaded to app storage', {
+    traceId,
+    mediaIdSuffix: mediaId.slice(-8),
+    blobKey: blob.pathname,
+    mimeType: meta.mime_type,
+    sizeBytes: buffer.byteLength,
+    label,
+  })
 
   // Step 4 — create Attachment record so access goes via the auth proxy.
-  // providerApplicationId starts null; backfilled in handlePending once the application row exists.
+  // providerApplicationId / jobRequestId start null; backfilled by the caller once the parent
+  // record exists (e.g. handlePending for evidence, handleJobRequestSubmitted for customer photos).
   const attachment = await db.attachment.create({
     data: {
       providerApplicationId,
       url: blob.url,
       blobKey: blob.pathname,
       mimeType: meta.mime_type,
-      sizeBytes: meta.file_size,
-      label: 'evidence',
-      uploadedBy: 'system:whatsapp',
+      sizeBytes: buffer.byteLength,   // actual transferred bytes — meta.file_size can be stale
+      label,
+      uploadedBy,
     },
+  })
+  console.info('[whatsapp-media] attachment record created', {
+    traceId,
+    mediaIdSuffix: mediaId.slice(-8),
+    attachmentId: attachment.id,
+    label,
   })
 
   return { attachmentId: attachment.id }

@@ -39,9 +39,9 @@
 - repo READMEs and spec trace docs
 
 ### OpenBrain context used
-- Project context for `Plug-A-Pro`
-- Decision list for `Plug-A-Pro`
-- Memory search for `Janice`, `Plug-A-Pro`, `ServiceMen`, backend journey, booking, quote, payment, technician, WhatsApp, admin/ops, onboarding, customer communication
+- Project context for `Plug A Pro`
+- Decision list for `Plug A Pro`
+- Memory search for `Janice`, `Plug A Pro`, `ServiceMen`, backend journey, booking, quote, payment, technician, WhatsApp, admin/ops, onboarding, customer communication
 
 ### Executed verification
 - `cd field-service && npm test` → `96 passed | 4 todo`
@@ -54,7 +54,7 @@
 - No live verification of Meta, PSP, Supabase production state, cron schedules, or webhooks was possible from repository state alone.
 
 ### Limitations
-- Janice-specific OpenBrain memories were not found. Janice-related conclusions therefore rely on repository specs plus general Plug-A-Pro memories rather than persona-specific operational notes.
+- Janice-specific OpenBrain memories were not found. Janice-related conclusions therefore rely on repository specs plus general Plug A Pro memories rather than persona-specific operational notes.
 - Payment/webhook behaviour was reviewed statically; no live PSP events were replayed.
 - WhatsApp production behaviour was reviewed from handlers/templates and tests, not from live Meta event traffic.
 

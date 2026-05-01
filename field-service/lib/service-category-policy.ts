@@ -1,3 +1,12 @@
+// DISCLAIMER: Plug A Pro is a marketplace platform that connects customers with independent
+// service providers. Plug A Pro does not verify, guarantee, or take responsibility for
+// ensuring that providers hold any trade certifications, licences, or regulatory approvals
+// required by law for a given category of work (including but not limited to wireman's
+// licences for electrical work). It is the responsibility of the customer and the provider
+// to satisfy themselves that all applicable legal and safety requirements are met before
+// work commences. Plug A Pro expressly disclaims any liability arising from work performed
+// without the required certifications.
+
 type CategoryPolicy = {
   normalizedCategory: string
   bookingOnAssignment: boolean
@@ -12,15 +21,18 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'plumbing',
     bookingOnAssignment: false,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['plumbing-kit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
   electrical: {
     normalizedCategory: 'electrical',
     bookingOnAssignment: false,
-    requiredCertificationCodes: ['wireman'],
-    requiredEquipmentTags: ['multimeter'],
+    // Certification and equipment requirements relaxed — providers are not blocked from
+    // receiving leads for lacking a wireman's licence or multimeter. Plug A Pro does not
+    // take responsibility for verifying regulatory compliance; see disclaimer above.
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: true,
   },
@@ -36,7 +48,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'garden & landscaping',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['garden-tools'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -44,7 +56,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'handyman',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['basic-toolkit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -52,7 +64,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'appliances',
     bookingOnAssignment: false,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['multimeter'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -60,7 +72,7 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'diy & assembly',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['basic-toolkit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
@@ -68,18 +80,78 @@ export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
     normalizedCategory: 'roofing',
     bookingOnAssignment: false,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['ladder'],
-    requiredVehicleTypes: ['bakkie', 'van'],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
     regulated: false,
   },
   cleaning: {
     normalizedCategory: 'cleaning',
     bookingOnAssignment: true,
     requiredCertificationCodes: [],
-    requiredEquipmentTags: ['cleaning-kit'],
+    requiredEquipmentTags: [],
     requiredVehicleTypes: [],
     regulated: false,
   },
+  tiling: {
+    normalizedCategory: 'tiling',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  pest_control: {
+    normalizedCategory: 'pest_control',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  carpentry: {
+    normalizedCategory: 'carpentry',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  waterproofing: {
+    normalizedCategory: 'waterproofing',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  air_conditioning: {
+    normalizedCategory: 'air_conditioning',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+  // "Other" is a UI-level escape hatch only. The stored category is always
+  // the closest real tag the client selected — this entry guards against
+  // the literal string 'other' ever reaching the matching engine.
+  other: {
+    normalizedCategory: 'other',
+    bookingOnAssignment: false,
+    requiredCertificationCodes: [],
+    requiredEquipmentTags: [],
+    requiredVehicleTypes: [],
+    regulated: false,
+  },
+}
+
+// Map short tag keys used in service-categories.ts to the policy table keys.
+// e.g. 'garden' (tag) → 'garden & landscaping' (policy key).
+// This prevents bookingOnAssignment from silently falling back to false
+// when the job category arrives in tag form rather than label form.
+const TAG_ALIAS_TO_POLICY_KEY: Record<string, string> = {
+  'garden': 'garden & landscaping',
+  'diy': 'diy & assembly',
 }
 
 function normalizeCategory(input: string) {
@@ -87,9 +159,12 @@ function normalizeCategory(input: string) {
 }
 
 export function getCategoryPolicy(category: string): CategoryPolicy {
+  const normalized = normalizeCategory(category)
+  // Resolve tag alias (e.g. 'garden' → 'garden & landscaping') before lookup.
+  const policyKey = TAG_ALIAS_TO_POLICY_KEY[normalized] ?? normalized
   return (
-    CATEGORY_POLICIES[normalizeCategory(category)] ?? {
-      normalizedCategory: normalizeCategory(category),
+    CATEGORY_POLICIES[policyKey] ?? {
+      normalizedCategory: normalized,
       bookingOnAssignment: false,
       requiredCertificationCodes: [],
       requiredEquipmentTags: [],

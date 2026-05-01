@@ -11,13 +11,14 @@ import {
   rejectAssignmentOffer,
   runAssignmentForJobRequest,
 } from './matching/service'
-import { notifyProviderNewJob } from './whatsapp-bot'
+import { notifyPostMatchAcceptance } from './post-match-communications'
 
 export interface CandidateInput {
   category: string
   suburb: string
   city: string
   regionKey?: string | null
+  isTestRequest?: boolean
 }
 
 export interface DispatchResult {
@@ -27,297 +28,43 @@ export interface DispatchResult {
   noMatch: boolean
 }
 
-type LegacyDispatchJobRequest = {
-  id: string
-  status: string
-  category: string
-  title: string
-  description: string
-  customer: { name: string } | null
-  address: {
-    suburb: string | null
-    city: string | null
-    locationNode: { regionKey: string | null } | null
-  } | null
-}
-
-
-function firstName(name: string | null | undefined) {
-  return name?.trim().split(/\s+/)[0] || 'Customer'
-}
-
-function leadDescription(jobRequest: LegacyDispatchJobRequest) {
-  const source = jobRequest.title?.trim() || jobRequest.description?.trim() || `${jobRequest.category} job`
-  return source.length > 120 ? `${source.slice(0, 117)}...` : source
-}
-
-async function loadLegacyDispatchJobRequest(jobRequestId: string): Promise<LegacyDispatchJobRequest | null> {
-  return db.jobRequest.findUnique({
-    where: { id: jobRequestId },
-    select: {
-      id: true,
-      status: true,
-      category: true,
-      title: true,
-      description: true,
-      customer: {
-        select: {
-          name: true,
-        },
-      },
-      address: {
-        select: {
-          suburb: true,
-          city: true,
-          locationNode: {
-            select: {
-              regionKey: true,
-            },
-          },
-        },
-      },
-    },
-  })
-}
-
-async function dispatchLeadsLegacy(jobRequestId: string): Promise<DispatchResult> {
-  const jobRequest = await loadLegacyDispatchJobRequest(jobRequestId)
-  if (!jobRequest || !['OPEN', 'MATCHING'].includes(jobRequest.status)) {
-    return { jobRequestId, leadsDispatched: 0, candidatesFound: 0, noMatch: true }
-  }
-
-  const suburb = jobRequest.address?.suburb ?? ''
-  const city = jobRequest.address?.city ?? ''
-  const candidates = await findCandidateProviders({
-    category: jobRequest.category,
-    suburb,
-    city,
-    regionKey: jobRequest.address?.locationNode?.regionKey ?? null,
-  })
-
-  if (candidates.length === 0) {
-    return {
-      jobRequestId,
-      leadsDispatched: 0,
-      candidatesFound: 0,
-      noMatch: true,
-    }
-  }
-
-  const existingLeads = await db.lead.findMany({
-    where: { jobRequestId },
-    select: { providerId: true, status: true },
-  })
-  const contactedProviderIds = new Set(existingLeads.map((lead) => lead.providerId))
-  const nextCandidates = candidates.filter((candidate) => !contactedProviderIds.has(candidate.id))
-
-  let leadsDispatched = 0
-
-  for (const candidate of nextCandidates.slice(0, 5)) {
-    const lead = await db.lead.create({
-      data: {
-        jobRequestId,
-        providerId: candidate.id,
-        status: 'SENT',
-        expiresAt: new Date(Date.now() + MATCHING_CONFIG.offerTtlMinutes * 60_000),
-      },
-      select: {
-        id: true,
-        expiresAt: true,
-      },
-    })
-
-    await notifyProviderNewJob({
-      providerPhone: candidate.phone,
-      leadId: lead.id,
-      category: jobRequest.category,
-      area: [suburb, city].filter(Boolean).join(', ') || 'Your area',
-      description: leadDescription(jobRequest),
-      customerInitial: firstName(jobRequest.customer?.name),
-      expiresInMinutes: lead.expiresAt
-        ? Math.max(1, Math.round((lead.expiresAt.getTime() - Date.now()) / 60_000))
-        : MATCHING_CONFIG.offerTtlMinutes,
-    })
-
-    leadsDispatched += 1
-  }
-
-  if (leadsDispatched > 0) {
-    await db.jobRequest.updateMany({
-      where: { id: jobRequestId, status: { in: ['OPEN', 'MATCHING'] } },
-      data: { status: 'MATCHING' },
-    })
-  }
-
-  return {
-    jobRequestId,
-    leadsDispatched,
-    candidatesFound: candidates.length,
-    noMatch: leadsDispatched === 0,
-  }
-}
-
-async function acceptLeadLegacy(params: {
-  leadId: string
-  providerId: string
-  inspectionNeeded?: boolean
-}): Promise<LeadAcceptanceResult> {
-  const lead = await db.lead.findUnique({
-    where: { id: params.leadId },
-    select: {
-      id: true,
-      jobRequestId: true,
-      providerId: true,
-      status: true,
-    },
-  })
-
-  if (!lead) return { ok: false, reason: 'NOT_FOUND' }
-  if (lead.providerId !== params.providerId) return { ok: false, reason: 'FORBIDDEN' }
-  if (lead.status === 'EXPIRED') return { ok: false, reason: 'EXPIRED' }
-
-  try {
-    return await db.$transaction(async (tx) => {
-      const existingMatch = await tx.match.findUnique({
-        where: { jobRequestId: lead.jobRequestId },
-        select: { id: true },
-      })
-      if (existingMatch) return { ok: false as const, reason: 'TAKEN' as const }
-
-      const accepted = await tx.lead.updateMany({
-        where: {
-          id: lead.id,
-          providerId: params.providerId,
-          status: { in: ['SENT', 'VIEWED'] },
-        },
-        data: {
-          status: 'ACCEPTED',
-          respondedAt: new Date(),
-        },
-      })
-
-      if (accepted.count === 0) {
-        const match = await tx.match.findUnique({
-          where: { jobRequestId: lead.jobRequestId },
-          select: { id: true },
-        })
-        return match
-          ? { ok: false as const, reason: 'TAKEN' as const }
-          : { ok: false as const, reason: 'EXPIRED' as const }
-      }
-
-      const match = await tx.match.create({
-        data: {
-          jobRequestId: lead.jobRequestId,
-          providerId: params.providerId,
-          status: 'MATCHED',
-          inspectionNeeded: params.inspectionNeeded === true,
-        },
-        select: { id: true },
-      })
-
-      await tx.jobRequest.updateMany({
-        where: { id: lead.jobRequestId },
-        data: { status: 'MATCHED' },
-      })
-
-      await tx.lead.updateMany({
-        where: {
-          jobRequestId: lead.jobRequestId,
-          id: { not: lead.id },
-          status: { in: ['SENT', 'VIEWED'] },
-        },
-        data: {
-          status: 'EXPIRED',
-          respondedAt: new Date(),
-        },
-      })
-
-      return {
-        ok: true as const,
-        leadId: params.leadId,
-        matchId: match.id,
-        inspectionNeeded: params.inspectionNeeded === true,
-      }
-    })
-  } catch (error) {
-    if (
-      error != null &&
-      typeof error === 'object' &&
-      'code' in error &&
-      (error as { code?: string }).code === 'P2002'
-    ) {
-      return { ok: false, reason: 'TAKEN' }
-    }
-    throw error
-  }
-}
-
-async function declineLeadLegacy(params: {
-  leadId: string
-  providerId: string
-}): Promise<{ ok: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
-  const lead = await db.lead.findUnique({
-    where: { id: params.leadId },
-    select: {
-      id: true,
-      providerId: true,
-      jobRequestId: true,
-    },
-  })
-
-  if (!lead) return { ok: false, reason: 'NOT_FOUND' }
-  if (lead.providerId !== params.providerId) return { ok: false, reason: 'FORBIDDEN' }
-
-  await db.lead.updateMany({
-    where: {
-      id: lead.id,
-      providerId: params.providerId,
-      status: { in: ['SENT', 'VIEWED'] },
-    },
-    data: {
-      status: 'DECLINED',
-      respondedAt: new Date(),
-    },
-  })
-
-  await dispatchLeadsLegacy(lead.jobRequestId)
-
-  return { ok: true }
-}
-
-async function expireStaleLeadsLegacy() {
-  const result = await db.lead.updateMany({
-    where: {
-      status: { in: ['SENT', 'VIEWED'] },
-      expiresAt: { lte: new Date() },
-    },
-    data: {
-      status: 'EXPIRED',
-      respondedAt: new Date(),
-    },
-  })
-
-  return result.count
-}
 
 type LeadAccepted = {
   ok: true
   leadId: string
   matchId: string
+  creditTransactionId?: string | null
+  currentCreditBalance?: number
+  alreadyUnlocked?: boolean
   inspectionNeeded: boolean
 }
 
 type LeadRejected = {
   ok: false
-  reason: 'NOT_FOUND' | 'FORBIDDEN' | 'EXPIRED' | 'TAKEN'
+  reason:
+    | 'NOT_FOUND'
+    | 'FORBIDDEN'
+    | 'EXPIRED'
+    | 'TAKEN'
+    | 'INSUFFICIENT_CREDITS'
+    | 'PROVIDER_NOT_APPROVED'
+    | 'WALLET_SUSPENDED'
+    | 'CONCURRENT_UNLOCK'
+    | 'LEAD_ACCEPTANCE_FAILED'
+  currentCreditBalance?: number
+  traceId?: string
 }
 
 export type LeadAcceptanceResult = LeadAccepted | LeadRejected
 
 export async function findCandidateProviders(input: CandidateInput) {
   const providers = await db.provider.findMany({
-    where: { active: true, verified: true },
+    where: {
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      isTestUser: Boolean(input.isTestRequest),
+    },
     select: {
       id: true,
       phone: true,
@@ -403,13 +150,31 @@ export async function acceptLead(params: {
   leadId: string
   providerId: string
   inspectionNeeded?: boolean
+  source?: 'whatsapp' | 'pwa' | 'api'
 }): Promise<LeadAcceptanceResult> {
   const result = await acceptAssignmentOffer(params)
   if (!result.ok) return result
+
+  await notifyPostMatchAcceptance({
+    leadId: params.leadId,
+    providerId: params.providerId,
+    matchId: result.matchId ?? '',
+    creditTransactionId: result.creditTransactionId ?? null,
+  }).catch((error: unknown) => {
+    console.error('[matching-engine] post-match communication failed:', {
+      leadId: params.leadId,
+      providerId: params.providerId,
+      error,
+    })
+  })
+
   return {
     ok: true,
     leadId: params.leadId,
     matchId: result.matchId ?? '',
+    creditTransactionId: result.creditTransactionId ?? null,
+    currentCreditBalance: result.currentCreditBalance,
+    alreadyUnlocked: result.alreadyUnlocked,
     inspectionNeeded: params.inspectionNeeded === true,
   }
 }
@@ -417,10 +182,11 @@ export async function acceptLead(params: {
 export async function declineLead(params: {
   leadId: string
   providerId: string
-}): Promise<{ ok: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
+}): Promise<{ ok: true; alreadyClosed?: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
   const result = await rejectAssignmentOffer(params)
   if (!result.ok) {
-    if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') return { ok: true }
+    if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') return { ok: true, alreadyClosed: true }
+    if (result.reason !== 'NOT_FOUND' && result.reason !== 'FORBIDDEN') return { ok: true }
     return { ok: false, reason: result.reason }
   }
   return { ok: true }
@@ -434,18 +200,20 @@ export async function expireStaleLeads(): Promise<number> {
 // ─── Lead reminder: 1-hour nudge for SENT/VIEWED leads with no response ───────
 
 export async function sendLeadReminders(): Promise<number> {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+  // Send reminder at ~10 minutes — halfway through the 15-minute offer TTL.
+  // (The old 1-hour threshold was dead code: v2 offers expire in 15 minutes.)
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000)
 
   const pendingLeads = await db.lead.findMany({
     where: {
       status: { in: ['SENT', 'VIEWED'] },
-      sentAt: { lte: oneHourAgo },
+      sentAt: { lte: tenMinutesAgo },
       reminderSentAt: null,
       expiresAt: { gt: new Date() },
     },
     select: {
       id: true,
+      providerId: true,
       expiresAt: true,
       provider: { select: { phone: true } },
       jobRequest: { select: { category: true, address: { select: { suburb: true, city: true } } } },
@@ -467,12 +235,20 @@ export async function sendLeadReminders(): Promise<number> {
 
     try {
       const { sendCtaUrl } = await import('./whatsapp-interactive')
+      const { getProviderLeadAccessUrl } = await import('./provider-lead-access')
+      const leadUrl = await getProviderLeadAccessUrl({
+        leadId: lead.id,
+        providerId: lead.providerId,
+      })
+      if (!leadUrl) {
+        throw new Error('Missing provider lead access URL')
+      }
       await sendCtaUrl(
         lead.provider.phone,
         `⏰ *Reminder — Lead Still Available*\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
         'View Lead',
-        `${appUrl}/leads/${lead.id}`,
-        { footer: 'Accept, inspect, or decline from the lead page' },
+        leadUrl,
+        { footer: 'View the lead preview. Accepting uses 1 credit.' },
       )
       await db.lead.update({ where: { id: lead.id }, data: { reminderSentAt: new Date() } })
       sent++

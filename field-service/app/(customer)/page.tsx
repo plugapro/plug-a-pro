@@ -7,27 +7,45 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import type { LucideIcon } from 'lucide-react'
 import {
   Star, ChevronRight,
   Wrench, Calendar,
   Droplets, Paintbrush, Leaf, Hammer, Plug, Zap, House,
+  SprayCan, Grid2x2, Bug, Wind, HelpCircle, Layers,
 } from 'lucide-react'
+import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
 export const metadata = buildMetadata({
   title: 'Request local home services',
   description: 'Describe the job, review written quotes, and choose a nearby provider.',
 })
 
-const CATEGORIES = [
-  { slug: 'plumbing',   name: 'Plumbing',      description: 'Leaks, installations, drain clearing and more.',  icon: Droplets    },
-  { slug: 'painting',   name: 'Painting',      description: 'Interior and exterior painting services.',         icon: Paintbrush  },
-  { slug: 'garden',     name: 'Garden',        description: 'Lawn care, landscaping, and tree trimming.',       icon: Leaf        },
-  { slug: 'handyman',   name: 'Handyman',      description: 'General repairs and odd jobs around the home.',    icon: Hammer      },
-  { slug: 'appliances', name: 'Appliances',    description: 'Repairs and installation of home appliances.',     icon: Plug        },
-  { slug: 'electrical', name: 'Electrical',    description: 'Wiring, fault-finding, and compliance certificates.', icon: Zap      },
-  { slug: 'diy',        name: 'DIY & Assembly', description: 'Flat-pack assembly, shelving, and mounting.',     icon: Wrench      },
-  { slug: 'roofing',    name: 'Roofing',       description: 'Roof repairs, waterproofing, and inspections.',   icon: House       },
-]
+// Icon mapping — one place to maintain as categories evolve.
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  plumbing:        Droplets,
+  painting:        Paintbrush,
+  garden:          Leaf,
+  handyman:        Hammer,
+  appliances:      Plug,
+  electrical:      Zap,
+  diy:             Wrench,
+  roofing:         House,
+  cleaning:        SprayCan,
+  tiling:          Grid2x2,
+  pest_control:    Bug,
+  carpentry:       Hammer,
+  waterproofing:   Layers,
+  air_conditioning: Wind,
+  other:           HelpCircle,
+}
+
+const CATEGORIES = SERVICE_CATEGORY_OPTIONS.map((cat) => ({
+  slug: cat.tag,
+  name: cat.label,
+  description: cat.description,
+  icon: CATEGORY_ICONS[cat.tag] ?? Wrench,
+}))
 
 export default async function CustomerHomePage() {
   return (
@@ -126,7 +144,7 @@ export default async function CustomerHomePage() {
 
       <footer className="border-t border-border/70 px-4 py-8 text-center">
         <p className="text-xs text-muted-foreground">
-          © 2026 Plug-A-Pro. All rights reserved.
+          © 2026 Plug A Pro. All rights reserved.
         </p>
       </footer>
     </div>

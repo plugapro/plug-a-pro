@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { mockGetUser, mockAdminUserFindUnique } = vi.hoisted(() => ({
+const { mockGetUser, mockAdminUserFindFirst } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
-  mockAdminUserFindUnique: vi.fn(),
+  mockAdminUserFindFirst: vi.fn(),
 }))
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -17,7 +17,8 @@ vi.mock('@supabase/supabase-js', () => ({
 vi.mock('@/lib/db', () => ({
   db: {
     adminUser: {
-      findUnique: mockAdminUserFindUnique,
+      // proxy.ts calls findFirst (OR query by userId / email)
+      findFirst: mockAdminUserFindFirst,
     },
   },
 }))
@@ -41,7 +42,7 @@ describe('proxy admin access', () => {
       },
       error: null,
     })
-    mockAdminUserFindUnique.mockResolvedValue({
+    mockAdminUserFindFirst.mockResolvedValue({
       role: 'OPS',
       active: true,
     })
@@ -70,7 +71,7 @@ describe('proxy admin access', () => {
       },
       error: null,
     })
-    mockAdminUserFindUnique.mockResolvedValue({
+    mockAdminUserFindFirst.mockResolvedValue({
       role: 'OWNER',
       active: false,
     })
@@ -87,7 +88,9 @@ describe('proxy admin access', () => {
     )
   })
 
-  it('redirects legacy metadata admins without an AdminUser row away from admin routes', async () => {
+  it('allows legacy metadata admins without an AdminUser row via metadata fallback', async () => {
+    // No AdminUser row → proxy falls back to Supabase user_metadata.role
+    // (transitional: run backfill-admin-users.ts to migrate these accounts to DB rows)
     const { proxy } = await import('../proxy')
 
     mockGetUser.mockResolvedValue({
@@ -99,7 +102,7 @@ describe('proxy admin access', () => {
       },
       error: null,
     })
-    mockAdminUserFindUnique.mockResolvedValue(null)
+    mockAdminUserFindFirst.mockResolvedValue(null)
 
     const req = new NextRequest('http://localhost/admin/providers', {
       headers: { cookie: 'sb-access-token=test-token' },
@@ -107,9 +110,59 @@ describe('proxy admin access', () => {
 
     const res = await proxy(req)
 
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(res.headers.get('x-user-role')).toBe('owner')
+  })
+
+  it('allows signed one-job WhatsApp routes without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/jobs/jr-1/handover?token=signed-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps account-level provider routes behind OTP login', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/credits'))
+
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'http://localhost/admin-sign-in?callbackUrl=%2Fadmin%2Fproviders&next=%2Fadmin%2Fproviders'
+      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fcredits&next=%2Fprovider%2Fcredits',
     )
+  })
+
+  it('allows provider credit terms without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/terms/credits'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows signed provider contact-customer API without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/provider/leads/lead-1/contact-customer?leadToken=signed-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows the attachment image proxy through so signed lead and ticket tokens can be validated by the route', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/attachments/att-1?leadToken=signed-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
   })
 })

@@ -13,6 +13,7 @@ export type FlowName =
   | 'help'
   | 'provider_job'
   | 'provider_journey'  // registered provider: availability + job status via WA
+  | 'alt_slot'          // alternative-slot negotiation after NO_MATCH
 
 // All possible step names (namespaced by flow)
 export type FlowStep =
@@ -32,8 +33,10 @@ export type FlowStep =
   // Legacy steps — kept only for in-flight conversations at deploy time
   | 'collect_address_suburb'    // LEGACY: typed suburb → then prompts city
   | 'confirm_address'           // LEGACY: receives typed city, assembles + confirms full address
+  | 'collect_issue_description' // free-text issue description (inserted after address, before availability)
   | 'collect_availability'
   | 'confirm_job_request'
+  | 'collect_photos'            // optional customer photo upload before confirm
   | 'job_request_submitted'
   | 'notify_me'                 // no providers in area — join waitlist
   // Registration (provider onboarding)
@@ -70,11 +73,23 @@ export type FlowStep =
   | 'tech_job_view'
   | 'tech_job_confirm_accept'
   | 'tech_job_confirm_decline'
+  // Alternative-slot negotiation (stateless — handled via button ID intercepts)
+  | 'alt_slot_customer_offered'  // customer has been offered alternative slots
+  | 'alt_slot_provider_offered'  // provider has been asked to pick a slot (provider-first)
+  | 'alt_slot_customer_confirm'  // customer confirming provider's chosen slot
   // Provider journey (registered provider WhatsApp interactions)
   | 'pj_menu'
+  | 'pj_available_leads'
   | 'pj_toggle_available'
+  | 'pj_pause_confirm'
   | 'pj_job_list'
   | 'pj_job_detail'
+  | 'pj_service_areas'
+  | 'pj_profile'
+  | 'pj_support'
+  | 'pj_provider_status'
+  | 'pj_worker_portal'
+  | 'pj_application_status'
   | 'pj_status_update'
   | 'pj_status_confirm'
   | 'pj_problem_report'
@@ -96,7 +111,10 @@ export interface ConversationData {
   addressSuburb?: string        // legacy: free-text suburb
   addressCity?: string          // legacy: free-text city
   hasSavedAddress?: boolean     // true = a previous address was offered to reuse
+  savedAddressId?: string       // DB Address.id of the saved address selected by customer (skip re-create)
+  issueDescription?: string     // free-text issue description captured before availability step
   availabilityNote?: string     // free-text preferred availability from customer
+  photoAttachmentIds?: string[] // Attachment IDs for customer job photos linked during request creation
   jobRequestId?: string
   matchId?: string
   category?: string
@@ -128,12 +146,15 @@ export interface ConversationData {
   serviceAreas?: string[]
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"
   availability?: string[]       // ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+  applicationId?: string
   evidenceNote?: string
-  evidenceFileUrls?: string[]       // blob URLs of uploaded proof images/documents
+  evidenceFileUrls?: string[]       // Attachment IDs for uploaded proof images/documents
+  evidenceMediaIds?: string[]       // WhatsApp media IDs already processed for evidence dedupe
 
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider
   selectedRegionLabels?: string[]    // display labels for selected regions
+  selectedRegionStatus?: 'active' | 'coming_soon'
   selectedSuburbLabels?: string[]    // display labels for selected suburbs (drill-down)
   regionId?: string                  // region node ID being drilled into for suburb selection
   regionLabel?: string               // region display label during suburb drill-down
@@ -149,6 +170,10 @@ export interface ConversationData {
   pendingJobId?: string
   declineReason?: string
 
+  // Alternative-slot negotiation — persisted so out-of-band responses can look up context
+  altSlotJobRequestId?: string
+  altSlotPendingProviderId?: string   // provider-first: the provider who selected a slot
+
   // Provider journey
   availableNow?: boolean
   activeJobId?: string
@@ -156,6 +181,7 @@ export interface ConversationData {
 
   // Shared
   customerId?: string
+  photoMediaIds?: string[]          // WhatsApp media IDs already processed for customer photo dedupe
 }
 
 // The full conversation context passed to each flow handler
@@ -165,6 +191,10 @@ export interface FlowContext {
   data: ConversationData
   reply: InboundReply   // what they just said / tapped
   flow: FlowName
+  suppressCustomerPhotoProgress?: boolean // true while processing earlier images in a WhatsApp multi-photo batch
+  customerPhotoBatchSize?: number
+  suppressEvidenceFileProgress?: boolean  // true while processing earlier files in a provider evidence batch
+  evidenceFileBatchSize?: number
 }
 
 // What a flow handler returns

@@ -10,7 +10,7 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
-import { dispatchLeads } from '@/lib/matching-engine'
+import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { openCase, resolveCase } from '@/lib/cases'
 import {
   OPS_QUEUE_TYPES,
@@ -36,7 +36,7 @@ export default async function AdminValidationQueuePage() {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
-  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
 
   const requests = await db.jobRequest.findMany({
     where: { status: 'PENDING_VALIDATION' },
@@ -163,6 +163,7 @@ export default async function AdminValidationQueuePage() {
 
   async function markReadyForMatching(formData: FormData) {
     'use server'
+    const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
     try {
       const result = await crudAction({
@@ -196,8 +197,8 @@ export default async function AdminValidationQueuePage() {
         },
       })
 
-      await dispatchLeads(result.data.id).catch((error) => {
-        console.error('[admin/validation] Failed to dispatch leads after validation', {
+      await orchestrateMatch(result.data.id, { triggeredBy: 'manual' }).catch((error) => {
+        console.error('[admin/validation] Failed to dispatch after validation', {
           jobRequestId: result.data.id,
           error,
         })
@@ -223,14 +224,17 @@ export default async function AdminValidationQueuePage() {
 
   async function cancelRequest(formData: FormData) {
     'use server'
+    const activeAdmin = await requireAdmin()
+    const jobRequestId = String(formData.get('jobRequestId') ?? '')
     try {
       await crudAction({
         entity: 'JobRequest',
+        entityId: jobRequestId,
         action: 'job_request.validation_cancelled',
         requiredRole: [...VALIDATION_ROLES],
         requiredFlag: FLAG,
         schema: QueueSchema,
-        input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
+        input: { jobRequestId },
         run: async ({ jobRequestId }, tx) => {
           const existing = await tx.jobRequest.findUnique({
             where: { id: jobRequestId },
@@ -259,28 +263,6 @@ export default async function AdminValidationQueuePage() {
       }
     }
 
-
-    await db.jobRequest.update({
-      where: { id: jobRequestId },
-      data: { status: 'CANCELLED' },
-    })
-
-    await recordAuditLog({
-      actorId: activeAdmin.id,
-      actorRole: activeAdmin.role,
-      action: 'job_request.validation_cancelled',
-      entityType: AUDIT_ENTITY.JOB_REQUEST,
-      entityId: jobRequestId,
-      before: { status: existing.status },
-      after: { status: 'CANCELLED' },
-    })
-
-    await releaseOpsQueueItem(db, {
-      queueType: OPS_QUEUE_TYPES.VALIDATION,
-      entityId: jobRequestId,
-      actor: { actorId: activeAdmin.id, actorRole: activeAdmin.role },
-    })
-
     // Close VALIDATION case on cancel
     const validationCaseToClose = await db.case.findUnique({
       where: { entityType_entityId_queueType: { entityType: 'JOB_REQUEST', entityId: jobRequestId, queueType: 'VALIDATION' } },
@@ -288,7 +270,6 @@ export default async function AdminValidationQueuePage() {
     if (validationCaseToClose) {
       await resolveCase({ caseId: validationCaseToClose.id, resolvedBy: activeAdmin.id, reasonCode: 'CANCELLED', outcome: 'cancelled' }).catch(() => {})
     }
-
 
     redirect('/admin/validation')
   }

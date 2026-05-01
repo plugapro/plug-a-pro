@@ -16,6 +16,7 @@ import {
 import { db } from '../db'
 import { resolveCategoryRequirements } from '../category-config'
 import { createJobRequest } from '../job-requests/create-job-request'
+import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import {
   isInActiveServiceArea,
   isActiveProvince,
@@ -34,6 +35,15 @@ import {
   resolveStructuredAddressCapture,
   InvalidStructuredAddressError,
 } from '../structured-address'
+import {
+  resolveWhatsAppIdentity,
+  type WhatsAppSavedAddress,
+} from '../whatsapp-identity'
+import { createTraceId } from '../support-diagnostics'
+import {
+  DuplicateActiveRequestError,
+  JobRequestPhotoLinkError,
+} from '../job-requests/create-job-request'
 import type { FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
@@ -57,6 +67,48 @@ const JOB_CATEGORIES = [
 // WhatsApp list cap is 10 rows total per message.
 // When paging is needed we use 8 item rows + up to 2 nav rows.
 const PAGE_SIZE = 8
+function firstName(name?: string | null) {
+  return name?.trim().split(/\s+/)[0] || 'there'
+}
+
+function applicationRef(id: string) {
+  return id.slice(-8).toUpperCase()
+}
+
+function savedAddressDisplay(address: Pick<WhatsAppSavedAddress, 'addressLine1' | 'street' | 'suburb' | 'city' | 'province'>) {
+  return [
+    address.addressLine1 ?? address.street,
+    address.suburb,
+    address.city,
+    address.province,
+  ].filter(Boolean).join(', ')
+}
+
+function savedAddressShortLabel(address: Pick<WhatsAppSavedAddress, 'addressLine1' | 'street' | 'suburb'>) {
+  return [address.addressLine1 ?? address.street, address.suburb].filter(Boolean).join(', ').slice(0, 24)
+}
+
+async function savedAddressToConversationData(address: WhatsAppSavedAddress) {
+  if (!address.locationNodeId) return null
+
+  const selection = await getStructuredAddressSelection(address.locationNodeId)
+  if (!selection) return null
+
+  const streetLine = address.addressLine1 ?? address.street
+  const display = [streetLine, selection.suburb, selection.city].filter(Boolean).join(', ')
+
+  return {
+    addressLine1: streetLine,
+    addrLocationNodeId: address.locationNodeId,
+    addrCityLabel: selection.city,
+    addrSuburbLabel: selection.suburb,
+    addrRegionLabel: selection.region,
+    addrProvinceLabel: selection.province,
+    addrPostalCode: selection.postalCode,
+    address: display,
+    hasSavedAddress: true,
+  }
+}
 
 // ─── Paging helper ────────────────────────────────────────────────────────────
 
@@ -199,10 +251,14 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleLegacyCollectSuburb(ctx)
     case 'confirm_address':
       return handleLegacyConfirmAddress(ctx)
+    case 'collect_issue_description':
+      return handleCollectIssueDescription(ctx)
     case 'collect_availability':
       return handleCollectAvailability(ctx)
     case 'confirm_job_request':
       return handleConfirmJobRequest(ctx)
+    case 'collect_photos':
+      return handleCollectPhotos(ctx)
     case 'job_request_submitted':
       return handleJobRequestSubmitted(ctx)
     case 'notify_me':
@@ -261,62 +317,71 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     const categoryEntry = JOB_CATEGORIES.find((c) => c.id === ctx.reply.id)
     const category = categoryEntry?.label ?? ctx.reply.title ?? ''
 
-    const existingCustomer = await db.customer.findUnique({
-      where: { phone: ctx.phone },
-      select: { name: true, id: true },
-    })
+    const identity = await resolveWhatsAppIdentity(ctx.phone)
+    if (identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive') {
+      await sendText(
+        ctx.phone,
+        `This number is registered as a Plug A Pro provider.\n\nFor now, provider and customer profiles must use separate WhatsApp numbers.\n\nPlease request a service using a different number.`
+      )
+      await showMainMenu(ctx.phone)
+      return { nextStep: 'done' }
+    }
+
     const PLACEHOLDER_NAMES = new Set(['WhatsApp Customer', 'Customer'])
-    const isFirstBooking = !existingCustomer || PLACEHOLDER_NAMES.has(existingCustomer.name)
+    const isKnownCustomer = identity.role === 'customer' && Boolean(identity.customerId)
+    const hasUsableName = Boolean(identity.displayName && !PLACEHOLDER_NAMES.has(identity.displayName))
+    const isFirstBooking = !isKnownCustomer || !hasUsableName
 
     if (!isFirstBooking) {
-      const lastAddress = await db.address.findFirst({
-        where: { customerId: existingCustomer!.id },
-        orderBy: { createdAt: 'desc' },
-      })
-
       const baseData = {
         selectedCategory: category,
         category,
-        customerName: existingCustomer?.name,
+        customerId: identity.customerId,
+        customerName: identity.displayName,
         isFirstBooking: false,
       }
 
-      if (lastAddress?.locationNodeId) {
-        // Structured saved address — verify it's still valid and offer reuse
-        const selection = await getStructuredAddressSelection(lastAddress.locationNodeId)
-        if (selection) {
-          const streetLine = lastAddress.addressLine1 ?? lastAddress.street
-          const display = [streetLine, selection.suburb, selection.city].filter(Boolean).join(', ')
+      const savedAddresses = identity.savedAddresses
+      if (savedAddresses.length > 1) {
+        await sendList(
+          ctx.phone,
+          `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nWhich address is this ${category} service for?`,
+          [{
+            title: 'Saved addresses',
+            rows: [
+              ...savedAddresses.slice(0, 9).map((address) => ({
+                id: `addr_saved_${address.id}`,
+                title: savedAddressShortLabel(address) || 'Saved address',
+                description: savedAddressDisplay(address).slice(0, 72),
+              })),
+              { id: 'addr_new', title: 'Add new address' },
+            ],
+          }],
+          { buttonLabel: 'Choose Address' },
+        )
+        return { nextStep: 'collect_address', nextData: baseData }
+      }
+
+      const savedAddress = savedAddresses[0]
+      if (savedAddress) {
+        const addressData = await savedAddressToConversationData(savedAddress)
+        if (addressData) {
           await sendButtons(
             ctx.phone,
-            `📍 *Where do you need the ${category} work done?*\n\nLast used:\n_${display}_`,
+            `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nIs this service for your saved address?\n\n_${savedAddressDisplay(savedAddress)}_`,
             [
-              { id: 'addr_same', title: '📍 Same address' },
-              { id: 'addr_new', title: '✏️ New address' },
+              { id: 'addr_same', title: 'Yes, use this' },
+              { id: 'addr_new', title: 'Add new address' },
             ]
           )
-          return {
-            nextStep: 'collect_address',
-            nextData: {
-              ...baseData,
-              addressLine1: streetLine,
-              addrLocationNodeId: lastAddress.locationNodeId,
-              addrCityLabel: selection.city,
-              addrSuburbLabel: selection.suburb,
-              addrRegionLabel: selection.region,
-              addrProvinceLabel: selection.province,
-              addrPostalCode: selection.postalCode,
-              address: display,
-              hasSavedAddress: true,
-            },
-          }
+          return { nextStep: 'collect_address', nextData: { ...baseData, ...addressData, savedAddressId: savedAddress.id } }
         }
       }
 
       // Legacy address (no locationNodeId) or unresolvable node — force new entry
       await sendText(
         ctx.phone,
-        `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+        `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nNo saved structured address is ready for this request yet.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
       )
       return { nextStep: 'collect_address_street', nextData: baseData }
     }
@@ -351,8 +416,35 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'addr_same') {
-    // addrLocationNodeId + addressLine1 are already in ctx.data — go to availability
-    return handleCollectAvailability(ctx)
+    // addrLocationNodeId + addressLine1 are already in ctx.data — collect issue description next
+    return handleCollectIssueDescription(ctx)
+  }
+
+  if (ctx.reply.id?.startsWith('addr_saved_')) {
+    const addressId = ctx.reply.id.slice('addr_saved_'.length)
+    const address = await db.address.findFirst({
+      where: { id: addressId, customerId: ctx.data.customerId },
+    })
+
+    if (!address) {
+      await sendText(ctx.phone, '❗ I could not find that saved address. Please choose another address or add a new one.')
+      return { nextStep: 'collect_address' }
+    }
+
+    const addressData = await savedAddressToConversationData(address as WhatsAppSavedAddress)
+    if (!addressData) {
+      const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
+      await sendText(
+        ctx.phone,
+        `That saved address needs to be re-confirmed.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+      )
+      return { nextStep: 'collect_address_street' }
+    }
+
+    return handleCollectIssueDescription({
+      ...ctx,
+      data: { ...ctx.data, ...addressData, savedAddressId: addressId },
+    })
   }
 
   // addr_new or any other reply — start new structured address entry
@@ -392,7 +484,7 @@ async function handleAddrSelectProvince(ctx: FlowContext): Promise<FlowResult> {
     await sendText(
       ctx.phone,
       `Thanks for your interest! 🙏\n\n` +
-      `Plug a Pro is currently only available in *Gauteng*, but we're expanding fast.\n\n` +
+      `Plug A Pro is currently only available in *Gauteng*, but we're expanding fast.\n\n` +
       `We've noted your details and will send you a WhatsApp the moment we go live in your area. No action needed from you! 🚀`,
     )
     return { nextStep: 'done' }
@@ -484,7 +576,7 @@ async function handleAddrSelectCity(ctx: FlowContext): Promise<FlowResult> {
         ctx.phone,
         `Thank you for reaching out! 🙏\n\n` +
         `We're not in *${selected.label}* just yet, but we're expanding fast.\n\n` +
-        `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
+        `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
         `No action needed from you. 🚀`,
       )
       return { nextStep: 'done' }
@@ -635,7 +727,7 @@ async function handleAddrConfirm(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'addr_yes') {
-    return handleCollectAvailability(ctx)
+    return handleCollectIssueDescription(ctx)
   }
 
   // Unknown reply — resend confirmation
@@ -649,6 +741,52 @@ async function handleAddrConfirm(ctx: FlowContext): Promise<FlowResult> {
     ]
   )
   return { nextStep: 'addr_confirm' }
+}
+
+// ─── Description helpers ──────────────────────────────────────────────────────
+
+/**
+ * Builds the JobRequest.description from the two free-text fields captured
+ * during the WhatsApp flow.  Either part can be absent.
+ */
+function buildDescription(issueDescription?: string, availabilityNote?: string): string {
+  const parts: string[] = []
+  if (issueDescription) parts.push(issueDescription)
+  if (availabilityNote) parts.push(`Preferred availability: ${availabilityNote}`)
+  return parts.join('\n\n')
+}
+
+// ─── Issue description capture ────────────────────────────────────────────────
+
+/**
+ * Prompts the customer for a free-text description of their problem.
+ * Called inline (immediately after address confirmation) so ctx.reply still
+ * carries the address-step button id — in that case we just show the prompt
+ * and wait for the next message.
+ */
+async function handleCollectIssueDescription(ctx: FlowContext): Promise<FlowResult> {
+  // Inline entry from address steps: reply id is addr_* — just show the prompt.
+  const comingFromAddressStep = Boolean(ctx.reply.id?.startsWith('addr_'))
+  const text = ctx.reply.text?.trim()
+
+  if (comingFromAddressStep || !text) {
+    const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
+    await sendText(
+      ctx.phone,
+      `📝 *Describe the ${category} issue*\n\nIn a few sentences, tell us what needs to be done.\n\n_Example: "My kitchen tap is dripping and needs a new washer."_`,
+    )
+    return { nextStep: 'collect_issue_description' }
+  }
+
+  if (text.length < 5) {
+    await sendText(
+      ctx.phone,
+      '❗ Please describe the issue in a little more detail so the worker knows what to expect.',
+    )
+    return { nextStep: 'collect_issue_description' }
+  }
+
+  return handleCollectAvailability({ ...ctx, data: { ...ctx.data, issueDescription: text } })
 }
 
 // ─── Availability ─────────────────────────────────────────────────────────────
@@ -702,17 +840,177 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
     return handleCollectAvailability(ctx)
   }
 
-  const { selectedCategory, address } = ctx.data
+  // Prompt for optional photos before showing the confirmation summary
+  await sendButtons(
+    ctx.phone,
+    `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+    [
+      { id: 'photos_skip', title: '⏭ Skip' },
+      { id: 'photos_start', title: '📷 Add photo' },
+    ]
+  )
+  return { nextStep: 'collect_photos', nextData: { availabilityNote, photoAttachmentIds: [] } }
+}
+
+async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
+  const { selectedCategory, address, issueDescription, availabilityNote } = ctx.data
+  const photoCount = (ctx.data.photoAttachmentIds ?? []).length
+  const descriptionLine = issueDescription ? `\n📝 ${issueDescription}` : ''
+  const photoLine = photoCount > 0 ? `\n📸 Photos: *${photoCount} attached*` : ''
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}\n🗓 ${availabilityNote}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}${photoLine}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },
     ]
   )
-  return { nextStep: 'job_request_submitted', nextData: { availabilityNote } }
+  return { nextStep: 'job_request_submitted' }
+}
+
+const MAX_CUSTOMER_PHOTOS = 5
+const MAX_CUSTOMER_PHOTO_BYTES = 10 * 1024 * 1024 // 10 MB — tighter than the 15 MB evidence limit
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
+}
+
+async function sendCustomerPhotoProgress(phone: string, count: number) {
+  const remaining = MAX_CUSTOMER_PHOTOS - count
+
+  if (remaining <= 0) {
+    const outboundId = await sendButtons(
+      phone,
+      `✅ *${MAX_CUSTOMER_PHOTOS} photos received.* Maximum reached.\n\nContinue to the next step?`,
+      [{ id: 'photos_done', title: '✅ Continue' }]
+    )
+    console.info('[job-request-flow] customer photo confirmation sent', {
+      normalized_phone: phone,
+      final_count_shown: MAX_CUSTOMER_PHOTOS,
+      remaining_slots: 0,
+      outbound_confirmation_message_id: outboundId || null,
+    })
+    return
+  }
+
+  const outboundId = await sendButtons(
+    phone,
+    `✅ *${count} photo${count === 1 ? '' : 's'} received.* You can add ${remaining} more or continue.`,
+    [
+      { id: 'photos_done', title: '✅ Continue' },
+      { id: 'photos_add_more', title: '📷 Add more photos' },
+    ]
+  )
+  console.info('[job-request-flow] customer photo confirmation sent', {
+    normalized_phone: phone,
+    final_count_shown: count,
+    remaining_slots: remaining,
+    outbound_confirmation_message_id: outboundId || null,
+  })
+}
+
+async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
+  const photoAttachmentIds = uniqueStrings(ctx.data.photoAttachmentIds ?? [])
+  const photoMediaIds = uniqueStrings(ctx.data.photoMediaIds ?? [])
+  const rawText = ctx.reply.text?.trim().toLowerCase()
+
+  // Button: skip or done (with 0 photos)
+  if (ctx.reply.id === 'photos_skip' || rawText === 'skip') {
+    return showJobRequestSummary(ctx)
+  }
+
+  // Button: done (with photos already added)
+  if (ctx.reply.id === 'photos_done' || rawText === 'done') {
+    return showJobRequestSummary(ctx)
+  }
+
+  // User tapped "Add photo" / "Add more" — instruct them to send a media message
+  if (ctx.reply.id === 'photos_start' || ctx.reply.id === 'photos_add_more') {
+    const remaining = MAX_CUSTOMER_PHOTOS - photoAttachmentIds.length
+    const limitCopy = remaining === MAX_CUSTOMER_PHOTOS
+      ? `up to ${MAX_CUSTOMER_PHOTOS} photos`
+      : `up to ${remaining} more photo${remaining === 1 ? '' : 's'}`
+    await sendText(
+      ctx.phone,
+      `📸 Please upload *${limitCopy}* of the issue. You can send them together or one at a time.`
+    )
+    return { nextStep: 'collect_photos' }
+  }
+
+  // Documents are not accepted — customer photos must be images
+  if (ctx.reply.type === 'document') {
+    await sendText(
+      ctx.phone,
+      `❗ Please send a *photo* (image), not a document.\n\nTap *Skip* if you don't have any photos to add.`
+    )
+    return { nextStep: 'collect_photos' }
+  }
+
+  // Image received
+  if (ctx.reply.type === 'image') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, '❗ Photo did not come through. Please try sending it again.')
+      return { nextStep: 'collect_photos' }
+    }
+
+    if (photoMediaIds.includes(ctx.reply.mediaId)) {
+      if (!ctx.suppressCustomerPhotoProgress) {
+        await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      }
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
+    }
+
+    if (photoAttachmentIds.length >= MAX_CUSTOMER_PHOTOS) {
+      if (!ctx.suppressCustomerPhotoProgress) {
+        await sendCustomerPhotoProgress(ctx.phone, photoAttachmentIds.length)
+      }
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds, photoMediaIds } }
+    }
+
+    try {
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        prefix: 'customer-photos',
+        label: 'customer_photo',
+        maxSizeBytes: MAX_CUSTOMER_PHOTO_BYTES,
+      })
+      const updated = uniqueStrings([...photoAttachmentIds, attachmentId]).slice(0, MAX_CUSTOMER_PHOTOS)
+      const updatedMediaIds = uniqueStrings([...photoMediaIds, ctx.reply.mediaId])
+
+      if (!ctx.suppressCustomerPhotoProgress) {
+        await sendCustomerPhotoProgress(ctx.phone, updated.length)
+      }
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated, photoMediaIds: updatedMediaIds } }
+    } catch (err) {
+      console.error('[job-request-flow:handleCollectPhotos] media upload failed:', err)
+      await sendText(ctx.phone, '❗ I couldn\'t upload that photo. Please try again or type *skip*.')
+      return { nextStep: 'collect_photos' }
+    }
+  }
+
+  // Unknown reply — resend the appropriate prompt
+  if (photoAttachmentIds.length > 0) {
+    const count = photoAttachmentIds.length
+    await sendButtons(
+      ctx.phone,
+      `📸 *${count} photo${count > 1 ? 's' : ''} added.*\n\nSend another or tap Done to continue.`,
+      [
+        { id: 'photos_done', title: '✅ Continue' },
+        { id: 'photos_add_more', title: '📷 Add more photos' },
+      ]
+    )
+  } else {
+    await sendButtons(
+      ctx.phone,
+      `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+      [
+        { id: 'photos_skip', title: '⏭ Skip' },
+        { id: 'photos_start', title: '📷 Add photo' },
+      ]
+    )
+  }
+  return { nextStep: 'collect_photos' }
 }
 
 async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> {
@@ -730,6 +1028,11 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
   try {
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
+    const photoAttachmentIds = uniqueStrings(ctx.data.photoAttachmentIds ?? []).slice(0, MAX_CUSTOMER_PHOTOS)
+
+    // Dedup is now enforced inside createJobRequest.$transaction via
+    // DuplicateActiveRequestError — handled in the catch block below.
+
     const categoryRequirements = await resolveCategoryRequirements({ category })
 
     let result: Awaited<ReturnType<typeof createJobRequest>>
@@ -760,9 +1063,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         title: ctx.data.selectedCategory ?? category,
-        description: ctx.data.availabilityNote
-          ? `Preferred availability: ${ctx.data.availabilityNote}`
-          : '',
+        description: buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote),
+        existingAddressId: ctx.data.savedAddressId ?? undefined,
         street: resolvedAddr.street,
         addressLine1: resolvedAddr.addressLine1,
         addressLine2: resolvedAddr.addressLine2,
@@ -774,6 +1076,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         province: resolvedAddr.province,
         postalCode: resolvedAddr.postalCode,
         locationNodeId: resolvedAddr.locationNodeId,
+        photoAttachmentIds,
       })
     } else {
       // ── Legacy path — old in-flight conversations only ────────────────────
@@ -783,43 +1086,126 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         title: ctx.data.selectedCategory ?? category,
-        description: ctx.data.availabilityNote
-          ? `Preferred availability: ${ctx.data.availabilityNote}`
-          : '',
+        description: buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote),
         street:   ctx.data.addressStreet ?? addrParts[0] ?? '',
         suburb:   ctx.data.addressSuburb ?? addrParts[1] ?? '',
         city:     ctx.data.addressCity   ?? addrParts[2] ?? addrParts[1] ?? '',
         province: addrParts[3] ?? '',
         locationNodeId: ctx.data.addressLocationNodeId ?? null,
+        photoAttachmentIds,
       })
     }
 
+    const photosLinked = photoAttachmentIds.length
+    const photoNote = photosLinked > 0
+      ? `\n📸 ${photosLinked} photo${photosLinked === 1 ? '' : 's'} attached.`
+      : ''
+
     const successMessage =
-      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*\n\n` +
+      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*${photoNote}\n\n` +
       `We're finding you a nearby worker — you'll get a WhatsApp update when matched.` +
       (categoryRequirements.policy.bookingOnAssignment
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
         : '')
 
-    if (result.ticketUrl) {
-      await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
-    } else {
-      await sendButtons(
+    // ── Send success confirmation ─────────────────────────────────────────────
+    // The job request is in the DB at this point. Success message delivery
+    // failures must NOT propagate to the outer catch — that would incorrectly
+    // tell the customer their submission failed when it actually succeeded.
+    try {
+      if (result.ticketUrl) {
+        try {
+          await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
+        } catch (ctaErr) {
+          console.error('[job-request-flow] Ticket CTA send failed:', ctaErr)
+          // CTA URL failed (e.g. non-HTTPS URL, domain not approved) — fall back
+          // to a plain button message which has no URL requirements.
+          await sendButtons(
+            ctx.phone,
+            successMessage,
+            [
+              { id: 'status', title: '📋 Track My Request' },
+              { id: 'back_home', title: '🏠 Main Menu' },
+            ]
+          )
+        }
+      } else {
+        await sendButtons(
+          ctx.phone,
+          successMessage,
+          [
+            { id: 'status', title: '📋 Track My Request' },
+            { id: 'back_home', title: '🏠 Main Menu' },
+          ]
+        )
+      }
+    } catch (sendErr) {
+      // Interactive message failed — last-resort plain text so the customer
+      // knows their request was received. sendText is simpler and more resilient.
+      console.error('[job-request-flow] Success message send failed:', sendErr)
+      await sendText(
         ctx.phone,
-        successMessage,
-        [
-          { id: 'status', title: '📋 Track My Request' },
-          { id: 'back_home', title: '🏠 Main Menu' },
-        ]
-      )
+        `${successMessage}\n\nReply *Hi* anytime to check your request status.`
+      ).catch((e) => console.error('[job-request-flow] Plain-text fallback also failed:', e))
     }
 
     return { nextStep: 'done', nextData: { jobRequestId: result.jobRequestId, customerId: result.customerId } }
   } catch (err) {
-    console.error('[job-request-flow] Create job request error:', err)
+    // ── Duplicate active request ───────────────────────────────────────────────
+    if (err instanceof DuplicateActiveRequestError) {
+      const ref = err.existingId.slice(-8).toUpperCase()
+      const statusLine =
+        err.existingStatus === 'MATCHING'
+          ? "We've notified nearby providers and are waiting for one to accept."
+          : "We're still searching for a suitable provider in your area."
+
+      // Patch description if we now have richer data from the customer
+      const latestDescription = buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote)
+      if (latestDescription && latestDescription !== err.existingDescription) {
+        await db.jobRequest.update({
+          where: { id: err.existingId },
+          data: { description: latestDescription },
+        }).catch((e) => console.error('[job-request-flow] dedup description patch failed:', e))
+      }
+
+      await sendText(
+        ctx.phone,
+        `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`,
+      )
+      return { nextStep: 'done', nextData: { jobRequestId: err.existingId, customerId: err.customerId } }
+    }
+
+    if (err instanceof JobRequestPhotoLinkError) {
+      const traceId = createTraceId('req')
+      console.error('[job-request-flow] customer photo link failed:', {
+        traceId,
+        expected: err.expectedCount,
+        linked: err.linkedCount,
+      })
+      await sendText(
+        ctx.phone,
+        `😔 We received your request details, but could not safely attach your photo. Please try submitting again or type *skip* to continue without photos.\n\n_Ref: ${traceId}_`,
+      )
+      // Clear stale attachment IDs so a retry does not attempt to re-link the same
+      // records and loop. The orphaned Attachment rows are still in Blob storage but
+      // unlinked — they will be cleaned up by the storage GC job.
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: [], photoMediaIds: [] } }
+    }
+
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    const traceId = createTraceId('req')
+    console.error('[job-request-flow] Create job request error:', { traceId, err })
+
+    // In pilot mode, append a truncated technical error to the WhatsApp message
+    // so failures can be triaged without needing server logs. Disable by removing
+    // PILOT_DEBUG_ERRORS from env once stable.
+    const debugSuffix = process.env.PILOT_DEBUG_ERRORS === 'true'
+      ? `\n\n_🔧 Debug: ${errorMessage.slice(0, 300)}_`
+      : ''
+
     await sendText(
       ctx.phone,
-      "😔 Something went wrong submitting your request. Please try again or contact us directly."
+      `😔 Something went wrong submitting your request. Please try again or contact us directly.\n\n_Ref: ${traceId}_${debugSuffix}`
     )
     return { nextStep: 'done' }
   }
@@ -856,7 +1242,7 @@ async function handleLegacyConfirmAddress(ctx: FlowContext): Promise<FlowResult>
       ctx.phone,
       `Thank you for reaching out! 🙏\n\n` +
       `We're not in *${city}* just yet, but we're expanding fast.\n\n` +
-      `We've saved your contact and will send you a WhatsApp the moment Plug a Pro goes live in your area. ` +
+      `We've saved your contact and will send you a WhatsApp the moment Plug A Pro goes live in your area. ` +
       `No action needed from you. 🚀`,
     )
     return { nextStep: 'done' }
@@ -903,9 +1289,107 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
 // ─── Exported helpers ─────────────────────────────────────────────────────────
 
 export async function showMainMenu(phone: string): Promise<void> {
+  const menu = await resolveWhatsAppIdentity(phone)
+
+  if (menu.role === 'customer') {
+    const name = menu.firstName ?? firstName(menu.displayName)
+
+    await sendList(
+      phone,
+      `Hi ${name}, welcome back to Plug A Pro.\n\nWhat would you like to do?`,
+      [
+        {
+          title: 'Services',
+          rows: [
+            { id: 'book', title: 'Request a Service', description: 'Book a plumber, electrician, cleaner & more' },
+            { id: 'status', title: 'My Requests', description: 'Track or manage existing requests' },
+            { id: 'help', title: 'Get Help', description: 'FAQs, pricing, support' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
+  if (menu.role === 'provider_pending') {
+    const name = menu.firstName ?? firstName(menu.displayName)
+    const ref = menu.applicationId ? applicationRef(menu.applicationId) : 'Pending'
+
+    await sendList(
+      phone,
+      `Hi ${name}, your Plug A Pro provider application is still under review.\n\nRef: *${ref}*\n\nWe'll notify you here once it's approved.`,
+      [
+        {
+          title: 'Provider',
+          rows: [
+            { id: 'provider_application_status', title: 'Application Status', description: 'Check your provider application' },
+            { id: 'provider_update_application', title: 'Update Application', description: 'Edit your details or service areas' },
+            { id: 'provider_support', title: 'Support', description: 'Get help with your application' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
+  if (menu.role === 'provider') {
+    const name = menu.firstName ?? firstName(menu.displayName)
+    const activeJobsLine = menu.activeJobCount > 0
+      ? `\n\nYou have *${menu.activeJobCount} active job${menu.activeJobCount === 1 ? '' : 's'}*.`
+      : ''
+    const statusLine = menu.isPaused
+      ? '\n\nStatus: 🔴 Leads paused\n\nYou won’t receive new leads until you go available again.'
+      : '\n\nStatus: 🟢 Available for leads'
+    const pauseRow = menu.isPaused
+      ? { id: 'provider_go_available', title: 'Go Available', description: 'Start receiving matching leads again' }
+      : { id: 'provider_pause_leads', title: 'Pause Leads', description: 'Stop new leads temporarily' }
+
+    await sendList(
+      phone,
+      `Welcome back, ${name}.${statusLine}${activeJobsLine}\n\nWhat would you like to do?`,
+      [
+        {
+          title: 'Provider',
+          rows: [
+            { id: 'provider_my_jobs', title: 'My Jobs', description: 'Manage accepted and scheduled work' },
+            { id: 'provider_available_jobs', title: 'Available Jobs', description: 'View leads you can accept' },
+            { id: 'provider_check_status', title: 'Check Status', description: 'See if you can receive leads' },
+            pauseRow,
+            { id: 'provider_worker_portal', title: 'Worker Portal', description: 'Manage detailed availability' },
+            { id: 'provider_support', title: 'Support', description: 'Get help' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
+  if (menu.role === 'provider_inactive') {
+    const name = menu.firstName ?? firstName(menu.displayName)
+
+    await sendList(
+      phone,
+      `Hi ${name}, your provider profile is currently inactive.\n\nYou won't receive new job leads until this is resolved.`,
+      [
+        {
+          title: 'Provider',
+          rows: [
+            { id: 'provider_status', title: 'Provider Status', description: 'See why your account is inactive' },
+            { id: 'provider_support', title: 'Contact Support', description: 'Get help with your account' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
   await sendList(
     phone,
-    '👋 Welcome to Plug a Pro!\n\nHow can I help you today?',
+    '👋 Welcome to Plug A Pro!\n\nHow can I help you today?',
     [
       {
         title: 'Services',
@@ -918,7 +1402,7 @@ export async function showMainMenu(phone: string): Promise<void> {
       {
         title: 'For Service Providers',
         rows: [
-          { id: 'find_work', title: '👷 Find Work',         description: 'Apply to join as a service provider' },
+          { id: 'find_work', title: '👷 Find Work',         description: 'Apply, get reviewed, then accept leads with credits' },
         ],
       },
     ],

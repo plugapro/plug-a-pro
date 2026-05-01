@@ -91,7 +91,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_cancel':
       await sendButtons(
         ctx.phone,
-        `❌ *Cancellation Help*\n\nSend a cancellation request through Plug a Pro and we’ll stop the job on the platform.\n\nIf you paid online, our team reviews your case against the booking stage and payment method and aims to respond within 2 business hours. Refund eligibility depends on when you cancel and whether work has started — we’ll walk you through the options.\n\nTo cancel, tap the button below or reply "cancel".`,
+        `❌ *Cancellation Help*\n\nSend a cancellation request through Plug A Pro and we’ll stop the job on the platform.\n\nIf you paid online, our team reviews your case against the booking stage and payment method and aims to respond within 2 business hours. Refund eligibility depends on when you cancel and whether work has started — we’ll walk you through the options.\n\nTo cancel, tap the button below or reply "cancel".`,
         [
           { id: 'start_cancel', title: '❌ Cancel My Booking' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -102,7 +102,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_reschedule':
       await sendButtons(
         ctx.phone,
-        `🔄 *Rescheduling*\n\nTell us why you need to move the booking and the new availability that works for you.\n\nPlug a Pro will log the request and confirm the updated time with you through the platform.`,
+        `🔄 *Rescheduling*\n\nTell us why you need to move the booking and the new availability that works for you.\n\nPlug A Pro will log the request and confirm the updated time with you through the platform.`,
         [
           { id: 'start_reschedule', title: '🔄 Reschedule Booking' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -113,7 +113,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_payment':
       await sendButtons(
         ctx.phone,
-        `💳 *How Payment Works*\n\nDuring our launch phase, payment is arranged after your quote is accepted and confirmed with the provider.\n\nFor some jobs we may send an online payment link. For others, Plug a Pro support will confirm the payment method with you directly.\n\nFor quote-based jobs, we always send the quote first so you can approve the price before anything moves ahead.`,
+        `💳 *How Payment Works*\n\nDuring our launch phase, payment is arranged after your quote is accepted and confirmed with the provider.\n\nFor some jobs we may send an online payment link. For others, Plug A Pro support will confirm the payment method with you directly.\n\nFor quote-based jobs, we always send the quote first so you can approve the price before anything moves ahead.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },
@@ -124,7 +124,7 @@ async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
     case 'faq_technician':
       await sendButtons(
         ctx.phone,
-        `👷 *Our Providers*\n\nPlug a Pro shows provider profiles, completed job history, and customer ratings where those records exist on the platform.\n\nProfile details such as skills and service areas come from the provider unless a field says it was checked by Plug a Pro.\n\nWe keep the early quote and update flow on the platform so there is a written record of what was agreed.`,
+        `👷 *Our Providers*\n\nPlug A Pro shows provider profiles, completed job history, and customer ratings where those records exist on the platform.\n\nProfile details such as skills and service areas come from the provider unless a field says it was checked by Plug A Pro.\n\nWe keep the early quote and update flow on the platform so there is a written record of what was agreed.`,
         [
           { id: 'book', title: '🔧 Book a Service' },
           { id: 'back_to_help', title: '← Back to Help' },

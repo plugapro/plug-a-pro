@@ -53,7 +53,7 @@ export function WhoItsFor() {
               Any small home job, sorted
             </h2>
             <p className="text-muted-foreground max-w-xl">
-              Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug-A-Pro matches you with a nearby worker who can do the job.
+              Whether you need a tap fixed, a room painted, or help finishing a DIY project, Plug A Pro matches you with a nearby worker who can do the job.
             </p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -92,7 +92,7 @@ export function WhoItsFor() {
               Get steady local work, on your terms
             </h2>
             <p className="text-muted-foreground mb-6">
-              If you have skills and need more paying customers, Plug-A-Pro brings the work to you. No registered business needed. Just your skills and a phone.
+              If you have skills and need more paying customers, Plug A Pro brings the work to you. No registered business needed. Just your skills and a phone.
             </p>
             <ul className="space-y-2">
               {WORKER_TYPES.map((type) => (

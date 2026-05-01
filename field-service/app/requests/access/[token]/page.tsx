@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveJobRequestAccessToken } from '@/lib/job-request-access'
+import { createTraceId } from '@/lib/support-diagnostics'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
@@ -10,6 +11,8 @@ import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
+import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'Ticket Details', noIndex: true })
 
@@ -23,14 +26,23 @@ export default async function TicketAccessPage({
 
   if (result.status !== 'active' || !result.jobRequest) {
     const expired = result.status === 'expired'
+    const code = expired ? 'TICKET_EXPIRED' : 'TICKET_INVALID'
+    const traceId = createTraceId('tkt')
     return (
       <div className="mx-auto max-w-lg space-y-4 px-4 py-10">
         <Card>
           <CardContent className="space-y-3 px-4 py-5 text-sm">
-            <p className="font-medium">{expired ? 'This ticket link has expired' : 'This ticket link is invalid'}</p>
-            <p className="text-muted-foreground">
-              For your privacy, direct ticket links only open a single request and can expire or be revoked.
+            <p className="font-semibold">
+              {expired ? 'This ticket link has expired' : 'This ticket link is invalid'}
             </p>
+            <p className="text-muted-foreground">
+              For your privacy, direct ticket links can expire or be revoked. Sign in to view all your tickets.
+            </p>
+            <div className="rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
+              <span className="mr-2 font-semibold">Code:</span>{code}
+              <br />
+              <span className="mr-2 font-semibold">Ref:</span>{traceId}
+            </div>
           </CardContent>
         </Card>
         <div className="space-y-3">
@@ -38,7 +50,7 @@ export default async function TicketAccessPage({
             <Link href="/sign-in">Sign in to view your tickets</Link>
           </Button>
           <p className="text-center text-xs text-muted-foreground">
-            You can also return to WhatsApp and ask Plug-A-Pro to resend your ticket link.
+            You can also return to WhatsApp and ask Plug A Pro to resend your ticket link.
           </p>
         </div>
       </div>
@@ -64,7 +76,7 @@ export default async function TicketAccessPage({
     <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Plug-A-Pro ticket</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Plug A Pro ticket</p>
           <h1 className="mt-1 text-xl font-semibold">Request #{jobRequest.id.slice(-8).toUpperCase()}</h1>
           <p className="text-sm capitalize text-muted-foreground">{jobRequest.category}</p>
         </div>
@@ -84,7 +96,7 @@ export default async function TicketAccessPage({
           </div>
           {jobRequest.address && (
             <Row label="Address">
-              {jobRequest.address.street}, {jobRequest.address.suburb}, {jobRequest.address.city}
+              {jobRequest.address.street}, {normaliseLocationDisplayName(jobRequest.address.suburb)}, {normaliseLocationDisplayName(jobRequest.address.city)}
             </Row>
           )}
           <Row label="Created">
@@ -94,6 +106,30 @@ export default async function TicketAccessPage({
               year: 'numeric',
             })}
           </Row>
+          {jobRequest.attachments.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Photos
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {jobRequest.attachments.map((photo) => {
+                  const src = `/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`
+                  return (
+                    <AttachmentThumbnail
+                      key={photo.id}
+                      attachmentId={photo.id}
+                      src={src}
+                      href={src}
+                      alt={photo.caption ?? 'Customer photo'}
+                      className="h-36 w-full rounded-lg object-cover"
+                      fallbackText="Photo unavailable"
+                      showDiagnostics={false}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -165,15 +201,18 @@ export default async function TicketAccessPage({
               <div className="grid grid-cols-2 gap-2">
                 {booking.job.photos.map((photo) => (
                   <div key={photo.id} className="space-y-1">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <AttachmentThumbnail
+                      attachmentId={photo.id}
                       src={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
-                      alt={photo.caption ?? photo.label ?? 'Work evidence'}
+                      href={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
+                      alt={photo.caption ?? 'Work evidence'}
                       className="h-40 w-full rounded-lg object-cover"
+                      fallbackText="Photo unavailable"
+                      showDiagnostics={false}
                     />
-                    {(photo.caption || photo.label) && (
+                    {photo.caption && (
                       <p className="text-xs text-muted-foreground">
-                        {photo.caption ?? photo.label}
+                        {photo.caption}
                       </p>
                     )}
                   </div>

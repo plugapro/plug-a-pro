@@ -10,7 +10,7 @@ const CATEGORIES: Record<string, { name: string; description: string }> = {
   garden:     { name: 'Garden',         description: 'Lawn care, landscaping, and tree trimming.' },
   handyman:   { name: 'Handyman',       description: 'General repairs and odd jobs around the home.' },
   appliances: { name: 'Appliances',     description: 'Repairs and installation of home appliances.' },
-  electrical: { name: 'Electrical',     description: 'Wiring, fault-finding, and compliance certificates.' },
+  electrical: { name: 'Electrical',     description: 'Wiring, fault-finding, and general electrical repairs.' },
   diy:        { name: 'DIY & Assembly', description: 'Flat-pack assembly, shelving, and mounting.' },
   roofing:    { name: 'Roofing',        description: 'Roof repairs, waterproofing, and inspections.' },
 }

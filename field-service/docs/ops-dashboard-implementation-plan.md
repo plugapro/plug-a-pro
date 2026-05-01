@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Build the admin operations dashboard into a day-to-day execution console for the Plug-A-Pro operations team.
+Build the admin operations dashboard into a day-to-day execution console for the Plug A Pro operations team.
 
 The end state is not a passive reporting screen. It is a queue-first operating surface that helps ops:
 

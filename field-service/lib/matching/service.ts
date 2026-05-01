@@ -14,6 +14,15 @@ import { resolveCategoryRequirements } from '../category-config'
 import { isLocationStale, pointFallsWithinRadius } from './geography'
 import { createBookingArtifactsForApprovedQuote } from '../quotes'
 import { initializeBookingPayment } from '../payments'
+import { emitMatchEvent } from './events'
+import { notifyExpiredJobParties } from './customer-recontact'
+import { releaseProviderCapacity } from './reservation'
+import { sendText } from '../whatsapp-interactive'
+import { hasSuccessfulMessageForRecipient } from '../message-events'
+import { createTraceId } from '../support-diagnostics'
+import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
+import { normaliseLocationDisplayName } from '../location-format'
+import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
 import type {
   CoverageTier,
   DispatchActor,
@@ -30,6 +39,25 @@ import type {
 
 type ResolvedCategoryRequirements = Awaited<ReturnType<typeof resolveCategoryRequirements>>
 
+const OFFER_TIMEOUT_CONSECUTIVE_PAUSE_THRESHOLD = 3
+const OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD = 6
+const OFFER_TIMEOUT_PAUSE_WINDOW_HOURS = 24
+const OFFER_TIMEOUT_TEMP_PAUSE_HOURS = 12
+const ACCEPT_ASSIGNMENT_TRANSACTION_TIMEOUT_MS = 20_000
+const ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS = 10_000
+
+type ExpiredAssignmentNotificationHold = {
+  id: string
+  expiresAt: Date
+  jobRequestId: string
+  providerId: string
+  provider: { phone: string | null; name: string | null } | null
+  jobRequest: {
+    category: string
+    address: { suburb: string | null; city: string | null } | null
+  } | null
+}
+
 function normalizeTag(tag: string) {
   return tag.trim().toLowerCase()
 }
@@ -38,6 +66,100 @@ function isSchemaCompatError(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const code = 'code' in error ? (error as { code?: string }).code : undefined
   return code === 'P2021' || code === 'P2022'
+}
+
+function errorCode(error: unknown) {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null
+  return String((error as { code?: unknown }).code ?? '')
+}
+
+function remainingBalanceFromUnlock(
+  ledgerEntries: Array<{
+    balanceAfterPaidCredits: number
+    balanceAfterPromoCredits: number
+  }>,
+  fallbackBalance: number,
+) {
+  const lastEntry = ledgerEntries.at(-1)
+  if (!lastEntry) return fallbackBalance
+  return lastEntry.balanceAfterPaidCredits + lastEntry.balanceAfterPromoCredits
+}
+
+function formatProviderLeadDeadline(deadline: Date) {
+  return deadline.toLocaleString('en-ZA', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Africa/Johannesburg',
+  })
+}
+
+function formatLeadExpiryArea(address: { suburb?: string | null; city?: string | null } | null | undefined) {
+  const suburb = normaliseLocationDisplayName(address?.suburb)
+  const city = normaliseLocationDisplayName(address?.city)
+  if (suburb && city && suburb !== city) return `${suburb}, ${city}`
+  return suburb || city || 'your area'
+}
+
+async function notifyProviderLeadInviteExpired(params: {
+  hold: ExpiredAssignmentNotificationHold
+  wasReassigned: boolean
+  traceId: string
+}) {
+  const { hold, wasReassigned, traceId } = params
+  const phone = hold.provider?.phone
+
+  if (!phone) {
+    console.warn('[expireAssignmentOffer] skipped provider expiry notification: missing provider phone', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      error_code: 'PROVIDER_PHONE_MISSING',
+    })
+    return
+  }
+
+  const alreadySent = await hasSuccessfulMessageForRecipient({
+    to: phone,
+    templateName: 'interactive:lead_expired',
+    metadataPath: ['assignmentHoldId'],
+    metadataEquals: hold.id,
+  })
+
+  if (alreadySent) {
+    console.info('[expireAssignmentOffer] skipped duplicate provider expiry notification', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      result: 'duplicate_skipped',
+    })
+    return
+  }
+
+  const category = hold.jobRequest?.category || 'job'
+  const area = formatLeadExpiryArea(hold.jobRequest?.address)
+  const deadline = formatProviderLeadDeadline(hold.expiresAt)
+  const reassignedLine = wasReassigned ? '\n\nThis lead has now been offered to another provider.' : ''
+
+  await sendText(
+    phone,
+    `⏱️ *Lead expired*\n\nThe ${category} lead in ${area} expired because there was no response before ${deadline}.\n\nNo credits were used.${reassignedLine}\n\nWe'll send you another lead when one matches your area and availability.`,
+    {
+      templateName: 'interactive:lead_expired',
+      metadata: {
+        traceId,
+        providerId: hold.providerId,
+        jobRequestId: hold.jobRequestId,
+        assignmentHoldId: hold.id,
+        expiresAt: hold.expiresAt.toISOString(),
+        wasReassigned,
+      },
+    },
+  )
 }
 
 async function safeOptionalQuery<T>(factory: () => Promise<T>, fallback: T): Promise<T> {
@@ -51,6 +173,17 @@ async function safeOptionalQuery<T>(factory: () => Promise<T>, fallback: T): Pro
   }
 }
 
+function isSameCalendarDay(left: Date, right: Date) {
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+}
+
+function isOutsideStandardLeadHours(date: Date) {
+  const hour = date.getHours()
+  return hour < 7 || hour >= 17
+}
+
 async function safeOptionalMutation<T>(factory: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await factory()
@@ -60,6 +193,112 @@ async function safeOptionalMutation<T>(factory: () => Promise<T>, fallback: T): 
     }
     throw error
   }
+}
+
+async function pauseProviderAfterRepeatedOfferTimeouts(providerId: string) {
+  const since = new Date(Date.now() - OFFER_TIMEOUT_PAUSE_WINDOW_HOURS * 60 * 60 * 1000)
+  const timeoutCount = await db.assignmentHold.count({
+    where: {
+      providerId,
+      status: 'EXPIRED',
+      outcomeReasonCode: 'OFFER_TIMEOUT',
+      respondedAt: { gte: since },
+    },
+  })
+
+  const recentResolvedHolds = await db.assignmentHold.findMany({
+    where: {
+      providerId,
+      respondedAt: { gte: since },
+      status: { in: ['ACCEPTED', 'REJECTED', 'EXPIRED', 'RELEASED', 'CANCELLED'] },
+    },
+    orderBy: { respondedAt: 'desc' },
+    take: OFFER_TIMEOUT_CONSECUTIVE_PAUSE_THRESHOLD,
+    select: { status: true, outcomeReasonCode: true },
+  })
+  const hasConsecutiveTimeouts =
+    recentResolvedHolds.length >= OFFER_TIMEOUT_CONSECUTIVE_PAUSE_THRESHOLD &&
+    recentResolvedHolds.every(
+      (hold) => hold.status === 'EXPIRED' && hold.outcomeReasonCode === 'OFFER_TIMEOUT',
+    )
+
+  if (timeoutCount < OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD && !hasConsecutiveTimeouts) {
+    return { paused: false, timeoutCount }
+  }
+
+  const isHardPause = timeoutCount >= OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD
+  const breakUntil = new Date(Date.now() + OFFER_TIMEOUT_TEMP_PAUSE_HOURS * 60 * 60 * 1000)
+
+  const provider = await db.provider.update({
+    where: { id: providerId },
+    data: {
+      ...(isHardPause ? { availableNow: false } : {}),
+      updatedAt: new Date(),
+    },
+    select: { id: true, phone: true, name: true },
+  })
+  await db.technicianAvailability.upsert({
+    where: { providerId },
+    create: {
+      providerId,
+      availabilityState: 'PAUSED',
+      breakUntil: isHardPause ? null : breakUntil,
+      notes: isHardPause
+        ? 'Auto-paused after repeated offer timeouts; provider must go online manually.'
+        : 'Auto-paused for 12 hours after consecutive offer timeouts.',
+    },
+    update: {
+      availabilityState: 'PAUSED',
+      breakUntil: isHardPause ? null : breakUntil,
+      notes: isHardPause
+        ? 'Auto-paused after repeated offer timeouts; provider must go online manually.'
+        : 'Auto-paused for 12 hours after consecutive offer timeouts.',
+      updatedAt: new Date(),
+    },
+  })
+
+  await sendText(
+    provider.phone,
+    isHardPause
+      ? `⏸️ *Leads paused*\n\nHi *${provider.name.split(' ')[0] || 'there'}*, we paused new Plug A Pro leads because several job offers expired without a response.\n\nReply *menu* when you're ready, then choose *Go Online* to receive leads again.`
+      : `⏸️ *Leads paused for 12 hours*\n\nHi *${provider.name.split(' ')[0] || 'there'}*, the last few job offers expired without a response, so we paused new Plug A Pro leads for 12 hours.\n\nReply *menu* if you want to manage your availability.`,
+    {
+      templateName: 'interactive:provider_auto_paused_timeout',
+      metadata: {
+        providerId,
+        timeoutCount,
+        pauseType: isHardPause ? 'hard' : 'temporary',
+        windowHours: OFFER_TIMEOUT_PAUSE_WINDOW_HOURS,
+        ...(isHardPause ? {} : { breakUntil: breakUntil.toISOString() }),
+      },
+    },
+  ).catch((error) => {
+    console.error('[matching] Failed to notify provider about timeout pause:', { providerId, error })
+  })
+
+  if (isHardPause && process.env.ADMIN_WHATSAPP_NUMBER) {
+    await sendText(
+      process.env.ADMIN_WHATSAPP_NUMBER,
+      `⚠️ *Provider leads paused*\n\n${provider.name} (${provider.phone}) has ${timeoutCount} offer timeouts in ${OFFER_TIMEOUT_PAUSE_WINDOW_HOURS}h and was taken offline for leads.`,
+      {
+        templateName: 'interactive:provider_timeout_admin_alert',
+        metadata: { providerId, timeoutCount, windowHours: OFFER_TIMEOUT_PAUSE_WINDOW_HOURS },
+      },
+    ).catch((error) => {
+      console.error('[matching] Failed to notify admin about provider timeout pause:', { providerId, error })
+    })
+  }
+
+  emitMatchEvent({
+    event: 'provider.auto_paused',
+    providerId,
+    reason: isHardPause ? 'repeated_offer_timeouts_hard' : 'consecutive_offer_timeouts',
+    timeoutCount,
+    windowHours: OFFER_TIMEOUT_PAUSE_WINDOW_HOURS,
+    pauseType: isHardPause ? 'hard' : 'temporary',
+  })
+
+  return { paused: true, timeoutCount, pauseType: isHardPause ? 'hard' : 'temporary' }
 }
 
 function buildMatchingJobRequest(record: {
@@ -81,7 +320,10 @@ function buildMatchingJobRequest(record: {
   customerAcceptedAmount: Prisma.Decimal | null
   customerAcceptedScope: string | null
   autoCreateBookingOnAssignment: boolean
+  isTestRequest: boolean
+  cohortName: string | null
   status: MatchingJobRequest['status']
+  expiresAt?: Date | null
   customer?: { id: string; name: string; phone: string } | null
   address?: {
     street: string
@@ -91,7 +333,7 @@ function buildMatchingJobRequest(record: {
     lat: number | null
     lng: number | null
     locationNodeId: string | null
-    locationNode: { regionKey: string | null } | null
+    locationNode: { regionKey: string | null; provinceKey: string | null } | null
   } | null
 }) {
   return {
@@ -113,7 +355,10 @@ function buildMatchingJobRequest(record: {
     customerAcceptedAmount: record.customerAcceptedAmount,
     customerAcceptedScope: record.customerAcceptedScope,
     autoCreateBookingOnAssignment: record.autoCreateBookingOnAssignment,
+    isTestRequest: record.isTestRequest,
+    cohortName: record.cohortName,
     status: record.status,
+    expiresAt: record.expiresAt ?? null,
     customer: record.customer ?? { id: record.customerId, name: 'Customer', phone: '' },
     address: record.address
       ? {
@@ -125,12 +370,13 @@ function buildMatchingJobRequest(record: {
           lng: record.address.lng,
           locationNodeId: record.address.locationNodeId ?? null,
           regionKey: record.address.locationNode?.regionKey ?? null,
+          provinceKey: record.address.locationNode?.provinceKey ?? null,
         }
       : null,
   }
 }
 
-async function loadMatchingJobRequest(client: any, jobRequestId: string) {
+export async function loadMatchingJobRequest(client: any, jobRequestId: string) {
   const query = {
     where: { id: jobRequestId },
     select: {
@@ -152,7 +398,10 @@ async function loadMatchingJobRequest(client: any, jobRequestId: string) {
       customerAcceptedAmount: true,
       customerAcceptedScope: true,
       autoCreateBookingOnAssignment: true,
+      isTestRequest: true,
+      cohortName: true,
       status: true,
+      expiresAt: true,
       customer: {
         select: {
           id: true,
@@ -170,7 +419,7 @@ async function loadMatchingJobRequest(client: any, jobRequestId: string) {
           lng: true,
           locationNodeId: true,
           locationNode: {
-            select: { regionKey: true },
+            select: { regionKey: true, provinceKey: true },
           },
         },
       },
@@ -489,6 +738,7 @@ function buildScoreBreakdown(params: {
     customerPreference,
     marginEfficiency,
     geographicPenalty,
+    workloadFairness: 1,
     total,
     reasons,
   } satisfies ScoreBreakdown
@@ -502,14 +752,22 @@ async function loadMatchingContext(jobRequestId: string) {
   }
 
   const baseProviders = await db.provider.findMany({
-    where: { active: true },
+    where: {
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      isTestUser: jobRequest.isTestRequest,
+    },
     select: {
       id: true,
       name: true,
       phone: true,
+      isTestUser: true,
+      cohortName: true,
       active: true,
       availableNow: true,
       verified: true,
+      status: true,
       skills: true,
       serviceAreas: true,
     },
@@ -546,9 +804,12 @@ async function loadMatchingContext(jobRequestId: string) {
   }
   type AvailabilityRow = {
     providerId: string
+    availabilityMode: string | null
     availabilityState: string
     nextAvailableAt: Date | null
     breakUntil: Date | null
+    emergencyAvailable?: boolean | null
+    sameDayAvailable?: boolean | null
   }
   type ScheduleItemRow = {
     providerId: string
@@ -635,7 +896,15 @@ async function loadMatchingContext(jobRequestId: string) {
         () =>
           (db as any).technicianAvailability?.findMany?.({
             where: { providerId: { in: providerIds } },
-            select: { providerId: true, availabilityState: true, nextAvailableAt: true, breakUntil: true },
+            select: {
+              providerId: true,
+              availabilityMode: true,
+              availabilityState: true,
+              nextAvailableAt: true,
+              breakUntil: true,
+              emergencyAvailable: true,
+              sameDayAvailable: true,
+            },
           }) ?? Promise.resolve([]),
         [] as AvailabilityRow[],
       ),
@@ -821,9 +1090,12 @@ async function loadMatchingContext(jobRequestId: string) {
         regionKey?: string | null
       }[]
       technicianAvailability?: {
+        availabilityMode: string | null
         availabilityState: string
         nextAvailableAt: Date | null
         breakUntil: Date | null
+        emergencyAvailable?: boolean | null
+        sameDayAvailable?: boolean | null
       } | null
       schedule?: { dayOfWeek: number; startTime: string; endTime: string; active: boolean }[]
       scheduleItems?: {
@@ -940,6 +1212,27 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
     if (provider.technicianAvailability?.availabilityState === 'OFFLINE') {
       filteredReasonCodes.push('TECHNICIAN_OFFLINE')
     }
+    if (
+      provider.technicianAvailability?.availabilityState === 'PAUSED' ||
+      provider.technicianAvailability?.availabilityMode === 'PAUSED'
+    ) {
+      filteredReasonCodes.push('TECHNICIAN_PAUSED')
+    }
+    if (provider.technicianAvailability?.breakUntil && provider.technicianAvailability.breakUntil > new Date()) {
+      filteredReasonCodes.push('TECHNICIAN_TEMP_PAUSED')
+    }
+    if (
+      provider.technicianAvailability?.sameDayAvailable === false &&
+      isSameCalendarDay(requestWindow.startAt, new Date())
+    ) {
+      filteredReasonCodes.push('SAME_DAY_NOT_AVAILABLE')
+    }
+    if (
+      provider.technicianAvailability?.emergencyAvailable === false &&
+      isOutsideStandardLeadHours(requestWindow.startAt)
+    ) {
+      filteredReasonCodes.push('EMERGENCY_NOT_AVAILABLE')
+    }
     const areaCoverage = providerCoversAddress(provider, address)
     if (!areaCoverage.covers) {
       filteredReasonCodes.push('OUTSIDE_SERVICE_AREA')
@@ -960,8 +1253,10 @@ export async function rankCandidatesForJobRequest(jobRequestId: string): Promise
       filteredReasonCodes.push('MISSING_REQUIRED_VEHICLE')
     }
 
-    const scheduleRule =
-      provider.schedule.find((rule) => rule.dayOfWeek === requestWindow.startAt.getDay()) ?? null
+    const usesSchedule = provider.technicianAvailability?.availabilityMode === 'SCHEDULE'
+    const scheduleRule = usesSchedule
+      ? provider.schedule.find((rule) => rule.dayOfWeek === requestWindow.startAt.getDay()) ?? null
+      : null
 
     const workingWindow = buildWorkingWindow({
       requestStartAt: requestWindow.startAt,
@@ -1193,6 +1488,18 @@ async function createOfferForAttempt(params: {
 
   const jobRequest = await loadMatchingJobRequest(db, params.jobRequestId)
 
+  // Guard: do not re-activate a lead that the provider has already explicitly declined
+  const existingLeadForGuard = await db.lead.findUnique({
+    where: { jobRequestId_providerId: { jobRequestId: params.jobRequestId, providerId: params.providerId } },
+    select: { id: true, status: true },
+  })
+  if (existingLeadForGuard?.status === 'DECLINED') {
+    throw Object.assign(
+      new Error('PROVIDER_PREVIOUSLY_DECLINED'),
+      { code: 'PROVIDER_PREVIOUSLY_DECLINED', jobRequestId: params.jobRequestId, providerId: params.providerId }
+    )
+  }
+
   const lead = await db.lead.upsert({
     where: {
       jobRequestId_providerId: {
@@ -1207,6 +1514,8 @@ async function createOfferForAttempt(params: {
       matchAttemptId: params.matchAttemptId,
       assignmentHoldId: hold.id,
       status: 'SENT',
+      isTestLead: jobRequest.isTestRequest,
+      cohortName: jobRequest.cohortName,
       expiresAt,
     },
     update: {
@@ -1214,6 +1523,8 @@ async function createOfferForAttempt(params: {
       matchAttemptId: params.matchAttemptId,
       assignmentHoldId: hold.id,
       status: 'SENT',
+      isTestLead: jobRequest.isTestRequest,
+      cohortName: jobRequest.cohortName,
       sentAt: new Date(),
       respondedAt: null,
       expiresAt,
@@ -1250,7 +1561,10 @@ async function createOfferForAttempt(params: {
     startAt: requestWindow.startAt,
     endAt: requestWindow.endAt,
     source: 'matching_engine',
-    locationLabel: [jobRequest.address?.suburb, jobRequest.address?.city].filter(Boolean).join(', '),
+    locationLabel: [
+      normaliseLocationDisplayName(jobRequest.address?.suburb),
+      normaliseLocationDisplayName(jobRequest.address?.city),
+    ].filter(Boolean).join(', '),
     lat: jobRequest.address?.lat ?? undefined,
     lng: jobRequest.address?.lng ?? undefined,
   })
@@ -1263,7 +1577,8 @@ async function createOfferForAttempt(params: {
     providerPhone: provider.phone,
     leadId: lead.id,
     category: jobRequest.category,
-    area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
+    area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
+    isTestLead: jobRequest.isTestRequest,
     description: jobRequest.title || jobRequest.description || jobRequest.category,
     customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
     expiresInMinutes: MATCHING_CONFIG.offerTtlMinutes,
@@ -1276,20 +1591,53 @@ async function createOfferForAttempt(params: {
   // Template fallback — only fires when the interactive CTA message fails (e.g. provider outside 24h session window).
   // Sending both would duplicate the notification; the interactive message is always preferred.
   if (!interactiveDelivered) {
-    const { sendJobOffer } = await import('../whatsapp')
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+    const [{ sendJobOffer }, { getProviderLeadAccessUrl }] = await Promise.all([
+      import('../whatsapp'),
+      import('../provider-lead-access'),
+    ])
     const scheduledWindow = requestWindow.startAt.toLocaleDateString('en-ZA', {
       weekday: 'short', day: 'numeric', month: 'short',
     })
-    sendJobOffer({
-      providerPhone: provider.phone,
-      providerFirstName: provider.name.split(' ')[0] ?? provider.name,
-      serviceName: jobRequest.category,
-      area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
-      scheduledWindow,
-      jobUrl: `${appUrl}/leads/${lead.id}`,
-    }).catch((error) => {
-      console.error('[matching] Failed to send job_offer template to provider:', error)
+    const signedUrl = await getProviderLeadAccessUrl({ leadId: lead.id, providerId: params.providerId })
+    if (!signedUrl) {
+      console.error('[matching] Skipping job_offer template — no signed lead URL available', { leadId: lead.id })
+    } else {
+      sendJobOffer({
+        providerPhone: provider.phone,
+        providerFirstName: provider.name.split(' ')[0] ?? provider.name,
+        serviceName: jobRequest.category,
+        area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
+        scheduledWindow,
+        jobUrl: signedUrl,
+      }).catch((error) => {
+        console.error('[matching] Failed to send job_offer template to provider:', error)
+      })
+    }
+  }
+
+  // Quick-response action buttons — same credit copy and Accept Lead / Decline
+  // buttons as the dispatch.ts path so providers always see a consistent UI.
+  if (interactiveDelivered) {
+    const { sendButtons } = await import('../whatsapp-interactive')
+    const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
+    const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
+    const category = jobRequest.category
+    const balance = await getProviderWalletBalanceReadOnly(params.providerId)
+    const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
+    await sendButtons(
+      provider.phone,
+      actionsBody,
+      [
+        { id: `accept:${hold.id}`, title: 'Accept Lead' },
+        { id: `decline:${hold.id}`, title: 'Decline' },
+      ],
+      undefined,
+      {
+        templateName: 'interactive:new_lead_actions',
+        metadata: { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: params.providerId },
+      }
+    ).catch((error) => {
+      console.error('[matching] Failed to send lead action buttons to provider:', error)
     })
   }
 
@@ -1457,8 +1805,14 @@ export async function acceptAssignmentOffer(params: {
   leadId: string
   providerId: string
   inspectionNeeded?: boolean
+  source?: 'whatsapp' | 'pwa' | 'api'
 }): Promise<OfferResolutionResult> {
-  const transactionResult = await db.$transaction(async (tx) => {
+  const acceptStart = Date.now()
+  const traceId = createTraceId(params.source ?? 'api')
+  let transactionResult
+
+  try {
+    transactionResult = await db.$transaction(async (tx) => {
     const lead = await tx.lead.findUnique({
       where: { id: params.leadId },
       include: {
@@ -1467,60 +1821,138 @@ export async function acceptAssignmentOffer(params: {
       },
     })
 
-    if (!lead) return { ok: false as const, reason: 'NOT_FOUND' }
-    if (lead.providerId !== params.providerId) return { ok: false as const, reason: 'FORBIDDEN' }
-    if (!lead.assignmentHoldId || !lead.assignmentHold) {
-      return { ok: false as const, reason: 'TAKEN' }
-    }
-    if (lead.assignmentHold.status !== 'ACTIVE') {
-      return { ok: false as const, reason: 'TAKEN' }
-    }
-    if (lead.expiresAt && lead.expiresAt < new Date()) {
-      await tx.lead.update({
-        where: { id: lead.id },
-        data: { status: 'EXPIRED', respondedAt: new Date() },
-      })
-      await tx.assignmentHold.update({
-        where: { id: lead.assignmentHold.id },
-        data: {
-          status: 'EXPIRED',
-          respondedAt: new Date(),
-          releasedAt: new Date(),
-          outcomeReasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
-        },
-      })
-      await tx.matchAttempt.update({
-        where: { id: lead.matchAttemptId ?? '' },
-        data: {
-          stage: 'TIMED_OUT',
-          respondedAt: new Date(),
-          responseOutcome: 'TIMED_OUT',
-          reasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
-        },
-      }).catch(() => {})
-      return { ok: false as const, reason: 'EXPIRED' }
-    }
+      if (!lead) return { ok: false as const, reason: 'NOT_FOUND' }
+      if (lead.providerId !== params.providerId) return { ok: false as const, reason: 'FORBIDDEN' }
 
-    const existingMatch = await tx.match.findUnique({
-      where: { jobRequestId: lead.jobRequestId },
+      const provider = await tx.provider.findUnique({
+        where: { id: params.providerId },
+        select: {
+          id: true,
+          active: true,
+          verified: true,
+          status: true,
+        },
+      })
+      if (!provider) return { ok: false as const, reason: 'FORBIDDEN' }
+      if (!provider.active || !provider.verified || provider.status !== 'ACTIVE') {
+        console.warn('[matching] provider blocked from accepting lead because profile is not approved', {
+          trace_id: traceId,
+          provider_id: params.providerId,
+          lead_id: params.leadId,
+          provider_active: provider.active,
+          provider_verified: provider.verified,
+          provider_status: provider.status,
+        })
+        return { ok: false as const, reason: 'PROVIDER_NOT_APPROVED' }
+      }
+
+      const existingMatch = await tx.match.findUnique({
+        where: { jobRequestId: lead.jobRequestId },
+      })
+      const walletBefore = await tx.providerWallet.findUnique({
+        where: { providerId: params.providerId },
+        select: { paidCreditBalance: true, promoCreditBalance: true },
+      })
+      const currentCreditBalance =
+        (walletBefore?.paidCreditBalance ?? 0) + (walletBefore?.promoCreditBalance ?? 0)
+
+      if (
+        existingMatch?.providerId === params.providerId &&
+        (lead.status === 'ACCEPTED' || lead.assignmentHold?.status === 'ACCEPTED')
+      ) {
+        await tx.lead.updateMany({
+          where: { id: lead.id, status: { not: 'ACCEPTED' } },
+          data: { status: 'ACCEPTED', respondedAt: new Date() },
+        })
+        if (lead.assignmentHoldId) {
+          await tx.assignmentHold.updateMany({
+            where: { id: lead.assignmentHoldId, status: { not: 'ACCEPTED' } },
+            data: {
+              status: 'ACCEPTED',
+              respondedAt: new Date(),
+              releasedAt: new Date(),
+              outcomeReasonCode: 'DUPLICATE_ACCEPT_IGNORED',
+            },
+          })
+        }
+
+        return {
+          ok: true as const,
+          responseOutcome: 'ACCEPTED',
+          matchId: existingMatch.id,
+          jobRequestId: lead.jobRequestId,
+          bookingId: null,
+          assignmentHoldId: lead.assignmentHoldId ?? 'already-accepted',
+          nextOfferedProviderId: null,
+          alreadyUnlocked: true,
+          creditTransactionId: null,
+          currentCreditBalance,
+          leadStatusBefore: lead.status,
+          leadStatusAfter: 'ACCEPTED',
+        }
+      }
+
+      if (!lead.assignmentHoldId || !lead.assignmentHold) {
+        return { ok: false as const, reason: existingMatch ? 'TAKEN' : 'NOT_FOUND' }
+      }
+      if (lead.assignmentHold.status !== 'ACTIVE') {
+        return { ok: false as const, reason: 'TAKEN' }
+      }
+      if (lead.expiresAt && lead.expiresAt < new Date()) {
+        await tx.lead.update({
+          where: { id: lead.id },
+          data: { status: 'EXPIRED', respondedAt: new Date() },
+        })
+        await tx.assignmentHold.update({
+          where: { id: lead.assignmentHold.id },
+          data: {
+            status: 'EXPIRED',
+            respondedAt: new Date(),
+            releasedAt: new Date(),
+            outcomeReasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
+          },
+        })
+        if (lead.matchAttemptId) {
+          await tx.matchAttempt.update({
+            where: { id: lead.matchAttemptId },
+            data: {
+              stage: 'TIMED_OUT',
+              respondedAt: new Date(),
+              responseOutcome: 'TIMED_OUT',
+              reasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
+            },
+          }).catch(() => {})
+        }
+        return { ok: false as const, reason: 'EXPIRED' }
+      }
+
+      if (existingMatch && existingMatch.providerId !== params.providerId) {
+        await tx.lead.update({
+          where: { id: lead.id },
+          data: { status: 'EXPIRED', respondedAt: new Date() },
+        })
+        await tx.assignmentHold.update({
+          where: { id: lead.assignmentHold.id },
+          data: {
+            status: 'RELEASED',
+            respondedAt: new Date(),
+            releasedAt: new Date(),
+            outcomeReasonCode: 'MATCH_ALREADY_TAKEN',
+          },
+        })
+        return { ok: false as const, reason: 'TAKEN' }
+      }
+
+    const unlockResult = await unlockLeadForProviderInTransaction(tx, lead.id, params.providerId, {
+      source: params.source ?? 'api',
+      traceId,
+      idempotencyKey: `${params.source ?? 'api'}:${params.providerId}:${lead.id}:unlock_accept_lead`,
     })
-
-    if (existingMatch && existingMatch.providerId !== params.providerId) {
-      await tx.lead.update({
-        where: { id: lead.id },
-        data: { status: 'EXPIRED', respondedAt: new Date() },
-      })
-      await tx.assignmentHold.update({
-        where: { id: lead.assignmentHold.id },
-        data: {
-          status: 'RELEASED',
-          respondedAt: new Date(),
-          releasedAt: new Date(),
-          outcomeReasonCode: 'MATCH_ALREADY_TAKEN',
-        },
-      })
-      return { ok: false as const, reason: 'TAKEN' }
-    }
+    const alreadyUnlocked = unlockResult.alreadyUnlocked
+    const remainingCreditBalance = remainingBalanceFromUnlock(
+      unlockResult.ledgerEntries,
+      currentCreditBalance,
+    )
 
     if (existingMatch && existingMatch.providerId === params.providerId) {
       await tx.lead.update({
@@ -1544,6 +1976,11 @@ export async function acceptAssignmentOffer(params: {
         bookingId: null,
         assignmentHoldId: lead.assignmentHold.id,
         nextOfferedProviderId: null,
+        alreadyUnlocked,
+        creditTransactionId: unlockResult.ledgerEntries.at(-1)?.id ?? null,
+        currentCreditBalance: remainingCreditBalance,
+        leadStatusBefore: lead.status,
+        leadStatusAfter: 'ACCEPTED',
       }
     }
 
@@ -1583,21 +2020,41 @@ export async function acceptAssignmentOffer(params: {
       },
     })
 
+    await tx.auditLog.create({
+      data: {
+        actorId: params.providerId,
+        actorRole: 'provider',
+        action: 'lead.accept',
+        entityType: 'Lead',
+        entityId: lead.id,
+        before: {
+          status: lead.status,
+          jobRequestId: lead.jobRequestId,
+        },
+        after: {
+          status: 'ACCEPTED',
+          matchId: match.id,
+          leadUnlockId: unlockResult.unlock.id,
+          source: params.source ?? 'api',
+        },
+      },
+    })
+
     await tx.jobRequest.update({
       where: { id: lead.jobRequestId },
       data: { status: 'MATCHED' },
     })
 
-    await tx.dispatchDecision.updateMany({
-      where: {
-        id: lead.dispatchDecisionId ?? undefined,
-      },
-      data: {
-        status: 'ASSIGNED',
-        selectedProviderId: params.providerId,
-        selectedMatchAttemptId: lead.matchAttemptId ?? undefined,
-      },
-    })
+    if (lead.dispatchDecisionId) {
+      await tx.dispatchDecision.updateMany({
+        where: { id: lead.dispatchDecisionId },
+        data: {
+          status: 'ASSIGNED',
+          selectedProviderId: params.providerId,
+          selectedMatchAttemptId: lead.matchAttemptId ?? undefined,
+        },
+      })
+    }
 
     await tx.lead.updateMany({
       where: {
@@ -1666,6 +2123,8 @@ export async function acceptAssignmentOffer(params: {
         address: jobRequest.address,
         scheduledDate: requestWindow.startAt,
         estimatedDurationMinutes: jobRequest.estimatedDurationMinutes,
+        isTestJob: jobRequest.isTestRequest,
+        cohortName: jobRequest.cohortName,
         source: 'assignment_acceptance',
       })
 
@@ -1677,33 +2136,145 @@ export async function acceptAssignmentOffer(params: {
       ok: true as const,
       responseOutcome: 'ACCEPTED',
       matchId: match.id,
+      jobRequestId: lead.jobRequestId,
       bookingId,
       paymentAmount,
       customerPhone: jobRequest.customer.phone,
       category: jobRequest.category,
       assignmentHoldId: lead.assignmentHold.id,
       nextOfferedProviderId: null,
+      alreadyUnlocked,
+      creditTransactionId: unlockResult.ledgerEntries.at(-1)?.id ?? null,
+      currentCreditBalance: remainingCreditBalance,
+      leadStatusBefore: lead.status,
+      leadStatusAfter: 'ACCEPTED',
     }
-  })
+    }, {
+      maxWait: ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS,
+      timeout: ACCEPT_ASSIGNMENT_TRANSACTION_TIMEOUT_MS,
+    })
+  } catch (error) {
+    if (error instanceof LeadUnlockError) {
+      const reason = error.code === 'LEAD_NOT_AVAILABLE'
+        ? 'EXPIRED'
+        : error.code === 'INSUFFICIENT_CREDITS'
+          ? 'INSUFFICIENT_CREDITS'
+          : error.code === 'PROVIDER_NOT_APPROVED' || error.code === 'PROVIDER_NOT_ACTIVE'
+            ? 'PROVIDER_NOT_APPROVED'
+            : error.code === 'WALLET_SUSPENDED'
+              ? 'WALLET_SUSPENDED'
+              : error.code === 'CONCURRENT_UNLOCK'
+                ? 'CONCURRENT_UNLOCK'
+                : error.code === 'FORBIDDEN'
+                  ? 'FORBIDDEN'
+                  : 'TAKEN'
+      console.info('[matching] lead unlock/accept blocked', {
+        provider_id: params.providerId,
+        lead_id: params.leadId,
+        source: params.source ?? 'api',
+        current_credit_balance: error.currentCreditBalance,
+        already_unlocked: false,
+        result: reason,
+        trace_id: traceId,
+      })
+      return {
+        ok: false,
+        reason,
+        currentCreditBalance: error.currentCreditBalance,
+        traceId,
+      }
+    }
+
+    if (errorCode(error) === 'P2002') {
+      console.info('[matching] lead unlock/accept blocked by concurrent match', {
+        provider_id: params.providerId,
+        lead_id: params.leadId,
+        source: params.source ?? 'api',
+        result: 'TAKEN',
+        trace_id: traceId,
+      })
+      return { ok: false, reason: 'TAKEN', traceId }
+    }
+
+    console.error('[matching] lead unlock/accept failed unexpectedly', {
+      provider_id: params.providerId,
+      lead_id: params.leadId,
+      source: params.source ?? 'api',
+      result: 'LEAD_ACCEPTANCE_FAILED',
+      error_code: errorCode(error) ?? 'UNKNOWN_LEAD_ACCEPT_ERROR',
+      trace_id: traceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return { ok: false, reason: 'LEAD_ACCEPTANCE_FAILED', traceId }
+  }
 
   if (!transactionResult.ok) {
+    console.info('[matching] lead unlock/accept blocked', {
+      provider_id: params.providerId,
+      lead_id: params.leadId,
+      source: params.source ?? 'api',
+      result: transactionResult.reason,
+      trace_id: traceId,
+    })
     return {
       ok: false,
-      reason: transactionResult.reason as 'NOT_FOUND' | 'FORBIDDEN' | 'EXPIRED' | 'TAKEN',
+      reason: transactionResult.reason as
+        | 'NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'EXPIRED'
+        | 'TAKEN'
+        | 'INSUFFICIENT_CREDITS'
+        | 'PROVIDER_NOT_APPROVED'
+        | 'WALLET_SUSPENDED'
+        | 'CONCURRENT_UNLOCK'
+        | 'LEAD_ACCEPTANCE_FAILED',
+      traceId,
     }
   }
+
+  console.info('[matching] lead unlock/accept attempt', {
+    provider_id: params.providerId,
+    lead_id: params.leadId,
+    source: params.source ?? 'api',
+    current_credit_balance: transactionResult.currentCreditBalance,
+    already_unlocked: transactionResult.alreadyUnlocked,
+    lead_status_before: transactionResult.leadStatusBefore,
+    lead_status_after: transactionResult.leadStatusAfter,
+    credit_transaction_id: transactionResult.creditTransactionId,
+    result: 'ACCEPTED',
+    trace_id: traceId,
+  })
 
   if (
     transactionResult.bookingId &&
     transactionResult.paymentAmount != null &&
     transactionResult.paymentAmount > 0
   ) {
-    await initializeBookingPayment({
+    // Fire-and-forget: payment init runs after the transaction commits.
+    // A failure here must not surface as a WhatsApp/PWA error — the accept
+    // already succeeded and the credit was charged. Ops can reconcile via logs.
+    initializeBookingPayment({
       bookingId: transactionResult.bookingId,
       amountRand: transactionResult.paymentAmount,
       customerEmail: null,
       customerPhone: transactionResult.customerPhone,
       description: `${transactionResult.category} booking`,
+    }).catch((err: unknown) => {
+      console.error('[matching] post-commit payment init failed', {
+        booking_id: transactionResult.bookingId,
+        trace_id: traceId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+
+  if ('jobRequestId' in transactionResult && transactionResult.jobRequestId) {
+    emitMatchEvent({
+      event: 'match.accepted',
+      jobRequestId: transactionResult.jobRequestId,
+      providerId: params.providerId,
+      bookingId: transactionResult.bookingId ?? '',
+      latencyMs: Date.now() - acceptStart,
     })
   }
 
@@ -1748,6 +2319,53 @@ export async function processPendingAssignmentWorkflows() {
     expiredOffers,
     reoffered,
   }
+}
+
+// ── Capacity reconciliation ────────────────────────────────────────────────────
+// Safety net: recomputes provider_capacity.activeHolds from actual active holds.
+// Corrects any drift caused by process crashes or legacy code paths.
+// Called at the start of every match-leads cron run.
+export async function reconcileStaleAssignmentState(): Promise<{ corrected: number }> {
+  const capacityRows = await safeOptionalQuery(
+    () =>
+      (db as any).providerCapacity?.findMany?.({
+        where: { activeHolds: { gt: 0 } },
+        select: { providerId: true, activeHolds: true },
+      }),
+    [] as Array<{ providerId: string; activeHolds: number }>,
+  )
+
+  let corrected = 0
+
+  for (const row of capacityRows) {
+    const actualCount = await db.assignmentHold
+      .count({
+        where: {
+          providerId: row.providerId,
+          status: 'ACTIVE',
+          expiresAt: { gt: new Date() },
+        },
+      })
+      .catch(() => row.activeHolds) // If count fails, keep existing value — don't corrupt
+
+    if (actualCount !== row.activeHolds) {
+      await (db as any).providerCapacity
+        ?.update?.({
+          where: { providerId: row.providerId },
+          data: { activeHolds: actualCount, updatedAt: new Date() },
+        })
+        .catch(() => {}) // Non-fatal
+
+      console.warn('[reconcile] corrected activeHolds', {
+        providerId: row.providerId,
+        was: row.activeHolds,
+        now: actualCount,
+      })
+      corrected++
+    }
+  }
+
+  return { corrected }
 }
 
 export async function rejectAssignmentOffer(params: {
@@ -1798,9 +2416,27 @@ export async function rejectAssignmentOffer(params: {
     })
   })
 
-  const next = await offerNextRankedCandidate({
+  let nextOfferedProviderId: string | null = null
+  if (lead.dispatchDecisionId) {
+    const next = await offerNextRankedCandidate({
+      jobRequestId: lead.jobRequestId,
+      dispatchDecisionId: lead.dispatchDecisionId,
+    })
+    nextOfferedProviderId = next.nextOfferedProviderId
+  } else {
+    console.warn('[matching] declined lead has no dispatch decision; skipping next-provider offer', {
+      leadId: lead.id,
+      jobRequestId: lead.jobRequestId,
+      providerId: params.providerId,
+    })
+  }
+
+  emitMatchEvent({
+    event: 'match.declined',
     jobRequestId: lead.jobRequestId,
-    dispatchDecisionId: lead.dispatchDecisionId!,
+    providerId: params.providerId,
+    holdId: lead.assignmentHold.id,
+    reason: params.reasonCode,
   })
 
   return {
@@ -1808,13 +2444,14 @@ export async function rejectAssignmentOffer(params: {
     responseOutcome: 'REJECTED',
     matchId: null,
     assignmentHoldId: lead.assignmentHold.id,
-    nextOfferedProviderId: next.nextOfferedProviderId,
+    nextOfferedProviderId,
   }
 }
 
 export async function expireAssignmentOffer(params: {
   assignmentHoldId: string
 }) {
+  const traceId = createTraceId('lead_expiry')
   const hold = await db.assignmentHold.findUnique({
     where: { id: params.assignmentHoldId },
     select: {
@@ -1825,6 +2462,13 @@ export async function expireAssignmentOffer(params: {
       dispatchDecisionId: true,
       jobRequestId: true,
       providerId: true,
+      provider: { select: { phone: true, name: true } },
+      jobRequest: {
+        select: {
+          category: true,
+          address: { select: { suburb: true, city: true } },
+        },
+      },
     },
   })
 
@@ -1832,6 +2476,8 @@ export async function expireAssignmentOffer(params: {
   if (hold.status !== 'ACTIVE' || hold.expiresAt > new Date()) {
     return { expired: false, nextOfferedProviderId: null }
   }
+
+  let expiredLeadCount = 0
 
   await db.$transaction(async (tx) => {
     await tx.assignmentHold.update({
@@ -1843,13 +2489,14 @@ export async function expireAssignmentOffer(params: {
         outcomeReasonCode: 'OFFER_TIMEOUT',
       },
     })
-    await tx.lead.updateMany({
+    const leadUpdate = await tx.lead.updateMany({
       where: {
         assignmentHoldId: hold.id,
         status: { in: ['SENT', 'VIEWED'] },
       },
       data: { status: 'EXPIRED', respondedAt: new Date() },
     })
+    expiredLeadCount = leadUpdate.count
     await tx.matchAttempt.update({
       where: { id: hold.matchAttemptId },
       data: {
@@ -1865,30 +2512,81 @@ export async function expireAssignmentOffer(params: {
     })
   })
 
+  // Decrement the provider's capacity counter — this must happen outside the
+  // transaction so it runs even if offerNextRankedCandidate fails below.
+  await releaseProviderCapacity(hold.providerId).catch((err) =>
+    console.error('[expireAssignmentOffer] releaseProviderCapacity failed', { providerId: hold.providerId, err })
+  )
+  await pauseProviderAfterRepeatedOfferTimeouts(hold.providerId).catch((err) =>
+    console.error('[expireAssignmentOffer] provider auto-pause check failed', { providerId: hold.providerId, err })
+  )
+
   const next = await offerNextRankedCandidate({
     jobRequestId: hold.jobRequestId,
     dispatchDecisionId: hold.dispatchDecisionId,
   })
 
-  // When all candidates exhausted the job is now EXPIRED — notify the last provider
-  if (!next.nextOfferedProviderId) {
-    const [provider, jobRequest] = await Promise.all([
-      db.provider.findUnique({ where: { id: hold.providerId }, select: { phone: true } }),
-      db.jobRequest.findUnique({
-        where: { id: hold.jobRequestId },
-        select: { id: true, category: true },
-      }),
-    ])
-    if (provider?.phone && jobRequest) {
-      const ref = jobRequest.id.slice(-8).toUpperCase()
-      const { sendText } = await import('../whatsapp-interactive')
-      await sendText(
-        provider.phone,
-        `⏰ *Lead Expired*\n\n*${jobRequest.category}* · Ref: ${ref}\n\nThis lead expired without a response and the service request has been closed. No action needed.`,
-      ).catch((err) => {
-        console.error('[matching] Failed to send lead-expired notification:', err)
+  if (expiredLeadCount > 0) {
+    await notifyProviderLeadInviteExpired({
+      hold,
+      wasReassigned: next.nextOfferedProviderId !== null,
+      traceId,
+    }).catch((err) => {
+      console.error('[expireAssignmentOffer] provider expiry notification failed', {
+        trace_id: traceId,
+        provider_id: hold.providerId,
+        job_request_id: hold.jobRequestId,
+        assignment_hold_id: hold.id,
+        error_code: 'LEAD_EXPIRY_NOTIFICATION_FAILED',
+        err,
       })
-    }
+    })
+  } else {
+    console.info('[expireAssignmentOffer] skipped provider expiry notification: no sent/viewed lead was expired', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      result: 'no_actionable_lead_at_expiry',
+    })
+  }
+
+  // When all candidates exhausted the job is now EXPIRED — notify the customer and last provider
+  if (!next.nextOfferedProviderId) {
+    await notifyExpiredJobParties({
+      jobRequestId: hold.jobRequestId,
+      lastProviderId: hold.providerId,
+    })
+  }
+
+  // Count how many candidates have been offered (non-RANKED = already attempted)
+  const attemptsCompleted = hold.dispatchDecisionId
+    ? await db.matchAttempt
+        .count({ where: { dispatchDecisionId: hold.dispatchDecisionId, stage: { not: 'RANKED' } } })
+        .catch(() => 0)
+    : 0
+
+  emitMatchEvent({
+    event: 'match.hold_expired',
+    jobRequestId: hold.jobRequestId,
+    providerId: hold.providerId,
+    holdId: hold.id,
+    cascaded: next.nextOfferedProviderId !== null,
+  })
+
+  if (next.nextOfferedProviderId) {
+    emitMatchEvent({
+      event: 'match.rematch',
+      jobRequestId: hold.jobRequestId,
+      attempt: attemptsCompleted,
+      triggeredBy: 'hold_expiry',
+    })
+  } else {
+    emitMatchEvent({
+      event: 'match.exhausted',
+      jobRequestId: hold.jobRequestId,
+      attempts: attemptsCompleted,
+    })
   }
 
   return { expired: true, nextOfferedProviderId: next.nextOfferedProviderId }

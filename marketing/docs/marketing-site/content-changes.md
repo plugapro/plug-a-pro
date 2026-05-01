@@ -1,13 +1,31 @@
-# Plug-A-Pro Marketing Site — Content Changes Log
+# Plug A Pro Marketing Site — Content Changes Log
 
 Updated: 2026-03-27
+
+## 2026-04-29 — Provider story media section
+
+Added a homepage storytelling section, `ProviderStorySection`, directly after the problem statement. The section uses five local campaign images of roadside service signs to explain the Plug A Pro mission respectfully: local skill already exists, and the platform helps make that skill easier for customers to discover digitally.
+
+Implementation decisions:
+- Used local images under `public/images/provider-story/` instead of remote URLs, so no `next.config.ts` image-domain change is required.
+- Used `next/image` with fixed intrinsic dimensions and responsive `sizes` to avoid layout shift.
+- Kept copy focused on dignity and practical local-commerce visibility. No guaranteed-income or guaranteed-leads claims were added.
+- Added customer and provider WhatsApp CTAs using the existing WhatsApp link helpers and analytics events.
+- Mobile layout shows copy first, then a horizontal image gallery. Desktop layout uses a two-column editorial collage plus a four-step journey row.
+
+Images added:
+- `public/images/provider-story/plumbing-electrical-carpentry.jpg`
+- `public/images/provider-story/handyman-painting-tiling.jpg`
+- `public/images/provider-story/roofing-waterproofing-gutters.jpg`
+- `public/images/provider-story/welding-gates-burglar-bars.jpg`
+- `public/images/provider-story/paving-tiling-renovations.jpg`
 
 ## lib/metadata.ts — siteConfig
 
 | Field | Before | After |
 |-------|--------|-------|
 | venture | my-product | plug-a-pro |
-| name | My Product | Plug-A-Pro |
+| name | My Product | Plug A Pro |
 | description | Generic one-liner | "WhatsApp booking, smart dispatch, and automatic invoicing — for any business that sends skilled workers to customer homes." |
 | url | https://myproduct.com | https://plugapro.co.za (TODO: production URL) |
 | whatsappNumber | Placeholder | +27000000000 (TODO: real number) |
@@ -52,7 +70,7 @@ Replaced generic USD Free/Pro/Enterprise with real ZAR tiers:
 | Element | Before | After |
 |---------|--------|-------|
 | Heading | "Ready to get started?" | "Ready to modernise your field service business?" |
-| Subtext | Generic | Plug-A-Pro specific |
+| Subtext | Generic | Plug A Pro specific |
 | Primary CTA | Generic | "Get early access" → /waitlist |
 
 ## Nav (components/shared/Nav.tsx)
@@ -85,7 +103,7 @@ Replaced 5 generic questions with 9 field-service-specific questions including a
 
 ## About (app/(marketing)/about/page.tsx)
 
-Replaced "Replace this with..." placeholders with real Plug-A-Pro mission copy: Africa field service context, low-data mobile design, DIY completion support.
+Replaced "Replace this with..." placeholders with real Plug A Pro mission copy: Africa field service context, low-data mobile design, DIY completion support.
 
 ## Items NOT Changed (Kept As-Is)
 

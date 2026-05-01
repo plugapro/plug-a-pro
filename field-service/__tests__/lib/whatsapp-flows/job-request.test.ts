@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/db', () => ({
   db: {
     customer: {
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
       updateMany: vi.fn(),
       upsert: vi.fn(),
@@ -23,7 +24,18 @@ vi.mock('@/lib/db', () => ({
     address: {
       findFirst: vi.fn(),
     },
+    jobRequest: {
+      findFirst: vi.fn().mockResolvedValue(null), // default: no existing active request
+      update: vi.fn().mockResolvedValue({}),
+    },
+    attachment: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   },
+}))
+
+vi.mock('@/lib/whatsapp-media', () => ({
+  downloadAndStoreWhatsAppMedia: vi.fn(),
 }))
 
 vi.mock('@/lib/location-nodes', () => ({
@@ -50,9 +62,13 @@ vi.mock('@/lib/service-area-guard', () => ({
   addToServiceAreaWaitlist: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock('@/lib/job-requests/create-job-request', () => ({
-  createJobRequest: vi.fn(),
-}))
+vi.mock('@/lib/job-requests/create-job-request', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/job-requests/create-job-request')>()
+  return {
+    ...actual,
+    createJobRequest: vi.fn(),
+  }
+})
 
 vi.mock('@/lib/structured-address', () => ({
   resolveStructuredAddressCapture: vi.fn(),
@@ -76,6 +92,7 @@ import * as wa from '@/lib/whatsapp-interactive'
 import * as serviceAreaGuard from '@/lib/service-area-guard'
 import * as structuredAddress from '@/lib/structured-address'
 import * as createJobRequestModule from '@/lib/job-requests/create-job-request'
+import * as whatsappMedia from '@/lib/whatsapp-media'
 import { db } from '@/lib/db'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -140,6 +157,7 @@ function makeCtx(
 describe('WhatsApp job-request flow — structured address', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ;(db.customer.findFirst as any).mockResolvedValue(null)
     ;(locationNodes.getProvinces as any).mockResolvedValue(PROVINCES)
     ;(locationNodes.getCities as any).mockResolvedValue(CITIES_GAUTENG)
     ;(locationNodes.getRegions as any).mockResolvedValue(REGIONS_JHB)
@@ -415,13 +433,90 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(locationNodes.resolveSuburbNodeId).not.toHaveBeenCalled()
     })
+
+    it('passes uploaded customer photo IDs into transactional request creation', async () => {
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          photoAttachmentIds: ['att_001', 'att_002', 'att_003'],
+        })
+      )
+
+      expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photoAttachmentIds: ['att_001', 'att_002', 'att_003'],
+        })
+      )
+      expect(db.attachment.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('returns to photo collection when transactional photo linking fails', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValueOnce(
+        new createJobRequestModule.JobRequestPhotoLinkError(1, 0),
+      )
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          photoAttachmentIds: ['att_001'],
+        }),
+      )
+
+      expect(result.nextStep).toBe('collect_photos')
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('could not safely attach your photo'),
+      )
+      // Stale IDs must be cleared so a retry does not re-attempt the same link
+      // and loop. The customer re-uploads photos from scratch.
+      expect(result.nextData?.photoAttachmentIds).toEqual([])
+      expect(result.nextData?.photoMediaIds).toEqual([])
+    })
+
+    it('falls back to status buttons when ticket CTA delivery fails after a successful submission', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockResolvedValue({
+        jobRequestId: 'jr_test123456',
+        customerId: 'cust_001',
+        ticketUrl: 'https://app.plugapro.co.za/requests/access/test-token',
+      })
+      ;(wa.sendCtaUrl as any).mockRejectedValueOnce(new Error('Meta rejected CTA'))
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Request submitted'),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'status' }),
+          expect.objectContaining({ id: 'back_home' }),
+        ]),
+      )
+    })
   })
 
   // ── 6. Returning customer with structured address can reuse it ────────────
 
   describe('returning customer — structured saved address', () => {
     beforeEach(() => {
-      ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust_1', name: 'Zanele' })
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_1',
+        name: 'Zanele',
+        addresses: [{
+          id: 'addr_1',
+          street: '14 Main Road, Sandton',
+          addressLine1: '14 Main Road',
+          suburb: 'Sandton',
+          region: 'JHB North',
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: '2196',
+          locationNodeId: 'sub_sandton',
+          isDefault: true,
+        }],
+      })
       ;(db.address.findFirst as any).mockResolvedValue({
         id: 'addr_1',
         street: '14 Main Road, Sandton',
@@ -436,16 +531,69 @@ describe('WhatsApp job-request flow — structured address', () => {
       const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
 
       expect(locationNodes.getStructuredAddressSelection).toHaveBeenCalledWith('sub_sandton')
+      expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
       expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Last used'),
+        expect.stringContaining('welcome back'),
         expect.arrayContaining([expect.objectContaining({ id: 'addr_same' })]),
       )
       expect(result.nextStep).toBe('collect_address')
       expect(result.nextData).toMatchObject({ addrLocationNodeId: 'sub_sandton' })
     })
 
-    it('carries addrLocationNodeId through addr_same → availability', async () => {
+    it('asks an existing customer to choose when multiple saved addresses exist', async () => {
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_1',
+        name: 'Sheila Dube',
+        addresses: [
+          {
+            id: 'addr_1',
+            street: '21 Jump Street',
+            addressLine1: '21 Jump Street',
+            suburb: 'Bromhof',
+            region: 'JHB West',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postalCode: '2188',
+            locationNodeId: 'sub_bromhof',
+            isDefault: true,
+          },
+          {
+            id: 'addr_2',
+            street: '12 Example Road',
+            addressLine1: '12 Example Road',
+            suburb: 'Randpark Ridge',
+            region: 'JHB West',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postalCode: '2169',
+            locationNodeId: 'sub_randpark',
+            isDefault: false,
+          },
+        ],
+      })
+
+      const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
+
+      expect(result.nextStep).toBe('collect_address')
+      expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Which address'),
+        expect.arrayContaining([
+          expect.objectContaining({
+            rows: expect.arrayContaining([
+              expect.objectContaining({ id: 'addr_saved_addr_1' }),
+              expect.objectContaining({ id: 'addr_saved_addr_2' }),
+              expect.objectContaining({ id: 'addr_new' }),
+            ]),
+          }),
+        ]),
+        expect.any(Object),
+      )
+    })
+
+    it('carries addrLocationNodeId through addr_same → collect_issue_description', async () => {
       const result = await handleJobRequestFlow(
         makeCtx('collect_address', 'addr_same', undefined, {
           addrLocationNodeId: 'sub_sandton',
@@ -453,8 +601,8 @@ describe('WhatsApp job-request flow — structured address', () => {
         })
       )
 
-      // Should jump straight to availability (nextStep: confirm_job_request)
-      expect(result.nextStep).toBe('confirm_job_request')
+      // addr_same now routes to issue description before availability
+      expect(result.nextStep).toBe('collect_issue_description')
     })
   })
 
@@ -462,7 +610,22 @@ describe('WhatsApp job-request flow — structured address', () => {
 
   describe('returning customer — legacy address (no locationNodeId)', () => {
     beforeEach(() => {
-      ;(db.customer.findUnique as any).mockResolvedValue({ id: 'cust_2', name: 'Sipho' })
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_2',
+        name: 'Sipho',
+        addresses: [{
+          id: 'addr_old',
+          street: 'Old Street, Soweto',
+          addressLine1: null,
+          suburb: 'Soweto',
+          region: null,
+          city: 'Johannesburg',
+          province: 'Gauteng',
+          postalCode: null,
+          locationNodeId: null,
+          isDefault: false,
+        }],
+      })
       ;(db.address.findFirst as any).mockResolvedValue({
         id: 'addr_old',
         street: 'Old Street, Soweto',
@@ -634,5 +797,456 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(result.nextStep).toBe('addr_select_province')
     })
+  })
+
+  // ── 11. Dedup guard — retry after DB-success / message-fail ───────────────
+
+  describe('dedup guard — existing active job request', () => {
+    const structuredData = {
+      category: 'cat_plumbing',
+      selectedCategory: 'Plumbing',
+      addrLocationNodeId: 'sub_sandton',
+      addressLine1: '14 Main Road',
+      address: '14 Main Road, Sandton, JHB North, Johannesburg, Gauteng 2196',
+      availabilityNote: 'As soon as possible',
+    }
+
+    beforeEach(() => {
+      ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue({
+        street: '14 Main Road, Sandton',
+        addressLine1: '14 Main Road',
+        addressLine2: null,
+        complexName: null,
+        unitNumber: null,
+        suburb: 'Sandton',
+        region: 'JHB North',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        postalCode: '2196',
+        locationNodeId: 'sub_sandton',
+      })
+    })
+
+    it('returns done when createJobRequest throws DuplicateActiveRequestError', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: As soon as possible'
+        )
+      )
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(result.nextData).toMatchObject({
+        jobRequestId: 'jr_existing1234',
+        customerId: 'cust_001',
+      })
+    })
+
+    it('sends the "already received" message when an active request is detected', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: As soon as possible'
+        )
+      )
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining("You have an active")
+      )
+      // Ref should be the last 8 chars of 'jr_existing1234' uppercased → TING1234
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('TING1234')
+      )
+    })
+
+    it('mentions provider-searching status line for OPEN status', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_abc12345', 'cust_001', 'OPEN', ''
+        )
+      )
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('still searching')
+      )
+    })
+
+    it('mentions providers-notified status line for MATCHING status', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_abc12345', 'cust_001', 'MATCHING', ''
+        )
+      )
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining("We've notified nearby providers")
+      )
+    })
+
+    it('updates description when availability note differs from existing', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: This week'  // old note
+        )
+      )
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          availabilityNote: 'This weekend',  // new note differs
+        })
+      )
+
+      expect(db.jobRequest.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'jr_existing1234' },
+          data: { description: 'Preferred availability: This weekend' },
+        })
+      )
+    })
+
+    it('does NOT call update when description is unchanged', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new createJobRequestModule.DuplicateActiveRequestError(
+          'jr_existing1234', 'cust_001', 'OPEN', 'Preferred availability: As soon as possible'
+        )
+      )
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(db.jobRequest.update).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── 12. Pilot debug errors (PILOT_DEBUG_ERRORS=true) ─────────────────────
+
+  describe('pilot debug error suffix', () => {
+    const structuredData = {
+      category: 'cat_plumbing',
+      selectedCategory: 'Plumbing',
+      addrLocationNodeId: 'sub_sandton',
+      addressLine1: '14 Main Road',
+      address: '14 Main Road, Sandton, Johannesburg',
+      availabilityNote: 'As soon as possible',
+    }
+
+    beforeEach(() => {
+      ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue({
+        street: '14 Main Road, Sandton',
+        addressLine1: '14 Main Road',
+        addressLine2: null,
+        complexName: null,
+        unitNumber: null,
+        suburb: 'Sandton',
+        region: 'JHB North',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        postalCode: '2196',
+        locationNodeId: 'sub_sandton',
+      })
+      ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
+        new Error('DB connection refused')
+      )
+    })
+
+    it('appends technical error to WhatsApp message when PILOT_DEBUG_ERRORS=true', async () => {
+      const original = process.env.PILOT_DEBUG_ERRORS
+      process.env.PILOT_DEBUG_ERRORS = 'true'
+      try {
+        await handleJobRequestFlow(
+          makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+        )
+
+        expect(wa.sendText).toHaveBeenCalledWith(
+          PHONE,
+          expect.stringContaining('DB connection refused')
+        )
+        expect(wa.sendText).toHaveBeenCalledWith(
+          PHONE,
+          expect.stringContaining('🔧 Debug:')
+        )
+      } finally {
+        process.env.PILOT_DEBUG_ERRORS = original
+      }
+    })
+
+    it('does NOT append debug info when PILOT_DEBUG_ERRORS is not set', async () => {
+      const original = process.env.PILOT_DEBUG_ERRORS
+      delete process.env.PILOT_DEBUG_ERRORS
+      try {
+        await handleJobRequestFlow(
+          makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+        )
+
+        const sendTextCall = (wa.sendText as any).mock.calls[0]
+        expect(sendTextCall[1]).not.toContain('🔧 Debug:')
+        expect(sendTextCall[1]).not.toContain('DB connection refused')
+      } finally {
+        process.env.PILOT_DEBUG_ERRORS = original
+      }
+    })
+
+    it('still sends the user-friendly error message in both cases', async () => {
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Something went wrong submitting your request')
+      )
+    })
+  })
+})
+
+// ─── collect_photos step ──────────────────────────────────────────────────────
+
+describe('WhatsApp job-request flow — collect_photos step', () => {
+  // Shared conversation data that mimics state after availability is selected
+  const baseData = {
+    selectedCategory: 'Plumbing',
+    address: '14 Main Rd, Sandton, Johannesburg',
+    availabilityNote: 'As soon as possible',
+    photoAttachmentIds: [] as string[],
+  }
+
+  function makePhotoCtx(
+    replyId?: string,
+    replyText?: string,
+    data: object = baseData,
+    type: 'button_reply' | 'text' | 'image' | 'document' = replyId ? 'button_reply' : 'text',
+    mediaId?: string,
+  ) {
+    return {
+      phone: PHONE,
+      step: 'collect_photos' as any,
+      data: data as any,
+      flow: 'job_request' as const,
+      reply: { type, id: replyId, text: replyText, title: replyId, mediaId } as any,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows photo prompt and confirmation summary when photos_skip is tapped', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx('photos_skip'))
+    expect(result.nextStep).toBe('job_request_submitted')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Job Request Summary'),
+      expect.arrayContaining([expect.objectContaining({ id: 'confirm_yes' })])
+    )
+    // No "Photos attached" line when skipped
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).not.toContain('Photos:')
+  })
+
+  it('proceeds to confirmation when "skip" is typed as free text', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'skip'))
+    expect(result.nextStep).toBe('job_request_submitted')
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Job Request Summary'), expect.any(Array))
+  })
+
+  it('instructs user to send a photo when photos_start is tapped', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx('photos_start'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Please upload *up to 5 photos* of the issue. You can send them together or one at a time.')
+    )
+  })
+
+  it('uploads image and returns updated attachment IDs', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_001' })
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-abc'))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaId: 'media-abc', prefix: 'customer-photos', label: 'customer_photo' })
+    )
+    expect(result.nextStep).toBe('collect_photos')
+    expect(result.nextData?.photoAttachmentIds).toEqual(['att_001'])
+    expect(result.nextData?.photoMediaIds).toEqual(['media-abc'])
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('1 photo received'), expect.any(Array))
+  })
+
+  it('can suppress progress while an earlier image in a WhatsApp batch is processed', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_001' })
+    const result = await handleJobRequestFlow({
+      ...makePhotoCtx(undefined, undefined, baseData, 'image', 'media-abc'),
+      suppressCustomerPhotoProgress: true,
+      customerPhotoBatchSize: 3,
+    })
+
+    expect(result.nextData?.photoAttachmentIds).toEqual(['att_001'])
+    expect(result.nextData?.photoMediaIds).toEqual(['media-abc'])
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('sends one final 2-photo confirmation for the last image in a batch', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_002' })
+    const data = {
+      ...baseData,
+      photoAttachmentIds: ['att_001'],
+      photoMediaIds: ['media-1'],
+    }
+
+    await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-2'))
+
+    const body: string = (wa.sendButtons as any).mock.calls.at(-1)[1]
+    expect(body).toContain('2 photos received')
+    expect(body).toContain('add 3 more')
+  })
+
+  it('accumulates multiple image uploads with correct total count', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ attachmentId: 'att_001' })
+      .mockResolvedValueOnce({ attachmentId: 'att_002' })
+      .mockResolvedValueOnce({ attachmentId: 'att_003' })
+
+    const first = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-1'))
+    const second = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, { ...baseData, ...first.nextData }, 'image', 'media-2'))
+    const third = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, { ...baseData, ...first.nextData, ...second.nextData }, 'image', 'media-3'))
+
+    expect(third.nextData?.photoAttachmentIds).toEqual(['att_001', 'att_002', 'att_003'])
+    expect(third.nextData?.photoMediaIds).toEqual(['media-1', 'media-2', 'media-3'])
+    const lastBody: string = (wa.sendButtons as any).mock.calls.at(-1)[1]
+    expect(lastBody).toContain('3 photos received')
+    expect(lastBody).toContain('add 2 more')
+  })
+
+  it('deduplicates repeated WhatsApp media IDs without creating another attachment', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001'], photoMediaIds: ['media-1'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-1'))
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextData?.photoAttachmentIds).toEqual(['att_001'])
+    expect(result.nextData?.photoMediaIds).toEqual(['media-1'])
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('1 photo received'), expect.any(Array))
+  })
+
+  it('duplicate media ID arriving as the last item in a suppressed batch sends one confirmation with the correct count', async () => {
+    // Simulates: batch of 2 webhooks — first is a new photo, second is a duplicate of the first.
+    // The batch flush calls this handler twice: first with suppress=true, second with suppress=false.
+    // The duplicate guard must not inflate the count on the final (unsuppressed) call.
+    const data = { ...baseData, photoAttachmentIds: [], photoMediaIds: [] }
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_dup' })
+
+    // First call: new media, suppressed (not the last in batch)
+    const first = await handleJobRequestFlow({
+      ...makePhotoCtx(undefined, undefined, data, 'image', 'media-dup'),
+      suppressCustomerPhotoProgress: true,
+      customerPhotoBatchSize: 2,
+    } as any)
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledTimes(1)
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+
+    // Second call: same media ID, unsuppressed (last in batch) — should deduplicate
+    const second = await handleJobRequestFlow({
+      ...makePhotoCtx(undefined, undefined, first.nextData as any, 'image', 'media-dup'),
+      suppressCustomerPhotoProgress: false,
+      customerPhotoBatchSize: 2,
+    } as any)
+
+    // Download must not happen again
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledTimes(1)
+    // Exactly one confirmation sent, reflecting only the 1 actually stored photo
+    expect(wa.sendButtons).toHaveBeenCalledTimes(1)
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('1 photo received'), expect.any(Array))
+    expect(second.nextData?.photoAttachmentIds).toEqual(['att_dup'])
+  })
+
+  it('shows Done-only button when 5th photo is added (max reached)', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ attachmentId: 'att_005' })
+    const data = { ...baseData, photoAttachmentIds: ['att_001', 'att_002', 'att_003', 'att_004'] }
+    await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-xyz'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('5 photos received')
+    expect(body).toContain('Maximum reached')
+    const buttons: { id: string }[] = (wa.sendButtons as any).mock.calls[0][2]
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].id).toBe('photos_done')
+  })
+
+  it('blocks upload and shows max-reached message when already at 5 photos', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['a', 'b', 'c', 'd', 'e'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, data, 'image', 'media-extra'))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Maximum'), expect.any(Array))
+  })
+
+  it('rejects document with a helpful message', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'document', 'doc-media'))
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).not.toHaveBeenCalled()
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('photo'))
+    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('not a document'))
+  })
+
+  it('continues to summary when photos_done is tapped with photos', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001', 'att_002'] }
+    const result = await handleJobRequestFlow(makePhotoCtx('photos_done', undefined, data))
+    expect(result.nextStep).toBe('job_request_submitted')
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Photos: *2 attached*')
+  })
+
+  it('continues to summary when "done" is typed as free text', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'done', data))
+    expect(result.nextStep).toBe('job_request_submitted')
+    expect(wa.sendButtons).toHaveBeenCalledWith(PHONE, expect.stringContaining('Photos: *1 attached*'), expect.any(Array))
+  })
+
+  it('shows upload-failed message and stays on collect_photos when download throws', async () => {
+    ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Network error'))
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-bad'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining("couldn't upload"))
+  })
+
+  it('resends skip/start prompt on unknown reply when no photos yet', async () => {
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'something random'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Add a photo?'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'photos_skip' }),
+        expect.objectContaining({ id: 'photos_start' }),
+      ])
+    )
+  })
+
+  it('resends done/add-more prompt on unknown reply when photos already added', async () => {
+    const data = { ...baseData, photoAttachmentIds: ['att_001'] }
+    const result = await handleJobRequestFlow(makePhotoCtx(undefined, 'something random', data))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('1 photo added'),
+      expect.arrayContaining([expect.objectContaining({ id: 'photos_done' })])
+    )
   })
 })

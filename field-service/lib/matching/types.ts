@@ -34,7 +34,11 @@ export type MatchingJobRequest = Pick<
   | 'customerAcceptedScope'
   | 'autoCreateBookingOnAssignment'
   | 'status'
->
+  | 'expiresAt'
+> & {
+  isTestRequest?: boolean
+  cohortName?: string | null
+}
 
 export type MatchingAddress = {
   street: string
@@ -45,6 +49,7 @@ export type MatchingAddress = {
   lng: number | null
   locationNodeId: string | null   // SUBURB node id — null for legacy addresses
   regionKey: string | null         // denormalised from the linked LocationNode
+  provinceKey: string | null       // denormalised from the linked LocationNode — enables province-level pool fallback
 }
 
 export type MatchingProvider = Pick<
@@ -53,6 +58,7 @@ export type MatchingProvider = Pick<
   | 'name'
   | 'phone'
   | 'active'
+  | 'status'
   | 'availableNow'
   | 'verified'
   | 'skills'
@@ -75,6 +81,8 @@ export type MatchingProvider = Pick<
   | 'lastKnownLocationAt'
   | 'equipmentTags'
   | 'vehicleTypes'
+  | 'isTestUser'
+  | 'cohortName'
 > & {
   technicianSkills: TechnicianSkill[]
   technicianCertifications: TechnicianCertification[]
@@ -108,6 +116,7 @@ export type ScoreBreakdown = {
   customerPreference: number
   marginEfficiency: number
   geographicPenalty: number   // 0.0 normally; regionFallbackPenalty when tier = REGION_FALLBACK
+  workloadFairness: number    // 1 = below preferredDailyLoad; 0 = at/above
   total: number
   reasons: string[]
 }
@@ -135,6 +144,7 @@ export type RankedCandidate = {
     punctualityScore: number
   }
   selectionReason: string
+  reservationFailureReason?: string  // populated by orchestrator after reservation attempt
 }
 
 export type RankingResult = {
@@ -163,16 +173,45 @@ export type DispatchHistoryResult = {
   attempts: MatchAttempt[]
 }
 
+// ── Alternative-slot negotiation ─────────────────────────────────────────────
+
+/**
+ * One bookable window discovered during the alternative-slot probe.
+ * slotKey is stable across WA button round-trips: "2026-04-29:morning"
+ */
+export type SlotOption = {
+  slotKey: string       // "{yyyy-MM-dd}:{morning|afternoon}" — stable routing key
+  slotLabel: string     // "Wed 29 Apr · Morning (7–12)" — display text
+  band: 'morning' | 'afternoon'
+  probeStartUtc: string // ISO string of window open (UTC)
+  probeEndUtc: string   // ISO string of window close (UTC)
+  providers: Array<{ id: string; name: string; phone: string; score: number }>
+}
+
 export type OfferResolutionResult =
   | {
       ok: true
       responseOutcome: AssignmentResponseOutcome
       matchId: string | null
       bookingId?: string | null
+      creditTransactionId?: string | null
+      currentCreditBalance?: number
+      alreadyUnlocked?: boolean
       assignmentHoldId: string
       nextOfferedProviderId: string | null
     }
   | {
       ok: false
-      reason: 'NOT_FOUND' | 'FORBIDDEN' | 'EXPIRED' | 'TAKEN'
+      reason:
+        | 'NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'EXPIRED'
+        | 'TAKEN'
+        | 'INSUFFICIENT_CREDITS'
+        | 'PROVIDER_NOT_APPROVED'
+        | 'WALLET_SUSPENDED'
+        | 'CONCURRENT_UNLOCK'
+        | 'LEAD_ACCEPTANCE_FAILED'
+      currentCreditBalance?: number
+      traceId?: string
     }

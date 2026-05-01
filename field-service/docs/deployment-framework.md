@@ -1,6 +1,6 @@
 # Deployment Framework
 
-This framework standardizes how Plug-A-Pro features move from merged code to a verified production release.
+This framework standardizes how Plug A Pro features move from merged code to a verified production release.
 
 It combines:
 
@@ -10,7 +10,7 @@ It combines:
 
 ## Workflow View
 
-![Plug-A-Pro deployment workflow](./deployment-workflow.svg)
+![Plug A Pro deployment workflow](./deployment-workflow.svg)
 
 ## Release Standard
 
@@ -130,7 +130,7 @@ Every release should log at minimum:
 Use project:
 
 ```bash
---project "Plug-A-Pro"
+--project "Plug A Pro"
 ```
 
 Use tags shaped like:
@@ -147,12 +147,12 @@ Recommended titles:
 
 ## OpenBrain CLI Pattern
 
-If the local OpenBrain CLI is available at `/Users/shimane/Projects/MobileApps/OpenBrain/backend`:
+If the local OpenBrain CLI is available at `/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend`:
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend
 pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "release kickoff — <release-name> (<date>)" \
   --tags "deployment,release,production" \

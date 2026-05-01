@@ -8,6 +8,7 @@ import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { QuoteForm } from '@/components/technician/QuoteForm'
 import { Button } from '@/components/ui/button'
+import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 
 export const metadata = buildMetadata({ title: 'Submit Quote', noIndex: true })
 
@@ -97,7 +98,13 @@ export default async function QuotePage({
   const match = await db.match.findUnique({
     where: { id: matchId },
     include: {
-      jobRequest: { include: { address: true } },
+      jobRequest: {
+        include: {
+          customer: { select: { name: true, phone: true } },
+          address: true,
+          attachments: { orderBy: { createdAt: 'asc' } },
+        },
+      },
       quotes: { orderBy: { createdAt: 'desc' } },
     },
   })
@@ -110,6 +117,7 @@ export default async function QuotePage({
   const jobRequest = match.jobRequest
   const addr = jobRequest.address
   const area = addr ? `${addr.suburb ?? ''}${addr.city ? `, ${addr.city}` : ''}`.trim() : 'Location in app'
+  const contactUrl = `https://wa.me/${jobRequest.customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${jobRequest.customer.name.split(/\s+/)[0] || 'there'}, this is your Plug A Pro provider. I accepted your ${jobRequest.category} request and would like to confirm the details.`)}`
   const quoteAwaitingDecision = match.status === 'QUOTED' && latestQuote?.status === 'PENDING'
   const quoteCanBeRevised =
     match.status === 'QUOTE_DECLINED' ||
@@ -124,6 +132,19 @@ export default async function QuotePage({
         <p className="text-sm text-muted-foreground mt-1">
           This quote will be sent to the customer for approval.
         </p>
+      </div>
+
+      <div className="rounded-xl border bg-card p-4 space-y-3 text-sm">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customer contact</p>
+          <p className="mt-1 font-medium">{jobRequest.customer.name}</p>
+          <p className="text-muted-foreground">{jobRequest.customer.phone}</p>
+        </div>
+        <Button asChild className="w-full">
+          <a href={contactUrl} target="_blank" rel="noopener noreferrer">
+            Contact Customer
+          </a>
+        </Button>
       </div>
 
       {match.inspectionNeeded && match.status === 'INSPECTION_SCHEDULED' && (
@@ -201,6 +222,32 @@ export default async function QuotePage({
               notes: quote.notes,
             }))}
           />
+        </div>
+      )}
+
+      {jobRequest.attachments.length > 0 && (
+        <div className="rounded-xl border bg-card p-4 space-y-3">
+          <div>
+            <h2 className="text-sm font-medium">Customer photos</h2>
+            <p className="text-sm text-muted-foreground">
+              Use these photos to understand the problem before quoting.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {jobRequest.attachments.map((photo) => {
+              const src = `/api/attachments/${photo.id}`
+              return (
+                <AttachmentThumbnail
+                  key={photo.id}
+                  attachmentId={photo.id}
+                  src={src}
+                  href={src}
+                  alt={photo.caption ?? 'Customer photo'}
+                  className="h-36 w-full rounded-lg object-cover"
+                />
+              )
+            })}
+          </div>
         </div>
       )}
 

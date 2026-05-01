@@ -181,7 +181,7 @@ export function OnboardingForm() {
       </button>
 
       <p className="text-xs leading-5 text-muted-foreground">
-        By continuing you agree to receive WhatsApp messages from Plug-A-Pro related to your registration and service activity.
+        By continuing you agree to receive WhatsApp messages from Plug A Pro related to your registration and service activity.
       </p>
     </form>
   );

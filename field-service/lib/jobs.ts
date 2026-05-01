@@ -2,9 +2,8 @@
 // Enforces valid status transitions for jobs.
 // All status changes go through this module to ensure:
 // - Immutable audit trail (JobStatusEvent)
-// - Side effects (messaging, invoice)
+// - Side effects (messaging)
 
-import { randomUUID } from 'crypto'
 import { db } from './db'
 import type { JobStatus } from '@prisma/client'
 import { recordAuditLog } from './audit'
@@ -98,24 +97,12 @@ export async function transitionJob(params: {
       tx
     )
 
-    // Booking completion + invoice are atomic with the job transition
+    // Booking completion is atomic with the customer sign-off. Payments and
+    // invoices are intentionally outside the MVP platform flow.
     if (toStatus === 'COMPLETED') {
       await tx.booking.update({
         where: { id: job.bookingId },
         data: { status: 'COMPLETED' },
-      })
-      const bookingRecord = await tx.booking.findUnique({
-        where: { id: job.bookingId },
-        include: { quote: { select: { amount: true } } },
-      })
-      await tx.invoice.create({
-        data: {
-          bookingId:   job.bookingId,
-          number:      `INV-${Date.now()}-${randomUUID().slice(0, 6).toUpperCase()}`,
-          totalAmount: bookingRecord?.quote?.amount ?? 0,
-          pdfUrl:      null,
-          createdAt:   new Date(),
-        },
       })
     }
   })
@@ -136,7 +123,7 @@ async function triggerSideEffects(params: {
   job: Awaited<ReturnType<typeof db.job.findUnique>> & {
     booking: {
       match: {
-        jobRequest: { id: string; customer: { phone: string; name: string }; category: string }
+        jobRequest: { id: string; customer: { id: string; phone: string; name: string }; category: string }
       }
     } | null
     provider: { name: string } | null
@@ -185,9 +172,14 @@ async function triggerSideEffects(params: {
     }
 
     if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
+      const { getJobCompletionUrl } = await import('./job-completion-access')
+      const completionUrl = getJobCompletionUrl({
+        jobId: job.id,
+        customerId: job.booking.match.jobRequest.customer.id,
+      })
       await sendText({
         to: customer.phone,
-        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nPlease confirm completion here: ${ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`}`,
+        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nTap to confirm completion — no login needed:\n${completionUrl ?? ticketUrl ?? `${appUrl}/bookings/${job.bookingId}`}`,
         bookingId: job.bookingId,
         templateName: 'freeform:completion_confirmation_request',
       })

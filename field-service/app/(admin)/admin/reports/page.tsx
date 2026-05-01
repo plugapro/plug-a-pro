@@ -76,17 +76,21 @@ export default async function ReportsPage() {
   ] = await Promise.all([
     // Bookings this month
     db.booking.count({
-      where: { createdAt: { gte: monthStart } },
+      where: { createdAt: { gte: monthStart }, match: { jobRequest: { isTestRequest: false } } },
     }),
     // Bookings last month
     db.booking.count({
-      where: { createdAt: { gte: lastMonthStart, lt: lastMonthEnd } },
+      where: {
+        createdAt: { gte: lastMonthStart, lt: lastMonthEnd },
+        match: { jobRequest: { isTestRequest: false } },
+      },
     }),
     // PAID payments this month (revenue)
     db.payment.aggregate({
       where: {
         status: 'PAID',
         paidAt: { gte: monthStart },
+        booking: { match: { jobRequest: { isTestRequest: false } } },
       },
       _sum: { amount: true },
     }),
@@ -95,6 +99,7 @@ export default async function ReportsPage() {
       where: {
         status: 'PAID',
         paidAt: { gte: lastMonthStart, lt: lastMonthEnd },
+        booking: { match: { jobRequest: { isTestRequest: false } } },
       },
       _sum: { amount: true },
     }),
@@ -102,6 +107,7 @@ export default async function ReportsPage() {
     db.job.count({
       where: {
         status:      'COMPLETED',
+        isTestJob: false,
         completedAt: { gte: monthStart },
       },
     }),
@@ -110,25 +116,26 @@ export default async function ReportsPage() {
       where: {
         createdAt: { gte: monthStart },
         status:    { in: ['COMPLETED', 'SCHEDULED', 'RESCHEDULED'] },
+        match: { jobRequest: { isTestRequest: false } },
       },
       select: { status: true },
     }),
     // Top categories by job request count this month
     db.jobRequest.groupBy({
       by:      ['category'],
-      where:   { createdAt: { gte: monthStart } },
+      where:   { createdAt: { gte: monthStart }, isTestRequest: false },
       _count:  { category: true },
       orderBy: { _count: { category: 'desc' } },
       take: 8,
     }),
     // Provider performance
     db.provider.findMany({
-      where:  { active: true },
+      where:  { active: true, isTestUser: false },
       select: {
         id:   true,
         name: true,
         jobs: {
-          where:  { status: 'COMPLETED', completedAt: { gte: monthStart } },
+          where:  { status: 'COMPLETED', isTestJob: false, completedAt: { gte: monthStart } },
           select: { id: true },
         },
       },

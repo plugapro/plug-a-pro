@@ -1,8 +1,8 @@
-# Plug-A-Pro Marketing MVP Refinement — Implementation Plan
+# Plug A Pro Marketing MVP Refinement — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Refine the Plug-A-Pro marketing site to remove Cleaning Services, elevate Home Maintenance, add DIY positioning, replace emoji/generic icons with Lucide React, and replace all generic template content with real Plug-A-Pro copy.
+**Goal:** Refine the Plug A Pro marketing site to remove Cleaning Services, elevate Home Maintenance, add DIY positioning, replace emoji/generic icons with Lucide React, and replace all generic template content with real Plug A Pro copy.
 
 **Architecture:** Next.js 16 App Router site under `app/(marketing)/`. All changes are pure content and component updates — no new routes, no new packages. Icons sourced from `lucide-react` (already installed at ^1.6.0). All changes follow existing Tailwind v4 + shadcn/ui conventions. The four strong components already in the codebase (`ProblemStatement`, `WhoItsFor`, `HowItWorksSteps`, `OperatingModel`) are currently unused on the homepage — this plan wires them in.
 
@@ -18,17 +18,17 @@
 | `app/globals.css` | Modify | Add missing `--accent-pink` and `--accent-green-wa` CSS vars |
 | `components/marketing/WhoItsFor.tsx` | Modify | Remove Cleaning, add DIY Project Help card, Lucide icons |
 | `components/marketing/ProblemStatement.tsx` | Modify | Replace emoji with Lucide icons |
-| `components/marketing/Features.tsx` | Modify | Replace 6 generic placeholders with real Plug-A-Pro features + Lucide icons |
+| `components/marketing/Features.tsx` | Modify | Replace 6 generic placeholders with real Plug A Pro features + Lucide icons |
 | `components/marketing/Hero.tsx` | Modify | Real headline, value prop subtext, DIY line, updated CTAs |
 | `components/marketing/SocialProof.tsx` | Modify | Field service testimonials (not generic startup copy) |
 | `components/marketing/PricingCards.tsx` | Modify | Real field service SaaS tiers in ZAR |
-| `components/marketing/CTAStrip.tsx` | Modify | Plug-A-Pro specific copy |
+| `components/marketing/CTAStrip.tsx` | Modify | Plug A Pro specific copy |
 | `components/shared/Nav.tsx` | Modify | Product-specific links: Solutions, How it works, Pricing |
 | `app/(marketing)/page.tsx` | Modify | Wire in ProblemStatement, WhoItsFor, HowItWorksSteps, OperatingModel |
 | `app/(marketing)/solutions/page.tsx` | Modify | Remove Cleaning, elevate Home Maintenance, Lucide icons, DIY callout |
 | `app/(marketing)/features/page.tsx` | Modify | Real page heading and description |
 | `app/(marketing)/faq/page.tsx` | Modify | Real FAQs for field service businesses |
-| `app/(marketing)/about/page.tsx` | Modify | Real Plug-A-Pro mission and team copy |
+| `app/(marketing)/about/page.tsx` | Modify | Real Plug A Pro mission and team copy |
 | `docs/marketing-site/current-site-audit.md` | Create | Site audit document |
 | `docs/marketing-site/visual-direction.md` | Create | Icon and visual direction decisions |
 | `docs/marketing-site/content-changes.md` | Create | Section-by-section copy change log |
@@ -67,7 +67,7 @@ Replace the entire `siteConfig` object with:
 ```ts
 export const siteConfig = {
   venture: "plug-a-pro",
-  name: "Plug-A-Pro",
+  name: "Plug A Pro",
   description:
     "WhatsApp booking, smart dispatch, and automatic invoicing — for any business that sends skilled workers to customer homes.",
   url: "https://plugapro.co.za", // TODO: update with production URL
@@ -84,7 +84,7 @@ export const siteConfig = {
 - [ ] **Step 1.3: Run typecheck to verify**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors (or only pre-existing unrelated errors).
@@ -92,9 +92,9 @@ Expected: no errors (or only pre-existing unrelated errors).
 - [ ] **Step 1.4: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add app/globals.css lib/metadata.ts
-git commit -m "chore: update siteConfig for Plug-A-Pro and add missing accent CSS vars"
+git commit -m "chore: update siteConfig for Plug A Pro and add missing accent CSS vars"
 ```
 
 ---
@@ -129,7 +129,7 @@ In `app/(marketing)/solutions/page.tsx`:
 export const metadata: Metadata = buildMetadata({
   title: "Solutions",
   description:
-    "Plug-A-Pro supports home maintenance, plumbing, electrical, HVAC, locksmith, and any field service business that dispatches technicians to customer locations.",
+    "Plug A Pro supports home maintenance, plumbing, electrical, HVAC, locksmith, and any field service business that dispatches technicians to customer locations.",
 });
 ```
 
@@ -138,7 +138,7 @@ export const metadata: Metadata = buildMetadata({
 - [ ] **Step 2.3: Verify no remaining cleaning references**
 
 ```bash
-grep -ri "clean" /Users/shimane/Projects/Plug-A-Pro/marketing/app /Users/shimane/Projects/Plug-A-Pro/marketing/components --include="*.tsx" --include="*.ts" -l
+grep -ri "clean" /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing/app /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing/components --include="*.tsx" --include="*.ts" -l
 ```
 
 Expected: zero results (or only unrelated matches like `className`).
@@ -146,7 +146,7 @@ Expected: zero results (or only unrelated matches like `className`).
 - [ ] **Step 2.4: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/WhoItsFor.tsx "app/(marketing)/solutions/page.tsx"
 git commit -m "feat: remove Cleaning Services from all marketing surfaces"
 ```
@@ -183,13 +183,13 @@ export function WhoItsFor() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
-            Who uses Plug-A-Pro
+            Who uses Plug A Pro
           </p>
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
             Built for any business that dispatches technicians
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            If your business sends skilled workers to customer locations, Plug-A-Pro handles the entire job lifecycle.
+            If your business sends skilled workers to customer locations, Plug A Pro handles the entire job lifecycle.
           </p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -222,7 +222,7 @@ export function WhoItsFor() {
           >
             Get in touch
           </a>{" "}
-          — if you dispatch technicians to customer locations, Plug-A-Pro can run it.
+          — if you dispatch technicians to customer locations, Plug A Pro can run it.
         </p>
       </div>
     </section>
@@ -304,7 +304,7 @@ Replace the problem items array:
 - [ ] **Step 3.4: Verify TypeScript**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1 | head -30
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1 | head -30
 ```
 
 Expected: no new TypeScript errors.
@@ -312,7 +312,7 @@ Expected: no new TypeScript errors.
 - [ ] **Step 3.5: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/WhoItsFor.tsx "app/(marketing)/solutions/page.tsx" components/marketing/ProblemStatement.tsx
 git commit -m "feat: replace emoji icons with Lucide React across service components"
 ```
@@ -355,7 +355,7 @@ In `app/(marketing)/solutions/page.tsx`, after the closing `</div>` of the solut
   <div className="max-w-2xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30 text-center">
     <p className="font-semibold text-foreground mb-2">Started a DIY job that needs finishing?</p>
     <p className="text-sm text-muted-foreground mb-4">
-      Plug-A-Pro connects customers with skilled technicians for any home job — including rescuing a repair that didn&apos;t go to plan. Book a project completion job from the same WhatsApp flow.
+      Plug A Pro connects customers with skilled technicians for any home job — including rescuing a repair that didn&apos;t go to plan. Book a project completion job from the same WhatsApp flow.
     </p>
     <a
       href="/contact"
@@ -371,7 +371,7 @@ In `app/(marketing)/solutions/page.tsx`, after the closing `</div>` of the solut
 - [ ] **Step 4.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add "app/(marketing)/solutions/page.tsx"
 git commit -m "feat: elevate Home Maintenance to top of solutions + add DIY callout"
 ```
@@ -442,14 +442,14 @@ export function Hero() {
 - [ ] **Step 5.2: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/Hero.tsx
-git commit -m "feat: update Hero with Plug-A-Pro headline, real copy, and DIY positioning"
+git commit -m "feat: update Hero with Plug A Pro headline, real copy, and DIY positioning"
 ```
 
 ---
 
-## Task 6: Replace generic Features with real Plug-A-Pro features
+## Task 6: Replace generic Features with real Plug A Pro features
 
 **Files:**
 - Modify: `components/marketing/Features.tsx`
@@ -565,9 +565,9 @@ export default function FeaturesPage() {
 - [ ] **Step 6.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/marketing/Features.tsx "app/(marketing)/features/page.tsx"
-git commit -m "feat: replace generic Features placeholders with real Plug-A-Pro feature content"
+git commit -m "feat: replace generic Features placeholders with real Plug A Pro feature content"
 ```
 
 ---
@@ -624,7 +624,7 @@ export default function HomePage() {
 - [ ] **Step 7.2: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add "app/(marketing)/page.tsx"
 git commit -m "feat: restructure homepage to surface ProblemStatement, WhoItsFor, HowItWorksSteps, OperatingModel"
 ```
@@ -665,7 +665,7 @@ export function CTAStrip() {
       <div className="max-w-2xl mx-auto text-center space-y-6">
         <h2 className="text-3xl font-bold">Ready to modernise your field service business?</h2>
         <p className="text-muted-foreground">
-          Plug-A-Pro handles booking, dispatch, and invoicing so you can focus on the work.
+          Plug A Pro handles booking, dispatch, and invoicing so you can focus on the work.
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button nativeButton={false} render={<Link href="/waitlist" />} size="lg">
@@ -689,7 +689,7 @@ Replace entire `components/marketing/SocialProof.tsx`:
 const TESTIMONIALS = [
   {
     quote:
-      "Our plumbing team used to take 30+ minutes to dispatch a callout. With Plug-A-Pro it's one tap and the technician is on his way.",
+      "Our plumbing team used to take 30+ minutes to dispatch a callout. With Plug A Pro it's one tap and the technician is on his way.",
     author: "Ryan M.",
     role: "Operations Manager, Plumbing Business",
   },
@@ -832,9 +832,9 @@ export function PricingCards() {
 - [ ] **Step 8.5: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add components/shared/Nav.tsx components/marketing/CTAStrip.tsx components/marketing/SocialProof.tsx components/marketing/PricingCards.tsx
-git commit -m "feat: update Nav, CTAStrip, SocialProof, and PricingCards with real Plug-A-Pro content"
+git commit -m "feat: update Nav, CTAStrip, SocialProof, and PricingCards with real Plug A Pro content"
 ```
 
 ---
@@ -861,16 +861,16 @@ import {
 
 export const metadata: Metadata = buildMetadata({
   title: "FAQ",
-  description: "Frequently asked questions about Plug-A-Pro — WhatsApp booking, dispatch, pricing, and how it works for field service businesses.",
+  description: "Frequently asked questions about Plug A Pro — WhatsApp booking, dispatch, pricing, and how it works for field service businesses.",
 });
 
 const FAQS = [
   {
-    q: "What is Plug-A-Pro?",
-    a: "Plug-A-Pro is a field service management platform that lets customers book via WhatsApp, helps you dispatch technicians, and automates invoicing — all in one connected system.",
+    q: "What is Plug A Pro?",
+    a: "Plug A Pro is a field service management platform that lets customers book via WhatsApp, helps you dispatch technicians, and automates invoicing — all in one connected system.",
   },
   {
-    q: "What types of businesses use Plug-A-Pro?",
+    q: "What types of businesses use Plug A Pro?",
     a: "Any business that sends skilled technicians to customer locations — plumbing, electrical, HVAC, home maintenance, locksmith, and more.",
   },
   {
@@ -878,12 +878,12 @@ const FAQS = [
     a: "No. Customers book entirely through WhatsApp — no app download, no email registration required. Technicians use a lightweight PWA installed directly from a link, with no App Store required.",
   },
   {
-    q: "Can I use Plug-A-Pro if I'm already managing bookings on WhatsApp?",
-    a: "Yes — that's exactly who we're built for. Plug-A-Pro adds structure, dispatch, and automation on top of the WhatsApp channel your customers already use.",
+    q: "Can I use Plug A Pro if I'm already managing bookings on WhatsApp?",
+    a: "Yes — that's exactly who we're built for. Plug A Pro adds structure, dispatch, and automation on top of the WhatsApp channel your customers already use.",
   },
   {
     q: "Can customers book a job to finish a DIY repair they started?",
-    a: "Yes. Customers can book any type of job through Plug-A-Pro — including repair assessments and project completion help. The booking flow handles any job description your service catalogue supports.",
+    a: "Yes. Customers can book any type of job through Plug A Pro — including repair assessments and project completion help. The booking flow handles any job description your service catalogue supports.",
   },
   {
     q: "How does payment work?",
@@ -908,7 +908,7 @@ export default function FAQPage() {
     <div className="py-24 max-w-2xl mx-auto px-4">
       <h1 className="text-4xl font-bold mb-4 text-center">Frequently asked questions</h1>
       <p className="text-center text-muted-foreground mb-12">
-        Everything you need to know about Plug-A-Pro.
+        Everything you need to know about Plug A Pro.
       </p>
       <Accordion className="w-full">
         {FAQS.map((faq, i) => (
@@ -941,7 +941,7 @@ export default function AboutPage() {
   return (
     <>
       <div className="py-24 max-w-3xl mx-auto px-4">
-        <h1 className="text-5xl font-bold mb-6">About Plug-A-Pro</h1>
+        <h1 className="text-5xl font-bold mb-6">About Plug A Pro</h1>
         <p className="text-muted-foreground text-xl mb-12">
           Building the operating system for field service businesses in emerging markets.
         </p>
@@ -951,7 +951,7 @@ export default function AboutPage() {
             Millions of skilled technicians work in home services across Africa — plumbers, electricians, handymen, HVAC specialists. Most are running their businesses on WhatsApp groups and spreadsheets.
           </p>
           <p>
-            Plug-A-Pro gives these businesses the operational infrastructure they deserve: structured bookings, professional dispatch, on-site job tracking, and automatic invoicing — all built around the WhatsApp channel their customers already use.
+            Plug A Pro gives these businesses the operational infrastructure they deserve: structured bookings, professional dispatch, on-site job tracking, and automatic invoicing — all built around the WhatsApp channel their customers already use.
           </p>
           <h2>Built for the field</h2>
           <p>
@@ -977,9 +977,9 @@ export default function AboutPage() {
 - [ ] **Step 9.3: Commit**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add "app/(marketing)/faq/page.tsx" "app/(marketing)/about/page.tsx"
-git commit -m "feat: update FAQ and About pages with real Plug-A-Pro content"
+git commit -m "feat: update FAQ and About pages with real Plug A Pro content"
 ```
 
 ---
@@ -995,8 +995,8 @@ git commit -m "feat: update FAQ and About pages with real Plug-A-Pro content"
 - [ ] **Step 10.1: Create current-site-audit.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/current-site-audit.md << 'EOF'
-# Plug-A-Pro Marketing Site — Current Site Audit
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing/docs/marketing-site/current-site-audit.md << 'EOF'
+# Plug A Pro Marketing Site — Current Site Audit
 
 Conducted: 2026-03-27
 
@@ -1005,7 +1005,7 @@ Conducted: 2026-03-27
 | Route | Component | Status |
 |-------|-----------|--------|
 | `/` | Hero, Features, SocialProof, PricingCards, CTAStrip | Mostly generic template — ProblemStatement, WhoItsFor, HowItWorksSteps, OperatingModel exist but unused |
-| `/solutions` | Solutions page | Good Plug-A-Pro content, Cleaning Services present, emoji icons |
+| `/solutions` | Solutions page | Good Plug A Pro content, Cleaning Services present, emoji icons |
 | `/how-it-works` | Full flow detail | Strong, specific, no cleaning references — keep as-is |
 | `/features` | Features list | Generic placeholders |
 | `/pricing` | PricingCards | Generic Free/Pro/Enterprise, no field service context |
@@ -1055,8 +1055,8 @@ EOF
 - [ ] **Step 10.2: Create visual-direction.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/visual-direction.md << 'EOF'
-# Plug-A-Pro Marketing Site — Visual Direction
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing/docs/marketing-site/visual-direction.md << 'EOF'
+# Plug A Pro Marketing Site — Visual Direction
 
 Decided: 2026-03-27
 
@@ -1137,8 +1137,8 @@ EOF
 - [ ] **Step 10.3: Create content-changes.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/content-changes.md << 'EOF'
-# Plug-A-Pro Marketing Site — Content Changes Log
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing/docs/marketing-site/content-changes.md << 'EOF'
+# Plug A Pro Marketing Site — Content Changes Log
 
 Updated: 2026-03-27
 
@@ -1147,7 +1147,7 @@ Updated: 2026-03-27
 | Field | Before | After |
 |-------|--------|-------|
 | venture | my-product | plug-a-pro |
-| name | My Product | Plug-A-Pro |
+| name | My Product | Plug A Pro |
 | description | One-line pitch. | WhatsApp booking, smart dispatch, and automatic invoicing — for any business that sends skilled workers to customer homes. |
 | url | https://myproduct.com | https://plugapro.co.za (TODO: production URL) |
 | whatsappNumber | +1234567890 | +27000000000 (TODO: real number) |
@@ -1193,7 +1193,7 @@ Replaced generic Free/Pro/Enterprise with real field service SaaS tiers:
 | Element | Before | After |
 |---------|--------|-------|
 | Heading | "Ready to get started?" | "Ready to modernise your field service business?" |
-| Subtext | "Join thousands of teams..." | "Plug-A-Pro handles booking, dispatch, and invoicing so you can focus on the work." |
+| Subtext | "Join thousands of teams..." | "Plug A Pro handles booking, dispatch, and invoicing so you can focus on the work." |
 | Primary CTA | "Get started free" → app | "Get early access" → /waitlist |
 
 ## Nav (components/shared/Nav.tsx)
@@ -1226,7 +1226,7 @@ Replaced 5 generic questions with 9 field service specific questions including a
 
 ## About (app/(marketing)/about/page.tsx)
 
-Replaced "Replace this with..." placeholders with real Plug-A-Pro mission copy covering Africa field service context, low-data mobile design philosophy, and DIY completion support.
+Replaced "Replace this with..." placeholders with real Plug A Pro mission copy covering Africa field service context, low-data mobile design philosophy, and DIY completion support.
 
 ## Items NOT Changed (Kept As-Is)
 
@@ -1243,8 +1243,8 @@ EOF
 - [ ] **Step 10.4: Create qa-checklist.md**
 
 ```bash
-cat > /Users/shimane/Projects/Plug-A-Pro/marketing/docs/marketing-site/qa-checklist.md << 'EOF'
-# Plug-A-Pro Marketing Site — QA Checklist
+cat > /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing/docs/marketing-site/qa-checklist.md << 'EOF'
+# Plug A Pro Marketing Site — QA Checklist
 
 Date: 2026-03-27
 
@@ -1285,8 +1285,8 @@ Date: 2026-03-27
 
 ## Content Accuracy
 
-- [ ] siteConfig.name renders as "Plug-A-Pro" throughout
-- [ ] Nav logo shows "Plug-A-Pro"
+- [ ] siteConfig.name renders as "Plug A Pro" throughout
+- [ ] Nav logo shows "Plug A Pro"
 - [ ] Nav links: Solutions, How it works, Pricing
 - [ ] Hero H1: "Book a technician in minutes — via WhatsApp"
 - [ ] Pricing tiers: Starter R 999/mo, Growth R 2 499/mo, Enterprise Custom
@@ -1304,7 +1304,7 @@ Date: 2026-03-27
 
 ## SEO
 
-- [ ] `<title>` on homepage is "Plug-A-Pro"
+- [ ] `<title>` on homepage is "Plug A Pro"
 - [ ] Meta description is set and meaningful (not placeholder)
 - [ ] Solutions page metadata does not mention cleaning
 - [ ] No noindex on public pages
@@ -1332,7 +1332,7 @@ EOF
 - [ ] **Step 10.5: Commit docs**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git add docs/marketing-site/
 git commit -m "docs: add marketing site audit, visual direction, content changes, and QA checklist"
 ```
@@ -1344,18 +1344,18 @@ git commit -m "docs: add marketing site audit, visual direction, content changes
 - [ ] **Step 11.1: Log audit findings to OpenBrain**
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "implementation — marketing site MVP refinement (2026-03-27)" \
   --tags "marketing,content,icons,DIY,cleaning-removal" \
-  --content "## Summary\nRefactored marketing site to reflect MVP focus: removed Cleaning Services, elevated Home Maintenance, added DIY positioning, replaced emoji icons with Lucide React, replaced all generic template content with real Plug-A-Pro copy.\n\n## What Changed\n- siteConfig updated: name Plug-A-Pro, real description, placeholder URLs noted\n- Missing CSS vars added: --accent-pink, --accent-green-wa\n- Homepage restructured: ProblemStatement, WhoItsFor, HowItWorksSteps, OperatingModel now visible\n- Hero: real headline + DIY line + updated CTAs\n- Features: 6 real features with Lucide icons\n- Nav: Solutions, How it works, Pricing\n- Pricing: real ZAR tiers (Starter R999, Growth R2499, Enterprise)\n- FAQ: 9 field-service-specific questions\n- About: real mission copy\n\n## Removed\n- Cleaning Services from WhoItsFor, solutions page, and metadata\n\n## Added\n- DIY Project Help card in WhoItsFor (Hammer icon)\n- DIY callout section on /solutions page\n- DIY mention in Hero subtext\n- DIY completion question in FAQ\n\n## Needs Human Review\n- siteConfig.whatsappNumber: needs real number\n- siteConfig.url + links.app: needs production URLs\n- Pricing tiers: confirm ZAR amounts with stakeholders\n- SocialProof: replace with real customer quotes when available\n- About page: add real team bios when available"
+  --content "## Summary\nRefactored marketing site to reflect MVP focus: removed Cleaning Services, elevated Home Maintenance, added DIY positioning, replaced emoji icons with Lucide React, replaced all generic template content with real Plug A Pro copy.\n\n## What Changed\n- siteConfig updated: name Plug A Pro, real description, placeholder URLs noted\n- Missing CSS vars added: --accent-pink, --accent-green-wa\n- Homepage restructured: ProblemStatement, WhoItsFor, HowItWorksSteps, OperatingModel now visible\n- Hero: real headline + DIY line + updated CTAs\n- Features: 6 real features with Lucide icons\n- Nav: Solutions, How it works, Pricing\n- Pricing: real ZAR tiers (Starter R999, Growth R2499, Enterprise)\n- FAQ: 9 field-service-specific questions\n- About: real mission copy\n\n## Removed\n- Cleaning Services from WhoItsFor, solutions page, and metadata\n\n## Added\n- DIY Project Help card in WhoItsFor (Hammer icon)\n- DIY callout section on /solutions page\n- DIY mention in Hero subtext\n- DIY completion question in FAQ\n\n## Needs Human Review\n- siteConfig.whatsappNumber: needs real number\n- siteConfig.url + links.app: needs production URLs\n- Pricing tiers: confirm ZAR amounts with stakeholders\n- SocialProof: replace with real customer quotes when available\n- About page: add real team bios when available"
 ```
 
 - [ ] **Step 11.2: Run lint**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npm run lint 2>&1 | tail -20
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npm run lint 2>&1 | tail -20
 ```
 
 Expected: no errors. Fix any lint issues before proceeding.
@@ -1363,7 +1363,7 @@ Expected: no errors. Fix any lint issues before proceeding.
 - [ ] **Step 11.3: Run typecheck**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npx tsc --noEmit 2>&1
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npx tsc --noEmit 2>&1
 ```
 
 Expected: no errors.
@@ -1371,7 +1371,7 @@ Expected: no errors.
 - [ ] **Step 11.4: Run build**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing && npm run build 2>&1 | tail -30
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing && npm run build 2>&1 | tail -30
 ```
 
 Expected: build completes successfully with no errors.
@@ -1379,7 +1379,7 @@ Expected: build completes successfully with no errors.
 - [ ] **Step 11.5: Final commit and push**
 
 ```bash
-cd /Users/shimane/Projects/Plug-A-Pro/marketing
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/Plug A Pro/marketing
 git status
 git push
 ```
@@ -1387,8 +1387,8 @@ git push
 - [ ] **Step 11.6: Log final status to OpenBrain**
 
 ```bash
-cd /Users/shimane/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
-  --project "Plug-A-Pro" \
+cd /Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend && pnpm brain -- knowledge add \
+  --project "Plug A Pro" \
   --domain "engineering" \
   --title "QA — marketing site MVP refinement build result (2026-03-27)" \
   --tags "marketing,QA,build" \

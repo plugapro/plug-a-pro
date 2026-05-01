@@ -18,7 +18,7 @@ This document captures the rollout order, verification steps, and rollback proce
 - `admin.crud.field_exceptions`
 - `admin.crud.categories`
 
-These flags are seeded by [seed-flags.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle%20Holdings/Solutions/Projects/Plug-A-Pro/field-service/scripts/seed-flags.ts).
+These flags are seeded by [seed-flags.ts](/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle%20Holdings/Solutions/Projects/Plug A Pro/field-service/scripts/seed-flags.ts).
 
 ## Rollout order
 

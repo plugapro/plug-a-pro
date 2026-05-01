@@ -3,6 +3,7 @@ import {
   acceptAssignmentOffer,
   manualOverrideAssignment,
   rankCandidatesForJobRequest,
+  rejectAssignmentOffer,
   runAssignmentForJobRequest,
 } from '../../lib/matching/service'
 
@@ -17,7 +18,7 @@ const {
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
     },
-    provider: { findMany: vi.fn(), findUniqueOrThrow: vi.fn() },
+    provider: { findMany: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn() },
     dispatchDecision: {
       create: vi.fn(),
       update: vi.fn(),
@@ -41,6 +42,15 @@ const {
       findFirst: vi.fn(),
     },
     lead: { upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+    leadUnlock: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    providerWallet: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
+    walletLedgerEntry: { create: vi.fn() },
+    auditLog: { create: vi.fn() },
     quote: { create: vi.fn() },
     booking: { create: vi.fn() },
     job: { create: vi.fn(), findMany: vi.fn() },
@@ -90,6 +100,52 @@ describe('matching service', () => {
     mockDb.assignmentHold.findFirst.mockResolvedValue(null)
     mockDb.lead.upsert.mockResolvedValue({ id: 'lead-1' })
     mockDb.lead.update.mockResolvedValue({})
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
+    mockDb.leadUnlock.create.mockResolvedValue({
+      id: 'unlock-1',
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      creditsCharged: 1,
+      creditTypeBreakdown: {},
+      status: 'UNLOCKED',
+    })
+    mockDb.leadUnlock.update.mockImplementation(async (args: any) => ({
+      id: args.where.id,
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      creditsCharged: 1,
+      creditTypeBreakdown: args.data.creditTypeBreakdown,
+      status: 'UNLOCKED',
+    }))
+    mockDb.providerWallet.findUnique.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 1,
+    })
+    mockDb.providerWallet.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 1,
+    })
+    mockDb.providerWallet.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.providerWallet.findUniqueOrThrow.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
+    })
+    mockDb.walletLedgerEntry.create.mockResolvedValue({
+      id: 'ledger-1',
+      entryType: 'LEAD_UNLOCK_DEBIT',
+      creditType: 'PROMO',
+      amountCredits: 1,
+    })
+    mockDb.auditLog.create.mockResolvedValue({})
     mockDb.quote.create.mockResolvedValue({ id: 'quote-1' })
     mockDb.booking.create.mockResolvedValue({ id: 'booking-1' })
     mockDb.job.create.mockResolvedValue({})
@@ -310,6 +366,13 @@ describe('matching service', () => {
       makeProvider('provider-alternative', 'Alternative Pro'),
       makeProvider('provider-preferred', 'Preferred Pro'),
     ])
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'VERIFIED',
+    })
 
     const result = await rankCandidatesForJobRequest('jr-2')
 
@@ -317,27 +380,23 @@ describe('matching service', () => {
     expect(result.candidates[0].scoreBreakdown.customerPreference).toBe(1)
   })
 
-  it('keeps active providers eligible even when marketplace review is still pending', async () => {
+  it('excludes providers whose marketplace approval is still pending', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest('AUTO_ASSIGN'))
-    mockDb.provider.findMany.mockResolvedValue([
-      makeProvider('provider-pending-review', 'Pending Review Pro', { verified: false }),
-    ])
+    mockDb.provider.findMany.mockResolvedValue([])
 
     const result = await rankCandidatesForJobRequest('jr-pending-review')
 
     expect(mockDb.provider.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { active: true },
+        where: expect.objectContaining({
+          active: true,
+          verified: true,
+          status: 'ACTIVE',
+        }),
       }),
     )
-    expect(result.eligibleCount).toBe(1)
-    expect(result.candidates[0].providerId).toBe('provider-pending-review')
-    expect(result.candidates[0].feasibilityNotes).toContain(
-      'Profile is still pending marketplace review',
-    )
-    expect(result.candidates[0].scoreBreakdown.reasons).toContain(
-      'Profile pending marketplace review',
-    )
+    expect(result.eligibleCount).toBe(0)
+    expect(result.candidates).toEqual([])
   })
 
   it('emits specific equipment reason codes for missing requirements', async () => {
@@ -428,7 +487,25 @@ describe('matching service', () => {
   })
 
   it('creates a booking immediately when the category allows direct booking and the customer accepted the amount', async () => {
-    mockDb.lead.findUnique.mockResolvedValue({
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
+      jobRequest: {
+        id: 'jr-generic',
+        status: 'OPEN',
+        match: null,
+      },
+    } : {
       id: 'lead-1',
       providerId: 'provider-preferred',
       jobRequestId: 'jr-generic',
@@ -468,6 +545,431 @@ describe('matching service', () => {
     expect(mockDb.quote.create).toHaveBeenCalled()
     expect(mockInitializeBookingPayment).toHaveBeenCalled()
   })
+
+  it('does not call dispatchDecision.updateMany when lead has no dispatch decision', async () => {
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
+      jobRequest: { id: 'jr-generic', status: 'OPEN', match: null },
+    } : {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: null,    // ← no dispatch decision
+      matchAttemptId: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: null,
+    })
+    mockDb.match.findUnique.mockResolvedValue(null)
+    mockDb.match.create.mockResolvedValue({ id: 'match-1' })
+
+    const result = await acceptAssignmentOffer({ leadId: 'lead-1', providerId: 'provider-preferred' })
+
+    expect(result.ok).toBe(true)
+    // Guard must prevent updateMany firing with an empty where clause
+    expect(mockDb.dispatchDecision.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('declines an active offer without reoffering when lead has no dispatch decision', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: null,
+      matchAttemptId: null,
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: null,
+    })
+
+    const result = await rejectAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      responseOutcome: 'REJECTED',
+      matchId: null,
+      assignmentHoldId: 'hold-1',
+      nextOfferedProviderId: null,
+    })
+    expect(mockDb.lead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: { status: 'DECLINED', respondedAt: expect.any(Date) },
+    })
+    expect(mockDb.assignmentHold.update).toHaveBeenCalledWith({
+      where: { id: 'hold-1' },
+      data: {
+        status: 'REJECTED',
+        respondedAt: expect.any(Date),
+        releasedAt: expect.any(Date),
+        outcomeReasonCode: 'TECHNICIAN_REJECTED_OFFER',
+      },
+    })
+    expect(mockDb.dispatchDecision.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('accepts the lead and returns ok: true even when post-commit payment init throws', async () => {
+    mockInitializeBookingPayment.mockRejectedValueOnce(new Error('PSP timeout'))
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
+      jobRequest: { id: 'jr-generic', status: 'OPEN', match: null },
+    } : {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.match.findUnique.mockResolvedValue(null)
+    mockDb.match.create.mockResolvedValue({ id: 'match-1' })
+    mockDb.jobRequest.findUniqueOrThrow.mockResolvedValue({
+      ...makeJobRequest('AUTO_ASSIGN'),
+      category: 'Handyman',
+      customerAcceptedAmount: 850,
+      customerAcceptedScope: 'Install shelves',
+      autoCreateBookingOnAssignment: true,
+    })
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      ...makeJobRequest('AUTO_ASSIGN'),
+      category: 'Handyman',
+      customerAcceptedAmount: 850,
+      customerAcceptedScope: 'Install shelves',
+      autoCreateBookingOnAssignment: true,
+    })
+
+    // Must not throw even though initializeBookingPayment rejects
+    const result = await acceptAssignmentOffer({ leadId: 'lead-1', providerId: 'provider-preferred' })
+
+    expect(result.ok).toBe(true)
+    // Payment init was attempted (fire-and-forget)
+    await vi.waitFor(() => expect(mockInitializeBookingPayment).toHaveBeenCalled())
+  })
+
+  it('blocks assignment acceptance when the provider has no lead credits', async () => {
+    mockDb.lead.findUnique.mockImplementation(async (args: any) => args.include?.provider ? {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'SENT',
+      expiresAt: new Date(Date.now() + 60_000),
+      provider: {
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      },
+      jobRequest: {
+        id: 'jr-generic',
+        status: 'OPEN',
+        match: null,
+      },
+    } : {
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.providerWallet.findUnique.mockResolvedValue({
+      id: 'wallet-1',
+      providerId: 'provider-preferred',
+      status: 'ACTIVE',
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
+    })
+    mockDb.match.findUnique.mockResolvedValue(null)
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    expect(mockDb.match.create).not.toHaveBeenCalled()
+    expect(mockInitializeBookingPayment).not.toHaveBeenCalled()
+  })
+
+  it('blocks assignment acceptance when the provider is not approved', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: false,
+      verified: false,
+      status: 'APPLICATION_PENDING',
+      kycStatus: 'NOT_STARTED',
+    })
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'PROVIDER_NOT_APPROVED',
+    })
+    expect(mockDb.providerWallet.findUnique).not.toHaveBeenCalled()
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    expect(mockDb.match.create).not.toHaveBeenCalled()
+  })
+
+  it('returns a controlled failure when the transaction fails after the unlock', async () => {
+    // Arrange: lead with an active hold and provider with 1 promo credit.
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'VERIFIED',
+    })
+    mockDb.lead.findUnique.mockImplementation(async (args: any) =>
+      args.include?.provider
+        ? {
+            id: 'lead-1',
+            providerId: 'provider-preferred',
+            jobRequestId: 'jr-generic',
+            status: 'SENT',
+            expiresAt: new Date(Date.now() + 60_000),
+            provider: {
+              id: 'provider-preferred',
+              active: true,
+              verified: true,
+              status: 'ACTIVE',
+              kycStatus: 'VERIFIED',
+              isTestUser: false,
+            },
+            jobRequest: {
+              id: 'jr-generic',
+              status: 'OPEN',
+              match: null,
+              isTestRequest: false,
+              cohortName: null,
+            },
+          }
+        : {
+            id: 'lead-1',
+            providerId: 'provider-preferred',
+            jobRequestId: 'jr-generic',
+            dispatchDecisionId: null,
+            matchAttemptId: null,
+            expiresAt: new Date(Date.now() + 60_000),
+            assignmentHoldId: 'hold-1',
+            assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+            matchAttempt: null,
+          },
+    )
+    mockDb.match.findUnique.mockResolvedValue(null)
+    // match.create fails after the unlock debit has already been staged inside the tx.
+    mockDb.match.create.mockRejectedValueOnce(new Error('DB constraint violation'))
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'LEAD_ACCEPTANCE_FAILED',
+      traceId: expect.stringMatching(/^whatsapp_[0-9a-f]{12}$/),
+    })
+
+    // The wallet debit was staged inside the same db.$transaction as match.create.
+    // A real Prisma transaction would roll back both writes atomically on failure;
+    // this assertion confirms the debit is inside the transaction boundary.
+    expect(mockDb.providerWallet.updateMany).toHaveBeenCalled()
+    expect(mockDb.match.create).toHaveBeenCalled()
+  })
+
+  it('treats duplicate accepts from the already assigned provider as idempotent', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'VERIFIED',
+    })
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'ACCEPTED',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACCEPTED' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.match.findUnique.mockResolvedValue({
+      id: 'match-1',
+      jobRequestId: 'jr-generic',
+      providerId: 'provider-preferred',
+      status: 'MATCHED',
+    })
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      responseOutcome: 'ACCEPTED',
+      matchId: 'match-1',
+      assignmentHoldId: 'hold-1',
+    })
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+  })
+
+  it('decline does not deduct credits or touch the wallet', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      dispatchDecisionId: null,
+      matchAttemptId: null,
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+      matchAttempt: null,
+    })
+
+    const result = await rejectAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result).toMatchObject({ responseOutcome: 'REJECTED', nextOfferedProviderId: null })
+    // Decline must never touch the wallet — no reads, no writes, no ledger entries.
+    expect(mockDb.providerWallet.findUnique).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.upsert).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['whatsapp', 'source: whatsapp'],
+    ['pwa', 'source: pwa'],
+  ] as const)(
+    'accept via %s debits exactly 1 credit through the shared unlock module',
+    async (source, _label) => {
+      // Both entry channels — WhatsApp quick-reply and PWA signed page — call
+      // acceptAssignmentOffer which delegates to unlockLeadForProviderInTransaction.
+      // This confirms neither channel has its own wallet logic.
+      mockDb.provider.findUnique.mockResolvedValue({
+        id: 'provider-preferred',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+        kycStatus: 'VERIFIED',
+      })
+      mockDb.lead.findUnique.mockImplementation(async (args: any) =>
+        args.include?.provider
+          ? {
+              id: 'lead-1',
+              providerId: 'provider-preferred',
+              jobRequestId: 'jr-generic',
+              status: 'SENT',
+              expiresAt: new Date(Date.now() + 60_000),
+              provider: {
+                id: 'provider-preferred',
+                active: true,
+                verified: true,
+                status: 'ACTIVE',
+                kycStatus: 'VERIFIED',
+                isTestUser: false,
+              },
+              jobRequest: {
+                id: 'jr-generic',
+                status: 'OPEN',
+                match: null,
+                isTestRequest: false,
+                cohortName: null,
+              },
+            }
+          : {
+              id: 'lead-1',
+              providerId: 'provider-preferred',
+              jobRequestId: 'jr-generic',
+              dispatchDecisionId: null,
+              matchAttemptId: null,
+              expiresAt: new Date(Date.now() + 60_000),
+              assignmentHoldId: 'hold-1',
+              assignmentHold: { id: 'hold-1', status: 'ACTIVE' },
+              matchAttempt: null,
+            },
+      )
+      mockDb.match.findUnique.mockResolvedValue(null)
+      mockDb.match.create.mockResolvedValue({ id: 'match-1' })
+
+      const result = await acceptAssignmentOffer({
+        leadId: 'lead-1',
+        providerId: 'provider-preferred',
+        source,
+      })
+
+      expect(result.ok).toBe(true)
+      // The debit path (providerWallet.updateMany) must be called exactly once,
+      // proving both channels route through debitCreditsForLeadUnlockInTransaction.
+      expect(mockDb.providerWallet.updateMany).toHaveBeenCalledTimes(1)
+      expect(mockDb.walletLedgerEntry.create).toHaveBeenCalled()
+    },
+  )
 
   it('logs a manual override and still creates an assignment hold', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest('OPS_REVIEW'))

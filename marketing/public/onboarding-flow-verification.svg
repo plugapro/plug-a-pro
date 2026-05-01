@@ -37,7 +37,7 @@
   <g filter="url(#shadow)">
     <rect x="120" y="90" width="1360" height="170" rx="34" fill="url(#hero)"/>
   </g>
-  <text x="180" y="160" fill="#86EFAC" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" letter-spacing="4">PLUG-A-PRO VERIFICATION FLOW</text>
+  <text x="180" y="160" fill="#86EFAC" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" letter-spacing="4">PLUG A PRO VERIFICATION FLOW</text>
   <text x="180" y="215" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="700">Self-registration to WhatsApp onboarding</text>
   <text x="180" y="255" fill="#D1FAE5" font-family="Arial, Helvetica, sans-serif" font-size="24">Visual summary of the current user journey, what works now, and where the real flow stops.</text>
 

@@ -1,7 +1,7 @@
 // ─── Vercel Blob — file storage helpers ──────────────────────────────────────
-// Used for: job proof photos, quote attachments, invoice PDFs, avatars
+// Used for: job request evidence, completion photos, quote attachments, and avatars.
 
-import { put, del } from '@vercel/blob'
+import { put, del, get } from '@vercel/blob'
 import { db } from './db'
 
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -51,6 +51,42 @@ export async function uploadJobPhoto(params: {
   return blob.url
 }
 
+export async function uploadJobRequestPhoto(params: {
+  jobRequestId: string
+  file: File
+  label?: 'evidence' | string
+  caption?: string | null
+  uploadedBy: string
+}): Promise<string> {
+  validateFile(params.file)
+
+  const ext = params.file.name.split('.').pop() ?? 'jpg'
+  const key = `job-requests/${params.jobRequestId}/${Date.now()}-${params.label ?? 'evidence'}.${ext}`
+
+  const blob = await put(key, params.file, {
+    access: 'public',
+    addRandomSuffix: true,
+    contentType: params.file.type,
+  })
+
+  // Attach photos to the request, not the eventual job, so providers can inspect
+  // evidence before they decide whether to quote.
+  await db.attachment.create({
+    data: {
+      jobRequestId: params.jobRequestId,
+      url: blob.url,
+      blobKey: blob.pathname,
+      mimeType: params.file.type,
+      sizeBytes: params.file.size,
+      label: params.label ?? 'evidence',
+      caption: params.caption ?? null,
+      uploadedBy: params.uploadedBy,
+    },
+  })
+
+  return blob.url
+}
+
 export async function uploadQuoteAttachment(params: {
   quoteId: string
   file: File
@@ -79,6 +115,32 @@ export async function uploadQuoteAttachment(params: {
   })
 
   return blob.url
+}
+
+export async function uploadProviderPaymentProof(params: {
+  paymentIntentId: string
+  file: File
+}): Promise<string> {
+  validateFile(params.file)
+
+  const ext = params.file.name.split('.').pop() ?? 'bin'
+  const key = `provider-credit-payments/${params.paymentIntentId}/${Date.now()}-proof.${ext}`
+
+  const blob = await put(key, params.file, {
+    access: 'private',
+    addRandomSuffix: true,
+    contentType: params.file.type,
+    cacheControlMaxAge: 60,
+  })
+
+  return blob.url
+}
+
+export async function getProviderPaymentProof(url: string) {
+  return get(url, {
+    access: 'private',
+    useCache: false,
+  })
 }
 
 // ─── Delete ───────────────────────────────────────────────────────────────────

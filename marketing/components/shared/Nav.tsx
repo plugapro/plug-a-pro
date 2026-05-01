@@ -28,7 +28,7 @@ export function Nav() {
         <Link href="/" className="flex items-center">
           <Image
             src="/logo-nav.png"
-            alt="Plug-A-Pro"
+            alt="Plug A Pro"
             width={318}
             height={110}
             className="h-10 w-auto"

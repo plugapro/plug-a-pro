@@ -3,7 +3,6 @@
 // Called by both the HTTP approval page and the WhatsApp bot button handler.
 
 import { db } from './db'
-import { initializeBookingPayment, type PaymentCollectionMode } from './payments'
 import { addMinutes, format } from 'date-fns'
 import { MATCHING_CONFIG } from './matching/config'
 import type { Prisma } from '@prisma/client'
@@ -13,13 +12,9 @@ export type QuoteDecisionResult =
       action: 'approved'
       quoteId: string
       matchId: string
+      jobRequestId: string
       bookingId: string
       scheduledDate: Date
-      payment: {
-        mode: PaymentCollectionMode
-        status: 'PENDING'
-        checkoutUrl: string | null
-      }
       provider: { id: string; phone: string; name: string }
       customer: { id: string; phone: string; name: string }
       category: string
@@ -74,6 +69,8 @@ export async function createBookingArtifactsForApprovedQuote(
     } | null
     scheduledDate: Date
     estimatedDurationMinutes?: number | null
+    isTestJob?: boolean
+    cohortName?: string | null
     source: 'quote_approval' | 'assignment_acceptance'
   }
 ) {
@@ -98,7 +95,13 @@ export async function createBookingArtifactsForApprovedQuote(
   })
 
   await tx.job.create({
-    data: { bookingId: booking.id, providerId: params.providerId, status: 'SCHEDULED' },
+    data: {
+      bookingId: booking.id,
+      providerId: params.providerId,
+      status: 'SCHEDULED',
+      isTestJob: Boolean(params.isTestJob),
+      cohortName: params.cohortName ?? null,
+    },
   })
 
   await tx.technicianScheduleItem.updateMany({
@@ -226,6 +229,8 @@ export async function processQuoteDecision(
         scheduledDate,
         estimatedDurationMinutes:
           Math.round((quote.estimatedHours ?? 0) * 60) || MATCHING_CONFIG.defaultDurationMinutes,
+        isTestJob: quote.match.jobRequest.isTestRequest,
+        cohortName: quote.match.jobRequest.cohortName,
         source: 'quote_approval',
       })
 
@@ -233,36 +238,14 @@ export async function processQuoteDecision(
         action: 'approved' as const,
         quoteId,
         matchId: quote.matchId,
+        jobRequestId: quote.match.jobRequest.id,
         bookingId: booking.bookingId,
         scheduledDate: booking.scheduledDate,
         provider,
         customer,
         category,
-        paymentAmount: Number(quote.amount),
       }
     })
-
-    if (result.action === 'approved') {
-      const payment = await initializeBookingPayment({
-        bookingId: result.bookingId,
-        amountRand: result.paymentAmount,
-        customerEmail: null,
-        customerPhone: result.customer.phone,
-        description: `${result.category} booking`,
-      })
-
-      return {
-        action: 'approved',
-        quoteId: result.quoteId,
-        matchId: result.matchId,
-        bookingId: result.bookingId,
-        scheduledDate: result.scheduledDate,
-        payment,
-        provider: result.provider,
-        customer: result.customer,
-        category: result.category,
-      }
-    }
 
     return result
   } catch (err) {

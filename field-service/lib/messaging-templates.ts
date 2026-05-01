@@ -99,7 +99,7 @@ export const TEMPLATES = {
     // {{1}} customer name, {{2}} technician name, {{3}} ETA
     // Body registered with Meta 2026-04-08 (original body was rejected — leading param).
     example:
-      'Hi {{1}}, your Plug-A-Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!',
+      'Hi {{1}}, your Plug A Pro technician {{2}} is heading your way now. Expected arrival in {{3}} — see you soon!',
   },
 
   technician_arrived: {
@@ -184,10 +184,10 @@ export const TEMPLATES = {
     name: 'job_offer',
     language: 'en_ZA',
     category: 'MARKETING',
-    description: 'Sent to a technician when a new job is available for them to accept',
+    description: 'Sent to a provider when a new matched lead is available to preview and accept',
     // {{1}} tech first name, {{2}} service, {{3}} area (suburb/city), {{4}} date/window, {{5}} job URL
     example:
-      'Hi {{1}}, new job: {{2}} in {{3}} on {{4}}. Tap to accept — {{5}} — good luck!',
+      'Hi {{1}}, new lead: {{2}} in {{3}} on {{4}}. Preview here: {{5}}. Accepting uses 1 credit and unlocks full customer details.',
   },
 
   technician_job_reminder: {
@@ -216,10 +216,10 @@ export const TEMPLATES = {
     name: 'technician_application_received',
     language: 'en_ZA',
     category: 'UTILITY',
-    description: 'Sent as template confirmation after application (covers >24h reply gap)',
+    description: 'Sent as template confirmation after application submission',
     // {{1}} applicant name, {{2}} application ref
     example:
-      'Hi {{1}}, we received your application to join Plug a Pro. Ref: {{2}}. We review all applications within 24 hours and will update you here.',
+      'Hi {{1}}, we received your Plug A Pro provider application. Ref: {{2}}. We will review your details and update you here. Approval is not automatic.',
   },
 
   technician_welcome: {
@@ -229,7 +229,7 @@ export const TEMPLATES = {
     description: 'Sent on approval — includes app link. Used as template for >24h outreach',
     // {{1}} tech name, {{2}} app URL
     example:
-      'Welcome to Plug a Pro, {{1}}! Your application has been approved. Download the app — {{2}} — jobs are waiting!',
+      'Welcome to Plug A Pro, {{1}}! Your application is approved. Starter credits were awarded. Each accepted lead uses 1 credit. Worker Portal: {{2}}',
   },
 
   technician_application_declined: {
@@ -239,7 +239,82 @@ export const TEMPLATES = {
     description: 'Sent when application is not approved, with optional reason',
     // {{1}} applicant name, {{2}} reason or "at this time"
     example:
-      'Hi {{1}}, thank you for applying to Plug a Pro. Unfortunately we are unable to onboard you {{2}}. You are welcome to apply again in the future.',
+      'Hi {{1}}, thank you for applying to Plug A Pro. Unfortunately we are unable to onboard you {{2}}. You are welcome to apply again in the future.',
+  },
+
+  // ─── Provider wallet and paid lead lifecycle ─────────────────────────────
+
+  wallet_low_balance: {
+    name: 'wallet_low_balance',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent when a provider wallet reaches one remaining credit',
+    // {{1}} remaining credits, {{2}} top-up amount, {{3}} credits issued
+    example:
+      'You have {{1}} Plug-A-Pro Credit left. Each accepted lead uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
+  },
+
+  wallet_zero_balance_lead: {
+    name: 'wallet_zero_balance_lead',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent when a matched lead is available but the provider wallet has no credits',
+    // {{1}} current credits, {{2}} minimum top-up amount
+    example:
+      'New matched lead available, but your wallet has {{1}} credits. You need 1 credit to accept and unlock full customer details. Top up {{2}}.',
+  },
+
+  wallet_payment_intent_created: {
+    name: 'wallet_payment_intent_created',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent after a provider creates a manual EFT wallet top-up intent',
+    // {{1}} amount, {{2}} credits, {{3}} account name, {{4}} bank, {{5}} account number,
+    // {{6}} branch code, {{7}} account type, {{8}} payment reference
+    example:
+      'Plug-A-Pro Credits top-up created: {{1}} = {{2}} credits. EFT to {{3}}, {{4}}, account {{5}}, branch {{6}}, {{7}}. Use exact reference: {{8}}. Credits are issued after Plug-A-Pro confirms the payment.',
+  },
+
+  wallet_payment_credited: {
+    name: 'wallet_payment_credited',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent after admin reconciliation credits a provider wallet top-up',
+    // {{1}} credits issued
+    example:
+      'Payment received. Your wallet has been credited with {{1}} Plug-A-Pro Credits. Each accepted lead uses 1 credit.',
+  },
+
+  wallet_payfast_topup_initiated: {
+    name: 'wallet_payfast_topup_initiated',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent after a provider initiates a Payfast gateway top-up (card, EFT, or SCode)',
+    // {{1}} amount formatted (e.g. "R100.00"), {{2}} credits to issue
+    // NOTE: WhatsApp template approval required before live sends succeed.
+    example:
+      'Your Plug-A-Pro top-up of {{1}} ({{2}} credits) has been initiated. Complete your payment on the checkout page. Credits will appear in your wallet once Payfast confirms payment.',
+  },
+
+  lead_unlock_provider: {
+    name: 'lead_unlock_provider',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a provider after paid credits unlock customer lead details',
+    // {{1}} category, {{2}} customer name, {{3}} customer phone, {{4}} address,
+    // {{5}} preferred time, {{6}} details
+    example:
+      'Lead accepted and unlocked: {{1}}. 1 credit used. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}',
+  },
+
+  lead_unlock_customer_intro: {
+    name: 'lead_unlock_customer_intro',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer after a provider unlocks their lead details',
+    // {{1}} provider name
+    example:
+      'Good news — we matched you with {{1}}. They may contact you shortly.',
   },
 
 } as const

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { CrudActionError, crudAction } from '../../lib/crud-action'
+import { CrudActionError, crudAction, meetsRoleRequirement } from '../../lib/crud-action'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -31,8 +31,8 @@ const mockTransaction = vi.mocked(db.$transaction)
 const mockIsEnabled = vi.mocked(isEnabled)
 
 const ADMIN_SESSION = { id: 'supabase-user-1', email: 'admin@test.com', phone: null, role: 'admin' as const }
-const OPS_ADMIN_USER = { id: 'admin-user-cuid-1', role: 'OPS' as const, active: true }
-const ADMIN_ADMIN_USER = { id: 'admin-user-cuid-2', role: 'ADMIN' as const, active: true }
+const OPS_ADMIN_USER = { id: 'admin-user-cuid-1', role: 'OPS' as const, active: true } as any
+const ADMIN_ADMIN_USER = { id: 'admin-user-cuid-2', role: 'ADMIN' as const, active: true } as any
 
 const testSchema = z.object({ name: z.string().min(1, 'Name required') })
 
@@ -48,7 +48,7 @@ const baseOpts = {
 beforeEach(() => {
   vi.clearAllMocks()
   // Default: transaction passes through to callback
-  mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+  ;(mockTransaction as any).mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
     const mockTx = {
       auditLog: { create: vi.fn() },
       adminAuditEvent: { create: vi.fn() },
@@ -60,6 +60,25 @@ beforeEach(() => {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('crudAction', () => {
+  describe('role requirements', () => {
+    it('supports explicit role exclusions on top of hierarchy checks', () => {
+      const reconcileRoles = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
+
+      expect(meetsRoleRequirement('TRUST', [...reconcileRoles])).toBe(true)
+      expect(meetsRoleRequirement('TRUST', [...reconcileRoles], ['TRUST'])).toBe(false)
+      expect(meetsRoleRequirement('TRUST', ['ADMIN', 'OWNER'])).toBe(false)
+      expect(meetsRoleRequirement('OPS', ['ADMIN', 'OWNER'])).toBe(false)
+      expect(meetsRoleRequirement('FINANCE', [...reconcileRoles], ['TRUST'])).toBe(true)
+
+      const opsOnlyExclusions = ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'] as const
+      expect(meetsRoleRequirement('OPS', ['OPS'], [...opsOnlyExclusions])).toBe(true)
+      expect(meetsRoleRequirement('FINANCE', ['OPS'], [...opsOnlyExclusions])).toBe(false)
+      expect(meetsRoleRequirement('TRUST', ['OPS'], [...opsOnlyExclusions])).toBe(false)
+      expect(meetsRoleRequirement('ADMIN', ['OPS'], [...opsOnlyExclusions])).toBe(false)
+      expect(meetsRoleRequirement('OWNER', ['OPS'], [...opsOnlyExclusions])).toBe(false)
+    })
+  })
+
   describe('unauthenticated', () => {
     it('throws UNAUTHENTICATED when session is null', async () => {
       mockGetSession.mockResolvedValue(null)
@@ -91,6 +110,24 @@ describe('crudAction', () => {
       mockAdminUserFindUnique.mockResolvedValue(ADMIN_ADMIN_USER)
       const result = await crudAction({ ...baseOpts, requiredRole: ['ADMIN'] })
       expect(result.ok).toBe(true)
+    })
+
+    it('throws UNAUTHORIZED when actor is explicitly excluded', async () => {
+      mockGetSession.mockResolvedValue(ADMIN_SESSION)
+      mockAdminUserFindUnique.mockResolvedValue({
+        id: 'admin-user-cuid-trust',
+        role: 'TRUST',
+        active: true,
+      } as any)
+      await expect(
+        crudAction({
+          ...baseOpts,
+          requiredRole: ['OPS', 'FINANCE', 'ADMIN', 'OWNER'],
+          excludedRole: ['TRUST'],
+        }),
+      ).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+      })
     })
 
     it('rejects legacy admin metadata when no AdminUser row exists', async () => {
@@ -139,7 +176,7 @@ describe('crudAction', () => {
       let auditLogCreated = false
       let adminAuditCreated = false
 
-      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      ;(mockTransaction as any).mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const mockTx = {
           auditLog: { create: vi.fn().mockImplementation(() => { auditLogCreated = true }) },
           adminAuditEvent: { create: vi.fn().mockImplementation(() => { adminAuditCreated = true }) },

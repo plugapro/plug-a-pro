@@ -7,7 +7,7 @@
 //   await sendText(phone, msg)
 //
 // All templates follow the marketplace-responsibility-matrix:
-//   - Plug-A-Pro facilitates matching and records agreements.
+//   - Plug A Pro facilitates matching and records agreements.
 //   - We do not guarantee workmanship, licensing, or provider behaviour.
 //   - Dispute resolution uses the written quote + job record as the reference.
 

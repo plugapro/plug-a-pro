@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,7 +20,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
-import type { CityOption } from '@/lib/location-nodes'
+import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,7 +32,6 @@ interface CategoryData {
 
 interface BookingFlowProps {
   category: CategoryData
-  initialCities: CityOption[]
 }
 
 interface Address {
@@ -48,6 +48,8 @@ interface Address {
 
 type Step = 'address' | 'description' | 'confirm' | 'submitted' | 'waitlisted'
 
+type Urgency = 'asap' | 'this_week' | 'flexible'
+
 const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
   Gauteng: 'gauteng',
   'Western Cape': 'western_cape',
@@ -60,17 +62,20 @@ const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
   'Northern Cape': 'northern_cape',
 }
 
-const PROVINCE_LABEL_BY_KEY = Object.fromEntries(
-  Object.entries(PROVINCE_KEY_BY_LABEL).map(([label, key]) => [key, label]),
-) as Record<string, string>
+const PROVINCE_LABELS = Object.keys(PROVINCE_KEY_BY_LABEL)
+
+// Categories that can be selected as "closest match" when a client picks Other
+const REAL_CATEGORIES = SERVICE_CATEGORY_OPTIONS.filter((c) => c.tag !== 'other')
+
+const URGENCY_LABELS: Record<Urgency, string> = {
+  asap: 'Today / ASAP',
+  this_week: 'This week',
+  flexible: "I'm flexible",
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BookingFlow({ category, initialCities }: BookingFlowProps) {
-  const availableProvinces = Array.from(
-    new Set(initialCities.map((city) => PROVINCE_LABEL_BY_KEY[city.provinceKey]).filter(Boolean)),
-  )
-  const defaultProvince = availableProvinces[0] ?? 'Gauteng'
+export function BookingFlow({ category }: BookingFlowProps) {
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
     addressLine1: '',
@@ -80,12 +85,16 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
     suburb: '',
     region: '',
     city: '',
-    province: defaultProvince,
+    province: 'Gauteng',
     postalCode: '',
   })
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [photos, setPhotos] = useState<File[]>([])
+  const [closestCategory, setClosestCategory] = useState('')
+  const [urgency, setUrgency] = useState<Urgency>('flexible')
   const [locationNodeId, setLocationNodeId] = useState<string | null>(null)
+  const [locationDetectedLabel, setLocationDetectedLabel] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [locationLoading, setLocationLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -100,7 +109,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
   function validateAddressStep() {
     if (!locationNodeId) {
-      return 'Select your province, city, region, and suburb from the available address list before continuing.'
+      return 'Select your suburb before continuing — use "Use my location" or type in the search box.'
     }
 
     const suburb = normalizeValue(address.suburb)
@@ -113,7 +122,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       return 'Please complete the full service address before continuing.'
     }
 
-    if (!availableProvinces.includes(province)) {
+    if (!Object.prototype.hasOwnProperty.call(PROVINCE_KEY_BY_LABEL, province)) {
       return 'Please select a valid South African province.'
     }
 
@@ -130,6 +139,9 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
   }
 
   function validateDescriptionStep() {
+    if (category.slug === 'other' && !closestCategory) {
+      return 'Please choose the closest type of work so we can match you with the right provider.'
+    }
     const normalizedTitle = normalizeValue(title)
     if (normalizedTitle.length < 6) {
       return 'Please enter a short job title so the provider can identify the work clearly.'
@@ -199,8 +211,9 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       }))
       if (data.selection) {
         setLocationNodeId(data.selection.locationNodeId)
+        setLocationDetectedLabel(data.selection.suburb)
       } else {
-        setError('We found your street, but could not match the suburb exactly. Select province, city, region, and suburb from the list.')
+        setError('We found your street, but could not match the suburb exactly. Search for your suburb using the box below.')
       }
     } catch (err) {
       setError(
@@ -253,19 +266,42 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       const descriptionError = validateDescriptionStep()
       if (descriptionError) throw new Error(descriptionError)
 
+      // Resolve category: when client picks "Other" they must also choose the closest
+      // real category so the matching engine can find a suitable provider.
+      const effectiveCategory =
+        category.slug === 'other' && closestCategory ? closestCategory : category.slug
+      const effectiveDescription =
+        category.slug === 'other'
+          ? `[Other — originally uncategorised]\n${description.trim()}`
+          : description.trim()
+
+      const formData = new FormData()
+      formData.set('category', effectiveCategory)
+      formData.set('title', normalizeValue(title))
+      formData.set('description', effectiveDescription)
+      formData.set('addressLine1', normalizeValue(address.addressLine1))
+      formData.set('addressLine2', normalizeValue(address.addressLine2))
+      formData.set('complexName', normalizeValue(address.complexName))
+      formData.set('unitNumber', normalizeValue(address.unitNumber))
+      formData.set('locationNodeId', locationNodeId ?? '')
+
+      // Urgency → timing window fields (extracted by the bookings API route)
+      const now = Date.now()
+      if (urgency === 'asap') {
+        formData.set('requestedWindowEnd', new Date(now + 48 * 60 * 60 * 1000).toISOString())
+        formData.set('requestedArrivalLatest', new Date(now + 24 * 60 * 60 * 1000).toISOString())
+      } else if (urgency === 'this_week') {
+        formData.set('requestedWindowEnd', new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString())
+        formData.set('requestedArrivalLatest', new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString())
+      }
+
+      // Photos are optional evidence. They travel with the request so the matched
+      // provider can quote without asking the client to repeat the problem.
+      photos.forEach((photo) => formData.append('photos', photo))
+
       const res = await fetch('/api/customer/bookings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          category: category.slug,
-          title: normalizeValue(title),
-          description: description.trim(),
-          addressLine1: normalizeValue(address.addressLine1),
-          addressLine2: normalizeValue(address.addressLine2),
-          complexName: normalizeValue(address.complexName),
-          unitNumber: normalizeValue(address.unitNumber),
-          locationNodeId,
-        }),
+        body: formData,
       })
 
       if (!res.ok) {
@@ -339,17 +375,42 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
       {/* ── Step 1: Address ──────────────────────────────────────────────── */}
       {step === 'address' && (
         <form onSubmit={handleAddressSubmit} className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-medium">Service address</h2>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={locationLoading}
-              onClick={handleUseMyLocation}
-            >
-              {locationLoading ? 'Finding address…' : 'Use my current location'}
-            </Button>
+          <h2 className="font-medium">Service address</h2>
+
+          {/* Primary CTA: Use my location */}
+          <Card className="border-dashed bg-muted/40">
+            <CardContent className="px-4 py-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <MapPin className="h-5 w-5 mt-0.5 shrink-0 text-muted-foreground" />
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">Use your current location</p>
+                  <p className="text-xs text-muted-foreground">
+                    We&apos;ll auto-fill your suburb and street address.
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={locationLoading}
+                onClick={handleUseMyLocation}
+              >
+                {locationLoading ? 'Finding address…' : 'Use my current location'}
+              </Button>
+              {locationDetectedLabel && (
+                <p className="text-xs text-center text-muted-foreground">
+                  Detected: <span className="font-medium">{locationDetectedLabel}</span>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex-1 border-t border-border" />
+            <span>or enter your address manually</span>
+            <div className="flex-1 border-t border-border" />
           </div>
 
           <div className="space-y-3">
@@ -367,13 +428,14 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                     postalCode: '',
                   }))
                   setLocationNodeId(null)
+                  setLocationDetectedLabel(null)
                 }}
               >
                 <SelectTrigger id="province" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableProvinces.map((p) => (
+                  {PROVINCE_LABELS.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
                   ))}
                 </SelectContent>
@@ -381,11 +443,11 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">Area</Label>
+              <Label className="text-muted-foreground">Suburb</Label>
               <SuburbPicker
-                initialCities={initialCities}
                 provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
                 onSelect={(selection) => {
+                  setLocationDetectedLabel(null)
                   if (selection) {
                     setAddress((prev) => ({
                       ...prev,
@@ -408,11 +470,6 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                   }
                 }}
               />
-              {address.suburb && (
-                <p className="text-xs text-muted-foreground">
-                  {address.suburb}, {address.region}, {address.city}, {address.postalCode}
-                </p>
-              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -443,7 +500,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="addressLine1" className="text-muted-foreground">Street address line 1</Label>
+              <Label htmlFor="addressLine1" className="text-muted-foreground">Street address</Label>
               <Input
                 id="addressLine1"
                 required
@@ -456,7 +513,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
             <div className="space-y-1">
               <Label htmlFor="addressLine2" className="text-muted-foreground">
-                Street address line 2 <span className="text-muted-foreground/60">(optional)</span>
+                Address line 2 <span className="text-muted-foreground/60">(optional)</span>
               </Label>
               <Input
                 id="addressLine2"
@@ -465,17 +522,6 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                 onChange={(e) => setAddress({ ...address, addressLine2: e.target.value })}
                 placeholder="Building entrance, floor, landmark"
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="region" className="text-muted-foreground">Region / area</Label>
-                <Input id="region" value={address.region} readOnly disabled />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="postalCode" className="text-muted-foreground">Postal code</Label>
-                <Input id="postalCode" value={address.postalCode} readOnly disabled />
-              </div>
             </div>
           </div>
 
@@ -502,6 +548,31 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
           </div>
 
           <div className="space-y-3">
+            {/* "Other" requires client to pick the closest real category */}
+            {category.slug === 'other' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="closestCategory" className="text-muted-foreground">
+                  Closest type of work <span className="text-destructive">*</span>
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Choose the closest type of help so we can find the right worker.
+                </p>
+                <Select
+                  value={closestCategory}
+                  onValueChange={setClosestCategory}
+                >
+                  <SelectTrigger id="closestCategory" className="w-full">
+                    <SelectValue placeholder="Select the closest match…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REAL_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat.tag} value={cat.tag}>{cat.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-1">
               <Label htmlFor="title" className="text-muted-foreground">Job title</Label>
               <Input
@@ -525,11 +596,51 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
                 rows={4}
               />
             </div>
-          </div>
+            <div className="space-y-1">
+              <Label htmlFor="photos" className="text-muted-foreground">
+                Photos <span className="text-muted-foreground/60">(optional)</span>
+              </Label>
+              <Input
+                id="photos"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(event) => {
+                  const selected = Array.from(event.target.files ?? []).slice(0, 5)
+                  setPhotos(selected)
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Add up to 5 photos of the problem so the provider can quote with less back-and-forth.
+              </p>
+              {photos.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {photos.length} photo{photos.length === 1 ? '' : 's'} selected.
+                </p>
+              )}
+            </div>
 
-          <p className="text-xs text-muted-foreground">
-            Scheduling is arranged directly with your provider after matching.
-          </p>
+            {/* Urgency picker */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">When do you need this done?</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['asap', 'this_week', 'flexible'] as const).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => setUrgency(u)}
+                    className={`rounded-lg border px-2 py-2 text-center text-xs transition-colors ${
+                      urgency === u
+                        ? 'border-primary bg-primary/10 font-semibold'
+                        : 'border-border bg-card hover:bg-muted'
+                    }`}
+                  >
+                    {URGENCY_LABELS[u]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
           <Button type="submit" className="w-full" size="lg">
             Review request →
@@ -544,9 +655,15 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
 
           <Card>
             <CardContent className="px-4 py-4 space-y-3 text-sm">
-              <Row label="Category">{category.name}</Row>
+              <Row label="Category">
+                {category.slug === 'other' && closestCategory
+                  ? `${REAL_CATEGORIES.find((c) => c.tag === closestCategory)?.label ?? closestCategory} (Other)`
+                  : category.name}
+              </Row>
               <Row label="Job">{title}</Row>
               {description && <Row label="Details">{description}</Row>}
+              {photos.length > 0 && <Row label="Photos">{photos.length} attached</Row>}
+              <Row label="Timing">{URGENCY_LABELS[urgency]}</Row>
               <Row label="Address">
                 {[streetSummary, address.suburb, address.region, address.city, address.province, address.postalCode]
                   .filter(Boolean)
@@ -586,7 +703,7 @@ export function BookingFlow({ category, initialCities }: BookingFlowProps) {
               We&apos;re not in <strong>{waitlistedCity}</strong> just yet, but we&apos;re growing fast.
             </p>
             <p className="text-sm text-muted-foreground">
-              We&apos;ve saved your contact and will reach out the moment Plug a Pro goes live in your area. No action needed from you.
+              We&apos;ve saved your contact and will reach out the moment Plug A Pro goes live in your area. No action needed from you.
             </p>
             <p className="text-xs text-muted-foreground pt-2">
               Currently serving: <strong>Johannesburg</strong>

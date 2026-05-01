@@ -1,0 +1,77 @@
+flowchart TD
+  subgraph ProviderPortal["Worker Portal OTP"]
+    P1["[Provider] Open Credits page"]
+    P2["[Provider] Select package R100, R200, or R500"]
+    P3{"[Provider] Payment method"}
+  end
+
+  subgraph IntentCreation["Backend Intent Creation"]
+    I1["[Backend] createManualEftTopUpIntent"]
+    I2["[Backend] createPayfastTopUpIntent"]
+    I3{"[Backend] Amount valid and whole credits?"}
+    I4["[DB] PaymentIntent status=PENDING_PAYMENT"]
+    I5["[WhatsApp] Non-blocking top-up initiated notification"]
+    I6["[Error] INVALID_AMOUNT or PROVIDER_NOT_FOUND"]
+  end
+
+  subgraph ManualEFT["Manual EFT"]
+    M1["[Provider] Bank transfer using PAP reference"]
+    M2["[Provider] Upload proof of payment"]
+    M3["[DB] PaymentIntent status=PROOF_UPLOADED"]
+    M4["[Admin/Ops] Match bank statement reference"]
+    M5["[DB] PaymentIntent status=MATCHED_ON_STATEMENT"]
+    M6["[Admin/Ops] Credit wallet"]
+  end
+
+  subgraph PayFast["PayFast Gateway"]
+    F1["[Payment] Browser posts checkout form to PayFast"]
+    F2["[Payment] PayFast sends ITN"]
+    F3{"[Backend] Verify IP, signature, COMPLETE status"}
+    F4{"[Backend] Amount matches PaymentIntent?"}
+    F5["[DB] Store ITN fields and status=ITN_RECEIVED"]
+    F6["[DB] Mark FAILED on amount mismatch"]
+    F7["[Backend] Return HTTP 200 without credit on invalid ITN"]
+  end
+
+  subgraph CreditWallet["Credit Wallet"]
+    C1{"[Backend] Intent creditable and creditedAt null?"}
+    C2["[DB] updateMany intent to CREDITED as optimistic lock"]
+    C3{"[Backend] Lock acquired?"}
+    C4["[Wallet] Increment paidCreditBalance"]
+    C5["[Ledger] TOPUP_CREDIT entry reference=payment_intent"]
+    C6["[Backend] Optional FIRST_TOPUP promo award"]
+    C7["[DB] Store creditedLedgerEntryId for PayFast path"]
+    C8["[WhatsApp] Payment credited notification after commit"]
+    C9["[Backend] Duplicate or invalid status: no credit"]
+  end
+
+  subgraph Recovery["Failure / Recovery"]
+    R1["[Admin] ITN_RECEIVED can be credited manually after failed auto-credit"]
+    R2["[Placeholder] EXPIRED cleanup not wired"]
+    R3["[Placeholder] PAYMENT_REVERSAL not implemented"]
+  end
+
+  P1 --> P2 --> P3
+  P3 -- "Manual EFT" --> I1 --> I3
+  P3 -- "PayFast" --> I2 --> I3
+  I3 -- "No" --> I6
+  I3 -- "Yes" --> I4 --> I5
+
+  I4 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> C1
+  I4 --> F1 --> F2 --> F3
+  F3 -- "No" --> F7
+  F3 -- "Yes" --> F4
+  F4 -- "No" --> F6
+  F4 -- "Yes" --> F5 --> C1
+
+  C1 -- "No" --> C9
+  C1 -- "Yes" --> C2 --> C3
+  C3 -- "No" --> C9
+  C3 -- "Yes" --> C4 --> C5 --> C6 --> C7 --> C8
+  F5 --> R1
+  C9 --> R1
+  R2 --> M4
+  R3 --> C5
+
+  classDef placeholder fill:#fff3cd,stroke:#a66a00,color:#3d2b00;
+  class R2,R3 placeholder;

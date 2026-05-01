@@ -18,7 +18,7 @@ export default async function NewCustomerPage({
   searchParams?: Promise<{ message?: string }>
 }) {
   const actor = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.customers', actor.id)
+  const crudEnabled = await isEnabled('admin.crud.customers', { userId: actor.id })
   const query = (await searchParams) ?? {}
 
   if (!crudEnabled) {

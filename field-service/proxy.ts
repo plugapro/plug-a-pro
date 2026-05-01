@@ -21,20 +21,28 @@ const PUBLIC_PATHS = [
   '/verify',               // customer OTP verification + identity link
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
+  '/provider/terms',       // provider credit rules are linked before login/application
   '/technician-sign-in',   // legacy — kept for backward compat
   '/technician-verify',    // legacy — kept for backward compat
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
   '/requests/access',      // signed single-ticket links are scoped to one request
+  '/leads/access',         // HMAC-signed provider lead links — token validates identity; no session needed
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET
+  '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
+  '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
   '/api/auth/session',     // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',        // called client-side after OTP — no session cookie yet
   '/api/health',           // monitoring probe — must be reachable without a session cookie
 ]
 
+const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/
+const PUBLIC_CUSTOMER_HANDOVER_ROUTE = /^\/customer\/requests\/[^/]+\/provider-handover$/
+const PUBLIC_SIGNED_PROVIDER_API_ROUTE = /^\/api\/provider\/leads\/[^/]+\/contact-customer$/
+
 // Routes that require provider role
-const PROVIDER_PATHS = ['/provider', '/technician']
+const PROVIDER_PATHS = ['/provider', '/technician', '/api/provider']
 
 // Routes that require active AdminUser access
 const ADMIN_PATHS = ['/admin']
@@ -118,17 +126,28 @@ export async function proxy(request: NextRequest) {
     // Enforce admin-only routes
     if (ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
       const adminUser = await db.adminUser
-        .findUnique({
-          where: { userId: user.id },
+        .findFirst({
+          where: { OR: [{ userId: user.id }, { email: user.email ?? '' }] },
           select: { role: true, active: true },
         })
         .catch(() => null)
 
-      if (!adminUser?.active) {
-        return redirectToSignIn(request, pathname, isAdminDomain)
+      if (adminUser) {
+        // AdminUser row found — honour DB state regardless of legacy metadata
+        if (!adminUser.active) {
+          // Deactivated accounts are blocked even if Supabase metadata still says admin/owner
+          return redirectToSignIn(request, pathname, isAdminDomain)
+        }
+        effectiveRole = adminUser.role.toLowerCase()
+      } else {
+        // No AdminUser row — legacy fallback for accounts that predate the AdminUser table.
+        // Run scripts/backfill-admin-users.ts to migrate these to DB rows.
+        const metaRole = user.user_metadata?.role as string | undefined
+        if (metaRole !== 'admin' && metaRole !== 'owner') {
+          return redirectToSignIn(request, pathname, isAdminDomain)
+        }
+        effectiveRole = metaRole
       }
-
-      effectiveRole = adminUser.role.toLowerCase()
     }
 
     // Inject user context into headers for downstream use
@@ -139,6 +158,10 @@ export async function proxy(request: NextRequest) {
 }
 
 function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_SIGNED_JOB_ROUTE.test(pathname)) return true
+  if (PUBLIC_CUSTOMER_HANDOVER_ROUTE.test(pathname)) return true
+  if (PUBLIC_SIGNED_PROVIDER_API_ROUTE.test(pathname)) return true
+
   return PUBLIC_PATHS.some((path) => {
     if (path === '/') return pathname === '/'
     return pathname === path || pathname.startsWith(`${path}/`)

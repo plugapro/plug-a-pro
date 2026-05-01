@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { processQuoteDecision } from '../../lib/quotes'
 
-const { mockDb, mockInitializeBookingPayment } = vi.hoisted(() => ({
+const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
     quote: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
@@ -10,15 +10,10 @@ const { mockDb, mockInitializeBookingPayment } = vi.hoisted(() => ({
     job: { create: vi.fn() },
     technicianScheduleItem: { create: vi.fn(), updateMany: vi.fn() },
   },
-  mockInitializeBookingPayment: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({
   db: mockDb,
-}))
-
-vi.mock('../../lib/payments', () => ({
-  initializeBookingPayment: mockInitializeBookingPayment,
 }))
 
 describe('processQuoteDecision', () => {
@@ -97,6 +92,56 @@ describe('processQuoteDecision', () => {
 
     expect(result).toEqual({ error: 'MISSING_PREFERRED_DATE' })
     expect(mockDb.booking.create).not.toHaveBeenCalled()
-    expect(mockInitializeBookingPayment).not.toHaveBeenCalled()
+  })
+
+  it('approves a quote and creates booking artifacts without creating platform payment', async () => {
+    const preferredDate = new Date('2030-01-01T08:00:00.000Z')
+    mockDb.quote.findUnique.mockResolvedValue({
+      id: 'quote-1',
+      status: 'PENDING',
+      validUntil: new Date(Date.now() + 60_000),
+      preferredDate,
+      estimatedHours: 2,
+      amount: 850,
+      matchId: 'match-1',
+      match: {
+        provider: { id: 'provider-1', phone: '+27123456789', name: 'Provider Pro' },
+        jobRequest: {
+          id: 'job-request-1',
+          category: 'plumbing',
+          estimatedDurationMinutes: null,
+          customer: { id: 'customer-1', phone: '+27999999999', name: 'Customer' },
+          address: { suburb: 'Sandton', city: 'Johannesburg', lat: null, lng: null },
+        },
+      },
+    })
+    mockDb.match.update.mockResolvedValue({})
+    mockDb.booking.create.mockResolvedValue({ id: 'booking-1' })
+    mockDb.job.create.mockResolvedValue({})
+    mockDb.technicianScheduleItem.create.mockResolvedValue({})
+
+    const result = await processQuoteDecision('quote-1', 'approve')
+
+    expect(result).toEqual({
+      action: 'approved',
+      quoteId: 'quote-1',
+      matchId: 'match-1',
+      jobRequestId: 'job-request-1',
+      bookingId: 'booking-1',
+      scheduledDate: preferredDate,
+      provider: { id: 'provider-1', phone: '+27123456789', name: 'Provider Pro' },
+      customer: { id: 'customer-1', phone: '+27999999999', name: 'Customer' },
+      category: 'plumbing',
+    })
+    expect(mockDb.booking.create).toHaveBeenCalledOnce()
+    expect(mockDb.job.create).toHaveBeenCalledWith({
+      data: {
+        bookingId: 'booking-1',
+        providerId: 'provider-1',
+        status: 'SCHEDULED',
+        isTestJob: false,
+        cohortName: null,
+      },
+    })
   })
 })

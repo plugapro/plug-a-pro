@@ -1,4 +1,4 @@
-# Plug-A-Pro WhatsApp Onboarding: Remaining Work Handoff for Claude Code
+# Plug A Pro WhatsApp Onboarding: Remaining Work Handoff for Claude Code
 
 ## Objective
 

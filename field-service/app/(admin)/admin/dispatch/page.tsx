@@ -15,6 +15,7 @@ import {
   rankCandidatesForJobRequest,
   runAssignmentForJobRequest,
 } from '@/lib/matching/service'
+import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { getDispatchAdminMessage } from '@/lib/admin-action-messages'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
@@ -36,6 +37,7 @@ import { CaseNotesPanel } from '@/components/admin/case/CaseNotesPanel'
 import { ResolveCaseForm } from '@/components/admin/case/ResolveCaseForm'
 import { getReasonCodesForQueue } from '@/lib/reason-codes'
 import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase, addEvent } from '@/lib/cases'
+import { recordAuditLog } from '@/lib/audit'
 
 export const metadata = buildMetadata({ title: 'Dispatch', noIndex: true })
 const FLAG = 'admin.crud.dispatch'
@@ -58,7 +60,7 @@ export default async function AdminDispatchPage({
   const banner = getDispatchAdminMessage(message)
   const now = new Date()
   const pageWarnings: string[] = []
-  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
 
   const requests = await db.jobRequest.findMany({
     where: {
@@ -111,11 +113,8 @@ export default async function AdminDispatchPage({
         schema: JobRequestQueueSchema,
         input: { jobRequestId: String(formData.get('jobRequestId') ?? '') },
         run: async ({ jobRequestId }) => {
-          await runAssignmentForJobRequest({
-            jobRequestId,
-            actor: { actorId: activeAdmin.id, actorRole: 'admin' },
-            mode: 'AUTO_ASSIGN',
-          })
+          // Use the atomic orchestrator path (same as job creation) for consistency and safety
+          await orchestrateMatch(jobRequestId, { triggeredBy: 'manual' })
           return { id: jobRequestId, mode: 'AUTO_ASSIGN' }
         },
       })
@@ -208,8 +207,7 @@ export default async function AdminDispatchPage({
     const activeAdmin = await requireAdmin()
     const jobRequestId = String(formData.get('jobRequestId') ?? '')
     if (!jobRequestId) return
-    const { dispatchLeads } = await import('@/lib/matching-engine')
-    await dispatchLeads(jobRequestId).catch(() => {})
+    await orchestrateMatch(jobRequestId, { triggeredBy: 'manual' }).catch(() => {})
     const dispCase = await getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId).catch(() => null)
     if (dispCase) {
       await addEvent({
@@ -436,7 +434,10 @@ export default async function AdminDispatchPage({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="font-medium">{jobRequest.title}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{jobRequest.title}</p>
+                        {jobRequest.isTestRequest ? <Badge variant="warning">Test Cohort</Badge> : null}
+                      </div>
                       <p className="text-xs text-muted-foreground">{jobRequest.customer.name}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -482,7 +483,10 @@ export default async function AdminDispatchPage({
                 <CardHeader className="space-y-1">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <CardTitle className="text-base">{selectedRequest.title}</CardTitle>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CardTitle className="text-base">{selectedRequest.title}</CardTitle>
+                        {selectedRequest.isTestRequest ? <Badge variant="warning">Test Cohort</Badge> : null}
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         {selectedRequest.category} · {selectedRequest.customer.name} ·{' '}
                         {selectedRequest.address

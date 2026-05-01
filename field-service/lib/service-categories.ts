@@ -33,7 +33,7 @@ export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
   {
     tag: 'electrical',
     label: 'Electrical',
-    description: 'Wiring, fault-finding, and compliance certificates.',
+    description: 'Wiring, fault-finding, and general electrical repairs.',
   },
   {
     tag: 'diy',
@@ -74,6 +74,14 @@ export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
     tag: 'air_conditioning',
     label: 'Air Conditioning',
     description: 'AC installation, servicing, and repairs.',
+  },
+  {
+    // "Other" lets clients post jobs that don't fit a specific category.
+    // At booking time the UI requires them to pick the closest real category
+    // so the matching engine can find a suitable provider.
+    tag: 'other',
+    label: 'Other',
+    description: "Something else? Tell us what you need and we'll find the right person.",
   },
 ]
 

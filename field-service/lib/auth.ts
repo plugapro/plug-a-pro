@@ -80,7 +80,7 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
     const role = (user.user_metadata?.role ?? 'customer') as UserRole
     const providerId = user.user_metadata?.providerId
 
-    // Supabase stores phone without the '+' prefix (e.g. "27823035070").
+    // Supabase stores phone without the '+' prefix (e.g. "27821234567").
     // Normalise to E.164 so comparisons downstream are consistent.
     const rawPhone = user.phone ?? null
     const phone = rawPhone
@@ -117,20 +117,31 @@ const getAdminActor = cache(async (): Promise<AdminAuthUser | null> => {
   if (!session) return null
 
   const { db } = await import('./db')
-  const adminUser = await db.adminUser.findUnique({
-    where: { userId: session.id },
+  const adminUser = await db.adminUser.findFirst({
+    where: { OR: [{ userId: session.id }, { email: session.email ?? '' }] },
     select: { id: true, role: true, active: true },
   })
 
-  if (!adminUser || !adminUser.active) {
-    return null
+  if (adminUser?.active) {
+    return {
+      ...session,
+      adminRole: adminUser.role,
+      adminUserId: adminUser.id,
+    }
   }
 
-  return {
-    ...session,
-    adminRole: adminUser.role,
-    adminUserId: adminUser.id,
+  // Legacy fallback: honour Supabase user_metadata.role for accounts predating
+  // the AdminUser table. Run backfill-admin-users.ts to migrate permanently.
+  const metaRole = session.role
+  if (metaRole === 'admin' || metaRole === 'owner') {
+    return {
+      ...session,
+      adminRole: (metaRole.toUpperCase() as Role),
+      adminUserId: null,
+    }
   }
+
+  return null
 })
 
 // ─── Route guards ─────────────────────────────────────────────────────────────
@@ -193,6 +204,8 @@ export async function linkCustomerAccount(params: {
   name?: string     // Optionally update name if it's still the WhatsApp placeholder
 }): Promise<{ id: string; isNew: boolean }> {
   const { db } = await import('./db')
+  const { createTestCohortContext } = await import('./internal-test-cohort')
+  const cohort = createTestCohortContext(params.phone)
 
   // Check if this userId is already linked (idempotent)
   const alreadyLinked = await db.customer.findUnique({
@@ -208,7 +221,10 @@ export async function linkCustomerAccount(params: {
 
   if (existing) {
     // Link: set userId on the existing record
-    const updates: { userId: string; name?: string } = { userId: params.userId }
+    const updates: { userId: string; name?: string; isTestUser?: boolean; cohortName?: string | null } = {
+      userId: params.userId,
+      ...(cohort.isTestUser ? { isTestUser: true, cohortName: cohort.cohortName } : {}),
+    }
     // Only overwrite name if it's still the default placeholder
     if (params.name && existing.name === 'WhatsApp Customer') {
       updates.name = params.name
@@ -226,6 +242,8 @@ export async function linkCustomerAccount(params: {
       userId: params.userId,
       phone: params.phone,
       name: params.name ?? 'Customer',
+      isTestUser: cohort.isTestUser,
+      cohortName: cohort.cohortName,
     },
   })
   return { id: created.id, isNew: true }

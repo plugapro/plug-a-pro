@@ -4,11 +4,23 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { normalizePhone } from '@/lib/utils'
+import { createTestCohortContext } from '@/lib/internal-test-cohort'
+import { normaliseLocationDisplayNames } from '@/lib/location-format'
+import {
+  awardKycApprovedPromoCreditsInTransaction,
+  evaluateAndAwardProviderProfileCompletionPromoCreditsInTransaction,
+} from '@/lib/provider-promo-awards'
 import type { KycStatus, ProviderStatus } from '@prisma/client'
 
 const FLAG = 'admin.crud.providers'
 const OPS_ROLES = ['OPS', 'TRUST', 'ADMIN', 'OWNER'] as const
 const OWNER_ROLES = ['ADMIN', 'OWNER'] as const
+
+function parseServiceAreas(value: string | undefined) {
+  return normaliseLocationDisplayNames(
+    value ? value.split(',').map((area) => area.trim()).filter(Boolean) : [],
+  )
+}
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -144,6 +156,7 @@ export async function createProviderAction(input: CreateProviderInput) {
         )
       }
 
+      const cohort = createTestCohortContext(data.phone)
       const provider = await tx.provider.create({
         data: {
           name: data.name,
@@ -153,11 +166,11 @@ export async function createProviderAction(input: CreateProviderInput) {
           skills: data.skills
             ? data.skills.split(',').map((skill) => skill.trim()).filter(Boolean)
             : [],
-          serviceAreas: data.serviceAreas
-            ? data.serviceAreas.split(',').map((area) => area.trim()).filter(Boolean)
-            : [],
+          serviceAreas: parseServiceAreas(data.serviceAreas),
           status: 'APPLICATION_PENDING',
           active: true,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
           availableNow: true,
           verified: false,
         },
@@ -213,11 +226,19 @@ export async function updateProviderProfileAction(input: UpdateProviderProfileIn
           skills: data.skills
             ? data.skills.split(',').map((skill) => skill.trim()).filter(Boolean)
             : [],
-          serviceAreas: data.serviceAreas
-            ? data.serviceAreas.split(',').map((area) => area.trim()).filter(Boolean)
-            : [],
+          serviceAreas: parseServiceAreas(data.serviceAreas),
         },
       })
+
+      await evaluateAndAwardProviderProfileCompletionPromoCreditsInTransaction(
+        tx,
+        data.providerId,
+        {
+          referenceType: 'provider',
+          referenceId: data.providerId,
+        },
+      )
+
       return { id: data.providerId }
     },
   })
@@ -343,6 +364,12 @@ export async function setProviderKycAction(input: SetProviderKycInput) {
         where: { id: data.providerId },
         data: { kycStatus: data.kycStatus as KycStatus },
       })
+      if (data.kycStatus === 'VERIFIED') {
+        await awardKycApprovedPromoCreditsInTransaction(tx, data.providerId, {
+          referenceType: 'provider_kyc',
+          referenceId: data.providerId,
+        })
+      }
       return { id: data.providerId }
     },
   })

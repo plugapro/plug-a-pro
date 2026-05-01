@@ -99,7 +99,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
   const query = (await searchParams) ?? {}
 
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.providers', admin.id)
+  const crudEnabled = await isEnabled('admin.crud.providers', { userId: admin.id })
 
   const provider = await db.provider.findFirst({
     where: { id },
@@ -146,6 +146,10 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
         where: { active: true },
         orderBy: { createdAt: 'desc' },
         select: { id: true, label: true, category: true, serialNumber: true },
+      },
+      technicianServiceAreas: {
+        orderBy: [{ active: 'desc' }, { label: 'asc' }],
+        select: { id: true, label: true, city: true, active: true, areaType: true },
       },
       _count: {
         select: {
@@ -451,7 +455,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Skills and service areas are supplied by the provider. This flag only controls whether the application passed Plug-A-Pro&apos;s marketplace review for lead eligibility.
+              Skills and service areas are supplied by the provider. This flag only controls whether the application passed Plug A Pro&apos;s marketplace review for lead eligibility.
             </p>
 
             {provider.skills.length > 0 && (
@@ -486,6 +490,26 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
               </>
             )}
 
+            {provider.technicianServiceAreas.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Structured Coverage Status</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {provider.technicianServiceAreas.map((area) => (
+                      <Badge
+                        key={area.id}
+                        variant={area.active ? 'default' : 'outline'}
+                        className="rounded-full text-xs"
+                      >
+                        {area.label} — {area.active ? 'Active pilot' : 'Coming soon'}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
             {provider.evidenceNote && (
               <>
                 <Separator />
@@ -493,7 +517,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                   <p className="text-sm text-muted-foreground mb-2">Provider-shared evidence note</p>
                   <p className="text-sm">{provider.evidenceNote}</p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    This note is supplied by the provider. It does not become a verified claim unless Plug-A-Pro reviews a specific item and labels it as such.
+                    This note is supplied by the provider. It does not become a verified claim unless Plug A Pro reviews a specific item and labels it as such.
                   </p>
                 </div>
               </>

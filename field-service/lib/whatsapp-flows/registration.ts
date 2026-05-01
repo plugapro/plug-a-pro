@@ -1,19 +1,36 @@
 // ─── Service provider registration flow via WhatsApp ──────────────────────────
 // Journey: trigger → name → skills (multi-select) → area → experience → availability → submit → pending review
-// No direct connection given to customer — all mediated through Plug-a-Pro
+// No direct connection given to customer — all mediated through Plug A Pro
 
 import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
 import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import { db } from '../db'
-import { syncProviderRecord } from '../provider-record'
+import { syncProviderRecord, upsertStructuredServiceAreas } from '../provider-record'
+import { syncProviderSkills } from '../provider-skills'
+import { checkJobsForNewProviderAvailability } from '../matching/customer-recontact'
 import { normalizePhone } from '../utils'
+import { phoneLookupVariants } from '../whatsapp-identity'
 import { findLatestActiveProviderApplicationByPhone } from '../provider-applications'
+import { createTestCohortContext } from '../internal-test-cohort'
+import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '../location-format'
+import {
+  PROVIDER_APPLY_BUTTON_TITLE,
+  PROVIDER_NOT_NOW_BUTTON_TITLE,
+  buildProviderApplicationSubmittedMessage,
+  buildProviderOnboardingIntroMessage,
+} from '../provider-credit-copy'
 import {
   SERVICE_CATEGORY_OPTIONS,
-  getServiceCategorySelectionSummary,
-  labelsFromServiceCategoryTags,
-  normalizeServiceCategorySelections,
+  resolveServiceCategoryTag,
 } from '../service-categories'
+import {
+  ACTIVE_PILOT_CITY_LABEL,
+  ACTIVE_PILOT_REGION_LABEL,
+  describeCityServiceStatus,
+  describeRegionServiceStatus,
+  getRegionServiceStatus,
+  type ServiceAreaStatus,
+} from '../service-area-guard'
 import type { FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -24,6 +41,167 @@ export const REGISTRATION_TRIGGERS = [
   'ek wil werk',        // Afrikaans: "I want to work"
   'ngifuna ukusebenza', // Zulu: "I want to work"
 ]
+
+// ─── Provider skill options (all categories except 'other', which is client-side) ─
+// 'other' lets clients describe unusual jobs, but providers select real skill tags.
+const PROVIDER_SKILL_OPTIONS = SERVICE_CATEGORY_OPTIONS.filter(o => o.tag !== 'other')
+const MAX_EVIDENCE_FILES = 5
+
+type ProviderApplicationSubmitErrorCode =
+  | 'PROVIDER_APPLICATION_VALIDATION_FAILED'
+  | 'PROVIDER_APPLICATION_ALREADY_EXISTS'
+  | 'PROVIDER_APPLICATION_FILES_MISSING'
+  | 'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'
+  | 'PROVIDER_APPLICATION_FILE_LINK_FAILED'
+  | 'PROVIDER_APPLICATION_SKILLS_INVALID'
+  | 'PROVIDER_APPLICATION_AREAS_INVALID'
+  | 'PROVIDER_APPLICATION_AVAILABILITY_INVALID'
+  | 'PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED'
+  | 'PROVIDER_APPLICATION_SUBMIT_FAILED'
+  | 'PROVIDER_APPLICATION_UNKNOWN_ERROR'
+
+class ProviderApplicationSubmitError extends Error {
+  constructor(
+    public readonly code: ProviderApplicationSubmitErrorCode,
+    message: string,
+    public readonly details: Record<string, unknown> = {},
+  ) {
+    super(message)
+    this.name = 'ProviderApplicationSubmitError'
+  }
+}
+
+type ProviderApplicationSubmitResult =
+  | { outcome: 'created'; applicationId: string; providerId: string; ref: string }
+  | { outcome: 'existing_pending'; applicationId: string; ref: string }
+  | { outcome: 'existing_approved'; applicationId: string; ref: string }
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
+}
+
+function createSubmitTraceId() {
+  return `provider_app_submit_${crypto.randomUUID().slice(0, 12)}`
+}
+
+function firstName(name: string | null | undefined) {
+  return name?.trim().split(/\s+/)[0] || 'there'
+}
+
+function errorCodeFromUnknown(error: unknown): ProviderApplicationSubmitErrorCode {
+  if (error instanceof ProviderApplicationSubmitError) return error.code
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    error.code.startsWith('P')
+  ) {
+    return 'PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED'
+  }
+  return 'PROVIDER_APPLICATION_UNKNOWN_ERROR'
+}
+
+function safeErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+function validateSubmitData(ctx: FlowContext) {
+  const name = ctx.data.name?.trim()
+  const skills = uniqueStrings(ctx.data.skills ?? [])
+  const invalidSkills = skills.filter((skill) => !resolveServiceCategoryTag(skill))
+  const locationNodeIds = uniqueStrings(ctx.data.locationNodeIds ?? [])
+  const serviceAreas = uniqueStrings(ctx.data.serviceAreas ?? [])
+  const selectedSuburbLabels = uniqueStrings(ctx.data.selectedSuburbLabels ?? [])
+  const selectedRegionLabels = uniqueStrings(ctx.data.selectedRegionLabels ?? [])
+  const availability = uniqueStrings(ctx.data.availability ?? [])
+  const evidenceAttachmentIds = uniqueStrings(ctx.data.evidenceFileUrls ?? []).slice(0, MAX_EVIDENCE_FILES)
+
+  if (!name || name.length < 2) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_VALIDATION_FAILED',
+      'Provider application requires a valid name.',
+      { missingField: 'name' },
+    )
+  }
+
+  if (skills.length === 0) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_SKILLS_INVALID',
+      'Provider application requires at least one valid skill.',
+      { selectedSkillsCount: 0 },
+    )
+  }
+
+  if (invalidSkills.length > 0) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_SKILLS_INVALID',
+      'Provider application contains unsupported skills.',
+      { invalidSkills },
+    )
+  }
+
+  if (
+    locationNodeIds.length === 0 &&
+    serviceAreas.length === 0 &&
+    selectedSuburbLabels.length === 0 &&
+    selectedRegionLabels.length === 0
+  ) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_AREAS_INVALID',
+      'Provider application requires at least one service area.',
+      { selectedAreasCount: 0 },
+    )
+  }
+
+  if (availability.length === 0) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_AVAILABILITY_INVALID',
+      'Provider application requires availability.',
+      { selectedAvailabilityCount: 0 },
+    )
+  }
+
+  return {
+    name,
+    skills,
+    availability,
+    evidenceAttachmentIds,
+    resolvedAreaLabels: normaliseLocationDisplayNames(locationNodeIds.length > 0
+      ? (selectedSuburbLabels.length ? selectedSuburbLabels : selectedRegionLabels.length ? selectedRegionLabels : serviceAreas)
+      : serviceAreas),
+    locationNodeIds,
+  }
+}
+
+function formatAvailabilityLabel(availability: string[] | undefined) {
+  return (availability?.length ?? 0) >= 7 ? 'Any day'
+    : (availability?.length ?? 0) >= 6 ? 'Mon–Sat'
+    : 'Weekdays only'
+}
+
+async function sendEvidenceFileProgress(phone: string, count: number) {
+  const remaining = MAX_EVIDENCE_FILES - count
+
+  if (remaining <= 0) {
+    await sendButtons(
+      phone,
+      `✅ *${MAX_EVIDENCE_FILES} files received.* Maximum reached.\n\nContinue to the next step?`,
+      [{ id: 'evidence_done', title: '✅ Continue' }]
+    )
+    return
+  }
+
+  await sendButtons(
+    phone,
+    `✅ *${count} file${count === 1 ? '' : 's'} received.* You can add up to ${remaining} more, or continue.`,
+    [
+      { id: 'evidence_done', title: '✅ Continue' },
+      { id: 'evidence_add_more', title: '📎 Add another file' },
+    ]
+  )
+}
 
 // ─── Flow entry point ─────────────────────────────────────────────────────────
 
@@ -69,17 +247,45 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
 // ─── Step handlers ────────────────────────────────────────────────────────────
 
 async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
-  // Block customers from registering as providers with the same number.
-  const { normalizePhone } = await import('../utils')
-  const normalizedPhone = normalizePhone(ctx.phone)
+  // A known provider should never be sent through duplicate registration.
+  const phoneVariants = phoneLookupVariants(ctx.phone)
+
+  const existingProvider = await (db as any).provider?.findFirst?.({
+    where: { phone: { in: phoneVariants } },
+    select: { id: true, name: true, status: true, active: true, availableNow: true },
+  }) ?? null
+
+  if (existingProvider) {
+    const inactive =
+      !existingProvider.active ||
+      ['SUSPENDED', 'ARCHIVED', 'BANNED'].includes(existingProvider.status)
+    await sendButtons(
+      ctx.phone,
+      inactive
+        ? `👷 Hi ${existingProvider.name}, your provider profile is currently inactive.\n\nYou won't receive new job leads until this is resolved.`
+        : `✅ Hi ${existingProvider.name}, you're already registered as a Plug A Pro provider.\n\nWhat would you like to manage?`,
+      inactive
+        ? [
+            { id: 'provider_status', title: 'Provider Status' },
+            { id: 'provider_support', title: 'Support' },
+          ]
+        : [
+            { id: 'provider_my_jobs', title: 'My Jobs' },
+            { id: 'provider_availability', title: 'Availability' },
+            { id: 'back_home', title: 'Main Menu' },
+          ],
+    )
+    return { nextStep: inactive ? 'pj_provider_status' : 'pj_toggle_available' }
+  }
+
   const existingCustomer = await db.customer.findFirst({
-    where: { phone: normalizedPhone },
+    where: { phone: { in: phoneVariants } },
     select: { id: true },
   })
   if (existingCustomer) {
     await sendText(
       ctx.phone,
-      `⚠️ *Provider registration unavailable*\n\nThis number is already registered as a customer on Plug a Pro.\n\nTo join as a service provider, please use a *different phone number* and restart with *join*.`
+      `⚠️ *Provider registration unavailable*\n\nThis number is already registered as a customer on Plug A Pro.\n\nTo join as a service provider, please use a *different phone number* and restart with *join*.`
     )
     return { nextStep: 'done' }
   }
@@ -90,7 +296,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   if (existing?.status === 'APPROVED') {
     await sendButtons(
       ctx.phone,
-      "✅ You're already registered as a Plug a Pro worker! You'll receive job leads through this number.\n\nWhat would you like to do?",
+      "✅ You're already registered as a Plug A Pro worker! You'll receive job leads through this number.\n\nWhat would you like to do?",
       [
         { id: 'pj_view_jobs', title: '📋 My Jobs' },
         { id: 'back_home', title: '🏠 Main Menu' },
@@ -102,17 +308,17 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   if (existing?.status === 'PENDING') {
     await sendText(
       ctx.phone,
-      `⏳ Your application is under review. We'll contact you within 24 hours.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *menu* anytime to return to the main menu.`
+      `⏳ Your provider profile is already on file.\n\nRef: *${existing.id.slice(-8).toUpperCase()}*\n\nReply *jobs* to check leads or *menu* to return to the main menu.`
     )
     return { nextStep: 'done' }
   }
 
   await sendButtons(
     ctx.phone,
-    `👷 *Join Plug a Pro as a Service Provider*\n\nEarn money doing what you're good at. We connect you with customers who need your skills.\n\n*Here's how it works:*\n• We send you job leads in your area\n• You confirm availability and go do the job\n• Plug a Pro keeps the quote and job record clear so payment can be settled properly\n\nReady to apply?`,
+    buildProviderOnboardingIntroMessage(),
     [
-      { id: 'reg_start', title: '✅ Yes, Apply Now' },
-      { id: 'reg_cancel', title: '❌ Not Now' },
+      { id: 'reg_start', title: PROVIDER_APPLY_BUTTON_TITLE },
+      { id: 'reg_cancel', title: PROVIDER_NOT_NOW_BUTTON_TITLE },
     ]
   )
   return { nextStep: 'reg_collect_name' }
@@ -139,40 +345,127 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills' }
   }
 
-  await sendSkillPrompt(ctx.phone, `Nice to meet you, *${name}*! 👋`)
+  await sendText(
+    ctx.phone,
+    buildSkillPromptText(`Nice to meet you, *${name}*! 👋\n\n🔧 *What type of work do you do?*`)
+  )
   return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
-  const rawInput = ctx.reply.text?.trim() ?? ctx.reply.title?.trim() ?? ''
-  const skills = parseSkillSelections(rawInput)
+  const existingSkills: string[] = ctx.data.skills ?? []
 
-  if (skills.length === 0) {
-    await sendSkillPrompt(
-      ctx.phone,
-      'Please choose at least one valid skill. Reply with numbers or a comma-separated list.',
-    )
-    return { nextStep: 'reg_collect_skills_more' }
+  // ── Button replies (from confirmation screen) ──────────────────────────────
+
+  if (ctx.reply.id === 'skills_confirm') {
+    if (existingSkills.length === 0) {
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please choose at least one skill first.*'))
+      return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+    }
+    return promptArea(ctx)
   }
 
-  await sendButtons(
-    ctx.phone,
-    `✅ Selected skills: *${skills.join(', ')}*\n\nUse these skills for your application, or replace them before continuing.`,
-    [
-      { id: 'skills_done', title: '✅ Continue' },
-      { id: 'edit_skills', title: '✏️ Change skills' },
-    ]
-  )
-  return { nextStep: 'reg_collect_area', nextData: { skills } }
+  if (ctx.reply.id === 'skills_change' || ctx.reply.id === 'edit_skills') {
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+  }
+
+  // ── Text reply ─────────────────────────────────────────────────────────────
+
+  const raw = ctx.reply.text?.trim() ?? ''
+
+  if (/^done$/i.test(raw)) {
+    if (existingSkills.length === 0) {
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please choose at least one skill first.*'))
+      return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+    }
+    return promptArea(ctx)
+  }
+
+  if (/^change(\s+skills?)?$/i.test(raw)) {
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
+  }
+
+  // ── Parse number input ─────────────────────────────────────────────────────
+
+  const indices = parseNumberedInput(raw)
+
+  // No numbers found — try label matching as fallback.
+  // 1. Try the full raw phrase first (handles "pest control", "air conditioning", etc.)
+  // 2. If no full-phrase match, split into tokens (handles "plumbing electrical")
+  let labelMatched: string[] = []
+  if (indices.length === 0 && raw.length > 0) {
+    const fullTag = resolveServiceCategoryTag(raw)
+    if (fullTag && fullTag !== 'other') {
+      const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === fullTag)
+      if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+    } else {
+      const parts = raw.split(/[,;&\s]+/).filter(s => s.length > 1)
+      for (const part of parts) {
+        const tag = resolveServiceCategoryTag(part)
+        if (!tag || tag === 'other') continue
+        const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === tag)
+        if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+      }
+    }
+  }
+
+  if (indices.length === 0 && labelMatched.length === 0) {
+    if (!raw) {
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *What type of work do you do?*', existingSkills))
+    } else {
+      // Unrecognised text — ask for numbers
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Please reply with the numbers from the list below.*', existingSkills))
+    }
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
+  }
+
+  // Validate indices (1-based) against PROVIDER_SKILL_OPTIONS
+  const validSkills: string[] = []
+  const invalidNums: number[] = []
+  for (const n of indices) {
+    const option = PROVIDER_SKILL_OPTIONS[n - 1]
+    if (option) {
+      validSkills.push(option.label)
+    } else {
+      invalidNums.push(n)
+    }
+  }
+
+  // All numbers were invalid (no label matches either)
+  if (validSkills.length === 0 && labelMatched.length === 0) {
+    await sendText(
+      ctx.phone,
+      buildSkillPromptText(`❌ None of those numbers are on the list (${invalidNums.join(', ')}).\n\n🔧 *Choose your skills:*`, existingSkills)
+    )
+    return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
+  }
+
+  // Merge new selections into existing (deduplicated)
+  const merged = [...new Set([...existingSkills, ...validSkills, ...labelMatched])]
+
+  let confirmBody = `✅ *Skills selected:* ${merged.join(', ')}`
+  if (invalidNums.length > 0) {
+    confirmBody += `\n\n_(We ignored numbers not on the list: ${invalidNums.join(', ')})_`
+  }
+  confirmBody += '\n\nShall I continue?'
+
+  await sendButtons(ctx.phone, confirmBody, [
+    { id: 'skills_confirm', title: '✅ Continue' },
+    { id: 'skills_change', title: '✏️ Change skills' },
+  ])
+
+  return { nextStep: 'reg_collect_skills_more', nextData: { skills: merged } }
 }
 
 async function promptArea(ctx: FlowContext): Promise<FlowResult> {
   const rows = [
-    { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
-    { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town area (coming soon)' },
-    { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: 'Durban & surrounds' },
-    { id: 'area_eastern_cape', title: 'Eastern Cape', description: 'Port Elizabeth & surrounds' },
-    { id: 'area_other', title: 'Other province', description: 'Rest of South Africa' },
+    { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot — ${ACTIVE_PILOT_REGION_LABEL}` },
+    { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon — register now' },
+    { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon — register now' },
+    { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon — register now' },
+    { id: 'area_other', title: 'Other province', description: '🔜 Coming soon — register now' },
   ]
 
   await sendList(
@@ -185,17 +478,9 @@ async function promptArea(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectArea(ctx: FlowContext): Promise<FlowResult> {
-  if (ctx.reply.id === 'edit_skills') {
-    await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
+  if (ctx.reply.id === 'edit_skills' || ctx.reply.id === 'skills_change') {
+    await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
     return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
-  }
-
-  if (ctx.reply.id === 'skills_done') {
-    const skills = ctx.data.skills ?? []
-    if (skills.length === 0) {
-      await sendSkillPrompt(ctx.phone, 'Please choose at least one skill before continuing.')
-      return { nextStep: 'reg_collect_skills_more' }
-    }
   }
 
   return promptArea(ctx)
@@ -221,11 +506,11 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       [{
         title: 'Areas',
         rows: [
-          { id: 'area_gauteng', title: 'Gauteng', description: 'Johannesburg & surrounds' },
-          { id: 'area_western_cape', title: 'Western Cape', description: 'Cape Town area (coming soon)' },
-          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: 'Durban & surrounds' },
-          { id: 'area_eastern_cape', title: 'Eastern Cape', description: 'Port Elizabeth & surrounds' },
-          { id: 'area_other', title: 'Other province', description: 'Rest of South Africa' },
+          { id: 'area_gauteng', title: 'Gauteng', description: `🟢 Active pilot — ${ACTIVE_PILOT_REGION_LABEL}` },
+          { id: 'area_western_cape', title: 'Western Cape', description: '🔜 Coming soon — register now' },
+          { id: 'area_kwazulu_natal', title: 'KwaZulu-Natal', description: '🔜 Coming soon — register now' },
+          { id: 'area_eastern_cape', title: 'Eastern Cape', description: '🔜 Coming soon — register now' },
+          { id: 'area_other', title: 'Other province', description: '🔜 Coming soon — register now' },
         ],
       }],
       { buttonLabel: 'Choose Area' }
@@ -235,6 +520,14 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
 
   const areaLabel = ctx.reply.title ?? ''
   const provinceKey = PROVINCE_KEY_MAP[ctx.reply.id ?? ''] ?? 'gauteng'
+
+  // Soft pilot notice for providers outside Gauteng — still allow full registration
+  if (ctx.reply.id !== 'area_gauteng') {
+    await sendText(
+      ctx.phone,
+      `🌍 *Heads up — Pilot Phase*\n\nPlug A Pro is currently operating in Gauteng only. We are expanding soon!\n\nYou can still complete your profile now — we will WhatsApp you the moment we go live in your area. No need to re-register later.`
+    )
+  }
 
   try {
     const { getCities } = await import('@/lib/location-nodes')
@@ -246,12 +539,13 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
         ctx.phone,
         `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
       )
-      return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey } }
+      return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey, selectedRegionStatus: 'coming_soon' } }
     }
 
     const rows = cities.slice(0, 10).map(c => ({
       id: `city_${c.id}`,
       title: c.label,
+      description: describeCityServiceStatus({ cityKey: c.cityKey }),
     }))
 
     await sendList(
@@ -262,7 +556,12 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
     )
     return {
       nextStep: 'reg_collect_city',
-      nextData: { serviceAreas: [areaLabel], province: areaLabel, provinceKey },
+      nextData: {
+        serviceAreas: [areaLabel],
+        province: areaLabel,
+        provinceKey,
+        selectedRegionStatus: ctx.reply.id === 'area_gauteng' ? undefined : 'coming_soon',
+      },
     }
   } catch {
     // DB unavailable — ask provider to type their suburb
@@ -270,7 +569,7 @@ async function handleCollectExperience(ctx: FlowContext): Promise<FlowResult> {
       ctx.phone,
       `📍 Which suburb or area do you mainly work in?\n\nType the suburb name (e.g. *Randburg*, *Allen's Nek*, *Sandton*):`,
     )
-    return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey } }
+    return { nextStep: 'reg_collect_suburb_text', nextData: { province: areaLabel, provinceKey, selectedRegionStatus: 'coming_soon' } }
   }
 }
 
@@ -300,13 +599,18 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
     // Re-show city list using stored provinceKey
     const { getCities } = await import('@/lib/location-nodes')
     const cities = await getCities(ctx.data.provinceKey ?? 'gauteng')
-    const rows = cities.slice(0, 10).map(c => ({ id: `city_${c.id}`, title: c.label }))
+    const rows = cities.slice(0, 10).map(c => ({
+      id: `city_${c.id}`,
+      title: c.label,
+      description: describeCityServiceStatus({ cityKey: c.cityKey }),
+    }))
     await sendList(ctx.phone, '🏙 Please choose your city:', [{ title: 'Cities', rows }], { buttonLabel: 'Choose City' })
     return { nextStep: 'reg_collect_city' }
   }
 
   const cityId = ctx.reply.id.replace('city_', '')
   const cityLabel = ctx.reply.title ?? ''
+  const cityIsActive = ctx.reply.title === ACTIVE_PILOT_CITY_LABEL
 
   try {
     const { getRegions } = await import('@/lib/location-nodes')
@@ -320,18 +624,21 @@ async function handleCollectCity(ctx: FlowContext): Promise<FlowResult> {
       )
       return {
         nextStep: 'reg_collect_suburb_text',
-        nextData: { city: cityLabel, cityId },
+        nextData: { city: cityLabel, cityId, selectedRegionStatus: 'coming_soon' },
       }
     }
 
     const rows = regions.slice(0, 10).map(r => ({
       id: `region_${r.id}`,
       title: r.label,
+      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }),
     }))
 
     await sendList(
       ctx.phone,
-      `🗺 Which area of *${cityLabel}* do you mainly work in?`,
+      cityIsActive
+        ? `🗺 Which area of *${cityLabel}* do you mainly work in?\n\nOnly *${ACTIVE_PILOT_REGION_LABEL}* is live for leads right now. Other areas are still welcome to register.`
+        : `🗺 Which area of *${cityLabel}* do you mainly work in?\n\nThis city is coming soon. You can still register now and we will notify you when leads open there.`,
       [{ title: 'Areas', rows }],
       { buttonLabel: 'Choose Area' }
     )
@@ -353,7 +660,11 @@ async function showRegionList(ctx: FlowContext): Promise<FlowResult> {
       await sendExperiencePrompt(ctx.phone)
       return { nextStep: 'reg_collect_availability' }
     }
-    const rows = regions.slice(0, 10).map(r => ({ id: `region_${r.id}`, title: r.label }))
+    const rows = regions.slice(0, 10).map(r => ({
+      id: `region_${r.id}`,
+      title: r.label,
+      description: describeRegionServiceStatus({ regionKey: r.regionKey, slug: r.slug }),
+    }))
     await sendList(
       ctx.phone,
       '🗺 Please choose an area:',
@@ -388,25 +699,49 @@ async function handleCollectRegion(ctx: FlowContext): Promise<FlowResult> {
 
   const regionId = ctx.reply.id.replace('region_', '')
   const regionLabel = ctx.reply.title ?? ''
+  let regionStatus: ServiceAreaStatus = 'coming_soon'
 
-  // Drill down to suburb selection within this region
-  return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, [])
+  try {
+    const { getRegions } = await import('@/lib/location-nodes')
+    const regions = await getRegions(ctx.data.cityId ?? '')
+    const selectedRegion = regions.find((region) => region.id === regionId)
+    regionStatus = getRegionServiceStatus({
+      regionKey: selectedRegion?.regionKey,
+      slug: selectedRegion?.slug,
+    })
+  } catch {
+    regionStatus = 'coming_soon'
+  }
+
+  if (regionStatus !== 'active') {
+    await sendText(
+      ctx.phone,
+      `🔜 *Coming soon area*\n\nThanks. *${regionLabel}* is not live for leads yet, but your profile will still be saved. We'll notify you when Plug A Pro opens leads in this region.`
+    )
+  }
+
+  // Drill down to suburb selection within this region (numbered text list)
+  return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, regionStatus)
 }
 
 async function handleCollectRegionMore(ctx: FlowContext): Promise<FlowResult> {
   return showRegionList(ctx) // re-show the region list
 }
 
-// ─── Suburb multi-select within a region ──────────────────────────────────────
+// ─── Suburb multi-select within a region (numbered text list) ─────────────────
+// Providers reply once with multiple numbers (e.g. "1,3,5") to select suburbs.
+// Uses global 1-based numbering across all pages so "8" always means the 8th suburb.
 
-const SUBURB_PAGE_SIZE = 10
+const SUBURB_TEXT_PAGE_SIZE = 15
 
-async function showSuburbSelectPrompt(
+async function showSuburbNumberedPrompt(
   phone: string,
   regionId: string,
   regionLabel: string,
-  alreadySelected: string[],
-  pageOffset = 0,
+  selectedLabels: string[],
+  selectedIds: string[],
+  pageOffset: number,
+  regionStatus: ServiceAreaStatus = 'coming_soon',
 ): Promise<FlowResult> {
   try {
     const { getSuburbs } = await import('@/lib/location-nodes')
@@ -420,28 +755,14 @@ async function showSuburbSelectPrompt(
         nextData: {
           locationNodeIds: [regionId],
           selectedRegionLabels: [regionLabel],
+          selectedRegionStatus: regionStatus,
         },
       }
     }
 
-    const page = suburbs.slice(pageOffset, pageOffset + SUBURB_PAGE_SIZE)
-    const hasMore = suburbs.length > pageOffset + SUBURB_PAGE_SIZE
-
-    const numberedList = page
-      .map((s, i) => `${pageOffset + i + 1}. ${s.label}`)
-      .join('\n')
-
-    const selectedSummary = alreadySelected.length > 0
-      ? `\n\n✅ Selected so far: *${alreadySelected.join(', ')}*`
-      : ''
-
-    const moreNote = hasMore
-      ? `\n\nType *more* to see more suburbs, or *done* when finished.`
-      : `\n\nType the numbers of your suburbs, then *done* when finished.`
-
     await sendText(
       phone,
-      `📍 *Which suburbs in ${regionLabel} do you work in?*\n\nReply with numbers separated by commas (e.g. *1,3*).${selectedSummary}${moreNote}\n\n${numberedList}`,
+      buildSuburbPromptText(regionLabel, suburbs, pageOffset, selectedLabels),
     )
 
     return {
@@ -450,16 +771,17 @@ async function showSuburbSelectPrompt(
         regionId,
         regionLabel,
         suburbPage: pageOffset,
-        suburbPageTotal: suburbs.length,
-        // Preserve suburb options so we can resolve numbers to IDs
         suburbOptions: suburbs.map(s => ({ id: s.id, label: s.label })),
+        locationNodeIds: selectedIds,
+        selectedSuburbLabels: selectedLabels,
+        selectedRegionStatus: regionStatus,
       },
     }
   } catch {
     await sendExperiencePrompt(phone)
     return {
       nextStep: 'reg_collect_availability',
-      nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel] },
+      nextData: { locationNodeIds: [regionId], selectedRegionLabels: [regionLabel], selectedRegionStatus: regionStatus },
     }
   }
 }
@@ -471,14 +793,14 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
   const suburbPage = (ctx.data.suburbPage as number) ?? 0
   const existingIds: string[] = (ctx.data.locationNodeIds as string[]) ?? []
   const existingLabels: string[] = (ctx.data.selectedSuburbLabels as string[]) ?? []
+  const selectedRegionStatus = (ctx.data.selectedRegionStatus as ServiceAreaStatus | undefined) ?? 'coming_soon'
 
-  const input = ctx.reply.text?.trim().toLowerCase() ?? ''
+  // ── Button replies (from confirmation screen) ──────────────────────────────
 
-  // "done" — proceed if at least one suburb selected
-  if (input === 'done' || ctx.reply.id === 'suburb_done') {
+  if (ctx.reply.id === 'suburb_confirm') {
     if (existingIds.length === 0) {
-      await sendText(ctx.phone, 'Please select at least one suburb, or type *done* to use the whole region.')
-      return { nextStep: 'reg_collect_suburb_select' }
+      await showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, selectedRegionStatus)
+      return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
     }
     await sendExperiencePrompt(ctx.phone)
     return {
@@ -487,58 +809,145 @@ async function handleCollectSuburbSelect(ctx: FlowContext): Promise<FlowResult> 
         locationNodeIds: existingIds,
         selectedRegionLabels: [regionLabel],
         selectedSuburbLabels: existingLabels,
+        selectedRegionStatus,
       },
     }
   }
 
-  // "more" — next page
-  if (input === 'more' || ctx.reply.id === 'suburb_more') {
-    const nextOffset = suburbPage + SUBURB_PAGE_SIZE
-    return showSuburbSelectPrompt(ctx.phone, regionId, regionLabel, existingLabels, nextOffset)
+  // "add more" — show numbered list keeping current selections
+  if (ctx.reply.id === 'suburb_add_more') {
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, 0, selectedRegionStatus)
   }
 
-  // Parse number selections
-  const tokens = input.split(/[,\s]+/).filter(Boolean)
-  const numbers = tokens.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n >= 1)
-
-  if (numbers.length === 0) {
-    await sendText(ctx.phone, 'Reply with the numbers of your suburbs (e.g. *1,3*), or type *done* when finished.')
-    return { nextStep: 'reg_collect_suburb_select' }
+  // "change" — clear all and restart
+  if (ctx.reply.id === 'suburb_change') {
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, selectedRegionStatus)
   }
 
-  const newIds = [...existingIds]
-  const newLabels = [...existingLabels]
+  // ── Text reply ─────────────────────────────────────────────────────────────
 
-  for (const n of numbers) {
-    const suburb = suburbOptions[n - 1]
-    if (suburb && !newIds.includes(suburb.id)) {
-      newIds.push(suburb.id)
-      newLabels.push(suburb.label)
+  const raw = ctx.reply.text?.trim() ?? ''
+  const rawLower = raw.toLowerCase()
+
+  if (rawLower === 'done') {
+    if (existingIds.length === 0) {
+      await sendText(ctx.phone, '📍 Please choose at least one suburb first.')
+      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], 0, selectedRegionStatus)
+    }
+    await sendExperiencePrompt(ctx.phone)
+    return {
+      nextStep: 'reg_collect_availability',
+      nextData: {
+        locationNodeIds: existingIds,
+        selectedRegionLabels: [regionLabel],
+        selectedSuburbLabels: existingLabels,
+        selectedRegionStatus,
+      },
     }
   }
 
-  const summary = newLabels.join(', ')
-  const hasMore = (ctx.data.suburbPageTotal as number ?? 0) > suburbPage + SUBURB_PAGE_SIZE
+  if (rawLower === 'more') {
+    const nextOffset = suburbPage + SUBURB_TEXT_PAGE_SIZE
+    if (nextOffset >= suburbOptions.length) {
+      await sendText(
+        ctx.phone,
+        `📍 You have seen all ${suburbOptions.length} suburbs in ${regionLabel}.\n\nReply with numbers to select, or *done* to continue.`
+      )
+      return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
+    }
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, nextOffset, selectedRegionStatus)
+  }
+
+  if (rawLower === 'all') {
+    // TODO: If a business limit on max suburbs per provider is introduced, enforce it here.
+    const allIds = suburbOptions.map(s => s.id)
+    const allLabels = suburbOptions.map(s => s.label)
+    const preview = allLabels.length > 8
+      ? `${allLabels.slice(0, 8).join(', ')} + ${allLabels.length - 8} more`
+      : allLabels.join(', ')
+    await sendButtons(
+      ctx.phone,
+      `✅ *All ${allLabels.length} suburbs in ${regionLabel} selected!*\n\n${preview}\n\nContinue?`,
+      [
+        { id: 'suburb_confirm', title: '✅ Continue' },
+        { id: 'suburb_change', title: '✏️ Change' },
+      ],
+    )
+    return {
+      nextStep: 'reg_collect_suburb_select',
+      nextData: {
+        regionId, regionLabel, suburbPage, suburbOptions,
+        locationNodeIds: allIds,
+        selectedSuburbLabels: allLabels,
+        selectedRegionStatus,
+      },
+    }
+  }
+
+  // ── Parse number input ─────────────────────────────────────────────────────
+  // Numbers are 1-based and global (refer to suburbOptions index, not the current page).
+
+  const indices = parseNumberedInput(raw)
+
+  if (indices.length === 0) {
+    if (!raw) {
+      return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, existingLabels, existingIds, suburbPage, selectedRegionStatus)
+    }
+    await sendText(ctx.phone, '📍 Please reply with suburb numbers from the list, e.g. *1,3,5*')
+    return { nextStep: 'reg_collect_suburb_select', nextData: { ...ctx.data } }
+  }
+
+  // Validate against full suburbOptions (global, 1-based)
+  const newIds: string[] = []
+  const newLabels: string[] = []
+  const invalidNums: number[] = []
+
+  for (const n of indices) {
+    const suburb = suburbOptions[n - 1]
+    if (!suburb) {
+      invalidNums.push(n)
+    } else if (!existingIds.includes(suburb.id)) {
+      newIds.push(suburb.id)
+      newLabels.push(suburb.label)
+    }
+    // silently skip already-selected suburbs (no duplicate message needed)
+  }
+
+  // Every number was invalid and nothing was already selected
+  if (newIds.length === 0 && existingIds.length === 0 && invalidNums.length > 0) {
+    await sendText(
+      ctx.phone,
+      `❌ None of those numbers match suburbs on the list (${invalidNums.join(', ')}).\n\nPlease try again, e.g. *1,3,5*`
+    )
+    return showSuburbNumberedPrompt(ctx.phone, regionId, regionLabel, [], [], suburbPage, selectedRegionStatus)
+  }
+
+  const mergedIds = [...existingIds, ...newIds]
+  const mergedLabels = [...existingLabels, ...newLabels]
+
+  let confirmBody = `✅ *Selected suburbs:* ${mergedLabels.join(', ')}`
+  if (invalidNums.length > 0) {
+    confirmBody += `\n\n_(We ignored numbers not on the list: ${invalidNums.join(', ')})_`
+  }
+  confirmBody += '\n\nReady to continue?'
 
   await sendButtons(
     ctx.phone,
-    `✅ *Suburbs selected:* ${summary}\n\n${hasMore ? 'Add more suburbs, or continue to the next step.' : 'Continue to the next step, or change your selection.'}`,
+    confirmBody,
     [
-      { id: 'suburb_done', title: '✅ Continue' },
-      { id: 'suburb_more', title: '➕ Add more' },
+      { id: 'suburb_confirm', title: '✅ Continue' },
+      { id: 'suburb_add_more', title: '➕ Add more' },
+      { id: 'suburb_change', title: '✏️ Change' },
     ],
   )
 
   return {
     nextStep: 'reg_collect_suburb_select',
     nextData: {
-      regionId,
-      regionLabel,
-      suburbPage,
-      suburbPageTotal: ctx.data.suburbPageTotal,
-      suburbOptions,
-      locationNodeIds: newIds,
-      selectedSuburbLabels: newLabels,
+      regionId, regionLabel, suburbPage, suburbOptions,
+      locationNodeIds: mergedIds,
+      selectedSuburbLabels: mergedLabels,
+      selectedRegionStatus,
     },
   }
 }
@@ -555,8 +964,8 @@ async function handleCollectSuburbText(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_suburb_text' }
   }
 
-  const suburbLabel = typed.charAt(0).toUpperCase() + typed.slice(1)
-  const city = ctx.data.city ?? ''
+  const suburbLabel = normaliseLocationDisplayName(typed)
+  const city = normaliseLocationDisplayName(ctx.data.city)
   const area = city ? `${suburbLabel}, ${city}` : suburbLabel
 
   await sendExperiencePrompt(ctx.phone)
@@ -605,7 +1014,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
 
     await sendButtons(
       ctx.phone,
-      '🧾 Would you like to add an optional proof note?\n\nExamples: past jobs, references, or certificate names. This stays provider-supplied unless Plug a Pro says a specific item was reviewed.',
+      '🧾 Would you like to add an optional work note?\n\nExamples: past jobs, references, or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
       [
         { id: 'evidence_add', title: '✍️ Add proof note' },
         { id: 'evidence_skip', title: '⏭️ Skip for now' },
@@ -617,7 +1026,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'evidence_add') {
     await sendText(
       ctx.phone,
-      '🧾 Share your proof — you can send:\n• A text note (past jobs, references, certificate names)\n• A photo or PDF of a certificate or work sample\n\nOr type *skip* to continue without one.'
+      '🧾 Share optional work examples — you can send:\n• A text note about past jobs or references\n• One photo or PDF at a time (up to 5 files)\n\nOr type *skip* to continue without one.'
     )
     return { nextStep: 'reg_collect_evidence' }
   }
@@ -632,6 +1041,32 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       await sendText(ctx.phone, "⚠️ Couldn't process that file. Please try again or type *skip* to continue without one.")
       return { nextStep: 'reg_collect_evidence' }
     }
+    const existing = uniqueStrings(ctx.data.evidenceFileUrls ?? [])
+    const existingMediaIds = uniqueStrings(ctx.data.evidenceMediaIds ?? [])
+
+    if (existingMediaIds.includes(ctx.reply.mediaId)) {
+      console.info('[registration:handleCollectEvidence] duplicate media skipped', {
+        phone: ctx.phone, mediaId: ctx.reply.mediaId, currentCount: existing.length,
+      })
+      if (!ctx.suppressEvidenceFileProgress) {
+        await sendEvidenceFileProgress(ctx.phone, existing.length)
+      }
+      return {
+        nextStep: 'reg_collect_evidence',
+        nextData: { evidenceFileUrls: existing, evidenceMediaIds: existingMediaIds },
+      }
+    }
+
+    if (existing.length >= MAX_EVIDENCE_FILES) {
+      if (!ctx.suppressEvidenceFileProgress) {
+        await sendEvidenceFileProgress(ctx.phone, existing.length)
+      }
+      return {
+        nextStep: 'reg_collect_evidence',
+        nextData: { evidenceFileUrls: existing, evidenceMediaIds: existingMediaIds },
+      }
+    }
+
     // providerApplicationId is not yet created — attachment starts with null FK.
     // handlePending backfills the FK once the ProviderApplication row exists.
     try {
@@ -639,17 +1074,26 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
         mediaId: ctx.reply.mediaId,
         // no providerApplicationId yet — backfilled at submission
       })
-      const existing = ctx.data.evidenceFileUrls ?? []
-      const updated = [...existing, attachmentId]
-      await sendButtons(
-        ctx.phone,
-        `✅ File received (${updated.length} total). Add another or continue?`,
-        [
-          { id: 'evidence_done', title: '✅ Continue' },
-          { id: 'evidence_add_more', title: '📎 Add another' },
-        ]
-      )
-      return { nextStep: 'reg_collect_evidence', nextData: { evidenceFileUrls: updated } }
+      const updated = uniqueStrings([...existing, attachmentId]).slice(0, MAX_EVIDENCE_FILES)
+      const updatedMediaIds = uniqueStrings([...existingMediaIds, ctx.reply.mediaId])
+
+      console.info('[registration:handleCollectEvidence] evidence file saved', {
+        phone: ctx.phone,
+        mediaId: ctx.reply.mediaId,
+        mimeType: ctx.reply.mimeType ?? 'unknown',
+        attachmentId,
+        newCount: updated.length,
+        batchSize: ctx.evidenceFileBatchSize ?? 1,
+        suppressed: ctx.suppressEvidenceFileProgress ?? false,
+      })
+
+      if (!ctx.suppressEvidenceFileProgress) {
+        await sendEvidenceFileProgress(ctx.phone, updated.length)
+      }
+      return {
+        nextStep: 'reg_collect_evidence',
+        nextData: { evidenceFileUrls: updated, evidenceMediaIds: updatedMediaIds },
+      }
     } catch (err) {
       console.error(
         `[registration:handleCollectEvidence] media upload failed — mediaId=${ctx.reply.mediaId} mimeType=${ctx.reply.mimeType ?? 'unknown'}:`,
@@ -665,7 +1109,9 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'evidence_add_more') {
-    await sendText(ctx.phone, '📎 Send your next file, or type *skip* to finish.')
+    const existing = uniqueStrings(ctx.data.evidenceFileUrls ?? [])
+    const remaining = Math.max(0, MAX_EVIDENCE_FILES - existing.length)
+    await sendText(ctx.phone, `📎 Send your next file — one at a time. You can add up to ${remaining} more, or type *skip* to finish.`)
     return { nextStep: 'reg_collect_evidence' }
   }
 
@@ -727,109 +1173,271 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_pending' }
   }
 
+  const traceId = createSubmitTraceId()
+  const normalizedPhone = normalizePhone(ctx.phone)
+  const digits = normalizedPhone.replace(/\D/g, '')
+  const phoneVariants = Array.from(new Set([
+    normalizedPhone,
+    digits ? `+${digits}` : null,
+    digits || null,
+    digits.startsWith('27') ? `0${digits.slice(2)}` : null,
+  ].filter(Boolean) as string[]))
+
   try {
-    const availLabel =
-      (ctx.data.availability?.length ?? 0) >= 7 ? 'Any day'
-      : (ctx.data.availability?.length ?? 0) >= 6 ? 'Mon–Sat'
-      : 'Weekdays only'
+    const submitData = validateSubmitData(ctx)
+    const cohort = createTestCohortContext(normalizedPhone)
+    const sessionUploadedFileCount = submitData.evidenceAttachmentIds.length
 
-    // ── Idempotency guard: prevent duplicate application on double-tap ─────────
-    // Race condition: user taps "Submit" twice (or retries quickly). Check for
-    // an existing active application before creating a new record.
-    const normalizedPhone = normalizePhone(ctx.phone)
-    const existingApp = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
-
-    if (existingApp?.status === 'APPROVED') {
-      await sendText(
-        ctx.phone,
-        `✅ You're already registered as a Plug a Pro worker. You'll receive job leads through this number.\n\nReply *menu* to return to the main menu.`
-      )
-      return { nextStep: 'done' }
-    }
-
-    if (existingApp?.status === 'PENDING') {
-      const ref = existingApp.id.slice(-8).toUpperCase()
-      await sendText(
-        ctx.phone,
-        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 24 hours. Reply *menu* anytime to return to the main menu.`
-      )
-      return { nextStep: 'done' }
-    }
-
-    const resolvedAreaLabels = ctx.data.locationNodeIds && (ctx.data.locationNodeIds as string[]).length > 0
-      ? ((ctx.data.selectedSuburbLabels as string[] | undefined)?.length
-          ? (ctx.data.selectedSuburbLabels as string[])
-          : (ctx.data.selectedRegionLabels as string[] | undefined) ?? ctx.data.serviceAreas ?? [])
-      : (ctx.data.serviceAreas ?? [])
-
-    const providerId = await syncProviderRecord(db, {
-      phone: normalizedPhone,
-      name: ctx.data.name ?? 'Unknown',
-      skills: ctx.data.skills ?? [],
-      serviceAreas: resolvedAreaLabels,
-      active: true,
-      availableNow: true,
-      verified: false,
-      locationNodeIds: ctx.data.locationNodeIds ?? [],
+    console.info('[registration-flow] provider application submit started', {
+      trace_id: traceId,
+      normalized_phone: normalizedPhone,
+      reply_id: ctx.reply.id ?? null,
+      selected_skills_count: submitData.skills.length,
+      selected_areas_count: submitData.resolvedAreaLabels.length,
+      selected_location_node_count: submitData.locationNodeIds.length,
+      uploaded_files_count_from_session: sessionUploadedFileCount,
+      is_test_user: cohort.isTestUser,
+      cohort_name: cohort.cohortName,
     })
 
-    // evidenceFileUrls holds Attachment IDs (not blob URLs) — created during evidence collection
-    // with providerApplicationId=null; we backfill the FK below after the application is created.
-    const evidenceAttachmentIds = ctx.data.evidenceFileUrls ?? []
+    const submitResult: ProviderApplicationSubmitResult = await db.$transaction(async (tx) => {
+      const existingCustomer = await tx.customer.findFirst({
+        where: { phone: { in: phoneVariants } },
+        select: { id: true },
+      })
+      if (existingCustomer) {
+        throw new ProviderApplicationSubmitError(
+          'PROVIDER_APPLICATION_ALREADY_EXISTS',
+          'This number is already registered as a customer on Plug A Pro.',
+          { customerId: existingCustomer.id },
+        )
+      }
 
-    let application: { id: string }
-    try {
-      application = await db.providerApplication.create({
+      const existingApp = await findLatestActiveProviderApplicationByPhone(tx as typeof db, normalizedPhone)
+      if (existingApp?.status === 'APPROVED') {
+        return {
+          outcome: 'existing_approved',
+          applicationId: existingApp.id,
+          ref: existingApp.id.slice(-8).toUpperCase(),
+        }
+      }
+      if (existingApp?.status === 'PENDING') {
+        return {
+          outcome: 'existing_pending',
+          applicationId: existingApp.id,
+          ref: existingApp.id.slice(-8).toUpperCase(),
+        }
+      }
+
+      if (submitData.evidenceAttachmentIds.length > 0) {
+        const attachments = await tx.attachment.findMany({
+          where: { id: { in: submitData.evidenceAttachmentIds } },
+          select: { id: true, providerApplicationId: true },
+        })
+        const foundAttachmentIds = new Set(attachments.map((attachment) => attachment.id))
+        const missingAttachmentIds = submitData.evidenceAttachmentIds.filter((id) => !foundAttachmentIds.has(id))
+
+        console.info('[registration-flow] provider application attachment validation', {
+          trace_id: traceId,
+          normalized_phone: normalizedPhone,
+          expected_files_count: submitData.evidenceAttachmentIds.length,
+          saved_files_count: attachments.length,
+          missing_files_count: missingAttachmentIds.length,
+        })
+
+        if (missingAttachmentIds.length > 0) {
+          throw new ProviderApplicationSubmitError(
+            'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY',
+            'One or more uploaded provider application files are not available yet.',
+            {
+              expectedFiles: submitData.evidenceAttachmentIds.length,
+              savedFiles: attachments.length,
+            },
+          )
+        }
+
+        const alreadyLinkedElsewhere = attachments.filter((attachment) => attachment.providerApplicationId)
+        if (alreadyLinkedElsewhere.length > 0) {
+          throw new ProviderApplicationSubmitError(
+            'PROVIDER_APPLICATION_FILE_LINK_FAILED',
+            'One or more uploaded files are already linked to another provider application.',
+            { linkedFiles: alreadyLinkedElsewhere.length },
+          )
+        }
+      }
+
+      const providerId = await syncProviderRecord(tx as typeof db, {
+        phone: normalizedPhone,
+        name: submitData.name,
+        skills: submitData.skills,
+        serviceAreas: submitData.resolvedAreaLabels,
+        active: true,
+        availableNow: true,
+        verified: false,
+        isTestUser: cohort.isTestUser,
+        cohortName: cohort.cohortName,
+        locationNodeIds: submitData.locationNodeIds,
+        // Enrichment (syncProviderSkills, upsertStructuredServiceAreas) must not run
+        // inside the transaction — a caught DB error inside those helpers puts the
+        // PostgreSQL connection in ABORTED state even when swallowed at the JS level,
+        // causing all subsequent tx queries to fail. Run enrichment post-commit below.
+        skipEnrichment: true,
+      })
+
+      const application = await tx.providerApplication.create({
         data: {
           providerId,
           phone: normalizedPhone,
-          name: ctx.data.name ?? 'Unknown',
-          skills: ctx.data.skills ?? [],
-          serviceAreas: resolvedAreaLabels,
+          name: submitData.name,
+          skills: submitData.skills,
+          serviceAreas: submitData.resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
-          availability: availLabel,
+          availability: formatAvailabilityLabel(submitData.availability),
           evidenceNote: ctx.data.evidenceNote ?? null,
-          evidenceFileUrls: evidenceAttachmentIds,
+          evidenceFileUrls: submitData.evidenceAttachmentIds,
+          isTestUser: cohort.isTestUser,
+          cohortName: cohort.cohortName,
           status: 'PENDING',
         },
       })
-    } catch (error) {
-      const duplicateRace =
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 'P2002'
 
-      if (!duplicateRace) throw error
+      if (submitData.evidenceAttachmentIds.length > 0) {
+        const linked = await tx.attachment.updateMany({
+          where: {
+            id: { in: submitData.evidenceAttachmentIds },
+            providerApplicationId: null,
+          },
+          data: { providerApplicationId: application.id },
+        })
 
-      const racedExisting = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
-      if (!racedExisting) throw error
+        if (linked.count !== submitData.evidenceAttachmentIds.length) {
+          throw new ProviderApplicationSubmitError(
+            'PROVIDER_APPLICATION_FILE_LINK_FAILED',
+            'Uploaded provider application files could not all be linked.',
+            {
+              expectedFiles: submitData.evidenceAttachmentIds.length,
+              linkedFiles: linked.count,
+            },
+          )
+        }
+      }
 
-      const ref = racedExisting.id.slice(-8).toUpperCase()
-      await sendText(
+      await (tx as any).auditLog?.create?.({
+        data: {
+          actorId: normalizedPhone,
+          actorRole: 'provider_applicant',
+          action: 'provider_application.submit',
+          entityType: 'ProviderApplication',
+          entityId: application.id,
+          after: {
+            status: 'PENDING',
+            providerId,
+            selectedSkillsCount: submitData.skills.length,
+            selectedAreasCount: submitData.resolvedAreaLabels.length,
+            uploadedFilesCount: submitData.evidenceAttachmentIds.length,
+            traceId,
+          },
+          isTestEvent: cohort.isTestUser,
+          cohortName: cohort.cohortName,
+        },
+      })
+
+      return {
+        outcome: 'created',
+        applicationId: application.id,
+        providerId,
+        ref: application.id.slice(-8).toUpperCase(),
+      }
+    })
+
+    if (submitResult.outcome === 'existing_approved') {
+      await sendButtons(
         ctx.phone,
-        `⏳ Your application is already under review.\n\nRef: *${ref}*\n\nWe'll contact you within 24 hours. Reply *menu* anytime to return to the main menu.`
+        `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${submitResult.ref}*\n\nYou can manage jobs from the provider menu.`,
+        [
+          { id: 'provider_my_jobs', title: 'My Jobs' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+        undefined,
+        { metadata: { traceId, applicationId: submitResult.applicationId } },
       )
       return { nextStep: 'done' }
     }
 
-    const ref = application.id.slice(-8).toUpperCase()
+    if (submitResult.outcome === 'existing_pending') {
+      await sendButtons(
+        ctx.phone,
+        `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${submitResult.ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
+        [
+          { id: 'provider_application_status', title: 'Check Status' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+        undefined,
+        { metadata: { traceId, applicationId: submitResult.applicationId } },
+      )
+      return { nextStep: 'done' }
+    }
 
-    // Backfill providerApplicationId on any evidence Attachments created during the flow.
-    // They were created with providerApplicationId=null (no app row existed yet).
-    if (evidenceAttachmentIds.length > 0) {
-      await db.attachment.updateMany({
-        where: { id: { in: evidenceAttachmentIds }, providerApplicationId: null },
-        data: { providerApplicationId: application.id },
-      }).catch((err: unknown) => {
-        console.error(`[registration-flow:handlePending] evidence attachment backfill failed for app ${application.id}:`, err)
+    if (submitResult.outcome === 'created') {
+      // Post-commit enrichment: skills and structured service areas are non-critical.
+      // Run on the real db client (not tx) so a transient error never rolls back the application.
+      syncProviderSkills(db, submitResult.providerId, submitData.skills).catch((err) =>
+        console.error('[registration-flow] post-commit skills sync failed', {
+          trace_id: traceId,
+          provider_id: submitResult.providerId,
+          error: safeErrorMessage(err),
+        })
+      )
+      if (submitData.locationNodeIds.length > 0) {
+        upsertStructuredServiceAreas(db, submitResult.providerId, submitData.locationNodeIds).catch((err) =>
+          console.error('[registration-flow] post-commit service areas sync failed', {
+            trace_id: traceId,
+            provider_id: submitResult.providerId,
+            error: safeErrorMessage(err),
+          })
+        )
+      }
+    }
+
+    const isComingSoonRegion = ctx.data.selectedRegionStatus === 'coming_soon'
+    try {
+      await sendButtons(
+        ctx.phone,
+        buildProviderApplicationSubmittedMessage({
+          providerName: ctx.data.name,
+          applicationRef: submitResult.ref,
+          isComingSoonRegion,
+        }),
+        [
+          { id: 'provider_application_status', title: 'Check Status' },
+          { id: 'back_home', title: 'Main Menu' },
+        ],
+        undefined,
+        { metadata: { traceId, applicationId: submitResult.applicationId } },
+      )
+    } catch (error) {
+      console.error('[registration-flow] provider application WhatsApp confirmation failed after commit', {
+        trace_id: traceId,
+        application_id: submitResult.applicationId,
+        error: safeErrorMessage(error),
       })
     }
 
-    await sendText(
-      ctx.phone,
-      `🎉 *Application submitted!*\n\nThanks, *${ctx.data.name}* — we'll review your details and get back to you within *24 hours*.\n\nRef: *${ref}*\n\n_We'll message you here with the outcome._`
-    )
+    console.info('[registration-flow] provider application submit committed', {
+      trace_id: traceId,
+      normalized_phone: normalizedPhone,
+      application_id: submitResult.applicationId,
+      provider_id: submitResult.providerId,
+      application_ref: submitResult.ref,
+      uploaded_files_count_from_session: sessionUploadedFileCount,
+      final_status: 'PENDING',
+    })
+
+    // A new provider can unlock older unmatched demand, so check open and
+    // recently expired jobs immediately instead of waiting for the next cron run.
+    checkJobsForNewProviderAvailability(submitResult.providerId).catch((err) => {
+      console.error(`[registration-flow] new-provider job check failed for provider ${submitResult.providerId}:`, err)
+    })
 
     // Send template confirmation (covers the case where >24h passes before we reply)
     // Intentional direct sendTemplate bypass: provider applicants have no Customer record yet,
@@ -840,9 +1448,15 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       to: ctx.phone,
       template: 'technician_application_received',
       components: [
-        { type: 'body', parameters: [{ type: 'text', text: ctx.data.name ?? 'Applicant' }, { type: 'text', text: ref }] },
+        { type: 'body', parameters: [{ type: 'text', text: ctx.data.name ?? 'Applicant' }, { type: 'text', text: submitResult.ref }] },
       ],
-    }).catch(() => {}) // non-blocking
+    }).catch((error: unknown) => {
+      console.error('[registration-flow] provider application template confirmation failed', {
+        trace_id: traceId,
+        application_id: submitResult.applicationId,
+        error: safeErrorMessage(error),
+      })
+    }) // non-blocking
 
     // Notify admin of new application (non-blocking)
     const { sendAdminNewApplication } = await import('../whatsapp')
@@ -850,20 +1464,74 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       applicantName: ctx.data.name ?? 'Unknown',
       applicantPhone: ctx.phone,
       skills: ctx.data.skills ?? [],
-      serviceAreas: ctx.data.locationNodeIds?.length
+      serviceAreas: normaliseLocationDisplayNames(ctx.data.locationNodeIds?.length
         ? (ctx.data.selectedRegionLabels ?? ctx.data.serviceAreas ?? [])
-        : (ctx.data.serviceAreas ?? []),
-      applicationId: application.id,
-    }).catch(() => {})
+        : (ctx.data.serviceAreas ?? [])),
+      applicationId: submitResult.applicationId,
+    }).catch((error: unknown) => {
+      console.error('[registration-flow] admin new application notification failed', {
+        trace_id: traceId,
+        application_id: submitResult.applicationId,
+        error: safeErrorMessage(error),
+      })
+    })
 
     return { nextStep: 'done' }
   } catch (err) {
-    console.error('[registration-flow] Submit error:', err)
-    await sendText(
+    const duplicateRace =
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      err.code === 'P2002'
+
+    if (duplicateRace) {
+      const racedExisting = await findLatestActiveProviderApplicationByPhone(db, normalizedPhone)
+      if (racedExisting) {
+        const ref = racedExisting.id.slice(-8).toUpperCase()
+        await sendButtons(
+          ctx.phone,
+          racedExisting.status === 'APPROVED'
+            ? `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${ref}*\n\nYou can manage jobs from the provider menu.`
+            : `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
+          [
+            { id: racedExisting.status === 'APPROVED' ? 'provider_my_jobs' : 'provider_application_status', title: racedExisting.status === 'APPROVED' ? 'My Jobs' : 'Check Status' },
+            { id: 'back_home', title: 'Main Menu' },
+          ],
+          undefined,
+          { metadata: { traceId, applicationId: racedExisting.id, recoveredFrom: 'P2002' } },
+        )
+        return { nextStep: 'done' }
+      }
+    }
+
+    const errorCode = errorCodeFromUnknown(err)
+    console.error('[registration-flow] provider application submit failed', {
+      trace_id: traceId,
+      normalized_phone: normalizedPhone,
+      reply_id: ctx.reply.id ?? null,
+      selected_skills_count: ctx.data.skills?.length ?? 0,
+      selected_areas_count: ctx.data.locationNodeIds?.length ?? ctx.data.serviceAreas?.length ?? 0,
+      uploaded_files_count_from_session: ctx.data.evidenceFileUrls?.length ?? 0,
+      error_code: errorCode,
+      error_message: safeErrorMessage(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    })
+    const detail =
+      err instanceof ProviderApplicationSubmitError && err.code === 'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'
+        ? `\n\nExpected files: ${err.details.expectedFiles ?? 'unknown'}\nSaved files: ${err.details.savedFiles ?? 'unknown'}`
+        : ''
+    await sendButtons(
       ctx.phone,
-      '😔 Something went wrong submitting your application. Please try again or reply *join* to restart.'
+      `😔 We couldn't submit your application.\n\nReason: ${err instanceof ProviderApplicationSubmitError ? err.message : 'An unexpected submit error occurred.'}${detail}\n\nError code: ${errorCode}\nTrace ID: ${traceId}\n\nYour progress is saved. Please try Submit again or choose Edit.`,
+      [
+        { id: 'submit_yes', title: 'Try Again' },
+        { id: 'reg_edit', title: 'Edit Application' },
+        { id: 'provider_support', title: 'Contact Support' },
+      ],
+      undefined,
+      { metadata: { traceId, errorCode } },
     )
-    return { nextStep: 'done' }
+    return { nextStep: 'reg_pending', nextData: ctx.data }
   }
 }
 
@@ -902,7 +1570,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'reg_collect_skills' }   // handleCollectSkills reads the text as the new name
 
     case 'edit_skills':
-      await sendSkillPrompt(ctx.phone, 'Reply with your updated skill selection. Your previous selection will be replaced.')
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills* — previous selection will be replaced.'))
       return { nextStep: 'reg_collect_skills_more', nextData: { skills: [] } }
 
     case 'edit_area':
@@ -929,7 +1597,7 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
     case 'edit_evidence':
       await sendText(
         ctx.phone,
-        '🧾 Share a short note about past work, references, or certificate names you want customers to see later.\n\nReply with your note, or type *skip* to clear it.'
+        '🧾 Share a short note about past work or references you want customers to see later.\n\nReply with your note, or type *skip* to clear it.'
       )
       return { nextStep: 'reg_collect_evidence' }
 
@@ -953,35 +1621,97 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function sendSkillPrompt(phone: string, intro: string): Promise<void> {
-  const numberedList = SERVICE_CATEGORY_OPTIONS.map(
-    (option, index) => `${index + 1}. ${option.label}`,
-  ).join('\n')
+/**
+ * Parses a WhatsApp reply into a deduplicated, sorted list of 1-based positive integers.
+ * Accepts comma, semicolon, and whitespace separators.
+ * Rejects floats ("1.2"), non-numeric fragments, and zero/negative numbers.
+ * Strips leading # (e.g. "#3" → 3) and trailing period (e.g. "1." → 1).
+ * Trailing periods appear when users copy or mimic WhatsApp's rendered numbered list
+ * format ("1. Plumbing" → user types "1.").
+ *
+ * Examples:
+ *   "1,3,6"     → [1, 3, 6]
+ *   "1 2 3"     → [1, 2, 3]
+ *   "1;2;3"     → [1, 2, 3]
+ *   "1, 2, 3"   → [1, 2, 3]
+ *   "1,1,2,3,2" → [1, 2, 3]  (deduplicated)
+ *   "#1,#3"     → [1, 3]
+ *   "1.,3."     → [1, 3]      (trailing periods stripped)
+ *   "1.2,3"     → [3]         (1.2 is not an integer — rejected)
+ *   "1a,3"      → [3]         (1a is not a pure integer — rejected)
+ */
+function parseNumberedInput(raw: string): number[] {
+  const parts = raw.trim().split(/[\s,;]+/).filter(Boolean)
+  const seen = new Set<number>()
+  for (const part of parts) {
+    // Strip leading # (e.g. "#1") and trailing period (e.g. "1." from WhatsApp list copy)
+    const stripped = part.replace(/^#/, '').replace(/\.$/, '')
+    // Only accept pure digit strings — no floats, no mixed alphanumeric
+    if (!/^\d+$/.test(stripped)) continue
+    const n = parseInt(stripped, 10)
+    if (n > 0) seen.add(n)
+  }
+  return [...seen].sort((a, b) => a - b)
+}
 
-  await sendText(
-    phone,
-    `${intro}\n\n🔧 *Choose your skills in one reply.*\nReply with numbers separated by commas.\nExample: *1,3,5*\n\n${numberedList}`,
+/**
+ * Builds a numbered skill selection prompt as a plain text message.
+ * Skills are numbered 1–N (PROVIDER_SKILL_OPTIONS, 'other' excluded).
+ * Provider replies with comma-separated numbers, e.g. "1,3,6".
+ */
+function buildSkillPromptText(intro: string, selected: string[] = []): string {
+  const lines = PROVIDER_SKILL_OPTIONS.map((o, i) => {
+    const selectedSuffix = selected.includes(o.label) ? ' (selected)' : ''
+    return `${i + 1}. ${o.label}${selectedSuffix}`
+  })
+  return (
+    `${intro}\n\n` +
+    `Reply with all numbers that apply, separated by commas.\n` +
+    `Example: *1,3,6*\n\n` +
+    lines.join('\n')
   )
 }
 
-function parseSkillSelections(input: string): string[] {
-  if (!input.trim()) return []
+/**
+ * Builds a numbered suburb selection prompt as a plain text message.
+ * Numbers are global (1-based across all pages) so "8" always means the 8th suburb
+ * regardless of the current page offset.
+ */
+function buildSuburbPromptText(
+  regionLabel: string,
+  allSuburbs: Array<{ id: string; label: string }>,
+  pageOffset: number,
+  selectedLabels: string[],
+): string {
+  const page = allSuburbs.slice(pageOffset, pageOffset + SUBURB_TEXT_PAGE_SIZE)
+  const hasMore = allSuburbs.length > pageOffset + SUBURB_TEXT_PAGE_SIZE
+  const total = allSuburbs.length
 
-  const tokens = input
-    .split(/[,\n]/)
-    .map((token) => token.trim())
-    .filter(Boolean)
+  const selectedSummary = selectedLabels.length > 0
+    ? `\nSelected so far: *${selectedLabels.join(', ')}*\n`
+    : ''
 
-  if (tokens.length === 0) return []
+  // Global numbering: suburb at index i has number (pageOffset + i + 1)
+  const lines = page.map((s, i) => {
+    const selectedSuffix = selectedLabels.includes(s.label) ? ' (selected)' : ''
+    return `${pageOffset + i + 1}. ${s.label}${selectedSuffix}`
+  })
 
-  const numericSelections = tokens.every((token) => /^\d+$/.test(token))
-  if (numericSelections) {
-    const tags = tokens
-      .map((token) => Number(token))
-      .map((index) => SERVICE_CATEGORY_OPTIONS[index - 1]?.tag)
-      .filter((value): value is string => Boolean(value))
-    return labelsFromServiceCategoryTags(tags)
-  }
+  // Build example numbers from the current page
+  const exNums = [pageOffset + 1, Math.min(pageOffset + 3, total)].filter((v, i, a) => a.indexOf(v) === i)
+  const example = exNums.join(',')
 
-  return labelsFromServiceCategoryTags(normalizeServiceCategorySelections(tokens))
+  const instructions: string[] = [
+    `Reply with all numbers for suburbs you cover. Example: *${example}*`,
+  ]
+  if (selectedLabels.length > 0) instructions.push(`Reply *done* to continue with your current selection.`)
+  if (hasMore) instructions.push(`Reply *more* to see the next batch of suburbs.`)
+  instructions.push(`Reply *all* to cover the whole ${regionLabel} area.`)
+
+  return (
+    `📍 *Which suburbs in ${regionLabel} do you work in?*${selectedSummary}\n` +
+    lines.join('\n') +
+    `\n\n` +
+    instructions.join('\n')
+  )
 }

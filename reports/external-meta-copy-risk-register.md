@@ -1,4 +1,4 @@
-# External Meta Copy Risk Register — Plug-A-Pro (2026-04-10)
+# External Meta Copy Risk Register — Plug A Pro (2026-04-10)
 
 Audit scope: WhatsApp Business profile, Facebook Page (Kgolaentle Holdings parent), Ads library.
 Runbook: blocked terms = verified, trusted, guaranteed, screened, background-checked, certified, licensed (where not formally implemented).
@@ -10,7 +10,7 @@ Runbook: blocked terms = verified, trusted, guaranteed, screened, background-che
 | Field | Before | After | Action taken |
 |---|---|---|---|
 | Description | "Local help. Real quotes. **Trusted pros**. PlugAPro connects you with **verified** local service providers across South Africa. Get multiple quotes, compare, and hire with confidence." | "Local help. Real quotes. **Independent providers**. Plug A Pro connects you with local service providers across South Africa. Get multiple quotes, compare, and book online." | Updated in WABA console 2026-04-10. Saved and confirmed. Screenshot: `screenshots/meta-copy-risk-whatsapp-profile-description-after.png` |
-| Display name | "Plug-A-Pro" → **Rejected** by Meta (hyphens violate Display Name Guidelines) | Submitted "Plug A Pro" | Blocked — prior "PlugAPro" submission is in active Meta review queue. Resubmit "Plug A Pro" once queue clears. See B9 in gap register. |
+| Display name | "Plug A Pro" → **Rejected** by Meta (hyphens violate Display Name Guidelines) | Submitted "Plug A Pro" | Blocked — prior "PlugAPro" submission is in active Meta review queue. Resubmit "Plug A Pro" once queue clears. See B9 in gap register. |
 
 ---
 
@@ -18,7 +18,7 @@ Runbook: blocked terms = verified, trusted, guaranteed, screened, background-che
 
 | Field | Finding | Action required |
 |---|---|---|
-| About / Bio | Parent company bio (toilet/trailer hire). No Plug-A-Pro-specific trust claims. Clean. | None |
+| About / Bio | Parent company bio (toilet/trailer hire). No Plug A Pro-specific trust claims. Clean. | None |
 | Ads (last 60 days) | No active or recent ads found in Ads Library for this Page. | None |
 
 ---

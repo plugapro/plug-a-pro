@@ -1,4 +1,4 @@
-// Plug-A-Pro — Marketplace Schema
+// Plug A Pro — Marketplace Schema
 // Domain model: homeowners post job requests → platform matches to independent providers
 // → providers accept leads → quote → book → execute → pay → review
 
@@ -25,6 +25,8 @@ model Customer {
   name      String
   notes     String?
   active    Boolean  @default(true)
+  isTestUser Boolean @default(false)
+  cohortName String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -35,6 +37,19 @@ model Customer {
   whatsappMarketingOptOutAt DateTime?
   whatsappMarketingSource   String?   // "bot" | "pwa" | "admin" | "import"
   lastWhatsappPrefSyncAt    DateTime?
+
+  // Moderation / lifecycle
+  isBlocked      Boolean   @default(false)
+  blockedReason  String?
+  blockedAt      DateTime?
+  suspendedUntil DateTime?
+  suspendedReason String?
+  archivedAt     DateTime?
+  archiveReason  String?
+  purgeAfter     DateTime?
+  mergedIntoCustomerId String?
+  channel        String?   // "PWA" | "WHATSAPP" | "BOTH"
+  address        String?   // free-text address for quick-edit / display
 
   addresses              Address[]
   jobRequests            JobRequest[]
@@ -126,6 +141,7 @@ model LocationNode {
 
   technicianServiceAreas TechnicianServiceArea[]
   addresses              Address[]
+  candidatePool          CandidatePool[]
 
   @@index([nodeType, active])
   @@index([provinceKey, nodeType])
@@ -151,6 +167,8 @@ model Provider {
   evidenceNote String?
   portfolioUrls String[] @default([])
   active       Boolean  @default(true)
+  isTestUser   Boolean  @default(false)
+  cohortName   String?
   availableNow Boolean  @default(true)   // currently online and accepting leads
   verified     Boolean  @default(false) // internal lead-eligibility flag after marketplace review; not a public guarantee
   averageRating Float   @default(0)
@@ -174,6 +192,15 @@ model Provider {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Moderation / lifecycle
+  status         ProviderStatus @default(ACTIVE)
+  kycStatus      KycStatus      @default(NOT_STARTED)
+  suspendedUntil DateTime?
+  suspendedReason String?
+  strikes        Int            @default(0)
+  archivedAt     DateTime?
+  archiveReason  String?
+
   schedule          ProviderSchedule[]
   technicianSkills  TechnicianSkill[]
   technicianCertifications TechnicianCertification[]
@@ -181,9 +208,11 @@ model Provider {
   technicianAvailability TechnicianAvailability?
   scheduleItems     TechnicianScheduleItem[]
   leads             Lead[]
+  leadUnlocks       LeadUnlock[]
   matches           Match[]
   jobs              Job[]
   reviews           Review[]
+  leadUnlockDisputes LeadUnlockDispute[]
   pushSubscriptions PushSubscription[]
   applications      ProviderApplication[]
   preferredByRequests JobRequest[] @relation("PreferredProvider")
@@ -193,7 +222,16 @@ model Provider {
   providerNotes             ProviderNote[]
   adminCertifications       ProviderCertification[]
   equipment                 ProviderEquipment[]
+  liveStatus                ProviderLiveStatus?
+  candidatePool             CandidatePool[]
+  capacity                  ProviderCapacity?
+  wallet                    ProviderWallet?
+  walletLedgerEntries       WalletLedgerEntry[]
+  paymentIntents            PaymentIntent[]
+  promoAwards               ProviderPromoAward[]
 
+  @@index([active, verified])
+  @@index([isTestUser])
   @@map("providers")
 }
 
@@ -238,16 +276,23 @@ model ProviderApplication {
   evidenceNote     String?
   evidenceFileUrls String[]          @default([])
   idNumber         String?           // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
+  isTestUser       Boolean           @default(false)
+  cohortName       String?
   status       ApplicationStatus @default(PENDING)
   notes        String?           // admin review notes
   reviewedAt   DateTime?
   reviewedById String?
+  approvalWhatsappSendStartedAt DateTime?
+  approvalWhatsappSentAt DateTime?
+  approvalWhatsappExternalId String?
   submittedAt  DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
   provider    Provider?    @relation(fields: [providerId], references: [id])
   attachments Attachment[]
 
+  @@index([approvalWhatsappSentAt])
+  @@index([isTestUser, status])
   @@map("provider_applications")
 }
 
@@ -278,8 +323,17 @@ model JobRequest {
   customerAccessTokenExpiresAt DateTime?
   customerAccessTokenRevokedAt DateTime?
   latestDispatchDecisionId String?
+  isTestRequest Boolean @default(false)
+  cohortName String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
   expiresAt   DateTime?        // if no match within window, mark EXPIRED
+  customerNoMatchNotifiedAt DateTime?
+  customerRematchCheckSentAt DateTime?
+  customerRematchCheckRespondedAt DateTime?
+  customerRematchCheckOutcome String?
+  // Alternative-slot negotiation — set when orchestrator sends slot options after a NO_MATCH
+  altSlotNegotiationSentAt    DateTime?
+  altSlotNegotiationOutcome   String?   // 'CUSTOMER_SELECTED' | 'CUSTOMER_DECLINED' | 'PROVIDER_DECLINED' | 'EXPIRED'
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -294,6 +348,8 @@ model JobRequest {
   assignmentHolds AssignmentHold[]
   dispatchDecisions DispatchDecision[]
 
+  @@index([status, createdAt])
+  @@index([isTestRequest, status])
   @@map("job_requests")
 }
 
@@ -313,15 +369,74 @@ model Lead {
   respondedAt  DateTime?
   expiresAt    DateTime?  // provider must respond within this window
   reminderSentAt DateTime? // set once when the 1-hour reminder WhatsApp is sent
+  isTestLead Boolean @default(false)
+  cohortName String?
 
   jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
   provider   Provider   @relation(fields: [providerId], references: [id])
   dispatchDecision DispatchDecision? @relation(fields: [dispatchDecisionId], references: [id], onDelete: SetNull)
   matchAttempt MatchAttempt? @relation(fields: [matchAttemptId], references: [id], onDelete: SetNull)
   assignmentHold AssignmentHold? @relation(fields: [assignmentHoldId], references: [id], onDelete: SetNull)
+  unlock       LeadUnlock?
 
   @@unique([jobRequestId, providerId])
+  @@index([jobRequestId, status])
+  @@index([isTestLead, status])
   @@map("leads")
+}
+
+model LeadUnlock {
+  id                  String           @id @default(cuid())
+  // One unlock per dispatched Lead. This relies on the current 1:1 Lead
+  // dispatch model; revisit before introducing pooled multi-provider dispatch.
+  leadId              String           @unique
+  providerId          String
+  matchId             String?
+  creditsCharged      Int
+  creditTypeBreakdown Json             @default("{}")
+  status              LeadUnlockStatus @default(UNLOCKED)
+  isTestUnlock        Boolean          @default(false)
+  cohortName          String?
+  unlockedAt          DateTime         @default(now())
+  disputeReason       LeadUnlockDisputeReason?
+  disputeNotes        String?
+  disputedAt          DateTime?
+  resolvedAt          DateTime?
+  resolvedBy          String?
+  refundedAt          DateTime?
+  refundReason        String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  provider Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  match    Match?    @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  dispute  LeadUnlockDispute?
+
+  @@index([providerId, unlockedAt])
+  @@index([matchId])
+  @@index([isTestUnlock])
+  @@map("lead_unlocks")
+}
+
+model LeadUnlockDispute {
+  id           String                  @id @default(cuid())
+  leadUnlockId String                  @unique
+  providerId   String
+  reason       LeadUnlockDisputeReason
+  notes        String?
+  status       LeadUnlockDisputeStatus @default(OPEN)
+  createdAt    DateTime                @default(now())
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  adminNotes   String?
+
+  leadUnlock LeadUnlock @relation(fields: [leadUnlockId], references: [id], onDelete: Cascade)
+  provider   Provider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, createdAt])
+  @@index([status, createdAt])
+  @@map("lead_unlock_disputes")
 }
 
 // ─── Match ────────────────────────────────────────────────────────────────────
@@ -333,6 +448,14 @@ model Match {
   providerId      String
   status          MatchStatus @default(MATCHED)
   inspectionNeeded Boolean    @default(false)
+  customerContactedAt DateTime?
+  plannedArrivalStart DateTime?
+  plannedArrivalEnd   DateTime?
+  plannedArrivalNote  String?
+  providerOnTheWayAt  DateTime?
+  providerArrivedAt   DateTime?
+  providerStartedAt   DateTime?
+  providerCompletedAt DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -341,6 +464,7 @@ model Match {
   inspectionSlots   InspectionSlot[]
   quotes            Quote[]
   booking           Booking?
+  leadUnlocks       LeadUnlock[]
 
   @@map("matches")
 }
@@ -427,6 +551,8 @@ model Job {
   bookingId      String    @unique
   providerId     String
   status         JobStatus @default(SCHEDULED)
+  isTestJob      Boolean   @default(false)
+  cohortName     String?
   notes          String?
   completionNote String?
   arrivedAt      DateTime?
@@ -547,6 +673,111 @@ model ProviderPayout {
   @@map("provider_payouts")
 }
 
+model PaymentIntent {
+  id                     String              @id @default(cuid())
+  providerId             String
+  amountCents            Int
+  currency               String              @default("ZAR")
+  creditsToIssue         Int
+  paymentMethod          PaymentIntentMethod
+  paymentReference       String              @unique
+  status                 PaymentIntentStatus @default(PENDING_PAYMENT)
+  providerCellphone      String?
+  gatewayReference       String?
+  bankStatementReference String?
+  proofOfPaymentUrl      String?
+  adminNote              String?
+  // Payfast ITN fields — populated when a Payfast notification arrives.
+  itnReceivedAt          DateTime?
+  itnPaymentStatus       String?
+  itnAmountCents         Int?
+  creditedLedgerEntryId  String?
+  createdAt              DateTime            @default(now())
+  paidAt                 DateTime?
+  creditedAt             DateTime?
+  expiresAt              DateTime?
+  metadata               Json                @default("{}")
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, createdAt])
+  @@index([status, createdAt])
+  @@index([bankStatementReference])
+  @@map("payment_intents")
+}
+
+// ─── Provider credit wallet ──────────────────────────────────────────────────
+// Credits are the provider-facing paid-lead currency. Rand values are kept out
+// of wallet balances; current product pricing is defined in code as
+// 1 Plug-A-Pro Credit = R20. Immutable ledger rows are the accounting source of
+// truth. Cached balances exist only to make gating and display fast.
+
+model ProviderWallet {
+  id                 String               @id @default(cuid())
+  providerId         String               @unique
+  paidCreditBalance  Int                  @default(0)
+  promoCreditBalance Int                  @default(0)
+  // reservedCreditBalance is intentionally omitted in this foundation PR because
+  // there is no active multi-step lead reservation flow yet. Add it when unlocks
+  // need holds that can expire or be captured later.
+  status             ProviderWalletStatus @default(ACTIVE)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  provider      Provider            @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  ledgerEntries WalletLedgerEntry[]
+
+  @@map("provider_wallets")
+}
+
+model WalletLedgerEntry {
+  id                         String                @id @default(cuid())
+  walletId                   String
+  providerId                 String
+  entryType                  WalletLedgerEntryType
+  creditType                 WalletCreditType
+  amountCredits              Int
+  isTestTransaction          Boolean               @default(false)
+  cohortName                 String?
+  balanceAfterPaidCredits    Int
+  balanceAfterPromoCredits   Int
+  referenceType              String
+  referenceId                String
+  description                String?
+  metadata                   Json                  @default("{}")
+  createdAt                  DateTime              @default(now())
+  createdBy                  String?
+
+  wallet   ProviderWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  provider Provider       @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+  @@index([providerId, createdAt])
+  @@index([referenceType, referenceId])
+  @@index([isTestTransaction, createdAt])
+  @@map("wallet_ledger_entries")
+}
+
+model ProviderPromoAward {
+  id             String                    @id @default(cuid())
+  providerId     String
+  awardType      ProviderPromoAwardType
+  creditsAwarded Int
+  status         ProviderPromoAwardStatus  @default(AWARDED)
+  referenceType  String
+  referenceId    String
+  awardedAt      DateTime                  @default(now())
+  revokedAt      DateTime?
+  metadata       Json                      @default("{}")
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, awardType])
+  @@index([providerId, awardedAt])
+  @@index([referenceType, referenceId])
+  @@map("provider_promo_awards")
+}
+
 model TechnicianSkill {
   id             String   @id @default(cuid())
   providerId     String
@@ -617,15 +848,23 @@ model TechnicianServiceArea {
 model TechnicianAvailability {
   id                 String   @id @default(cuid())
   providerId         String   @unique
+  availabilityMode   String   @default("ALWAYS_AVAILABLE") // ALWAYS_AVAILABLE | SCHEDULE | PAUSED
   availabilityState  TechnicianAvailabilityState @default(AVAILABLE)
   nextAvailableAt    DateTime?
   breakUntil         DateTime?
+  pausedAt           DateTime?
+  pauseReason        String?
+  emergencyAvailable Boolean  @default(false)
+  sameDayAvailable   Boolean  @default(true)
+  lastUpdatedBy      String?
+  lastUpdatedChannel String?
   notes              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
+  @@index([availabilityMode])
   @@map("technician_availability")
 }
 
@@ -677,6 +916,7 @@ model DispatchDecision {
   rankingSummary        Json?
   filterSummary         Json?
   explanation           String?
+  alternativeSlotOptions Json?   // SlotOption[] — stored for alternative-slot WA negotiation
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -746,6 +986,7 @@ model AssignmentHold {
   scheduleItems    TechnicianScheduleItem[]
 
   @@index([jobRequestId, status])
+  @@index([expiresAt, status])
   @@map("assignment_holds")
 }
 
@@ -819,6 +1060,8 @@ model MessageEvent {
   readAt        DateTime?
   failureReason String?
   metadata      Json           @default("{}")
+  isTestEvent   Boolean        @default(false)
+  cohortName    String?
   createdAt     DateTime       @default(now())
 
   customer Customer? @relation(fields: [customerId], references: [id])
@@ -864,6 +1107,8 @@ model WhatsappPreferenceLog {
 model Conversation {
   id                String    @id @default(cuid())
   phone             String    @unique // E.164 WhatsApp number — one session per number
+  isTestSession     Boolean   @default(false)
+  cohortName        String?
   flow              String    // 'idle' | 'job_request' | 'registration' | 'status' | 'help'
   step              String    // current step within the flow
   data              Json      @default("{}") // accumulated session data
@@ -887,6 +1132,8 @@ model AuditLog {
   before     Json?
   after      Json?
   reason     String?  // human-readable rationale for the action
+  isTestEvent Boolean @default(false)
+  cohortName String?
   ipAddress  String?
   userAgent  String?
   timestamp  DateTime @default(now())
@@ -947,6 +1194,28 @@ enum LeadStatus {
   ACCEPTED  // provider accepted — triggers Match creation
   DECLINED  // provider passed on this job
   EXPIRED   // provider didn't respond in time
+}
+
+enum LeadUnlockStatus {
+  UNLOCKED
+  REFUNDED
+  DISPUTED
+  REVERSED
+}
+
+enum LeadUnlockDisputeReason {
+  INVALID_CUSTOMER_NUMBER
+  DUPLICATE_LEAD
+  WRONG_CATEGORY
+  WRONG_LOCATION
+  CUSTOMER_DID_NOT_REQUEST
+  CANCELLED_BEFORE_UNLOCK
+}
+
+enum LeadUnlockDisputeStatus {
+  OPEN
+  APPROVED
+  REJECTED
 }
 
 enum MatchStatus {
@@ -1117,6 +1386,66 @@ enum PayoutStatus {
   PAID       // funds transferred to provider
   FAILED     // transfer failed
   ON_HOLD    // held due to dispute
+}
+
+enum PaymentIntentMethod {
+  MANUAL_EFT
+  PAYMENT_LINK
+  GATEWAY_CARD
+  GATEWAY_EFT
+  PAYFAST_CARD
+  PAYFAST_EFT
+  PAYFAST_SCODE
+}
+
+enum PaymentIntentStatus {
+  CREATED
+  PENDING_PAYMENT
+  PROOF_UPLOADED
+  MATCHED_ON_STATEMENT
+  // ITN_RECEIVED: Payfast ITN arrived and verified; crediting in-flight.
+  ITN_RECEIVED
+  CREDITED
+  CANCELLED
+  FAILED
+  EXPIRED
+  REVERSED
+}
+
+enum ProviderWalletStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum WalletLedgerEntryType {
+  TOPUP_CREDIT
+  PROMO_CREDIT
+  LEAD_UNLOCK_DEBIT
+  LEAD_REFUND_CREDIT
+  ADMIN_ADJUSTMENT
+  WALLET_SUSPENDED
+  WALLET_REACTIVATED
+  PROMO_EXPIRY
+  PAYMENT_REVERSAL
+}
+
+enum WalletCreditType {
+  PAID
+  PROMO
+}
+
+enum ProviderPromoAwardType {
+  MOBILE_VERIFIED
+  PROFILE_COMPLETED
+  KYC_APPROVED
+  FIRST_TOPUP
+  FIRST_COMPLETED_JOB
+}
+
+enum ProviderPromoAwardStatus {
+  AWARDED
+  REVOKED
 }
 
 enum ApprovalStatus {
@@ -1498,6 +1827,64 @@ model ProviderEquipment {
 
   @@index([providerId])
   @@map("provider_equipment")
+}
+
+// ─── Matching engine v2 — performance foundations ────────────────────────────
+// These three models support near real-time dispatch without full-table scans.
+
+// Tracks provider online/offline state updated by app heartbeat (every 2 min).
+// Separated from Provider to keep the hot-path write narrow and fast.
+model ProviderLiveStatus {
+  providerId       String    @id
+  isOnline         Boolean   @default(false)
+  availabilityMode String    @default("OFFLINE") // ONLINE | ONLINE_LIMITED | OFFLINE | BREAK
+  activeJobCount   Int       @default(0)
+  lastHeartbeatAt  DateTime?
+  lastLocationLat  Float?
+  lastLocationLng  Float?
+  lastLocationAt   DateTime?
+  updatedAt        DateTime  @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([isOnline])
+  @@index([lastLocationLat, lastLocationLng])
+  @@map("provider_live_status")
+}
+
+// Precomputed index of eligible providers per (category slug × location node).
+// Rebuilt on provider profile change and every 5 min by cron.
+// Enables O(1) candidate shortlisting instead of full provider scan.
+model CandidatePool {
+  id             String    @id @default(cuid())
+  categorySlug   String
+  locationNodeId String?
+  provinceKey    String?
+  providerId     String
+  scoreBase      Float     @default(0) // reliability + skill signal, not travel-adjusted
+  lastRefreshed  DateTime  @default(now())
+
+  provider     Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  locationNode LocationNode? @relation(fields: [locationNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([categorySlug, locationNodeId, providerId])
+  @@index([categorySlug, locationNodeId])
+  @@index([categorySlug, provinceKey])
+  @@map("candidate_pool")
+}
+
+// Tracks provider active workload to prevent overloading.
+// activeHolds incremented on AssignmentHold creation, decremented on resolution.
+model ProviderCapacity {
+  providerId     String @id
+  activeHolds    Int    @default(0)
+  activeJobs     Int    @default(0)
+  maxConcurrent  Int    @default(2)
+  updatedAt      DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@map("provider_capacity")
 }
 
 // ─── Reason codes ─────────────────────────────────────────────────────────────

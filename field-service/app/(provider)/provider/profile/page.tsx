@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ServiceAreaPicker } from '@/components/provider/ServiceAreaPicker'
 import { SkillPicker } from '@/components/provider/SkillPicker'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'My Profile', noIndex: true })
 
@@ -139,7 +140,7 @@ async function updateProfile(formData: FormData) {
             providerId: provider.id,
             locationNodeId: node.id,
             areaType: 'SUBURB' as const,
-            label: node.label,
+            label: normaliseLocationDisplayName(node.label),
             provinceKey: node.provinceKey,
             cityKey: node.cityKey,
             regionKey: node.regionKey,
@@ -164,6 +165,12 @@ async function updateProfile(formData: FormData) {
       update: { startTime, endTime, active },
     })
   }
+
+  const { evaluateAndAwardProviderProfileCompletionPromoCredits } = await import('@/lib/provider-promo-awards')
+  await evaluateAndAwardProviderProfileCompletionPromoCredits(provider.id, {
+    referenceType: 'provider',
+    referenceId: provider.id,
+  })
 
   redirect('/provider/profile')
 }
@@ -350,7 +357,7 @@ export default async function ProviderProfilePage({
                 name="evidenceNote"
                 defaultValue={provider.evidenceNote ?? ''}
                 rows={4}
-                placeholder="Optional: mention past jobs, references, or certificate names. Only add items you are comfortable sharing."
+                placeholder="Optional: mention past jobs, references, or types of work you are comfortable sharing."
               />
             </div>
             <div className="space-y-1.5">

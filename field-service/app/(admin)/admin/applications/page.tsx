@@ -13,6 +13,7 @@ import { requireAdmin, createServiceClient } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { crudAction } from '@/lib/crud-action'
 import { syncProviderRecord } from '@/lib/provider-record'
+import { awardMobileVerifiedPromoCreditsInTransaction } from '@/lib/provider-promo-awards'
 import {
   findConflictingActiveProviderApplications,
   getConflictingActiveProviderApplicationIds,
@@ -66,6 +67,8 @@ const providerApplicationSelect = {
   notes: true,
   reviewedAt: true,
   reviewedById: true,
+  isTestUser: true,
+  cohortName: true,
   submittedAt: true,
 } as const
 
@@ -94,7 +97,7 @@ async function approveApplication(formData: FormData) {
     redirect('/admin/applications?message=duplicate_active_application')
   }
 
-  await crudAction({
+  const approval = await crudAction({
     entity: 'ProviderApplication',
     entityId: app.id,
     action: 'provider_application.approve',
@@ -131,6 +134,8 @@ async function approveApplication(formData: FormData) {
         active: true,
         availableNow: true,
         verified: true,
+        isTestUser: app.isTestUser,
+        cohortName: app.cohortName,
       })
 
       if (authData?.user?.id) {
@@ -146,14 +151,33 @@ async function approveApplication(formData: FormData) {
         }
       }
 
-      await tx.providerApplication.update({
-        where: { id },
+      const statusUpdate = await tx.providerApplication.updateMany({
+        where: { id, status: 'PENDING' },
         data: {
           status: 'APPROVED',
           providerId,
           reviewedAt: new Date(),
           reviewedById: session.id,
         },
+      })
+
+      if (statusUpdate.count === 0) {
+        console.info('[applications] Approval skipped because application is no longer pending', {
+          applicationId: app.id,
+        })
+        return {
+          id: app.id,
+          status: app.status,
+          providerId,
+          reviewedById: app.reviewedById,
+          approvedNow: false,
+        }
+      }
+
+      await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
+        referenceType: 'provider_application',
+        referenceId: app.id,
+        createdBy: session.id,
       })
 
       await releaseOpsQueueItem(tx as typeof db, {
@@ -166,17 +190,34 @@ async function approveApplication(formData: FormData) {
         status: 'APPROVED',
         providerId,
         reviewedById: session.id,
+        approvedNow: true,
       }
     },
   })
 
   // WhatsApp notification
-  const { notifyTechnicianApplicationResult } = await import('@/lib/whatsapp-bot')
-  await notifyTechnicianApplicationResult({
-    phone: app.phone,
-    name: app.name,
-    approved: true,
-  }).catch(() => {})
+  if (approval.data?.approvedNow) {
+    const { notifyTechnicianApplicationResult } = await import('@/lib/whatsapp-bot')
+    await notifyTechnicianApplicationResult({
+      applicationId: app.id,
+      phone: app.phone,
+      name: app.name,
+      approved: true,
+    }).catch((error) => {
+      console.error('[applications] approval WhatsApp notification failed', {
+        applicationId: app.id,
+        phone: app.phone,
+        error,
+      })
+    })
+  }
+
+  if (approval.data?.providerId) {
+    const { checkJobsForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
+    await checkJobsForNewProviderAvailability(approval.data.providerId).catch((error) => {
+      console.error('[applications] new-provider availability check failed:', error)
+    })
+  }
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
@@ -326,7 +367,7 @@ export default async function ApplicationsPage({
   searchParams: Promise<{ message?: string }>
 }) {
   const admin = await requireAdmin()
-  const crudEnabled = await isEnabled(FLAG, admin.id)
+  const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
   const { message } = await searchParams
   const banner = getApplicationsAdminMessage(message)
 

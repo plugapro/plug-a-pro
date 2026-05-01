@@ -15,6 +15,40 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { resolveJobRequestAccessScope } from '@/lib/job-request-access'
+import { resolveProviderLeadAttachmentScope } from '@/lib/provider-lead-access'
+
+type ImageErrorCode =
+  | 'ATTACHMENT_RECORD_MISSING'
+  | 'IMAGE_STORAGE_PATH_MISSING'
+  | 'IMAGE_SIGNED_URL_FAILED'
+  | 'IMAGE_NOT_FOUND'
+
+function attachmentError({
+  code,
+  message,
+  status,
+  reqId,
+  attachmentId,
+}: {
+  code: ImageErrorCode
+  message: string
+  status: number
+  reqId: string
+  attachmentId: string
+}) {
+  return NextResponse.json(
+    {
+      error: message,
+      code,
+      attachmentId,
+      traceId: reqId,
+    },
+    {
+      status,
+      headers: { 'X-Trace-Id': reqId },
+    },
+  )
+}
 
 export async function GET(
   request: NextRequest,
@@ -22,6 +56,7 @@ export async function GET(
 ) {
   const reqId = crypto.randomUUID().slice(0, 8)
   const token = request.nextUrl.searchParams.get('token')?.trim() || null
+  const leadToken = request.nextUrl.searchParams.get('leadToken')?.trim() || null
 
   const session = await getSession()
 
@@ -60,10 +95,17 @@ export async function GET(
 
   if (!attachment) {
     console.warn(`[attachments:${reqId}] Not found: ${id}`)
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return attachmentError({
+      code: 'ATTACHMENT_RECORD_MISSING',
+      message: 'Attachment record was not found',
+      status: 404,
+      reqId,
+      attachmentId: id,
+    })
   }
 
   const tokenScope = token ? await resolveJobRequestAccessScope(token) : null
+  const leadTokenScope = leadToken ? await resolveProviderLeadAttachmentScope(leadToken) : null
   const attachmentJobRequestId =
     attachment.jobRequest?.id ??
     attachment.job?.booking?.match?.jobRequest?.id ??
@@ -72,6 +114,10 @@ export async function GET(
     tokenScope?.status === 'active' &&
     attachmentJobRequestId != null &&
     tokenScope.jobRequestId === attachmentJobRequestId
+  const leadTokenAllowsAttachment =
+    leadTokenScope?.status === 'active' &&
+    attachmentJobRequestId != null &&
+    leadTokenScope.jobRequestId === attachmentJobRequestId
 
   let sessionAllowsAttachment = false
 
@@ -106,14 +152,55 @@ export async function GET(
       return false
     })()
 
-    if (!allowed) {
+    if (
+      !allowed &&
+      session.role === 'provider' &&
+      providerDbId != null &&
+      attachmentJobRequestId != null
+    ) {
+      const scopedLead = await db.lead.findUnique({
+        where: {
+          jobRequestId_providerId: {
+            jobRequestId: attachmentJobRequestId,
+            providerId: providerDbId,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+          expiresAt: true,
+          jobRequest: {
+            select: {
+              match: { select: { status: true } },
+            },
+          },
+        },
+      })
+      sessionAllowsAttachment = Boolean(
+        scopedLead &&
+        scopedLead.status !== 'DECLINED' &&
+        scopedLead.jobRequest?.match?.status !== 'CANCELLED' &&
+        (!scopedLead.expiresAt || scopedLead.expiresAt > new Date()),
+      )
+    }
+
+    if (!allowed && !sessionAllowsAttachment) {
       console.warn(`[attachments:${reqId}] Forbidden: user=${session.id} role=${session.role} attachment=${id}`)
     }
 
-    sessionAllowsAttachment = allowed
+    sessionAllowsAttachment = sessionAllowsAttachment || allowed
   }
 
-  if (!sessionAllowsAttachment && !tokenAllowsAttachment) {
+  if (!sessionAllowsAttachment && !tokenAllowsAttachment && !leadTokenAllowsAttachment) {
+    if (!session && leadTokenScope?.status) {
+      const error = leadTokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired lead token'
+      const status = leadTokenScope.status === 'active' ? 403 : 401
+      console.warn(
+        `[attachments:${reqId}] Lead token denied: tokenStatus=${leadTokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'} tokenJobRequest=${leadTokenScope.jobRequestId ?? 'none'}`,
+      )
+      return NextResponse.json({ error }, { status })
+    }
+
     if (!session && tokenScope?.status) {
       const error = tokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired ticket token'
       const status = tokenScope.status === 'active' ? 403 : 401
@@ -132,11 +219,40 @@ export async function GET(
 
   // Resolve a server-side download URL first so private blobs stay opaque to clients.
   let upstreamUrl = attachment.url
+  if (!upstreamUrl) {
+    console.error(`[attachments:${reqId}] Missing storage URL for ${id}`)
+    return attachmentError({
+      code: 'IMAGE_STORAGE_PATH_MISSING',
+      message: 'Attachment storage path is missing',
+      status: 500,
+      reqId,
+      attachmentId: id,
+    })
+  }
+
   try {
     const blob = await head(attachment.url)
-    upstreamUrl = blob.downloadUrl
+    const downloadUrl = (blob as { downloadUrl?: string | null }).downloadUrl
+    if (downloadUrl) {
+      upstreamUrl = downloadUrl
+    } else {
+      console.warn(`[attachments:${reqId}] Blob metadata for ${id} has no downloadUrl; using stored attachment URL`)
+    }
   } catch (err) {
     console.warn(`[attachments:${reqId}] Metadata lookup fallback for ${id}:`, err)
+  }
+
+  try {
+    new URL(upstreamUrl)
+  } catch (err) {
+    console.error(`[attachments:${reqId}] Invalid storage URL for ${id}:`, err)
+    return attachmentError({
+      code: 'IMAGE_STORAGE_PATH_MISSING',
+      message: 'Attachment storage URL is invalid',
+      status: 500,
+      reqId,
+      attachmentId: id,
+    })
   }
 
   // Proxy the blob — fetch server-side and stream to client
@@ -145,20 +261,34 @@ export async function GET(
     upstream = await fetch(upstreamUrl)
   } catch (err) {
     console.error(`[attachments:${reqId}] Fetch error for ${id}:`, err)
-    return NextResponse.json({ error: 'Could not retrieve file' }, { status: 502 })
+    return attachmentError({
+      code: 'IMAGE_SIGNED_URL_FAILED',
+      message: 'Could not retrieve attachment from storage',
+      status: 502,
+      reqId,
+      attachmentId: id,
+    })
   }
 
   if (!upstream.ok) {
     console.error(`[attachments:${reqId}] Blob not found for ${id}: ${upstream.status}`)
-    return NextResponse.json({ error: 'File not found in storage' }, { status: 404 })
+    return attachmentError({
+      code: 'IMAGE_NOT_FOUND',
+      message: 'Attachment file was not found in storage',
+      status: 404,
+      reqId,
+      attachmentId: id,
+    })
   }
 
-  const servedTo = session?.id ?? `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`
+  const servedTo = session?.id ??
+    (leadTokenScope?.jobRequestId ? `lead-token:${leadTokenScope.leadId ?? 'unknown'}` : `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`)
   console.info(`[attachments:${reqId}] Served ${id} to ${servedTo}`)
 
   const headers = new Headers()
   headers.set('Content-Type', attachment.mimeType)
   headers.set('Cache-Control', 'private, max-age=300')
+  headers.set('X-Trace-Id', reqId)
   const disposition = attachment.mimeType.startsWith('image/') ? 'inline' : 'attachment'
   const filename = attachment.blobKey.split('/').pop() ?? 'file'
   headers.set('Content-Disposition', `${disposition}; filename="${filename}"`)

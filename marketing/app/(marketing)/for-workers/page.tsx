@@ -10,50 +10,62 @@ import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 export const metadata: Metadata = buildMetadata({
   title: "For Workers",
   description:
-    "Register as a home-job worker on Plug-A-Pro. Get matched to local customers, receive structured leads, submit quotes, and build your reputation.",
+    "Register as a home-job worker on Plug A Pro. Get matched to local customers, receive structured leads, submit quotes, and build your reputation.",
 });
 
 const BENEFITS = [
   {
     icon: MapPin,
-    title: "Only jobs near you",
-    body: "Tell us which areas you work in once. You'll only get jobs you can actually reach.",
+    title: "Leads matched to your area",
+    body: "Tell us which areas you work in once. Eligible requests are matched against your service areas, skills, and availability.",
   },
   {
     icon: Smartphone,
     title: "Works on your WhatsApp",
-    body: "Get job notifications, say yes or no, and move through the Plug-A-Pro quote flow on the WhatsApp you already use. Nothing to download.",
+    body: "Start onboarding, receive lead previews, and open secure job links from the WhatsApp you already use.",
   },
   {
     icon: ShieldCheck,
-    title: "Your price in writing. No arguments.",
-    body: "Your quote and any extra work are always written down and approved before you start. No more arguments about what was agreed.",
+    title: "Controlled access to real requests",
+    body: "Your application is reviewed before marketplace access. Paid leads are unlocked with credits before full customer details are released.",
   },
   {
     icon: Star,
-    title: "Good work gets you more work",
-    body: "Every job you finish adds a rating to your name. Customers can see how good you are before they pick you.",
+    title: "Build a visible work record",
+    body: "Accepted jobs, quotes, updates, photos, and customer reviews help turn your service history into a stronger digital profile.",
   },
 ];
 
 const HOW_TO_JOIN = [
   {
     step: "1",
-    title: "Sign up",
+    title: "Start on WhatsApp",
     detail:
-      "Message us on WhatsApp or fill in the form below. Tell us your name, what jobs you do, which areas you cover, and when you're free.",
+      "Tell Plug A Pro your name, what jobs you do, which areas you cover, when you're normally available, and upload the requested evidence or photos.",
   },
   {
     step: "2",
-    title: "We review your application",
+    title: "Operations reviews your application",
     detail:
-      "We review the details you submit before sending you any work. If your application is accepted for marketplace participation, your profile goes live and customers in your area can find you.",
+      "We review the details before marketplace access. If you are rejected, you receive a WhatsApp update and cannot access live provider leads.",
   },
   {
     step: "3",
-    title: "Start getting work",
+    title: "Activate your provider profile",
     detail:
-      "When a job in your area matches what you do, you'll get a WhatsApp message. Say yes, move into the Plug-A-Pro quote flow, do the job, and get paid.",
+      "If approved, your provider record is activated. You can open the Provider PWA, sign in with phone OTP, review your profile, set availability, and check wallet credits.",
+  },
+  {
+    step: "4",
+    title: "Unlock leads with credits",
+    detail:
+      "When a matching job is available, you receive a WhatsApp lead preview. You unlock the lead with credits before full customer details are shown and before you accept.",
+  },
+  {
+    step: "5",
+    title: "Accept, quote, and update the job",
+    detail:
+      "After acceptance, Plug A Pro notifies the customer and the job moves into handover. You can contact the customer, submit a quote, schedule arrival, and update progress from your phone.",
   },
 ];
 
@@ -66,10 +78,10 @@ export default function ForWorkersPage() {
           For workers
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          Your skills. Steady local work.
+          Your skills. Digital local demand.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          Plug-A-Pro brings paying home-job customers to you. Register once, set your areas and skills, and start receiving matched leads on WhatsApp.
+          Plug A Pro helps skilled local providers become easier to find online. Register once, set your areas and skills, and receive matched lead previews on WhatsApp when you are approved and eligible.
         </p>
         <p className="text-sm font-medium mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}
@@ -96,7 +108,7 @@ export default function ForWorkersPage() {
       <section className="py-20 px-4">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-12">
-            What you get when you join
+            What the provider journey gives you
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {BENEFITS.map((b) => {
@@ -164,10 +176,10 @@ export default function ForWorkersPage() {
         <div className="max-w-3xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30">
           <h2 className="text-xl font-bold mb-4">Who we&apos;re looking for</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            You don&apos;t need a formal business or company registration to join. If you have practical skills and a track record of doing good work, we want to hear from you.
+            You don&apos;t need a formal business or company registration to apply. If you have practical skills and a track record of doing good work, we want to hear from you.
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You are responsible for holding any credentials that apply to the work you offer. Plug-A-Pro records the types of work you list but does not verify your licences unless a specific check is requested.
+            For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You are responsible for holding any credentials that apply to the work you offer. Plug A Pro records the types of work you list but does not verify your licences unless a specific check is requested.
           </p>
           <ul className="grid grid-cols-2 gap-2 mb-6">
             {[

@@ -16,7 +16,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </div>
 
       <p className="mt-8 text-xs text-muted-foreground">
-        &copy; {new Date().getFullYear()} Plug-A-Pro. All rights reserved.
+        &copy; {new Date().getFullYear()} Plug A Pro. All rights reserved.
       </p>
     </div>
   )

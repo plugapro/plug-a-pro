@@ -46,7 +46,7 @@ interface ProvidersPageProps {
 
 export default async function ProvidersPage({ searchParams }: ProvidersPageProps) {
   const actor = await requireAdmin()
-  const crudEnabled = await isEnabled('admin.crud.providers', actor.id)
+  const crudEnabled = await isEnabled('admin.crud.providers', { userId: actor.id })
   const filters = (await searchParams) ?? {}
   const q = filters.q?.trim() ?? ''
 

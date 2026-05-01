@@ -1,4 +1,4 @@
-# Plug-A-Pro Provider Journey Hardening Audit
+# Plug A Pro Provider Journey Hardening Audit
 
 Date: 2026-04-13  
 Scope: Provider/service professional journey only  
