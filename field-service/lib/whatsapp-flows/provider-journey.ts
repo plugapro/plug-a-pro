@@ -10,13 +10,12 @@ import { recordAuditLog } from '../audit'
 import { AUDIT_ENTITY } from '../audit-entities'
 import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
-import { creditCountLabel, providerCreditBreakdownLabel } from '../provider-credit-copy'
+import { creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
 import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ''
 const ACTIVE_JOB_STATUSES = [
   'SCHEDULED',
   'EN_ROUTE',
@@ -653,7 +652,8 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleWorkerPortal(ctx: FlowContext): Promise<FlowResult> {
-  const portalUrl = APP_URL ? `${APP_URL}/provider/availability` : ''
+  const baseUrl = getPublicAppUrl()
+  const portalUrl = baseUrl.startsWith('http') ? `${baseUrl}/provider/availability` : ''
   if (!portalUrl) {
     await sendText(ctx.phone, 'Open the Worker Portal and go to Provider > Availability to manage your detailed schedule.')
     return { nextStep: 'done' }

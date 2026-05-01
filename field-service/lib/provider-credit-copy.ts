@@ -18,19 +18,52 @@ function configuredUrl(name: string) {
   return value || null
 }
 
-export function getProviderTermsUrl() {
-  const configured = configuredUrl('PROVIDER_TERMS_URL') ?? configuredUrl('NEXT_PUBLIC_PROVIDER_TERMS_URL')
-  if (configured) return configured
+/**
+ * Returns the public app base URL with an optional path appended.
+ *
+ * Resolution order:
+ *   1. APP_PUBLIC_URL          — server-side only; set this in production to the canonical
+ *                                public domain (e.g. https://app.plugapro.co.za). Safe to set
+ *                                independently of NEXT_PUBLIC_APP_URL so local scripts can
+ *                                target production URLs without changing client-side config.
+ *   2. NEXT_PUBLIC_APP_URL     — Next.js client-visible variable; typically correct in Vercel
+ *                                production builds but may be localhost in local dev.
+ *   3. Empty string fallback   — callers receive '' and can degrade gracefully (bare-path text).
+ *
+ * Production guard: logs a configuration error if NODE_ENV=production and the resolved base
+ * URL contains "localhost". Does not throw — the caller still gets the (broken) URL so the
+ * message is sent rather than silently dropped, but ops will see the error in logs.
+ */
+export function getPublicAppUrl(path = ''): string {
+  const base = stripTrailingSlash(
+    (process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '').trim()
+  )
 
-  const appUrl = configuredUrl('NEXT_PUBLIC_APP_URL')
-  if (appUrl) return `${stripTrailingSlash(appUrl)}${PROVIDER_TERMS_PATH}`
+  if (process.env.NODE_ENV === 'production' && base.includes('localhost')) {
+    console.error(
+      '[provider-credit-copy] CONFIG ERROR: public app URL contains localhost in production — ' +
+      'WhatsApp links will be broken. Set APP_PUBLIC_URL to the canonical public domain.',
+      {
+        APP_PUBLIC_URL: process.env.APP_PUBLIC_URL ? '(set)' : '(not set)',
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ? '(set)' : '(not set)',
+      }
+    )
+  }
 
-  return PROVIDER_TERMS_PATH
+  if (!base) return ''
+
+  const normalizedPath = path ? (path.startsWith('/') ? path : `/${path}`) : ''
+  return `${base}${normalizedPath}`
 }
 
-export function getWorkerPortalUrl(path = '/provider') {
-  const appUrl = configuredUrl('NEXT_PUBLIC_APP_URL')
-  return appUrl ? `${stripTrailingSlash(appUrl)}${path}` : path
+export function getProviderTermsUrl(): string {
+  const configured = configuredUrl('PROVIDER_TERMS_URL') ?? configuredUrl('NEXT_PUBLIC_PROVIDER_TERMS_URL')
+  if (configured) return configured
+  return getPublicAppUrl(PROVIDER_TERMS_PATH) || PROVIDER_TERMS_PATH
+}
+
+export function getWorkerPortalUrl(path = '/provider'): string {
+  return getPublicAppUrl(path) || path
 }
 
 export function creditCountLabel(count: number) {

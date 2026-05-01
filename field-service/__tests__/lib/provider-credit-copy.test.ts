@@ -9,7 +9,89 @@ import {
   buildProviderLeadPreviewMessage,
   buildProviderOnboardingIntroMessage,
   getProviderTermsUrl,
+  getPublicAppUrl,
+  getWorkerPortalUrl,
 } from '@/lib/provider-credit-copy'
+
+describe('getPublicAppUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('prefers APP_PUBLIC_URL over NEXT_PUBLIC_APP_URL', () => {
+    vi.stubEnv('APP_PUBLIC_URL', 'https://app.example.com')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+
+    expect(getPublicAppUrl('/provider')).toBe('https://app.example.com/provider')
+  })
+
+  it('falls back to NEXT_PUBLIC_APP_URL when APP_PUBLIC_URL is not set', () => {
+    vi.stubEnv('APP_PUBLIC_URL', '')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
+
+    expect(getPublicAppUrl('/provider')).toBe('https://app.example.com/provider')
+  })
+
+  it('strips trailing slash from base URL before appending path', () => {
+    vi.stubEnv('APP_PUBLIC_URL', 'https://app.example.com/')
+
+    expect(getPublicAppUrl('/provider/terms/credits')).toBe('https://app.example.com/provider/terms/credits')
+  })
+
+  it('returns empty string when no base URL is configured', () => {
+    vi.stubEnv('APP_PUBLIC_URL', '')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
+
+    expect(getPublicAppUrl('/provider')).toBe('')
+  })
+
+  it('logs a config error in production when base URL contains localhost', () => {
+    vi.stubEnv('APP_PUBLIC_URL', '')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('NODE_ENV', 'production')
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    getPublicAppUrl('/provider')
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('CONFIG ERROR'),
+      expect.any(Object),
+    )
+    consoleSpy.mockRestore()
+  })
+
+  it('does not log a config error in development when base URL contains localhost', () => {
+    vi.stubEnv('APP_PUBLIC_URL', '')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('NODE_ENV', 'development')
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    getPublicAppUrl('/provider')
+
+    expect(consoleSpy).not.toHaveBeenCalled()
+    consoleSpy.mockRestore()
+  })
+})
+
+describe('getWorkerPortalUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('returns full portal URL when APP_PUBLIC_URL is configured', () => {
+    vi.stubEnv('APP_PUBLIC_URL', 'https://app.example.com')
+
+    expect(getWorkerPortalUrl('/provider')).toBe('https://app.example.com/provider')
+    expect(getWorkerPortalUrl('/provider/credits')).toBe('https://app.example.com/provider/credits')
+  })
+
+  it('returns bare path when no base URL is configured', () => {
+    vi.stubEnv('APP_PUBLIC_URL', '')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
+
+    expect(getWorkerPortalUrl('/provider')).toBe('/provider')
+  })
+})
 
 describe('provider credit copy', () => {
   afterEach(() => {
@@ -25,14 +107,25 @@ describe('provider credit copy', () => {
   it('uses a controlled fallback provider terms path when no URL is configured', () => {
     vi.stubEnv('PROVIDER_TERMS_URL', '')
     vi.stubEnv('NEXT_PUBLIC_PROVIDER_TERMS_URL', '')
+    vi.stubEnv('APP_PUBLIC_URL', '')
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
 
     expect(getProviderTermsUrl()).toBe('/provider/terms/credits')
   })
 
+  it('builds a full terms URL from APP_PUBLIC_URL when specific vars are absent', () => {
+    vi.stubEnv('PROVIDER_TERMS_URL', '')
+    vi.stubEnv('NEXT_PUBLIC_PROVIDER_TERMS_URL', '')
+    vi.stubEnv('APP_PUBLIC_URL', 'https://app.example.com/')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+
+    expect(getProviderTermsUrl()).toBe('https://app.example.com/provider/terms/credits')
+  })
+
   it('builds a full terms URL from NEXT_PUBLIC_APP_URL when specific vars are absent', () => {
     vi.stubEnv('PROVIDER_TERMS_URL', '')
     vi.stubEnv('NEXT_PUBLIC_PROVIDER_TERMS_URL', '')
+    vi.stubEnv('APP_PUBLIC_URL', '')
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com/')
 
     expect(getProviderTermsUrl()).toBe('https://app.example.com/provider/terms/credits')

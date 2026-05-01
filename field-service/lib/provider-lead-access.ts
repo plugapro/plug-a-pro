@@ -100,6 +100,7 @@ function getProviderLeadBaseUrl() {
   return (
     process.env.PROVIDER_LEAD_APP_URL ||
     process.env.NEXT_PUBLIC_PROVIDER_LEAD_APP_URL ||
+    process.env.APP_PUBLIC_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     ''
   ).trim().replace(/\/+$/, '')

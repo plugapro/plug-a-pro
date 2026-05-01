@@ -38,6 +38,7 @@ import { normaliseLocationDisplayName } from './location-format'
 import {
   buildInsufficientCreditsMessage,
   creditCountLabel,
+  getPublicAppUrl,
   getWorkerPortalUrl,
   providerCreditBreakdownLabel,
 } from './provider-credit-copy'
@@ -1323,7 +1324,7 @@ export async function notifyProviderApplicationResult(params: {
   approved: boolean
   reason?: string
 }): Promise<void> {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
 
   if (params.approved) {
     if (params.applicationId) {
@@ -1540,7 +1541,7 @@ async function handleCancelFlow(
 
 async function handleMatchLeadResponse(phone: string, buttonId: string): Promise<void> {
   const { sendButtons, sendCtaUrl, sendText } = await import('./whatsapp-interactive')
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
 
   const leadId = buttonId
     .replace('match_accept_', '')
@@ -1654,7 +1655,7 @@ async function handleProviderJobFlow(
   ctx: Parameters<typeof handleJobRequestFlow>[0]
 ): Promise<{ nextStep: FlowStep; nextData?: Partial<ConversationData> }> {
   const { sendButtons, sendCtaUrl, sendText, sendList } = await import('./whatsapp-interactive')
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
 
   // ── "My jobs" list ──────────────────────────────────────────────────────────
   if (ctx.step === 'tech_job_list') {
@@ -1874,7 +1875,7 @@ export async function sendQuoteToClient(params: {
   approvalToken: string
 }): Promise<void> {
   const { sendButtons } = await import('./whatsapp-interactive')
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
   const webLink = `${appUrl}/quotes/${params.approvalToken}`
 
   const materialsLine = params.materialsCost > 0
@@ -1897,7 +1898,7 @@ export async function sendQuoteToClient(params: {
 
 async function handleCustomerQuoteResponse(phone: string, buttonId: string): Promise<void> {
   const { sendText } = await import('./whatsapp-interactive')
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
 
   const quoteId = buttonId.replace('quote_accept_', '').replace('quote_decline_', '')
   const action = buttonId.startsWith('quote_accept_') ? 'approve' : 'decline'

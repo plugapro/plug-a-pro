@@ -54,7 +54,7 @@ function parsePayload(encodedPayload: string): CustomerProviderHandoverPayload |
 }
 
 function getAppBaseUrl() {
-  return (process.env.NEXT_PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '')
+  return (process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
 }
 
 export function createCustomerProviderHandoverToken(params: {
