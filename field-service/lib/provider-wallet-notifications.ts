@@ -4,6 +4,7 @@ import type { TemplateName } from './messaging-templates'
 import { getManualEftBankAccountInstructions } from './provider-credit-payment-intents'
 import { sendTemplate } from './whatsapp'
 import type { WhatsAppComponent } from './whatsapp'
+import { normaliseLocationDisplayName } from './location-format'
 
 const SENT_OR_BETTER: MessageStatus[] = ['SENT', 'DELIVERED', 'READ']
 
@@ -51,7 +52,10 @@ function areaLabel(address: {
   city?: string | null
   province?: string | null
 } | null | undefined) {
-  return [address?.suburb, address?.city].filter(Boolean).join(', ') || 'Area on file'
+  return [
+    normaliseLocationDisplayName(address?.suburb),
+    normaliseLocationDisplayName(address?.city),
+  ].filter(Boolean).join(', ') || 'Area on file'
 }
 
 function fullAddressLabel(address: {
@@ -60,9 +64,12 @@ function fullAddressLabel(address: {
   city?: string | null
   province?: string | null
 } | null | undefined) {
-  return [address?.street, address?.suburb, address?.city, address?.province]
-    .filter(Boolean)
-    .join(', ') || 'Address on file'
+  return [
+    address?.street,
+    normaliseLocationDisplayName(address?.suburb),
+    normaliseLocationDisplayName(address?.city),
+    normaliseLocationDisplayName(address?.province),
+  ].filter(Boolean).join(', ') || 'Address on file'
 }
 
 function preferredWindowLabel(jobRequest: {

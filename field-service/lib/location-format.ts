@@ -77,7 +77,9 @@ export function normaliseLocationKey(value: string | null | undefined): string {
     .replace(/^_+|_+$/g, '')
 }
 
-export function formatAddressLocality(address: {
+// Used internally by consumers that need a pre-normalised locality object.
+// Not exported until a second call site exists.
+function formatAddressLocality(address: {
   suburb?: string | null
   region?: string | null
   city?: string | null

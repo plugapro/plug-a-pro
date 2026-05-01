@@ -22,6 +22,7 @@ describe('location display-name normalisation', () => {
     expect(normaliseLocationDisplayName('emalahleni')).toBe('eMalahleni')
     expect(normaliseLocationDisplayName('umhlanga')).toBe('uMhlanga')
     expect(normaliseLocationDisplayName('kwazulu natal')).toBe('KwaZulu-Natal')
+    expect(normaliseLocationDisplayName('kwazulu-natal')).toBe('KwaZulu-Natal')
     expect(normaliseLocationDisplayName('jhb cbd')).toBe('JHB CBD')
   })
 

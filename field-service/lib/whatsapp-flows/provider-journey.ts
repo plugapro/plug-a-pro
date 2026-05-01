@@ -10,6 +10,7 @@ import { recordAuditLog } from '../audit'
 import { AUDIT_ENTITY } from '../audit-entities'
 import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
+import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
 import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
@@ -268,7 +269,7 @@ async function handleAvailableLeads(ctx: FlowContext): Promise<FlowResult> {
 
   const rows = leads.map((lead) => {
     const request = lead.jobRequest
-    const suburb = request.address?.suburb ?? request.address?.city ?? 'Area in request'
+    const suburb = normaliseLocationDisplayName(request.address?.suburb ?? request.address?.city) || 'Area in request'
     return {
       id: `match_accept_${lead.id}`,
       title: request.category.slice(0, 24),
@@ -840,7 +841,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
 
   const jobRows = activeJobs.slice(0, 5).map((job: any) => {
     const category = job.booking?.match?.jobRequest?.category ?? 'Job'
-    const suburb = job.booking?.match?.jobRequest?.address?.suburb
+    const suburb = normaliseLocationDisplayName(job.booking?.match?.jobRequest?.address?.suburb)
     const status = statusLabel[job.status] ?? job.status
     return {
       id: `pj_job_${job.id}`,
@@ -850,7 +851,7 @@ async function handleJobList(ctx: FlowContext): Promise<FlowResult> {
   })
   const acceptedLeadRows = activeLeadWork.slice(0, Math.max(0, 5 - jobRows.length)).map((lead: any) => {
     const category = lead.jobRequest?.category ?? 'Job'
-    const suburb = lead.jobRequest?.address?.suburb
+    const suburb = normaliseLocationDisplayName(lead.jobRequest?.address?.suburb)
     const status = acceptedLeadStatusLabel(lead.jobRequest?.match)
     return {
       id: `pj_lead_${lead.id}`,
@@ -933,7 +934,7 @@ async function handleJobDetail(ctx: FlowContext): Promise<FlowResult> {
   const jobAny = job as any
   const category = jobAny.booking?.match?.jobRequest?.category ?? 'Job'
   const address = jobAny.booking?.match?.jobRequest?.address
-  const addressStr = address ? `${address.street}, ${address.suburb}` : 'Address on file'
+  const addressStr = address ? `${address.street}, ${normaliseLocationDisplayName(address.suburb)}` : 'Address on file'
 
   const statusLabel: Record<string, string> = {
     SCHEDULED: '📅 Scheduled',
@@ -1016,7 +1017,7 @@ async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promi
 
   const category = lead.jobRequest.category
   const address = lead.jobRequest.address
-  const suburb = address?.suburb ?? 'Area on ticket'
+  const suburb = normaliseLocationDisplayName(address?.suburb) || 'Area on ticket'
   const customer = firstName(lead.jobRequest.customer?.name)
   const status = acceptedLeadStatusLabel(match)
   const nextStep = acceptedLeadNextStep(match)
