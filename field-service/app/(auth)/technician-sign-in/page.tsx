@@ -4,11 +4,12 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { SA_EXAMPLE_MOBILE_E164_SPACED, SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
+import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
+import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { getSafeNextPath } from '@/lib/safe-redirect'
 import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
+import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 
 function getSupabaseClient() {
   return createClient(
@@ -17,7 +18,7 @@ function getSupabaseClient() {
   )
 }
 
-export default function ProviderSignInPage() {
+export default function TechnicianSignInPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [phone, setPhone] = useState('')
@@ -28,34 +29,27 @@ export default function ProviderSignInPage() {
     '/technician',
   )
 
-  function normalise(raw: string): string {
-    const digits = raw.replace(/\D/g, '')
-    if (digits.startsWith('27')) return `+${digits}`
-    if (digits.startsWith('0') && digits.length === 10) return `+27${digits.slice(1)}`
-    return `+${digits}`
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    const normalised = normalise(phone)
-    if (!/^\+\d{10,15}$/.test(normalised)) {
+    const normalized = normalizeOtpPhoneNumber(phone, 'ZA')
+    if (!normalized.ok) {
       setError('Please enter a valid South African mobile number.')
       setLoading(false)
       return
     }
 
     try {
-      const exists = await phoneExistsForSignIn(normalised, 'provider')
+      const exists = await phoneExistsForSignIn(normalized.e164, 'provider')
       if (!exists) {
         setError("We couldn't find an active provider account for this number. Apply via WhatsApp first, or check the number.")
         return
       }
 
       const supabase = getSupabaseClient()
-      const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalised })
+      const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalized.e164 })
 
       if (otpError) {
         const msg = otpError.message.toLowerCase()
@@ -71,7 +65,7 @@ export default function ProviderSignInPage() {
       }
 
       router.push(
-        `/technician-verify?phone=${encodeURIComponent(normalised)}&next=${encodeURIComponent(next)}`,
+        `/technician-verify?phone=${encodeURIComponent(normalized.e164)}&next=${encodeURIComponent(next)}`,
       )
     } catch {
       setError('Something went wrong. Please try again.')
@@ -84,9 +78,7 @@ export default function ProviderSignInPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="app-kicker">
-          Worker Portal
-        </p>
+        <p className="app-kicker">Worker Portal</p>
         <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
         <p className="text-sm text-muted-foreground">
           Enter the mobile number linked to your provider account
@@ -97,16 +89,12 @@ export default function ProviderSignInPage() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
-          <Input
+          <SaMobileNumberInput
             id="phone"
-            type="tel"
-            inputMode="numeric"
-            placeholder={SA_EXAMPLE_MOBILE_E164_SPACED}
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            required
+            onChange={setPhone}
             disabled={loading}
-            className="h-11 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/20"
+            onEdit={() => setError(null)}
           />
           <p className="text-xs text-muted-foreground">
             {SA_OTP_SIGN_IN_HELPER_TEXT}

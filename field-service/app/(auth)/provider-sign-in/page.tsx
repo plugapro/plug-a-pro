@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { SA_EXAMPLE_MOBILE_LOCAL_SPACED, SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
+import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
+import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { getSafeNextPath } from '@/lib/safe-redirect'
 import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
 
@@ -260,30 +260,15 @@ export default function ProviderSignInPage() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
-          <div className="flex overflow-hidden rounded-md border border-input bg-background focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
-            <select
-              aria-label="Country code"
-              value={countryCode}
-              disabled
-              className="h-11 w-[96px] shrink-0 border-0 border-r border-input bg-muted px-3 text-sm font-medium text-foreground outline-none disabled:opacity-100"
-            >
-              <option value="ZA">🇿🇦 +27</option>
-            </select>
-            <Input
-              id="phone"
-              type="tel"
-              inputMode="tel"
-              placeholder={SA_EXAMPLE_MOBILE_LOCAL_SPACED}
-              value={phone}
-              onChange={(e) => {
-                setPhone(e.target.value)
-                if (error?.code === 'INVALID_PHONE_NUMBER' || error?.code === 'INVALID_MOBILE_NUMBER') setError(null)
-              }}
-              required
-              disabled={loading}
-              className="h-11 flex-1 rounded-none border-0 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-0"
-            />
-          </div>
+          <SaMobileNumberInput
+            id="phone"
+            value={phone}
+            onChange={setPhone}
+            disabled={loading}
+            onEdit={() => {
+              if (error?.code === 'INVALID_PHONE_NUMBER' || error?.code === 'INVALID_MOBILE_NUMBER') setError(null)
+            }}
+          />
           <p className="text-xs text-muted-foreground">
             {SA_OTP_SIGN_IN_HELPER_TEXT}
           </p>
