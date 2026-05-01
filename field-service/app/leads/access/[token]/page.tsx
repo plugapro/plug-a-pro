@@ -107,13 +107,16 @@ async function acceptLeadWithToken(formData: FormData) {
   const lead = resolved.lead
   if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
     const leadExpired = Boolean(lead.expiresAt && lead.expiresAt <= new Date())
+    const leadDeclined = !leadExpired && lead.status === 'DECLINED'
     redirectLeadActionError(token, {
       error: 'closed',
-      errorCode: leadExpired ? 'LEAD_EXPIRED' : 'LEAD_ALREADY_ACCEPTED',
+      errorCode: leadExpired ? 'LEAD_EXPIRED' : leadDeclined ? 'LEAD_ALREADY_DECLINED' : 'LEAD_ALREADY_ACCEPTED',
       action: 'accept',
       traceId,
       message: leadExpired
         ? 'This lead has expired and can no longer be accepted. No credits were used.'
+        : leadDeclined
+        ? 'You have already declined this lead. No credits were used.'
         : 'This lead has already been accepted or closed. No credits were used.',
       creditDeducted: false,
     })

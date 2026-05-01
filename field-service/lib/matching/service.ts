@@ -2547,7 +2547,7 @@ export async function expireAssignmentOffer(params: {
       provider_id: hold.providerId,
       job_request_id: hold.jobRequestId,
       assignment_hold_id: hold.id,
-      result: 'no_sent_invite',
+      result: 'no_actionable_lead_at_expiry',
     })
   }
 

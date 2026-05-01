@@ -94,7 +94,13 @@ export async function sendText(
       body: text,
       externalId,
       metadata: context.metadata,
-    }).catch(() => {})
+    }).catch((err) => {
+      console.warn('[whatsapp] logOutboundMessage failed (non-fatal)', {
+        to,
+        templateName: context.templateName,
+        error: String(err),
+      })
+    })
   }
   return externalId
 }

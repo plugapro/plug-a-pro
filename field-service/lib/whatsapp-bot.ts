@@ -1600,9 +1600,9 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
       }
       const message =
         result.reason === 'TAKEN'
-          ? '⚠️ Another provider has already accepted this job.'
+          ? '⚠️ Another provider has already accepted this job. No credits were used.\n\nNew leads will come through as jobs arise.'
           : result.reason === 'EXPIRED'
-          ? '⏰ This lead expired before you responded.'
+          ? '⏰ This lead expired before you responded. No credits were used.\n\nNew leads will come through as jobs arise.'
           : '⚠️ This lead is no longer available.'
       await sendText(phone, message)
       return
@@ -2066,7 +2066,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       await sendText(phone, "⏰ This lead has expired and can no longer be accepted. No credits were used.\n\nNew leads will come through as jobs arise.")
     } else if (result.reason === 'TAKEN') {
       console.info('[whatsapp-bot] accept: lead taken', { traceId, holdId, leadId: lead.id, providerId: provider.id })
-      await sendText(phone, "⚡ This job was just assigned to another provider. New leads will come through as jobs arise.")
+      await sendText(phone, "⚡ This job was just assigned to another provider. No credits were used.\n\nNew leads will come through as jobs arise.")
     } else {
       console.error('[whatsapp-bot] accept: unexpected failure', {
         traceId, holdId, leadId: lead.id, providerId: provider.id, reason: result.reason,

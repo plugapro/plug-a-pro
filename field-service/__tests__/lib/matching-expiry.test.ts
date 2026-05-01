@@ -95,7 +95,7 @@ function makeActiveHold(overrides: Partial<Record<string, unknown>> & Partial<{
     provider: { phone: '+27764010810', name: 'Fannie Provider' },
     jobRequest: {
       category: 'Handyman',
-      address: { suburb: 'ruimsig', city: 'johannesburg' },
+      address: { street: '42 Oak Avenue', suburb: 'ruimsig', city: 'johannesburg' },
     },
     ...overrides,
   }
@@ -272,7 +272,7 @@ describe('expireAssignmentOffer', () => {
     )
     expect(mockSendText).not.toHaveBeenCalledWith(
       expect.any(String),
-      expect.stringContaining('1 Main St'),
+      expect.stringContaining('42 Oak Avenue'),
       expect.anything(),
     )
   })
