@@ -16,12 +16,14 @@ const OTP_TIMEOUT_MS = 10_000
 
 function reasonFor(code: DiagnosticCode) {
   switch (code) {
+    case 'INVALID_MOBILE_NUMBER':
     case 'INVALID_PHONE_NUMBER':
       return 'Enter a valid South African mobile number.'
     case 'UNSUPPORTED_COUNTRY_CODE':
       return 'Only South African mobile numbers are enabled for worker portal OTP sign-in.'
+    case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
-      return 'No provider account was found for this mobile number.'
+      return "We couldn't find a provider account for this number. Please register first or contact support."
     case 'PROVIDER_NOT_APPROVED':
       return 'Your provider application must be approved before you can sign in to the Worker Portal.'
     case 'PROVIDER_INACTIVE':
@@ -30,16 +32,70 @@ function reasonFor(code: DiagnosticCode) {
       return 'Too many login code requests were made. Please wait a few minutes and try again.'
     case 'OTP_PROVIDER_TIMEOUT':
       return 'OTP delivery timed out.'
+    case 'AUTH_CONFIG_MISSING':
+    case 'AUTH_RESPONSE_INVALID':
     case 'OTP_PROVIDER_UNAVAILABLE':
-      return 'The OTP provider is temporarily unavailable or phone login is not enabled.'
+      return "We couldn't send the code right now. Please try again shortly."
     case 'OTP_PROVIDER_BAD_RESPONSE':
-      return 'The OTP provider returned an invalid response.'
+      return "We couldn't send the code right now. Please try again shortly."
     case 'OTP_PROVIDER_AUTH_FAILED':
-      return 'OTP service authentication failed.'
+      return "We couldn't send the code right now. Please try again shortly."
     case 'OTP_DELIVERY_FAILED':
-      return 'OTP delivery failed.'
+      return "We couldn't send the code right now. Please try again shortly."
     default:
       return 'An unexpected authentication error occurred.'
+  }
+}
+
+function titleFor(code: DiagnosticCode) {
+  switch (code) {
+    case 'INVALID_MOBILE_NUMBER':
+    case 'INVALID_PHONE_NUMBER':
+    case 'UNSUPPORTED_COUNTRY_CODE':
+      return 'Check the mobile number.'
+    case 'WORKER_NOT_FOUND':
+    case 'PROVIDER_NOT_FOUND':
+      return 'Provider account not found.'
+    case 'PROVIDER_NOT_APPROVED':
+      return 'Application still under review.'
+    case 'PROVIDER_INACTIVE':
+      return 'Provider account inactive.'
+    case 'RATE_LIMITED':
+      return 'Please wait before trying again.'
+    default:
+      return "We couldn't send your login code."
+  }
+}
+
+function statusFor(code: DiagnosticCode) {
+  switch (code) {
+    case 'UNSUPPORTED_COUNTRY_CODE':
+      return 400
+    case 'INVALID_MOBILE_NUMBER':
+    case 'INVALID_PHONE_NUMBER':
+      return 422
+    case 'WORKER_NOT_FOUND':
+    case 'PROVIDER_NOT_FOUND':
+      return 404
+    case 'PROVIDER_NOT_APPROVED':
+      return 403
+    case 'PROVIDER_INACTIVE':
+      return 423
+    case 'RATE_LIMITED':
+      return 429
+    case 'AUTH_CONFIG_MISSING':
+    case 'OTP_PROVIDER_UNAVAILABLE':
+      return 503
+    case 'OTP_PROVIDER_TIMEOUT':
+      return 504
+    case 'OTP_PROVIDER_AUTH_FAILED':
+      return 401
+    case 'AUTH_RESPONSE_INVALID':
+    case 'OTP_PROVIDER_BAD_RESPONSE':
+    case 'OTP_DELIVERY_FAILED':
+      return 502
+    default:
+      return 500
   }
 }
 
@@ -55,12 +111,16 @@ function errorPayload(params: {
     ? params.phone
     : undefined
 
+  const message = reasonFor(params.code)
   return NextResponse.json(
     {
       ok: false,
+      code: params.code,
+      message,
+      traceId: params.traceId,
       error: {
-        title: "We couldn't send your login code.",
-        reason: reasonFor(params.code),
+        title: titleFor(params.code),
+        reason: message,
         code: params.code,
         step: STEP,
         traceId: params.traceId,
@@ -148,6 +208,7 @@ export async function POST(request: NextRequest) {
   let countryCode = 'ZA'
   let providerId: string | undefined
   let otpProviderCalled = false
+  let otpSetupStarted = false
 
   try {
     const body = await request.json().catch(() => ({})) as {
@@ -173,11 +234,11 @@ export async function POST(request: NextRequest) {
         step: STEP,
       })
       return errorPayload({
-        code: normalized.errorCode,
+        code: normalized.errorCode === 'INVALID_PHONE_NUMBER' ? 'INVALID_MOBILE_NUMBER' : normalized.errorCode,
         traceId,
         phone: rawPhone,
         countryCode: normalized.countryCode,
-        status: normalized.errorCode === 'UNSUPPORTED_COUNTRY_CODE' ? 400 : 422,
+        status: statusFor(normalized.errorCode === 'INVALID_PHONE_NUMBER' ? 'INVALID_MOBILE_NUMBER' : normalized.errorCode),
       })
     }
 
@@ -225,7 +286,7 @@ export async function POST(request: NextRequest) {
         timestamp: timestamp(),
         step: STEP,
       })
-      return errorPayload({ code: 'PROVIDER_NOT_FOUND', traceId, phone, countryCode, status: 404 })
+      return errorPayload({ code: 'WORKER_NOT_FOUND', traceId, phone, countryCode, status: statusFor('WORKER_NOT_FOUND') })
     }
 
     if (provider.status === 'APPLICATION_PENDING' || provider.status === 'UNDER_REVIEW') {
@@ -278,6 +339,7 @@ export async function POST(request: NextRequest) {
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    otpSetupStarted = true
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('[provider-send-code] Supabase client env missing', {
         trace_id: traceId,
@@ -292,12 +354,12 @@ export async function POST(request: NextRequest) {
         step: STEP,
       })
       return errorPayload({
-        code: 'OTP_PROVIDER_UNAVAILABLE',
+        code: 'AUTH_CONFIG_MISSING',
         traceId,
         phone,
         countryCode,
         providerId,
-        status: 503,
+        status: statusFor('AUTH_CONFIG_MISSING'),
       })
     }
 
@@ -320,12 +382,12 @@ export async function POST(request: NextRequest) {
         step: STEP,
       })
       return errorPayload({
-        code: 'OTP_PROVIDER_BAD_RESPONSE',
+        code: 'AUTH_RESPONSE_INVALID',
         traceId,
         phone,
         countryCode,
         providerId,
-        status: 502,
+        status: statusFor('AUTH_RESPONSE_INVALID'),
       })
     }
 
@@ -354,13 +416,7 @@ export async function POST(request: NextRequest) {
         phone,
         countryCode,
         providerId,
-        status: code === 'RATE_LIMITED'
-          ? 429
-          : code === 'OTP_PROVIDER_TIMEOUT'
-            ? 504
-            : code === 'OTP_PROVIDER_AUTH_FAILED'
-              ? 401
-              : 502,
+        status: statusFor(code),
       })
     }
 
@@ -376,9 +432,13 @@ export async function POST(request: NextRequest) {
       timestamp: timestamp(),
       step: STEP,
     })
-    return NextResponse.json({ ok: true, phone, traceId })
+    return NextResponse.json({ ok: true, nextStep: 'verify_otp', phone, traceId })
   } catch (error) {
-    const code = otpProviderCalled ? classifyOtpError(error) : 'UNKNOWN_AUTH_ERROR'
+    const code = otpProviderCalled
+      ? classifyOtpError(error)
+      : otpSetupStarted
+        ? 'AUTH_CONFIG_MISSING'
+        : 'AUTH_RESPONSE_INVALID'
     console.error('[provider-send-code] unexpected error', {
       trace_id: traceId,
       rawPhone,
@@ -399,11 +459,7 @@ export async function POST(request: NextRequest) {
       phone: phone || rawPhone,
       countryCode,
       providerId,
-      status: code === 'OTP_PROVIDER_TIMEOUT'
-        ? 504
-        : code === 'UNKNOWN_AUTH_ERROR'
-          ? 500
-          : 502,
+      status: statusFor(code),
     })
   }
 }

@@ -21,6 +21,8 @@ import { sendText } from '@/lib/whatsapp-interactive'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
 const PROVIDER_AUTO_APPROVAL_WINDOW_MINUTES = 30
+const PROVIDER_AUTO_APPROVAL_TRANSACTION_TIMEOUT_MS = 20_000
+const PROVIDER_AUTO_APPROVAL_TRANSACTION_MAX_WAIT_MS = 10_000
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -122,6 +124,9 @@ export async function GET(request: Request) {
               createdBy: 'system',
             })
           }
+        }, {
+          maxWait: PROVIDER_AUTO_APPROVAL_TRANSACTION_MAX_WAIT_MS,
+          timeout: PROVIDER_AUTO_APPROVAL_TRANSACTION_TIMEOUT_MS,
         })
         if (!approved) continue
 

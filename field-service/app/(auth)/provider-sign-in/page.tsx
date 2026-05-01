@@ -16,6 +16,7 @@ type SendCodeError = {
   step: string
   traceId: string
   time: string
+  tone: 'info' | 'error'
   mobileChecked?: string
   phoneMasked?: string
   countryCode?: string
@@ -25,6 +26,16 @@ type SendCodeError = {
 type ApiSendCodeError = Partial<SendCodeError> & {
   code?: string
   reason?: string
+}
+
+type ApiSendCodePayload = {
+  ok?: boolean
+  nextStep?: string
+  phone?: string
+  code?: string
+  message?: string
+  traceId?: string
+  error?: ApiSendCodeError
 }
 
 function createClientTraceId() {
@@ -43,54 +54,94 @@ function fallbackCodeForStatus(status: number) {
     case 400:
       return 'UNSUPPORTED_COUNTRY_CODE'
     case 401:
-      return 'OTP_PROVIDER_AUTH_FAILED'
+      return 'AUTH_CONFIG_MISSING'
     case 403:
       return 'PROVIDER_NOT_APPROVED'
     case 423:
       return 'PROVIDER_INACTIVE'
     case 404:
-      return 'PROVIDER_NOT_FOUND'
+      return 'WORKER_NOT_FOUND'
     case 422:
-      return 'INVALID_PHONE_NUMBER'
+      return 'INVALID_MOBILE_NUMBER'
     case 429:
       return 'RATE_LIMITED'
     case 502:
-      return 'OTP_PROVIDER_BAD_RESPONSE'
+      return 'AUTH_RESPONSE_INVALID'
     case 503:
       return 'OTP_PROVIDER_UNAVAILABLE'
     case 504:
       return 'OTP_PROVIDER_TIMEOUT'
     default:
-      return 'UNKNOWN_AUTH_ERROR'
+      return 'AUTH_RESPONSE_INVALID'
   }
 }
 
 function fallbackReasonForCode(code: string) {
   switch (code) {
+    case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
-      return 'No provider account was found for this mobile number.'
+      return "We couldn't find a provider account for this number. Please register first or contact support."
     case 'PROVIDER_NOT_APPROVED':
       return 'Your provider application must be approved before you can sign in to the Worker Portal.'
     case 'PROVIDER_INACTIVE':
       return 'This provider account is not active.'
+    case 'INVALID_MOBILE_NUMBER':
     case 'INVALID_PHONE_NUMBER':
       return 'Enter a valid South African mobile number.'
     case 'UNSUPPORTED_COUNTRY_CODE':
       return 'Only South African mobile numbers are enabled for worker portal OTP sign-in.'
     case 'OTP_PROVIDER_AUTH_FAILED':
-      return 'OTP service authentication failed.'
+    case 'AUTH_CONFIG_MISSING':
+      return "We couldn't send the code right now. Please try again shortly."
     case 'OTP_PROVIDER_BAD_RESPONSE':
-      return 'The OTP service returned an invalid response.'
+    case 'AUTH_RESPONSE_INVALID':
+      return "We couldn't send the code right now. Please try again shortly."
     case 'OTP_PROVIDER_TIMEOUT':
       return 'OTP delivery timed out.'
     case 'OTP_PROVIDER_UNAVAILABLE':
-      return 'The OTP provider is temporarily unavailable or phone login is not enabled.'
+      return "We couldn't send the code right now. Please try again shortly."
     case 'OTP_DELIVERY_FAILED':
-      return 'OTP delivery failed.'
+      return "We couldn't send the code right now. Please try again shortly."
     case 'RATE_LIMITED':
       return 'Too many login code requests were made. Please wait a few minutes and try again.'
     default:
       return 'The sign-in service did not return a usable response.'
+  }
+}
+
+function titleForCode(code: string) {
+  switch (code) {
+    case 'INVALID_MOBILE_NUMBER':
+    case 'INVALID_PHONE_NUMBER':
+    case 'UNSUPPORTED_COUNTRY_CODE':
+      return 'Check the mobile number.'
+    case 'WORKER_NOT_FOUND':
+    case 'PROVIDER_NOT_FOUND':
+      return 'Provider account not found.'
+    case 'PROVIDER_NOT_APPROVED':
+      return 'Application still under review.'
+    case 'PROVIDER_INACTIVE':
+      return 'Provider account inactive.'
+    case 'RATE_LIMITED':
+      return 'Please wait before trying again.'
+    default:
+      return "We couldn't send your login code."
+  }
+}
+
+function toneForCode(code: string): SendCodeError['tone'] {
+  switch (code) {
+    case 'INVALID_MOBILE_NUMBER':
+    case 'INVALID_PHONE_NUMBER':
+    case 'UNSUPPORTED_COUNTRY_CODE':
+    case 'WORKER_NOT_FOUND':
+    case 'PROVIDER_NOT_FOUND':
+    case 'PROVIDER_NOT_APPROVED':
+    case 'PROVIDER_INACTIVE':
+    case 'RATE_LIMITED':
+      return 'info'
+    default:
+      return 'error'
   }
 }
 
@@ -115,12 +166,13 @@ export default function ProviderSignInPage() {
     countryCode?: string
   }): SendCodeError {
     return {
-      title: "We couldn't send your login code.",
+      title: titleForCode(params.code),
       reason: params.reason,
       code: params.code,
       step: 'Worker portal send-code',
       traceId: params.traceId,
       time: new Date().toISOString(),
+      tone: toneForCode(params.code),
       mobileChecked: params.mobileChecked,
       phoneMasked: params.phoneMasked,
       countryCode: params.countryCode,
@@ -137,7 +189,7 @@ export default function ProviderSignInPage() {
     if (!normalized.ok) {
       setError(localError({
         reason: normalized.reason,
-        code: normalized.errorCode,
+        code: normalized.errorCode === 'INVALID_PHONE_NUMBER' ? 'INVALID_MOBILE_NUMBER' : normalized.errorCode,
         traceId,
         countryCode: normalized.countryCode,
       }))
@@ -154,22 +206,19 @@ export default function ProviderSignInPage() {
         },
         body: JSON.stringify({ phone, countryCode, traceId }),
       })
-      const payload = await response.json().catch(() => ({})) as {
-        ok?: boolean
-        phone?: string
-        error?: ApiSendCodeError
-      }
+      const payload = await response.json().catch(() => ({})) as ApiSendCodePayload
 
       if (!response.ok || !payload.ok || !payload.phone) {
         const fallbackCode = fallbackCodeForStatus(response.status)
-        const errorCode = payload.error?.code ?? fallbackCode
+        const errorCode = payload.error?.code ?? payload.code ?? fallbackCode
         setError({
-          title: payload.error?.title ?? "We couldn't send your login code.",
-          reason: payload.error?.reason ?? fallbackReasonForCode(errorCode),
+          title: payload.error?.title ?? titleForCode(errorCode),
+          reason: payload.error?.reason ?? payload.message ?? fallbackReasonForCode(errorCode),
           code: errorCode,
           step: payload.error?.step ?? 'Worker portal send-code',
-          traceId: payload.error?.traceId ?? traceId,
+          traceId: payload.error?.traceId ?? payload.traceId ?? traceId,
           time: payload.error?.time ?? new Date().toISOString(),
+          tone: toneForCode(errorCode),
           mobileChecked: payload.error?.mobileChecked,
           phoneMasked: payload.error?.phoneMasked ?? formatPhoneForDisplay(normalized.e164),
           countryCode: payload.error?.countryCode ?? countryCode,
@@ -228,7 +277,7 @@ export default function ProviderSignInPage() {
               value={phone}
               onChange={(e) => {
                 setPhone(e.target.value)
-                if (error?.code === 'INVALID_PHONE_NUMBER') setError(null)
+                if (error?.code === 'INVALID_PHONE_NUMBER' || error?.code === 'INVALID_MOBILE_NUMBER') setError(null)
               }}
               required
               disabled={loading}
@@ -241,10 +290,16 @@ export default function ProviderSignInPage() {
         </div>
 
         {error && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive space-y-2">
+          <div className={`rounded-md border p-3 text-sm space-y-2 ${
+            error.tone === 'info'
+              ? 'border-amber-300/70 bg-amber-50 text-amber-950'
+              : 'border-destructive/30 bg-destructive/5 text-destructive'
+          }`}>
             <p className="font-medium">{error.title}</p>
             <p>{error.reason}</p>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-destructive/90">
+            <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs ${
+              error.tone === 'info' ? 'text-amber-950/80' : 'text-destructive/90'
+            }`}>
               <dt>Error code</dt><dd className="text-right font-medium">{error.code}</dd>
               {(error.phoneMasked || error.mobileChecked) && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.phoneMasked ?? error.mobileChecked}</dd></>}
               {error.countryCode && <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></>}
