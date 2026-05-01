@@ -190,12 +190,39 @@ describe('processInboundMessage stateless notification replies', () => {
     })
     expect(mockSendButtons).toHaveBeenCalledWith(
       PHONE,
-      '🔒 This lead requires 1 credit to unlock.\n\nYour current balance: 0 credits.\n\nPlease top up in the Worker Portal to accept this lead.',
+      '🔒 This lead requires 1 credit to unlock.\n\nYour current balance: 0 credits.\n\nPlease top up in the Worker Portal to accept this lead.', // LEAD_UNLOCK_COST_CREDITS = 1
       expect.arrayContaining([
         expect.objectContaining({ id: 'provider_top_up_credits', title: 'Top Up Credits' }),
         expect.objectContaining({ id: 'match_inspect_lead-1', title: 'View Lead' }),
         expect.objectContaining({ id: 'back_home', title: 'Main Menu' }),
       ]),
+    )
+  })
+
+  it('returns a traceable technical message when WhatsApp assignment accept throws unexpectedly', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
+    mockAcceptLead.mockRejectedValue(new Error('database timeout'))
+
+    await processInboundMessage(buttonMessage('accept:hold-1'))
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("Something went wrong processing your acceptance"),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('_Ref:'),
+    )
+  })
+
+  it('handles malformed WhatsApp accept payloads without falling through to the generic bot error', async () => {
+    await processInboundMessage(buttonMessage('accept:'))
+
+    expect(mockAcceptLead).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't read that lead response"),
     )
   })
 

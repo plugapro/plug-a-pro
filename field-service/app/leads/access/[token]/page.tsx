@@ -26,6 +26,7 @@ import {
   sendFreshAcceptedJobLink,
 } from '@/lib/accepted-job-actions'
 import { createTraceId, maskPhone, safeErrorMessage, timestamp, type DiagnosticCode } from '@/lib/support-diagnostics'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 type LeadActionErrorParams = {
   error: string
@@ -670,7 +671,7 @@ export default async function ProviderLeadAccessPage({
   }
 
   const previewArea = addr
-    ? [addr.suburb, addr.city].filter(Boolean).join(', ')
+    ? [normaliseLocationDisplayName(addr.suburb), normaliseLocationDisplayName(addr.city)].filter(Boolean).join(', ')
     : 'Area on file'
   const fullArea = addr
     ? [
@@ -679,9 +680,9 @@ export default async function ProviderLeadAccessPage({
         'street' in addr ? addr.street : null,
         'addressLine1' in addr ? addr.addressLine1 : null,
         'addressLine2' in addr ? addr.addressLine2 : null,
-        addr.suburb,
-        addr.city,
-        'province' in addr ? addr.province : null,
+        normaliseLocationDisplayName(addr.suburb),
+        normaliseLocationDisplayName(addr.city),
+        'province' in addr ? normaliseLocationDisplayName(typeof addr.province === 'string' ? addr.province : null) : null,
       ].filter(Boolean).join(', ')
     : 'Location on file'
   const preferredWindow = formatWindow(jr.requestedWindowStart, jr.requestedWindowEnd) ??

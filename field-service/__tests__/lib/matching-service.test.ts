@@ -719,7 +719,7 @@ describe('matching service', () => {
       source: 'whatsapp',
     })
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: false,
       reason: 'INSUFFICIENT_CREDITS',
       currentCreditBalance: 0,
@@ -755,7 +755,7 @@ describe('matching service', () => {
       source: 'whatsapp',
     })
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: false,
       reason: 'PROVIDER_NOT_APPROVED',
     })
@@ -764,7 +764,7 @@ describe('matching service', () => {
     expect(mockDb.match.create).not.toHaveBeenCalled()
   })
 
-  it('rolls back credit deduction when the transaction fails after the unlock', async () => {
+  it('returns a controlled failure when the transaction fails after the unlock', async () => {
     // Arrange: lead with an active hold and provider with 1 promo credit.
     mockDb.provider.findUnique.mockResolvedValue({
       id: 'provider-preferred',
@@ -813,15 +813,67 @@ describe('matching service', () => {
     // match.create fails after the unlock debit has already been staged inside the tx.
     mockDb.match.create.mockRejectedValueOnce(new Error('DB constraint violation'))
 
-    await expect(
-      acceptAssignmentOffer({ leadId: 'lead-1', providerId: 'provider-preferred', source: 'whatsapp' }),
-    ).rejects.toThrow('DB constraint violation')
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'LEAD_ACCEPTANCE_FAILED',
+      traceId: expect.stringMatching(/^whatsapp_[0-9a-f]{12}$/),
+    })
 
     // The wallet debit was staged inside the same db.$transaction as match.create.
     // A real Prisma transaction would roll back both writes atomically on failure;
     // this assertion confirms the debit is inside the transaction boundary.
     expect(mockDb.providerWallet.updateMany).toHaveBeenCalled()
     expect(mockDb.match.create).toHaveBeenCalled()
+  })
+
+  it('treats duplicate accepts from the already assigned provider as idempotent', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-preferred',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+      kycStatus: 'VERIFIED',
+    })
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      providerId: 'provider-preferred',
+      jobRequestId: 'jr-generic',
+      status: 'ACCEPTED',
+      dispatchDecisionId: 'decision-1',
+      matchAttemptId: 'attempt-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      assignmentHoldId: 'hold-1',
+      assignmentHold: { id: 'hold-1', status: 'ACCEPTED' },
+      matchAttempt: { id: 'attempt-1' },
+    })
+    mockDb.match.findUnique.mockResolvedValue({
+      id: 'match-1',
+      jobRequestId: 'jr-generic',
+      providerId: 'provider-preferred',
+      status: 'MATCHED',
+    })
+
+    const result = await acceptAssignmentOffer({
+      leadId: 'lead-1',
+      providerId: 'provider-preferred',
+      source: 'whatsapp',
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      responseOutcome: 'ACCEPTED',
+      matchId: 'match-1',
+      assignmentHoldId: 'hold-1',
+    })
+    expect(mockDb.leadUnlock.create).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
   })
 
   it('decline does not deduct credits or touch the wallet', async () => {

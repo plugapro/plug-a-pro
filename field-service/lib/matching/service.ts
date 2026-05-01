@@ -18,7 +18,9 @@ import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
 import { releaseProviderCapacity } from './reservation'
 import { sendText } from '../whatsapp-interactive'
+import { createTraceId } from '../support-diagnostics'
 import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
+import { normaliseLocationDisplayName } from '../location-format'
 import type {
   CoverageTier,
   DispatchActor,
@@ -39,6 +41,8 @@ const OFFER_TIMEOUT_CONSECUTIVE_PAUSE_THRESHOLD = 3
 const OFFER_TIMEOUT_HARD_PAUSE_THRESHOLD = 6
 const OFFER_TIMEOUT_PAUSE_WINDOW_HOURS = 24
 const OFFER_TIMEOUT_TEMP_PAUSE_HOURS = 12
+const ACCEPT_ASSIGNMENT_TRANSACTION_TIMEOUT_MS = 20_000
+const ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS = 10_000
 
 function normalizeTag(tag: string) {
   return tag.trim().toLowerCase()
@@ -48,6 +52,23 @@ function isSchemaCompatError(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const code = 'code' in error ? (error as { code?: string }).code : undefined
   return code === 'P2021' || code === 'P2022'
+}
+
+function errorCode(error: unknown) {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null
+  return String((error as { code?: unknown }).code ?? '')
+}
+
+function remainingBalanceFromUnlock(
+  ledgerEntries: Array<{
+    balanceAfterPaidCredits: number
+    balanceAfterPromoCredits: number
+  }>,
+  fallbackBalance: number,
+) {
+  const lastEntry = ledgerEntries.at(-1)
+  if (!lastEntry) return fallbackBalance
+  return lastEntry.balanceAfterPaidCredits + lastEntry.balanceAfterPromoCredits
 }
 
 async function safeOptionalQuery<T>(factory: () => Promise<T>, fallback: T): Promise<T> {
@@ -1449,7 +1470,10 @@ async function createOfferForAttempt(params: {
     startAt: requestWindow.startAt,
     endAt: requestWindow.endAt,
     source: 'matching_engine',
-    locationLabel: [jobRequest.address?.suburb, jobRequest.address?.city].filter(Boolean).join(', '),
+    locationLabel: [
+      normaliseLocationDisplayName(jobRequest.address?.suburb),
+      normaliseLocationDisplayName(jobRequest.address?.city),
+    ].filter(Boolean).join(', '),
     lat: jobRequest.address?.lat ?? undefined,
     lng: jobRequest.address?.lng ?? undefined,
   })
@@ -1462,7 +1486,7 @@ async function createOfferForAttempt(params: {
     providerPhone: provider.phone,
     leadId: lead.id,
     category: jobRequest.category,
-    area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
+    area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
     isTestLead: jobRequest.isTestRequest,
     description: jobRequest.title || jobRequest.description || jobRequest.category,
     customerInitial: (jobRequest.customer?.name ?? 'Customer').split(' ')[0] ?? 'Customer',
@@ -1491,7 +1515,7 @@ async function createOfferForAttempt(params: {
         providerPhone: provider.phone,
         providerFirstName: provider.name.split(' ')[0] ?? provider.name,
         serviceName: jobRequest.category,
-        area: jobRequest.address?.suburb ?? jobRequest.address?.city ?? '',
+        area: normaliseLocationDisplayName(jobRequest.address?.suburb) || normaliseLocationDisplayName(jobRequest.address?.city),
         scheduledWindow,
         jobUrl: signedUrl,
       }).catch((error) => {
@@ -1505,7 +1529,7 @@ async function createOfferForAttempt(params: {
   if (interactiveDelivered) {
     const { sendButtons } = await import('../whatsapp-interactive')
     const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
-    const suburb = jobRequest.address?.suburb ?? 'your area'
+    const suburb = normaliseLocationDisplayName(jobRequest.address?.suburb) || 'your area'
     const category = jobRequest.category
     const balance = await getProviderWalletBalanceReadOnly(params.providerId)
     const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
@@ -1694,7 +1718,7 @@ export async function acceptAssignmentOffer(params: {
   source?: 'whatsapp' | 'pwa' | 'api'
 }): Promise<OfferResolutionResult> {
   const acceptStart = Date.now()
-  const traceId = `${params.source ?? 'api'}:${params.leadId}:${Date.now().toString(36)}`
+  const traceId = createTraceId(params.source ?? 'api')
   let transactionResult
 
   try {
@@ -1707,99 +1731,138 @@ export async function acceptAssignmentOffer(params: {
       },
     })
 
-    if (!lead) return { ok: false as const, reason: 'NOT_FOUND' }
-    if (lead.providerId !== params.providerId) return { ok: false as const, reason: 'FORBIDDEN' }
-    if (!lead.assignmentHoldId || !lead.assignmentHold) {
-      return { ok: false as const, reason: 'TAKEN' }
-    }
-    if (lead.assignmentHold.status !== 'ACTIVE') {
-      return { ok: false as const, reason: 'TAKEN' }
-    }
-    if (lead.expiresAt && lead.expiresAt < new Date()) {
-      await tx.lead.update({
-        where: { id: lead.id },
-        data: { status: 'EXPIRED', respondedAt: new Date() },
-      })
-      await tx.assignmentHold.update({
-        where: { id: lead.assignmentHold.id },
-        data: {
-          status: 'EXPIRED',
-          respondedAt: new Date(),
-          releasedAt: new Date(),
-          outcomeReasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
+      if (!lead) return { ok: false as const, reason: 'NOT_FOUND' }
+      if (lead.providerId !== params.providerId) return { ok: false as const, reason: 'FORBIDDEN' }
+
+      const provider = await tx.provider.findUnique({
+        where: { id: params.providerId },
+        select: {
+          id: true,
+          active: true,
+          verified: true,
+          status: true,
         },
       })
-      await tx.matchAttempt.update({
-        where: { id: lead.matchAttemptId ?? '' },
-        data: {
-          stage: 'TIMED_OUT',
-          respondedAt: new Date(),
-          responseOutcome: 'TIMED_OUT',
-          reasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
-        },
-      }).catch(() => {})
-      return { ok: false as const, reason: 'EXPIRED' }
-    }
+      if (!provider) return { ok: false as const, reason: 'FORBIDDEN' }
+      if (!provider.active || !provider.verified || provider.status !== 'ACTIVE') {
+        console.warn('[matching] provider blocked from accepting lead because profile is not approved', {
+          trace_id: traceId,
+          provider_id: params.providerId,
+          lead_id: params.leadId,
+          provider_active: provider.active,
+          provider_verified: provider.verified,
+          provider_status: provider.status,
+        })
+        return { ok: false as const, reason: 'PROVIDER_NOT_APPROVED' }
+      }
 
-    const provider = await tx.provider.findUnique({
-      where: { id: params.providerId },
-      select: {
-        id: true,
-        active: true,
-        verified: true,
-        status: true,
-      },
-    })
-    if (!provider) return { ok: false as const, reason: 'FORBIDDEN' }
-    if (!provider.active || !provider.verified || provider.status !== 'ACTIVE') {
-      console.warn('[matching] provider blocked from accepting lead because profile is not approved', {
-        trace_id: traceId,
-        provider_id: params.providerId,
-        lead_id: params.leadId,
-        provider_active: provider.active,
-        provider_verified: provider.verified,
-        provider_status: provider.status,
+      const existingMatch = await tx.match.findUnique({
+        where: { jobRequestId: lead.jobRequestId },
       })
-      return { ok: false as const, reason: 'PROVIDER_NOT_APPROVED' }
-    }
-
-    const existingMatch = await tx.match.findUnique({
-      where: { jobRequestId: lead.jobRequestId },
-    })
-
-    if (existingMatch && existingMatch.providerId !== params.providerId) {
-      await tx.lead.update({
-        where: { id: lead.id },
-        data: { status: 'EXPIRED', respondedAt: new Date() },
+      const walletBefore = await tx.providerWallet.findUnique({
+        where: { providerId: params.providerId },
+        select: { paidCreditBalance: true, promoCreditBalance: true },
       })
-      await tx.assignmentHold.update({
-        where: { id: lead.assignmentHold.id },
-        data: {
-          status: 'RELEASED',
-          respondedAt: new Date(),
-          releasedAt: new Date(),
-          outcomeReasonCode: 'MATCH_ALREADY_TAKEN',
-        },
-      })
-      return { ok: false as const, reason: 'TAKEN' }
-    }
+      const currentCreditBalance =
+        (walletBefore?.paidCreditBalance ?? 0) + (walletBefore?.promoCreditBalance ?? 0)
 
-    const walletBefore = await tx.providerWallet.findUnique({
-      where: { providerId: params.providerId },
-      select: { paidCreditBalance: true, promoCreditBalance: true },
-    })
-    const currentCreditBalance =
-      (walletBefore?.paidCreditBalance ?? 0) + (walletBefore?.promoCreditBalance ?? 0)
-    const unlockBefore = await tx.leadUnlock.findUnique({
-      where: { leadId: lead.id },
-      select: { id: true, providerId: true },
-    })
+      if (
+        existingMatch?.providerId === params.providerId &&
+        (lead.status === 'ACCEPTED' || lead.assignmentHold?.status === 'ACCEPTED')
+      ) {
+        await tx.lead.updateMany({
+          where: { id: lead.id, status: { not: 'ACCEPTED' } },
+          data: { status: 'ACCEPTED', respondedAt: new Date() },
+        })
+        if (lead.assignmentHoldId) {
+          await tx.assignmentHold.updateMany({
+            where: { id: lead.assignmentHoldId, status: { not: 'ACCEPTED' } },
+            data: {
+              status: 'ACCEPTED',
+              respondedAt: new Date(),
+              releasedAt: new Date(),
+              outcomeReasonCode: 'DUPLICATE_ACCEPT_IGNORED',
+            },
+          })
+        }
+
+        return {
+          ok: true as const,
+          responseOutcome: 'ACCEPTED',
+          matchId: existingMatch.id,
+          jobRequestId: lead.jobRequestId,
+          bookingId: null,
+          assignmentHoldId: lead.assignmentHoldId ?? 'already-accepted',
+          nextOfferedProviderId: null,
+          alreadyUnlocked: true,
+          creditTransactionId: null,
+          currentCreditBalance,
+          leadStatusBefore: lead.status,
+          leadStatusAfter: 'ACCEPTED',
+        }
+      }
+
+      if (!lead.assignmentHoldId || !lead.assignmentHold) {
+        return { ok: false as const, reason: existingMatch ? 'TAKEN' : 'NOT_FOUND' }
+      }
+      if (lead.assignmentHold.status !== 'ACTIVE') {
+        return { ok: false as const, reason: 'TAKEN' }
+      }
+      if (lead.expiresAt && lead.expiresAt < new Date()) {
+        await tx.lead.update({
+          where: { id: lead.id },
+          data: { status: 'EXPIRED', respondedAt: new Date() },
+        })
+        await tx.assignmentHold.update({
+          where: { id: lead.assignmentHold.id },
+          data: {
+            status: 'EXPIRED',
+            respondedAt: new Date(),
+            releasedAt: new Date(),
+            outcomeReasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
+          },
+        })
+        if (lead.matchAttemptId) {
+          await tx.matchAttempt.update({
+            where: { id: lead.matchAttemptId },
+            data: {
+              stage: 'TIMED_OUT',
+              respondedAt: new Date(),
+              responseOutcome: 'TIMED_OUT',
+              reasonCode: 'OFFER_EXPIRED_BEFORE_ACCEPT',
+            },
+          }).catch(() => {})
+        }
+        return { ok: false as const, reason: 'EXPIRED' }
+      }
+
+      if (existingMatch && existingMatch.providerId !== params.providerId) {
+        await tx.lead.update({
+          where: { id: lead.id },
+          data: { status: 'EXPIRED', respondedAt: new Date() },
+        })
+        await tx.assignmentHold.update({
+          where: { id: lead.assignmentHold.id },
+          data: {
+            status: 'RELEASED',
+            respondedAt: new Date(),
+            releasedAt: new Date(),
+            outcomeReasonCode: 'MATCH_ALREADY_TAKEN',
+          },
+        })
+        return { ok: false as const, reason: 'TAKEN' }
+      }
+
     const unlockResult = await unlockLeadForProviderInTransaction(tx, lead.id, params.providerId, {
       source: params.source ?? 'api',
       traceId,
       idempotencyKey: `${params.source ?? 'api'}:${params.providerId}:${lead.id}:unlock_accept_lead`,
     })
-    const alreadyUnlocked = Boolean(unlockBefore) || unlockResult.alreadyUnlocked
+    const alreadyUnlocked = unlockResult.alreadyUnlocked
+    const remainingCreditBalance = remainingBalanceFromUnlock(
+      unlockResult.ledgerEntries,
+      currentCreditBalance,
+    )
 
     if (existingMatch && existingMatch.providerId === params.providerId) {
       await tx.lead.update({
@@ -1825,7 +1888,7 @@ export async function acceptAssignmentOffer(params: {
         nextOfferedProviderId: null,
         alreadyUnlocked,
         creditTransactionId: unlockResult.ledgerEntries.at(-1)?.id ?? null,
-        currentCreditBalance,
+        currentCreditBalance: remainingCreditBalance,
         leadStatusBefore: lead.status,
         leadStatusAfter: 'ACCEPTED',
       }
@@ -1992,10 +2055,13 @@ export async function acceptAssignmentOffer(params: {
       nextOfferedProviderId: null,
       alreadyUnlocked,
       creditTransactionId: unlockResult.ledgerEntries.at(-1)?.id ?? null,
-      currentCreditBalance,
+      currentCreditBalance: remainingCreditBalance,
       leadStatusBefore: lead.status,
       leadStatusAfter: 'ACCEPTED',
     }
+    }, {
+      maxWait: ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS,
+      timeout: ACCEPT_ASSIGNMENT_TRANSACTION_TIMEOUT_MS,
     })
   } catch (error) {
     if (error instanceof LeadUnlockError) {
@@ -2025,15 +2091,11 @@ export async function acceptAssignmentOffer(params: {
         ok: false,
         reason,
         currentCreditBalance: error.currentCreditBalance,
+        traceId,
       }
     }
 
-    if (
-      error != null &&
-      typeof error === 'object' &&
-      'code' in error &&
-      (error as { code?: string }).code === 'P2002'
-    ) {
+    if (errorCode(error) === 'P2002') {
       console.info('[matching] lead unlock/accept blocked by concurrent match', {
         provider_id: params.providerId,
         lead_id: params.leadId,
@@ -2041,10 +2103,19 @@ export async function acceptAssignmentOffer(params: {
         result: 'TAKEN',
         trace_id: traceId,
       })
-      return { ok: false, reason: 'TAKEN' }
+      return { ok: false, reason: 'TAKEN', traceId }
     }
 
-    throw error
+    console.error('[matching] lead unlock/accept failed unexpectedly', {
+      provider_id: params.providerId,
+      lead_id: params.leadId,
+      source: params.source ?? 'api',
+      result: 'LEAD_ACCEPTANCE_FAILED',
+      error_code: errorCode(error) ?? 'UNKNOWN_LEAD_ACCEPT_ERROR',
+      trace_id: traceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return { ok: false, reason: 'LEAD_ACCEPTANCE_FAILED', traceId }
   }
 
   if (!transactionResult.ok) {
@@ -2065,7 +2136,9 @@ export async function acceptAssignmentOffer(params: {
         | 'INSUFFICIENT_CREDITS'
         | 'PROVIDER_NOT_APPROVED'
         | 'WALLET_SUSPENDED'
-        | 'CONCURRENT_UNLOCK',
+        | 'CONCURRENT_UNLOCK'
+        | 'LEAD_ACCEPTANCE_FAILED',
+      traceId,
     }
   }
 
