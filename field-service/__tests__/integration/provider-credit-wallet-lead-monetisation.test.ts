@@ -170,6 +170,7 @@ function publicLead(lead: any) {
         suburb: lead.jobRequest.address.suburb,
         city: lead.jobRequest.address.city,
       },
+      attachments: lead.jobRequest.attachments,
     },
   }
 }
@@ -469,8 +470,12 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       referenceId: 'unlock-lead-1',
     }))
 
-    const unlocked = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
-    expect(unlocked?.unlockedDetails).toMatchObject({
+    const unlockOnly = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
+    expect(unlockOnly?.unlockedDetails).toBeNull()
+
+    state.leads.set('lead-1', { ...state.leads.get('lead-1'), status: 'ACCEPTED' })
+    const accepted = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
+    expect(accepted?.unlockedDetails).toMatchObject({
       customerPhone: '+27821234567',
       fullAddress: expect.stringContaining('12 Exact Street'),
     })

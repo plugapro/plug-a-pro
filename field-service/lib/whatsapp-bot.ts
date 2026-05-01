@@ -1297,10 +1297,10 @@ export async function notifyProviderNewJob(params: {
 
   await sendCtaUrl(
     params.providerPhone,
-    `🔔 *New Lead Available*\n\n*${params.category}* · ${area}\nRef: ${ref} · Expires in ${expiryLabel}\n\n${creditLine}\n\nTap below to view the full job details and respond.`,
+    `🔔 *New Lead Available*\n\n*${params.category}* · ${area}\nRef: ${ref} · Expires in ${expiryLabel}\n\n${creditLine}\n\nTap below to view the lead preview and respond.`,
     'View Lead',
     leadUrl,
-    { footer: 'Accept, inspect, or decline from the lead page' },
+    { footer: 'View the lead preview. Accepting uses 1 credit.' },
     {
       templateName: 'interactive:new_lead_available',
       metadata: {
@@ -1622,7 +1622,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
     }
     await sendCtaUrl(
       phone,
-      `🔍 *View Lead Details*\n\nOpen the link below to review the full job details, then choose to accept, request an inspection, or decline.`,
+      `🔍 *View Lead Preview*\n\nOpen the link below to review the lead preview, then choose to accept or decline.`,
       'View Lead',
       leadUrl,
       { footer: 'Tap to open your provider app' }
@@ -2024,7 +2024,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       console.warn('[whatsapp-bot] accept: provider wallet suspended', {
         traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'WALLET_SUSPENDED',
       })
-      await sendText(phone, "Your credit wallet is not active right now, so this lead cannot be unlocked. Please contact support.")
+      await sendText(phone, "Your credit wallet is not active right now, so this lead cannot be accepted. Please contact support.")
       return
     }
     if (result.reason === 'FORBIDDEN') {
@@ -2063,7 +2063,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     }
     if (result.reason === 'EXPIRED') {
       console.info('[whatsapp-bot] accept: lead expired', { traceId, holdId, leadId: lead.id, providerId: provider.id })
-      await sendText(phone, "⏰ This lead has expired — the offer window closed before your response. New leads will come through as jobs arise.")
+      await sendText(phone, "⏰ This lead has expired and can no longer be accepted. No credits were used.\n\nNew leads will come through as jobs arise.")
     } else if (result.reason === 'TAKEN') {
       console.info('[whatsapp-bot] accept: lead taken', { traceId, holdId, leadId: lead.id, providerId: provider.id })
       await sendText(phone, "⚡ This job was just assigned to another provider. New leads will come through as jobs arise.")

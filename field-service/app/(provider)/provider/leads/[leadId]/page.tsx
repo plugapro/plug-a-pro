@@ -11,8 +11,6 @@ import { Button } from '@/components/ui/button'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { LeadActionSubmitButton } from '@/components/provider/LeadActionSubmitButton'
 import { formatDistanceToNow, format } from 'date-fns'
-import { getCategoryPolicy } from '@/lib/service-category-policy'
-import { LeadUnlockError, unlockLeadForProvider } from '@/lib/lead-unlocks'
 import { createTraceId, safeErrorMessage } from '@/lib/support-diagnostics'
 import {
   ProviderLeadDetailError,
@@ -32,7 +30,7 @@ async function acceptLead(formData: FormData) {
   'use server'
   const session = await requireProvider()
   const leadId = String(formData.get('leadId') ?? '')
-  const inspectionNeeded = formData.get('inspectionNeeded') === 'true'
+  const inspectionNeeded = false
 
   const provider = await db.provider.findUnique({ where: { userId: session.id } })
   if (!provider) redirect('/provider')
@@ -42,43 +40,25 @@ async function acceptLead(formData: FormData) {
 
   if (!result.ok) {
     if (result.reason === 'INSUFFICIENT_CREDITS') {
-      redirect(`/provider/leads/${leadId}?unlockError=credits`)
+      redirect(`/provider/leads/${leadId}?acceptError=credits`)
     }
     if (result.reason === 'PROVIDER_NOT_APPROVED') {
-      redirect(`/provider/leads/${leadId}?unlockError=approval`)
+      redirect(`/provider/leads/${leadId}?acceptError=approval`)
     }
-    // Lead expired or taken — go back to leads list with the status visible
-    redirect('/provider/leads')
+    if (result.reason === 'EXPIRED') {
+      redirect(`/provider/leads/${leadId}?acceptError=expired`)
+    }
+    if (result.reason === 'TAKEN') {
+      redirect(`/provider/leads/${leadId}?acceptError=taken`)
+    }
+    redirect(`/provider/leads/${leadId}?acceptError=unavailable`)
   }
 
-  redirect(`/provider/quotes/${result.matchId}`)
-}
-
-async function unlockLead(formData: FormData) {
-  'use server'
-  const session = await requireProvider()
-  const leadId = String(formData.get('leadId') ?? '')
-
-  const provider = await db.provider.findUnique({ where: { userId: session.id } })
-  if (!provider) redirect('/provider')
-
-  try {
-    await unlockLeadForProvider(leadId, provider.id, { source: 'pwa' })
-  } catch (error) {
-    if (error instanceof LeadUnlockError) {
-      const reason = error.code === 'INSUFFICIENT_CREDITS'
-        ? 'credits'
-        : error.code === 'PROVIDER_NOT_APPROVED'
-          ? 'approval'
-          : error.code === 'PROVIDER_NOT_ACTIVE'
-            ? 'inactive'
-            : 'unavailable'
-      redirect(`/provider/leads/${leadId}?unlockError=${reason}`)
-    }
-    throw error
+  const query = new URLSearchParams({ accepted: '1' })
+  if (result.currentCreditBalance != null) {
+    query.set('remainingBalance', String(result.currentCreditBalance))
   }
-
-  redirect(`/provider/leads/${leadId}?unlocked=1`)
+  redirect(`/provider/leads/${leadId}?${query.toString()}`)
 }
 
 async function disputeUnlockedLead(formData: FormData) {
@@ -152,7 +132,7 @@ export default async function LeadDetailPage({
   searchParams,
 }: {
   params: Promise<{ leadId: string }>
-  searchParams?: Promise<{ unlockError?: string; unlocked?: string; dispute?: string; declined?: string; declineError?: string; traceId?: string }>
+  searchParams?: Promise<{ acceptError?: string; accepted?: string; remainingBalance?: string; confirmAccept?: string; dispute?: string; declined?: string; declineError?: string; traceId?: string }>
 }) {
   const session = await requireProvider()
   const { leadId } = await params
@@ -199,16 +179,18 @@ export default async function LeadDetailPage({
   )
   const totalCreditBalance = lead.wallet.totalCredits
   const hasEnoughCredits = totalCreditBalance >= lead.unlockCostCredits
+  const remainingCreditBalanceAfterAccept = totalCreditBalance - lead.unlockCostCredits
+  const acceptedRemainingBalance =
+    resolvedSearchParams.remainingBalance != null && Number.isFinite(Number(resolvedSearchParams.remainingBalance))
+      ? Number(resolvedSearchParams.remainingBalance)
+      : totalCreditBalance
 
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
   const isResponded = lead.status === 'ACCEPTED' || lead.status === 'DECLINED'
   const canAct = !isExpired && !isResponded
-
-  // Hide "Inspection First" for simple categories where bookingOnAssignment is true
-  // (e.g. garden, handyman, cleaning, diy) — these don't need a site visit before quoting.
-  const categoryPolicy = getCategoryPolicy(preview.category)
-  const showInspectionOption = !categoryPolicy.bookingOnAssignment
+  const confirmingAccept = resolvedSearchParams.confirmAccept === '1' && canAct
   const unlockedDetails = lead.unlockedDetails
+  const visiblePhotos = isUnlocked && unlockedDetails ? unlockedDetails.attachments : preview.attachments
 
   return (
     <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-28">
@@ -277,36 +259,85 @@ export default async function LeadDetailPage({
         </div>
       )}
 
-      {resolvedSearchParams.unlocked && (
+      {resolvedSearchParams.accepted && (
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          Lead unlocked. Full customer and job details are now available.
+          Lead accepted. {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} used. Balance remaining: {acceptedRemainingBalance}.
+          Full customer and job details are now available.
         </div>
       )}
 
-      {resolvedSearchParams.unlockError === 'credits' && (
+      {resolvedSearchParams.acceptError === 'credits' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          You need at least 1 Plug-A-Pro Credit to unlock this lead.
+          You need {lead.unlockCostCredits} Plug-A-Pro Credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
           <Link href="/provider/credits" className="ml-1 font-medium underline underline-offset-4">
             Top up credits
           </Link>
         </div>
       )}
 
-      {resolvedSearchParams.unlockError === 'inactive' && (
+      {resolvedSearchParams.acceptError === 'inactive' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Your provider profile is not active, so you cannot unlock leads right now.
+          Your provider profile is not active, so you cannot accept leads right now.
         </div>
       )}
 
-      {resolvedSearchParams.unlockError === 'approval' && (
+      {resolvedSearchParams.acceptError === 'approval' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Your provider application is still under review. You can accept leads once your profile is approved.
         </div>
       )}
 
-      {resolvedSearchParams.unlockError && !['credits', 'inactive', 'approval'].includes(resolvedSearchParams.unlockError) && (
+      {resolvedSearchParams.acceptError === 'expired' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This lead has expired and can no longer be accepted. No credits were used.
+        </div>
+      )}
+
+      {resolvedSearchParams.acceptError === 'taken' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This lead has already been accepted by another provider. No credits were used.
+        </div>
+      )}
+
+      {resolvedSearchParams.acceptError && !['credits', 'inactive', 'approval', 'expired', 'taken'].includes(resolvedSearchParams.acceptError) && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          This lead could not be unlocked. It may no longer be available.
+          This lead could not be accepted. It may no longer be available.
+        </div>
+      )}
+
+      {!isResponded && (
+        <div className="rounded-xl border bg-card px-4 py-3 text-sm">
+          <p className="font-medium">Lead preview</p>
+          <p className="mt-1 text-muted-foreground">
+            Customer contact, exact street address, unit, complex and access details are hidden until you accept this lead.
+          </p>
+          <p className="mt-2">
+            Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
+            Your current balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
+          </p>
+        </div>
+      )}
+
+      {confirmingAccept && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-950">
+          <p className="font-semibold">Confirm lead acceptance</p>
+          {hasEnoughCredits ? (
+            <>
+              <p className="mt-1">
+                Accepting this lead will use {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
+                Your current balance is {totalCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
+              </p>
+              <p className="mt-1">Full customer details will be released only after acceptance succeeds.</p>
+            </>
+          ) : (
+            <>
+              <p className="mt-1">
+                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
+                Your current balance is {totalCreditBalance}.
+              </p>
+              <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
+            </>
+          )}
         </div>
       )}
 
@@ -376,9 +407,9 @@ export default async function LeadDetailPage({
         </div>
         {!isUnlocked && (
           <div className="px-4 py-3 space-y-1 text-sm">
-            <p className="font-medium">Unlock cost: {lead.unlockCostCredits} Plug-A-Pro Credit</p>
+            <p className="font-medium">Accept cost: {lead.unlockCostCredits} Plug-A-Pro Credit</p>
             <p className="text-muted-foreground">
-              Credits are used to unlock verified matched leads. Customer contact details, exact address, and photos are hidden until unlock.
+              Credits are used when you accept verified matched leads. Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
             </p>
           </div>
         )}
@@ -394,11 +425,11 @@ export default async function LeadDetailPage({
             ) : null}
           </div>
         )}
-        {isUnlocked && unlockedDetails && unlockedDetails.attachments.length > 0 && (
+        {visiblePhotos.length > 0 && (
           <div className="px-4 py-3 space-y-2">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer photos</p>
             <div className="grid grid-cols-2 gap-2">
-              {unlockedDetails.attachments.map((photo) => {
+              {visiblePhotos.map((photo) => {
                 const src = `/api/attachments/${photo.id}`
                 return (
                   <AttachmentThumbnail
@@ -484,42 +515,40 @@ export default async function LeadDetailPage({
       {/* Actions */}
       {canAct && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t px-4 py-4 space-y-2 safe-bottom">
-          {!isUnlocked ? (
+          {!confirmingAccept ? (
             <>
-              {!hasEnoughCredits ? (
-                <Button asChild size="lg" className="w-full">
-                  <Link href="/provider/credits">Top Up to Unlock</Link>
-                </Button>
-              ) : (
-                <form action={unlockLead}>
-                  <input type="hidden" name="leadId" value={leadId} />
-                  <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Unlocking lead...">
-                    Unlock lead for 1 Plug-A-Pro Credit
-                  </LeadActionSubmitButton>
-                </form>
-              )}
+              <Button asChild size="lg" className="w-full">
+                <Link href={`/provider/leads/${leadId}?confirmAccept=1`}>
+                  Accept lead — uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}
+                </Link>
+              </Button>
               <p className="text-center text-xs text-muted-foreground">
                 Balance: {totalCreditBalance} Plug-A-Pro Credits · Cost: {lead.unlockCostCredits}
               </p>
             </>
-          ) : (
+          ) : hasEnoughCredits ? (
             <form action={acceptLead} className="space-y-2">
               <input type="hidden" name="leadId" value={leadId} />
               <input type="hidden" name="inspectionNeeded" value="false" />
-              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting job...">
-                Accept and build quote
+              <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting lead...">
+                Confirm accept — use {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}
               </LeadActionSubmitButton>
             </form>
+          ) : (
+            <>
+              <Button asChild size="lg" className="w-full">
+                <Link href="/provider/credits">Top Up Credits</Link>
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
+              </p>
+            </>
           )}
 
-          {isUnlocked && showInspectionOption && (
-            <form action={acceptLead}>
-              <input type="hidden" name="leadId" value={leadId} />
-              <input type="hidden" name="inspectionNeeded" value="true" />
-              <LeadActionSubmitButton size="lg" variant="outline" className="w-full" pendingLabel="Accepting...">
-                Inspection first
-              </LeadActionSubmitButton>
-            </form>
+          {confirmingAccept && (
+            <Button asChild size="lg" variant="outline" className="w-full">
+              <Link href={`/provider/leads/${leadId}`}>Back to preview</Link>
+            </Button>
           )}
 
           <form action={declineLead}>

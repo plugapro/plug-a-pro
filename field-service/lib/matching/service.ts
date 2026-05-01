@@ -18,6 +18,7 @@ import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
 import { releaseProviderCapacity } from './reservation'
 import { sendText } from '../whatsapp-interactive'
+import { hasSuccessfulMessageForRecipient } from '../message-events'
 import { createTraceId } from '../support-diagnostics'
 import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
 import { normaliseLocationDisplayName } from '../location-format'
@@ -44,6 +45,18 @@ const OFFER_TIMEOUT_TEMP_PAUSE_HOURS = 12
 const ACCEPT_ASSIGNMENT_TRANSACTION_TIMEOUT_MS = 20_000
 const ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS = 10_000
 
+type ExpiredAssignmentNotificationHold = {
+  id: string
+  expiresAt: Date
+  jobRequestId: string
+  providerId: string
+  provider: { phone: string | null; name: string | null } | null
+  jobRequest: {
+    category: string
+    address: { suburb: string | null; city: string | null } | null
+  } | null
+}
+
 function normalizeTag(tag: string) {
   return tag.trim().toLowerCase()
 }
@@ -69,6 +82,83 @@ function remainingBalanceFromUnlock(
   const lastEntry = ledgerEntries.at(-1)
   if (!lastEntry) return fallbackBalance
   return lastEntry.balanceAfterPaidCredits + lastEntry.balanceAfterPromoCredits
+}
+
+function formatProviderLeadDeadline(deadline: Date) {
+  return deadline.toLocaleString('en-ZA', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Africa/Johannesburg',
+  })
+}
+
+function formatLeadExpiryArea(address: { suburb?: string | null; city?: string | null } | null | undefined) {
+  const suburb = normaliseLocationDisplayName(address?.suburb)
+  const city = normaliseLocationDisplayName(address?.city)
+  if (suburb && city && suburb !== city) return `${suburb}, ${city}`
+  return suburb || city || 'your area'
+}
+
+async function notifyProviderLeadInviteExpired(params: {
+  hold: ExpiredAssignmentNotificationHold
+  wasReassigned: boolean
+  traceId: string
+}) {
+  const { hold, wasReassigned, traceId } = params
+  const phone = hold.provider?.phone
+
+  if (!phone) {
+    console.warn('[expireAssignmentOffer] skipped provider expiry notification: missing provider phone', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      error_code: 'PROVIDER_PHONE_MISSING',
+    })
+    return
+  }
+
+  const alreadySent = await hasSuccessfulMessageForRecipient({
+    to: phone,
+    templateName: 'interactive:lead_expired',
+    metadataPath: ['assignmentHoldId'],
+    metadataEquals: hold.id,
+  })
+
+  if (alreadySent) {
+    console.info('[expireAssignmentOffer] skipped duplicate provider expiry notification', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      result: 'duplicate_skipped',
+    })
+    return
+  }
+
+  const category = hold.jobRequest?.category || 'job'
+  const area = formatLeadExpiryArea(hold.jobRequest?.address)
+  const deadline = formatProviderLeadDeadline(hold.expiresAt)
+  const reassignedLine = wasReassigned ? '\n\nThis lead has now been offered to another provider.' : ''
+
+  await sendText(
+    phone,
+    `⏱️ *Lead expired*\n\nThe ${category} lead in ${area} expired because there was no response before ${deadline}.\n\nNo credits were used.${reassignedLine}\n\nWe'll send you another lead when one matches your area and availability.`,
+    {
+      templateName: 'interactive:lead_expired',
+      metadata: {
+        traceId,
+        providerId: hold.providerId,
+        jobRequestId: hold.jobRequestId,
+        assignmentHoldId: hold.id,
+        expiresAt: hold.expiresAt.toISOString(),
+        wasReassigned,
+      },
+    },
+  )
 }
 
 async function safeOptionalQuery<T>(factory: () => Promise<T>, fallback: T): Promise<T> {
@@ -1524,7 +1614,7 @@ async function createOfferForAttempt(params: {
     }
   }
 
-  // Quick-response action buttons — same credit copy and Unlock & Accept / Decline
+  // Quick-response action buttons — same credit copy and Accept Lead / Decline
   // buttons as the dispatch.ts path so providers always see a consistent UI.
   if (interactiveDelivered) {
     const { sendButtons } = await import('../whatsapp-interactive')
@@ -1533,12 +1623,12 @@ async function createOfferForAttempt(params: {
     const category = jobRequest.category
     const balance = await getProviderWalletBalanceReadOnly(params.providerId)
     const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
-    const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nUnlocking this lead uses ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
+    const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nAccepting this lead uses ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
     await sendButtons(
       provider.phone,
       actionsBody,
       [
-        { id: `accept:${hold.id}`, title: 'Unlock & Accept' },
+        { id: `accept:${hold.id}`, title: 'Accept Lead' },
         { id: `decline:${hold.id}`, title: 'Decline' },
       ],
       undefined,
@@ -2361,6 +2451,7 @@ export async function rejectAssignmentOffer(params: {
 export async function expireAssignmentOffer(params: {
   assignmentHoldId: string
 }) {
+  const traceId = createTraceId('lead_expiry')
   const hold = await db.assignmentHold.findUnique({
     where: { id: params.assignmentHoldId },
     select: {
@@ -2371,6 +2462,13 @@ export async function expireAssignmentOffer(params: {
       dispatchDecisionId: true,
       jobRequestId: true,
       providerId: true,
+      provider: { select: { phone: true, name: true } },
+      jobRequest: {
+        select: {
+          category: true,
+          address: { select: { suburb: true, city: true } },
+        },
+      },
     },
   })
 
@@ -2378,6 +2476,8 @@ export async function expireAssignmentOffer(params: {
   if (hold.status !== 'ACTIVE' || hold.expiresAt > new Date()) {
     return { expired: false, nextOfferedProviderId: null }
   }
+
+  let expiredLeadCount = 0
 
   await db.$transaction(async (tx) => {
     await tx.assignmentHold.update({
@@ -2389,13 +2489,14 @@ export async function expireAssignmentOffer(params: {
         outcomeReasonCode: 'OFFER_TIMEOUT',
       },
     })
-    await tx.lead.updateMany({
+    const leadUpdate = await tx.lead.updateMany({
       where: {
         assignmentHoldId: hold.id,
         status: { in: ['SENT', 'VIEWED'] },
       },
       data: { status: 'EXPIRED', respondedAt: new Date() },
     })
+    expiredLeadCount = leadUpdate.count
     await tx.matchAttempt.update({
       where: { id: hold.matchAttemptId },
       data: {
@@ -2424,6 +2525,31 @@ export async function expireAssignmentOffer(params: {
     jobRequestId: hold.jobRequestId,
     dispatchDecisionId: hold.dispatchDecisionId,
   })
+
+  if (expiredLeadCount > 0) {
+    await notifyProviderLeadInviteExpired({
+      hold,
+      wasReassigned: next.nextOfferedProviderId !== null,
+      traceId,
+    }).catch((err) => {
+      console.error('[expireAssignmentOffer] provider expiry notification failed', {
+        trace_id: traceId,
+        provider_id: hold.providerId,
+        job_request_id: hold.jobRequestId,
+        assignment_hold_id: hold.id,
+        error_code: 'LEAD_EXPIRY_NOTIFICATION_FAILED',
+        err,
+      })
+    })
+  } else {
+    console.info('[expireAssignmentOffer] skipped provider expiry notification: no sent/viewed lead was expired', {
+      trace_id: traceId,
+      provider_id: hold.providerId,
+      job_request_id: hold.jobRequestId,
+      assignment_hold_id: hold.id,
+      result: 'no_sent_invite',
+    })
+  }
 
   // When all candidates exhausted the job is now EXPIRED — notify the customer and last provider
   if (!next.nextOfferedProviderId) {

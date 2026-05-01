@@ -58,6 +58,9 @@ const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
     scheduleItem: {
       updateMany: vi.fn(),
     },
+    messageEvent: {
+      findFirst: vi.fn(),
+    },
   },
   mockEmitMatchEvent: vi.fn(),
   mockSendText: vi.fn(),
@@ -72,7 +75,7 @@ vi.mock('../../lib/whatsapp-interactive', () => ({
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function makeActiveHold(overrides: Partial<{
+function makeActiveHold(overrides: Partial<Record<string, unknown>> & Partial<{
   id: string
   status: string
   expiresAt: Date
@@ -89,6 +92,11 @@ function makeActiveHold(overrides: Partial<{
     dispatchDecisionId: 'decision-1',
     jobRequestId: 'job-1',
     providerId: 'provider-1',
+    provider: { phone: '+27764010810', name: 'Fannie Provider' },
+    jobRequest: {
+      category: 'Handyman',
+      address: { suburb: 'ruimsig', city: 'johannesburg' },
+    },
     ...overrides,
   }
 }
@@ -152,6 +160,7 @@ function setupBaseTransaction() {
   mockDb.technicianScheduleItem.deleteMany.mockResolvedValue({ count: 0 })
   mockDb.technicianScheduleItem.create.mockResolvedValue({})
   mockDb.matchAttempt.count.mockResolvedValue(1)
+  mockDb.messageEvent.findFirst.mockResolvedValue(null)
   mockDb.dispatchDecision.update.mockResolvedValue({})
   mockDb.jobRequest.update.mockResolvedValue({})
   // loadMatchingJobRequest inside createOfferForAttempt
@@ -225,6 +234,81 @@ describe('expireAssignmentOffer', () => {
     )
   })
 
+  it('notifies the timed-out provider once when an active sent lead expires and is reoffered', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
+    mockDb.matchAttempt.findMany.mockResolvedValue([
+      { id: 'attempt-2', stage: 'RANKED', rankedPosition: 2, providerId: 'provider-2', hardFilterPassed: true },
+    ])
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Lead expired'),
+      expect.objectContaining({
+        templateName: 'interactive:lead_expired',
+        metadata: expect.objectContaining({
+          assignmentHoldId: 'hold-1',
+          jobRequestId: 'job-1',
+          providerId: 'provider-1',
+          wasReassigned: true,
+        }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('No credits were used'),
+      expect.anything(),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('This lead has now been offered to another provider.'),
+      expect.anything(),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Handyman lead in Ruimsig, Johannesburg'),
+      expect.anything(),
+    )
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('1 Main St'),
+      expect.anything(),
+    )
+  })
+
+  it('does not send a duplicate expiry notification when one was already logged', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
+    mockDb.matchAttempt.findMany.mockResolvedValue([
+      { id: 'attempt-2', stage: 'RANKED', rankedPosition: 2, providerId: 'provider-2', hardFilterPassed: true },
+    ])
+    mockDb.messageEvent.findFirst.mockResolvedValue({ id: 'message-1' })
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Lead expired'),
+      expect.anything(),
+    )
+  })
+
+  it('does not notify expiry when no sent or viewed lead was expired', async () => {
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
+    mockDb.lead.updateMany.mockResolvedValue({ count: 0 })
+    mockDb.matchAttempt.findMany.mockResolvedValue([
+      { id: 'attempt-2', stage: 'RANKED', rankedPosition: 2, providerId: 'provider-2', hardFilterPassed: true },
+    ])
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      '+27764010810',
+      expect.stringContaining('Lead expired'),
+      expect.anything(),
+    )
+  })
+
   it('expires the hold and marks job EXPIRED when no next candidate', async () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
     // No RANKED attempts remaining
@@ -246,7 +330,7 @@ describe('expireAssignmentOffer', () => {
       expect.objectContaining({ event: 'match.exhausted', jobRequestId: 'job-1' })
     )
     expect(mockSendText).toHaveBeenNthCalledWith(
-      2,
+      3,
       '+27831234567',
       expect.stringContaining('Thank you for trying Plug A Pro.'),
       expect.objectContaining({
@@ -270,7 +354,7 @@ describe('expireAssignmentOffer', () => {
     await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
 
     expect(mockSendText).toHaveBeenNthCalledWith(
-      2,
+      3,
       '+27831234567',
       expect.stringContaining('we will message you if a suitable provider becomes available in time'),
       expect.objectContaining({

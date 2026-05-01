@@ -195,6 +195,8 @@ export type OfferResolutionResult =
       matchId: string | null
       bookingId?: string | null
       creditTransactionId?: string | null
+      currentCreditBalance?: number
+      alreadyUnlocked?: boolean
       assignmentHoldId: string
       nextOfferedProviderId: string | null
     }

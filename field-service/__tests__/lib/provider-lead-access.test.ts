@@ -61,7 +61,7 @@ describe('provider lead access tokens', () => {
       payload: {
         leadId: 'lead-1',
         providerId: 'provider-1',
-        scopes: ['view_lead', 'unlock_lead', 'accept_lead', 'decline_lead'],
+        scopes: ['view_lead', 'accept_lead', 'decline_lead'],
       },
     })
   })

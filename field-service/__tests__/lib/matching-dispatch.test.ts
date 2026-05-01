@@ -102,7 +102,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
       expect.stringContaining('Area: *Ruimsig*'),
       'View Lead',
       expect.stringMatching(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//),
-      { footer: 'Accept, inspect, or decline from the lead page' },
+      { footer: 'View the lead preview. Accepting uses 1 credit.' },
       expect.objectContaining({
         templateName: 'dispatch:job_lead',
         metadata: expect.objectContaining({
@@ -126,7 +126,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
       '+27820000000',
       expect.stringContaining('Quick response for *plumbing* in *Ruimsig*.'),
       [
-        { id: 'accept:hold-1', title: 'Unlock & Accept' },
+        { id: 'accept:hold-1', title: 'Accept Lead' },
         { id: 'decline:hold-1', title: 'Decline' },
       ],
       undefined,

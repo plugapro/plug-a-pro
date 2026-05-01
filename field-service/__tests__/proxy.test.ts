@@ -145,4 +145,14 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
   })
+
+  it('allows the attachment image proxy through so signed lead and ticket tokens can be validated by the route', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/attachments/att-1?leadToken=signed-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
 })

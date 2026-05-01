@@ -15,6 +15,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:backfill": "tsx scripts/backfill-location-nodes.ts",
     "db:backfill-cases": "tsx scripts/backfill-cases.ts",
+    "seed:test-leads": "tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --dry-run",
+    "seed:test-leads:commit": "ALLOW_TEST_DATA_IMPORT=true tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit",
+    "seed:test-leads:reset": "ALLOW_TEST_DATA_IMPORT=true tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit --reset-existing=true",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset"
   },

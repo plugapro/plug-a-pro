@@ -152,11 +152,43 @@ export async function GET(
       return false
     })()
 
-    if (!allowed) {
+    if (
+      !allowed &&
+      session.role === 'provider' &&
+      providerDbId != null &&
+      attachmentJobRequestId != null
+    ) {
+      const scopedLead = await db.lead.findUnique({
+        where: {
+          jobRequestId_providerId: {
+            jobRequestId: attachmentJobRequestId,
+            providerId: providerDbId,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+          expiresAt: true,
+          jobRequest: {
+            select: {
+              match: { select: { status: true } },
+            },
+          },
+        },
+      })
+      sessionAllowsAttachment = Boolean(
+        scopedLead &&
+        scopedLead.status !== 'DECLINED' &&
+        scopedLead.jobRequest?.match?.status !== 'CANCELLED' &&
+        (!scopedLead.expiresAt || scopedLead.expiresAt > new Date()),
+      )
+    }
+
+    if (!allowed && !sessionAllowsAttachment) {
       console.warn(`[attachments:${reqId}] Forbidden: user=${session.id} role=${session.role} attachment=${id}`)
     }
 
-    sessionAllowsAttachment = allowed
+    sessionAllowsAttachment = sessionAllowsAttachment || allowed
   }
 
   if (!sessionAllowsAttachment && !tokenAllowsAttachment && !leadTokenAllowsAttachment) {

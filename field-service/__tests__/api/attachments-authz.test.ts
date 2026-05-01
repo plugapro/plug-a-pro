@@ -19,6 +19,7 @@ const {
     attachment: { findUnique: vi.fn() },
     provider: { findUnique: vi.fn() },
     customer: { findUnique: vi.fn(), update: vi.fn() },
+    lead: { findUnique: vi.fn() },
   },
   mockFetch: vi.fn(),
   mockHead: vi.fn(),
@@ -87,6 +88,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
       status: 'invalid',
       jobRequestId: null,
     })
+    mockDb.lead.findUnique.mockResolvedValue(null)
   })
 
   it('allows a provider whose Provider.id matches job.providerId', async () => {
@@ -110,6 +112,64 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     // Provider record has a different DB id than the job owner
     mockDb.provider.findUnique.mockResolvedValue({ id: 'different-provider-id' })
     mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an authenticated invited provider to preview customer photos before acceptance', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      status: 'VIEWED',
+      expiresAt: new Date(Date.now() + 60_000),
+      jobRequest: { match: { status: 'OFFERED' } },
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      jobRequest: {
+        id: 'jr-1',
+        customer: { id: 'cust-db-id' },
+      },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+    expect(mockDb.lead.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          jobRequestId_providerId: {
+            jobRequestId: 'jr-1',
+            providerId: 'provider-db-id',
+          },
+        },
+      }),
+    )
+  })
+
+  it('denies an invited provider whose underlying match was cancelled', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      status: 'VIEWED',
+      expiresAt: new Date(Date.now() + 60_000),
+      jobRequest: { match: { status: 'CANCELLED' } },
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      jobRequest: {
+        id: 'jr-1',
+        customer: { id: 'cust-db-id' },
+      },
+    })
 
     const GET = await getHandler()
     const res = await GET(makeRequest(), { params: makeParams() })
