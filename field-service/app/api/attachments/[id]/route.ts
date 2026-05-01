@@ -196,7 +196,7 @@ export async function GET(
       const error = leadTokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired lead token'
       const status = leadTokenScope.status === 'active' ? 403 : 401
       console.warn(
-        `[attachments:${reqId}] Lead token denied: tokenStatus=${leadTokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'}`,
+        `[attachments:${reqId}] Lead token denied: tokenStatus=${leadTokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'} tokenJobRequest=${leadTokenScope.jobRequestId ?? 'none'}`,
       )
       return NextResponse.json({ error }, { status })
     }

@@ -380,6 +380,68 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     expect(mockFetch).toHaveBeenCalledWith('https://blob.example.com/att-1')
   })
 
+  it('returns 401 when an unauthenticated request has an expired or invalid lead token', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
+      status: 'expired',
+      jobRequestId: null,
+      leadId: 'lead-1',
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeLeadTokenRequest('expired-lead-token'), { params: makeParams() })
+
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body.error).toMatch(/invalid or expired/i)
+  })
+
+  it('returns 403 when an unauthenticated request has a valid lead token scoped to a different job request', async () => {
+    mockGetSession.mockResolvedValue(null)
+    // token is valid but scoped to jr-2, not jr-1
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-2',
+      leadId: 'lead-2',
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeLeadTokenRequest('valid-but-wrong-scope-token'), { params: makeParams() })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 403 when a session-authenticated invited provider has an expired lead', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      status: 'VIEWED',
+      expiresAt: new Date(Date.now() - 60_000), // expired 1 minute ago
+      jobRequest: { match: { status: 'OFFERED' } },
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+
+    expect(res.status).toBe(403)
+  })
+
   it('returns a diagnostic error when the stored image file cannot be found', async () => {
     mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
