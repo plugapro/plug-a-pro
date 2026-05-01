@@ -32,9 +32,11 @@ const PUBLIC_PATHS = [
   '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
   '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
-  '/api/auth/session',     // called client-side after sign-in to persist the HttpOnly session cookie
-  '/api/auth/link',        // called client-side after OTP — no session cookie yet
-  '/api/health',           // monitoring probe — must be reachable without a session cookie
+  '/api/auth/session',              // called client-side after sign-in to persist the HttpOnly session cookie
+  '/api/auth/link',                 // called client-side after OTP — no session cookie yet
+  '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
+  '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
+  '/api/health',                    // monitoring probe — must be reachable without a session cookie
 ]
 
 const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/
