@@ -7,7 +7,7 @@
 import { db } from '../lib/db'
 
 const TARGET_PHONES_RAW = [
-  '0823035070',   // Jacob (provider)
+  '0821234567',   // Neutral dummy provider
   '0773923802',   // Stephanie (customer)
 ]
 

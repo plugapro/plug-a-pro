@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SA_EXAMPLE_MOBILE_E164_SPACED, SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { getSafeNextPath } from '@/lib/safe-redirect'
 import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 
@@ -101,13 +102,16 @@ export default function SignInPage() {
             id="phone"
             type="tel"
             inputMode="numeric"
-            placeholder="+27 82 123 4567"
+            placeholder={SA_EXAMPLE_MOBILE_E164_SPACED}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             required
             disabled={loading}
             className="h-11 bg-background border-input text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/20"
           />
+          <p className="text-xs text-muted-foreground">
+            {SA_OTP_SIGN_IN_HELPER_TEXT}
+          </p>
         </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}

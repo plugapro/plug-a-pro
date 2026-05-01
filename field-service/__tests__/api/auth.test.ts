@@ -341,9 +341,9 @@ describe('POST /api/auth/provider/send-code', () => {
   })
 
   it.each([
-    ['0823035070', '+27823035070'],
-    ['27823035070', '+27823035070'],
-    ['+27823035070', '+27823035070'],
+    ['0821234567', '+27821234567'],
+    ['27821234567', '+27821234567'],
+    ['+27821234567', '+27821234567'],
   ])('normalizes %s and sends a provider login code', async (input, normalized) => {
     const { db } = await import('@/lib/db')
     const { createClient } = await import('@supabase/supabase-js')
@@ -420,7 +420,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '0823035070' }),
+      body: JSON.stringify({ phone: '0821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -431,8 +431,8 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(body.error).toMatchObject({
       code: 'PROVIDER_NOT_FOUND',
       step: 'Worker portal send-code',
-      mobileChecked: '+27823035070',
-      phoneMasked: '082****070',
+      mobileChecked: '+27821234567',
+      phoneMasked: '082****567',
     })
     expect(body.error.traceId).toMatch(/^auth_/)
   })
@@ -447,7 +447,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '0823035070' }),
+      body: JSON.stringify({ phone: '0821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -458,7 +458,7 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(body.error).toMatchObject({
       code: 'PROVIDER_NOT_APPROVED',
       providerId: id,
-      mobileChecked: '+27823035070',
+      mobileChecked: '+27821234567',
     })
   })
 
@@ -473,7 +473,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '0823035070' }),
+      body: JSON.stringify({ phone: '0821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -484,7 +484,7 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(body.error).toMatchObject({
       code: 'PROVIDER_INACTIVE',
       providerId: 'prov-suspended',
-      mobileChecked: '+27823035070',
+      mobileChecked: '+27821234567',
     })
   })
 
@@ -501,7 +501,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27823035070' }),
+      body: JSON.stringify({ phone: '+27821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -530,7 +530,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27823035070' }),
+      body: JSON.stringify({ phone: '+27821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -558,7 +558,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27823035070' }),
+      body: JSON.stringify({ phone: '+27821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -586,7 +586,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27823035070' }),
+      body: JSON.stringify({ phone: '+27821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -614,7 +614,7 @@ describe('POST /api/auth/provider/send-code', () => {
       const { POST } = await import('../../app/api/auth/provider/send-code/route')
       const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
         method: 'POST',
-        body: JSON.stringify({ phone: '+27823035070' }),
+        body: JSON.stringify({ phone: '+27821234567' }),
         headers: { 'Content-Type': 'application/json' },
       })
 
@@ -646,7 +646,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27823035070' }),
+      body: JSON.stringify({ phone: '+27821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -668,7 +668,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '0823035070' }),
+      body: JSON.stringify({ phone: '0821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -695,7 +695,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27823035070' }),
+      body: JSON.stringify({ phone: '+27821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -723,7 +723,7 @@ describe('POST /api/auth/provider/send-code', () => {
     const { POST } = await import('../../app/api/auth/provider/send-code/route')
     const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
       method: 'POST',
-      body: JSON.stringify({ phone: '+27823035070' }),
+      body: JSON.stringify({ phone: '+27821234567' }),
       headers: { 'Content-Type': 'application/json' },
     })
 

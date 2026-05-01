@@ -84,6 +84,35 @@ describe('downloadAndStoreWhatsAppMedia', () => {
     })
   })
 
+  it('stores actual buffer byte length, not Meta-reported file_size, in the attachment record', async () => {
+    // Meta reports 999 bytes but the actual downloaded buffer is 4 bytes.
+    // sizeBytes must reflect the ground truth (buffer.byteLength).
+    const body = new Uint8Array([1, 2, 3, 4]).buffer
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          url: 'https://lookaside.whatsapp.net/media-temp',
+          mime_type: 'image/jpeg',
+          file_size: 999,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => body,
+      })
+
+    await downloadAndStoreWhatsAppMedia({
+      mediaId: 'media-sizecheck',
+      label: 'customer_photo',
+      maxSizeBytes: 10_000,
+    })
+
+    expect(mockDb.attachment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ sizeBytes: 4 }),
+    })
+  })
+
   it('reuses an existing attachment for duplicate WhatsApp media delivery', async () => {
     mockDb.attachment.findFirst.mockResolvedValue({ id: 'att-existing' })
 
@@ -109,6 +138,45 @@ describe('downloadAndStoreWhatsAppMedia', () => {
     await expect(
       downloadAndStoreWhatsAppMedia({ mediaId: 'media-heic', label: 'customer_photo' }),
     ).rejects.toThrow('Unsupported media type')
+
+    expect(mockPut).not.toHaveBeenCalled()
+    expect(mockDb.attachment.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects media that exceeds the size limit before downloading or storing', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        url: 'https://lookaside.whatsapp.net/media-temp',
+        mime_type: 'image/jpeg',
+        file_size: 20_000_000,
+      }),
+    })
+
+    await expect(
+      downloadAndStoreWhatsAppMedia({ mediaId: 'media-large', label: 'customer_photo', maxSizeBytes: 10_000_000 }),
+    ).rejects.toThrow('File too large')
+
+    // Must stop before binary download
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(mockPut).not.toHaveBeenCalled()
+    expect(mockDb.attachment.create).not.toHaveBeenCalled()
+  })
+
+  it('throws and does not store when the downloaded binary is empty', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ url: 'https://lookaside.whatsapp.net/media-temp', mime_type: 'image/jpeg', file_size: 4 }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(0),
+      })
+
+    await expect(
+      downloadAndStoreWhatsAppMedia({ mediaId: 'media-empty', label: 'customer_photo' }),
+    ).rejects.toThrow('empty file')
 
     expect(mockPut).not.toHaveBeenCalled()
     expect(mockDb.attachment.create).not.toHaveBeenCalled()

@@ -467,6 +467,10 @@ describe('WhatsApp job-request flow — structured address', () => {
         PHONE,
         expect.stringContaining('could not safely attach your photo'),
       )
+      // Stale IDs must be cleared so a retry does not re-attempt the same link
+      // and loop. The customer re-uploads photos from scratch.
+      expect(result.nextData?.photoAttachmentIds).toEqual([])
+      expect(result.nextData?.photoMediaIds).toEqual([])
     })
 
     it('falls back to status buttons when ticket CTA delivery fails after a successful submission', async () => {

@@ -54,6 +54,7 @@ export function AttachmentThumbnail({
 
   const image = (
     // eslint-disable-next-line @next/next/no-img-element
+    // next/image does not support onError; we need it to detect broken proxy responses.
     <img
       src={src}
       alt={imageAlt}

@@ -855,7 +855,7 @@ describe('matching service', () => {
     ['pwa', 'source: pwa'],
   ] as const)(
     'accept via %s debits exactly 1 credit through the shared unlock module',
-    async (source) => {
+    async (source, _label) => {
       // Both entry channels — WhatsApp quick-reply and PWA signed page — call
       // acceptAssignmentOffer which delegates to unlockLeadForProviderInTransaction.
       // This confirms neither channel has its own wallet logic.

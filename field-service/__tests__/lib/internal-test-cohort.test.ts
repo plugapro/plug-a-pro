@@ -12,9 +12,6 @@ import {
 describe('internal test cohort', () => {
   it('detects all internal staff numbers across local and international formats', () => {
     const cases = [
-      ['0823035070', '+27823035070'],
-      ['27823035070', '+27823035070'],
-      ['+27823035070', '+27823035070'],
       ['0773923802', '+27773923802'],
       ['27773923802', '+27773923802'],
       ['+27773923802', '+27773923802'],
@@ -44,7 +41,6 @@ describe('internal test cohort', () => {
 
   it('keeps live numbers outside the internal staff cohort', () => {
     expect(INTERNAL_TEST_PHONE_NUMBERS).toEqual([
-      '+27823035070',
       '+27773923802',
       '+27764010810',
       '+27832114183',
@@ -61,14 +57,10 @@ describe('internal test cohort', () => {
 
   it('detects the internal staff numbers that receive 10 onboarding test credits', () => {
     expect(INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS).toEqual([
-      '+27823035070',
       '+27764010810',
     ])
     expect(INTERNAL_TEST_ONBOARDING_CREDITS).toBe(10)
 
-    for (const input of ['0823035070', '27823035070', '+27823035070']) {
-      expect(isInternalTestOnboardingCreditPhone(input)).toBe(true)
-    }
     for (const input of ['0764010810', '27764010810', '+27764010810']) {
       expect(isInternalTestOnboardingCreditPhone(input)).toBe(true)
     }

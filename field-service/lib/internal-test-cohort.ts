@@ -3,7 +3,6 @@ import { normalizePhone } from './utils'
 export const INTERNAL_TEST_COHORT_NAME = 'internal_staff_test'
 
 export const INTERNAL_TEST_PHONE_NUMBERS = [
-  '+27823035070',
   '+27773923802',
   '+27764010810',
   '+27832114183',
@@ -12,7 +11,6 @@ export const INTERNAL_TEST_PHONE_NUMBERS = [
 ] as const
 
 export const INTERNAL_TEST_ONBOARDING_CREDIT_PHONE_NUMBERS = [
-  '+27823035070',
   '+27764010810',
 ] as const
 

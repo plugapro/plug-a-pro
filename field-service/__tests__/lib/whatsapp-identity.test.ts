@@ -23,9 +23,9 @@ describe('WhatsApp identity resolution', () => {
   })
 
   it.each([
-    ['0823035070', '+27823035070'],
-    ['27823035070', '+27823035070'],
-    ['+27823035070', '+27823035070'],
+    ['0821234567', '+27821234567'],
+    ['27821234567', '+27821234567'],
+    ['+27821234567', '+27821234567'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizePhone(input)).toBe(expected)
   })
@@ -33,13 +33,13 @@ describe('WhatsApp identity resolution', () => {
   it('returns customer for an existing customer number', async () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: 'cust_1',
-      phone: '+27823035070',
+      phone: '+27821234567',
       name: 'Sheila Dube',
       addresses: [],
     } as any)
 
-    await expect(resolveWhatsAppIdentity('0823035070')).resolves.toMatchObject({
-      normalizedPhone: '+27823035070',
+    await expect(resolveWhatsAppIdentity('0821234567')).resolves.toMatchObject({
+      normalizedPhone: '+27821234567',
       role: 'customer',
       customerId: 'cust_1',
       firstName: 'Sheila',
@@ -49,7 +49,7 @@ describe('WhatsApp identity resolution', () => {
   it('returns provider for an approved active provider number', async () => {
     vi.mocked(db.provider.findFirst).mockResolvedValue({
       id: 'prv_1',
-      phone: '+27823035070',
+      phone: '+27821234567',
       name: 'Jacob Hesser',
       status: 'ACTIVE',
       active: true,
@@ -58,7 +58,7 @@ describe('WhatsApp identity resolution', () => {
       technicianAvailability: null,
     } as any)
 
-    await expect(resolveWhatsAppIdentity('27823035070')).resolves.toMatchObject({
+    await expect(resolveWhatsAppIdentity('27821234567')).resolves.toMatchObject({
       role: 'provider',
       providerId: 'prv_1',
       firstName: 'Jacob',
@@ -68,14 +68,14 @@ describe('WhatsApp identity resolution', () => {
   it('returns provider_pending for a pending provider application', async () => {
     vi.mocked(db.providerApplication.findFirst).mockResolvedValue({
       id: 'app_1',
-      phone: '+27823035070',
+      phone: '+27821234567',
       name: 'Kobus Terblanche',
       status: 'PENDING',
       providerId: null,
       submittedAt: new Date(),
     } as any)
 
-    await expect(resolveWhatsAppIdentity('+27823035070')).resolves.toMatchObject({
+    await expect(resolveWhatsAppIdentity('+27821234567')).resolves.toMatchObject({
       role: 'provider_pending',
       applicationId: 'app_1',
       firstName: 'Kobus',
@@ -83,16 +83,16 @@ describe('WhatsApp identity resolution', () => {
   })
 
   it('returns unknown for a new number', async () => {
-    await expect(resolveWhatsAppIdentity('+27823035070')).resolves.toMatchObject({
+    await expect(resolveWhatsAppIdentity('+27821234567')).resolves.toMatchObject({
       role: 'unknown',
-      normalizedPhone: '+27823035070',
+      normalizedPhone: '+27821234567',
     })
   })
 
   it('returns provider_inactive for a suspended provider', async () => {
     vi.mocked(db.provider.findFirst).mockResolvedValue({
       id: 'prv_suspended',
-      phone: '+27823035070',
+      phone: '+27821234567',
       name: 'Thabo Nkosi',
       status: 'SUSPENDED',
       active: false,
@@ -101,7 +101,7 @@ describe('WhatsApp identity resolution', () => {
       technicianAvailability: null,
     } as any)
 
-    await expect(resolveWhatsAppIdentity('+27823035070')).resolves.toMatchObject({
+    await expect(resolveWhatsAppIdentity('+27821234567')).resolves.toMatchObject({
       role: 'provider_inactive',
       providerId: 'prv_suspended',
     })
@@ -110,13 +110,13 @@ describe('WhatsApp identity resolution', () => {
   it('sets conflict: true when the same phone is registered as both customer and provider', async () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: 'cust_conflict',
-      phone: '+27823035070',
+      phone: '+27821234567',
       name: 'Dual Role',
       addresses: [],
     } as any)
     vi.mocked(db.provider.findFirst).mockResolvedValue({
       id: 'prv_conflict',
-      phone: '+27823035070',
+      phone: '+27821234567',
       name: 'Dual Role',
       status: 'ACTIVE',
       active: true,
@@ -125,7 +125,7 @@ describe('WhatsApp identity resolution', () => {
       technicianAvailability: null,
     } as any)
 
-    await expect(resolveWhatsAppIdentity('+27823035070')).resolves.toMatchObject({
+    await expect(resolveWhatsAppIdentity('+27821234567')).resolves.toMatchObject({
       conflict: true,
       // Provider wins role precedence over customer
       role: 'provider',

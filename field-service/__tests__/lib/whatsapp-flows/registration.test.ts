@@ -1097,6 +1097,6 @@ describe('syncProviderRecord — phone normalization', () => {
   it('normalizePhone: handles WhatsApp-delivered format without + prefix', () => {
     // WhatsApp delivers SA numbers as 27xxxxxxxxx (no + prefix)
     expect(normalizePhone('27821234567')).toBe('+27821234567')
-    expect(normalizePhone('27823035070')).toBe('+27823035070')
+    expect(normalizePhone('27821234567')).toBe('+27821234567')
   })
 })

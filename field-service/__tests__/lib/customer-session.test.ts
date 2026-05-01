@@ -12,7 +12,7 @@ describe('resolveCustomerForSession', () => {
           .mockResolvedValueOnce({
             id: 'cust_1',
             userId: null,
-            phone: '+27823035070',
+            phone: '+27821234567',
             name: 'WhatsApp Customer',
             email: null,
           }),
@@ -20,7 +20,7 @@ describe('resolveCustomerForSession', () => {
         update: vi.fn().mockResolvedValue({
           id: 'cust_1',
           userId: 'user_1',
-          phone: '+27823035070',
+          phone: '+27821234567',
           name: 'WhatsApp Customer',
           email: null,
         }),
@@ -30,7 +30,7 @@ describe('resolveCustomerForSession', () => {
     const customer = await resolveCustomerForSession(client as never, {
       id: 'user_1',
       email: null,
-      phone: '+27823035070',
+      phone: '+27821234567',
       role: 'customer',
     })
 
@@ -45,7 +45,7 @@ describe('resolveCustomerForSession', () => {
       },
     })
     expect(client.customer.findUnique).toHaveBeenNthCalledWith(2, {
-      where: { phone: '+27823035070' },
+      where: { phone: '+27821234567' },
       select: {
         id: true,
         userId: true,

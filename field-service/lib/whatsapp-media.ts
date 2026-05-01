@@ -108,6 +108,9 @@ export async function downloadAndStoreWhatsAppMedia(params: {
   }
 
   // Step 3 — upload to Vercel Blob
+  // Blobs are stored as public for compatibility with the existing evidence upload
+  // architecture. The /api/attachments/[id] auth proxy is the canonical access path;
+  // addRandomSuffix ensures direct blob URLs are non-guessable.
   const ext = ALLOWED_EVIDENCE_TYPES[meta.mime_type]
   const pathname = `${prefix}/${mediaId.slice(-8)}.${ext}`
 
@@ -134,7 +137,7 @@ export async function downloadAndStoreWhatsAppMedia(params: {
       url: blob.url,
       blobKey: blob.pathname,
       mimeType: meta.mime_type,
-      sizeBytes: meta.file_size,
+      sizeBytes: buffer.byteLength,   // actual transferred bytes — meta.file_size can be stale
       label,
       uploadedBy,
     },

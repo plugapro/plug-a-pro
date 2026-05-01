@@ -69,7 +69,7 @@ describe('loadCandidatePool', () => {
       {
         id: 'provider-test',
         name: 'Internal Test',
-        phone: '+27823035070',
+        phone: '+27821234567',
         skills: ['plumbing'],
         serviceAreas: ['Sandton'],
         maxTravelMinutes: 60,

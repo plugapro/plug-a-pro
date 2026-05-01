@@ -107,7 +107,7 @@ import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
 
-const PHONE = '+27823035070'
+const PHONE = '+27821234567'
 
 function listRows() {
   return vi.mocked(wa.sendList).mock.calls[0]?.[2]?.flatMap((section: any) => section.rows) ?? []
@@ -279,12 +279,12 @@ describe('role-aware WhatsApp main menu routing', () => {
   })
 
   it('normalizes SA phone numbers before provider lookup', async () => {
-    await showMainMenu('0823035070')
+    await showMainMenu('0821234567')
 
     expect(db.provider.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          phone: { in: expect.arrayContaining(['+27823035070', '27823035070', '0823035070']) },
+          phone: { in: expect.arrayContaining(['+27821234567', '27821234567', '0821234567']) },
         },
       }),
     )

@@ -271,7 +271,7 @@ describe('provider promo award service', () => {
   })
 
   it('does not add profile or KYC pre-payment credits after an internal 10-credit onboarding award', async () => {
-    state.provider = makeProvider({ phone: '+27823035070' })
+    state.provider = makeProvider({ phone: '+27764010810' })
 
     const mobileAward = await awardPromoCreditsForMilestone(
       'provider-1',

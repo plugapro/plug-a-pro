@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SA_EXAMPLE_MOBILE_LOCAL_SPACED, SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { getSafeNextPath } from '@/lib/safe-redirect'
 import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
 
@@ -223,7 +224,7 @@ export default function ProviderSignInPage() {
               id="phone"
               type="tel"
               inputMode="tel"
-              placeholder="81 234 5678"
+              placeholder={SA_EXAMPLE_MOBILE_LOCAL_SPACED}
               value={phone}
               onChange={(e) => {
                 setPhone(e.target.value)
@@ -235,7 +236,7 @@ export default function ProviderSignInPage() {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            South Africa is selected for OTP sign-in. You can enter 081 234 5678, 27812345678, or +27812345678.
+            {SA_OTP_SIGN_IN_HELPER_TEXT}
           </p>
         </div>
 

@@ -1186,7 +1186,10 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         ctx.phone,
         `😔 We received your request details, but could not safely attach your photo. Please try submitting again or type *skip* to continue without photos.\n\n_Ref: ${traceId}_`,
       )
-      return { nextStep: 'collect_photos' }
+      // Clear stale attachment IDs so a retry does not attempt to re-link the same
+      // records and loop. The orphaned Attachment rows are still in Blob storage but
+      // unlinked — they will be cleaned up by the storage GC job.
+      return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: [], photoMediaIds: [] } }
     }
 
     const errorMessage = err instanceof Error ? err.message : String(err)
