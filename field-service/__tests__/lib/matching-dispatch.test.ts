@@ -23,6 +23,15 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderZeroBalanceLeadAvailable: mockNotifyZeroBalance,
 }))
+vi.mock('@/lib/provider-wallet', () => ({
+  getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({
+    providerId: 'provider-1',
+    paidCreditBalance: 2,
+    promoCreditBalance: 3,
+    totalCreditBalance: 5,
+    status: 'ACTIVE',
+  }),
+}))
 
 describe('dispatchMatchLead WhatsApp notification', () => {
   beforeEach(() => {
@@ -107,7 +116,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
 
     expect(mockSendButtons).toHaveBeenCalledWith(
       '+27820000000',
-      expect.stringContaining('1 credit'),
+      expect.stringContaining('Accepting this lead will use 1 credit.\nAvailable balance: 5 credits (Promo: 3 · Purchased: 2).'),
       [
         { id: 'accept:hold-1', title: 'Unlock & Accept' },
         { id: 'decline:hold-1', title: 'Decline' },

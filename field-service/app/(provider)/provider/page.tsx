@@ -9,6 +9,7 @@ import { buildMetadata } from '@/lib/metadata'
 import { JobCard } from '@/components/technician/JobCard'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
+import { getProviderWalletBalance } from '@/lib/provider-wallet'
 
 export const metadata = buildMetadata({ title: 'My Jobs', noIndex: true })
 
@@ -52,7 +53,7 @@ export default async function ProviderHomePage() {
     },
   } as const
 
-  const [activeJobs, upcomingJobs] = await Promise.all([
+  const [activeJobs, upcomingJobs, walletBalance] = await Promise.all([
     db.job.findMany({
       where: {
         providerId: provider.id,
@@ -71,6 +72,7 @@ export default async function ProviderHomePage() {
       orderBy: { booking: { scheduledDate: 'asc' } },
       take: 10,
     }),
+    getProviderWalletBalance(provider.id),
   ])
 
   return (
@@ -80,13 +82,44 @@ export default async function ProviderHomePage() {
         <p className="text-sm text-muted-foreground">{provider.name}</p>
       </div>
 
-      <Button asChild variant="outline" className="w-full">
-        <Link href="/provider/availability">Manage Availability</Link>
-      </Button>
+      <section className="grid gap-3 rounded-lg border bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+              Credits
+            </h2>
+            <p className="mt-1 text-3xl font-semibold tracking-normal">
+              {walletBalance.totalCreditBalance}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Available to accept eligible leads
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/provider/credits">History</Link>
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded-md border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">Promo</p>
+            <p className="text-lg font-semibold">{walletBalance.promoCreditBalance}</p>
+          </div>
+          <div className="rounded-md border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">Purchased</p>
+            <p className="text-lg font-semibold">{walletBalance.paidCreditBalance}</p>
+          </div>
+        </div>
+      </section>
 
-      <Button asChild variant="outline" className="w-full">
-        <Link href="/provider/credits">View Plug-A-Pro Credits</Link>
-      </Button>
+      <div className="grid gap-2">
+        <Button asChild variant="outline" className="w-full">
+          <Link href="/provider/availability">Manage Availability</Link>
+        </Button>
+
+        <Button asChild variant="outline" className="w-full">
+          <Link href="/provider/credits">Top Up / View Credits</Link>
+        </Button>
+      </div>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">

@@ -114,7 +114,7 @@ function ActivityRow({ item }: { item: ProviderWalletLedgerItem }) {
           {signedCredits(item.signedAmountCredits)}
         </p>
         <Badge variant="outline" className="mt-1">
-          {item.creditType === 'PAID' ? 'Paid' : 'Promo'}
+          {item.creditType === 'PAID' ? 'Purchased' : 'Promo'}
         </Badge>
       </div>
     </li>
@@ -162,7 +162,7 @@ export default async function ProviderCreditsPage({
           </div>
           <div className="grid grid-cols-3 gap-2 text-sm">
             <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Paid</p>
+              <p className="text-xs text-muted-foreground">Purchased</p>
               <p className="text-lg font-semibold">{summary.paidCredits}</p>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">

@@ -9,6 +9,7 @@ import { promptCustomersForNewProviderAvailability } from '../matching/customer-
 import { recordAuditLog } from '../audit'
 import { AUDIT_ENTITY } from '../audit-entities'
 import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
+import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
 import { normalizePhone } from '../utils'
 import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
@@ -76,6 +77,11 @@ function shortRef(id: string) {
 
 function firstName(name?: string | null) {
   return name?.trim().split(/\s+/)[0] || 'Customer'
+}
+
+async function providerCreditBalanceLine(providerId: string) {
+  const balance = await getProviderWalletBalanceReadOnly(providerId)
+  return `Credit balance: *${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'}* (Promo: *${balance.promoCreditBalance}* · Purchased: *${balance.paidCreditBalance}*)`
 }
 
 function providerPhoneVariants(phone: string) {
@@ -187,10 +193,11 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
   const statusLine = paused
     ? 'Status: 🔴 Leads paused'
     : 'Status: 🟢 Available for leads'
+  const creditLine = await providerCreditBalanceLine(provider.id)
 
   await sendList(
     ctx.phone,
-    `Welcome back, ${provider.name}.\n\n${statusLine}\n\nWhat would you like to do?`,
+    `Welcome back, ${provider.name}.\n\n${statusLine}\n${creditLine}\n\nCredits are used when you accept eligible leads.\n\nWhat would you like to do?`,
     [{
       title: 'Provider',
       rows: [
@@ -247,9 +254,10 @@ async function handleAvailableLeads(ctx: FlowContext): Promise<FlowResult> {
   })
 
   if (leads.length === 0) {
+    const creditLine = await providerCreditBalanceLine(provider.id)
     await sendButtons(
       ctx.phone,
-      "📋 *No available leads right now.*\n\nWe'll send new job leads here when they match your services and active service areas.",
+      `📋 *No available leads right now.*\n\n${creditLine}\n\nWe'll send new job leads here when they match your services and active service areas.`,
       [
         { id: 'provider_availability', title: 'Availability' },
         { id: 'back_home', title: 'Main Menu' },
@@ -268,9 +276,10 @@ async function handleAvailableLeads(ctx: FlowContext): Promise<FlowResult> {
     }
   })
 
+  const creditLine = await providerCreditBalanceLine(provider.id)
   await sendList(
     ctx.phone,
-    `📋 *Available Jobs*\n\nTap a lead to accept it. Expired or closed leads are not shown.`,
+    `📋 *Available Jobs*\n\n${creditLine}\n\nAccepting an eligible lead uses 1 credit. Expired or closed leads are not shown.`,
     [{ title: 'Open Leads', rows }],
     { buttonLabel: 'Choose Lead' },
   )
@@ -621,10 +630,11 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
     : mode === 'SCHEDULE'
       ? `🟡 *Your availability is schedule-based.*\n\nToday: ${todaySchedule ? `Available ${todaySchedule.startTime}–${todaySchedule.endTime}` : 'Not available'}\nCurrent status: ${provider.availableNow ? 'Available' : 'Not available'}`
       : `🟢 *You're currently available for new leads.*`
+  const creditLine = await providerCreditBalanceLine(provider.id)
 
   await sendButtons(
     ctx.phone,
-    `${statusBody}\n\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when available.`,
+    `${statusBody}\n\n${creditLine}\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when available.`,
     paused
       ? [
           { id: 'provider_go_available', title: 'Go Available' },

@@ -31,7 +31,17 @@ describe('provider application approval notifications', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     providerApplication.updateMany.mockResolvedValue({ count: 1 })
-    providerApplication.findUnique.mockResolvedValue(null)
+    providerApplication.findUnique.mockResolvedValue({
+      providerId: 'provider_123',
+      provider: {
+        wallet: { paidCreditBalance: 2, promoCreditBalance: 3 },
+        promoAwards: [{
+          creditsAwarded: 3,
+          referenceType: 'provider_application',
+          referenceId: 'app_123',
+        }],
+      },
+    })
     providerApplication.update.mockResolvedValue({})
     ;(sendText as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.approval_1')
   })
@@ -47,7 +57,11 @@ describe('provider application approval notifications', () => {
     expect(sendText).toHaveBeenCalledOnce()
     expect(sendText).toHaveBeenCalledWith(
       '+27821234567',
-      buildProviderApplicationApprovedMessage('Jacob Hesser'),
+      buildProviderApplicationApprovedMessage('Jacob Hesser', {
+        starterPromoCreditsAwarded: 3,
+        paidCredits: 2,
+        promoCredits: 3,
+      }),
       {
         templateName: 'provider_application_approved',
         metadata: { providerApplicationId: 'app_123' },
@@ -61,6 +75,30 @@ describe('provider application approval notifications', () => {
         approvalWhatsappExternalId: 'wamid.approval_1',
       },
     })
+  })
+
+  it('builds approval copy that explains promo starter credits and balance', () => {
+    const message = buildProviderApplicationApprovedMessage('Jacob Hesser', {
+      starterPromoCreditsAwarded: 3,
+      paidCredits: 2,
+      promoCredits: 3,
+    })
+
+    expect(message).toContain('Starter credits awarded: *3 promo credits*')
+    expect(message).toContain('Available balance: *5 credits*')
+    expect(message).toContain('Promo: *3* · Purchased: *2*')
+    expect(message).toContain('Credits are used when you accept eligible job leads')
+  })
+
+  it('builds approval copy with top-up guidance when no starter credits were awarded', () => {
+    const message = buildProviderApplicationApprovedMessage('Jacob Hesser', {
+      starterPromoCreditsAwarded: 0,
+      paidCredits: 0,
+      promoCredits: 0,
+    })
+
+    expect(message).toContain("Credit balance: *0 credits*. You'll need credits")
+    expect(message).not.toContain('Starter credits awarded')
   })
 
   it('does not send again when the approval WhatsApp was already sent', async () => {

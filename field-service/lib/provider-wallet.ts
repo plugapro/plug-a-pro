@@ -338,6 +338,21 @@ export async function getProviderWalletBalance(
   return toBalance(wallet)
 }
 
+/**
+ * Read-only wallet balance lookup for notification/display contexts.
+ * Uses findUnique instead of upsert — returns a zero balance for providers
+ * without a wallet row rather than creating one as a side-effect.
+ */
+export async function getProviderWalletBalanceReadOnly(
+  providerId: string,
+): Promise<ProviderWalletBalance> {
+  const wallet = await db.providerWallet.findUnique({ where: { providerId } })
+  if (!wallet) {
+    return { providerId, paidCreditBalance: 0, promoCreditBalance: 0, totalCreditBalance: 0, status: 'ACTIVE' }
+  }
+  return toBalance(wallet)
+}
+
 export async function getProviderWalletLedgerEntries(
   providerId: string,
   options: ProviderWalletLedgerEntryOptions = {},

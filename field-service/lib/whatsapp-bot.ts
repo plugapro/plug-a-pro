@@ -32,6 +32,7 @@ import { applyOptIn, applyOptOut } from './whatsapp-policy'
 import { normalizePhone } from './utils'
 import { createTraceId } from './support-diagnostics'
 import { createTestCohortContext } from './internal-test-cohort'
+import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import { resolveWhatsAppIdentity } from './whatsapp-identity'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
@@ -1259,9 +1260,28 @@ export async function notifyProviderNewJob(params: {
     throw new Error(`Could not create provider lead access URL for lead ${params.leadId}`)
   }
 
+  const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
+  let creditLine = `Accepting this lead will use ${creditCost}.`
+  try {
+    const lead = await db.lead.findUnique({
+      where: { id: params.leadId },
+      select: { providerId: true },
+    })
+    if (lead?.providerId) {
+      const { getProviderWalletBalanceReadOnly } = await import('./provider-wallet')
+      const balance = await getProviderWalletBalanceReadOnly(lead.providerId)
+      creditLine = `Accepting this lead will use ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
+    }
+  } catch (error) {
+    console.warn('[whatsapp-bot] unable to include provider credit balance in lead notification', {
+      leadId: params.leadId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
   await sendCtaUrl(
     params.providerPhone,
-    `🔔 *New Lead Available*\n\n*${params.category}* · ${params.area}\nRef: ${ref} · Expires in ${expiryLabel}\n\nTap below to view the full job details and respond.`,
+    `🔔 *New Lead Available*\n\n*${params.category}* · ${params.area}\nRef: ${ref} · Expires in ${expiryLabel}\n\n${creditLine}\n\nTap below to view the full job details and respond.`,
     'View Lead',
     leadUrl,
     { footer: 'Accept, inspect, or decline from the lead page' },
@@ -1960,7 +1980,7 @@ async function sendLeadInsufficientCreditsMessage(
   const { sendButtons } = await import('./whatsapp-interactive')
   await sendButtons(
     phone,
-    `🔒 This lead requires 1 credit to unlock.\n\nYour current balance: ${currentCreditBalance} credit${currentCreditBalance === 1 ? '' : 's'}.\n\nPlease top up to accept this lead.`,
+    `🔒 This lead requires 1 credit to unlock.\n\nYour current balance: ${currentCreditBalance} credit${currentCreditBalance === 1 ? '' : 's'}.\n\nPlease top up in the Worker Portal to accept this lead.`,
     [
       { id: 'provider_top_up_credits', title: 'Top Up Credits' },
       { id: `match_inspect_${leadId}`, title: 'View Lead' },

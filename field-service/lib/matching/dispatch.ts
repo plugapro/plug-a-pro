@@ -6,6 +6,8 @@
 import { db } from '@/lib/db'
 import { hasSuccessfulMessageForRecipient } from '@/lib/message-events'
 import { getProviderLeadAccessUrl } from '@/lib/provider-lead-access'
+import { getProviderWalletBalanceReadOnly } from '@/lib/provider-wallet'
+import { LEAD_UNLOCK_COST_CREDITS } from '@/lib/lead-unlocks'
 import { notifyProviderZeroBalanceLeadAvailable } from '@/lib/provider-wallet-notifications'
 import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
 import type { CandidatePoolEntry } from './candidate-pool'
@@ -59,9 +61,12 @@ export async function dispatchMatchLead(params: {
   const expiryStr = hold.expiresAt.toLocaleTimeString('en-ZA', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg',
   })
+  const balance = await getProviderWalletBalanceReadOnly(provider.id)
+  const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
+  const balanceLine = `Accepting this lead will use ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
   const titleLine = jobRequest.title ? `*${jobRequest.title}*\n` : ''
-  const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
-  const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nUnlocking this lead uses 1 credit.`
+  const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\n${balanceLine}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
+  const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\n${balanceLine}`
   const msgMeta = { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: provider.id }
   const leadUrl = await getProviderLeadAccessUrl({
     leadId: lead.id,

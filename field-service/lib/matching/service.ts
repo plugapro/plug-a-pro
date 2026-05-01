@@ -18,7 +18,7 @@ import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
 import { releaseProviderCapacity } from './reservation'
 import { sendText } from '../whatsapp-interactive'
-import { LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
+import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
 import type {
   CoverageTier,
   DispatchActor,
@@ -1504,9 +1504,12 @@ async function createOfferForAttempt(params: {
   // buttons as the dispatch.ts path so providers always see a consistent UI.
   if (interactiveDelivered) {
     const { sendButtons } = await import('../whatsapp-interactive')
+    const { getProviderWalletBalanceReadOnly } = await import('../provider-wallet')
     const suburb = jobRequest.address?.suburb ?? 'your area'
     const category = jobRequest.category
-    const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nUnlocking this lead uses 1 credit.`
+    const balance = await getProviderWalletBalanceReadOnly(params.providerId)
+    const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
+    const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\nUnlocking this lead uses ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
     await sendButtons(
       provider.phone,
       actionsBody,

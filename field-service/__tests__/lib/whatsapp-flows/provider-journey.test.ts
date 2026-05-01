@@ -39,6 +39,16 @@ vi.mock('@/lib/provider-lead-access', () => ({
   getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/provider/jobs/job-request-1/handover?token=token'),
 }))
 
+vi.mock('@/lib/provider-wallet', () => ({
+  getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({
+    providerId: 'prov_1',
+    paidCreditBalance: 2,
+    promoCreditBalance: 3,
+    totalCreditBalance: 5,
+    status: 'ACTIVE',
+  }),
+}))
+
 import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
@@ -74,7 +84,7 @@ describe('handleProviderJourneyFlow', () => {
       const result = await handleProviderJourneyFlow(mockCtx('pj_menu'))
       expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Sipho'),
+        expect.stringContaining('Credit balance: *5 credits*'),
         expect.any(Array),
         expect.any(Object),
       )
@@ -95,7 +105,7 @@ describe('handleProviderJourneyFlow', () => {
       await handleProviderJourneyFlow(mockCtx('pj_menu'))
       expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Leads paused'),
+        expect.stringContaining('Promo: *3* · Purchased: *2*'),
         expect.any(Array),
         expect.any(Object),
       )
@@ -209,6 +219,11 @@ describe('handleProviderJourneyFlow', () => {
           status: { in: ['SENT', 'VIEWED'] },
         }),
       }))
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Credit balance: *5 credits*'),
+        expect.any(Array),
+      )
     })
   })
 

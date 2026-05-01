@@ -218,7 +218,7 @@ export default async function ProviderWalletDetailPage({
           <p className="mt-2 text-3xl font-semibold">{totalCredits}</p>
         </div>
         <div className="rounded-xl border bg-card p-4">
-          <p className="text-sm text-muted-foreground">Paid credits</p>
+          <p className="text-sm text-muted-foreground">Purchased credits</p>
           <p className="mt-2 text-3xl font-semibold">{paidCredits}</p>
         </div>
         <div className="rounded-xl border bg-card p-4">
@@ -261,7 +261,7 @@ export default async function ProviderWalletDetailPage({
                         <td className="px-3 py-2">
                           {entry.balanceAfterPaidCredits + entry.balanceAfterPromoCredits}
                           <span className="ml-1 text-xs text-muted-foreground">
-                            ({entry.balanceAfterPaidCredits} paid, {entry.balanceAfterPromoCredits} promo)
+                            ({entry.balanceAfterPaidCredits} purchased, {entry.balanceAfterPromoCredits} promo)
                           </span>
                         </td>
                         <td className="px-3 py-2">
@@ -366,7 +366,7 @@ export default async function ProviderWalletDetailPage({
               defaultValue="PAID"
               required
             >
-              <option value="PAID">Paid credits</option>
+              <option value="PAID">Purchased credits</option>
               <option value="PROMO">Promo credits</option>
             </select>
             <Input
@@ -395,7 +395,7 @@ export default async function ProviderWalletDetailPage({
             <input type="hidden" name="providerId" value={provider.id} />
             <h2 className="font-semibold">Suspend wallet</h2>
             <p className="text-sm text-muted-foreground">
-              Suspension blocks paid lead unlocks but keeps existing balances intact.
+              Suspension blocks lead unlocks but keeps existing balances intact.
             </p>
             <textarea
               name="reason"
