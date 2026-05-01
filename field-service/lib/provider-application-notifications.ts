@@ -2,12 +2,76 @@ import { db } from './db'
 
 const APPROVAL_NOTIFICATION_LOCK_STALE_MINUTES = 10
 
+type ProviderApprovalCreditSummary = {
+  starterPromoCreditsAwarded: number
+  paidCredits: number
+  promoCredits: number
+}
+
 export type ProviderApplicationApprovalNotificationResult =
   | { status: 'sent'; externalId: string }
   | { status: 'skipped'; reason: 'already_sent' | 'send_in_progress' | 'not_found' }
 
-export function buildProviderApplicationApprovedMessage(name: string): string {
-  return `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\nDefault availability: *Available now*\n\nYou can update your working hours in the Worker Portal.\n\nReply *menu* to check your status anytime.`
+export function buildProviderApplicationApprovedMessage(
+  name: string,
+  credits: ProviderApprovalCreditSummary = {
+    starterPromoCreditsAwarded: 0,
+    paidCredits: 0,
+    promoCredits: 0,
+  },
+): string {
+  const totalCredits = credits.paidCredits + credits.promoCredits
+  const creditLine = credits.starterPromoCreditsAwarded > 0
+    ? `🎁 Starter credits awarded: *${credits.starterPromoCreditsAwarded} promo credit${credits.starterPromoCreditsAwarded === 1 ? '' : 's'}*\n💳 Available balance: *${totalCredits} credit${totalCredits === 1 ? '' : 's'}*`
+    : `💳 Credit balance: *${totalCredits} credit${totalCredits === 1 ? '' : 's'}*. You'll need credits to accept eligible job leads.`
+
+  const breakdownLine = totalCredits > 0
+    ? `\nPromo: *${credits.promoCredits}* · Purchased: *${credits.paidCredits}*`
+    : ''
+  return `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nCredits are used when you accept eligible job leads. You can view your balance and credit history in the Worker Portal.\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`
+}
+
+async function getApprovalCreditSummary(applicationId: string): Promise<ProviderApprovalCreditSummary> {
+  const application = await db.providerApplication.findUnique({
+    where: { id: applicationId },
+    select: {
+      providerId: true,
+      provider: {
+        select: {
+          wallet: {
+            select: {
+              paidCreditBalance: true,
+              promoCreditBalance: true,
+            },
+          },
+          promoAwards: {
+            where: {
+              awardType: 'MOBILE_VERIFIED',
+              status: 'AWARDED',
+            },
+            select: {
+              creditsAwarded: true,
+              referenceType: true,
+              referenceId: true,
+            },
+            take: 1,
+          },
+        },
+      },
+    },
+  })
+
+  const wallet = application?.provider?.wallet
+  const starterAward = application?.provider?.promoAwards.find((award) => (
+    award.referenceType === 'provider_application' &&
+    award.referenceId === applicationId
+  ))
+
+  return {
+    starterPromoCreditsAwarded: starterAward?.creditsAwarded ?? 0,
+    paidCredits: wallet?.paidCreditBalance ?? 0,
+    promoCredits: wallet?.promoCreditBalance ?? 0,
+  }
 }
 
 export async function notifyProviderApplicationApprovedOnce(params: {
@@ -52,7 +116,8 @@ export async function notifyProviderApplicationApprovedOnce(params: {
 
   try {
     const { sendText } = await import('./whatsapp-interactive')
-    const body = buildProviderApplicationApprovedMessage(params.name)
+    const credits = await getApprovalCreditSummary(params.applicationId)
+    const body = buildProviderApplicationApprovedMessage(params.name, credits)
     const externalId = await sendText(params.phone, body, {
       templateName: 'provider_application_approved',
       metadata: { providerApplicationId: params.applicationId },

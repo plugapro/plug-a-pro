@@ -106,7 +106,7 @@ export default async function ProviderWalletsPage({
             <tr>
               <th className="px-4 py-3 text-left font-medium">Provider</th>
               <th className="px-4 py-3 text-left font-medium">Wallet</th>
-              <th className="px-4 py-3 text-left font-medium">Paid</th>
+              <th className="px-4 py-3 text-left font-medium">Purchased</th>
               <th className="px-4 py-3 text-left font-medium">Promo</th>
               <th className="px-4 py-3 text-left font-medium">Activity</th>
               <th className="px-4 py-3"></th>

@@ -1397,8 +1397,8 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       await sendButtons(
         ctx.phone,
         isComingSoonRegion
-          ? `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nThis area is not live yet. We'll update you here when Plug A Pro opens leads in this region.`
-          : `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nWe'll review your application and update you here within 24 hours.`,
+          ? `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nThis area is not live yet. We'll update you here when Plug A Pro opens leads in this region.\n\nIf approved later, your Worker Portal will show your credit balance and any starter promo credits awarded.`
+          : `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nWe'll review your application and update you here within 24 hours.\n\nIf approved, your Worker Portal will show your credit balance and any starter promo credits awarded.`,
         [
           { id: 'provider_application_status', title: 'Check Status' },
           { id: 'back_home', title: 'Main Menu' },

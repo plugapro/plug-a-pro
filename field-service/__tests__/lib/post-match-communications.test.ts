@@ -30,6 +30,16 @@ vi.mock('@/lib/customer-provider-handover-access', () => ({
   getCustomerProviderHandoverUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/customer/requests/jr-12345678/provider-handover?token=customer-token'),
 }))
 
+vi.mock('@/lib/provider-wallet', () => ({
+  getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({
+    providerId: 'provider-1',
+    paidCreditBalance: 2,
+    promoCreditBalance: 1,
+    totalCreditBalance: 3,
+    status: 'ACTIVE',
+  }),
+}))
+
 import { db } from '@/lib/db'
 import { sendButtons, sendCtaUrl, sendText } from '@/lib/whatsapp-interactive'
 import { getProviderSignedJobHandoverUrlByLeadId, resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
@@ -94,6 +104,14 @@ describe('post-match communications', () => {
         templateName: 'post_match_provider_job_accepted',
         metadata: expect.objectContaining({ leadId: 'lead-1' }),
       }),
+    )
+    expect(sendCtaUrl).toHaveBeenCalledWith(
+      '+27770000001',
+      expect.stringContaining('Remaining balance: *3 credits* (Promo: *1* · Purchased: *2*)'),
+      'View Job',
+      'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
+      expect.any(Object),
+      expect.any(Object),
     )
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',

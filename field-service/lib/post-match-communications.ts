@@ -7,6 +7,7 @@ import {
   providerLeadTokenAllowsScope,
   verifyProviderLeadAccessToken,
 } from './provider-lead-access'
+import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -116,6 +117,7 @@ export async function notifyPostMatchAcceptance(params: {
   })
   const preferredAvailability = preferredAvailabilityLabel(lead.jobRequest)
   const creditsCharged = lead.unlock?.creditsCharged ?? 1
+  const walletBalance = await getProviderWalletBalanceReadOnly(provider.id)
 
   const { sendText, sendCtaUrl, sendButtons } = await import('./whatsapp-interactive')
 
@@ -165,7 +167,8 @@ export async function notifyPostMatchAcceptance(params: {
   }))) {
     const body =
       `✅ *Job accepted! — ${firstName(provider.name)}*\n\n` +
-      `You've unlocked this lead using *${creditsCharged} credit${creditsCharged === 1 ? '' : 's'}*.\n\n` +
+      `You've unlocked this lead using *${creditsCharged} credit${creditsCharged === 1 ? '' : 's'}*.\n` +
+      `Remaining balance: *${walletBalance.totalCreditBalance} credit${walletBalance.totalCreditBalance === 1 ? '' : 's'}* (Promo: *${walletBalance.promoCreditBalance}* · Purchased: *${walletBalance.paidCreditBalance}*).\n\n` +
       `Client: *${customer.name}*\n` +
       `Service: *${category}*\n` +
       `Address: *${address}*\n` +
