@@ -119,21 +119,36 @@ export async function addToServiceAreaWaitlist(params: {
   const suburb = normaliseLocationDisplayName(params.suburb) || null
   const city = normaliseLocationDisplayName(params.city)
   const province = normaliseLocationDisplayName(params.province) || null
-  await db.serviceAreaWaitlist.upsert({
-    where: { phone_city: { phone: params.phone, city } },
-    create: {
+  // Use case-insensitive findFirst so that existing rows stored with lowercase city
+  // (before normalisation was introduced) are matched correctly — the @@unique([phone, city])
+  // constraint is case-sensitive by default in Postgres.
+  const existing = await db.serviceAreaWaitlist.findFirst({
+    where: {
       phone: params.phone,
-      name: params.name ?? null,
-      category: params.category ?? null,
-      suburb,
-      city,
-      province,
-      source: params.source,
+      city: { equals: city, mode: 'insensitive' },
     },
-    update: {
-      // Update name/category in case they weren't captured the first time
-      ...(params.name ? { name: params.name } : {}),
-      ...(params.category ? { category: params.category } : {}),
-    },
+    select: { id: true },
   })
+  if (existing) {
+    await db.serviceAreaWaitlist.update({
+      where: { id: existing.id },
+      data: {
+        city, // normalise the stored city on touch
+        ...(params.name ? { name: params.name } : {}),
+        ...(params.category ? { category: params.category } : {}),
+      },
+    })
+  } else {
+    await db.serviceAreaWaitlist.create({
+      data: {
+        phone: params.phone,
+        name: params.name ?? null,
+        category: params.category ?? null,
+        suburb,
+        city,
+        province,
+        source: params.source,
+      },
+    })
+  }
 }
