@@ -54,7 +54,7 @@ function fallbackCodeForStatus(status: number) {
     case 400:
       return 'UNSUPPORTED_COUNTRY_CODE'
     case 401:
-      return 'AUTH_CONFIG_MISSING'
+      return 'OTP_PROVIDER_AUTH_FAILED'
     case 403:
       return 'PROVIDER_NOT_APPROVED'
     case 423:
@@ -68,7 +68,7 @@ function fallbackCodeForStatus(status: number) {
     case 502:
       return 'AUTH_RESPONSE_INVALID'
     case 503:
-      return 'OTP_PROVIDER_UNAVAILABLE'
+      return 'AUTH_CONFIG_MISSING'
     case 504:
       return 'OTP_PROVIDER_TIMEOUT'
     default:

@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
-import { normalizePhone } from '@/lib/utils'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import {
   createTraceId,
@@ -443,7 +442,7 @@ export async function POST(request: NextRequest) {
       trace_id: traceId,
       rawPhone,
       providerId,
-      normalizedPhone: phone || normalizePhone(rawPhone),
+      normalizedPhone: phone || rawPhone,
       countryCode,
       providerLookupResult: providerId ? 'found' : 'unknown',
       otpProviderCalled,
