@@ -13,8 +13,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const mockDb = {
+    $transaction: vi.fn(),
     customer: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -31,7 +32,26 @@ vi.mock('@/lib/db', () => ({
     attachment: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
-  },
+    // Required by lib/whatsapp-media-batch.ts (debounceMediaBatch).
+    conversation: {
+      findUnique: vi.fn().mockResolvedValue({ data: {} }),
+      update: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
+    },
+  }
+  mockDb.$transaction.mockImplementation(async (callback) => {
+    if (typeof callback === 'function') return callback(mockDb)
+    return callback
+  })
+  return { db: mockDb }
+})
+
+// Bypass the 2.5s debounce in flow tests.
+vi.mock('@/lib/whatsapp-media-batch', () => ({
+  debounceMediaBatch: vi.fn().mockResolvedValue({ mySeq: 1, isLatest: true }),
+  readMediaBatchSeq: vi.fn().mockResolvedValue(1),
+  claimMediaBatchSeq: vi.fn().mockResolvedValue(1),
+  awaitAndCheckLatest: vi.fn().mockResolvedValue(true),
+  WHATSAPP_MEDIA_BATCH_DEBOUNCE_MS: 0,
 }))
 
 vi.mock('@/lib/whatsapp-media', () => ({

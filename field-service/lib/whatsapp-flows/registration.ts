@@ -215,7 +215,36 @@ function skillLevelFromExperienceLabel(label: string | undefined) {
 }
 
 async function sendEvidenceFileProgress(phone: string, count: number) {
-  const remaining = MAX_EVIDENCE_FILES - count
+  // Debounce across Vercel function instances. Each media event claims a seq
+  // and waits; if a newer event arrives during the wait, this caller exits
+  // silently and the newer one sends the consolidated message. Default
+  // window is 2.5s, override via WHATSAPP_MEDIA_BATCH_DEBOUNCE_MS.
+  const { debounceMediaBatch, readMediaBatchSeq } = await import('../whatsapp-media-batch')
+  const { isLatest, mySeq } = await debounceMediaBatch({
+    phone,
+    scope: 'provider_evidence',
+  })
+  if (!isLatest) {
+    const currentSeq = await readMediaBatchSeq(phone, 'provider_evidence')
+    console.info('[registration:sendEvidenceFileProgress] superseded — newer media event in batch', {
+      phone,
+      mySeq,
+      currentSeq,
+      countObservedAtClaim: count,
+    })
+    return
+  }
+
+  // Re-read the freshest count from the conversation record so the message
+  // reflects the settled total (not just what this invocation observed at
+  // claim time).
+  const fresh = await db.conversation.findUnique({
+    where: { phone },
+    select: { data: true },
+  })
+  const freshUrls = ((fresh?.data as { evidenceFileUrls?: unknown[] } | null)?.evidenceFileUrls ?? []) as unknown[]
+  const settledCount = Math.max(count, Math.min(freshUrls.length, MAX_EVIDENCE_FILES))
+  const remaining = MAX_EVIDENCE_FILES - settledCount
 
   if (remaining <= 0) {
     await sendButtons(
@@ -228,7 +257,7 @@ async function sendEvidenceFileProgress(phone: string, count: number) {
 
   await sendButtons(
     phone,
-    `✅ *${count} file${count === 1 ? '' : 's'} received.* You can add up to ${remaining} more, or continue.`,
+    `✅ *${settledCount} file${settledCount === 1 ? '' : 's'} received.* You can add up to ${remaining} more, or continue.`,
     [
       { id: 'evidence_done', title: '✅ Continue' },
       { id: 'evidence_add_more', title: '📎 Add another file' },

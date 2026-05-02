@@ -33,10 +33,30 @@ vi.mock('@/lib/db', () => {
     auditLog: {
       create: vi.fn().mockResolvedValue({}),
     },
+    // Required by lib/whatsapp-media-batch.ts (debounceMediaBatch). The flow
+    // tests don't exercise the debounce window — they fast-path through the
+    // batch claim — but the mock surface must exist.
+    conversation: {
+      findUnique: vi.fn().mockResolvedValue({ data: {} }),
+      update: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
+    },
   }
-  mockDb.$transaction.mockImplementation(async (callback) => callback(mockDb))
+  mockDb.$transaction.mockImplementation(async (callback) => {
+    if (typeof callback === 'function') return callback(mockDb)
+    return callback
+  })
   return { db: mockDb }
 })
+
+// Bypass the 2.5s debounce in flow tests — we're not testing the debounce
+// here, just the file-accumulation paths.
+vi.mock('@/lib/whatsapp-media-batch', () => ({
+  debounceMediaBatch: vi.fn().mockResolvedValue({ mySeq: 1, isLatest: true }),
+  readMediaBatchSeq: vi.fn().mockResolvedValue(1),
+  claimMediaBatchSeq: vi.fn().mockResolvedValue(1),
+  awaitAndCheckLatest: vi.fn().mockResolvedValue(true),
+  WHATSAPP_MEDIA_BATCH_DEBOUNCE_MS: 0,
+}))
 
 vi.mock('@/lib/whatsapp-media', () => ({
   downloadAndStoreWhatsAppMedia: vi.fn().mockResolvedValue({ attachmentId: 'att_mock_001' }),
