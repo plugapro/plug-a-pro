@@ -43,6 +43,7 @@ vi.mock('@/lib/provider-wallet', () => ({
 import { db } from '@/lib/db'
 import { sendButtons, sendCtaUrl, sendText } from '@/lib/whatsapp-interactive'
 import { getProviderSignedJobHandoverUrlByLeadId, resolveProviderLeadAccessToken } from '@/lib/provider-lead-access'
+import { getCustomerProviderHandoverUrl } from '@/lib/customer-provider-handover-access'
 import {
   buildAcceptedLeadContactUrl,
   buildAcceptedLeadContactUrlForProvider,
@@ -76,7 +77,11 @@ describe('post-match communications', () => {
     ;(db.messageEvent.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
     ;(db.customer.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'cust-1' })
     ;(db.auditLog.create as ReturnType<typeof vi.fn>).mockResolvedValue({})
+    ;(sendText as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.customer')
+    ;(sendCtaUrl as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.provider')
+    ;(sendButtons as ReturnType<typeof vi.fn>).mockResolvedValue('wamid.provider-actions')
     ;(getProviderSignedJobHandoverUrlByLeadId as ReturnType<typeof vi.fn>).mockResolvedValue('https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token')
+    ;(getCustomerProviderHandoverUrl as ReturnType<typeof vi.fn>).mockResolvedValue('https://app.plugapro.co.za/customer/requests/jr-12345678/provider-handover?token=customer-token')
   })
 
   it('sends a named customer notification and provider post-acceptance job message', async () => {
@@ -212,7 +217,6 @@ describe('post-match communications', () => {
   })
 
   it('falls back to sendText for customer message when handover URL is unavailable', async () => {
-    const { getCustomerProviderHandoverUrl } = await import('@/lib/customer-provider-handover-access')
     ;(getCustomerProviderHandoverUrl as ReturnType<typeof vi.fn>).mockResolvedValue(null)
 
     await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
@@ -221,6 +225,41 @@ describe('post-match communications', () => {
       '+27820000001',
       expect.stringContaining('Plumbing'),
       expect.objectContaining({ templateName: 'post_match_customer_provider_accepted' }),
+    )
+  })
+
+  it('still sends the provider confirmation when the customer notification fails', async () => {
+    ;(sendCtaUrl as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('Meta rejected customer message'))
+      .mockResolvedValueOnce('wamid.provider')
+
+    const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+    expect(result).toEqual({ customerNotified: false, providerNotified: true })
+    expect(sendCtaUrl).toHaveBeenCalledWith(
+      '+27770000001',
+      expect.stringContaining('Lead accepted'),
+      'View Job',
+      'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
+      expect.any(Object),
+      expect.objectContaining({ templateName: 'post_match_provider_job_accepted' }),
+    )
+  })
+
+  it('returns providerNotified false instead of throwing when provider confirmation fails', async () => {
+    ;(sendCtaUrl as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce('wamid.customer')
+      .mockRejectedValueOnce(new Error('Meta rejected provider message'))
+
+    const result = await notifyPostMatchAcceptance({ leadId: 'lead-1', providerId: 'provider-1', matchId: 'match-1' })
+
+    expect(result).toEqual({ customerNotified: true, providerNotified: false })
+    expect(sendButtons).toHaveBeenCalledWith(
+      '+27770000001',
+      expect.stringContaining('Customer contact is released'),
+      [{ id: 'post_match_contact:lead-1', title: 'Contact Customer' }],
+      expect.any(Object),
+      expect.objectContaining({ templateName: 'post_match_provider_next_actions' }),
     )
   })
 })

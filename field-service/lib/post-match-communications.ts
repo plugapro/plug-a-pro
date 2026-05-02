@@ -129,7 +129,20 @@ export async function notifyPostMatchAcceptance(params: {
 
   const preferredAvailability = preferredAvailabilityLabel(lead.jobRequest)
   const creditsCharged = lead.unlock?.creditsCharged ?? 1
-  const walletBalance = await getProviderWalletBalanceReadOnly(provider.id)
+  const walletBalance = await getProviderWalletBalanceReadOnly(provider.id).catch((err) => {
+    console.error('[post-match] provider wallet balance lookup failed (non-fatal)', {
+      lead_id: lead.id,
+      provider_id: provider.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return {
+      providerId: provider.id,
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
+      totalCreditBalance: 0,
+      status: 'UNKNOWN',
+    }
+  })
 
   const { sendText, sendCtaUrl, sendButtons } = await import('./whatsapp-interactive')
 
@@ -209,47 +222,44 @@ export async function notifyPostMatchAcceptance(params: {
       `Customer contact:\n${customer.name}\n${customer.phone}\n\n` +
       `You can manage this job from the link below. No login is needed for this job link.`
 
-    if (leadUrl) {
-      await sendCtaUrl(
-        provider.phone,
-        body,
-        'View Job',
-        leadUrl,
-        { footer: 'Secure link for this accepted job only.' },
-        {
-          templateName: 'post_match_provider_job_accepted',
-          metadata: {
-            leadId: lead.id,
-            jobRequestId: lead.jobRequestId,
-            matchId: params.matchId,
-            providerId: provider.id,
-            leadUnlockId: lead.unlock?.id,
-            creditTransactionId: params.creditTransactionId ?? null,
-            customerContactReleased: true,
-            isTestLead,
-            isTestRequest: isTestLead,
-          },
-        },
-      )
-    } else {
-      await sendText(provider.phone, body, {
-        templateName: 'post_match_provider_job_accepted',
-        metadata: {
-          leadId: lead.id,
-          jobRequestId: lead.jobRequestId,
-          matchId: params.matchId,
-          providerId: provider.id,
-          leadUnlockId: lead.unlock?.id,
-          creditTransactionId: params.creditTransactionId ?? null,
-          customerContactReleased: true,
-          isTestLead,
-          isTestRequest: isTestLead,
-        },
+    const providerContext = {
+      templateName: 'post_match_provider_job_accepted',
+      metadata: {
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        matchId: params.matchId,
+        providerId: provider.id,
+        leadUnlockId: lead.unlock?.id,
+        creditTransactionId: params.creditTransactionId ?? null,
+        customerContactReleased: true,
+        isTestLead,
+        isTestRequest: isTestLead,
+      },
+    }
+
+    try {
+      if (leadUrl) {
+        await sendCtaUrl(
+          provider.phone,
+          body,
+          'View Job',
+          leadUrl,
+          { footer: 'Secure link for this accepted job only.' },
+          providerContext,
+        )
+      } else {
+        await sendText(provider.phone, body, providerContext)
+      }
+      // Mark as notified here — before the Contact Customer button — so that a
+      // failure on the secondary button does not incorrectly mark providerNotified false.
+      providerNotified = true
+    } catch (err) {
+      console.error('[post-match] provider confirmation failed', {
+        lead_id: lead.id,
+        provider_id: provider.id,
+        error: err instanceof Error ? err.message : String(err),
       })
     }
-    // Mark as notified here — before the Contact Customer button — so that a
-    // failure on the secondary button does not incorrectly mark providerNotified false.
-    providerNotified = true
   }
 
   // Contact Customer button — non-fatal; failure must not affect providerNotified.

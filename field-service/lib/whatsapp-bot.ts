@@ -36,6 +36,7 @@ import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import { phoneLookupVariants, resolveWhatsAppIdentity } from './whatsapp-identity'
 import { normaliseLocationDisplayName } from './location-format'
 import {
+  buildLeadAcceptedCreditLine,
   buildInsufficientCreditsMessage,
   creditCountLabel,
   getPublicAppUrl,
@@ -80,6 +81,82 @@ const recentCityInteractiveSelections = new Map<string, {
   messageId: string
   timer: ReturnType<typeof setTimeout>
 }>()
+
+async function sendAcceptedLeadFallbackConfirmation(params: {
+  phone: string
+  leadId: string
+  providerId: string
+  traceId: string
+  holdId?: string
+  currentCreditBalance?: number
+}) {
+  let balance = {
+    totalCreditBalance: params.currentCreditBalance ?? 0,
+    promoCreditBalance: 0,
+    paidCreditBalance: 0,
+  }
+
+  try {
+    const { getProviderWalletBalanceReadOnly } = await import('./provider-wallet')
+    const wallet = await getProviderWalletBalanceReadOnly(params.providerId)
+    balance = {
+      totalCreditBalance: wallet.totalCreditBalance,
+      promoCreditBalance: wallet.promoCreditBalance,
+      paidCreditBalance: wallet.paidCreditBalance,
+    }
+  } catch (error) {
+    console.warn('[whatsapp-bot] accept: fallback balance lookup failed', {
+      traceId: params.traceId,
+      holdId: params.holdId,
+      leadId: params.leadId,
+      providerId: params.providerId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  const body =
+    `✅ *Lead accepted*\n\n` +
+    `You used 1 credit to accept this lead.\n\n` +
+    `💳 ${buildLeadAcceptedCreditLine({
+      creditsUsed: LEAD_UNLOCK_COST_CREDITS,
+      remainingCredits: balance.totalCreditBalance,
+      starterCredits: balance.promoCreditBalance,
+      paidCredits: balance.paidCreditBalance,
+    })}\n\n` +
+    `Full customer details are now unlocked.\n\n` +
+    `Reply *menu* to view your active jobs.\n\n` +
+    `_Ref: ${params.traceId}_`
+
+  let jobUrl: string | null = null
+  try {
+    const { getProviderSignedJobHandoverUrlByLeadId } = await import('./provider-lead-access')
+    jobUrl = await getProviderSignedJobHandoverUrlByLeadId(params.leadId)
+  } catch (error) {
+    console.warn('[whatsapp-bot] accept: fallback job URL generation failed', {
+      traceId: params.traceId,
+      holdId: params.holdId,
+      leadId: params.leadId,
+      providerId: params.providerId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  try {
+    if (jobUrl) {
+      await sendCtaUrl(params.phone, body, 'View Job', jobUrl)
+    } else {
+      await sendText(params.phone, body)
+    }
+  } catch (error) {
+    console.error('[whatsapp-bot] accept: fallback confirmation failed', {
+      traceId: params.traceId,
+      holdId: params.holdId,
+      leadId: params.leadId,
+      providerId: params.providerId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
 
 // Keywords that restart the main menu from any state
 const RESET_KEYWORDS = [
@@ -1625,12 +1702,13 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
 
     // Primary notifications handled inside acceptLead. Send fallback if they failed.
     if (!result.notificationSent) {
-      const balance = result.currentCreditBalance ?? 0
-      const traceIdLegacy = createTraceId('wbot')
-      await sendText(
+      await sendAcceptedLeadFallbackConfirmation({
         phone,
-        `✅ *Lead accepted*\n\nYou used 1 credit to accept this lead.\n\n💳 Available balance: ${balance} credit${balance !== 1 ? 's' : ''}\n\nFull customer details are now unlocked.\n\nReply *menu* to view your active jobs.\n\n_Ref: ${traceIdLegacy}_`,
-      ).catch(() => {})
+        leadId,
+        providerId: provider.id,
+        traceId: createTraceId('wbot'),
+        currentCreditBalance: result.currentCreditBalance,
+      })
     }
     return
   }
@@ -2110,36 +2188,14 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       leadId: lead.id,
       providerId: provider.id,
     })
-    const balance = result.currentCreditBalance ?? 0
-    const fallbackBody =
-      `✅ *Lead accepted*\n\n` +
-      `You used 1 credit to accept this lead.\n\n` +
-      `💳 Available balance: ${balance} credit${balance !== 1 ? 's' : ''}\n\n` +
-      `Full customer details are now unlocked.\n\n` +
-      `Reply *menu* to view your active jobs.\n\n` +
-      `_Ref: ${traceId}_`
-
-    let fallbackSent = false
-    try {
-      const { getProviderSignedJobHandoverUrlByLeadId } = await import('./provider-lead-access')
-      const jobUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
-      if (jobUrl) {
-        await sendCtaUrl(phone, fallbackBody, 'View Job', jobUrl)
-        fallbackSent = true
-      }
-    } catch { /* URL generation failed — fall through to plain text */ }
-
-    if (!fallbackSent) {
-      await sendText(phone, fallbackBody).catch((err) => {
-        console.error('[whatsapp-bot] accept: fallback confirmation also failed', {
-          traceId,
-          holdId,
-          leadId: lead.id,
-          providerId: provider.id,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      })
-    }
+    await sendAcceptedLeadFallbackConfirmation({
+      phone,
+      leadId: lead.id,
+      providerId: provider.id,
+      traceId,
+      holdId,
+      currentCreditBalance: result.currentCreditBalance,
+    })
   }
 }
 

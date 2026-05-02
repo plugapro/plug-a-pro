@@ -2287,6 +2287,9 @@ export async function acceptAssignmentOffer(params: {
     responseOutcome: transactionResult.responseOutcome as 'ACCEPTED' | 'REJECTED' | 'TIMED_OUT' | 'EXPIRED' | 'OVERRIDDEN' | 'CANCELLED',
     matchId: transactionResult.matchId,
     bookingId: transactionResult.bookingId ?? null,
+    creditTransactionId: transactionResult.creditTransactionId ?? null,
+    currentCreditBalance: transactionResult.currentCreditBalance,
+    alreadyUnlocked: transactionResult.alreadyUnlocked,
     assignmentHoldId: transactionResult.assignmentHoldId,
     nextOfferedProviderId: transactionResult.nextOfferedProviderId,
   }
