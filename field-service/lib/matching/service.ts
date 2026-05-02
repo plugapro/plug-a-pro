@@ -1772,9 +1772,13 @@ async function offerNextRankedCandidate(params: {
       where: { id: params.dispatchDecisionId },
       data: { status: 'NO_MATCH', nextRetryAt: null },
     })
+    // Reset to OPEN so the cron re-dispatches with a fresh ranking on the next tick.
+    // Previously-declined providers are excluded by lead status; ghosted providers are
+    // auto-paused by pauseProviderAfterRepeatedOfferTimeouts. Do not expire here —
+    // the real deadline is jobRequest.expiresAt, enforced by the cron expiry sweep.
     await db.jobRequest.update({
       where: { id: params.jobRequestId },
-      data: { status: 'EXPIRED' },
+      data: { status: 'OPEN' },
     })
     return { nextOfferedProviderId: null, assignmentHoldId: null }
   }
@@ -2417,14 +2421,24 @@ export async function rejectAssignmentOffer(params: {
   })
 
   let nextOfferedProviderId: string | null = null
-  if (lead.dispatchDecisionId) {
+  // Prefer lead.dispatchDecisionId (old path, pre-queued ranked candidates).
+  // Fall back to hold.dispatchDecisionId (orchestrator path, stub decision).
+  // In both cases offerNextRankedCandidate resets the job to OPEN when no
+  // ranked candidates remain, so the cron re-dispatches on the next tick.
+  const dispatchDecisionId = lead.dispatchDecisionId ?? lead.assignmentHold?.dispatchDecisionId ?? null
+  if (dispatchDecisionId) {
     const next = await offerNextRankedCandidate({
       jobRequestId: lead.jobRequestId,
-      dispatchDecisionId: lead.dispatchDecisionId,
+      dispatchDecisionId,
     })
     nextOfferedProviderId = next.nextOfferedProviderId
   } else {
-    console.warn('[matching] declined lead has no dispatch decision; skipping next-provider offer', {
+    // No dispatch decision on lead or hold — reset directly so cron can retry.
+    await db.jobRequest.update({
+      where: { id: lead.jobRequestId },
+      data: { status: 'OPEN' },
+    })
+    console.warn('[matching] declined lead has no dispatch decision; reset job to OPEN for re-dispatch', {
       leadId: lead.id,
       jobRequestId: lead.jobRequestId,
       providerId: params.providerId,
