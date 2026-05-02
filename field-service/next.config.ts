@@ -1,5 +1,15 @@
 import type { NextConfig } from 'next'
 
+// ─── App timezone — South Africa Standard Time ────────────────────────────────
+// Force the Node.js process timezone to SAST so Date constructors, default
+// toLocaleString() output, cron evaluation, and message-event timestamps all
+// line up with the operating market. Vercel honours this at server-start when
+// it's set before Next.js boots. Local override: TZ=Africa/Johannesburg in
+// .env.local.
+if (!process.env.TZ) {
+  process.env.TZ = 'Africa/Johannesburg'
+}
+
 const nextConfig: NextConfig = {
   turbopack: {},
   images: {
