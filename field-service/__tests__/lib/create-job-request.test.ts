@@ -229,35 +229,34 @@ describe('createJobRequest', () => {
     const tx = makeTx()
     tx.customer.findUnique
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 'cust-by-phone', userId: null, name: 'WhatsApp Customer' })
-    tx.customer.update.mockResolvedValue({ id: 'cust-by-phone' })
+      .mockResolvedValueOnce({ id: 'cust-by-phone', userId: null, name: 'WhatsApp Customer', isTestUser: false, cohortName: null })
+    tx.customer.update.mockResolvedValue({ id: 'cust-by-phone', isTestUser: false, cohortName: null })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
 
     await createJobRequest({ ...BASE_PARAMS, userId: 'user-abc' })
 
-    expect(tx.customer.update).toHaveBeenCalledWith({
+    expect(tx.customer.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'cust-by-phone' },
       data: {
         userId: 'user-abc',
         name: 'Test Customer',
       },
-      select: { id: true },
-    })
+    }))
   })
 
   it('creates a fresh linked customer when no existing userId or phone match exists', async () => {
     const tx = makeTx()
     tx.customer.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null)
-    tx.customer.create.mockResolvedValue({ id: 'cust-new' })
+    tx.customer.create.mockResolvedValue({ id: 'cust-new', isTestUser: false, cohortName: null })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
 
     await createJobRequest({ ...BASE_PARAMS, userId: 'user-abc' })
 
-    expect(tx.customer.create).toHaveBeenCalledWith({
+    expect(tx.customer.create).toHaveBeenCalledWith(expect.objectContaining({
       data: {
         userId: 'user-abc',
         phone: '+27821234567',
@@ -265,13 +264,12 @@ describe('createJobRequest', () => {
         isTestUser: false,
         cohortName: null,
       },
-      select: { id: true },
-    })
+    }))
   })
 
   it('marks internal staff customer requests with the test cohort', async () => {
     const tx = makeTx()
-    tx.customer.upsert.mockResolvedValue({ id: 'cust-test' })
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-test', isTestUser: true, cohortName: 'internal_staff_test' })
     tx.address.create.mockResolvedValue({ id: 'addr-test' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-test' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))

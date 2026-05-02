@@ -34,9 +34,15 @@ export async function logOutboundMessage(params: {
         Boolean(metadata.isTestLead)
       : isInternalTestPhone(params.to))
 
+  const recipientIsTest =
+    typeof metadata.recipientIsTest === 'boolean'
+      ? (metadata.recipientIsTest as boolean)
+      : undefined
+
   if (isCohortMismatch({
     subjectIsTest: inferredTestEvent,
     recipientPhone: params.to,
+    recipientIsTest,
     allowTestOverride: params.allowTestCohortOverride,
   })) {
     await db.messageEvent.create({

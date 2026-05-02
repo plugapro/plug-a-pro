@@ -2,9 +2,15 @@ import { normalizePhone } from './utils'
 
 export const INTERNAL_TEST_COHORT_NAME = 'internal_staff_test'
 
+// Bootstrap list — seeds Customer.isTestUser / Provider.isTestUser when those
+// rows are first created. The DB flags are authoritative once a row exists;
+// adding/removing test users at runtime should be done by flipping the DB flag,
+// not by editing this list. We still consult the list as a fallback for
+// recipients whose DB row hasn't been loaded into the cohort context yet.
 export const INTERNAL_TEST_PHONE_NUMBERS = [
   '+27773923802',
   '+27764010810',
+  '+27823035070',
   '+27832114183',
   '+27824978565',
   '+27827006695',
@@ -88,9 +94,16 @@ export function testTransactionFields(isTestTransaction: boolean) {
 export function isCohortMismatch(params: {
   subjectIsTest: boolean
   recipientPhone: string
+  recipientIsTest?: boolean
   allowTestOverride?: boolean
 }) {
   if (params.allowTestOverride) return false
-  const recipientIsTest = isInternalTestPhone(params.recipientPhone)
+  // Prefer the caller-supplied flag (sourced from Customer.isTestUser /
+  // Provider.isTestUser in the DB). Fall back to the bootstrap phone list only
+  // when the caller hasn't loaded the DB row.
+  const recipientIsTest =
+    typeof params.recipientIsTest === 'boolean'
+      ? params.recipientIsTest
+      : isInternalTestPhone(params.recipientPhone)
   return params.subjectIsTest !== recipientIsTest
 }

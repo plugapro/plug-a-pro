@@ -71,19 +71,71 @@ async function hasSentPostMatchMessage(params: {
   templateName: string
   leadId: string
 }) {
-  const existing = await db.messageEvent.findFirst({
-    where: {
+  try {
+    const existing = await db.messageEvent.findFirst({
+      where: {
+        to: params.to,
+        templateName: params.templateName,
+        status: { in: [...SENT_OR_BETTER] },
+        metadata: {
+          path: ['leadId'],
+          equals: params.leadId,
+        },
+      },
+      select: { id: true },
+    })
+    return Boolean(existing)
+  } catch (err) {
+    // Treat lookup failures as "not sent yet" so we proceed with the notification
+    // attempt rather than crashing the whole post-match flow.
+    console.warn('[post-match] hasSentPostMatchMessage lookup failed (proceeding as not-sent)', {
       to: params.to,
       templateName: params.templateName,
-      status: { in: [...SENT_OR_BETTER] },
-      metadata: {
-        path: ['leadId'],
-        equals: params.leadId,
+      leadId: params.leadId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+}
+
+async function recordPostMatchSendFailure(params: {
+  to: string
+  templateName: string
+  leadId: string
+  jobRequestId: string
+  providerId: string
+  customerId?: string | null
+  reason: string
+  body?: string
+}) {
+  try {
+    await db.messageEvent.create({
+      data: {
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: params.templateName,
+        body: params.body,
+        to: params.to,
+        status: 'FAILED',
+        sentAt: new Date(),
+        failureReason: params.reason,
+        customerId: params.customerId ?? undefined,
+        metadata: {
+          leadId: params.leadId,
+          jobRequestId: params.jobRequestId,
+          providerId: params.providerId,
+          source: 'post_match_communications',
+        },
       },
-    },
-    select: { id: true },
-  })
-  return Boolean(existing)
+    })
+  } catch (err) {
+    console.warn('[post-match] failed to record FAILED MessageEvent (non-fatal)', {
+      to: params.to,
+      templateName: params.templateName,
+      leadId: params.leadId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 export async function notifyPostMatchAcceptance(params: {
@@ -95,11 +147,11 @@ export async function notifyPostMatchAcceptance(params: {
   const lead = await db.lead.findUnique({
     where: { id: params.leadId },
     include: {
-      provider: { select: { id: true, name: true, phone: true } },
+      provider: { select: { id: true, name: true, phone: true, isTestUser: true } },
       unlock: { select: { id: true, creditsCharged: true, unlockedAt: true } },
       jobRequest: {
         include: {
-          customer: { select: { id: true, name: true, phone: true } },
+          customer: { select: { id: true, name: true, phone: true, isTestUser: true } },
           address: { select: { street: true, suburb: true, city: true, province: true } },
           match: { select: { id: true, providerId: true, status: true, createdAt: true } },
         },
@@ -173,6 +225,7 @@ export async function notifyPostMatchAcceptance(params: {
         handoverUrlCreated: Boolean(customerHandoverUrl),
         isTestLead,
         isTestRequest: isTestLead,
+        recipientIsTest: customer.isTestUser,
       },
     }
 
@@ -191,10 +244,21 @@ export async function notifyPostMatchAcceptance(params: {
       }
       customerNotified = true
     } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
       console.error('[post-match] customer notification failed (non-fatal — provider confirmation continues)', {
         lead_id: lead.id,
         customer_id: customer.id,
-        error: err instanceof Error ? err.message : String(err),
+        error: reason,
+      })
+      await recordPostMatchSendFailure({
+        to: customer.phone,
+        templateName: 'post_match_customer_provider_accepted',
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        providerId: provider.id,
+        customerId: customer.id,
+        reason,
+        body: customerBody,
       })
     }
   }
@@ -234,6 +298,7 @@ export async function notifyPostMatchAcceptance(params: {
         customerContactReleased: true,
         isTestLead,
         isTestRequest: isTestLead,
+        recipientIsTest: provider.isTestUser,
       },
     }
 
@@ -254,10 +319,20 @@ export async function notifyPostMatchAcceptance(params: {
       // failure on the secondary button does not incorrectly mark providerNotified false.
       providerNotified = true
     } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
       console.error('[post-match] provider confirmation failed', {
         lead_id: lead.id,
         provider_id: provider.id,
-        error: err instanceof Error ? err.message : String(err),
+        error: reason,
+      })
+      await recordPostMatchSendFailure({
+        to: provider.phone,
+        templateName: 'post_match_provider_job_accepted',
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        providerId: provider.id,
+        reason,
+        body,
       })
     }
   }
@@ -285,6 +360,7 @@ export async function notifyPostMatchAcceptance(params: {
             creditTransactionId: params.creditTransactionId ?? null,
             isTestLead,
             isTestRequest: isTestLead,
+            recipientIsTest: provider.isTestUser,
           },
         },
       )

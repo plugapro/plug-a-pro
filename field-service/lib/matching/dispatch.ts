@@ -50,12 +50,16 @@ export async function dispatchMatchLead(params: {
       status: 'SENT',
       sentAt: new Date(),
       expiresAt: hold.expiresAt,
+      isTestLead: jobRequest.isTestRequest ?? false,
+      cohortName: jobRequest.cohortName ?? null,
     },
     update: {
       status: 'SENT',
       sentAt: new Date(),
       expiresAt: hold.expiresAt,
       assignmentHoldId: hold.id,
+      isTestLead: jobRequest.isTestRequest ?? false,
+      cohortName: jobRequest.cohortName ?? null,
     },
   })
 
@@ -95,7 +99,15 @@ export async function dispatchMatchLead(params: {
     description: jobRequest.description,
   })
   const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
-  const msgMeta = { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: provider.id }
+  const msgMeta = {
+    jobRequestId: jobRequest.id,
+    leadId: lead.id,
+    holdId: hold.id,
+    providerId: provider.id,
+    isTestLead: lead.isTestLead,
+    isTestRequest: jobRequest.isTestRequest ?? false,
+    recipientIsTest: provider.isTestUser ?? false,
+  }
   const leadUrl = await getProviderLeadAccessUrl({
     leadId: lead.id,
     providerId: provider.id,

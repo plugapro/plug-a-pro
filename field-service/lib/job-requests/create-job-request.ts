@@ -170,12 +170,12 @@ export async function createJobRequest(
 
     // Resolve or create customer — support both userId-keyed (web) and
     // phone-keyed (WhatsApp) lookups so duplicate records never appear.
-    let customer: { id: string }
+    let customer: { id: string; isTestUser: boolean; cohortName: string | null }
 
     if (params.userId) {
       const existingByUserId = await tx.customer.findUnique({
         where: { userId: params.userId },
-        select: { id: true },
+        select: { id: true, isTestUser: true, cohortName: true },
       })
 
       if (existingByUserId) {
@@ -183,7 +183,7 @@ export async function createJobRequest(
       } else {
         const existingByPhone = await tx.customer.findUnique({
           where: { phone: params.phone },
-          select: { id: true, userId: true, name: true },
+          select: { id: true, userId: true, name: true, isTestUser: true, cohortName: true },
         })
 
         if (existingByPhone) {
@@ -195,7 +195,7 @@ export async function createJobRequest(
                 ? { name: params.customerName }
                 : {}),
             },
-            select: { id: true },
+            select: { id: true, isTestUser: true, cohortName: true },
           })
         } else {
           customer = await tx.customer.create({
@@ -206,7 +206,7 @@ export async function createJobRequest(
               isTestUser: cohort.isTestUser,
               cohortName: cohort.cohortName,
             },
-            select: { id: true },
+            select: { id: true, isTestUser: true, cohortName: true },
           })
         }
       }
@@ -220,7 +220,7 @@ export async function createJobRequest(
           cohortName: cohort.cohortName,
         },
         update: cohort.isTestUser ? { isTestUser: true, cohortName: cohort.cohortName } : {},
-        select: { id: true },
+        select: { id: true, isTestUser: true, cohortName: true },
       })
     }
 
@@ -323,7 +323,9 @@ export async function createJobRequest(
             : undefined,
         customerAcceptedScope: params.customerAcceptedScope?.trim() || undefined,
         autoCreateBookingOnAssignment,
-        ...testRequestFields(cohort.isTestUser),
+        // Read from the resolved Customer row (DB is authoritative). The
+        // phone-based `cohort` is only used to seed brand-new customer rows above.
+        ...testRequestFields(customer.isTestUser),
       },
       select: { id: true },
     })

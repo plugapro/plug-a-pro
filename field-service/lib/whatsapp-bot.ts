@@ -141,11 +141,22 @@ async function sendAcceptedLeadFallbackConfirmation(params: {
     })
   }
 
+  const fallbackContext = {
+    templateName: 'post_match_provider_fallback',
+    metadata: {
+      leadId: params.leadId,
+      providerId: params.providerId,
+      traceId: params.traceId,
+      holdId: params.holdId ?? null,
+      source: 'accepted_lead_fallback',
+    },
+  }
+
   try {
     if (jobUrl) {
-      await sendCtaUrl(params.phone, body, 'View Job', jobUrl)
+      await sendCtaUrl(params.phone, body, 'View Job', jobUrl, undefined, fallbackContext)
     } else {
-      await sendText(params.phone, body)
+      await sendText(params.phone, body, fallbackContext)
     }
   } catch (error) {
     console.error('[whatsapp-bot] accept: fallback confirmation failed', {
