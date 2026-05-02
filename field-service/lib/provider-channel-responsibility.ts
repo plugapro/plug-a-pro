@@ -63,22 +63,22 @@ export const PROVIDER_CHANNEL_RESPONSIBILITIES: ProviderChannelResponsibility[] 
     label: 'View safe opportunity preview',
     core: true,
     primaryChannel: 'whatsapp',
-    whatsapp: 'planned',
+    whatsapp: 'existing',
     pwa: 'optional',
-    existingWhatsAppPath: 'new-lead notification with signed preview CTA',
+    existingWhatsAppPath:
+      'new-lead notification with inline category/area/urgency/budget/photo-count via buildProviderLeadPreviewMessage and signed preview CTA',
     optionalPwaPath: '/leads/access/[token]',
-    blocker: 'Safe preview summary is not yet fully rendered inline in WhatsApp.',
   },
   {
     id: 'interest_response',
     label: 'Respond interested/not interested with call-out fee and ETA',
     core: true,
     primaryChannel: 'whatsapp',
-    whatsapp: 'planned',
+    whatsapp: 'existing',
     pwa: 'optional',
-    existingWhatsAppPath: 'interested:<leadId> and not_interested:<leadId> intercepts',
+    existingWhatsAppPath:
+      'interested:<leadId> / not_interested:<leadId> intercepts with multi-step capture (callout → arrival → negotiable → note) routed through respondToProviderOpportunity',
     optionalPwaPath: '/api/provider/opportunities/[leadId]',
-    blocker: 'Interested response still needs a WhatsApp capture state for fee and arrival before service submission.',
   },
   {
     id: 'selected_job_acceptance',

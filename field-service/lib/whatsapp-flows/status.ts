@@ -46,8 +46,9 @@ function formatRequestDate(date: Date) {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
+  const { maskPhone } = await import('../support-diagnostics')
   const reqId = crypto.randomUUID().slice(0, 8)
-  const log = (msg: string) => console.log(`[status-flow:${reqId}] phone=${ctx.phone} ${msg}`)
+  const log = (msg: string) => console.log(`[status-flow:${reqId}] phone=${maskPhone(ctx.phone)} ${msg}`)
 
   // ── Step: customer chose one request from disambiguation list ────────────
   if (ctx.step === 'status_pick' && ctx.reply.id?.startsWith('status_req_')) {
