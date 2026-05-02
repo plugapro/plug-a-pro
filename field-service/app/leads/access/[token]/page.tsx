@@ -366,6 +366,28 @@ function formatWindow(start: Date | null | undefined, end: Date | null | undefin
   return end ? `${date} · ${startTime}-${format(end, 'HH:mm')}` : `${date} · ${startTime}`
 }
 
+function arrivalInputValue(value: Date) {
+  return {
+    date: format(value, 'yyyy-MM-dd'),
+    time: format(value, 'HH:mm'),
+  }
+}
+
+function getArrivalFormDefaults(params: {
+  plannedArrivalStart?: Date | null
+  plannedArrivalEnd?: Date | null
+  fallback: ReturnType<typeof deriveDefaultArrivalWindow>
+}) {
+  if (!params.plannedArrivalStart) return params.fallback
+  const start = arrivalInputValue(params.plannedArrivalStart)
+  const end = params.plannedArrivalEnd ? arrivalInputValue(params.plannedArrivalEnd).time : ''
+  return {
+    date: start.date,
+    start: start.time,
+    end,
+  }
+}
+
 function DiagnosticRows({ details }: {
   details: Array<{ label: string; value: string | undefined | null }>
 }) {
@@ -596,7 +618,11 @@ export default async function ProviderLeadAccessPage({
     requestedArrivalLatest: jr.requestedArrivalLatest,
     description: jr.description,
   })
-  const defaultArrival = deriveDefaultArrivalWindow(customerAvailability)
+  const defaultArrival = getArrivalFormDefaults({
+    plannedArrivalStart: jr.match?.plannedArrivalStart,
+    plannedArrivalEnd: jr.match?.plannedArrivalEnd,
+    fallback: deriveDefaultArrivalWindow(customerAvailability),
+  })
   const providerWallet = await db.providerWallet.findUnique({
     where: { providerId: lead.providerId },
     select: { paidCreditBalance: true, promoCreditBalance: true },

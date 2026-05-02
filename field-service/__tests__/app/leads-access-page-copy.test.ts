@@ -32,4 +32,23 @@ describe('signed provider lead page copy', () => {
     expect(source).not.toContain('{lead.expiresAt && !isAccepted && (')
     expect(source).toContain('canRespondToLead && confirmingAccept && hasEnoughCredits')
   })
+
+  it('renders arrival scheduling as a completed step after an arrival time is saved', () => {
+    expect(source).toContain('const hasPlannedArrival = isAccepted && Boolean(jr.match?.plannedArrivalStart)')
+    expect(source).toContain('const arrivalActionsDone = Boolean(')
+    expect(source).toContain("const showArrivalForm = !hasPlannedArrival || resolvedSearchParams.editArrival === '1'")
+    expect(source).toContain('{isAccepted && hasPlannedArrival && !showArrivalForm && !arrivalActionsDone && (')
+    expect(source).toContain('Arrival time confirmed')
+    expect(source).toContain('Customer has been notified on WhatsApp.')
+    expect(source).toContain('Change arrival time')
+    expect(source).toContain('{isAccepted && showArrivalForm && !arrivalActionsDone && (')
+  })
+
+  it('defaults the change-arrival form to the persisted arrival window', () => {
+    expect(source).toContain('function getArrivalFormDefaults')
+    expect(source).toContain('if (!params.plannedArrivalStart) return params.fallback')
+    expect(source).toContain('plannedArrivalStart: jr.match?.plannedArrivalStart')
+    expect(source).toContain('plannedArrivalEnd: jr.match?.plannedArrivalEnd')
+    expect(source).toContain('fallback: deriveDefaultArrivalWindow(customerAvailability)')
+  })
 })
