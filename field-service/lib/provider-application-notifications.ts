@@ -35,7 +35,7 @@ export function buildProviderApplicationApprovedMessage(
     : ''
 
   return {
-    mainBody: `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nEach lead you accept uses 1 credit. Full customer details unlock after acceptance.\n\nYou can view your credits, working hours, and jobs in the Worker Portal:`,
+    mainBody: `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nNo credits are used for previewing or saying you are interested.\n1 credit is used only when a customer selects you and you accept that selected job.\nFull customer details unlock after acceptance.\n\nYou can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours, and jobs:`,
     termsBody: `Provider terms and credit rules:\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`,
   }
 }

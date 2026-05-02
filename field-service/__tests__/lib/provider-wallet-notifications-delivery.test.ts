@@ -129,7 +129,7 @@ describe('provider wallet notification delivery', () => {
     expect(state.createdMessages[0]).toMatchObject({
       channel: 'WHATSAPP',
       templateName: 'wallet:payment_credited',
-      body: 'Payment received. Your wallet has been credited with 5 Plug-A-Pro Credits. Each accepted lead uses 1 credit.',
+      body: 'Payment received. Your wallet has been credited with 5 Plug-A-Pro Credits. 1 credit is used only when a customer selects you and you accept that selected job.',
       to: '+27821234567',
       status: 'SENT',
       metadata: expect.objectContaining({

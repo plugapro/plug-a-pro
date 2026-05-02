@@ -69,7 +69,7 @@ describe('provider wallet admin actions', () => {
     expect(crudAction).not.toHaveBeenCalled()
   })
 
-  it('wraps adjustments in an audited OPS-level crud action', async () => {
+  it('wraps adjustments in an audited finance/admin-level crud action', async () => {
     const { requireAdmin } = await import('../../lib/auth')
     const { crudAction } = await import('../../lib/crud-action')
     const { db } = await import('../../lib/db')
@@ -102,8 +102,8 @@ describe('provider wallet admin actions', () => {
       action: 'provider_wallet.admin_adjustment',
       entity: 'ProviderWallet',
       entityId: 'wallet-1',
-      requiredRole: ['OPS'],
-      excludedRole: ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'],
+      requiredRole: ['FINANCE', 'ADMIN', 'OWNER'],
+      excludedRole: ['TRUST'],
       reason: 'Reversal after ops review',
     }))
   })
@@ -136,8 +136,8 @@ describe('provider wallet admin actions', () => {
       action: 'provider_wallet.suspend',
       entity: 'ProviderWallet',
       entityId: 'wallet-1',
-      requiredRole: ['OPS'],
-      excludedRole: ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'],
+      requiredRole: ['FINANCE', 'ADMIN', 'OWNER'],
+      excludedRole: ['TRUST'],
       reason: 'Abuse review',
     }))
   })
@@ -170,8 +170,8 @@ describe('provider wallet admin actions', () => {
       action: 'provider_wallet.reactivate',
       entity: 'ProviderWallet',
       entityId: 'wallet-1',
-      requiredRole: ['OPS'],
-      excludedRole: ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'],
+      requiredRole: ['FINANCE', 'ADMIN', 'OWNER'],
+      excludedRole: ['TRUST'],
       reason: 'Review resolved',
     }))
   })

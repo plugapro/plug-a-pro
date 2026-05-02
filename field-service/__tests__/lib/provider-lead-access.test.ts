@@ -160,9 +160,10 @@ describe('provider lead access tokens', () => {
     expect(mockDb.lead.findUnique).toHaveBeenCalledWith(expect.objectContaining({
       select: expect.objectContaining({
         jobRequest: {
-          select: expect.not.objectContaining({
-            customer: expect.anything(),
-            street: expect.anything(),
+          select: expect.objectContaining({
+            attachments: expect.objectContaining({
+              where: { safeForPreview: true },
+            }),
           }),
         },
       }),
@@ -172,6 +173,24 @@ describe('provider lead access tokens', () => {
     expect(serialized).not.toContain('12 Exact Street')
     expect(serialized).toContain('photo-preview-1')
     expect(serialized).not.toContain('Gate code 1234')
+  })
+
+  it('does not unlock customer details when the unlock belongs to a different provider', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({
+      status: 'ACCEPTED',
+      unlock: { id: 'unlock-1', providerId: 'provider-2' },
+    }))
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+    const serialized = JSON.stringify(resolved)
+
+    expect(mockDb.lead.findUnique).toHaveBeenCalledTimes(1)
+    expect(resolved.status).toBe('active')
+    expect(resolved.lead?.jobRequest.customer).toBeNull()
+    expect(serialized).not.toContain('+27821234567')
+    expect(serialized).not.toContain('12 Exact Street')
   })
 
   it('invalidates an accepted-job token when the match is cancelled', async () => {

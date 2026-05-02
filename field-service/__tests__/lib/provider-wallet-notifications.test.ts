@@ -19,7 +19,9 @@ describe('provider wallet notification message builders', () => {
     const message = buildLowBalanceWarningMessage()
 
     expect(message).toContain('You have 1 Plug-A-Pro Credit left')
-    expect(message).toContain('Each accepted lead uses 1 credit')
+    expect(message).toContain('No credits are used for previewing or saying you are interested')
+    expect(message).toContain('1 credit is used only when a customer selects you')
+    expect(message).toContain('You can continue here on WhatsApp')
     expect(message).toContain('https://app.example.com/provider/credits')
   })
 
@@ -27,7 +29,7 @@ describe('provider wallet notification message builders', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
     const message = buildLowBalanceWarningMessage()
 
-    expect(message).toContain('Top up now so you do not miss matched leads:')
+    expect(message).toContain('top up in the Worker Portal:')
     expect(message).not.toContain('https://')
   })
 
@@ -35,8 +37,9 @@ describe('provider wallet notification message builders', () => {
     const message = buildZeroBalanceLeadAvailableMessage()
 
     expect(message).toContain('wallet has 0 credits')
-    expect(message).toContain('You need 1 credit to accept a lead')
-    expect(message).toContain('unlock full customer details')
+    expect(message).toContain('Previewing and saying you are interested are free')
+    expect(message).toContain('You need 1 credit only if the customer selects you')
+    expect(message).toContain('You can continue here on WhatsApp')
   })
 
   it('builds manual EFT top-up instructions with bank details and reference', () => {
@@ -54,16 +57,18 @@ describe('provider wallet notification message builders', () => {
     })
 
     expect(message).toContain('R 100,00 = 5 credits')
-    expect(message).toContain('Credits are used when you accept matched leads')
+    expect(message).toContain('No credits are used for previewing or saying you are interested')
+    expect(message).toContain('1 credit is used only when a customer selects you')
     expect(message).toContain('Test Bank')
     expect(message).toContain('123456789')
     expect(message).toContain('Use exact reference: PAP-7842-9F3K')
   })
 
   it('builds the payment credited receipt copy', () => {
-    expect(buildPaymentCreditedMessage(10)).toBe(
-      'Payment received. Your wallet has been credited with 10 Plug-A-Pro Credits. Each accepted lead uses 1 credit.',
+    expect(buildPaymentCreditedMessage(10)).toContain(
+      'Payment received. Your wallet has been credited with 10 Plug-A-Pro Credits.',
     )
+    expect(buildPaymentCreditedMessage(10)).toContain('1 credit is used only when a customer selects you')
   })
 
   it('builds provider lead unlock copy with post-unlock customer details', () => {
@@ -120,6 +125,22 @@ describe('provider wallet notification message builders', () => {
         creditsToIssue: 25,
       })
       expect(message).toContain('Credits will appear in your wallet once Payfast confirms payment')
+      expect(message).toContain('1 credit is used only when a customer selects you')
+    })
+
+    it('does not include localhost in production when public URL is canonical', () => {
+      vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
+      vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+      vi.stubEnv('NODE_ENV', 'production')
+
+      const messages = [
+        buildLowBalanceWarningMessage(),
+        buildZeroBalanceLeadAvailableMessage(),
+      ].join('\n')
+
+      expect(messages).toContain('https://app.plugapro.co.za/provider/credits')
+      expect(messages).not.toContain('localhost')
+      expect(messages).not.toContain('127.0.0.1')
     })
 
     it('does not contain bank account details', () => {

@@ -145,7 +145,7 @@ export default async function ProviderCreditsPage({
         <div>
           <h1 className="text-xl font-semibold">Plug-A-Pro Credits</h1>
           <p className="text-sm text-muted-foreground">
-            Each accepted lead uses 1 credit. Full customer details unlock after acceptance.
+            Previewing and saying you are interested are free. 1 credit is used only when a customer selects you and you accept that selected job.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
