@@ -128,7 +128,8 @@ describe('createJobRequest', () => {
     )
     expect(tx.address.create).toHaveBeenCalledOnce()
     expect(tx.jobRequest.create).toHaveBeenCalledOnce()
-    expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-1', ticketUrl: null })
+    expect(result).toMatchObject({ jobRequestId: 'jr-1', customerId: 'cust-1', ticketUrl: null })
+    expect(result.requestRef).toMatch(/^PAP-/)
   })
 
   it('stores customer address locality fields in display case while preserving matching lookup', async () => {
@@ -222,7 +223,8 @@ describe('createJobRequest', () => {
     )
     expect(tx.customer.update).not.toHaveBeenCalled()
     expect(tx.customer.create).not.toHaveBeenCalled()
-    expect(result).toEqual({ jobRequestId: 'jr-1', customerId: 'cust-by-user', ticketUrl: null })
+    expect(result).toMatchObject({ jobRequestId: 'jr-1', customerId: 'cust-by-user', ticketUrl: null })
+    expect(result.requestRef).toMatch(/^PAP-/)
   })
 
   it('links an existing phone customer to the authenticated web user when userId lookup misses', async () => {
@@ -330,7 +332,7 @@ describe('createJobRequest', () => {
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
     mockGetJobRequestAccessUrl.mockRejectedValue(new Error('Token write failed'))
 
-    await expect(createJobRequest(BASE_PARAMS)).resolves.toEqual({
+    await expect(createJobRequest(BASE_PARAMS)).resolves.toMatchObject({
       jobRequestId: 'jr-1',
       customerId: 'cust-1',
       ticketUrl: null,

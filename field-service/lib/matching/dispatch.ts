@@ -4,6 +4,7 @@
 // remains active and the provider can still be notified by retry.
 
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { hasSuccessfulMessageForRecipient } from '@/lib/message-events'
 import { getProviderLeadAccessUrl } from '@/lib/provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '@/lib/provider-wallet'
@@ -188,13 +189,24 @@ export async function dispatchMatchLead(params: {
 
   if (actionsAlreadySent) return
 
+  // Qualified Shortlist Model: when the dispatch_v2 flag is on, the buttons
+  // capture free interest instead of triggering a paid acceptance. This keeps
+  // the legacy paid sequential dispatch reachable until pilots are ready.
+  const dispatchV2 = await isEnabled('qualified_shortlist.dispatch_v2').catch(() => false)
+  const buttons = dispatchV2
+    ? [
+        { id: `interested:${lead.id}`, title: "I'm interested" },
+        { id: `not_interested:${lead.id}`, title: 'Not interested' },
+      ]
+    : [
+        { id: `accept:${hold.id}`, title: 'Accept Lead' },
+        { id: `decline:${hold.id}`, title: 'Decline' },
+      ]
+
   await sendButtons(
     provider.phone,
     actionsBody,
-    [
-      { id: `accept:${hold.id}`, title: 'Accept Lead' },
-      { id: `decline:${hold.id}`, title: 'Decline' },
-    ],
+    buttons,
     undefined,
     { templateName: 'dispatch:job_lead_actions', metadata: msgMeta }
   ).catch(async (err: unknown) => {

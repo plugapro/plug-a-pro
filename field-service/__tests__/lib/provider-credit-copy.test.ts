@@ -38,6 +38,12 @@ describe('getPublicAppUrl', () => {
     expect(getPublicAppUrl('/provider/terms/credits')).toBe('https://app.example.com/provider/terms/credits')
   })
 
+  it('safely joins paths with duplicate leading slashes', () => {
+    vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za/')
+
+    expect(getPublicAppUrl('//provider')).toBe('https://app.plugapro.co.za/provider')
+  })
+
   it('returns empty string when no base URL is configured', () => {
     vi.stubEnv('APP_PUBLIC_URL', '')
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
@@ -104,6 +110,19 @@ describe('provider credit copy', () => {
     expect(getProviderTermsUrl()).toBe('https://terms.example.com/provider')
   })
 
+  it('blocks localhost provider terms URL in production', () => {
+    vi.stubEnv('PROVIDER_TERMS_URL', 'http://localhost:3000/provider/terms/credits')
+    vi.stubEnv('NODE_ENV', 'production')
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    expect(getProviderTermsUrl()).toBe('')
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('CONFIG ERROR'),
+      expect.any(Object),
+    )
+    consoleSpy.mockRestore()
+  })
+
   it('returns empty terms URL when no base URL is configured', () => {
     vi.stubEnv('PROVIDER_TERMS_URL', '')
     vi.stubEnv('NEXT_PUBLIC_PROVIDER_TERMS_URL', '')
@@ -136,8 +155,9 @@ describe('provider credit copy', () => {
 
     expect(message).toContain('We review your application using the information you provide')
     expect(message).toContain('starter credits')
-    expect(message).toContain('Each lead you accept uses 1 credit')
-    expect(message).toContain('Full customer and job details unlock after acceptance')
+    expect(message).toContain('Previewing and showing interest in jobs is free')
+    expect(message).toContain('You spend 1 credit only when a customer selects you')
+    expect(message).toContain('Full customer and job details unlock after selected-job acceptance')
     expect(message).toContain('https://example.com/provider/terms/credits')
     expect(message.toLowerCase()).not.toContain('promo pilot')
   })
@@ -158,7 +178,7 @@ describe('provider credit copy', () => {
     expect(message).toContain('We will review your details')
     expect(message).toContain('Approval is not automatic')
     expect(message).toContain('If approved, your provider profile will be activated')
-    expect(message).toContain('starter credits')
+    expect(message).toContain('starter credits for customer-selected jobs')
     expect(message).toContain('https://example.com/provider-terms')
   })
 
@@ -175,10 +195,10 @@ describe('provider credit copy', () => {
       },
     })
 
-    expect(message).toContain('New Job Lead')
-    expect(message).toContain('You can preview the job details first')
-    expect(message).toContain('Accepting this lead uses 1 credit')
-    expect(message).toContain('Full customer contact and exact address unlock after acceptance')
+    expect(message).toContain('New Job Opportunity')
+    expect(message).toContain('Previewing and responding is free')
+    expect(message).toContain('You spend 1 credit only if the customer selects you')
+    expect(message).toContain('Full customer contact and exact address stay locked')
     expect(message).toContain('Available balance: 2 credits')
   })
 
@@ -190,7 +210,7 @@ describe('provider credit copy', () => {
     })
 
     expect(message).toContain('Not enough credits')
-    expect(message).toContain('You need 1 credit to accept this lead')
+    expect(message).toContain('You need 1 credit to accept this selected job')
     expect(message).toContain('Your current balance is 0 credits')
     expect(message).toContain('https://example.com/provider/credits')
   })
@@ -230,8 +250,9 @@ describe('provider credit copy', () => {
 
     expect(message).toContain('Electrical')
     expect(message).toContain('Sandton')
-    expect(message).toContain('Accepting this lead uses 1 credit')
-    expect(message).toContain('Full customer details unlock only after acceptance succeeds')
+    expect(message).toContain('Showing interest is free')
+    expect(message).toContain('after customer selection and your final acceptance')
+    expect(message).toContain('Full customer details unlock only after selected-job acceptance succeeds')
     expect(message).toContain('Available balance: 5 credits')
   })
 })

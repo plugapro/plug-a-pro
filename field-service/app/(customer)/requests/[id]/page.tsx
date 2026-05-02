@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { resolveClientPwaDestination } from '@/lib/client-pwa-destination'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
@@ -27,58 +28,15 @@ export default async function RequestDetailPage({
     redirect(`/sign-in?next=${encodeURIComponent(`/requests/${id}`)}`)
   }
 
-  const jobRequest = await db.jobRequest.findUnique({
-    where: { id },
-    include: {
-      customer: { select: { id: true, userId: true } },
-      address: true,
-      attachments: { orderBy: { createdAt: 'asc' } },
-      leads: {
-        include: {
-          provider: {
-            select: {
-              id: true,
-              name: true,
-              skills: true,
-            },
-          },
-        },
-        orderBy: { sentAt: 'desc' },
-      },
-      match: {
-        include: {
-          provider: {
-            select: {
-              id: true,
-              name: true,
-              bio: true,
-              experience: true,
-              skills: true,
-              serviceAreas: true,
-              evidenceNote: true,
-              portfolioUrls: true,
-              verified: true,
-            },
-          },
-          quotes: {
-            orderBy: { createdAt: 'desc' },
-          },
-          booking: {
-            include: {
-              quote: true,
-              payment: true,
-              job: true,
-            },
-          },
-        },
-      },
-    },
-  })
-
+  const destination = await resolveClientPwaDestination({ requestId: id })
+  const jobRequest = destination.request
   if (!jobRequest) notFound()
   const customer = await resolveCustomerForSession(db, session)
   if (!customer || customer.id !== jobRequest.customer.id) {
     redirect('/bookings')
+  }
+  if (destination.route.startsWith('/bookings/')) {
+    redirect(destination.route)
   }
 
   const match = jobRequest.match

@@ -162,7 +162,7 @@ describe('registration flow — duplicate prevention', () => {
 
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('Each lead you accept uses 1 credit'),
+        expect.stringContaining('You spend 1 credit only when a customer selects you'),
         expect.any(Array),
       )
       expect(wa.sendButtons).toHaveBeenCalledWith(

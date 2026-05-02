@@ -16,6 +16,7 @@ import { MATCHING_CONFIG } from '../matching/config'
 import { createTestCohortContext, testRequestFields } from '../internal-test-cohort'
 import { phoneLookupVariants } from '../whatsapp-identity'
 import { normaliseLocationDisplayName } from '../location-format'
+import { buildRequestRef } from '../client-request-data'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -27,8 +28,16 @@ export interface CreateJobRequestParams {
 
   // Job details
   category: string
+  requestRef?: string | null
+  source?: string | null
+  subcategory?: string | null
   title: string
   description?: string
+  urgency?: string | null
+  budgetPreference?: string | null
+  maxCallOutFee?: number | null
+  providerPreference?: string | null
+  verifiedOnly?: boolean | null
   estimatedDurationMinutes?: number
   requestedWindowStart?: Date | null
   requestedWindowEnd?: Date | null
@@ -53,6 +62,10 @@ export interface CreateJobRequestParams {
   addressLine2?: string | null
   complexName?: string | null
   unitNumber?: string | null
+  // Sensitive structured access details (gate codes, dog warnings, etc).
+  // Stored on Address.accessNotes; only revealed to the provider after the
+  // selected-provider final acceptance creates a LeadUnlock.
+  accessNotes?: string | null
   suburb: string
   region?: string | null
   city: string
@@ -67,6 +80,7 @@ export interface CreateJobRequestParams {
 
 export interface CreateJobRequestResult {
   jobRequestId: string
+  requestRef: string
   customerId: string
   ticketUrl: string | null
 }
@@ -143,6 +157,7 @@ export async function createJobRequest(
   })
   const resolvedLocationNodeId =
     params.locationNodeId ?? (await resolveSuburbNodeId(locality.suburb, locality.city))
+  const requestRef = params.requestRef?.trim() || buildRequestRef()
 
   // Atomic: customer upsert + address + jobRequest in one transaction
   const result = await db.$transaction(async (tx) => {
@@ -245,6 +260,7 @@ export async function createJobRequest(
             addressLine2: params.addressLine2?.trim() || null,
             complexName: params.complexName?.trim() || null,
             unitNumber: params.unitNumber?.trim() || null,
+            accessNotes: params.accessNotes?.trim() || null,
             suburb:     locality.suburb,
             region:     locality.region || null,
             city:       locality.city,
@@ -303,8 +319,20 @@ export async function createJobRequest(
         customerId: customer.id,
         addressId: address.id,
         category: params.category,
+        requestRef,
+        source: params.source?.trim() || 'unknown',
+        subcategory: params.subcategory?.trim() || undefined,
         title: params.title,
         description: params.description ?? '',
+        urgency: params.urgency?.trim() || undefined,
+        budgetPreference: params.budgetPreference?.trim() || undefined,
+        maxCallOutFee:
+          typeof params.maxCallOutFee === 'number'
+            ? params.maxCallOutFee
+            : undefined,
+        providerPreference: params.providerPreference?.trim() || undefined,
+        verifiedOnly: params.verifiedOnly === true,
+        submittedAt: new Date(),
         status: 'OPEN',
         expiresAt,
         requestedWindowStart: params.requestedWindowStart ?? undefined,
@@ -357,7 +385,7 @@ export async function createJobRequest(
       })
     }
 
-    return { jobRequestId: jobRequest.id, customerId: customer.id }
+    return { jobRequestId: jobRequest.id, requestRef, customerId: customer.id }
   })
 
   // Open a DISPATCH case for the new job request (fire and forget — cron can backfill on failure).

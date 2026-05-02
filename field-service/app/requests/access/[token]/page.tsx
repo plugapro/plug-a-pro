@@ -1,8 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveJobRequestAccessToken } from '@/lib/job-request-access'
+import { resolveClientPwaDestination } from '@/lib/client-pwa-destination'
 import { createTraceId } from '@/lib/support-diagnostics'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -13,19 +15,104 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
+import {
+  cancelRequestFromShortlist,
+  getCustomerShortlistForRequest,
+  requestMoreShortlistOptions,
+  selectShortlistedProviderForRequest,
+} from '@/lib/customer-shortlists'
 
 export const metadata = buildMetadata({ title: 'Ticket Details', noIndex: true })
 
+async function selectShortlistProvider(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const requestId = String(formData.get('requestId') ?? '')
+  const shortlistItemId = String(formData.get('shortlistItemId') ?? '')
+  const resolved = await resolveJobRequestAccessToken(token)
+
+  if (resolved.status !== 'active' || resolved.jobRequest?.id !== requestId) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
+  }
+
+  try {
+    await selectShortlistedProviderForRequest({ requestId, shortlistItemId })
+  } catch {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=failed`)
+  }
+
+  redirect(`/requests/access/${encodeURIComponent(token)}?selection=provider-confirming`)
+}
+
+async function askForMoreShortlistOptions(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const requestId = String(formData.get('requestId') ?? '')
+  const resolved = await resolveJobRequestAccessToken(token)
+
+  if (resolved.status !== 'active' || resolved.jobRequest?.id !== requestId) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
+  }
+
+  try {
+    await requestMoreShortlistOptions({ requestId })
+  } catch {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=more-options-failed`)
+  }
+
+  redirect(`/requests/access/${encodeURIComponent(token)}?selection=more-options`)
+}
+
+async function cancelRequestAction(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const requestId = String(formData.get('requestId') ?? '')
+  const resolved = await resolveJobRequestAccessToken(token)
+
+  if (resolved.status !== 'active' || resolved.jobRequest?.id !== requestId) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
+  }
+
+  try {
+    await cancelRequestFromShortlist({ requestId })
+  } catch {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=cancel-failed`)
+  }
+
+  redirect(`/requests/access/${encodeURIComponent(token)}?selection=cancelled`)
+}
+
+function formatCurrency(amount: number | null) {
+  if (amount == null) return 'Not provided'
+  return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(amount)
+}
+
+function formatDateTime(value: Date | null) {
+  if (!value) return 'Not provided'
+  return value.toLocaleString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export default async function TicketAccessPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>
+  searchParams?: Promise<{ intent?: string; selection?: string; view?: string }>
 }) {
   const { token } = await params
-  const result = await resolveJobRequestAccessToken(token)
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const destination = await resolveClientPwaDestination({
+    token,
+    intendedScreen: resolvedSearchParams.view ?? resolvedSearchParams.intent ?? null,
+  })
 
-  if (result.status !== 'active' || !result.jobRequest) {
-    const expired = result.status === 'expired'
+  if (destination.accessLevel !== 'public_token' || !destination.request) {
+    const expired = destination.accessLevel === 'expired'
     const code = expired ? 'TICKET_EXPIRED' : 'TICKET_INVALID'
     const traceId = createTraceId('tkt')
     return (
@@ -57,7 +144,8 @@ export default async function TicketAccessPage({
     )
   }
 
-  const jobRequest = result.jobRequest
+  const jobRequest = destination.request
+  const shortlist = await getCustomerShortlistForRequest(jobRequest.id)
   const match = jobRequest.match
   const latestQuote = match?.quotes[0] ?? null
   const booking = match?.booking ?? null
@@ -132,6 +220,145 @@ export default async function TicketAccessPage({
           )}
         </CardContent>
       </Card>
+
+      {resolvedSearchParams.selection === 'provider-confirming' && (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-emerald-900">
+            <p className="font-medium">Provider selected</p>
+            <p>We are asking them to confirm the job now. You will be notified once accepted.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {resolvedSearchParams.selection === 'failed' && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-destructive">
+            <p className="font-medium">Selection could not be completed</p>
+            <p>Please refresh this link or ask Plug A Pro for help in WhatsApp.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {resolvedSearchParams.selection === 'more-options' && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-amber-900">
+            <p className="font-medium">Looking for more options</p>
+            <p>We are reaching out to additional providers. We&apos;ll update you here when more responses come in.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {resolvedSearchParams.selection === 'cancelled' && (
+        <Card className="border-muted-foreground/30 bg-muted">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-muted-foreground">
+            <p className="font-medium">Request cancelled</p>
+            <p>Your request has been cancelled. No credits were used and no providers were notified beyond the initial preview.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {shortlist && shortlist.items.length > 0 && !match && (
+        <section className="space-y-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Provider shortlist
+            </p>
+            <h2 className="mt-1 text-lg font-semibold">Choose a provider</h2>
+          </div>
+          <div className="space-y-3">
+            {shortlist.items.map((item) => {
+              const selected = Boolean(item.customerSelectedAt) || jobRequest.selectedLeadInviteId === item.leadInviteId
+              const signals = buildProviderTrustSignals({
+                marketplaceApproved: item.provider.verified,
+                skills: item.provider.skills,
+                experience: item.provider.experience,
+                evidenceNote: item.provider.evidenceNote,
+                completedJobs: item.provider.completedJobsCount,
+                averageRating: item.provider.averageRating,
+              })
+              return (
+                <Card key={item.id} className={selected ? 'border-primary' : undefined}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-base">{item.provider.name}</CardTitle>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {item.provider.verified ? 'Application reviewed' : 'Provider-supplied profile'}
+                        </p>
+                      </div>
+                      {item.provider.avatarUrl && (
+                        <div
+                          aria-label={`${item.provider.name} profile photo`}
+                          className="h-12 w-12 rounded-full bg-cover bg-center"
+                          role="img"
+                          style={{ backgroundImage: `url(${item.provider.avatarUrl})` }}
+                        />
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    {item.provider.bio && <p className="text-muted-foreground">{item.provider.bio}</p>}
+                    <div className="grid grid-cols-2 gap-2">
+                      <MiniStat label="Call-out fee" value={formatCurrency(item.callOutFee)} />
+                      <MiniStat label="Arrival" value={formatDateTime(item.estimatedArrivalAt)} />
+                      <MiniStat label="Rate" value={item.rateAmount == null ? (item.negotiable ? 'Negotiable' : 'Not provided') : formatCurrency(item.rateAmount)} />
+                      <MiniStat label="Jobs" value={String(item.provider.completedJobsCount)} />
+                    </div>
+                    {item.provider.portfolioUrls.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Previous work
+                        </p>
+                        <div className="space-y-1">
+                          {item.provider.portfolioUrls.slice(0, 3).map((url) => (
+                            <a key={url} href={url} className="block break-all text-xs text-primary underline">
+                              View profile work
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <ProviderTrustSignals signals={signals} />
+                    <ProviderTrustNote marketplaceApproved={item.provider.verified} />
+                    {selected ? (
+                      <div className="rounded-md bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
+                        Selected. We are asking this provider to confirm.
+                      </div>
+                    ) : (
+                      <form action={selectShortlistProvider}>
+                        <input type="hidden" name="token" value={token} />
+                        <input type="hidden" name="requestId" value={jobRequest.id} />
+                        <input type="hidden" name="shortlistItemId" value={item.id} />
+                        <Button type="submit" className="w-full">
+                          Select provider
+                        </Button>
+                      </form>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+          {jobRequest.status === 'SHORTLIST_READY' && (
+            <div className="grid grid-cols-2 gap-2">
+              <form action={askForMoreShortlistOptions}>
+                <input type="hidden" name="token" value={token} />
+                <input type="hidden" name="requestId" value={jobRequest.id} />
+                <Button type="submit" variant="outline" className="w-full">
+                  Ask for more options
+                </Button>
+              </form>
+              <form action={cancelRequestAction}>
+                <input type="hidden" name="token" value={token} />
+                <input type="hidden" name="requestId" value={jobRequest.id} />
+                <Button type="submit" variant="ghost" className="w-full text-destructive">
+                  Cancel request
+                </Button>
+              </form>
+            </div>
+          )}
+        </section>
+      )}
 
       {provider && (
         <Card>
@@ -247,6 +474,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex gap-2">
       <span className="w-20 flex-shrink-0 text-muted-foreground">{label}</span>
       <span>{children}</span>
+    </div>
+  )
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-medium">{value}</p>
     </div>
   )
 }

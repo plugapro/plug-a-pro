@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendText } from '@/lib/whatsapp-interactive'
+import { maskPhone } from '@/lib/support-diagnostics'
 
 // Flows that indicate an active mid-session state worth notifying about
 const NOTIFIABLE_FLOWS = ['job_request', 'registration', 'status', 'help', 'reschedule', 'cancel']
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
       if (claimed.count === 0) {
         // Another process already claimed this conversation
         skipped++
-        console.info(`[cron/session-timeout:${reqId}] already-claimed phone=${conv.phone} id=${conv.id}`)
+        console.info(`[cron/session-timeout:${reqId}] already-claimed phone=${maskPhone(conv.phone)} id=${conv.id}`)
         continue
       }
 
@@ -75,7 +76,7 @@ export async function GET(request: Request) {
       })
 
       if (customer && !customer.whatsappServiceOptIn) {
-        console.info(`[cron/session-timeout:${reqId}] service-opted-out phone=${conv.phone} — skipping send`)
+        console.info(`[cron/session-timeout:${reqId}] service-opted-out phone=${maskPhone(conv.phone)} — skipping send`)
         await db.conversation.updateMany({
           where: { id: conv.id, timeoutNotifiedAt: LOCK_SENTINEL },
           data:  { timeoutNotifiedAt: now },

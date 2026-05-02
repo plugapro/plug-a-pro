@@ -28,12 +28,14 @@ export async function POST(req: NextRequest) {
 
   let body: {
     category: string
+    subcategory?: string
     title: string
     description?: string
     addressLine1: string
     addressLine2?: string
     complexName?: string
     unitNumber?: string
+    accessNotes?: string
     requestedWindowStart?: string
     requestedWindowEnd?: string
     requestedArrivalLatest?: string
@@ -47,6 +49,11 @@ export async function POST(req: NextRequest) {
     customerAcceptedAmount?: number
     customerAcceptedScope?: string
     locationNodeId: string
+    urgency?: string
+    providerPreference?: string
+    budgetPreference?: string
+    maxCallOutFee?: number
+    verifiedOnly?: boolean
   }
   let photos: File[] = []
 
@@ -58,13 +65,19 @@ export async function POST(req: NextRequest) {
       const rawArrivalLatest = formData.get('requestedArrivalLatest')
       body = {
         category: String(formData.get('category') ?? ''),
+        subcategory: formData.get('subcategory') ? String(formData.get('subcategory')) : undefined,
         title: String(formData.get('title') ?? ''),
         description: String(formData.get('description') ?? ''),
         addressLine1: String(formData.get('addressLine1') ?? ''),
         addressLine2: String(formData.get('addressLine2') ?? ''),
         complexName: String(formData.get('complexName') ?? ''),
         unitNumber: String(formData.get('unitNumber') ?? ''),
+        accessNotes: formData.get('accessNotes') ? String(formData.get('accessNotes')) : undefined,
         locationNodeId: String(formData.get('locationNodeId') ?? ''),
+        urgency: formData.get('urgency') ? String(formData.get('urgency')) : undefined,
+        providerPreference: formData.get('providerPreference') ? String(formData.get('providerPreference')) : undefined,
+        budgetPreference: formData.get('budgetPreference') ? String(formData.get('budgetPreference')) : undefined,
+        verifiedOnly: formData.get('verifiedOnly') === 'true',
         ...(rawWindowEnd ? { requestedWindowEnd: String(rawWindowEnd) } : {}),
         ...(rawArrivalLatest ? { requestedArrivalLatest: String(rawArrivalLatest) } : {}),
       }
@@ -80,12 +93,14 @@ export async function POST(req: NextRequest) {
 
   const {
     category,
+    subcategory,
     title,
     description,
     addressLine1,
     addressLine2,
     complexName,
     unitNumber,
+    accessNotes,
     requestedWindowStart,
     requestedWindowEnd,
     requestedArrivalLatest,
@@ -99,6 +114,11 @@ export async function POST(req: NextRequest) {
     customerAcceptedAmount,
     customerAcceptedScope,
     locationNodeId,
+    urgency,
+    providerPreference,
+    budgetPreference,
+    maxCallOutFee,
+    verifiedOnly,
   } = body
 
   if (!category || !title || !addressLine1 || !locationNodeId) {
@@ -145,6 +165,7 @@ export async function POST(req: NextRequest) {
       userId: session.id,
       phone: session.phone!,
       category,
+      subcategory: subcategory ?? null,
       title,
       description: description ?? '',
       estimatedDurationMinutes: estimatedDurationMinutes ?? undefined,
@@ -164,12 +185,19 @@ export async function POST(req: NextRequest) {
       addressLine2: resolvedAddress.addressLine2,
       complexName: resolvedAddress.complexName,
       unitNumber: resolvedAddress.unitNumber,
+      accessNotes: accessNotes ?? null,
       suburb: resolvedAddress.suburb,
       region: resolvedAddress.region,
       city: resolvedAddress.city,
       province: resolvedAddress.province,
       postalCode: resolvedAddress.postalCode,
       locationNodeId: resolvedAddress.locationNodeId,
+      source: 'pwa',
+      urgency: urgency ?? null,
+      providerPreference: providerPreference ?? null,
+      budgetPreference: budgetPreference ?? null,
+      maxCallOutFee: typeof maxCallOutFee === 'number' ? maxCallOutFee : null,
+      verifiedOnly: typeof verifiedOnly === 'boolean' ? verifiedOnly : null,
     })
 
     let uploadedPhotoCount = 0

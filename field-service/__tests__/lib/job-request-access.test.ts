@@ -47,4 +47,20 @@ describe('job request access tokens', () => {
     expect(url).toMatch(/^https:\/\/app\.plugapro\.co\.za\/requests\/access\//)
     expect(db.jobRequest.update).toHaveBeenCalledOnce()
   })
+
+  it('adds handoff intent to ticket URLs without changing the token path', async () => {
+    const { db } = await import('@/lib/db')
+    const expiresAt = new Date('2030-01-01T00:00:00Z')
+
+    ;(db.jobRequest.findUnique as any).mockResolvedValue({
+      customerAccessToken: 'existing-token',
+      customerAccessTokenExpiresAt: expiresAt,
+      customerAccessTokenRevokedAt: null,
+    })
+
+    const { getJobRequestAccessUrl } = await import('@/lib/job-request-access')
+    const url = await getJobRequestAccessUrl('jr_1', 'shortlist')
+
+    expect(url).toBe('https://app.plugapro.co.za/requests/access/existing-token?intent=shortlist')
+  })
 })

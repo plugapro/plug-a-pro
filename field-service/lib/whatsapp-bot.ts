@@ -230,6 +230,10 @@ function isStatelessNotificationReply(
     id.startsWith('match_accept_') ||
     id.startsWith('match_inspect_') ||
     id.startsWith('match_decline_') ||
+    id.startsWith('confirm_accept:') ||
+    id.startsWith('confirm_decline:') ||
+    id.startsWith('not_interested:') ||
+    id.startsWith('interested:') ||
     id.startsWith('alt_slot_c:') ||
     id.startsWith('alt_slot_p:') ||
     id.startsWith('alt_cust_ok:') ||
@@ -811,6 +815,24 @@ async function processInboundMessageUnlocked(
     ) {
       // ── Match-level lead responses (quote flow) ─────────────────────────────
       await handleMatchLeadResponse(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('confirm_accept:') || reply.id?.startsWith('confirm_decline:')) {
+      // ── Qualified Shortlist: selected-provider final acceptance/decline ─────
+      await handleSelectedProviderConfirmation(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('not_interested:')) {
+      // ── Qualified Shortlist: provider declines opportunity preview ──────────
+      await handleProviderOpportunityNotInterested(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('interested:')) {
+      // ── Qualified Shortlist: provider expresses interest in opportunity ─────
+      await handleProviderOpportunityInterested(phone, reply.id)
       return
     }
 
@@ -2308,6 +2330,146 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
       `😔 Something went wrong recording your decline. Please try again or contact support.\n\n_Ref: ${traceId}_`
     ).catch(() => {})
   }
+}
+
+// ─── Qualified Shortlist: selected-provider final acceptance / decline ───────
+
+async function handleSelectedProviderConfirmation(phone: string, buttonId: string): Promise<void> {
+  const traceId = createTraceId('wbot')
+  const isAccept = buttonId.startsWith('confirm_accept:')
+  const leadId = buttonId.slice(buttonId.indexOf(':') + 1).trim()
+  if (!leadId) {
+    await sendText(phone, `We couldn't read that selection. Please use the latest message or reply *menu*.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  if (isAccept) {
+    const { acceptSelectedProviderJob } = await import('./selected-provider-acceptance')
+    const result = await acceptSelectedProviderJob({
+      leadId,
+      providerId: provider.id,
+      source: 'whatsapp',
+      traceId,
+    })
+    if (!result.ok) {
+      if (result.reason === 'INSUFFICIENT_CREDITS') {
+        await sendText(
+          phone,
+          buildInsufficientCreditsMessage({ availableCredits: result.currentCreditBalance ?? 0 }),
+        )
+        return
+      }
+      if (result.reason === 'PROVIDER_NOT_SELECTED') {
+        await sendText(phone, '⚠️ This job was offered to a different provider. No credits used.')
+        return
+      }
+      if (result.reason === 'LEAD_INVITE_NOT_SELECTED') {
+        await sendText(phone, '⚠️ This job has not been customer-selected for you. No action taken.')
+        return
+      }
+      if (result.reason === 'LEAD_EXPIRED') {
+        await sendText(phone, '⏰ This job has expired and can no longer be accepted. No credits used.')
+        return
+      }
+      if (result.reason === 'REQUEST_NOT_AWAITING_CONFIRMATION') {
+        await sendText(phone, '⚠️ This job is no longer awaiting your confirmation.')
+        return
+      }
+      console.error('[whatsapp-bot] confirm_accept failed', { traceId, leadId, reason: result.reason })
+      await sendText(phone, `😔 We couldn't process that confirmation. Please try again or contact support.\n\n_Ref: ${traceId}_`)
+      return
+    }
+    return
+  }
+
+  // confirm_decline
+  const { declineSelectedProviderJob } = await import('./customer-shortlists')
+  const declineResult = await declineSelectedProviderJob({ leadId, providerId: provider.id })
+  if (!declineResult.ok) {
+    if (declineResult.reason === 'NOT_FOUND') {
+      await sendText(phone, '⚠️ This job could not be found.')
+      return
+    }
+    if (declineResult.reason === 'FORBIDDEN') {
+      await sendText(phone, '⚠️ This job was offered to a different provider.')
+      return
+    }
+    await sendText(phone, '⚠️ This job is no longer awaiting your confirmation.')
+    return
+  }
+  await sendText(
+    phone,
+    'No problem — we have let the customer know. They can pick another provider from the shortlist.',
+  )
+}
+
+// ─── Qualified Shortlist: provider opportunity interest ──────────────────────
+
+async function handleProviderOpportunityNotInterested(phone: string, buttonId: string): Promise<void> {
+  const traceId = createTraceId('wbot')
+  const leadId = buttonId.slice(buttonId.indexOf(':') + 1).trim()
+  if (!leadId) {
+    await sendText(phone, `We couldn't read that response. Please use the latest message.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  try {
+    const { respondToProviderOpportunity } = await import('./provider-opportunity-responses')
+    await respondToProviderOpportunity({
+      leadId,
+      providerId: provider.id,
+      response: 'NOT_INTERESTED',
+      source: 'whatsapp',
+      idempotencyKey: `whatsapp:${provider.id}:${leadId}:not_interested`,
+    })
+    await sendText(phone, 'Thanks — we have marked you as not interested. No credits used.')
+  } catch (error) {
+    console.warn('[whatsapp-bot] not_interested response failed', { traceId, leadId, error: String(error) })
+    await sendText(phone, 'Thanks — your response has been recorded.')
+  }
+}
+
+async function handleProviderOpportunityInterested(phone: string, buttonId: string): Promise<void> {
+  const traceId = createTraceId('wbot')
+  const leadId = buttonId.slice(buttonId.indexOf(':') + 1).trim()
+  if (!leadId) {
+    await sendText(phone, `We couldn't read that response. Please use the latest message.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  // The customer expects a call-out fee and an estimated arrival before they
+  // see this provider in the shortlist. The conversational rate-capture flow
+  // is a separate follow-up; for now, prompt the provider to either complete
+  // their response in the provider portal/app or reply with structured text
+  // (handled by the existing rate-capture code path on the next inbound).
+  await saveConversation({
+    phone,
+    flow: 'idle',
+    step: 'welcome',
+    data: { pendingOpportunityLeadId: leadId } as ConversationData,
+  })
+  await sendText(
+    phone,
+    `Thanks for showing interest. Reply with your call-out fee and earliest arrival, e.g.\n\n*R250 | tomorrow morning*\n\nThe customer will compare your response with other providers.\n\nNo credits are used until the customer selects you and you accept.\n\n_Ref: ${traceId}_`,
+  )
 }
 
 // ─── Backwards-compat alias ───────────────────────────────────────────────────

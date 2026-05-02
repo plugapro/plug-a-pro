@@ -29,6 +29,32 @@ function configuredUrl(name: string) {
   return value || null
 }
 
+function validateConfiguredPublicUrl(value: string, resolvedFrom: string) {
+  if (!/^https?:\/\//.test(value)) {
+    console.error('[provider-credit-copy] CONFIG ERROR: configured public URL is not absolute.', {
+      resolvedFrom,
+    })
+    return ''
+  }
+
+  try {
+    const url = new URL(value)
+    const host = url.hostname.toLowerCase()
+    if ((host === 'localhost' || host === '127.0.0.1') && process.env.NODE_ENV === 'production') {
+      console.error('[provider-credit-copy] CONFIG ERROR: configured public URL contains localhost in production.', {
+        resolvedFrom,
+      })
+      return ''
+    }
+    return value
+  } catch {
+    console.error('[provider-credit-copy] CONFIG ERROR: configured public URL could not be parsed.', {
+      resolvedFrom,
+    })
+    return ''
+  }
+}
+
 function getPublicUrlResolutionContext(envNames: string[]) {
   const configured = envNames
     .map((name) => ({
@@ -128,7 +154,10 @@ function getPublicAppUrlFromEnv(
     console.warn('[provider-credit-copy] CONFIG NOTE: APP_PUBLIC_URL is not set in production; using NEXT_PUBLIC_APP_URL fallback.')
   }
 
-  const normalizedPath = path ? (path.startsWith('/') ? path : `/${path}`) : ''
+  const trimmedPath = path.trim()
+  const normalizedPath = trimmedPath
+    ? `/${trimmedPath.replace(/^\/+/, '')}`
+    : ''
   return { base: baseValue, path: normalizedPath, resolvedFrom }
 }
 
@@ -161,8 +190,13 @@ export function getPublicAppUrlWithOptions(path = '', options?: PublicUrlOptions
 }
 
 export function getProviderTermsUrl(): string {
-  const configured = configuredUrl('PROVIDER_TERMS_URL') ?? configuredUrl('NEXT_PUBLIC_PROVIDER_TERMS_URL')
-  if (configured) return configured
+  const configured =
+    (configuredUrl('PROVIDER_TERMS_URL') && { name: 'PROVIDER_TERMS_URL', value: configuredUrl('PROVIDER_TERMS_URL')! }) ||
+    (configuredUrl('NEXT_PUBLIC_PROVIDER_TERMS_URL') && {
+      name: 'NEXT_PUBLIC_PROVIDER_TERMS_URL',
+      value: configuredUrl('NEXT_PUBLIC_PROVIDER_TERMS_URL')!,
+    })
+  if (configured) return validateConfiguredPublicUrl(configured.value, configured.name)
   return getPublicAppUrlWithOptions(PROVIDER_TERMS_PATH)
 }
 
@@ -196,8 +230,9 @@ export function buildProviderOnboardingIntroMessage(termsUrl = getProviderTermsU
     '• We review your application using the information you provide.',
     '• If approved, your provider profile is activated.',
     '• You receive starter credits when onboarded.',
-    `• Each lead you accept uses ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)}.`,
-    '• Full customer and job details unlock after acceptance.',
+    `• Previewing and showing interest in jobs is free.`,
+    `• You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only when a customer selects you and you accept that selected job.`,
+    '• Full customer and job details unlock after selected-job acceptance.',
     '• You can top up credits when your balance runs low.',
     '',
     'Before applying, please review our provider terms and credit rules:',
@@ -228,7 +263,7 @@ export function buildProviderApplicationSubmittedMessage(params: {
     'We will review your details and update you here. Approval is not automatic.',
     regionLine.trim(),
     '',
-    'If approved, your provider profile will be activated and you will receive starter credits to begin accepting matched leads.',
+    'If approved, your provider profile will be activated and you will receive starter credits for customer-selected jobs you accept.',
     '',
     'Provider terms and credit rules:',
     params.termsUrl ?? getProviderTermsUrl(),
@@ -248,16 +283,16 @@ export function buildProviderLeadPreviewMessage(params: {
   const descriptionLine = params.description ? ['', params.description] : []
 
   return [
-    `🔔 *New Job Lead — ${params.category}*`,
+    `🔔 *New Job Opportunity — ${params.category}*`,
     '',
     ...titleLine,
     `Area: *${params.area}*`,
     `Preferred time: *${params.preferredTime}*`,
     ...descriptionLine,
     '',
-    'You can preview the job details first.',
+    'The customer is comparing suitable providers. Previewing and responding is free.',
     '',
-    `Accepting this lead uses ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)}. Full customer contact and exact address unlock after acceptance.`,
+    `You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only if the customer selects you and you accept the selected job. Full customer contact and exact address stay locked until then.`,
     `Available balance: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
     '',
     `Respond by *${params.deadlineTime}*.`,
@@ -272,8 +307,9 @@ export function buildProviderLeadActionsMessage(params: {
   return [
     `Quick response for *${params.category}* in *${params.area}*.`,
     '',
-    `Accepting this lead uses ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)}.`,
-    'Full customer details unlock only after acceptance succeeds.',
+    'Showing interest is free while the customer compares providers.',
+    `You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only after customer selection and your final acceptance.`,
+    'Full customer details unlock only after selected-job acceptance succeeds.',
     `Available balance: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
   ].join('\n')
 }
@@ -310,7 +346,7 @@ export function buildInsufficientCreditsMessage(params: {
   return [
     '⚠️ *Not enough credits*',
     '',
-    `You need ${creditCountLabel(required)} to accept this lead.`,
+    `You need ${creditCountLabel(required)} to accept this selected job.`,
     `Your current balance is ${creditCountLabel(params.availableCredits)}.`,
     '',
     'Please top up in the Worker Portal:',

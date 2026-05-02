@@ -35,6 +35,8 @@ export type FlowStep =
   | 'confirm_address'           // LEGACY: receives typed city, assembles + confirms full address
   | 'collect_issue_description' // free-text issue description (inserted after address, before availability)
   | 'collect_availability'
+  | 'collect_request_preferences'
+  | 'collect_budget_preference'
   | 'confirm_job_request'
   | 'collect_photos'            // optional customer photo upload before confirm
   | 'job_request_submitted'
@@ -47,6 +49,7 @@ export type FlowStep =
   | 'reg_collect_area'
   | 'reg_collect_experience'
   | 'reg_collect_availability'
+  | 'reg_collect_rates'
   | 'reg_collect_city'         // city selection within chosen province
   | 'reg_collect_region'       // first region selection within chosen city
   | 'reg_collect_region_more'    // select additional regions
@@ -114,6 +117,10 @@ export interface ConversationData {
   savedAddressId?: string       // DB Address.id of the saved address selected by customer (skip re-create)
   issueDescription?: string     // free-text issue description captured before availability step
   availabilityNote?: string     // free-text preferred availability from customer
+  urgency?: string              // urgent | soon | flexible
+  providerPreference?: string   // fastest_available | most_experienced | best_rated | budget_friendly | verified_only
+  budgetPreference?: string     // customer budget preference for shortlist sorting/copy
+  verifiedOnly?: boolean
   photoAttachmentIds?: string[] // Attachment IDs for customer job photos linked during request creation
   jobRequestId?: string
   matchId?: string
@@ -146,6 +153,9 @@ export interface ConversationData {
   serviceAreas?: string[]
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"
   availability?: string[]       // ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+  callOutFee?: number            // provider's usual call-out fee in Rand
+  hourlyRate?: number            // optional hourly rate in Rand
+  rateNegotiable?: boolean       // true when provider is willing to negotiate displayed rate
   applicationId?: string
   evidenceNote?: string
   evidenceFileUrls?: string[]       // Attachment IDs for uploaded proof images/documents

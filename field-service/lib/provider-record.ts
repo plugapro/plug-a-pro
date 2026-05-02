@@ -34,7 +34,7 @@ type ProviderRecordSyncClient = {
   }
 }
 
-type ProviderApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+type ProviderApplicationStatus = 'PENDING' | 'MORE_INFO_REQUIRED' | 'APPROVED' | 'REJECTED'
 
 type ProviderRecordReconcileClient = ProviderRecordSyncClient & {
   providerApplication?: {

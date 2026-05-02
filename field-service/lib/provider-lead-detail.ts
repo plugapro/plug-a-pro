@@ -62,6 +62,7 @@ export type ProviderLeadDetail = {
     whatsappHref: string | null
     fullAddress: string
     fullNotes: string
+    accessNotes: string | null
     attachments: Array<{
       id: string
       caption: string | null
@@ -164,6 +165,7 @@ export async function getProviderLeadDetailForProvider(
               },
             },
             attachments: {
+              where: { safeForPreview: true },
               orderBy: { createdAt: 'asc' },
               select: {
                 id: true,
@@ -209,6 +211,7 @@ export async function getProviderLeadDetailForProvider(
                 suburb: true,
                 city: true,
                 province: true,
+                accessNotes: true,
               },
             },
             attachments: {
@@ -231,6 +234,7 @@ export async function getProviderLeadDetailForProvider(
         whatsappHref: whatsappHref(sensitiveLead.jobRequest.customer.phone),
         fullAddress: formatFullAddress(sensitiveLead.jobRequest.address),
         fullNotes: sensitiveLead.jobRequest.description,
+        accessNotes: sensitiveLead.jobRequest.address?.accessNotes ?? null,
         attachments: sensitiveLead.jobRequest.attachments,
       }
     }
