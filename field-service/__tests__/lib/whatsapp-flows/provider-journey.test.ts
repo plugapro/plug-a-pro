@@ -85,7 +85,16 @@ describe('handleProviderJourneyFlow', () => {
       expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
         expect.stringContaining('Credit balance: *5 credits*'),
-        expect.any(Array),
+        [expect.objectContaining({
+          rows: [
+            expect.objectContaining({ id: 'provider_check_status', title: 'View Credits' }),
+            expect.objectContaining({ id: 'provider_available_jobs', title: 'View Opportunities' }),
+            expect.objectContaining({ id: 'provider_my_jobs', title: 'View Active Jobs' }),
+            expect.objectContaining({ title: 'Update Availability' }),
+            expect.objectContaining({ id: 'provider_profile', title: 'Update Profile' }),
+            expect.objectContaining({ id: 'provider_support', title: 'Contact Support' }),
+          ],
+        })],
         expect.any(Object),
       )
       expect(result.nextStep).toBe('pj_toggle_available')
@@ -667,6 +676,21 @@ describe('handleProviderJourneyFlow', () => {
         expect.stringContaining('On'),
         expect.any(Array),
       )
+    })
+
+    it('shows WhatsApp credit summary and PWA credit history link', async () => {
+      vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(baseProvider)
+      await handleProviderJourneyFlow(mockCtx('pj_provider_status', 'provider_check_status'))
+
+      const message = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls[0][1] as string
+      expect(message).toContain('Your credits')
+      expect(message).toContain('Available: 5')
+      expect(message).toContain('Starter/onboarding: 3')
+      expect(message).toContain('Purchased: 2')
+      expect(message).toContain('Credits are used only when you accept a customer-selected job')
+      expect(message).toContain('/provider/credits')
+      vi.unstubAllEnvs()
     })
 
     it('shows Go Available button and paused message when provider is paused', async () => {

@@ -56,6 +56,7 @@ type ProviderRecordReconcileClient = ProviderRecordSyncClient & {
 type SyncProviderRecordInput = {
   phone: string
   name: string
+  email?: string | null
   userId?: string | null
   skills: string[]
   serviceAreas: string[]
@@ -187,6 +188,7 @@ export async function syncProviderRecord(
   if (existing) {
     const data: Record<string, unknown> = {
       name: input.name,
+      email: input.email ?? null,
       skills: input.skills,
       serviceAreas,
       active: leadEligible,
@@ -235,6 +237,7 @@ export async function syncProviderRecord(
       id,
       phone,
       name: input.name,
+      email: input.email ?? null,
       userId: input.userId ?? null,
       skills: input.skills,
       serviceAreas,

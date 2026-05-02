@@ -10,7 +10,7 @@ import { recordAuditLog } from '../audit'
 import { AUDIT_ENTITY } from '../audit-entities'
 import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
-import { creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
+import { buildProviderCreditSummaryMessage, creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
 import type { Prisma } from '@prisma/client'
@@ -83,6 +83,11 @@ function firstName(name?: string | null) {
 async function providerCreditBalanceLine(providerId: string) {
   const balance = await getProviderWalletBalanceReadOnly(providerId)
   return `Credit balance: *${creditCountLabel(balance.totalCreditBalance)}* (${providerCreditBreakdownLabel(balance)})`
+}
+
+async function providerCreditSummary(providerId: string) {
+  const balance = await getProviderWalletBalanceReadOnly(providerId)
+  return buildProviderCreditSummaryMessage(balance)
 }
 
 function providerPhoneVariants(phone: string) {
@@ -197,19 +202,19 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
   const creditLine = await providerCreditBalanceLine(provider.id)
 
   await sendList(
-    ctx.phone,
-    `Welcome back, ${provider.name}.\n\n${statusLine}\n${creditLine}\n\nEach accepted lead uses 1 credit. Full customer details unlock after acceptance.\n\nWhat would you like to do?`,
+      ctx.phone,
+    `Welcome back, ${provider.name}.\n\n${statusLine}\n${creditLine}\n\nPreviewing and showing interest is free. You spend 1 credit only when a customer selects you and you accept the job.\n\nWhat would you like to do?`,
     [{
       title: 'Provider',
       rows: [
-        { id: 'provider_my_jobs', title: 'My Jobs', description: 'Manage accepted and scheduled work' },
-        { id: 'provider_available_jobs', title: 'Available Jobs', description: 'View leads you can accept' },
-        { id: 'provider_check_status', title: 'Check Status', description: 'See if you can receive leads' },
+        { id: 'provider_check_status', title: 'View Credits', description: 'Check balance and provider status' },
+        { id: 'provider_available_jobs', title: 'View Opportunities', description: 'Review safe job previews' },
+        { id: 'provider_my_jobs', title: 'View Active Jobs', description: 'Manage accepted and scheduled work' },
         paused
-          ? { id: 'provider_go_available', title: 'Go Available', description: 'Start receiving matching leads again' }
-          : { id: 'provider_pause_leads', title: 'Pause Leads', description: 'Stop new leads temporarily' },
-        { id: 'provider_worker_portal', title: 'Worker Portal', description: 'Manage detailed availability' },
-        { id: 'provider_support', title: 'Support', description: 'Get help' },
+          ? { id: 'provider_go_available', title: 'Update Availability', description: 'Start receiving matching leads again' }
+          : { id: 'provider_pause_leads', title: 'Update Availability', description: 'Stop new leads temporarily' },
+        { id: 'provider_profile', title: 'Update Profile', description: 'Review services and service areas' },
+        { id: 'provider_support', title: 'Contact Support', description: 'Get help' },
       ],
     }],
     { buttonLabel: 'Choose Option' },
@@ -631,11 +636,11 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
     : mode === 'SCHEDULE'
       ? `🟡 *Your availability is schedule-based.*\n\nToday: ${todaySchedule ? `Available ${todaySchedule.startTime}–${todaySchedule.endTime}` : 'Not available'}\nCurrent status: ${provider.availableNow ? 'Available' : 'Not available'}`
       : `🟢 *You're currently available for new leads.*`
-  const creditLine = await providerCreditBalanceLine(provider.id)
+  const creditSummary = await providerCreditSummary(provider.id)
 
   await sendButtons(
     ctx.phone,
-    `${statusBody}\n\n${creditLine}\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when available.`,
+    `${statusBody}\n\n${creditSummary}\n\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when available.`,
     paused
       ? [
           { id: 'provider_go_available', title: 'Go Available' },

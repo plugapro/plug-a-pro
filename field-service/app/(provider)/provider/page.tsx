@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { getProviderWalletBalance } from '@/lib/provider-wallet'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
+import { calculateProviderProfileCompleteness } from '@/lib/provider-pwa-dashboard'
 
 export const metadata = buildMetadata({ title: 'My Jobs', noIndex: true })
 
@@ -19,6 +20,15 @@ export default async function ProviderHomePage() {
 
   const provider = await db.provider.findUnique({
     where: { userId: session.id },
+    include: {
+      technicianServiceAreas: {
+        where: { active: true },
+        select: { id: true },
+      },
+      providerRates: {
+        select: { id: true },
+      },
+    },
   })
 
   if (!provider) {
@@ -54,7 +64,7 @@ export default async function ProviderHomePage() {
     },
   } as const
 
-  const [activeJobs, upcomingJobs, walletBalance] = await Promise.all([
+  const [activeJobs, upcomingJobs, completedJobsCount, pendingOpportunitiesCount, selectedPendingCount, walletBalance] = await Promise.all([
     db.job.findMany({
       where: {
         providerId: provider.id,
@@ -73,9 +83,42 @@ export default async function ProviderHomePage() {
       orderBy: { booking: { scheduledDate: 'asc' } },
       take: 10,
     }),
+    db.job.count({
+      where: {
+        providerId: provider.id,
+        status: 'COMPLETED',
+      },
+    }),
+    db.lead.count({
+      where: {
+        providerId: provider.id,
+        status: { in: ['SENT', 'VIEWED'] },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+    }),
+    db.lead.count({
+      where: {
+        providerId: provider.id,
+        customerSelectedAt: { not: null },
+        status: { in: ['SENT', 'VIEWED'] },
+        jobRequest: { status: 'PROVIDER_CONFIRMATION_PENDING' },
+      },
+    }),
     getProviderWalletBalance(provider.id),
   ])
   const termsUrl = getProviderTermsUrl()
+  const profileCompleteness = calculateProviderProfileCompleteness({
+    name: provider.name,
+    phone: provider.phone,
+    email: provider.email,
+    bio: provider.bio,
+    experience: provider.experience,
+    skills: provider.skills,
+    serviceAreas: provider.serviceAreas,
+    structuredServiceAreaCount: provider.technicianServiceAreas.length,
+    providerRateCount: provider.providerRates.length,
+    portfolioUrlCount: provider.portfolioUrls.length,
+  })
 
   return (
     <div className="px-4 py-6 space-y-6">
@@ -110,6 +153,43 @@ export default async function ProviderHomePage() {
             <p className="text-xs text-muted-foreground">Purchased</p>
             <p className="text-lg font-semibold">{walletBalance.paidCreditBalance}</p>
           </div>
+        </div>
+      </section>
+
+      <section className="grid gap-3 rounded-lg border bg-card p-4">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+          Dashboard
+        </h2>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <Link href="/provider/leads" className="rounded-md border bg-muted/30 p-3">
+            <span className="block text-xs text-muted-foreground">New opportunities</span>
+            <span className="text-lg font-semibold">{pendingOpportunitiesCount}</span>
+          </Link>
+          <Link href="/provider/leads" className="rounded-md border bg-muted/30 p-3">
+            <span className="block text-xs text-muted-foreground">Awaiting acceptance</span>
+            <span className="text-lg font-semibold">{selectedPendingCount}</span>
+          </Link>
+          <Link href="/provider" className="rounded-md border bg-muted/30 p-3">
+            <span className="block text-xs text-muted-foreground">Active jobs</span>
+            <span className="text-lg font-semibold">{activeJobs.length}</span>
+          </Link>
+          <Link href="/provider/profile" className="rounded-md border bg-muted/30 p-3">
+            <span className="block text-xs text-muted-foreground">Completed jobs</span>
+            <span className="text-lg font-semibold">{completedJobsCount}</span>
+          </Link>
+        </div>
+        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">Profile completeness</p>
+            <p className="font-semibold">{profileCompleteness.percentage}%</p>
+          </div>
+          {profileCompleteness.missing.length > 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Missing: {profileCompleteness.missing.slice(0, 3).join(', ')}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">Profile is ready for richer customer cards.</p>
+          )}
         </div>
       </section>
 

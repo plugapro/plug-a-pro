@@ -38,6 +38,9 @@ export type MatchingJobRequest = Pick<
 > & {
   isTestRequest?: boolean
   cohortName?: string | null
+  subcategory?: string | null
+  urgency?: string | null
+  budgetPreference?: string | null
 }
 
 export type MatchingAddress = {

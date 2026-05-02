@@ -14,7 +14,7 @@ const clientPwaRequestInclude = Prisma.validator<Prisma.JobRequestInclude>()({
   customer: { select: { id: true, userId: true, name: true, phone: true } },
   address: true,
   attachments: {
-    where: { label: 'customer_photo' },
+    where: { label: { in: ['customer_photo', 'evidence'] } },
     orderBy: { createdAt: 'asc' },
   },
   leads: {

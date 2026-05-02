@@ -219,6 +219,29 @@ export function providerCreditBreakdownLabel(balance: CreditBalanceBreakdown) {
   return `Starter/onboarding: ${starterCredits} · Purchased: ${purchasedCredits}`
 }
 
+export function buildProviderCreditSummaryMessage(
+  balance: CreditBalanceBreakdown,
+  historyUrl = getWorkerPortalUrl('/provider/credits'),
+) {
+  const starterCredits = balance.promoCreditBalance ?? 0
+  const purchasedCredits = balance.paidCreditBalance ?? 0
+  const historyLine = historyUrl
+    ? `\n\nCredit history: ${historyUrl}`
+    : ''
+
+  return [
+    '*Your credits*',
+    '',
+    `Available: ${balance.totalCreditBalance}`,
+    `Starter/onboarding: ${starterCredits}`,
+    `Purchased: ${purchasedCredits}`,
+    '',
+    'Credits are used only when you accept a customer-selected job.',
+    'Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits.',
+    historyLine.trimStart(),
+  ].filter(Boolean).join('\n')
+}
+
 export function buildProviderOnboardingIntroMessage(termsUrl = getProviderTermsUrl()) {
   return [
     '👷 *Join Plug A Pro as a Service Provider*',
@@ -278,16 +301,40 @@ export function buildProviderLeadPreviewMessage(params: {
   balance: CreditBalanceBreakdown
   title?: string | null
   description?: string | null
+  subcategory?: string | null
+  region?: string | null
+  city?: string | null
+  province?: string | null
+  urgency?: string | null
+  budgetPreference?: string | null
+  photosCount?: number | null
+  previewUrl?: string | null
 }) {
   const titleLine = params.title ? [`*${params.title}*`, ''] : []
   const descriptionLine = params.description ? ['', params.description] : []
+  const areaParts = [
+    params.area,
+    params.city,
+    params.province,
+  ].filter(Boolean)
+  const subcategoryLine = params.subcategory ? [`Subcategory: *${params.subcategory}*`] : []
+  const regionLine = params.region ? [`Region: *${params.region}*`] : []
+  const urgencyLine = params.urgency ? [`Urgency: *${params.urgency}*`] : []
+  const budgetLine = params.budgetPreference ? [`Budget preference: *${params.budgetPreference}*`] : []
+  const photosLine = params.photosCount != null ? [`Photos: *${params.photosCount} available*`] : []
+  const previewUrlLine = params.previewUrl ? ['', `View full preview: ${params.previewUrl}`] : []
 
   return [
     `🔔 *New Job Opportunity — ${params.category}*`,
     '',
     ...titleLine,
-    `Area: *${params.area}*`,
+    ...subcategoryLine,
+    `Area: *${areaParts.join(', ') || params.area}*`,
+    ...regionLine,
     `Preferred time: *${params.preferredTime}*`,
+    ...urgencyLine,
+    ...budgetLine,
+    ...photosLine,
     ...descriptionLine,
     '',
     'The customer is comparing suitable providers. Previewing and responding is free.',
@@ -296,6 +343,7 @@ export function buildProviderLeadPreviewMessage(params: {
     `Available balance: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
     '',
     `Respond by *${params.deadlineTime}*.`,
+    ...previewUrlLine,
   ].join('\n')
 }
 

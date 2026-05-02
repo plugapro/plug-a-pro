@@ -13,6 +13,7 @@ import {
 } from '@/lib/structured-address'
 import { isInActiveServiceArea, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 import { uploadJobRequestPhoto } from '@/lib/storage'
+import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-notifications'
 
 const MAX_REQUEST_PHOTOS = 5
 const MAX_REQUEST_PHOTO_SIZE = 10 * 1024 * 1024
@@ -61,8 +62,10 @@ export async function POST(req: NextRequest) {
     const contentType = req.headers.get('content-type') ?? ''
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData()
+      const rawWindowStart = formData.get('requestedWindowStart')
       const rawWindowEnd = formData.get('requestedWindowEnd')
       const rawArrivalLatest = formData.get('requestedArrivalLatest')
+      const rawMaxCallOutFee = formData.get('maxCallOutFee')
       body = {
         category: String(formData.get('category') ?? ''),
         subcategory: formData.get('subcategory') ? String(formData.get('subcategory')) : undefined,
@@ -77,7 +80,9 @@ export async function POST(req: NextRequest) {
         urgency: formData.get('urgency') ? String(formData.get('urgency')) : undefined,
         providerPreference: formData.get('providerPreference') ? String(formData.get('providerPreference')) : undefined,
         budgetPreference: formData.get('budgetPreference') ? String(formData.get('budgetPreference')) : undefined,
+        maxCallOutFee: rawMaxCallOutFee ? Number(rawMaxCallOutFee) : undefined,
         verifiedOnly: formData.get('verifiedOnly') === 'true',
+        ...(rawWindowStart ? { requestedWindowStart: String(rawWindowStart) } : {}),
         ...(rawWindowEnd ? { requestedWindowEnd: String(rawWindowEnd) } : {}),
         ...(rawArrivalLatest ? { requestedArrivalLatest: String(rawArrivalLatest) } : {}),
       }
@@ -123,6 +128,10 @@ export async function POST(req: NextRequest) {
 
   if (!category || !title || !addressLine1 || !locationNodeId) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+
+  if (maxCallOutFee != null && (!Number.isFinite(maxCallOutFee) || maxCallOutFee < 0)) {
+    return NextResponse.json({ error: 'Max call-out fee must be a positive number' }, { status: 400 })
   }
 
   if (photos.length > MAX_REQUEST_PHOTOS) {
@@ -205,12 +214,27 @@ export async function POST(req: NextRequest) {
       await uploadJobRequestPhoto({
         jobRequestId: result.jobRequestId,
         file: photo,
-        label: 'evidence',
+        label: 'customer_photo',
         caption: 'Customer job photo',
+        safeForPreview: true,
         uploadedBy: session.id,
       })
       uploadedPhotoCount++
     }
+
+    await notifyCustomerPwaRequestSubmitted({
+      customerPhone: session.phone,
+      category,
+      suburb: resolvedAddress.suburb,
+      city: resolvedAddress.city,
+      ticketUrl: result.ticketUrl,
+      requestId: result.jobRequestId,
+    }).catch((error) => {
+      console.warn('[bookings] request submitted notification failed', {
+        requestId: result.jobRequestId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
 
     return NextResponse.json({
       jobRequestId: result.jobRequestId,

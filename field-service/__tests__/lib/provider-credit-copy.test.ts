@@ -5,6 +5,7 @@ import {
   buildInsufficientCreditsMessage,
   buildLeadAcceptedCreditLine,
   buildProviderApplicationSubmittedMessage,
+  buildProviderCreditSummaryMessage,
   buildProviderLeadActionsMessage,
   buildProviderLeadPreviewMessage,
   buildProviderOnboardingIntroMessage,
@@ -185,9 +186,18 @@ describe('provider credit copy', () => {
   it('builds lead preview copy with credit cost and customer detail unlock rules', () => {
     const message = buildProviderLeadPreviewMessage({
       category: 'Plumbing',
+      subcategory: 'Blocked drain',
       area: 'Soweto',
+      city: 'Johannesburg',
+      province: 'Gauteng',
+      region: 'JHB South',
+      urgency: 'soon',
+      budgetPreference: 'balanced_value',
+      photosCount: 2,
       preferredTime: 'Fri, 1 May, 10:00',
       deadlineTime: '12:00',
+      description: 'Shower drain is blocked.',
+      previewUrl: 'https://app.plugapro.co.za/leads/access/token',
       balance: {
         totalCreditBalance: 2,
         promoCreditBalance: 1,
@@ -196,10 +206,22 @@ describe('provider credit copy', () => {
     })
 
     expect(message).toContain('New Job Opportunity')
+    expect(message).toContain('Subcategory: *Blocked drain*')
+    expect(message).toContain('Area: *Soweto, Johannesburg, Gauteng*')
+    expect(message).toContain('Region: *JHB South*')
+    expect(message).toContain('Urgency: *soon*')
+    expect(message).toContain('Budget preference: *balanced_value*')
+    expect(message).toContain('Photos: *2 available*')
+    expect(message).toContain('Shower drain is blocked.')
     expect(message).toContain('Previewing and responding is free')
     expect(message).toContain('You spend 1 credit only if the customer selects you')
     expect(message).toContain('Full customer contact and exact address stay locked')
     expect(message).toContain('Available balance: 2 credits')
+    expect(message).toContain('View full preview: https://app.plugapro.co.za/leads/access/token')
+    expect(message).not.toContain('customer@example.com')
+    expect(message).not.toContain('+27821234567')
+    expect(message).not.toContain('12 Exact Street')
+    expect(message).not.toContain('access notes')
   })
 
   it('builds insufficient credit copy with balance and top-up link', () => {
@@ -239,6 +261,21 @@ describe('provider credit copy', () => {
 
     expect(line).not.toContain('Starter/onboarding')
     expect(line).not.toContain('Purchased')
+  })
+
+  it('builds WhatsApp credit summary with starter, purchased, history, and selected-job rule', () => {
+    const message = buildProviderCreditSummaryMessage(
+      { totalCreditBalance: 5, promoCreditBalance: 3, paidCreditBalance: 2 },
+      'https://app.plugapro.co.za/provider/credits',
+    )
+
+    expect(message).toContain('Your credits')
+    expect(message).toContain('Available: 5')
+    expect(message).toContain('Starter/onboarding: 3')
+    expect(message).toContain('Purchased: 2')
+    expect(message).toContain('Credits are used only when you accept a customer-selected job')
+    expect(message).toContain('Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits')
+    expect(message).toContain('https://app.plugapro.co.za/provider/credits')
   })
 
   it('buildProviderLeadActionsMessage includes credit cost and unlock rules', () => {

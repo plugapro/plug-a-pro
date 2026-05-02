@@ -89,6 +89,19 @@ describe('client PWA destination resolver', () => {
     expect(result.allowedActions).toEqual(['track_job', 'leave_review'])
   })
 
+  it('does not select provider private fields for client PWA destinations', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeRequest())
+
+    const { resolveClientPwaDestination } = await import('../../lib/client-pwa-destination')
+    await resolveClientPwaDestination({ requestId: 'request-1' })
+
+    const providerSelect = mockDb.jobRequest.findUnique.mock.calls[0][0].include.match.include.provider.select
+    expect(providerSelect).not.toHaveProperty('phone')
+    expect(providerSelect).not.toHaveProperty('privateAddress')
+    expect(providerSelect).not.toHaveProperty('adminNotes')
+    expect(providerSelect).not.toHaveProperty('idDocumentUrl')
+  })
+
   it('returns controlled recovery for invalid tokens', async () => {
     mockResolveJobRequestAccessToken.mockResolvedValue({
       status: 'invalid',

@@ -229,6 +229,8 @@ describe('registration flow — duplicate prevention', () => {
   describe('handlePending (reg_pending step) — submit_yes', () => {
     const dataWithFullProfile = {
       name: 'Thabo Nkosi',
+      providerEmail: 'thabo@example.com',
+      providerIdNumber: '8001015009087',
       skills: ['Plumbing'],
       serviceAreas: ['Gauteng'],
       experience: '3–5 years',
@@ -299,6 +301,7 @@ describe('registration flow — duplicate prevention', () => {
           data: expect.objectContaining({
             phone,
             name: 'Thabo Nkosi',
+            idNumber: '8001015009087',
             status: 'PENDING',
           }),
         })
@@ -408,7 +411,7 @@ describe('registration flow — duplicate prevention', () => {
 
       expect(providerRecord.syncProviderRecord).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ phone }),  // +27 format preserved
+        expect.objectContaining({ phone, email: 'thabo@example.com' }),  // +27 format preserved
       )
       expect(db.providerApplication.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -451,8 +454,28 @@ describe('registration flow — numbered bulk skill selection', () => {
     resetDbMocks()
   })
 
-  it('shows a numbered text list of skills (not an interactive list) after name is collected', async () => {
+  it('captures optional email after name is collected', async () => {
     const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('email address'))
+    expect(result.nextStep).toBe('reg_collect_email')
+    expect(result.nextData).toMatchObject({ name: 'Thabo Nkosi' })
+  })
+
+  it('captures ID/passport after a valid email', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_email', undefined, 'thabo@example.com', { name: 'Thabo Nkosi' })
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('ID or passport'))
+    expect(result.nextStep).toBe('reg_collect_id')
+    expect(result.nextData).toMatchObject({ providerEmail: 'thabo@example.com' })
+  })
+
+  it('shows a numbered text list of skills after ID/passport is collected', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_id', undefined, '8001015009087', { name: 'Thabo Nkosi', providerEmail: 'thabo@example.com' })
+    )
 
     expect(wa.sendList).not.toHaveBeenCalled()
     expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('1.'))
@@ -463,7 +486,7 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(body).not.toContain('☐ 1.')
     expect(body).not.toContain('✅ 1.')
     expect(result.nextStep).toBe('reg_collect_skills_more')
-    expect(result.nextData).toMatchObject({ name: 'Thabo Nkosi', skills: [] })
+    expect(result.nextData).toMatchObject({ providerIdNumber: '8001015009087', skills: [] })
   })
 
   it('re-shows selected skills as plain numbered rows, not checkbox rows', async () => {
@@ -828,6 +851,7 @@ describe('registration flow — evidence file uploads', () => {
         serviceAreas: ['Gauteng'],
         experience: '3–5 years',
         availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        providerIdNumber: '8001015009087',
         evidenceFileUrls: ['att_ev_001', 'att_ev_002'],
       })
     )

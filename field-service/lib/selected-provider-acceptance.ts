@@ -50,6 +50,35 @@ function formatRand(amount: number | Prisma.Decimal | null | undefined) {
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(amount))
 }
 
+function formatProviderHandoffAddress(address: {
+  street: string
+  addressLine1: string | null
+  addressLine2: string | null
+  complexName: string | null
+  unitNumber: string | null
+  suburb: string
+  city: string
+  province: string
+} | null) {
+  if (!address) return 'Address pending — contact customer'
+  return [
+    address.unitNumber,
+    address.complexName,
+    address.street,
+    address.addressLine1,
+    address.addressLine2,
+    address.suburb,
+    address.city,
+    address.province,
+  ].filter(Boolean).join(', ')
+}
+
+function formatPreferredTime(start: Date | null | undefined, end: Date | null | undefined) {
+  if (!start) return 'To be confirmed'
+  const startText = start.toLocaleString('en-ZA')
+  return end ? `${startText} - ${end.toLocaleString('en-ZA')}` : startText
+}
+
 export async function acceptSelectedProviderJob(params: {
   leadId: string
   providerId: string
@@ -62,14 +91,30 @@ export async function acceptSelectedProviderJob(params: {
     providerId: string
     providerPhone: string
     customerPhone: string
+    customerName: string
     providerName: string
     category: string
     requestId: string
+    description: string | null
+    preferredWindowStart: Date | null
+    preferredWindowEnd: Date | null
+    photosCount: number
     estimatedArrivalAt: Date | null
     callOutFee: Prisma.Decimal | number | null
     currentCreditBalance: number
     paidCreditBalance: number
     promoCreditBalance: number
+    address: {
+      street: string
+      addressLine1: string | null
+      addressLine2: string | null
+      complexName: string | null
+      unitNumber: string | null
+      suburb: string
+      city: string
+      province: string
+      accessNotes: string | null
+    } | null
   } | null = null
 
   try {
@@ -97,6 +142,9 @@ export async function acceptSelectedProviderJob(params: {
             include: {
               customer: { select: { name: true, phone: true } },
               address: true,
+              attachments: {
+                select: { id: true },
+              },
               match: {
                 include: {
                   booking: {
@@ -269,14 +317,32 @@ export async function acceptSelectedProviderJob(params: {
         providerId: params.providerId,
         providerPhone: lead.provider.phone,
         customerPhone: lead.jobRequest.customer.phone,
+        customerName: lead.jobRequest.customer.name,
         providerName: lead.provider.name,
         category: lead.jobRequest.category,
         requestId: lead.jobRequestId,
+        description: lead.jobRequest.description,
+        preferredWindowStart: lead.jobRequest.requestedWindowStart,
+        preferredWindowEnd: lead.jobRequest.requestedWindowEnd,
+        photosCount: lead.jobRequest.attachments.length,
         estimatedArrivalAt: response?.estimatedArrivalAt ?? null,
         callOutFee: response?.callOutFee ?? null,
         currentCreditBalance: remainingCreditBalance,
         paidCreditBalance: walletBefore?.paidCreditBalance ?? 0,
         promoCreditBalance: walletBefore?.promoCreditBalance ?? 0,
+        address: lead.jobRequest.address
+          ? {
+              street: lead.jobRequest.address.street,
+              addressLine1: lead.jobRequest.address.addressLine1,
+              addressLine2: lead.jobRequest.address.addressLine2,
+              complexName: lead.jobRequest.address.complexName,
+              unitNumber: lead.jobRequest.address.unitNumber,
+              suburb: lead.jobRequest.address.suburb,
+              city: lead.jobRequest.address.city,
+              province: lead.jobRequest.address.province,
+              accessNotes: lead.jobRequest.address.accessNotes,
+            }
+          : null,
       }
 
       return {
@@ -321,30 +387,70 @@ async function notifySelectedAcceptanceCommitted(params: {
   providerId: string
   providerPhone: string
   customerPhone: string
+  customerName: string
   providerName: string
   category: string
   requestId: string
+  description: string | null
+  preferredWindowStart: Date | null
+  preferredWindowEnd: Date | null
+  photosCount: number
   estimatedArrivalAt: Date | null
   callOutFee: Prisma.Decimal | number | null
   currentCreditBalance: number
   paidCreditBalance: number
   promoCreditBalance: number
+  address: {
+    street: string
+    addressLine1: string | null
+    addressLine2: string | null
+    complexName: string | null
+    unitNumber: string | null
+    suburb: string
+    city: string
+    province: string
+    accessNotes: string | null
+  } | null
 }) {
   try {
     const [jobUrl, ticketUrl] = await Promise.all([
       getProviderSignedJobHandoverUrlByLeadId(params.leadId),
-      getJobRequestAccessUrl(params.requestId),
+      getJobRequestAccessUrl(params.requestId, 'job_tracking'),
     ])
+
+    // Provider WhatsApp-complete: include the unlocked customer details
+    // inline so the provider can act without opening the PWA. The PWA link
+    // is still appended for richer screens but is not required.
+    const fullAddress = formatProviderHandoffAddress(params.address)
+    const accessLine = params.address?.accessNotes
+      ? `\nAccess notes: ${params.address.accessNotes}`
+      : ''
+    const descriptionLine = params.description?.trim()
+      ? `Job description: ${params.description.trim()}\n`
+      : ''
+    const photosLine = params.photosCount > 0
+      ? `Photos: ${params.photosCount} available in the job link\n`
+      : 'Photos: None uploaded\n'
+    const jobReference = params.leadId.slice(-8).toUpperCase()
 
     await sendText({
       to: params.providerPhone,
       text:
-        `Job accepted\n\n` +
-        `You used ${LEAD_UNLOCK_COST_CREDITS} credit.\n\n` +
+        `Job accepted.\n\n` +
+        `${LEAD_UNLOCK_COST_CREDITS} credit used.\n` +
         `Available balance: ${params.currentCreditBalance} credits\n` +
         `Starter/onboarding: ${params.promoCreditBalance}\n` +
         `Purchased: ${params.paidCreditBalance}\n\n` +
-        `Full customer details are now unlocked.${jobUrl ? `\n\nView job:\n${jobUrl}` : ''}`,
+        `Customer details:\n` +
+        `Name: ${params.customerName}\n` +
+        `Phone: ${params.customerPhone}\n` +
+        `Address: ${fullAddress}${accessLine}\n\n` +
+        `Job details:\n` +
+        `Reference: ${jobReference}\n` +
+        `Preferred time: ${formatPreferredTime(params.preferredWindowStart, params.preferredWindowEnd)}\n` +
+        descriptionLine +
+        photosLine +
+        `\nNext step:\nReply with your arrival time.\nExample: 14:00${jobUrl ? `\n\nView job and photos:\n${jobUrl}` : ''}`,
       templateName: 'interactive:selected_job_accepted_provider',
       metadata: { leadId: params.leadId, providerId: params.providerId },
     })

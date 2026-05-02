@@ -136,7 +136,7 @@ async function notifyCustomerShortlistReady(params: {
   optionCount: number
 }) {
   if (!params.customerPhone) return { sent: false as const, reason: 'no_customer_phone' }
-  const ticketUrl = await getJobRequestAccessUrl(params.requestId).catch(() => null)
+  const ticketUrl = await getJobRequestAccessUrl(params.requestId, 'shortlist').catch(() => null)
   const area = [params.suburb, params.city].filter(Boolean).join(', ')
   const linkLine = ticketUrl ? `\n\nCompare and select your provider:\n${ticketUrl}` : ''
   await sendText({
@@ -144,6 +144,7 @@ async function notifyCustomerShortlistReady(params: {
     text:
       `Your ${params.category} shortlist is ready\n\n` +
       `${params.optionCount} suitable provider${params.optionCount === 1 ? '' : 's'} in ${area || 'your area'} responded with their call-out fee and earliest arrival.\n\n` +
+      `You can compare providers before choosing.\n\n` +
       `Choose the provider you'd like for this job. Your phone number and exact address will only be shared after you select a provider and they accept.${linkLine}`,
     templateName: 'interactive:client_shortlist_ready',
     metadata: { requestId: params.requestId },
@@ -175,6 +176,7 @@ export async function getCustomerShortlistForRequest(requestId: string) {
               bio: true,
               experience: true,
               skills: true,
+              serviceAreas: true,
               evidenceNote: true,
               portfolioUrls: true,
               avatarUrl: true,

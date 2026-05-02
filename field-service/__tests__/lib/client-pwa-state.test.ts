@@ -28,4 +28,15 @@ describe('client PWA state mapping', () => {
       reason: 'job_active_or_needs_customer_attention',
     })
   })
+
+  it('maps cancelled and expired requests to controlled exception screens', () => {
+    expect(resolveClientPwaScreenForState({ requestStatus: 'CANCELLED' })).toEqual({
+      screen: 'cancelled',
+      reason: 'request_cancelled',
+    })
+    expect(resolveClientPwaScreenForState({ requestStatus: 'EXPIRED' })).toEqual({
+      screen: 'expired',
+      reason: 'request_expired',
+    })
+  })
 })

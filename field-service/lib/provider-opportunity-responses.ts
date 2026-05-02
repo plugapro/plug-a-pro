@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { randomUUID } from 'crypto'
 import { db } from './db'
 import { isEnabled } from './flags'
+import { normaliseLocationDisplayName } from './location-format'
 import { previewNotes } from './provider-lead-detail'
 import { validateProviderOnboardingRates } from './provider-onboarding-data'
 
@@ -103,10 +104,10 @@ export async function getSafeProviderOpportunityPreview(leadId: string, provider
       requestedArrivalLatest: lead.jobRequest.requestedArrivalLatest,
       area: lead.jobRequest.address
         ? {
-            suburb: lead.jobRequest.address.suburb,
-            region: lead.jobRequest.address.region,
-            city: lead.jobRequest.address.city,
-            province: lead.jobRequest.address.province,
+            suburb: normaliseLocationDisplayName(lead.jobRequest.address.suburb),
+            region: normaliseLocationDisplayName(lead.jobRequest.address.region),
+            city: normaliseLocationDisplayName(lead.jobRequest.address.city),
+            province: normaliseLocationDisplayName(lead.jobRequest.address.province),
           }
         : null,
       attachments: lead.jobRequest.attachments,

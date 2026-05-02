@@ -122,6 +122,7 @@ function validateSubmitData(ctx: FlowContext) {
   const selectedRegionLabels = uniqueStrings(ctx.data.selectedRegionLabels ?? [])
   const availability = uniqueStrings(ctx.data.availability ?? [])
   const evidenceAttachmentIds = uniqueStrings(ctx.data.evidenceFileUrls ?? []).slice(0, MAX_EVIDENCE_FILES)
+  const idNumber = ctx.data.providerIdNumber?.trim()
 
   if (!name || name.length < 2) {
     throw new ProviderApplicationSubmitError(
@@ -168,11 +169,20 @@ function validateSubmitData(ctx: FlowContext) {
     )
   }
 
+  if (!idNumber || idNumber.length < 6) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_VALIDATION_FAILED',
+      'Provider application requires an ID or passport number for review.',
+      { missingField: 'idNumber' },
+    )
+  }
+
   return {
     name,
     skills,
     availability,
     evidenceAttachmentIds,
+    idNumber,
     resolvedAreaLabels: normaliseLocationDisplayNames(locationNodeIds.length > 0
       ? (selectedSuburbLabels.length ? selectedSuburbLabels : selectedRegionLabels.length ? selectedRegionLabels : serviceAreas)
       : serviceAreas),
@@ -184,6 +194,22 @@ function formatAvailabilityLabel(availability: string[] | undefined) {
   return (availability?.length ?? 0) >= 7 ? 'Any day'
     : (availability?.length ?? 0) >= 6 ? 'Mon–Sat'
     : 'Weekdays only'
+}
+
+function yearsExperienceFromLabel(label: string | undefined) {
+  if (!label) return null
+  if (label.includes('Less')) return 0
+  if (label.includes('1–3')) return 2
+  if (label.includes('3–5')) return 4
+  if (label.includes('5+')) return 5
+  return null
+}
+
+function skillLevelFromExperienceLabel(label: string | undefined) {
+  if (!label) return null
+  if (label.includes('Less')) return 'BEGINNER'
+  if (label.includes('1–3')) return 'INTERMEDIATE'
+  return 'EXPERIENCED'
 }
 
 async function sendEvidenceFileProgress(phone: string, count: number) {
@@ -216,6 +242,10 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return startRegistration(ctx)
     case 'reg_collect_name':
       return handleCollectName(ctx)
+    case 'reg_collect_email':
+      return handleCollectEmail(ctx)
+    case 'reg_collect_id':
+      return handleCollectId(ctx)
     case 'reg_collect_skills':
       return handleCollectSkills(ctx)
     case 'reg_collect_skills_more':
@@ -354,9 +384,53 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 
   await sendText(
     ctx.phone,
-    buildSkillPromptText(`Nice to meet you, *${name}*! 👋\n\n🔧 *What type of work do you do?*`)
+    '✉️ What is your email address?\n\nReply with your email, or type *skip* if you do not want to add one now.'
   )
-  return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
+  return { nextStep: 'reg_collect_email', nextData: { name } }
+}
+
+function validateOptionalProviderEmail(raw: string | undefined) {
+  const value = raw?.trim()
+  if (!value || /^skip$/i.test(value)) return null
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return undefined
+  return value.toLowerCase()
+}
+
+async function handleCollectEmail(ctx: FlowContext): Promise<FlowResult> {
+  const providerEmail = validateOptionalProviderEmail(ctx.reply.text)
+  if (providerEmail === undefined) {
+    await sendText(ctx.phone, 'Please reply with a valid email address, for example *name@example.com*, or type *skip*.')
+    return { nextStep: 'reg_collect_email' }
+  }
+
+  await sendText(
+    ctx.phone,
+    '🪪 Please send your *ID or passport number* for application review.\n\nWe use this for provider vetting and do not share it with customers.'
+  )
+  return {
+    nextStep: 'reg_collect_id',
+    nextData: providerEmail ? { providerEmail } : {},
+  }
+}
+
+function validateProviderIdNumber(raw: string | undefined) {
+  const value = raw?.trim().replace(/\s+/g, '')
+  if (!value || value.length < 6 || value.length > 30 || !/^[a-z0-9-]+$/i.test(value)) return null
+  return value.toUpperCase()
+}
+
+async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
+  const providerIdNumber = validateProviderIdNumber(ctx.reply.text)
+  if (!providerIdNumber) {
+    await sendText(ctx.phone, 'Please send a valid ID or passport number with at least 6 characters.')
+    return { nextStep: 'reg_collect_id' }
+  }
+
+  await sendText(
+    ctx.phone,
+    buildSkillPromptText(`Thanks, *${ctx.data.name}*. 👋\n\n🔧 *What type of work do you do?*`)
+  )
+  return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber, skills: [] } }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
@@ -1187,7 +1261,18 @@ async function showRegistrationSummary(
     : 'Weekdays only'
 
   const merged = { ...ctx.data, ...overrides }
-  const { name, skills, serviceAreas, experience, evidenceNote, evidenceFileUrls, callOutFee, rateNegotiable } = merged
+  const {
+    name,
+    skills,
+    serviceAreas,
+    experience,
+    evidenceNote,
+    evidenceFileUrls,
+    callOutFee,
+    rateNegotiable,
+    providerEmail,
+    providerIdNumber,
+  } = merged
   const skillList = (skills ?? []).join(', ')
   // Prefer suburb-level labels if the provider drilled down, else fall back to region/area labels
   const suburbLabels = merged.selectedSuburbLabels as string[] | undefined
@@ -1197,7 +1282,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\nShall I submit your application?`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\nShall I submit your application?`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1322,6 +1407,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       const providerId = await syncProviderRecord(tx as typeof db, {
         phone: normalizedPhone,
         name: submitData.name,
+        email: ctx.data.providerEmail ?? null,
         skills: submitData.skills,
         serviceAreas: submitData.resolvedAreaLabels,
         active: true,
@@ -1352,6 +1438,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           sameDayJobs: true,
           evidenceNote: ctx.data.evidenceNote ?? null,
           evidenceFileUrls: submitData.evidenceAttachmentIds,
+          idNumber: submitData.idNumber,
           isTestUser: cohort.isTestUser,
           cohortName: cohort.cohortName,
           status: 'PENDING',
@@ -1361,8 +1448,8 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       const providerCategoryRows = submitData.skills.map((skill) => ({
         providerId,
         categorySlug: resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
-        yearsExperience: null,
-        skillLevel: null,
+        yearsExperience: yearsExperienceFromLabel(ctx.data.experience),
+        skillLevel: skillLevelFromExperienceLabel(ctx.data.experience),
         approvalStatus: 'PENDING_REVIEW',
       }))
 

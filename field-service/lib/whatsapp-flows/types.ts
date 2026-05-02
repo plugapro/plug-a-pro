@@ -44,6 +44,8 @@ export type FlowStep =
   // Registration (provider onboarding)
   | 'reg_start'           // shows intro + yes/no — entry point
   | 'reg_collect_name'
+  | 'reg_collect_email'
+  | 'reg_collect_id'
   | 'reg_collect_skills'
   | 'reg_collect_skills_more'
   | 'reg_collect_area'
@@ -149,6 +151,16 @@ export interface ConversationData {
 
   // Registration
   name?: string
+  providerEmail?: string
+  providerIdNumber?: string
+  pendingOpportunityLeadId?: string
+  providerOpportunityStep?: 'callout' | 'arrival' | 'negotiable' | 'note'
+  providerOpportunityCallOutFeeText?: string
+  providerOpportunityEstimatedArrivalAtIso?: string
+  providerOpportunityNegotiable?: boolean
+  pendingCompletionJobId?: string
+  providerCompletionStep?: 'note' | 'photo'
+  providerCompletionNote?: string
   skills?: string[]
   serviceAreas?: string[]
   experience?: string           // "Less than 1 year" | "1–3 years" | "3–5 years" | "5+ years"

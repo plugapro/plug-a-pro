@@ -93,6 +93,7 @@ function makeSensitiveLead() {
         suburb: 'Sandton',
         city: 'Johannesburg',
         province: 'Gauteng',
+        accessNotes: 'Use the north gate and call security.',
       },
       attachments: [
         {
@@ -174,6 +175,7 @@ describe('provider lead detail', () => {
       whatsappHref: 'https://wa.me/27821234567',
       fullAddress: 'Unit 7, Hidden Complex, 12 Exact Street, Block B, Sandton, Johannesburg, Gauteng',
       fullNotes: 'Full job notes include gate code 1234 and exact unit details.',
+      accessNotes: 'Use the north gate and call security.',
       attachments: [
         {
           id: 'attachment-1',

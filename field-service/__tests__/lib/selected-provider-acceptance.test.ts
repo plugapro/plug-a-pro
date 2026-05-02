@@ -69,11 +69,24 @@ function makeLead(overrides: Record<string, unknown> = {}) {
       status: 'PROVIDER_CONFIRMATION_PENDING',
       selectedProviderId: 'provider-1',
       selectedLeadInviteId: 'lead-1',
-      requestedWindowStart: null,
+      description: 'Replace burst geyser valve and check pressure.',
+      requestedWindowStart: new Date('2026-05-02T14:00:00.000Z'),
+      requestedWindowEnd: new Date('2026-05-02T16:00:00.000Z'),
       isTestRequest: false,
       cohortName: null,
-      customer: { name: 'Customer', phone: '+27222222222' },
-      address: { suburb: 'Ruimsig' },
+      customer: { name: 'Acme Customer', phone: '+27222222222' },
+      attachments: [{ id: 'photo-1' }, { id: 'photo-2' }],
+      address: {
+        street: '12 Hill Crescent',
+        addressLine1: null,
+        addressLine2: null,
+        complexName: 'Ruimsig Heights',
+        unitNumber: 'Unit 4',
+        suburb: 'Ruimsig',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        accessNotes: 'Gate code 1234, beware of dog',
+      },
       match: null,
     },
     ...overrides,
@@ -152,6 +165,25 @@ describe('selected provider final acceptance', () => {
       }),
     })
     expect(sendText).toHaveBeenCalledTimes(2)
+
+    // Provider WhatsApp-complete: full customer details must arrive inline,
+    // not only as a "view in PWA" link.
+    const providerSend = (sendText as any).mock.calls.find(
+      (call: any[]) => call[0]?.to === '+27111111111',
+    )?.[0]
+    expect(providerSend).toBeDefined()
+    expect(providerSend.text).toContain('Acme Customer')
+    expect(providerSend.text).toContain('1 credit used')
+    expect(providerSend.text).toContain('+27222222222')
+    expect(providerSend.text).toContain('12 Hill Crescent')
+    expect(providerSend.text).toContain('Ruimsig Heights')
+    expect(providerSend.text).toContain('Unit 4')
+    expect(providerSend.text).toContain('Gate code 1234')
+    expect(providerSend.text).toContain('Reference: LEAD-1')
+    expect(providerSend.text).toContain('Preferred time:')
+    expect(providerSend.text).toContain('Replace burst geyser valve')
+    expect(providerSend.text).toContain('Photos: 2 available')
+    expect(providerSend.text).toContain('Example: 14:00')
   })
 
   it('blocks non-selected provider before credit deduction', async () => {

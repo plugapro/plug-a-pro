@@ -443,7 +443,7 @@ export async function createJobRequest(
 
   let ticketUrl: string | null = null
   try {
-    ticketUrl = await getJobRequestAccessUrl(result.jobRequestId)
+    ticketUrl = await getJobRequestAccessUrl(result.jobRequestId, 'matching_status')
   } catch (err) {
     console.error('[create-job-request] ticket URL generation failed:', err)
   }

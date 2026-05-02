@@ -35,6 +35,7 @@ import { createTestCohortContext } from './internal-test-cohort'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import { phoneLookupVariants, resolveWhatsAppIdentity } from './whatsapp-identity'
 import { normaliseLocationDisplayName } from './location-format'
+import { parseProviderOpportunityArrivalText } from './provider-opportunity-whatsapp'
 import {
   buildLeadAcceptedCreditLine,
   buildInsufficientCreditsMessage,
@@ -43,6 +44,14 @@ import {
   getWorkerPortalUrl,
   providerCreditBreakdownLabel,
 } from './provider-credit-copy'
+import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
+import {
+  completeProviderJobFromWhatsApp,
+  executeProviderJobCommand,
+  findSingleActiveJobForProviderPhone,
+  parseProviderJobCommand,
+} from './provider-whatsapp-job-commands'
+import { parseProviderInterestRateText } from './provider-whatsapp-interest-capture'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
 const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
@@ -584,6 +593,7 @@ async function processInboundMessageUnlocked(
     const isHelp = HELP_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))
     const isReschedule = RESCHEDULE_KEYWORDS.some((k) => rawText.includes(k))
     const isCancel = CANCEL_KEYWORDS.some((k) => rawText.includes(k))
+    const providerCommand = resolveProviderWhatsappCommand(rawText)
 
     let flow: FlowName = conversation.flow as FlowName
     let step: FlowStep = isExpired ? 'welcome' : (conversation.step as FlowStep)
@@ -623,6 +633,7 @@ async function processInboundMessageUnlocked(
       reply.id === 'find_work' ||
       isRegistration ||
       isProviderMenuReply ||
+      (isProviderRole && Boolean(providerCommand)) ||
       PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) ||
       flow === 'registration' ||
       flow === 'provider_journey' ||
@@ -719,6 +730,16 @@ async function processInboundMessageUnlocked(
     // ─── Stateless notification-response intercepts ─────────────────────────────
     // These run regardless of session state — push-notification button replies can
     // arrive hours after the user last interacted; session expiry must not block them.
+
+    if (data.pendingOpportunityLeadId) {
+      await handleProviderOpportunityCapture(phone, reply, data)
+      return
+    }
+
+    if (data.pendingCompletionJobId) {
+      await handleProviderCompletionCapture(phone, reply, data)
+      return
+    }
 
     if (reply.id === 'back_home' || reply.id === 'session_restart') {
       await showMainMenu(phone)
@@ -967,8 +988,149 @@ async function processInboundMessageUnlocked(
       }
     }
 
+    // ── Provider opportunity interest follow-up ────────────────────────────
+    // After tapping "I'm interested" on a dispatched lead, the bot stored
+    // pendingOpportunityLeadId and prompted the provider for fee + arrival.
+    // Parse that follow-up reply so the response is captured server-side and
+    // becomes eligible for customer shortlist generation.
+    if (!reply.id && reply.text && data.pendingOpportunityLeadId) {
+      const parsed = parseProviderInterestRateText(reply.text)
+      if (parsed) {
+        const provider = await findProviderByWhatsAppPhone(phone, { id: true })
+        if (provider) {
+          try {
+            const { respondToProviderOpportunity } = await import('./provider-opportunity-responses')
+            await respondToProviderOpportunity({
+              leadId: data.pendingOpportunityLeadId,
+              providerId: provider.id,
+              response: 'INTERESTED',
+              callOutFeeText: String(parsed.callOutFee),
+              estimatedArrivalAt: parsed.estimatedArrivalAt,
+              source: 'whatsapp',
+              idempotencyKey: `whatsapp:${provider.id}:${data.pendingOpportunityLeadId}:interest:${parsed.raw.slice(0, 32)}`,
+            })
+            await sendText(
+              phone,
+              `Thanks — your interest is recorded. Call-out fee: R${parsed.callOutFee}. Earliest arrival: ${parsed.estimatedArrivalAt.toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.\n\nThe customer will compare your response with other providers. We'll notify you here if you're selected.\n\nNo credits used.`,
+            )
+            await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+            return
+          } catch (error) {
+            console.warn('[whatsapp-bot] interest rate capture failed', {
+              phone,
+              error: error instanceof Error ? error.message : String(error),
+            })
+            await sendText(
+              phone,
+              "Sorry, we couldn't save that response. Please reply with your call-out fee in Rands and an arrival time, e.g. *R250 | tomorrow 09:00*.",
+            )
+            return
+          }
+        }
+      } else {
+        await sendText(
+          phone,
+          "Please include both your call-out fee in Rands and a clear arrival time, e.g. *R250 | tomorrow 09:00* or *250 today 14:00*.",
+        )
+        return
+      }
+    }
+
+    // ── Provider MORE_INFO_REQUIRED reply recognizer ───────────────────────
+    // If a provider has an open MORE_INFO_REQUIRED application and replies
+    // with free text that is not a recognized command or a button payload,
+    // treat the message as the requested more-info follow-up and move the
+    // application back to PENDING for admin re-review. Defensive: skip silently
+    // when the test/mock environment has no providerApplication delegate.
+    if (
+      !reply.id
+      && reply.text
+      && reply.text.trim().length > 4
+      && !isReset
+      && !isHelp
+      && !providerCommand
+      && typeof (db as any)?.providerApplication?.findFirst === 'function'
+    ) {
+      try {
+        const moreInfoApp = await db.providerApplication.findFirst({
+          where: { phone, status: 'MORE_INFO_REQUIRED' },
+          orderBy: { submittedAt: 'desc' },
+          select: { id: true },
+        })
+        if (moreInfoApp) {
+          const { resumeMoreInfoApplication } = await import('./provider-applications')
+          const result = await resumeMoreInfoApplication(db as any, {
+            applicationId: moreInfoApp.id,
+            providerNote: reply.text,
+          })
+          if (result.ok) {
+            await sendText(
+              phone,
+              'Thanks — your reply has been added to your application. Our team will continue the review and update you here.',
+            )
+            return
+          }
+        }
+      } catch (error) {
+        console.warn('[whatsapp-bot] more_info reply check failed', {
+          phone,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    // ── Provider WhatsApp-complete: direct text shortcuts ──────────────────
+    // When a provider with a single active job sends a job-state shortcut
+    // ("arrive 14:00", "on the way", "arrived", "start", "complete") we apply
+    // the transition directly so the provider does not have to open the menu
+    // or the PWA. Multiple-active-job and ambiguous cases fall through to the
+    // existing menu-based flow.
+    if (isProviderRole && !reply.id) {
+      const jobCommand = parseProviderJobCommand(reply.text)
+      if (jobCommand) {
+        if (jobCommand.kind === 'complete') {
+          const lookup = await findSingleActiveJobForProviderPhone(phone)
+          if (lookup.state === 'unique' && lookup.status === 'STARTED') {
+            await saveConversation({
+              phone,
+              flow: 'provider_job',
+              step: 'tech_job_view',
+              data: {
+                pendingCompletionJobId: lookup.jobId,
+                providerCompletionStep: 'note',
+              },
+            })
+            await sendText(phone, 'Please send a short completion note.')
+            return
+          }
+        }
+        const result = await executeProviderJobCommand({ phone, command: jobCommand })
+        if (result.ok) {
+          await sendText(phone, result.message)
+          await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+          return
+        }
+        if (result.reason === 'NO_ACTIVE_JOB' || result.reason === 'PROVIDER_NOT_FOUND') {
+          await sendText(phone, result.message)
+          return
+        }
+        // For AMBIGUOUS_JOB or INVALID_COMMAND: fall through so the menu can
+        // show the provider their list of active jobs.
+      }
+    }
+
     // Route to appropriate flow (keyword overrides only when idle or expired)
-    if ((isReset || isExpired) && !isProviderMenuReply) {
+    if (providerCommand && isProviderRole && !reply.id) {
+      // Provider text commands are recoverable from any state. Button replies
+      // keep their original IDs because those carry lead/job routing context.
+      flow = providerCommand.flow
+      step = providerCommand.step
+      if (providerCommand.replyId) {
+        reply.id = providerCommand.replyId
+        reply.title = providerCommand.command
+      }
+      data = providerCommand.flow === 'provider_journey' ? {} : data
+    } else if ((isReset || isExpired) && !isProviderMenuReply) {
       flow = 'idle'
       step = 'welcome'
       data = {}
@@ -1392,30 +1554,58 @@ export async function notifyProviderNewJob(params: {
   }
 
   const area = normaliseLocationDisplayName(params.area)
-  let creditLine = `Accepting this lead uses ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)}. Full customer details unlock after acceptance.`
+  let creditLine = `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.`
+  let safePreview: Awaited<ReturnType<typeof import('./provider-opportunity-responses').getSafeProviderOpportunityPreview>> | null = null
+  let providerIdForPreview: string | null = null
   try {
     const lead = await db.lead.findUnique({
       where: { id: params.leadId },
       select: { providerId: true },
     })
     if (lead?.providerId) {
+      providerIdForPreview = lead.providerId
       const { getProviderWalletBalanceReadOnly } = await import('./provider-wallet')
       const balance = await getProviderWalletBalanceReadOnly(lead.providerId)
-      creditLine = `Accepting this lead uses ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)}. Full customer details unlock after acceptance.\nAvailable balance: ${creditCountLabel(balance.totalCreditBalance)} (${providerCreditBreakdownLabel(balance)}).`
+      creditLine = `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.\nAvailable balance: ${creditCountLabel(balance.totalCreditBalance)} (${providerCreditBreakdownLabel(balance)}).`
+      const { getSafeProviderOpportunityPreview } = await import('./provider-opportunity-responses')
+      safePreview = await getSafeProviderOpportunityPreview(params.leadId, lead.providerId)
     }
   } catch (error) {
     console.warn('[whatsapp-bot] unable to include provider credit balance in lead notification', {
       leadId: params.leadId,
+      providerId: providerIdForPreview,
       error: error instanceof Error ? error.message : String(error),
     })
   }
+  const preview = safePreview?.request
+  const previewArea = preview?.area
+    ? [
+        preview.area.suburb,
+        preview.area.city,
+        preview.area.province,
+      ].filter(Boolean).join(', ')
+    : area
+  const previewLines = [
+    `*${preview?.category ?? params.category}*${preview?.subcategory ? ` · ${preview.subcategory}` : ''}`,
+    `Area: ${previewArea}`,
+    preview?.area?.region ? `Region: ${preview.area.region}` : null,
+    preview?.urgency ? `Urgency: ${preview.urgency}` : null,
+    preview?.budgetPreference ? `Budget: ${preview.budgetPreference}` : null,
+    preview?.requestedWindowStart
+      ? `Preferred time: ${preview.requestedWindowStart.toLocaleString('en-ZA')}`
+      : preview?.requestedArrivalLatest
+        ? `Preferred time: before ${preview.requestedArrivalLatest.toLocaleString('en-ZA')}`
+        : null,
+    `Photos: ${preview?.attachments.length ?? 0} available`,
+    preview?.description ? `Issue: ${preview.description}` : null,
+  ].filter(Boolean).join('\n')
 
   await sendCtaUrl(
     params.providerPhone,
-    `🔔 *New Lead Available*\n\n*${params.category}* · ${area}\nRef: ${ref} · Expires in ${expiryLabel}\n\n${creditLine}\n\nTap below to view the lead preview and respond.`,
+    `🔔 *New Job Opportunity*\n\n${previewLines}\n\nRef: ${ref} · Expires in ${expiryLabel}\n\nThe customer is comparing suitable providers.\n\n${creditLine}\n\nReply with the buttons sent below, or tap to view photos/full preview.`,
     'View Lead',
     leadUrl,
-    { footer: 'Preview first. Acceptance uses 1 credit.' },
+    { footer: 'Safe preview only. Exact address stays locked.' },
     {
       templateName: 'interactive:new_lead_available',
       metadata: {
@@ -2385,6 +2575,9 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       await sendText(phone, `😔 We couldn't process that confirmation. Please try again or contact support.\n\n_Ref: ${traceId}_`)
       return
     }
+    if (result.alreadyUnlocked) {
+      await sendText(phone, 'This job is already assigned to you. No additional credit was deducted. Reply *my jobs* to manage it.')
+    }
     return
   }
 
@@ -2464,12 +2657,226 @@ async function handleProviderOpportunityInterested(phone: string, buttonId: stri
     phone,
     flow: 'idle',
     step: 'welcome',
-    data: { pendingOpportunityLeadId: leadId } as ConversationData,
+    data: { pendingOpportunityLeadId: leadId, providerOpportunityStep: 'callout' } as ConversationData,
   })
   await sendText(
     phone,
-    `Thanks for showing interest. Reply with your call-out fee and earliest arrival, e.g.\n\n*R250 | tomorrow morning*\n\nThe customer will compare your response with other providers.\n\nNo credits are used until the customer selects you and you accept.\n\n_Ref: ${traceId}_`,
+    `Thanks for showing interest.\n\nWhat is your call-out fee for this job?\n\nReply with an amount, e.g. *R250* or *0*.\n\nNo credits are used at this stage.\n\n_Ref: ${traceId}_`,
   )
+}
+
+async function handleProviderOpportunityCapture(
+  phone: string,
+  reply: ReturnType<typeof parseInbound>,
+  data: ConversationData,
+) {
+  const leadId = data.pendingOpportunityLeadId
+  if (!leadId) return
+
+  if (reply.id === 'back_home' || reply.text?.trim().toLowerCase() === 'cancel') {
+    await sendText(phone, 'Opportunity response cancelled. No credits were used.')
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  const step = data.providerOpportunityStep ?? 'callout'
+
+  if (step === 'callout') {
+    const { validateProviderOnboardingRates } = await import('./provider-onboarding-data')
+    try {
+      const rates = validateProviderOnboardingRates({ callOutFeeText: reply.text })
+      if (rates.callOutFee == null) throw new Error('missing fee')
+      await sendText(phone, 'When can you arrive? Reply with a time like *today afternoon*, *tomorrow morning*, or an exact date/time.')
+      await saveConversation({
+        phone,
+        flow: 'idle',
+        step: 'welcome',
+        data: {
+          ...data,
+          providerOpportunityStep: 'arrival',
+          providerOpportunityCallOutFeeText: String(reply.text ?? '').trim(),
+        },
+      })
+      return
+    } catch {
+      await sendText(phone, 'Please reply with a valid call-out fee, for example *R250* or *0*. No credits are used at this stage.')
+      return
+    }
+  }
+
+  if (step === 'arrival') {
+    const estimatedArrivalAt = parseProviderOpportunityArrivalText(reply.text ?? '')
+    if (!estimatedArrivalAt) {
+      await sendText(phone, 'Please reply with a valid arrival time, for example *today afternoon*, *tomorrow morning*, or *2026-05-03 09:00*.')
+      return
+    }
+    await sendButtons(
+      phone,
+      `Arrival saved: *${estimatedArrivalAt.toLocaleString('en-ZA')}*.\n\nIs your rate negotiable?`,
+      [
+        { id: 'provider_opp_negotiable_yes', title: 'Yes' },
+        { id: 'provider_opp_negotiable_no', title: 'No' },
+      ],
+    )
+    await saveConversation({
+      phone,
+      flow: 'idle',
+      step: 'welcome',
+      data: {
+        ...data,
+        providerOpportunityStep: 'negotiable',
+        providerOpportunityEstimatedArrivalAtIso: estimatedArrivalAt.toISOString(),
+      },
+    })
+    return
+  }
+
+  if (step === 'negotiable') {
+    if (reply.id !== 'provider_opp_negotiable_yes' && reply.id !== 'provider_opp_negotiable_no') {
+      await sendButtons(
+        phone,
+        'Please choose whether your rate is negotiable.',
+        [
+          { id: 'provider_opp_negotiable_yes', title: 'Yes' },
+          { id: 'provider_opp_negotiable_no', title: 'No' },
+        ],
+      )
+      return
+    }
+    await sendButtons(
+      phone,
+      'Add an optional note for the customer?',
+      [
+        { id: 'provider_opp_note_skip', title: 'Skip' },
+        { id: 'provider_opp_note_add', title: 'Add note' },
+      ],
+    )
+    await saveConversation({
+      phone,
+      flow: 'idle',
+      step: 'welcome',
+      data: {
+        ...data,
+        providerOpportunityStep: 'note',
+        providerOpportunityNegotiable: reply.id === 'provider_opp_negotiable_yes',
+      },
+    })
+    return
+  }
+
+  const providerNote =
+    reply.id === 'provider_opp_note_skip'
+      ? null
+      : reply.text?.trim() || null
+  if (reply.id === 'provider_opp_note_add') {
+    await sendText(phone, 'Reply with the note you want the customer to see.')
+    return
+  }
+
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  const { respondToProviderOpportunity } = await import('./provider-opportunity-responses')
+  const result = await respondToProviderOpportunity({
+    leadId,
+    providerId: provider.id,
+    response: 'INTERESTED',
+    callOutFeeText: data.providerOpportunityCallOutFeeText,
+    estimatedArrivalAt: data.providerOpportunityEstimatedArrivalAtIso
+      ? new Date(data.providerOpportunityEstimatedArrivalAtIso)
+      : null,
+    negotiable: data.providerOpportunityNegotiable ?? true,
+    providerNote,
+    source: 'whatsapp',
+    idempotencyKey: `whatsapp:${provider.id}:${leadId}:interested`,
+  })
+
+  await sendText(
+    phone,
+    `Interest submitted.\n\nCall-out: ${data.providerOpportunityCallOutFeeText}\nArrival: ${data.providerOpportunityEstimatedArrivalAtIso ? new Date(data.providerOpportunityEstimatedArrivalAtIso).toLocaleString('en-ZA') : 'Saved'}\nRate: ${data.providerOpportunityNegotiable === false ? 'Fixed' : 'Negotiable'}${providerNote ? `\nNote: ${providerNote}` : ''}\n\nNo credits were used.\nWe'll notify you if the customer selects you.`,
+  )
+  await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+  void result
+}
+
+async function handleProviderCompletionCapture(
+  phone: string,
+  reply: ReturnType<typeof parseInbound>,
+  data: ConversationData,
+) {
+  const jobId = data.pendingCompletionJobId
+  if (!jobId) return
+
+  const step = data.providerCompletionStep ?? 'note'
+  if (reply.text?.trim().toLowerCase() === 'cancel') {
+    await sendText(phone, 'Completion update cancelled. Reply *complete* when you are ready.')
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  if (step === 'note') {
+    const note = reply.text?.trim()
+    if (!note) {
+      await sendText(phone, 'Please send a short completion note.')
+      return
+    }
+    await sendText(phone, 'Please upload a completion photo, or reply SKIP.')
+    await saveConversation({
+      phone,
+      flow: 'provider_job',
+      step: 'tech_job_view',
+      data: {
+        ...data,
+        providerCompletionStep: 'photo',
+        providerCompletionNote: note.slice(0, 1000),
+      },
+    })
+    return
+  }
+
+  if (step === 'photo') {
+    let attachmentId: string | null = null
+    const skipped = reply.text?.trim().toLowerCase() === 'skip'
+    if (!skipped) {
+      if (!reply.mediaId) {
+        await sendText(phone, 'Please upload a completion photo, or reply SKIP.')
+        return
+      }
+      try {
+        const { downloadAndStoreWhatsAppMedia } = await import('./whatsapp-media')
+        const stored = await downloadAndStoreWhatsAppMedia({
+          mediaId: reply.mediaId,
+          prefix: `jobs/${jobId}/completion`,
+          label: 'completion_photo',
+        })
+        attachmentId = stored.attachmentId
+      } catch (error) {
+        console.error('[whatsapp-bot] completion photo upload failed', {
+          jobId,
+          mediaIdSuffix: reply.mediaId.slice(-8),
+          error,
+        })
+        await sendText(phone, 'We could not save that photo. Please upload another photo, or reply SKIP.')
+        return
+      }
+    }
+
+    const result = await completeProviderJobFromWhatsApp({
+      phone,
+      jobId,
+      completionNote: data.providerCompletionNote ?? '',
+      attachmentId,
+    })
+
+    await sendText(phone, result.message)
+    if (result.ok) {
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    }
+  }
 }
 
 // ─── Backwards-compat alias ───────────────────────────────────────────────────
