@@ -13,7 +13,8 @@ import { checkWorkerPortalAccess, logWorkerPortalDecision } from '@/lib/worker-p
 // Auth model:
 //   Customers   → phone OTP    → /sign-in → /verify
 //   Providers   → phone OTP    → /provider-sign-in → /provider-verify
-//                             (legacy: /technician-sign-in → /technician-verify also supported)
+//                             (legacy /technician-sign-in and /technician-verify
+//                              now server-redirect to the canonical routes above)
 //   Admin/Owner → email+pass   → /admin-sign-in
 // Email is reserved for admin/owner. LSM users (customers, providers) use phone only.
 const PUBLIC_PATHS = [
@@ -23,8 +24,8 @@ const PUBLIC_PATHS = [
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
   '/provider/terms',       // provider credit rules are linked before login/application
-  '/technician-sign-in',   // legacy — kept for backward compat
-  '/technician-verify',    // legacy — kept for backward compat
+  '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
+  '/technician-verify',    // legacy — server-redirects to /provider-verify
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
   '/requests/access',      // signed single-ticket links are scoped to one request
