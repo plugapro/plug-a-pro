@@ -620,15 +620,19 @@ export default async function ProviderLeadAccessPage({
           )}
         </div>
 
-        {lead.expiresAt && (
+        {lead.expiresAt && !isAccepted && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Expires {formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · {format(lead.expiresAt, 'HH:mm, d MMM')}
           </div>
         )}
 
         {isAccepted && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            You&apos;re viewing this job through a secure WhatsApp link. This link only gives access to this job.
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 space-y-1">
+            <p className="font-semibold">Job assigned to you</p>
+            {jr.match?.createdAt && (
+              <p>Accepted {format(jr.match.createdAt, 'HH:mm, d MMM yyyy')} · 1 credit used.</p>
+            )}
+            <p className="text-emerald-700">Next step: contact the customer and confirm your arrival time below.</p>
           </div>
         )}
 

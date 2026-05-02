@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDb, mockResolveToken, mockVerifyToken, mockGetAccessUrl, mockSendText, mockSendCtaUrl } = vi.hoisted(() => ({
+const {
+  mockDb,
+  mockResolveToken,
+  mockVerifyToken,
+  mockGetAccessUrl,
+  mockSendText,
+  mockSendCtaUrl,
+  mockProviderLeadTokenAllowsScope,
+} = vi.hoisted(() => ({
   mockDb: {
     lead: { findUnique: vi.fn() },
     match: { update: vi.fn() },
@@ -11,6 +19,7 @@ const { mockDb, mockResolveToken, mockVerifyToken, mockGetAccessUrl, mockSendTex
   mockGetAccessUrl: vi.fn(),
   mockSendText: vi.fn(),
   mockSendCtaUrl: vi.fn(),
+  mockProviderLeadTokenAllowsScope: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
@@ -18,7 +27,8 @@ vi.mock('@/lib/provider-lead-access', () => ({
   resolveProviderLeadAccessToken: mockResolveToken,
   verifyProviderLeadAccessToken: mockVerifyToken,
   getProviderSignedJobHandoverUrl: mockGetAccessUrl,
-  providerLeadTokenAllowsScope: () => true,
+  providerLeadTokenAllowsScope: mockProviderLeadTokenAllowsScope,
+  LEAD_RESPONSE_SCOPES: ['view_lead', 'accept_lead', 'decline_lead'],
 }))
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: mockSendText,
@@ -78,6 +88,7 @@ function acceptedLead(overrides: Record<string, unknown> = {}) {
 describe('accepted job actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockProviderLeadTokenAllowsScope.mockReturnValue(true)
     mockResolveToken.mockResolvedValue({ status: 'active', lead: { id: 'lead-1' } })
     mockVerifyToken.mockReturnValue({
       status: 'active',
@@ -277,6 +288,49 @@ describe('accepted job actions', () => {
         plannedArrivalEnd: plannedEnd,
       }),
     })
+  })
+
+  it('allows a LEAD_RESPONSE_SCOPES token (original WhatsApp invite URL) to save arrival for an accepted lead', async () => {
+    // Simulate the provider using their original "View Lead" URL after accepting via WhatsApp.
+    // That token has LEAD_RESPONSE_SCOPES which does not include 'confirm_arrival'.
+    // tokenAllowsAcceptedJobScope must detect this and let resolveAcceptedLeadFromToken decide.
+    mockVerifyToken.mockReturnValue({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        scopes: ['view_lead', 'accept_lead', 'decline_lead'],
+      },
+    })
+    mockProviderLeadTokenAllowsScope.mockReturnValue(false) // 'confirm_arrival' not in LEAD_RESPONSE_SCOPES
+
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'original-invite-token',
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+    })
+
+    expect(result).toMatchObject({ ok: true, duplicate: false })
+    expect(mockDb.match.update).toHaveBeenCalledWith({
+      where: { id: 'match-1' },
+      data: expect.objectContaining({ plannedArrivalStart: plannedStart }),
+    })
+  })
+
+  it('rejects an invalid/tampered token before hitting the database', async () => {
+    mockVerifyToken.mockReturnValue({ status: 'invalid', payload: null })
+
+    const result = await saveAcceptedLeadArrival({
+      leadId: 'lead-1',
+      token: 'tampered-token',
+      plannedArrivalStart: plannedStart,
+      plannedArrivalEnd: plannedEnd,
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB' })
+    expect(mockDb.lead.findUnique).not.toHaveBeenCalled()
+    expect(mockDb.match.update).not.toHaveBeenCalled()
   })
 
   it('sends a fresh signed job link for an expired accepted-job token', async () => {
