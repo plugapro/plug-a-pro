@@ -56,9 +56,9 @@ function fallbackCodeForStatus(status: number) {
     case 401:
       return 'OTP_PROVIDER_AUTH_FAILED'
     case 403:
-      return 'PROVIDER_NOT_APPROVED'
+      return 'WORKER_NOT_APPROVED'
     case 423:
-      return 'PROVIDER_INACTIVE'
+      return 'WORKER_INACTIVE'
     case 404:
       return 'WORKER_NOT_FOUND'
     case 422:
@@ -81,8 +81,10 @@ function fallbackReasonForCode(code: string) {
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
       return "We couldn't find a provider account for this number. Please register first or contact support."
+    case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return 'Your provider application must be approved before you can sign in to the Worker Portal.'
+    case 'WORKER_INACTIVE':
     case 'PROVIDER_INACTIVE':
       return 'This provider account is not active.'
     case 'INVALID_MOBILE_NUMBER':
@@ -118,8 +120,10 @@ function titleForCode(code: string) {
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
       return 'Provider account not found.'
+    case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return 'Application still under review.'
+    case 'WORKER_INACTIVE':
     case 'PROVIDER_INACTIVE':
       return 'Provider account inactive.'
     case 'RATE_LIMITED':
@@ -136,7 +140,9 @@ function toneForCode(code: string): SendCodeError['tone'] {
     case 'UNSUPPORTED_COUNTRY_CODE':
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
+    case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
+    case 'WORKER_INACTIVE':
     case 'PROVIDER_INACTIVE':
     case 'RATE_LIMITED':
       return 'info'

@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { mockGetUser, mockAdminUserFindFirst } = vi.hoisted(() => ({
+const { mockGetUser, mockAdminUserFindFirst, mockProviderFindFirst } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockAdminUserFindFirst: vi.fn(),
+  mockProviderFindFirst: vi.fn(),
 }))
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -20,12 +21,16 @@ vi.mock('@/lib/db', () => ({
       // proxy.ts calls findFirst (OR query by userId / email)
       findFirst: mockAdminUserFindFirst,
     },
+    provider: {
+      findFirst: mockProviderFindFirst,
+    },
   },
 }))
 
 describe('proxy admin access', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockProviderFindFirst.mockResolvedValue(null)
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost:54321'
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
   })
@@ -144,6 +149,81 @@ describe('proxy admin access', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows provider verify-code API without an existing session cookie', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/auth/provider/verify-code'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows approved linked providers onto provider routes even without legacy provider metadata', async () => {
+    const { proxy } = await import('../proxy')
+
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-provider-1',
+          phone: '27823035070',
+          user_metadata: { role: 'customer' },
+        },
+      },
+      error: null,
+    })
+    mockProviderFindFirst.mockResolvedValue({
+      id: 'provider-1',
+      userId: 'user-provider-1',
+      phone: '+27823035070',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+    })
+
+    const req = new NextRequest('http://localhost/provider', {
+      headers: { cookie: 'sb-access-token=test-token' },
+    })
+
+    const res = await proxy(req)
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(res.headers.get('x-user-role')).toBe('provider')
+  })
+
+  it('blocks pending providers from provider routes after OTP', async () => {
+    const { proxy } = await import('../proxy')
+
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-provider-pending',
+          phone: '27823035070',
+          user_metadata: { role: 'provider' },
+        },
+      },
+      error: null,
+    })
+    mockProviderFindFirst.mockResolvedValue({
+      id: 'provider-pending',
+      userId: 'user-provider-pending',
+      phone: '+27823035070',
+      active: true,
+      verified: false,
+      status: 'UNDER_REVIEW',
+    })
+
+    const req = new NextRequest('http://localhost/provider', {
+      headers: { cookie: 'sb-access-token=test-token' },
+    })
+
+    const res = await proxy(req)
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe('http://localhost/provider-sign-in')
   })
 
   it('allows signed provider contact-customer API without an OTP session', async () => {

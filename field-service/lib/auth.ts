@@ -4,6 +4,7 @@ import { forbidden, redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import { cache } from 'react'
 import type { Role } from '@prisma/client'
+import { checkWorkerPortalAccess } from './worker-provider-auth'
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
 
@@ -76,16 +77,40 @@ export const getSession = cache(async (): Promise<AuthUser | null> => {
 
     if (error || !user) return null
 
-    // Role and providerId are stored in user_metadata during sign-up/invite
-    const role = (user.user_metadata?.role ?? 'customer') as UserRole
-    const providerId = user.user_metadata?.providerId
-
     // Supabase stores phone without the '+' prefix (e.g. "27821234567").
     // Normalise to E.164 so comparisons downstream are consistent.
     const rawPhone = user.phone ?? null
     const phone = rawPhone
       ? rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`
       : null
+
+    // Role and providerId are stored in user_metadata for new users, but older
+    // OTP identities may only be linked in the Provider table after first login.
+    let role = (user.user_metadata?.role ?? 'customer') as UserRole
+    let providerId = user.user_metadata?.providerId as string | undefined
+
+    const { db } = await import('./db')
+    const provider = await db.provider.findFirst({
+      where: {
+        OR: [
+          { userId: user.id },
+          ...(phone ? [{ phone, userId: null }] : []),
+        ],
+      },
+      select: {
+        id: true,
+        userId: true,
+        phone: true,
+        active: true,
+        verified: true,
+        status: true,
+      },
+    }).catch(() => null)
+
+    if (checkWorkerPortalAccess(provider).ok) {
+      role = 'provider'
+      providerId = provider?.id
+    }
 
     return {
       id: user.id,
@@ -181,6 +206,27 @@ export async function requireProvider(): Promise<AuthUser> {
   const session = await getSession()
   if (!session) redirect('/provider-sign-in')
   if (session.role !== 'provider') {
+    redirect('/provider-sign-in?error=unauthorized')
+  }
+  const { db } = await import('./db')
+  const provider = await db.provider.findFirst({
+    where: {
+      OR: [
+        { userId: session.id },
+        ...(session.providerId ? [{ id: session.providerId }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      userId: true,
+      phone: true,
+      active: true,
+      verified: true,
+      status: true,
+    },
+  }).catch(() => null)
+
+  if (!checkWorkerPortalAccess(provider).ok) {
     redirect('/provider-sign-in?error=unauthorized')
   }
   return session

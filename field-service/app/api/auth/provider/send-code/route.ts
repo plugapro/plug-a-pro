@@ -9,6 +9,7 @@ import {
   timestamp,
   type DiagnosticCode,
 } from '@/lib/support-diagnostics'
+import { checkWorkerPortalAccess } from '@/lib/worker-provider-auth'
 
 const STEP = 'Worker portal send-code'
 const OTP_TIMEOUT_MS = 10_000
@@ -23,8 +24,10 @@ function reasonFor(code: DiagnosticCode) {
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
       return "We couldn't find a provider account for this number. Please register first or contact support."
+    case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return 'Your provider application must be approved before you can sign in to the Worker Portal.'
+    case 'WORKER_INACTIVE':
     case 'PROVIDER_INACTIVE':
       return 'This provider account is not active.'
     case 'RATE_LIMITED':
@@ -55,8 +58,10 @@ function titleFor(code: DiagnosticCode) {
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
       return 'Provider account not found.'
+    case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return 'Application still under review.'
+    case 'WORKER_INACTIVE':
     case 'PROVIDER_INACTIVE':
       return 'Provider account inactive.'
     case 'RATE_LIMITED':
@@ -76,8 +81,10 @@ function statusFor(code: DiagnosticCode) {
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
       return 404
+    case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return 403
+    case 'WORKER_INACTIVE':
     case 'PROVIDER_INACTIVE':
       return 423
     case 'RATE_LIMITED':
@@ -244,11 +251,11 @@ export async function POST(request: NextRequest) {
     phone = normalized.e164
     countryCode = normalized.countryCode
 
-    let provider: { id: string; active: boolean; status: string } | null
+    let provider: { id: string; userId: string | null; phone: string; active: boolean; verified: boolean; status: string } | null
     try {
       provider = await db.provider.findUnique({
         where: { phone },
-        select: { id: true, active: true, status: true },
+        select: { id: true, userId: true, phone: true, active: true, verified: true, status: true },
       })
     } catch (dbError) {
       console.error('[provider-send-code] provider lookup failed', {
@@ -288,7 +295,9 @@ export async function POST(request: NextRequest) {
       return errorPayload({ code: 'WORKER_NOT_FOUND', traceId, phone, countryCode, status: statusFor('WORKER_NOT_FOUND') })
     }
 
-    if (provider.status === 'APPLICATION_PENDING' || provider.status === 'UNDER_REVIEW') {
+    const access = checkWorkerPortalAccess(provider)
+
+    if (!access.ok && access.code === 'WORKER_NOT_APPROVED') {
       console.warn('[provider-send-code] provider not approved', {
         trace_id: traceId,
         rawPhone,
@@ -303,7 +312,7 @@ export async function POST(request: NextRequest) {
         step: STEP,
       })
       return errorPayload({
-        code: 'PROVIDER_NOT_APPROVED',
+        code: 'WORKER_NOT_APPROVED',
         traceId,
         phone,
         countryCode,
@@ -312,7 +321,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    if (!provider.active || provider.status !== 'ACTIVE') {
+    if (!access.ok) {
       console.warn('[provider-send-code] provider inactive', {
         trace_id: traceId,
         rawPhone,
@@ -327,7 +336,7 @@ export async function POST(request: NextRequest) {
         step: STEP,
       })
       return errorPayload({
-        code: 'PROVIDER_INACTIVE',
+        code: 'WORKER_INACTIVE',
         traceId,
         phone,
         countryCode,
