@@ -25,6 +25,13 @@ describe('GET /api/health', () => {
     expect(body.status).toBe('ok')
     expect(body.db).toBe('ok')
     expect(typeof body.timestamp).toBe('string')
+    expect(body).toHaveProperty('build')
+    expect(body.build).toMatchObject({
+      commitSha: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
+      commitShaShort: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
+      commitRef: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
+      builtAt: expect.toSatisfy((v: unknown) => v === null || typeof v === 'string'),
+    })
   })
 
   it('returns 503 with status degraded when DB throws', async () => {
