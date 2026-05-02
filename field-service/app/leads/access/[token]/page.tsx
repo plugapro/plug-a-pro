@@ -953,10 +953,36 @@ export default async function ProviderLeadAccessPage({
           </div>
         </div>
 
-        {isAccepted && (
+        {isAccepted && hasPlannedArrival && !showArrivalForm && !arrivalActionsDone && (
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div>
+              <h2 className="text-base font-semibold">Arrival time confirmed</h2>
+              <p className="text-sm text-muted-foreground">Customer has been notified on WhatsApp.</p>
+            </div>
+            <div className="rounded-md border bg-muted/30 px-3 py-3 text-sm space-y-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Scheduled for</p>
+                <p className="mt-1 font-medium">{plannedWindow}</p>
+              </div>
+              {jr.match?.plannedArrivalNote && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Note to customer</p>
+                  <p className="mt-1">{jr.match.plannedArrivalNote}</p>
+                </div>
+              )}
+            </div>
+            <Button asChild variant="outline" size="sm" className="bg-background">
+              <Link href={`/leads/access/${encodeURIComponent(token)}?editArrival=1`}>Change arrival time</Link>
+            </Button>
+          </div>
+        )}
+
+        {isAccepted && showArrivalForm && !arrivalActionsDone && (
           <div className="rounded-lg border bg-card p-4 space-y-4">
             <div>
-              <h2 className="text-base font-semibold">Update arrival time</h2>
+              <h2 className="text-base font-semibold">
+                {hasPlannedArrival ? 'Update arrival time' : 'Confirm arrival time'}
+              </h2>
               <p className="text-sm text-muted-foreground">
                 The customer will receive this schedule update on WhatsApp.
               </p>
