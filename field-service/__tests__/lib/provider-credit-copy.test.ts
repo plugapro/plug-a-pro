@@ -190,7 +190,7 @@ describe('provider credit copy', () => {
     expect(message).not.toContain('example.com')
   })
 
-  it('builds lead preview copy with credit cost and customer detail unlock rules', () => {
+  it('builds lead preview copy with credit cost and customer detail unlock rules — body has no raw URL', () => {
     const message = buildProviderLeadPreviewMessage({
       category: 'Plumbing',
       subcategory: 'Blocked drain',
@@ -204,7 +204,8 @@ describe('provider credit copy', () => {
       preferredTime: 'Fri, 1 May, 10:00',
       deadlineTime: '12:00',
       description: 'Shower drain is blocked.',
-      previewUrl: 'https://app.plugapro.co.za/leads/access/token',
+      // previewUrl param has been removed — the signed lead URL is exposed via
+      // dispatch.ts's sendCtaUrl ("View Lead" CTA), not inline in the body.
       balance: {
         totalCreditBalance: 2,
         promoCreditBalance: 1,
@@ -224,7 +225,8 @@ describe('provider credit copy', () => {
     expect(message).toContain('You spend 1 credit only if the customer selects you')
     expect(message).toContain('Full customer contact and exact address stay locked')
     expect(message).toContain('Available balance: 2 credits')
-    expect(message).toContain('View full preview: https://app.plugapro.co.za/leads/access/token')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('app.plugapro.co.za')
     expect(message).not.toContain('customer@example.com')
     expect(message).not.toContain('+27821234567')
     expect(message).not.toContain('12 Exact Street')

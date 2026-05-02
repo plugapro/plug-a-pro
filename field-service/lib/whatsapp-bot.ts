@@ -2211,7 +2211,8 @@ export async function sendQuoteToClient(params: {
   validUntil: Date
   approvalToken: string
 }): Promise<void> {
-  const { sendButtons } = await import('./whatsapp-interactive')
+  const { sendButtons, sendCtaUrl } = await import('./whatsapp-interactive')
+  const { ctaLabelFor } = await import('./whatsapp-copy')
   const webLink = getPublicAppUrl(`/quotes/${params.approvalToken}`)
 
   const materialsLine = params.materialsCost > 0
@@ -2220,14 +2221,30 @@ export async function sendQuoteToClient(params: {
   const hoursLine = params.estimatedHours ? `\n• Est. time: ${params.estimatedHours}h` : ''
   const validLine = `\n• Valid until: ${params.validUntil.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
 
+  // Body intentionally contains no URL. Accept/Decline travel as quick-reply
+  // buttons; the full quote URL is exposed via a sendCtaUrl follow-up below.
   await sendButtons(
     params.customerPhone,
-    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${params.description}_\n\nReview and respond online 👇\n${webLink}`,
+    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${params.description}_\n\nTap a button below to accept or decline, or open the full quote.`,
     [
       { id: `quote_accept_${params.quoteId}`, title: '✅ Accept Quote' },
       { id: `quote_decline_${params.quoteId}`, title: '❌ Decline' },
     ]
   )
+  if (webLink) {
+    try {
+      await sendCtaUrl(
+        params.customerPhone,
+        'Open the full quote in your browser.',
+        ctaLabelFor('quote_view'),
+        webLink,
+        undefined,
+        { templateName: 'interactive:quote_view_cta', metadata: { quoteId: params.quoteId } },
+      )
+    } catch (error) {
+      console.warn('[whatsapp-bot] quote view CTA follow-up failed', { quoteId: params.quoteId, error })
+    }
+  }
 }
 
 // ─── Customer quote response handler ─────────────────────────────────────────

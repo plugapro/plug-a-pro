@@ -299,6 +299,8 @@ export function buildProviderApplicationSubmittedMessage(params: {
   ].filter(Boolean).join('\n')
 }
 
+// Body intentionally contains no URL. The signed lead URL is exposed via the
+// dispatch.ts sendCtaUrl call ("View Lead" CTA) — never inline.
 export function buildProviderLeadPreviewMessage(params: {
   category: string
   area: string
@@ -314,7 +316,6 @@ export function buildProviderLeadPreviewMessage(params: {
   urgency?: string | null
   budgetPreference?: string | null
   photosCount?: number | null
-  previewUrl?: string | null
 }) {
   const titleLine = params.title ? [`*${params.title}*`, ''] : []
   const descriptionLine = params.description ? ['', params.description] : []
@@ -328,7 +329,6 @@ export function buildProviderLeadPreviewMessage(params: {
   const urgencyLine = params.urgency ? [`Urgency: *${params.urgency}*`] : []
   const budgetLine = params.budgetPreference ? [`Budget preference: *${params.budgetPreference}*`] : []
   const photosLine = params.photosCount != null ? [`Photos: *${params.photosCount} available*`] : []
-  const previewUrlLine = params.previewUrl ? ['', `View full preview: ${params.previewUrl}`] : []
 
   return [
     `🔔 *New Job Opportunity — ${params.category}*`,
@@ -349,7 +349,6 @@ export function buildProviderLeadPreviewMessage(params: {
     `Available balance: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
     '',
     `Respond by *${params.deadlineTime}*.`,
-    ...previewUrlLine,
   ].join('\n')
 }
 
