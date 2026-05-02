@@ -58,7 +58,7 @@ describe('matching-engine compatibility wrappers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockReconcileProviderRecordsFromApplications.mockResolvedValue({ reconciled: 0 })
-    mockNotifyPostMatchAcceptance.mockResolvedValue(undefined)
+    mockNotifyPostMatchAcceptance.mockResolvedValue({ providerNotified: true, customerNotified: true })
   })
 
   it('dispatchLeads returns an offered hold for the top ranked technician', async () => {
@@ -101,6 +101,7 @@ describe('matching-engine compatibility wrappers', () => {
       matchId: 'match-1',
       creditTransactionId: null,
       inspectionNeeded: false,
+      notificationSent: true,
     })
     expect(mockNotifyPostMatchAcceptance).toHaveBeenCalledWith({
       leadId: 'lead-1',

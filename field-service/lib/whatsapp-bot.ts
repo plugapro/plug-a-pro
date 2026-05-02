@@ -1623,7 +1623,15 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
       return
     }
 
-    // acceptLead owns the post-match customer/provider messages for every accept channel.
+    // Primary notifications handled inside acceptLead. Send fallback if they failed.
+    if (!result.notificationSent) {
+      const balance = result.currentCreditBalance ?? 0
+      const traceIdLegacy = createTraceId('wbot')
+      await sendText(
+        phone,
+        `✅ *Lead accepted*\n\nYou used 1 credit to accept this lead.\n\n💳 Available balance: ${balance} credit${balance !== 1 ? 's' : ''}\n\nFull customer details are now unlocked.\n\nReply *menu* to view your active jobs.\n\n_Ref: ${traceIdLegacy}_`,
+      ).catch(() => {})
+    }
     return
   }
 
@@ -2090,7 +2098,49 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     return
   }
 
-  // acceptLead owns the post-match customer/provider messages for every accept channel.
+  // Primary post-match notifications (customer + provider) are dispatched inside
+  // acceptLead via notifyPostMatchAcceptance. If that function failed to notify the
+  // provider (e.g. customer WhatsApp error, URL generation issue, transient API
+  // failure), send a reliable fallback so the provider is never left without a
+  // response after successfully accepting a lead.
+  if (!result.notificationSent) {
+    console.warn('[whatsapp-bot] accept: primary notification failed; sending fallback confirmation', {
+      traceId,
+      holdId,
+      leadId: lead.id,
+      providerId: provider.id,
+    })
+    const balance = result.currentCreditBalance ?? 0
+    const fallbackBody =
+      `✅ *Lead accepted*\n\n` +
+      `You used 1 credit to accept this lead.\n\n` +
+      `💳 Available balance: ${balance} credit${balance !== 1 ? 's' : ''}\n\n` +
+      `Full customer details are now unlocked.\n\n` +
+      `Reply *menu* to view your active jobs.\n\n` +
+      `_Ref: ${traceId}_`
+
+    let fallbackSent = false
+    try {
+      const { getProviderSignedJobHandoverUrlByLeadId } = await import('./provider-lead-access')
+      const jobUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
+      if (jobUrl) {
+        await sendCtaUrl(phone, fallbackBody, 'View Job', jobUrl)
+        fallbackSent = true
+      }
+    } catch { /* URL generation failed — fall through to plain text */ }
+
+    if (!fallbackSent) {
+      await sendText(phone, fallbackBody).catch((err) => {
+        console.error('[whatsapp-bot] accept: fallback confirmation also failed', {
+          traceId,
+          holdId,
+          leadId: lead.id,
+          providerId: provider.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+  }
 }
 
 async function sendLeadInsufficientCreditsMessage(

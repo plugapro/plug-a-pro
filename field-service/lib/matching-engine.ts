@@ -37,6 +37,7 @@ type LeadAccepted = {
   currentCreditBalance?: number
   alreadyUnlocked?: boolean
   inspectionNeeded: boolean
+  notificationSent: boolean
 }
 
 type LeadRejected = {
@@ -155,18 +156,23 @@ export async function acceptLead(params: {
   const result = await acceptAssignmentOffer(params)
   if (!result.ok) return result
 
-  await notifyPostMatchAcceptance({
-    leadId: params.leadId,
-    providerId: params.providerId,
-    matchId: result.matchId ?? '',
-    creditTransactionId: result.creditTransactionId ?? null,
-  }).catch((error: unknown) => {
+  let notificationSent = false
+  try {
+    const notifyResult = await notifyPostMatchAcceptance({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      matchId: result.matchId ?? '',
+      creditTransactionId: result.creditTransactionId ?? null,
+    })
+    notificationSent = notifyResult.providerNotified
+  } catch (error: unknown) {
     console.error('[matching-engine] post-match communication failed:', {
       leadId: params.leadId,
       providerId: params.providerId,
+      notificationSent,
       error,
     })
-  })
+  }
 
   return {
     ok: true,
@@ -176,6 +182,7 @@ export async function acceptLead(params: {
     currentCreditBalance: result.currentCreditBalance,
     alreadyUnlocked: result.alreadyUnlocked,
     inspectionNeeded: params.inspectionNeeded === true,
+    notificationSent,
   }
 }
 

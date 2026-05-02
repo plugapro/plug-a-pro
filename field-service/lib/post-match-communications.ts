@@ -91,7 +91,7 @@ export async function notifyPostMatchAcceptance(params: {
   providerId: string
   matchId: string
   creditTransactionId?: string | null
-}) {
+}): Promise<{ providerNotified: boolean; customerNotified: boolean }> {
   const lead = await db.lead.findUnique({
     where: { id: params.leadId },
     include: {
@@ -107,7 +107,9 @@ export async function notifyPostMatchAcceptance(params: {
     },
   })
 
-  if (!lead || lead.providerId !== params.providerId) return
+  if (!lead || lead.providerId !== params.providerId) {
+    return { providerNotified: false, customerNotified: false }
+  }
 
   const customer = lead.jobRequest.customer
   const provider = lead.provider
@@ -116,18 +118,26 @@ export async function notifyPostMatchAcceptance(params: {
   const customerName = firstName(customer.name)
   const category = lead.jobRequest.category
   const address = addressLabel(lead.jobRequest.address)
-  const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
+
+  // Non-throwing URL lookups — null means we fall back to plain text messages.
+  const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id).catch(() => null)
   const customerHandoverUrl = await getCustomerProviderHandoverUrl({
     leadId: lead.id,
     providerId: provider.id,
     jobRequestId: lead.jobRequestId,
-  })
+  }).catch(() => null)
+
   const preferredAvailability = preferredAvailabilityLabel(lead.jobRequest)
   const creditsCharged = lead.unlock?.creditsCharged ?? 1
   const walletBalance = await getProviderWalletBalanceReadOnly(provider.id)
 
   const { sendText, sendCtaUrl, sendButtons } = await import('./whatsapp-interactive')
 
+  let customerNotified = false
+  let providerNotified = false
+
+  // Customer notification — non-fatal. A customer-side WhatsApp failure must
+  // never block the provider confirmation that follows.
   if (customer.phone && !(await hasSentPostMatchMessage({
     to: customer.phone,
     templateName: 'post_match_customer_provider_accepted',
@@ -153,20 +163,30 @@ export async function notifyPostMatchAcceptance(params: {
       },
     }
 
-    if (customerHandoverUrl) {
-      await sendCtaUrl(
-        customer.phone,
-        customerBody,
-        'View Provider',
-        customerHandoverUrl,
-        { footer: 'Secure link for this request only.' },
-        customerContext,
-      )
-    } else {
-      await sendText(customer.phone, customerBody, customerContext)
+    try {
+      if (customerHandoverUrl) {
+        await sendCtaUrl(
+          customer.phone,
+          customerBody,
+          'View Provider',
+          customerHandoverUrl,
+          { footer: 'Secure link for this request only.' },
+          customerContext,
+        )
+      } else {
+        await sendText(customer.phone, customerBody, customerContext)
+      }
+      customerNotified = true
+    } catch (err) {
+      console.error('[post-match] customer notification failed (non-fatal — provider confirmation continues)', {
+        lead_id: lead.id,
+        customer_id: customer.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
+  // Provider notification — must always be attempted regardless of customer outcome.
   if (provider.phone && !(await hasSentPostMatchMessage({
     to: provider.phone,
     templateName: 'post_match_provider_job_accepted',
@@ -227,32 +247,44 @@ export async function notifyPostMatchAcceptance(params: {
         },
       })
     }
+    // Mark as notified here — before the Contact Customer button — so that a
+    // failure on the secondary button does not incorrectly mark providerNotified false.
+    providerNotified = true
   }
 
+  // Contact Customer button — non-fatal; failure must not affect providerNotified.
   if (provider.phone && !(await hasSentPostMatchMessage({
     to: provider.phone,
     templateName: 'post_match_provider_next_actions',
     leadId: lead.id,
   }))) {
-    await sendButtons(
-      provider.phone,
-      `Customer contact is released for this accepted job. Tap below to open WhatsApp with ${customerName}.`,
-      [{ id: `post_match_contact:${lead.id}`, title: 'Contact Customer' }],
-      { footer: 'This contact handover is logged on the ticket.' },
-      {
-        templateName: 'post_match_provider_next_actions',
-        metadata: {
-          leadId: lead.id,
-          jobRequestId: lead.jobRequestId,
-          matchId: params.matchId,
-          providerId: provider.id,
-          leadUnlockId: lead.unlock?.id,
-          creditTransactionId: params.creditTransactionId ?? null,
-          isTestLead,
-          isTestRequest: isTestLead,
+    try {
+      await sendButtons(
+        provider.phone,
+        `Customer contact is released for this accepted job. Tap below to open WhatsApp with ${customerName}.`,
+        [{ id: `post_match_contact:${lead.id}`, title: 'Contact Customer' }],
+        { footer: 'This contact handover is logged on the ticket.' },
+        {
+          templateName: 'post_match_provider_next_actions',
+          metadata: {
+            leadId: lead.id,
+            jobRequestId: lead.jobRequestId,
+            matchId: params.matchId,
+            providerId: provider.id,
+            leadUnlockId: lead.unlock?.id,
+            creditTransactionId: params.creditTransactionId ?? null,
+            isTestLead,
+            isTestRequest: isTestLead,
+          },
         },
-      },
-    )
+      )
+    } catch (err) {
+      console.error('[post-match] contact-customer button failed (non-fatal)', {
+        lead_id: lead.id,
+        provider_id: provider.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   console.info('[post-match] accepted lead handover notifications processed', {
@@ -263,8 +295,8 @@ export async function notifyPostMatchAcceptance(params: {
     customer_id: customer.id,
     credit_transaction_id: params.creditTransactionId ?? null,
     lead_unlock_id: lead.unlock?.id ?? null,
-    customer_notification_result: customer.phone ? 'attempted' : 'skipped_no_phone',
-    provider_notification_result: provider.phone ? 'attempted' : 'skipped_no_phone',
+    customer_notified: customerNotified,
+    provider_notified: providerNotified,
     signed_link_generation_result: {
       provider_view_job: Boolean(leadUrl),
       customer_view_provider: Boolean(customerHandoverUrl),
@@ -285,6 +317,8 @@ export async function notifyPostMatchAcceptance(params: {
       customerContactReleased: true,
     },
   }).catch(() => {})
+
+  return { providerNotified, customerNotified }
 }
 
 export async function buildAcceptedLeadContactUrl(params: {
