@@ -147,8 +147,8 @@ function isSameCalendarDay(left: Date, right: Date) {
 }
 
 function isOutsideStandardLeadHours(date: Date) {
-  const hour = date.getHours()
-  return hour < 7 || hour >= 17
+  const hour = date.getUTCHours()
+  return hour < 7 || hour >= 19
 }
 
 function hasRequiredSkills(
