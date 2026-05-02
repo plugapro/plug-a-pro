@@ -1,7 +1,7 @@
 // ─── Cron: Auto-match OPEN job requests + expire stale leads + ops alerts ─────
-// Runs 24/7 via two Vercel Cron schedules:
-//   */5 7-18 * * *       — every 5 min during standard hours (07:00–18:59 UTC)
-//   */30 19-23,0-6 * * * — every 30 min during off-hours (19:00–06:59 UTC)
+// Runs 24/7 via two Vercel Cron schedules (all times SAST = UTC+2):
+//   */5 5-16 * * *       — every 5 min during standard hours (07:00–18:59 SAST)
+//   */30 17-23,0-4 * * * — every 30 min during off-hours (19:00–06:59 SAST)
 // 1. Expires leads past their expiresAt → frees job for re-dispatch
 // 2. Finds OPEN job requests with no active SENT lead → dispatches via orchestrateMatch
 // 3. Alerts admin if jobs remain unmatched after 1 hour
