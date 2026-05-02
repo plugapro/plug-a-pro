@@ -106,9 +106,10 @@ async function acceptLeadWithToken(formData: FormData) {
   }
 
   const lead = resolved.lead
-  if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'DECLINED') {
-    const leadExpired = Boolean(lead.expiresAt && lead.expiresAt <= new Date())
-    const leadDeclined = !leadExpired && lead.status === 'DECLINED'
+  const leadExpired = lead.status === 'EXPIRED' || Boolean(lead.expiresAt && lead.expiresAt <= new Date())
+  const leadDeclined = lead.status === 'DECLINED'
+  const leadAccepted = lead.status === 'ACCEPTED'
+  if (leadExpired || leadAccepted || leadDeclined) {
     redirectLeadActionError(token, {
       error: 'closed',
       errorCode: leadExpired ? 'LEAD_EXPIRED' : leadDeclined ? 'LEAD_ALREADY_DECLINED' : 'LEAD_ALREADY_ACCEPTED',
@@ -224,7 +225,7 @@ async function declineLeadWithToken(formData: FormData) {
   if (lead.status === 'DECLINED') {
     redirect(`/leads/access/${encodeURIComponent(token)}?declined=already&actionTraceId=${encodeURIComponent(traceId)}`)
   }
-  if ((lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED') {
+  if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED') {
     redirectLeadActionError(token, {
       error: 'closed',
       errorCode: lead.status === 'ACCEPTED' ? 'LEAD_ALREADY_ACCEPTED' : 'LEAD_EXPIRED',
@@ -451,6 +452,7 @@ export default async function ProviderLeadAccessPage({
     scheduleMessage?: string
     traceId?: string
     savedAt?: string
+    editArrival?: string
   }>
 }) {
   const { token } = await params
@@ -511,9 +513,12 @@ export default async function ProviderLeadAccessPage({
   const jr = lead.jobRequest
   const addr = jr.address
   const customer = jr.customer
-  const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
   const isAccepted = lead.status === 'ACCEPTED'
   const isDeclined = lead.status === 'DECLINED'
+  const isExpired = lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false)
+  const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED'
+  const canRespondToLead = isOpenOffer && !isExpired
+  const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)
   const hasAcceptedDetails = isAccepted && Boolean(lead.unlock)
   const leadRef = lead.id.slice(-8).toUpperCase()
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
@@ -576,6 +581,15 @@ export default async function ProviderLeadAccessPage({
   const acceptedStage = isAccepted ? deriveAcceptedStage(jr.match) : null
   const plannedWindow = isAccepted ? formatWindow(jr.match?.plannedArrivalStart, jr.match?.plannedArrivalEnd) : null
   const actionDisabled = Boolean(jr.match?.providerCompletedAt)
+  const hasPlannedArrival = isAccepted && Boolean(jr.match?.plannedArrivalStart)
+  // Job has progressed past the arrival-scheduling stage — hide the form entirely.
+  const arrivalActionsDone = Boolean(
+    jr.match?.providerOnTheWayAt ||
+    jr.match?.providerArrivedAt ||
+    jr.match?.providerStartedAt ||
+    jr.match?.providerCompletedAt
+  )
+  const showArrivalForm = !hasPlannedArrival || resolvedSearchParams.editArrival === '1'
   const customerAvailability = getCustomerAvailabilitySummary({
     requestedWindowStart: jr.requestedWindowStart,
     requestedWindowEnd: jr.requestedWindowEnd,
@@ -595,7 +609,7 @@ export default async function ProviderLeadAccessPage({
     resolvedSearchParams.remainingBalance != null && Number.isFinite(Number(resolvedSearchParams.remainingBalance))
       ? Number(resolvedSearchParams.remainingBalance)
       : providerCreditBalance
-  const confirmingAccept = resolvedSearchParams.confirmAccept === '1' && !isAccepted && !isDeclined
+  const confirmingAccept = resolvedSearchParams.confirmAccept === '1' && canRespondToLead
   const supportWhatsAppDigits = process.env.SUPPORT_WHATSAPP_NUMBER?.replace(/\D/g, '')
   const backToWhatsAppHref = supportWhatsAppDigits
     ? `https://wa.me/${supportWhatsAppDigits}?text=${encodeURIComponent(`Hi, I declined lead ${jobRef}.`)}`
@@ -620,7 +634,7 @@ export default async function ProviderLeadAccessPage({
           )}
         </div>
 
-        {lead.expiresAt && !isAccepted && (
+        {showExpiryCountdown && lead.expiresAt && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Expires {formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · {format(lead.expiresAt, 'HH:mm, d MMM')}
           </div>
@@ -787,7 +801,7 @@ export default async function ProviderLeadAccessPage({
             </div>
           )}
 
-        {!isAccepted && !isDeclined && (
+        {canRespondToLead && (
           <div className="rounded-lg border bg-card px-4 py-3 text-sm">
             <p className="font-medium">Lead preview</p>
             <p className="mt-1 text-muted-foreground">
@@ -1101,7 +1115,7 @@ export default async function ProviderLeadAccessPage({
                 <Link href="/provider">Main Menu</Link>
               </Button>
             </>
-          ) : !confirmingAccept ? (
+          ) : canRespondToLead && !confirmingAccept ? (
             <>
               <Button asChild size="lg" className="w-full">
                 <Link href={`/leads/access/${encodeURIComponent(token)}?confirmAccept=1`}>
@@ -1109,7 +1123,7 @@ export default async function ProviderLeadAccessPage({
                 </Link>
               </Button>
             </>
-          ) : hasEnoughCredits ? (
+          ) : canRespondToLead && confirmingAccept && hasEnoughCredits ? (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="false" />
@@ -1117,7 +1131,7 @@ export default async function ProviderLeadAccessPage({
                 Confirm accept — use {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}
               </LeadActionSubmitButton>
             </form>
-          ) : (
+          ) : canRespondToLead && confirmingAccept ? (
             <>
               <Button asChild size="lg" className="w-full">
                 <Link href="/provider/credits">Top Up Credits</Link>
@@ -1126,9 +1140,9 @@ export default async function ProviderLeadAccessPage({
                 You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this lead.
               </p>
             </>
-          )}
+          ) : null}
 
-          {!isAccepted && !isDeclined && (
+          {canRespondToLead && (
             <>
               {confirmingAccept && (
                 <Button asChild size="lg" variant="outline" className="w-full">
@@ -1138,7 +1152,7 @@ export default async function ProviderLeadAccessPage({
             </>
           )}
 
-          {!isAccepted && !isDeclined && !confirmingAccept && (
+          {canRespondToLead && !confirmingAccept && (
             <form action={declineLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <LeadActionSubmitButton
