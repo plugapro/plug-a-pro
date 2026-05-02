@@ -37,9 +37,14 @@ function assertCohortSendAllowed(
   context: { metadata?: Record<string, unknown>; allowTestCohortOverride?: boolean; templateName: string }
 ) {
   const subjectIsTest = inferTestSubject(to, context.metadata)
+  const recipientIsTest =
+    typeof context.metadata?.recipientIsTest === 'boolean'
+      ? (context.metadata.recipientIsTest as boolean)
+      : undefined
   if (!isCohortMismatch({
     subjectIsTest,
     recipientPhone: to,
+    recipientIsTest,
     allowTestOverride: context.allowTestCohortOverride,
   })) {
     return
@@ -49,6 +54,7 @@ function assertCohortSendAllowed(
     to,
     template_name: context.templateName,
     subject_is_test: subjectIsTest,
+    recipient_is_test: recipientIsTest ?? isInternalTestPhone(to),
   })
   throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
 }

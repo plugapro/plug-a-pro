@@ -38,6 +38,7 @@ export async function logOutboundMessage(params: {
     typeof metadata.recipientIsTest === 'boolean'
       ? (metadata.recipientIsTest as boolean)
       : undefined
+  const effectiveRecipientIsTest = recipientIsTest ?? isInternalTestPhone(params.to)
 
   if (isCohortMismatch({
     subjectIsTest: inferredTestEvent,
@@ -58,7 +59,7 @@ export async function logOutboundMessage(params: {
         failureReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
         metadata: {
           ...metadata,
-          recipientIsTestUser: isInternalTestPhone(params.to),
+          recipientIsTestUser: effectiveRecipientIsTest,
           blockedReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
         } as Prisma.InputJsonValue,
         ...testEventFields(inferredTestEvent),
@@ -69,7 +70,7 @@ export async function logOutboundMessage(params: {
       to: params.to,
       templateName: params.templateName,
       subject_is_test: inferredTestEvent,
-      recipient_is_test: isInternalTestPhone(params.to),
+      recipient_is_test: effectiveRecipientIsTest,
       trace_id: metadata.traceId ?? metadata.trace_id ?? null,
     })
     throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')

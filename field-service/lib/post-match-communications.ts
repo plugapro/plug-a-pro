@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { db } from './db'
 import { recordAuditLog } from './audit'
 import { AUDIT_ENTITY } from './audit-entities'
@@ -10,6 +11,7 @@ import {
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { normaliseLocationDisplayName } from './location-format'
 import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
+import { testEventFields } from './internal-test-cohort'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -107,8 +109,17 @@ async function recordPostMatchSendFailure(params: {
   customerId?: string | null
   reason: string
   body?: string
+  metadata?: Record<string, unknown>
+  isTestEvent?: boolean
 }) {
   try {
+    const metadata = {
+      ...params.metadata,
+      leadId: params.leadId,
+      jobRequestId: params.jobRequestId,
+      providerId: params.providerId,
+      source: 'post_match_communications',
+    }
     await db.messageEvent.create({
       data: {
         channel: 'WHATSAPP',
@@ -120,12 +131,8 @@ async function recordPostMatchSendFailure(params: {
         sentAt: new Date(),
         failureReason: params.reason,
         customerId: params.customerId ?? undefined,
-        metadata: {
-          leadId: params.leadId,
-          jobRequestId: params.jobRequestId,
-          providerId: params.providerId,
-          source: 'post_match_communications',
-        },
+        metadata: metadata as Prisma.InputJsonValue,
+        ...testEventFields(Boolean(params.isTestEvent)),
       },
     })
   } catch (err) {
@@ -259,6 +266,8 @@ export async function notifyPostMatchAcceptance(params: {
         customerId: customer.id,
         reason,
         body: customerBody,
+        metadata: customerContext.metadata,
+        isTestEvent: isTestLead,
       })
     }
   }
@@ -333,6 +342,8 @@ export async function notifyPostMatchAcceptance(params: {
         providerId: provider.id,
         reason,
         body,
+        metadata: providerContext.metadata,
+        isTestEvent: isTestLead,
       })
     }
   }
