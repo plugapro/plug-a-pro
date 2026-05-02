@@ -139,9 +139,9 @@ async function snapshotCounts(): Promise<{ counts: Counts; jobRequestIds: string
 
   // Heavy children (counts only):
   counts.lead_unlocks = await db.leadUnlock.count({ where: { leadId: { in: leadIds } } })
-  counts.provider_lead_responses = await db.providerLeadResponse.count({ where: { leadInviteId: { in: leadIds } } })
-  counts.provider_shortlist_items = await db.providerShortlistItem.count({ where: { leadInviteId: { in: leadIds } } })
-  counts.provider_shortlists = await db.providerShortlist.count({ where: { requestId: { in: jobRequestIds } } })
+  counts.provider_lead_responses = await db.providerLeadResponse.count({ where: { leadInviteId: { in: leadIds } } }).catch(() => 0)
+  counts.provider_shortlist_items = await db.providerShortlistItem.count({ where: { leadInviteId: { in: leadIds } } }).catch(() => 0)
+  counts.provider_shortlists = await db.providerShortlist.count({ where: { requestId: { in: jobRequestIds } } }).catch(() => 0)
   counts.attachments = await db.attachment.count({
     where: {
       OR: [
@@ -231,9 +231,9 @@ async function main() {
     },
   })
   await db.payment.deleteMany({ where: { bookingId: { in: bookingIds } } })
-  await db.providerShortlistItem.deleteMany({ where: { leadInviteId: { in: leadIds } } })
-  await db.providerShortlist.deleteMany({ where: { requestId: { in: jobRequestIds } } })
-  await db.providerLeadResponse.deleteMany({ where: { leadInviteId: { in: leadIds } } })
+  await db.providerShortlistItem.deleteMany({ where: { leadInviteId: { in: leadIds } } }).catch(() => undefined)
+  await db.providerShortlist.deleteMany({ where: { requestId: { in: jobRequestIds } } }).catch(() => undefined)
+  await db.providerLeadResponse.deleteMany({ where: { leadInviteId: { in: leadIds } } }).catch(() => undefined)
   const unlockIds = (await db.leadUnlock.findMany({
     where: { leadId: { in: leadIds } },
     select: { id: true },
