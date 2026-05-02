@@ -55,4 +55,30 @@ describe('parseProviderInterestRateText', () => {
     // Must not interpret "1234567890" as a small reasonable fee.
     expect(result?.callOutFee).not.toBe(1234567890)
   })
+
+  it('parses "in 2 hours" as a relative arrival', () => {
+    const result = parseProviderInterestRateText('R250 in 2 hours', { now: FIXED_NOW })
+    expect(result?.callOutFee).toBe(250)
+    // 08:00 UTC + 2h = 10:00 UTC
+    expect(result?.estimatedArrivalAt.getUTCHours()).toBe(10)
+  })
+
+  it('parses "in 30 minutes" as a half-hour-out arrival', () => {
+    const result = parseProviderInterestRateText('R200 in 30 minutes', { now: FIXED_NOW })
+    expect(result?.callOutFee).toBe(200)
+    expect(result?.estimatedArrivalAt.getUTCMinutes()).toBe(30)
+  })
+
+  it('parses "noon" as 12:00', () => {
+    const result = parseProviderInterestRateText('250 today noon', { now: FIXED_NOW })
+    expect(result?.callOutFee).toBe(250)
+    expect(result?.estimatedArrivalAt.getHours()).toBe(12)
+  })
+
+  it('parses "later today" as roughly +3 hours', () => {
+    const result = parseProviderInterestRateText('300 later today', { now: FIXED_NOW })
+    expect(result?.callOutFee).toBe(300)
+    // 08:00 + 3h = 11:00 (UTC), local hour will mirror within timezone bounds
+    expect(result?.estimatedArrivalAt.getUTCHours()).toBe(11)
+  })
 })

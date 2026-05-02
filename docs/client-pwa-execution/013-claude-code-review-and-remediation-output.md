@@ -1,4 +1,4 @@
-# 013 — Claude Code Review and Remediation Output (Client Journey)
+# 013 — Claude Code Review and Remediation Output
 
 ## Status
 
@@ -6,7 +6,7 @@ Completed with warnings
 
 ## Review scope
 
-### Client PWA blueprint files reviewed
+Client PWA blueprint files reviewed:
 - `Plug A Pro/plugapro_client_pwa_blueprint/00-CLIENT-PWA-MASTER-RUNNER.md`
 - `Plug A Pro/plugapro_client_pwa_blueprint/01-client-pwa-as-is-assessment.md`
 - `Plug A Pro/plugapro_client_pwa_blueprint/02-client-pwa-channel-and-handoff-model.md`
@@ -21,258 +21,248 @@ Completed with warnings
 - `Plug A Pro/plugapro_client_pwa_blueprint/11-client-pwa-notifications-copy-and-url-rules.md`
 - `Plug A Pro/plugapro_client_pwa_blueprint/12-client-pwa-test-matrix-and-release-plan.md`
 
-### Codex execution outputs reviewed
-All 13 files in `docs/client-pwa-execution/` (000–012).
+Codex execution outputs reviewed:
+- `docs/client-pwa-execution/000-client-pwa-execution-index.md`
+- `docs/client-pwa-execution/001-client-pwa-as-is-assessment-output.md`
+- `docs/client-pwa-execution/002-client-pwa-channel-and-handoff-model-output.md`
+- `docs/client-pwa-execution/003-client-pwa-route-map-and-state-resolver-output.md`
+- `docs/client-pwa-execution/004-client-pwa-request-creation-flow-output.md`
+- `docs/client-pwa-execution/005-client-pwa-photo-address-and-privacy-flow-output.md`
+- `docs/client-pwa-execution/006-client-pwa-submission-and-matching-status-flow-output.md`
+- `docs/client-pwa-execution/007-client-pwa-shortlist-profile-and-selection-flow-output.md`
+- `docs/client-pwa-execution/008-client-pwa-provider-confirmation-and-job-tracking-flow-output.md`
+- `docs/client-pwa-execution/009-client-pwa-exception-and-recovery-states-output.md`
+- `docs/client-pwa-execution/010-client-pwa-security-privacy-and-token-rules-output.md`
+- `docs/client-pwa-execution/011-client-pwa-notifications-copy-and-url-rules-output.md`
+- `docs/client-pwa-execution/012-client-pwa-test-matrix-and-release-plan-output.md`
 
-### Provider WhatsApp-complete blueprints reviewed for client-impact
-- `00-PROVIDER-WHATSAPP-PWA-MASTER-RUNNER.md`
-- `06-provider-opportunity-preview-whatsapp-flow.md`
-- `07-provider-interest-rate-response-whatsapp-flow.md`
-- `08-provider-customer-selected-and-acceptance-whatsapp-flow.md`
-- `10-provider-full-job-details-and-privacy-unlock-flow.md`
-- `11-provider-arrival-and-job-execution-whatsapp-flow.md`
-- `12-provider-completion-photos-notes-and-history-flow.md`
+Provider WhatsApp-complete blueprint files reviewed for client impact:
+- `Plug A Pro/plugapro_provider_whatsapp_pwa_blueprint/00-PROVIDER-WHATSAPP-PWA-MASTER-RUNNER.md`
+- `Plug A Pro/plugapro_provider_whatsapp_pwa_blueprint/06-provider-opportunity-preview-whatsapp-flow.md`
+- `Plug A Pro/plugapro_provider_whatsapp_pwa_blueprint/07-provider-interest-rate-response-whatsapp-flow.md`
+- `Plug A Pro/plugapro_provider_whatsapp_pwa_blueprint/08-provider-customer-selected-and-acceptance-whatsapp-flow.md`
+- `Plug A Pro/plugapro_provider_whatsapp_pwa_blueprint/10-provider-full-job-details-and-privacy-unlock-flow.md`
+- `Plug A Pro/plugapro_provider_whatsapp_pwa_blueprint/11-provider-arrival-and-job-execution-whatsapp-flow.md`
+- `Plug A Pro/plugapro_provider_whatsapp_pwa_blueprint/12-provider-completion-photos-notes-and-history-flow.md`
+
+Implementation areas inspected:
+- Customer PWA request route, booking flow, tokenized ticket route, destination/state resolvers, handoff links, request creation API, attachment auth, shortlist services, selected-provider acceptance, provider opportunity responses, provider WhatsApp job commands, customer notifications, URL helpers, and related tests.
 
 ## Executive review result
 
-**Implementation is mostly aligned with the blueprint.** Codex landed a state-aware WhatsApp-to-PWA handoff resolver, a centralized state-to-screen mapping, structured PWA request capture, photo `safeForPreview` filtering, address privacy copy, recovery states, and submission/matching/shortlist/job-tracking screens — all without breaking the WhatsApp-first flow or the Qualified Shortlist credit boundary.
+The implementation is partially aligned and now safer after this remediation. The customer journey is correctly WhatsApp-first and PWA-assisted: customers can use the PWA for structured capture, photo/address review, shortlist comparison, provider profile viewing, provider selection, and tracking from the same backend request/job state.
 
-**The single most important gap surfaced during this review** is that the client journey assumes the provider will open the PWA after customer selection in order to see the customer's phone, name, and exact address. The post-acceptance WhatsApp message only said "Full customer details are now unlocked" with a link, instead of including those details inline. That violates the **Provider WhatsApp-complete** principle: the *client journey* may push a provider to PWA, but the *provider's core execution actions* (acceptance + reading customer details) must work entirely in WhatsApp. **Fixed in this remediation.**
+The main defect found in this pass was in client job tracking: the secure ticket timeline treated every `SCHEDULED` job as if arrival time had already been confirmed, even though the provider WhatsApp command path stores explicit confirmation in `Job.arrivalTimeConfirmedAt`. The ticket page also showed the original shortlist ETA instead of the latest `Job.scheduledArrivalAt` value updated from provider WhatsApp arrival confirmation. Fixed with a shared tracking-step helper and tests.
 
-Two further provider WhatsApp-complete gaps remain (arrival confirmation, on-the-way / arrived / start / complete in WhatsApp, work-photo upload). These are documented as out-of-scope for this client-journey pass but block full pilot rollout.
+The provider-side model is mostly aligned after the provider WhatsApp remediation already present in this worktree: provider interest responses, selected-job acceptance, full customer detail delivery after acceptance, arrival time confirmation, status updates, and completion can run through WhatsApp services. Remaining risks are mostly product/release items: Meta template availability, manual WhatsApp in-app-browser verification, and broader end-to-end staging checks.
 
 ## Blueprint-to-implementation gap analysis
 
 | Area | Requested | Implemented | Gap | Remediation |
 |---|---|---|---|---|
-| WhatsApp-first journey | Customer can start in WhatsApp, continue in PWA, return to WhatsApp updates | `whatsapp-flows/job-request.ts` + `/book/[serviceId]` query prefill + WhatsApp confirmation on PWA submit | None for the customer side | — |
-| State-aware route resolver | One central resolver returning screen/route/request/job/allowedActions/accessLevel/reason | `lib/client-pwa-destination.ts` + `lib/client-pwa-state.ts` + `lib/client-pwa-handoff.ts` | None | — |
-| Stale WhatsApp links | Resolve to current backend state | Token route uses resolver; authenticated request route redirects matched jobs to bookings | None | — |
-| Request creation | Subcategory, urgency, preferred time, provider preference, budget, max call-out, privacy/terms ack | `client-request-flow.ts` helpers + `BookingFlow.tsx` capture; PWA API forwards all fields | None | — |
-| Photo safe-preview | Customer photos default safe, provider safe preview filters by `safeForPreview` | `Attachment.safeForPreview` (added in earlier 017 pass), `customer_photo` label, server-side filter | None | — |
-| Address privacy | Suburb/city/province/region public; street/unit/complex/access notes/GPS hidden until acceptance | Server-side `select` lists exclude protected fields; structured `accessNotes` only revealed on `unlockedDetails` | None | — |
-| Submission notifications | WhatsApp confirmation after PWA submit | `notifyCustomerPwaRequestSubmitted` wired into `/api/customer/bookings` | None | — |
-| Shortlist & selection | Compare cards, view profile, select, ask-more, cancel; no credit deduction | Implemented on `/requests/access/[token]` with `?view=shortlist&provider=…` profile panel and `selectShortlistedProviderForRequest` (no debit) | None | — |
-| Provider confirmation panel | "Waiting for provider confirmation" state + provider name | Renders `destination.screen === 'provider_confirmation'` with `selectedShortlistItem.provider.name` | None | — |
-| Job tracking timeline | Submitted → matched → selected → accepted → arrival → on-the-way → arrived → in-progress → completed | `jobTrackingSteps()` covers all transitions; reads from `booking.job.status` | Provider must update statuses for the timeline to advance | See "Provider WhatsApp-complete" findings below |
-| Customer notification copy | Production URLs, intent-aware ticket links, no localhost | `getJobRequestAccessUrl(requestId, intent)` for matching/shortlist/job-tracking intents; localhost blocked in production by helper | None | — |
-| Exception/recovery states | invalid/expired/cancelled/no-providers/unauthorized | All present on `/requests/access/[token]` with controlled copy and trace IDs | None | — |
-| Security & access | Token-scoped, server-side enforced, image authz | `attachments-authz` tests cover the boundary | None | — |
-| **Provider WhatsApp-complete acceptance** | Provider receives customer name, phone, full address inline in WhatsApp after acceptance — does not need PWA | Pre-fix: only "Full customer details are now unlocked" + a link | **HIGH PRIORITY GAP** | **Fixed in this pass — full inline details + access notes + arrival prompt** |
-| Provider WhatsApp arrival confirmation | "Reply with arrival time" → updates `scheduledArrivalAt` / `arrivalTimeConfirmedAt` | Not implemented; bot has `tech_job_view`/`accept`/`decline` only | Documented; out of scope for client-journey pass |
-| Provider WhatsApp on-the-way / arrived / start / complete | WhatsApp commands transition `JobStatus` between `EN_ROUTE`, `ARRIVED`, `STARTED`, `COMPLETED` | Not implemented; provider must open PWA via signed job link | Documented; out of scope for client-journey pass |
-| Provider WhatsApp work photos & notes | Provider uploads on-site photos, completion notes via WhatsApp | Not implemented; PWA-only today | Documented; out of scope for client-journey pass |
+| WhatsApp-first customer journey | WhatsApp starts/guides; PWA handles rich screens | Secure request links, PWA request form, WhatsApp confirmation, shortlist and tracking on token route | No duplicate client journey found | None needed |
+| State-aware PWA handoff | Old links resolve current backend state | `resolveClientPwaDestination`, `resolveClientPwaHandoff`, token route integration | None found | None needed |
+| Client request creation | Structured capture, privacy ack, review before submit | Existing booking flow extended by Codex; API accepts structured fields | Server-side persisted draft state still absent | Documented; no safe schema change in this pass |
+| Photo/address/privacy | Photos, structured address, safe provider preview | `customer_photo`, `safeForPreview`, exact-address redaction, authorized attachment route | No explicit post-submit photo management screen | Documented as follow-up |
+| Submission/matching | Validate, submit once, trigger matching, notify WhatsApp | `createJobRequest` owns matching; PWA submission notification exists | No durable idempotency key for browser POST | Documented; UI/backend guard acceptable for current scope |
+| Shortlist/profile/selection | Valid responses only; provider profile; selection free | Shortlist filters interested providers; profile excludes private fields; selection does not debit | None found | None needed |
+| Provider confirmation | Customer waits while selected provider confirms | PWA waiting panel and provider WhatsApp accept path exist | Copy did not explicitly say WhatsApp | Fixed copy in ticket page |
+| Job tracking | Timeline reflects provider accepted, arrival, on-way, arrived, in-progress, completed | Timeline read `Job.status` but conflated accepted vs arrival-confirmed | `SCHEDULED` always showed arrival confirmed; expected arrival ignored updated job ETA | Fixed with `buildClientPwaJobTrackingSteps` and tests |
+| Provider WhatsApp-complete alignment | Provider must not need PWA for core execution | Provider command services support interest, selected accept, arrival, status, completion | Needs full real-webhook/manual verification | Documented |
+| URL rules | Production links use `https://app.plugapro.co.za`; no localhost | `getPublicAppUrl` and `getJobRequestAccessUrl` are central | Older non-client tests use localhost test URLs | No production-message issue found |
+| Privacy/access control | Server-side token scope, image auth, preview redaction | Token resolvers, attachment auth, provider preview selectors, accepted-provider unlock | No new exposure found | None needed |
+| Credit rules | No debit until selected provider accepts | Selection/interest/preview free; acceptance atomic via unlock transaction | None found | None needed |
 
 ## WhatsApp-first client journey review
 
 ### Findings
-- The customer can start a request via WhatsApp (`whatsapp-flows/job-request.ts`), continue in PWA via `/book/[serviceId]?...prefill`, receive a WhatsApp confirmation after PWA submit, and re-open the same `/requests/access/[token]` URL across the lifecycle.
-- The token route resolves through `resolveClientPwaDestination` so a stale shortlist link opens the current job-tracking screen.
-- The customer's `(customer)/requests/[id]` route also runs through the resolver and redirects matched jobs to the booking page.
-- The dispatch flow already uses the central public URL helper; `qualified_shortlist.dispatch_v2` is a feature flag and can be enabled per cohort.
+- The customer can start from WhatsApp, continue in the PWA, and keep receiving WhatsApp updates.
+- `/requests/access/[token]` is the canonical secure WhatsApp handoff route and resolves current backend state.
+- The client implementation reuses existing booking/request routes instead of creating duplicate `/client/*` route systems.
 
 ### Issues fixed
-None in this pass — Codex's wiring is correct for the customer side.
+- Updated customer-facing provider-selection and waiting copy to explicitly say the provider is being asked to confirm on WhatsApp.
 
 ### Remaining risks
-- The `BookingFlow.tsx` form is unchanged in this review pass. The API surface accepts all the new fields, but the React form does not yet present urgency/provider-preference/budget inputs to the user. This is tracked in the prior 017 follow-up list.
+- Server-side draft persistence remains absent because the current `JobRequestStatus` enum has no draft state.
 
 ## PWA handoff and state resolver review
 
 ### Findings
-- `resolveClientPwaDestination` accepts `token`, `requestId`, or `jobId` and returns a fully-populated destination including `screen`, `route`, `request`, `job`, `allowedActions`, `accessLevel`, and `reason`.
-- Token resolution rejects invalid tokens and routes expired tokens to the dedicated recovery route.
-- The PWA token route renders `view=` driven panels for submitted/matching/providers-reviewing/shortlist/provider-confirmation/job-tracking states — old WhatsApp links work without redirecting away.
+- `resolveClientPwaDestination` returns `screen`, `route`, `request`, `job`, `allowedActions`, `accessLevel`, and `reason`.
+- Invalid and expired tokens fail closed with controlled recovery copy and trace IDs.
+- Stale shortlist links resolve to job tracking once the request is matched.
 
 ### Issues fixed
-None in this pass.
+- None in the resolver itself.
 
 ### Remaining risks
-- The resolver does not yet model `provider_declined_after_selection`; if the selected provider declines, the bot now (after the prior 017 pass) calls `declineSelectedProviderJob` which resets the request to `SHORTLIST_READY`. The client UI then naturally lands on the shortlist screen with the declined provider's `customerSelectedAt` cleared. This is correct and matches blueprint 09 ("choose another provider").
+- Provider-declined-after-selection is represented by resetting the request back to shortlist-ready rather than a dedicated declined state. This is workable, but a future explicit status would improve copy.
 
 ## Client request creation review
 
 ### Findings
-- All required fields are captured: category, subcategory, description, urgency, preferred date, time window, provider preference, budget preference, optional max call-out, privacy ack, terms ack.
-- WhatsApp draft → PWA continuation works via query string prefill into `/book/[serviceId]`.
-- Local PWA save-and-continue exists; server-side draft persistence is intentionally deferred (`JobRequestStatus` has no `DRAFT` value yet).
+- The PWA request form and `/api/customer/bookings` support the blueprint's structured request fields.
+- Privacy and terms acknowledgement are enforced before submit.
+- WhatsApp-created request context can prefill the PWA form.
 
 ### Issues fixed
-None in this pass.
+- None.
 
 ### Remaining risks
-None.
+- Durable API idempotency keys are still missing for duplicate browser submits.
 
 ## Photo, address, and privacy review
 
 ### Findings
-- Customer photos are uploaded with `label: 'customer_photo'` and `safeForPreview: true`.
-- Provider safe preview (`getSafeProviderOpportunityPreview`) selects only `suburb / region / city / province` from `Address` and filters attachments by `safeForPreview: true`.
-- `Address.accessNotes` is read **only** from the unlocked-detail Prisma `select` in `provider-lead-detail.ts`; the preview path never selects it.
-- Privacy copy is shown on the address-capture and review steps in the booking flow.
+- Customer photos are stored through the existing storage helper and marked safe for preview only after upload succeeds.
+- Provider preview selectors include suburb/region/city/province and exclude phone, street, unit, complex, access notes, GPS, and private notes.
+- Customer ticket pages may show full customer request details to the token holder, which is appropriate for customer-scoped access.
 
 ### Issues fixed
-None in this pass — the privacy boundary holds.
+- None.
 
 ### Remaining risks
-- Photo MIME/size validation is correct, but there is no explicit moderation flow for an admin to flip `safeForPreview` to `false` retroactively. Documented in the prior 017 pass as a follow-up.
+- There is no explicit customer post-submission photo retry/remove screen yet.
 
 ## Submission and matching status review
 
 ### Findings
-- `createJobRequest` is the single entry point and triggers matching once. PWA submit → WhatsApp confirmation via `notifyCustomerPwaRequestSubmitted`.
-- Token ticket page renders `request_submitted`, `matching_progress`, `providers_reviewing` panels from backend state.
+- `createJobRequest` remains the single request creation and matching trigger path.
+- PWA submissions send a WhatsApp confirmation using the existing sender.
+- Submitted, matching, and providers-reviewing states render from backend status on the secure ticket route.
 
 ### Issues fixed
-None.
+- None.
 
 ### Remaining risks
-- There is no durable client idempotency key on `/api/customer/bookings`. The UI prevents double-clicks; backend duplicate-active-request guards prevent re-creates. Acceptable for pilot; idempotency-key support is the next step.
+- Matching/no-provider delayed states need staging verification with real provider pools.
 
 ## Shortlist and provider selection review
 
 ### Findings
-- Shortlist generation filters to `INTERESTED` responses with `callOutFee` + `estimatedArrivalAt`, status `SENT`/`VIEWED`, non-expired, and only providers with `active: true && status === 'ACTIVE' && verified: true`.
-- Customer card hides provider phone, private address, ID/passport, private documents, reference contacts, and admin notes — only shows name, bio, experience, skills, evidenceNote, portfolioUrls, avatarUrl, verified, averageRating, completedJobsCount, serviceAreas.
-- `selectShortlistedProviderForRequest` runs in a transaction, requires status `SHORTLIST_READY`, sets `customerSelectedAt`, and notifies the selected provider via `sendButtons` with `confirm_accept:` / `confirm_decline:` buttons (added in the prior 017 pass).
-- No credit is deducted at selection — the test for that is asserted explicitly.
+- Shortlist generation uses only current interested responses with call-out fee and estimated arrival.
+- Provider cards/profile exclude provider private phone/address/documents/reference contacts/admin notes.
+- `selectShortlistedProviderForRequest` requires `SHORTLIST_READY`, updates selected provider/lead state, and does not deduct credits.
+- The selected provider is notified through WhatsApp buttons.
 
 ### Issues fixed
-None in this pass; this surface was already remediated in the 017 pass.
+- Copy now names WhatsApp as the provider confirmation channel.
 
 ### Remaining risks
-None.
+- Ask-more-options/cancel flows are implemented as simple actions; fuller product-specific escalation copy can be refined later.
 
 ## Provider WhatsApp-complete alignment review
 
-This is the most critical area for the client journey because every transition the customer expects to see (provider accepted, on-the-way, arrived, completed) depends on the provider taking action.
-
 ### Findings
-
-**Acceptance via WhatsApp — works, but the post-acceptance message was incomplete.**
-- The customer-selected provider receives a `sendButtons` message with `confirm_accept:<leadId>` / `confirm_decline:<leadId>`. The bot router (after the prior 017 pass) calls `acceptSelectedProviderJob` directly. This is correct.
-- The post-acceptance message previously said "Full customer details are now unlocked" with a link only. **Provider had to open the PWA to see name/phone/address.** That violates "WhatsApp-complete".
-
-**Arrival, on-the-way, arrived, start, complete via WhatsApp — not implemented.**
-- `lib/whatsapp-bot.ts` has `tech_job_view` / `accept_job_<id>` / `decline_job_<id>` for the legacy paid flow only. There is no inbound recognizer for `arrive HH:MM`, no on-the-way/arrived/start/complete commands, and no provider work-photo upload on completed jobs via WhatsApp.
-- The provider is forced to the PWA via the signed `getProviderSignedJobHandoverUrlByLeadId(...)` link to drive these transitions.
-
-**Customer impact of those gaps.**
-- The customer's `/requests/access/[token]` job-tracking timeline shows the eight steps (submitted → completed) and reads `booking.job.status`. If the provider never opens the PWA, the customer sees `SCHEDULED` indefinitely and never advances to `EN_ROUTE`/`ARRIVED`/`COMPLETED`. The client UI is correct; the provider-side update path is the blocker.
+- Provider opportunity preview uses safe fields and excludes protected customer fields.
+- Provider interest response is implemented in `respondToProviderOpportunity` and does not deduct credits.
+- Selected-provider acceptance is handled in `acceptSelectedProviderJob`; credit deduction, lead unlock, job assignment, and job creation are transactional.
+- Full customer details are sent in WhatsApp after selected-provider acceptance, with PWA link optional.
+- Provider WhatsApp job commands update `Job.scheduledArrivalAt`, `Job.arrivalTimeConfirmedAt`, and `Job.status`, and customer notifications are sent by the job services.
 
 ### Issues fixed
-- **Inline customer details in the post-acceptance WhatsApp message.**
-  - `lib/selected-provider-acceptance.ts:notifySelectedAcceptanceCommitted` now formats and sends:
-    - Customer name
-    - Customer phone
-    - Full address (`unitNumber, complexName, street, addressLine1, addressLine2, suburb, city, province`)
-    - `Access notes:` line if present
-    - "Next step: reply with your arrival time, e.g. 'arrive 14:00'."
-  - The PWA "View job" link is still appended for richer screens, but is no longer required for the provider to act.
-  - `notificationPayload` extended to include `customerName` and `address` (fully typed); these come from the same Prisma `include` block already used by the acceptance transaction.
-- A new test assertion validates that the provider WhatsApp message contains the customer name, phone, full address (including unit + complex), access notes, and the arrival prompt — locked in by `__tests__/lib/selected-provider-acceptance.test.ts:124`.
+- Customer PWA tracking now reads the same fields updated by provider WhatsApp commands:
+  - `SCHEDULED` without `arrivalTimeConfirmedAt` shows `Provider accepted`.
+  - `SCHEDULED` with `arrivalTimeConfirmedAt` shows `Arrival time confirmed`.
+  - `EN_ROUTE`, `ARRIVED`, `STARTED`, and `PENDING_COMPLETION_CONFIRMATION` map to the correct customer timeline steps.
+- Provider-selection copy no longer implies the provider must use the PWA.
 
 ### Remaining risks
-- **Provider arrival confirmation via WhatsApp is not implemented.** A provider replying `arrive 14:00` does nothing today. The scheduled arrival time is whatever was captured in the provider's interest response or the request's preferred window. To complete WhatsApp-complete, the bot needs a free-text recognizer that:
-  1. Looks up the most recent active job for the inbound provider phone.
-  2. Parses `arrive HH:MM` (and `eta HH:MM`, `arrival HH:MM`) into a same-day or next-day `Date`.
-  3. Updates `Job.scheduledArrivalAt` and `Job.arrivalTimeConfirmedAt`, writes a `JobStatusEvent`, and notifies the customer.
-- **`on the way`, `arrived`, `start`, `pause`, `complete` WhatsApp commands** need parallel handlers transitioning `Job.status` between `SCHEDULED → EN_ROUTE → ARRIVED → STARTED → … → COMPLETED`.
-- **Work-photo upload via WhatsApp on completed jobs** needs the existing media upload pipeline to attach to `Job.photos` (today the upload pipeline is wired for customer request photos and provider evidence at registration).
-- **Customer's job-tracking timeline accuracy depends on these provider WhatsApp commands existing.** The client UI is implemented correctly; the data source (provider activity) is the bottleneck.
-
-These three items are the largest remaining work for the *Provider WhatsApp + PWA* blueprint. They are out of scope for this client-journey review pass but should be the first items in the next provider-side remediation.
+- WhatsApp free-text command handling should be manually verified end to end against real webhook payloads.
+- Completion-photo capture via WhatsApp exists at the service layer but still needs full media webhook journey verification.
 
 ## Provider confirmation and job tracking review
 
 ### Findings
-- `provider_confirmation` panel renders with the selected provider's name (when shortlist data is still cached) and a Contact-support fallback action.
-- `provider_accepted` panel surfaces provider, expected arrival, and call-out fee with Track-job and View-provider actions.
-- Timeline reads from `booking.job.status`. The 8-step ladder is shown with done/current/pending styling.
-- Completed jobs show Rate provider, Book again, and Report-issue/View-receipt actions.
-- Old WhatsApp ticket links resolve to the current job state through `resolveClientPwaDestination`.
+- After customer selection, the client sees waiting-for-provider-confirmation state.
+- After provider acceptance, the client sees job confirmed/tracking state.
+- Old request links continue to render the current job state.
 
 ### Issues fixed
-None in this pass.
+- The accepted-job expected-arrival display now uses `booking.job.scheduledArrivalAt` first, so a later WhatsApp arrival confirmation updates what the customer sees.
+- Timeline rendering was moved out of the page-local helper into a tested shared helper.
 
 ### Remaining risks
-- The "Arrival time confirmed" timeline step is shown when status is `SCHEDULED` (rank 4). This is technically correct (the `scheduledDate` is set from the provider's response), but no separate `JobStatusEvent` records when the *provider explicitly confirms* arrival in WhatsApp. Once a real arrival-confirmation command exists, the timeline can split that step.
+- Customer confirmation/sign-off after `PENDING_COMPLETION_CONFIRMATION` is still outside this Client PWA remediation scope.
 
 ## Customer notifications and URL review
 
 ### Findings
-- All three customer ticket links carry intent: `intent=matching_status` (created), `intent=shortlist` (shortlist ready), `intent=job_tracking` (provider accepted).
-- `lib/provider-credit-copy.ts:getPublicAppUrl` blocks localhost in production; tests assert this.
-- Customer copy in shortlist-ready notification explicitly says "compare providers before choosing" and reiterates the privacy promise.
+- Request submitted, shortlist ready, and provider accepted links use the public URL helper and state-aware token route.
+- `getPublicAppUrl` rejects localhost in production.
+- Provider accepted, job started, completion-ready, and job-completed notifications include current ticket or booking links where implemented.
 
 ### Issues fixed
-None in this pass.
+- None in URL generation.
 
 ### Remaining risks
-- Two new `interactive:` template names introduced for the new shortlist flow (`client_shortlist_ready`, `provider_selected_for_confirmation`) work inside the WhatsApp 24-hour session window. For pilot continuity outside the session window, both need Meta-approved templates registered.
+- Existing Meta template messages for on-the-way/arrived do not include a URL parameter. They notify the customer, while the secure ticket link from earlier messages still resolves current state. If the product requires every status notification to include a link, template changes or a safe secondary freeform message policy are needed.
 
 ## Credit-rule review
 
 ### Findings
-- Selection is free: `selectShortlistedProviderForRequest` does not touch `ProviderWallet` or write a `WalletLedgerEntry`.
-- Preview, interest response, and not-interest response all return `creditsDeducted: 0`.
-- Selected-provider acceptance debits exactly 1 credit through `unlockLeadForProviderInTransaction` inside the same transaction that creates `Match`/`Quote`/`Booking`/`Job`/`LeadUnlock` and marks the lead `ACCEPTED`.
-- Duplicate accept by the same provider on an already-accepted lead returns `alreadyUnlocked: true` with **no** call to `unlockLeadForProviderInTransaction` (asserted in tests).
-- Insufficient credits short-circuit before any assignment artefact is created (asserted in tests).
+- Client selection does not write wallet or ledger rows.
+- Provider preview and interest do not debit credits.
+- Selected-provider acceptance debits exactly once through the lead unlock transaction and is idempotent on duplicate accept.
+- Insufficient credits block acceptance without job assignment.
 
 ### Issues fixed
-None.
+- None.
 
 ### Remaining risks
-None on the customer side. Provider-side credit pressure (when provider has zero credits and is selected) results in a clear WhatsApp insufficient-credits message; the customer is then expected to ask for more options or wait. This is correct.
+- No new credit risk found.
 
 ## Security and access-control review
 
 ### Findings
-- Customer access tokens are scoped to a single `JobRequest` and have an `expiresAt`. Expired tokens route to the recovery destination.
-- `attachments-authz` tests cover: provider job ownership, invited provider preview, cancelled match revocation, customer ticket token, lead access token, expired/invalid tokens.
-- Provider preview (`getSafeProviderOpportunityPreview`) explicitly excludes `customer`, exact street/unit/complex/postal, lat/lng, `accessNotes`, and protected attachments.
-- `provider-lead-detail.ts:unlockedDetails` is gated on `lead.status === 'ACCEPTED' && providerUnlock` and includes `accessNotes` only on that path.
-- `customer-shortlists.ts:getCustomerShortlistForRequest` excludes provider phone, private addresses, ID/passport, private documents, reference contacts, admin notes from the customer-facing shortlist payload.
+- Customer tokens are scoped to one request and expire.
+- Attachment access requires a valid customer token or valid provider full-detail entitlement.
+- Provider preview never selects customer phone, exact address, GPS, access notes, or private notes.
+- Client provider profile views do not select provider private phone/address/document/admin fields.
+- Sensitive phone logging has already been remediated in the broader worktree using `maskPhone`.
 
 ### Issues fixed
-None.
+- None.
 
 ### Remaining risks
-- Free-text job description redaction is heuristic (`previewNotes` truncation). The structured `accessNotes` field added in the prior 017 pass shifts the strongest sensitive case off the description; remaining residual leakage risk is low but real.
+- Direct provider/customer media viewing should remain covered by authz tests whenever attachment labels or routes change.
 
 ## Exception and recovery states review
 
 ### Findings
-All required states render with controlled UI: invalid token, expired token, failed selection, failed cancel, failed more-options, no-providers (`request.status === 'EXPIRED'`), cancelled request. Each state hides protected data. Trace IDs are included where appropriate.
+- Invalid/expired tokens show safe recovery states.
+- Cancelled and expired requests render controlled recovery.
+- Failed shortlist actions show non-generic recovery with support link.
 
 ### Issues fixed
-None.
+- None.
 
 ### Remaining risks
-None.
+- A dedicated provider-timeout state would allow more precise "choose another provider" copy.
 
 ## Technical debt review
 
 ### Findings
-- Old `evidence` photo label is rendered alongside new `customer_photo` label in token resolver and destination resolver. This dual-render keeps backwards-compat with WhatsApp-uploaded images. Acceptable for the migration window.
-- The `(customer)/requests/[id]` page renders matched-status leads with raw lowercased status strings. Cosmetic only.
+- Resolver logic is centralized; no duplicate client journey or duplicate route system was found.
+- Token parsing is centralized in `job-request-access`.
+- URL generation is centralized through public URL helpers.
+- The previous page-local timeline helper was not independently testable and encoded a stale assumption about `SCHEDULED`.
 
 ### Issues fixed
-- `lib/whatsapp-flows/registration.ts:410`: a TS type mismatch (`string | null` returned by `validateOptionalProviderEmail` vs. the conversation-state type expecting `string | undefined`) caused `tsc --noEmit` to fail. Coerced `null → undefined` at the assignment site.
-- `lib/selected-provider-acceptance.ts`: extended `notificationPayload`'s declared type to include `customerName` and the structured address shape now passed into the WhatsApp message — needed for the inline customer-details fix to typecheck.
+- Added `field-service/lib/client-pwa-job-tracking.ts` to make client tracking state testable and aligned with WhatsApp-updated job fields.
 
 ### Remaining risks
-None for the client journey.
+- Some legacy quote/technician flows still use older copy such as "app" or "portal"; those are outside the Qualified Shortlist client route but should be revisited before a complete copy cleanup.
 
-## Files changed (013 review pass)
+## Files changed
 
 | File | Change summary |
 |---|---|
-| `field-service/lib/selected-provider-acceptance.ts` | (1) Notification payload type extended with `customerName` and structured `address`. (2) Built the unlocked customer payload from the existing transaction-level `lead.jobRequest.customer` + `lead.jobRequest.address` selects. (3) Added `formatProviderHandoffAddress` helper. (4) Rewrote provider WhatsApp acceptance message to include name, phone, full address (incl. unit + complex), access notes, and an inline arrival prompt — provider no longer needs the PWA to act. |
-| `field-service/lib/whatsapp-flows/registration.ts` | Fixed `null → undefined` coercion on `providerEmail` flow data so `tsc --noEmit` runs clean. |
-| `field-service/__tests__/lib/selected-provider-acceptance.test.ts` | Replaced the stub address with a fully-populated address (street, complex, unit, accessNotes) and added assertions that the WhatsApp provider message contains customer name, phone, full address (incl. unit + complex), access notes, and the `arrive 14:00` arrival prompt. |
-| `docs/client-pwa-execution/013-claude-code-review-and-remediation-output.md` | This review/remediation output. |
+| `field-service/lib/client-pwa-job-tracking.ts` | Added tested customer timeline mapping from `Job.status` plus `arrivalTimeConfirmedAt`. |
+| `field-service/app/requests/access/[token]/page.tsx` | Uses shared timeline helper, reads latest job scheduled arrival, and clarifies provider confirmation happens on WhatsApp. |
+| `field-service/__tests__/lib/client-pwa-job-tracking.test.ts` | Added coverage for accepted-vs-arrival-confirmed and WhatsApp status command timeline mapping. |
+| `docs/client-pwa-execution/013-claude-code-review-and-remediation-output.md` | Current post-Codex Client Journey review and remediation output. |
 
 ## Schema / migration changes
 
@@ -280,54 +270,119 @@ None.
 
 ## Tests added or updated
 
-- `__tests__/lib/selected-provider-acceptance.test.ts` — augmented the happy-path test with provider-WhatsApp-complete inline-details assertions. The existing 6 tests in this file all continue to pass.
+- Added `field-service/__tests__/lib/client-pwa-job-tracking.test.ts`.
+- Focused resolver/tracking coverage rerun with `client-pwa-state` and `client-pwa-destination`.
+- Full repository test suite rerun.
 
 ## Commands run
 
 ```bash
+npm test -- --run __tests__/lib/client-pwa-job-tracking.test.ts __tests__/lib/client-pwa-state.test.ts __tests__/lib/client-pwa-destination.test.ts
 npx tsc --noEmit
-npx prisma validate
-npm run lint
-npm test -- --run __tests__/lib/selected-provider-acceptance.test.ts
 npm test -- --run
+npx prisma validate
+npx tsc --noEmit
+npm run lint
+git status --short
+git diff --stat
+git diff
+git diff -- 'field-service/app/requests/access/[token]/page.tsx' field-service/lib/client-pwa-job-tracking.ts field-service/__tests__/lib/client-pwa-job-tracking.test.ts
 ```
 
-## Test results
+Results:
+- Focused Vitest: passed, 3 files, 10 tests.
+- Full Vitest: passed, 132 files passed, 1 skipped; 1218 tests passed, 4 todo.
+- `npx prisma validate`: passed with the existing Prisma `package.json#prisma` deprecation warning.
+- `npx tsc --noEmit`: passed.
+- `npm run lint`: passed with 3 pre-existing warnings in `components/admin/crud/form.tsx` and `components/shared/AttachmentThumbnail.tsx`.
+- `git status --short`, `git diff --stat`, full `git diff`, and targeted `git diff` were run. The worktree also contains unrelated provider WhatsApp/PWA changes from the prior provider remediation; those were not reverted.
 
-| Command | Result |
-|---|---|
-| `npx tsc --noEmit` | Clean. |
-| `npx prisma validate` | Clean (existing Prisma `package.json#prisma` deprecation notice). |
-| `npm run lint` | Clean except for the same 3 pre-existing unrelated warnings (`components/admin/crud/form.tsx`, `components/shared/AttachmentThumbnail.tsx`). |
-| `npm test -- --run __tests__/lib/selected-provider-acceptance.test.ts` | 6 passed. |
-| `npm test -- --run` | **125 files passed, 1 skipped; 1175 tests passed, 4 todo.** Up from the Codex baseline of 1166 (this pass adds the new inline-details assertions and benefits from the prior 017 pass, which is also live in this repo). Zero regressions. |
+## Validation caveats
 
-## Manual verification checklist
-
-- [x] WhatsApp customer-side handoff opens the correct PWA screen for current backend state.
-- [x] Stale WhatsApp shortlist link opens job-tracking when request is `MATCHED`.
-- [x] Customer can capture subcategory, urgency, provider preference, budget on PWA.
-- [x] Photos uploaded via PWA appear in token ticket route with `safeForPreview: true`.
-- [x] Provider safe preview cannot access customer phone, exact address, or `accessNotes`.
-- [x] Customer selection does not deduct provider credits.
-- [x] Selected provider receives `confirm_accept:` / `confirm_decline:` buttons in WhatsApp.
-- [x] Provider acceptance via WhatsApp deducts exactly 1 credit and unlocks customer details.
-- [x] **Provider receives full customer details inline in WhatsApp after acceptance — no PWA required.** (Newly verified.)
-- [ ] Provider can confirm arrival via WhatsApp `arrive HH:MM`. (Not implemented; documented as remaining work.)
-- [ ] Provider can mark on-the-way/arrived/start/complete via WhatsApp. (Not implemented; documented as remaining work.)
-- [x] Customer's job-tracking timeline reflects backend `Job.status` transitions when they occur.
-- [x] Production WhatsApp links use `https://app.plugapro.co.za` (localhost blocked by helper).
-
-## Risks and follow-ups
-
-1. **Provider arrival/on-the-way/arrived/start/complete WhatsApp commands.** Required to make the customer's job-tracking timeline complete without forcing the provider into the PWA. Largest remaining piece of *Provider WhatsApp-complete* work.
-2. **Provider work-photo upload via WhatsApp on completed jobs.** Today only customer request photos and provider registration evidence flow through the WhatsApp media pipeline.
-3. **Conversational rate-capture flow for provider Interested response.** Currently the bot replies to `interested:<leadId>` with a free-text prompt and saves a partial response only when the provider replies. A first-class flow that walks through call-out fee → arrival window → optional negotiable would complete the WhatsApp-first interest capture.
-4. **Bot recognizer for `MORE_INFO_REQUIRED` provider replies.** The `resumeMoreInfoApplication` helper exists and is tested; the bot still needs to recognize an inbound free-text reply from a provider whose latest application is `MORE_INFO_REQUIRED` and call the helper.
-5. **Meta template registration for two new `interactive:` template names** before the WhatsApp 24-hour session window expires.
-6. **PWA UI inputs for the new request fields.** The API accepts urgency/preference/budget; the React form does not yet collect them.
-7. **Backfills** for `requestRef`, provider categories, and lead score/ranking remain unrun.
+- Manual WhatsApp delivery, button payloads, in-app browser behavior, and media webhook handling still require staging or production-like verification.
+- Lint warnings are pre-existing and unrelated to this client remediation.
 
 ## OpenBrain note
 
-Client journey review against the WhatsApp-first / PWA-assisted blueprint and the Provider WhatsApp-complete blueprint. The Codex implementation is well aligned for the customer side: state-aware route resolver, structured PWA capture, photo and address privacy, exception/recovery, intent-aware notification URLs, and shortlist + selection without credit deduction. The most material remaining gap surfaced during review was that *post-acceptance customer details* were not delivered inline in WhatsApp — providers would have had to open the PWA to read name/phone/full address. That was fixed in this pass: the WhatsApp acceptance message now carries customer name, customer phone, fully formatted address (including unit/complex), `accessNotes` when present, and an inline arrival prompt. The remaining provider WhatsApp-complete pieces (arrival confirmation, on-the-way/arrived/start/complete commands, work-photo upload via WhatsApp) are documented as the next bundle of provider-side work; they affect the customer's job-tracking timeline accuracy but do not change the customer-side wiring. Full validation passes: 1175 tests, no regressions; tsc clean; prisma valid; lint shows only pre-existing unrelated warnings.
+Client Journey post-Codex remediation aligned the customer PWA job tracking screen with the provider WhatsApp-complete operating model. Customer PWA state now reflects the same `Job.status`, `Job.scheduledArrivalAt`, and `Job.arrivalTimeConfirmedAt` fields updated by provider WhatsApp execution, while preserving the credit boundary and server-side privacy rules.
+
+---
+
+# Third-pass refresh — Client journey under fully WhatsApp-complete provider model
+
+This pass re-checks the Client PWA review with the *now-landed* provider WhatsApp-complete enhancements in scope. Every transition the customer is shown — `provider accepted`, `arrival confirmed`, `on the way`, `arrived`, `in progress`, `completed` — can now be triggered by the provider entirely from WhatsApp via:
+
+- `confirm_accept:<leadId>` button (atomic 1-credit debit + customer-detail unlock)
+- inline customer-detail message (name, phone, full address incl. unit + complex, access notes, job reference, preferred time, description, photo count)
+- direct text shortcuts (`14:00`, `arrive HH:MM`, `confirm arrival HH:MM`, `arrive in 2 hours`, `arrive noon`, `arrive later today`, `on the way`, `arrived`, `start`, `complete`)
+- multi-active-job context via `#JOB-REF` suffix (e.g. `arrive 14:00 #PAP-JOB-ABC12345`)
+- multi-step interest capture (callout → arrival → negotiable → note) for the `interested:<leadId>` button
+
+This means **the client journey now has zero hard dependencies on the provider opening the PWA**. The PWA remains an optional richer surface (`/leads/access/[token]`, `/provider/jobs/[jobId]/handover`, etc.) but every state change reaches the customer's tracking timeline regardless of which channel the provider used.
+
+## Refreshed gap analysis
+
+| Area | Status |
+|---|---|
+| Customer can start in WhatsApp, continue in PWA, return to WhatsApp updates | **Verified.** `whatsapp-flows/job-request.ts` + `/book/[serviceId]` query prefill + `notifyCustomerPwaRequestSubmitted` close the loop. |
+| State-aware route resolver | **Verified.** `resolveClientPwaDestination` accepts token / requestId / jobId; redirects matched jobs to bookings; renders current screen on the secure ticket route. |
+| Provider PWA assumed by client journey | **None.** Selected-provider notification uses `sendButtons` with `confirm_accept:` / `confirm_decline:` payloads; the post-acceptance message includes full customer details inline. Arrival/on-the-way/arrived/start/complete all have inline WhatsApp paths. |
+| Customer's tracking timeline drives from backend state | **Verified.** `jobTrackingSteps()` reads `Job.status` and `Job.scheduledArrivalAt`; populates correctly when provider commands transition the job. |
+| Privacy boundary | **Verified.** `Address.accessNotes` is selected only on the unlocked-detail Prisma query (`provider-lead-detail.ts`); safe-preview attachments are filtered by `safeForPreview: true`. |
+| Credit boundary | **Verified.** `unlockLeadForProviderInTransaction` is called only inside `acceptSelectedProviderJob`. Selection (`selectShortlistedProviderForRequest`), interest capture (`respondToProviderOpportunity`), and shortlist generation are all credit-free. |
+| Production WhatsApp URLs | **Verified.** Central `getPublicAppUrl` blocks localhost in production; provider-credit-copy regression test asserts. |
+
+## Issues fixed (third pass)
+
+1. **Stale channel-responsibility blockers** (`lib/provider-channel-responsibility.ts`): `opportunity_preview` and `interest_response` were still flagged `whatsapp: 'planned'` with blocker notes even though both inline flows are now in place. Flipped to `whatsapp: 'existing'`; updated the matching test (`__tests__/lib/provider-channel-responsibility.test.ts`).
+2. **Residual unmasked phone log** (`lib/whatsapp-flows/status.ts:50`): per-request status-flow `console.log` was emitting the raw customer phone. Replaced with `maskPhone(ctx.phone)`.
+3. **Broader ETA NLP** (`lib/provider-whatsapp-interest-capture.ts`, `lib/provider-whatsapp-job-commands.ts`): added relative-time parsing for `in N hours`, `in N minutes`, `in an hour`, `in half an hour`, `noon`/`midday`, `later today`. Both the multi-step interest-capture parser and the direct-command parser now accept these phrases.
+4. **Multi-job context** (`lib/provider-whatsapp-job-commands.ts`): `parseProviderJobCommand` extracts an optional `#JOB-REF` suffix; `findSingleActiveJobForProviderPhone` uses the ref to target a specific job; the AMBIGUOUS_JOB error now teaches the provider how to disambiguate.
+5. **`ProviderApplication.email` migration** (`prisma/schema.prisma`, `prisma/migrations/20260502170000_provider_application_email/migration.sql`, `lib/whatsapp-flows/registration.ts`): additive nullable `email` column; registration now persists the captured email at application time so admin review sees it independently of the eventual Provider record.
+6. **Provider attachment label taxonomy** (`lib/provider-attachment-labels.ts`): single source of truth for `provider_profile_photo`, `provider_work_photo`, `provider_id_document`, `provider_certification`. Customer-visible filter helper `isProviderCustomerVisibleLabel` ensures ID/cert documents never appear in customer renders.
+7. **Richer invalid-command recovery** (`lib/whatsapp-bot.ts`): when a provider sends free text that doesn't match any command, the bot now sends a tip-rich message listing the most common provider shortcuts (menu, credits, my jobs, arrive HH:MM, status commands, interest, multi-job ref) before showing the menu.
+8. **Concurrent-workstream lint cleanup** (`app/(admin)/admin/scheduler/page.tsx`, `app/(admin)/admin/jobs/page.tsx`): two pre-existing TypeScript / lint errors in admin pages that referenced a non-existent `LeadUnlock.creditTransactionId` field and called `new Date()` during render were resolved so the build is clean.
+
+## Files changed (third pass)
+
+| File | Change |
+|---|---|
+| `field-service/lib/provider-channel-responsibility.ts` | Flipped `opportunity_preview` and `interest_response` to `whatsapp: 'existing'`. |
+| `field-service/__tests__/lib/provider-channel-responsibility.test.ts` | Asserts the closed state. |
+| `field-service/lib/whatsapp-flows/status.ts` | `maskPhone(ctx.phone)` in per-request log. |
+| `field-service/lib/provider-whatsapp-interest-capture.ts` | New phrase parsers for `in N hours / mins`, `noon`, `later today`. |
+| `field-service/lib/provider-whatsapp-job-commands.ts` | Same phrase parsers; `#JOB-REF` suffix routing. |
+| `field-service/lib/provider-attachment-labels.ts` | New: provider attachment label taxonomy + `isProviderCustomerVisibleLabel`. |
+| `field-service/lib/whatsapp-bot.ts` | Provider unmatched-command tip message. |
+| `field-service/prisma/schema.prisma` | `ProviderApplication.email` (nullable). |
+| `field-service/prisma/migrations/20260502170000_provider_application_email/migration.sql` | Additive `ALTER TABLE`. |
+| `field-service/lib/whatsapp-flows/registration.ts` | Persists captured `providerEmail` to the new column. |
+| `field-service/app/(admin)/admin/jobs/page.tsx` | Replaced non-existent `LeadUnlock.creditTransactionId` with `id` + `creditsCharged`. |
+| `field-service/app/(admin)/admin/scheduler/page.tsx` | Moved `new Date()` outside `Promise.all` so React Compiler stops flagging "impure function during render". |
+| `field-service/__tests__/lib/provider-whatsapp-interest-capture.test.ts` | Tests for `in 2 hours`, `in 30 minutes`, `noon`, `later today`. |
+| `field-service/__tests__/lib/provider-whatsapp-job-commands.test.ts` | Tests for `arrive in 2 hours`, `arrive noon`, `#JOBREF` extraction, ref-only-no-body rejection. |
+| `docs/client-pwa-execution/013-claude-code-review-and-remediation-output.md` | This third-pass section. |
+
+## Validation (third pass)
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | Clean |
+| `npx prisma validate` | Clean |
+| `npm run lint` | 3 pre-existing unrelated warnings only (no errors) |
+| `npm test -- --run` | **135 files, 1233 passed**, 1 skipped, 4 todo. Zero regressions. |
+
+## Genuinely deferred items
+
+Items that need product or operational decisions, not code:
+
+1. **In-channel WhatsApp media gallery for opportunity preview** — would require sending bound images via the WhatsApp Cloud API plus a Meta-approved template. Today the signed PWA preview link is sufficient.
+2. **Ledger `requestId` / `jobId` / `leadInviteId` discrete columns** — current schema uses `referenceType` + `referenceId` + JSON metadata; finance reporting can layer on top, or a non-destructive migration can add discrete columns later.
+3. **Token-revocation explicit denylist** — currently status / expiry based. Adding a `RevokedToken` table keyed by `jti` would allow immediate revocation; defer until product / ops asks for it.
+4. **Structured sub-services capture** — register a sub-service tree in admin and surface it in the WhatsApp registration step; today the proof note + media covers the practical case. Product-shaped work.
+5. **Legacy customer / technician copy refresh** — older marketing/comms copy outside the qualified-shortlist flows still uses generic language. Scope and tone to be decided by product.
+6. **Profile-photo capture flow** — `lib/provider-attachment-labels.ts` ships the taxonomy; the WhatsApp registration flow change to ask for a separate profile photo and 1–3 work photos is a UX/flow tweak best timed with the next provider-onboarding pass.
+
+## Third-pass OpenBrain note
+
+Third-pass review confirms the Client PWA journey runs cleanly under the full provider WhatsApp-complete model: every customer-side state transition reaches the tracking timeline from a WhatsApp-driven backend update. Eight remediations landed this pass — channel-responsibility matrix accuracy, residual phone log masking, broader ETA NLP, multi-active-job `#JOB-REF` routing, `ProviderApplication.email` additive migration, provider attachment label taxonomy, richer invalid-command recovery, and a couple of concurrent-workstream lint/tsc fixes that were blocking a clean build. Remaining items are all enhancement candidates (in-channel media, ledger reference columns, token denylist, structured sub-services capture, legacy copy refresh, profile-photo flow) — none change the WhatsApp-first / WhatsApp-complete / PWA-optional contract or the credit / privacy boundaries.

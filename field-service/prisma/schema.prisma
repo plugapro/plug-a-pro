@@ -278,6 +278,7 @@ model ProviderApplication {
   id           String            @id @default(cuid())
   providerId   String?           // set after account is created on approval
   phone        String
+  email        String?           // optional, captured during WhatsApp onboarding for admin review continuity
   name         String
   skills       String[]          @default([])
   serviceAreas String[]          @default([])

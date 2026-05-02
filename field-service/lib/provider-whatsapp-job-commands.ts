@@ -20,11 +20,11 @@ import { db } from './db'
 import { transitionJob } from './jobs'
 
 export type ProviderJobCommand =
-  | { kind: 'arrive'; arrivalAt: Date; raw: string }
-  | { kind: 'on_the_way'; raw: string }
-  | { kind: 'arrived'; raw: string }
-  | { kind: 'start'; raw: string }
-  | { kind: 'complete'; raw: string }
+  | { kind: 'arrive'; arrivalAt: Date; raw: string; jobRef?: string }
+  | { kind: 'on_the_way'; raw: string; jobRef?: string }
+  | { kind: 'arrived'; raw: string; jobRef?: string }
+  | { kind: 'start'; raw: string; jobRef?: string }
+  | { kind: 'complete'; raw: string; jobRef?: string }
 
 export type ProviderJobCommandResult =
   | { ok: true; jobId: string; toStatus: JobStatus | null; message: string }
@@ -39,6 +39,66 @@ const ARRIVE_PATTERNS = [
   /^(?:arrive|arrival|eta)\s+(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?$/i,
   /^(?:arrive|arrival|eta)\s+(\d{1,2})\s*(am|pm)$/i,
   /^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i,
+]
+
+// Phrase-style arrival commands recognised in addition to HH:MM patterns.
+const ARRIVE_RELATIVE_PATTERNS: Array<{ regex: RegExp; resolve: (now: Date, match: RegExpMatchArray) => Date | null }> = [
+  // "in 2 hours", "in 90 minutes", "in an hour", "in half an hour"
+  {
+    regex: /^(?:arrive|arrival|eta)\s+in\s+(\d{1,2})\s*(hours?|hrs?|hr|h)$/i,
+    resolve: (now, m) => {
+      const hours = Number(m[1])
+      if (!Number.isFinite(hours) || hours < 1 || hours > 12) return null
+      const candidate = new Date(now)
+      candidate.setHours(now.getHours() + hours, 0, 0, 0)
+      return candidate
+    },
+  },
+  {
+    regex: /^(?:arrive|arrival|eta)\s+in\s+(\d{1,3})\s*(minutes?|mins?|min)$/i,
+    resolve: (now, m) => {
+      const mins = Number(m[1])
+      if (!Number.isFinite(mins) || mins < 5 || mins > 360) return null
+      const candidate = new Date(now)
+      candidate.setMinutes(now.getMinutes() + mins, 0, 0)
+      return candidate
+    },
+  },
+  {
+    regex: /^(?:arrive|arrival|eta)\s+in\s+(?:an?|one)\s+hour$/i,
+    resolve: (now) => {
+      const candidate = new Date(now)
+      candidate.setHours(now.getHours() + 1, 0, 0, 0)
+      return candidate
+    },
+  },
+  {
+    regex: /^(?:arrive|arrival|eta)\s+in\s+(?:half\s+(?:an?\s+)?hour|30\s*(?:mins?|minutes?))$/i,
+    resolve: (now) => {
+      const candidate = new Date(now)
+      candidate.setMinutes(now.getMinutes() + 30, 0, 0)
+      return candidate
+    },
+  },
+  // "arrive noon", "arrive midday"
+  {
+    regex: /^(?:arrive|arrival|eta)\s+(?:noon|midday|mid-day)$/i,
+    resolve: (now) => {
+      const candidate = new Date(now)
+      candidate.setHours(12, 0, 0, 0)
+      if (candidate.getTime() <= now.getTime()) candidate.setDate(candidate.getDate() + 1)
+      return candidate
+    },
+  },
+  // "arrive later" / "arrive later today" → +3 hours
+  {
+    regex: /^(?:arrive|arrival|eta)\s+later(?:\s+today)?$/i,
+    resolve: (now) => {
+      const candidate = new Date(now)
+      candidate.setHours(now.getHours() + 3, 0, 0, 0)
+      return candidate
+    },
+  },
 ]
 
 type ProviderJobStatusCommandKind = Exclude<ProviderJobCommand['kind'], 'arrive'>
@@ -64,28 +124,55 @@ const STATUS_ALIASES: Record<string, ProviderJobStatusCommandKind> = {
   'finish job': 'complete',
 }
 
-export function parseProviderJobCommand(text: string | null | undefined): ProviderJobCommand | null {
+// Provider may suffix any command with "#JOB-REF" (or "#JOBREF") so a
+// multi-active-job provider can target a specific job. The ref is the last 8
+// chars of jobRef, case-insensitive. Whitespace before the # is optional.
+const JOB_REF_SUFFIX_PATTERN = /\s*#([a-z0-9-]{4,40})$/i
+
+export function parseProviderJobCommand(text: string | null | undefined, options?: { now?: Date }): ProviderJobCommand | null {
   if (!text) return null
-  const normalised = text.trim().toLowerCase().replace(/\s+/g, ' ')
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  let jobRef: string | undefined
+  let payload = trimmed
+  const refMatch = payload.match(JOB_REF_SUFFIX_PATTERN)
+  if (refMatch) {
+    jobRef = refMatch[1].toUpperCase()
+    payload = payload.slice(0, refMatch.index!).trim()
+    if (!payload) return null
+  }
+
+  const normalised = payload.toLowerCase().replace(/\s+/g, ' ')
   if (!normalised) return null
+
+  const now = options?.now ?? new Date()
 
   for (const pattern of ARRIVE_PATTERNS) {
     const match = normalised.match(pattern)
     if (match) {
-      const arrivalAt = buildArrivalTime(match)
-      return arrivalAt ? { kind: 'arrive', arrivalAt, raw: text.trim() } : null
+      const arrivalAt = buildArrivalTime(match, now)
+      return arrivalAt ? { kind: 'arrive', arrivalAt, raw: trimmed, ...(jobRef && { jobRef }) } : null
+    }
+  }
+
+  for (const relative of ARRIVE_RELATIVE_PATTERNS) {
+    const match = normalised.match(relative.regex)
+    if (match) {
+      const arrivalAt = relative.resolve(now, match)
+      return arrivalAt ? { kind: 'arrive', arrivalAt, raw: trimmed, ...(jobRef && { jobRef }) } : null
     }
   }
 
   const matchedAlias = STATUS_ALIASES[normalised]
   if (matchedAlias) {
-    return { kind: matchedAlias, raw: text.trim() }
+    return { kind: matchedAlias, raw: trimmed, ...(jobRef && { jobRef }) }
   }
 
   return null
 }
 
-function buildArrivalTime(match: RegExpMatchArray): Date | null {
+function buildArrivalTime(match: RegExpMatchArray, now: Date = new Date()): Date | null {
   const hourPart = Number(match[1])
   const minutePart = match[2] ? Number(match[2]) : 0
   const meridiem = (match[3] ?? '').toLowerCase()
@@ -99,7 +186,6 @@ function buildArrivalTime(match: RegExpMatchArray): Date | null {
   if (hour < 0 || hour > 23) return null
 
   // Build a same-day SAST arrival; if the time has already passed, push to next day.
-  const now = new Date()
   const candidate = new Date(now)
   candidate.setHours(hour, minutePart, 0, 0)
   if (candidate.getTime() <= now.getTime()) {
@@ -125,9 +211,14 @@ export type ActiveJobLookupResult =
   | { state: 'no_provider' }
 
 // Pick the single most-recent active job for the provider with the given
-// WhatsApp phone. Returns 'multiple' if more than one is in flight so the
-// caller can fall back to the existing pj_job_list menu.
-export async function findSingleActiveJobForProviderPhone(phone: string): Promise<ActiveJobLookupResult> {
+// WhatsApp phone. When the provider supplies a job-ref suffix (#JOBREF),
+// resolve to that specific job even if they have multiple active. Returns
+// 'multiple' for non-targeted commands when more than one is in flight, so
+// the caller can fall back to the pj_job_list menu.
+export async function findSingleActiveJobForProviderPhone(
+  phone: string,
+  options?: { jobRef?: string },
+): Promise<ActiveJobLookupResult> {
   const provider = await db.provider.findFirst({
     where: { phone },
     select: { id: true, name: true },
@@ -145,6 +236,7 @@ export async function findSingleActiveJobForProviderPhone(phone: string): Promis
       status: true,
       scheduledArrivalAt: true,
       bookingId: true,
+      jobRef: true,
       booking: {
         select: {
           match: {
@@ -160,10 +252,33 @@ export async function findSingleActiveJobForProviderPhone(phone: string): Promis
         },
       },
     },
-    take: 2,
   })
 
   if (activeJobs.length === 0) return { state: 'none' }
+
+  // Job-ref suffix → match that specific job by jobRef (case-insensitive,
+  // last 8 chars or full ref).
+  if (options?.jobRef) {
+    const ref = options.jobRef.toUpperCase()
+    const match = activeJobs.find((j) => j.jobRef && (
+      j.jobRef.toUpperCase() === ref
+      || j.jobRef.toUpperCase().endsWith(ref)
+      || ref.endsWith(j.jobRef.toUpperCase())
+    ))
+    if (!match) return { state: 'none' }
+    return {
+      state: 'unique',
+      jobId: match.id,
+      status: match.status,
+      scheduledArrivalAt: match.scheduledArrivalAt,
+      bookingId: match.bookingId,
+      providerName: provider.name,
+      customerPhone: match.booking?.match?.jobRequest?.customer?.phone ?? null,
+      customerName: match.booking?.match?.jobRequest?.customer?.name ?? null,
+      category: match.booking?.match?.jobRequest?.category ?? null,
+    }
+  }
+
   if (activeJobs.length > 1) return { state: 'multiple' }
   const job = activeJobs[0]
   return {
@@ -190,18 +305,28 @@ export async function executeProviderJobCommand(params: {
   phone: string
   command: ProviderJobCommand
 }): Promise<ProviderJobCommandResult> {
-  const lookup = await findSingleActiveJobForProviderPhone(params.phone)
+  const lookup = await findSingleActiveJobForProviderPhone(params.phone, {
+    jobRef: params.command.jobRef,
+  })
   if (lookup.state === 'no_provider') {
     return { ok: false, reason: 'PROVIDER_NOT_FOUND', message: "We couldn't find your provider profile. Reply *Hi* to continue." }
   }
   if (lookup.state === 'none') {
+    if (params.command.jobRef) {
+      return {
+        ok: false,
+        reason: 'NO_ACTIVE_JOB',
+        message: `We couldn't find an active job with reference *#${params.command.jobRef}*. Reply *my jobs* to see your active jobs.`,
+      }
+    }
     return { ok: false, reason: 'NO_ACTIVE_JOB', message: "You have no active jobs right now. Reply *my jobs* to refresh." }
   }
   if (lookup.state === 'multiple') {
     return {
       ok: false,
       reason: 'AMBIGUOUS_JOB',
-      message: 'You have more than one active job. Reply *my jobs* to pick which one to update.',
+      message:
+        'You have more than one active job. Add the job reference to target a specific one, e.g. *arrive 14:00 #PAP-JOB-ABCDE123*. Or reply *my jobs* to pick from a list.',
     }
   }
 

@@ -1427,6 +1427,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
         data: {
           providerId,
           phone: normalizedPhone,
+          email: ctx.data.providerEmail ?? null,
           name: submitData.name,
           skills: submitData.skills,
           serviceAreas: submitData.resolvedAreaLabels,

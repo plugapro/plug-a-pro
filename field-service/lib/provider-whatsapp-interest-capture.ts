@@ -50,10 +50,40 @@ function parseArrival(text: string, now: Date): Date | null {
   baseDate.setSeconds(0, 0)
 
   // ASAP / now → +1 hour
-  if (/\b(asap|right now|immediately|now)\b/i.test(lower)) {
+  if (/\b(asap|right now|immediately|straight away|on my way|now)\b/i.test(lower)) {
     const asap = new Date(baseDate)
     asap.setHours(baseDate.getHours() + 1, 0, 0, 0)
     return asap
+  }
+
+  // "in N hours" / "in N minutes" / "in an hour" / "in half an hour"
+  const inHoursMatch = lower.match(/\bin\s+(\d{1,2})\s*(hours?|hrs?|hr|h)\b/)
+  if (inHoursMatch) {
+    const hours = Number(inHoursMatch[1])
+    if (Number.isFinite(hours) && hours >= 1 && hours <= 12) {
+      const candidate = new Date(baseDate)
+      candidate.setHours(baseDate.getHours() + hours, 0, 0, 0)
+      return candidate
+    }
+  }
+  const inMinsMatch = lower.match(/\bin\s+(\d{1,3})\s*(minutes?|mins?|min)\b/)
+  if (inMinsMatch) {
+    const mins = Number(inMinsMatch[1])
+    if (Number.isFinite(mins) && mins >= 5 && mins <= 360) {
+      const candidate = new Date(baseDate)
+      candidate.setMinutes(baseDate.getMinutes() + mins, 0, 0)
+      return candidate
+    }
+  }
+  if (/\bin (an|one) hour\b/.test(lower)) {
+    const candidate = new Date(baseDate)
+    candidate.setHours(baseDate.getHours() + 1, 0, 0, 0)
+    return candidate
+  }
+  if (/\bin (half|a half) an hour\b|\bin 30 (?:mins|minutes|m)\b|\bhalf hour\b/.test(lower)) {
+    const candidate = new Date(baseDate)
+    candidate.setMinutes(baseDate.getMinutes() + 30, 0, 0)
+    return candidate
   }
 
   let dayOffset = 0
@@ -91,6 +121,19 @@ function parseArrival(text: string, now: Date): Date | null {
         if (meridiem === 'am' && hour === 12) hour = 0
       }
     }
+  }
+
+  // "noon" / "midday"
+  if (hour == null && /\b(noon|midday|mid-day)\b/.test(lower)) {
+    hour = 12
+    minute = 0
+  }
+
+  // "later today" → ~3 hours from now (no specific window)
+  if (hour == null && /\blater\s+(today)?\b/.test(lower)) {
+    const later = new Date(baseDate)
+    later.setHours(baseDate.getHours() + 3, 0, 0, 0)
+    return later
   }
 
   if (hour == null) {
