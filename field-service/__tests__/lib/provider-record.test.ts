@@ -106,7 +106,7 @@ describe('reconcileProviderRecordsFromApplications', () => {
         update: expect.objectContaining({
           availabilityMode: 'ALWAYS_AVAILABLE',
           availabilityState: 'AVAILABLE',
-          emergencyAvailable: false,
+          emergencyAvailable: true,
           sameDayAvailable: true,
         }),
       }),

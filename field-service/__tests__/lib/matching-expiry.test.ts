@@ -309,7 +309,7 @@ describe('expireAssignmentOffer', () => {
     )
   })
 
-  it('expires the hold and marks job EXPIRED when no next candidate', async () => {
+  it('expires the hold and reopens the job for redispatch when no next candidate', async () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
     // No RANKED attempts remaining
     mockDb.matchAttempt.findMany.mockResolvedValue([])
@@ -324,7 +324,7 @@ describe('expireAssignmentOffer', () => {
     expect(result.expired).toBe(true)
     expect(result.nextOfferedProviderId).toBeNull()
     expect(mockDb.jobRequest.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'EXPIRED' }) })
+      expect.objectContaining({ data: expect.objectContaining({ status: 'OPEN' }) })
     )
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'match.exhausted', jobRequestId: 'job-1' })
