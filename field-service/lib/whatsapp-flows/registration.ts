@@ -1140,7 +1140,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
 
     await sendText(
       ctx.phone,
-      '💰 What is your usual *call-out fee* for jobs in your area?\n\nReply with a number, for example *250* or *R250*.\n\nIf you do not charge a call-out fee, reply *0*.'
+      '💰 What is your usual *call-out fee* for labour (excluding materials)?\n\nReply with a number, for example *250* or *R250*.\n\nIf you do not charge a call-out fee, reply *0*.\n\nCustomers compare providers by labour rate, so make this accurate.'
     )
     return { nextStep: 'reg_collect_rates', nextData: { availability } }
   }
