@@ -151,15 +151,18 @@ describe('provider credit copy', () => {
     expect(getProviderTermsUrl()).toBe('https://app.example.com/provider/terms/credits')
   })
 
-  it('builds onboarding intro copy with terms and lead credit rules', () => {
-    const message = buildProviderOnboardingIntroMessage('https://example.com/provider/terms/credits')
+  it('builds onboarding intro copy with terms and lead credit rules — body has no raw URL', () => {
+    const message = buildProviderOnboardingIntroMessage()
 
     expect(message).toContain('We review your application using the information you provide')
     expect(message).toContain('starter credits')
     expect(message).toContain('Previewing and showing interest in jobs is free')
     expect(message).toContain('You spend 1 credit only when a customer selects you')
     expect(message).toContain('Full customer and job details unlock after selected-job acceptance')
-    expect(message).toContain('https://example.com/provider/terms/credits')
+    // The terms URL is exposed via a sendCtaUrl follow-up, never inline.
+    expect(message).toContain('View credit policy')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('app.plugapro.co.za')
     expect(message.toLowerCase()).not.toContain('promo pilot')
   })
 
@@ -168,10 +171,11 @@ describe('provider credit copy', () => {
     expect(PROVIDER_NOT_NOW_BUTTON_TITLE.length).toBeLessThanOrEqual(20)
   })
 
-  it('builds application submitted copy with review and approval wording', () => {
+  it('builds application submitted copy with review and approval wording — body has no raw URL', () => {
     const message = buildProviderApplicationSubmittedMessage({
       providerName: 'Jacob Hesser',
       applicationRef: 'APP123',
+      // termsUrl param is preserved for backward compat but must NOT appear in body.
       termsUrl: 'https://example.com/provider-terms',
     })
 
@@ -180,7 +184,10 @@ describe('provider credit copy', () => {
     expect(message).toContain('Approval is not automatic')
     expect(message).toContain('If approved, your provider profile will be activated')
     expect(message).toContain('starter credits for customer-selected jobs')
-    expect(message).toContain('https://example.com/provider-terms')
+    // The terms URL is exposed via a sendCtaUrl follow-up, never inline.
+    expect(message).toContain('View credit policy')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('example.com')
   })
 
   it('builds lead preview copy with credit cost and customer detail unlock rules', () => {

@@ -955,7 +955,7 @@ async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}\n⚡ Urgency: *${urgency ?? 'flexible'}*\n⭐ Preference: *${providerPreference ?? 'fastest_available'}*\n💰 Budget: *${budgetPreference ?? 'balanced_value'}*${photoLine}\n\nYour phone number and exact address will only be shared after you select a provider and that provider accepts the job.\n\nShall I submit this request? We'll share a safe preview with suitable providers.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}\n⚡ Urgency: *${urgency ?? 'flexible'}*\n⭐ Preference: *${providerPreference ?? 'fastest_available'}*\n💰 Budget: *${budgetPreference ?? 'balanced_value'}*${photoLine}\n\nYour phone number and exact address will only be shared after you select a provider and that provider accepts the job.\n\nReady to submit this request? We'll share a safe preview with suitable providers.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },

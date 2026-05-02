@@ -2,7 +2,8 @@
 // Journey: trigger → name → skills (multi-select) → area → experience → availability → submit → pending review
 // No direct connection given to customer — all mediated through Plug A Pro
 
-import { sendText, sendButtons, sendList } from '../whatsapp-interactive'
+import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
+import { WHATSAPP_COPY, ctaLabelFor } from '../whatsapp-copy'
 import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
 import { db } from '../db'
 import { syncProviderRecord, upsertStructuredServiceAreas } from '../provider-record'
@@ -23,6 +24,7 @@ import {
   PROVIDER_NOT_NOW_BUTTON_TITLE,
   buildProviderApplicationSubmittedMessage,
   buildProviderOnboardingIntroMessage,
+  getProviderTermsUrl,
 } from '../provider-credit-copy'
 import {
   SERVICE_CATEGORY_OPTIONS,
@@ -358,6 +360,20 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
       { id: 'reg_cancel', title: PROVIDER_NOT_NOW_BUTTON_TITLE },
     ]
   )
+  // Follow-up CTA so the terms URL is exposed via a labelled button rather than
+  // raw text in the body. The intro message body intentionally has no URL.
+  try {
+    await sendCtaUrl(
+      ctx.phone,
+      'Provider terms and credit rules.',
+      ctaLabelFor('credit_policy'),
+      getProviderTermsUrl(),
+      undefined,
+      { templateName: 'interactive:provider_onboarding_terms_cta' },
+    )
+  } catch (error) {
+    console.warn('[registration-flow] terms CTA follow-up failed (intro)', { error })
+  }
   return { nextStep: 'reg_collect_name' }
 }
 
@@ -530,11 +546,11 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   if (invalidNums.length > 0) {
     confirmBody += `\n\n_(We ignored numbers not on the list: ${invalidNums.join(', ')})_`
   }
-  confirmBody += '\n\nShall I continue?'
+  confirmBody += `\n\n${WHATSAPP_COPY.confirmContinue}`
 
   await sendButtons(ctx.phone, confirmBody, [
-    { id: 'skills_confirm', title: '✅ Continue' },
-    { id: 'skills_change', title: '✏️ Change skills' },
+    { id: 'skills_confirm', title: WHATSAPP_COPY.continueButton },
+    { id: 'skills_change', title: WHATSAPP_COPY.changeSkillsButton },
   ])
 
   return { nextStep: 'reg_collect_skills_more', nextData: { skills: merged } }
@@ -1282,7 +1298,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\nShall I submit your application?`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1582,12 +1598,33 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           isComingSoonRegion,
         }),
         [
-          { id: 'provider_application_status', title: 'Check Status' },
-          { id: 'back_home', title: 'Main Menu' },
+          { id: 'provider_application_status', title: WHATSAPP_COPY.checkStatusButton },
+          { id: 'back_home', title: WHATSAPP_COPY.mainMenuButton },
         ],
         undefined,
         { metadata: { traceId, applicationId: submitResult.applicationId } },
       )
+      // Follow-up CTA so the terms URL is exposed via a labelled button rather
+      // than raw text in the body. The submitted message body has no URL.
+      try {
+        await sendCtaUrl(
+          ctx.phone,
+          'Provider terms and credit rules.',
+          ctaLabelFor('credit_policy'),
+          getProviderTermsUrl(),
+          undefined,
+          {
+            templateName: 'interactive:provider_application_submitted_terms_cta',
+            metadata: { traceId, applicationId: submitResult.applicationId },
+          },
+        )
+      } catch (error) {
+        console.warn('[registration-flow] terms CTA follow-up failed (submitted)', {
+          trace_id: traceId,
+          application_id: submitResult.applicationId,
+          error,
+        })
+      }
     } catch (error) {
       console.error('[registration-flow] provider application WhatsApp confirmation failed after commit', {
         trace_id: traceId,

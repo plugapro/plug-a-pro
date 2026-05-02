@@ -242,7 +242,10 @@ export function buildProviderCreditSummaryMessage(
   ].filter(Boolean).join('\n')
 }
 
-export function buildProviderOnboardingIntroMessage(termsUrl = getProviderTermsUrl()) {
+// Body intentionally contains no raw URL. Caller must pair this with a
+// sendCtaUrl follow-up that exposes `getProviderTermsUrl()` behind the
+// "View credit policy" CTA — see callers in lib/whatsapp-flows/registration.ts.
+export function buildProviderOnboardingIntroMessage() {
   return [
     '👷 *Join Plug A Pro as a Service Provider*',
     '',
@@ -258,19 +261,23 @@ export function buildProviderOnboardingIntroMessage(termsUrl = getProviderTermsU
     '• Full customer and job details unlock after selected-job acceptance.',
     '• You can top up credits when your balance runs low.',
     '',
-    'Before applying, please review our provider terms and credit rules:',
-    termsUrl,
+    'Before applying, please review our provider terms and credit rules. Tap *View credit policy* below to read them.',
     '',
     'Ready to apply?',
   ].join('\n')
 }
 
+// Body intentionally contains no raw URL. The `termsUrl` field (param kept for
+// backward compatibility with existing call sites) is now ignored in the body.
+// Callers must follow up with a sendCtaUrl that exposes the terms URL behind
+// the "View credit policy" CTA — see lib/whatsapp-flows/registration.ts.
 export function buildProviderApplicationSubmittedMessage(params: {
   providerName?: string | null
   applicationRef: string
   isComingSoonRegion?: boolean
   termsUrl?: string
 }) {
+  void params.termsUrl // retained for callers; URL travels via the CTA follow-up, not the body
   const name = params.providerName?.trim().split(/\s+/)[0] || 'there'
   const regionLine = params.isComingSoonRegion
     ? '\n\nThis area is not live yet. We will update you here when Plug A Pro opens leads in this region.'
@@ -288,8 +295,7 @@ export function buildProviderApplicationSubmittedMessage(params: {
     '',
     'If approved, your provider profile will be activated and you will receive starter credits for customer-selected jobs you accept.',
     '',
-    'Provider terms and credit rules:',
-    params.termsUrl ?? getProviderTermsUrl(),
+    'Provider terms and credit rules are available below — tap *View credit policy* to read them.',
   ].filter(Boolean).join('\n')
 }
 

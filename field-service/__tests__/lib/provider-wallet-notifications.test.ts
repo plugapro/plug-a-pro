@@ -14,7 +14,7 @@ describe('provider wallet notification message builders', () => {
     vi.unstubAllEnvs()
   })
 
-  it('builds the low-balance warning copy with resolved portal URL', () => {
+  it('builds the low-balance warning copy — body has no raw URL (URL is in CTA follow-up)', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
     const message = buildLowBalanceWarningMessage()
 
@@ -22,14 +22,16 @@ describe('provider wallet notification message builders', () => {
     expect(message).toContain('No credits are used for previewing or saying you are interested')
     expect(message).toContain('1 credit is used only when a customer selects you')
     expect(message).toContain('You can continue here on WhatsApp')
-    expect(message).toContain('https://app.example.com/provider/credits')
+    expect(message).toContain('top up in the Worker Portal')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('app.example.com')
   })
 
-  it('builds the low-balance warning copy with empty portal URL when NEXT_PUBLIC_APP_URL is absent', () => {
+  it('builds the low-balance warning copy when NEXT_PUBLIC_APP_URL is absent — still no raw URL in body', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
     const message = buildLowBalanceWarningMessage()
 
-    expect(message).toContain('top up in the Worker Portal:')
+    expect(message).toContain('top up in the Worker Portal')
     expect(message).not.toContain('https://')
   })
 
@@ -128,7 +130,7 @@ describe('provider wallet notification message builders', () => {
       expect(message).toContain('1 credit is used only when a customer selects you')
     })
 
-    it('does not include localhost in production when public URL is canonical', () => {
+    it('does not leak any URL or localhost into the body — URLs travel via CTA buttons only', () => {
       vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
       vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
       vi.stubEnv('NODE_ENV', 'production')
@@ -138,7 +140,8 @@ describe('provider wallet notification message builders', () => {
         buildZeroBalanceLeadAvailableMessage(),
       ].join('\n')
 
-      expect(messages).toContain('https://app.plugapro.co.za/provider/credits')
+      expect(messages).not.toMatch(/https?:\/\//)
+      expect(messages).not.toContain('app.plugapro.co.za')
       expect(messages).not.toContain('localhost')
       expect(messages).not.toContain('127.0.0.1')
     })

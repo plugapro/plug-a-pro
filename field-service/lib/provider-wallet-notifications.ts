@@ -106,12 +106,18 @@ function preferredWindowLabel(jobRequest: {
   return 'Flexible'
 }
 
+// Body intentionally contains no raw URL. Caller pairs the message with a
+// sendCtaUrl follow-up that exposes getWorkerPortalUrl('/provider/credits')
+// behind a "Top up credits" / "Open dashboard" CTA.
 export function buildLowBalanceWarningMessage() {
-  return `You have 1 Plug-A-Pro Credit left. No credits are used for previewing or saying you are interested. 1 credit is used only when a customer selects you and you accept that selected job. You can continue here on WhatsApp. You can also top up in the Worker Portal: ${getWorkerPortalUrl('/provider/credits')}`
+  return 'You have 1 Plug-A-Pro Credit left. No credits are used for previewing or saying you are interested. 1 credit is used only when a customer selects you and you accept that selected job. You can continue here on WhatsApp. Tap the button below to top up in the Worker Portal.'
 }
 
+// Body intentionally contains no raw URL. Caller pairs with a sendCtaUrl
+// follow-up exposing getWorkerPortalUrl('/provider/credits') behind a
+// "Top up credits" / "Open dashboard" CTA.
 export function buildZeroBalanceLeadAvailableMessage() {
-  return `New matched lead available, but your wallet has 0 credits. Previewing and saying you are interested are free. You need 1 credit only if the customer selects you and you accept that selected job. You can continue here on WhatsApp. You can also top up in the Worker Portal: ${getWorkerPortalUrl('/provider/credits')}`
+  return 'New matched lead available, but your wallet has 0 credits. Previewing and saying you are interested are free. You need 1 credit only if the customer selects you and you accept that selected job. You can continue here on WhatsApp. Tap the button below to top up in the Worker Portal.'
 }
 
 export function buildPaymentIntentCreatedMessage(params: {
