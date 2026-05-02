@@ -32,9 +32,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { CaseActivityTimeline } from '@/components/admin/case/CaseActivityTimeline'
 import { CaseNotesPanel } from '@/components/admin/case/CaseNotesPanel'
 import { ResolveCaseForm } from '@/components/admin/case/ResolveCaseForm'
+import { DispatchActivityFeed, type ActivityEvent } from '@/components/admin/dispatch/DispatchActivityFeed'
 import { getReasonCodesForQueue } from '@/lib/reason-codes'
 import { getCaseByEntity, claimCase, releaseCase, resolveCase, reopenCase, addNote, getCase, addEvent } from '@/lib/cases'
 import { recordAuditLog } from '@/lib/audit'
@@ -369,25 +369,165 @@ export default async function AdminDispatchPage({
         return null
       })
     : null
-  const history = selectedRequest
-    ? await getDispatchHistory(selectedRequest.id).catch((error) => {
-        console.error('[admin/dispatch] Failed to load dispatch history', error)
-        pageWarnings.push('Dispatch history failed to load.')
-        return []
+
+  // ─── Unified activity feed ────────────────────────────────────────────────
+  const activityEvents: ActivityEvent[] = []
+
+  if (selectedRequest) {
+    // 1. Dispatch decisions → dispatch_no_match / dispatch_offered / dispatch_matched
+    const history = await getDispatchHistory(selectedRequest.id).catch((error) => {
+      console.error('[admin/dispatch] Failed to load dispatch history', error)
+      pageWarnings.push('Dispatch history failed to load.')
+      return []
+    })
+
+    for (const { dispatchDecision: dd } of history) {
+      if (dd.status === 'NO_MATCH') {
+        const reasons = (dd.filterSummary as Array<{ providerId: string; providerName: string; filteredReasonCodes: string[] }>)
+          .map((f) => ({ name: f.providerName, codes: f.filteredReasonCodes }))
+        activityEvents.push({ kind: 'dispatch_no_match', at: dd.createdAt, consideredCount: dd.consideredCount, noMatchReasons: reasons })
+      } else if (dd.status === 'OFFERING' && dd.selectedProviderId) {
+        const rankEntry = (dd.rankingSummary as Array<{ providerId: string; providerName: string; score: number }>)
+          .find((r) => r.providerId === dd.selectedProviderId)
+        activityEvents.push({
+          kind: 'dispatch_offered',
+          at: dd.createdAt,
+          providerName: rankEntry?.providerName ?? dd.selectedProviderId,
+          score: rankEntry?.score ?? null,
+          explanation: dd.explanation,
+        })
+      } else if ((dd.status === 'ASSIGNED' || dd.status === 'OVERRIDDEN') && dd.selectedProviderId) {
+        const rankEntry = (dd.rankingSummary as Array<{ providerId: string; providerName: string }>)
+          .find((r) => r.providerId === dd.selectedProviderId)
+        activityEvents.push({
+          kind: 'dispatch_matched',
+          at: dd.createdAt,
+          providerName: rankEntry?.providerName ?? dd.selectedProviderId,
+        })
+      }
+    }
+
+    // 2. Leads → lead_sent, lead_accepted/declined/expired, credit_debit
+    const leads = await db.lead.findMany({
+      where: { jobRequestId: selectedRequest.id },
+      include: {
+        provider: { select: { id: true, name: true, phone: true } },
+        unlock: { select: { creditsCharged: true, creditTypeBreakdown: true, unlockedAt: true } },
+      },
+      orderBy: { sentAt: 'asc' },
+    }).catch(() => [])
+
+    const providerPhones: string[] = []
+    const phoneToName: Record<string, string> = {}
+    for (const lead of leads) {
+      const name = lead.provider.name ?? lead.provider.phone
+      providerPhones.push(lead.provider.phone)
+      phoneToName[lead.provider.phone] = name
+
+      activityEvents.push({ kind: 'lead_sent', at: lead.sentAt, providerName: name, providerPhone: lead.provider.phone })
+
+      if (lead.respondedAt && lead.status !== 'SENT' && lead.status !== 'VIEWED') {
+        const responseKind =
+          lead.status === 'ACCEPTED' ? 'lead_accepted' :
+          lead.status === 'DECLINED' ? 'lead_declined' : 'lead_expired'
+        activityEvents.push({ kind: responseKind, at: lead.respondedAt, providerName: name })
+      }
+
+      if (lead.unlock) {
+        activityEvents.push({
+          kind: 'credit_debit',
+          at: lead.unlock.unlockedAt,
+          providerName: name,
+          creditsCharged: lead.unlock.creditsCharged,
+          breakdown: (lead.unlock.creditTypeBreakdown as Record<string, number>) ?? {},
+        })
+      }
+    }
+
+    // 3. Outbound messages to customer
+    const customerMessages = await db.messageEvent.findMany({
+      where: {
+        customerId: selectedRequest.customer.id,
+        createdAt: { gte: new Date(selectedRequest.createdAt.getTime() - 5 * 60 * 1000) },
+      },
+      select: { id: true, to: true, templateName: true, body: true, status: true, createdAt: true, sentAt: true },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    }).catch(() => [])
+
+    for (const msg of customerMessages) {
+      activityEvents.push({
+        kind: 'msg_out',
+        at: msg.sentAt ?? msg.createdAt,
+        recipientLabel: `${selectedRequest.customer.name} (customer)`,
+        template: msg.templateName,
+        body: msg.body,
+        msgStatus: msg.status,
       })
-    : []
-  const requestAuditTrail = selectedRequest
-    ? await db.auditLog.findMany({
-        where: { entityId: selectedRequest.id, entityType: AUDIT_ENTITY.JOB_REQUEST },
-        select: { id: true, action: true, actorRole: true, timestamp: true },
-        orderBy: { timestamp: 'desc' },
-        take: 10,
-      }).catch((error) => {
-        console.error('[admin/dispatch] Failed to load audit trail', error)
-        pageWarnings.push('Recent dispatch activity failed to load.')
-        return []
-      })
-    : []
+    }
+
+    // 4. Inbound messages from customer phone
+    if (selectedRequest.customer.phone) {
+      const inbound = await db.inboundWhatsAppMessage.findMany({
+        where: {
+          phone: selectedRequest.customer.phone,
+          firstSeenAt: { gte: new Date(selectedRequest.createdAt.getTime() - 5 * 60 * 1000) },
+        },
+        select: { id: true, body: true, firstSeenAt: true },
+        orderBy: { firstSeenAt: 'asc' },
+        take: 30,
+      }).catch(() => [])
+
+      for (const msg of inbound) {
+        activityEvents.push({
+          kind: 'msg_in',
+          at: msg.firstSeenAt,
+          fromLabel: `${selectedRequest.customer.name} (customer)`,
+          body: msg.body,
+        })
+      }
+    }
+
+    // 5. Outbound messages to provider phones
+    if (providerPhones.length > 0) {
+      const providerMessages = await db.messageEvent.findMany({
+        where: {
+          to: { in: providerPhones },
+          createdAt: { gte: selectedRequest.createdAt },
+        },
+        select: { id: true, to: true, templateName: true, body: true, status: true, createdAt: true, sentAt: true },
+        orderBy: { createdAt: 'asc' },
+        take: 50,
+      }).catch(() => [])
+
+      for (const msg of providerMessages) {
+        activityEvents.push({
+          kind: 'msg_out',
+          at: msg.sentAt ?? msg.createdAt,
+          recipientLabel: `${phoneToName[msg.to] ?? msg.to} (provider)`,
+          template: msg.templateName,
+          body: msg.body,
+          msgStatus: msg.status,
+        })
+      }
+    }
+
+    // 6. Audit trail
+    const auditTrail = await db.auditLog.findMany({
+      where: { entityId: selectedRequest.id, entityType: AUDIT_ENTITY.JOB_REQUEST },
+      select: { id: true, action: true, actorRole: true, timestamp: true },
+      orderBy: { timestamp: 'asc' },
+      take: 30,
+    }).catch((error) => {
+      console.error('[admin/dispatch] Failed to load audit trail', error)
+      pageWarnings.push('Recent dispatch activity failed to load.')
+      return []
+    })
+
+    for (const entry of auditTrail) {
+      activityEvents.push({ kind: 'audit', at: entry.timestamp, action: entry.action, actorRole: entry.actorRole })
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -637,54 +777,21 @@ export default async function AdminDispatchPage({
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Dispatch history</CardTitle>
+                  <CardTitle className="text-base">Activity</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  {history.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No dispatch history yet.</p>
-                  ) : (
-                    history.map((entry) => (
-                      <div key={entry.dispatchDecision.id} className="rounded-lg border p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="font-medium">{entry.dispatchDecision.mode}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {entry.dispatchDecision.status}
-                          </p>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Considered {entry.dispatchDecision.consideredCount} · eligible {entry.dispatchDecision.eligibleCount}
-                        </p>
-                        <ul className="space-y-1 text-xs text-muted-foreground">
-                          {entry.attempts.slice(0, 5).map((attempt) => (
-                            <li key={attempt.id}>
-                              {attempt.providerId} · {attempt.stage}
-                              {attempt.score != null ? ` · ${attempt.score.toFixed(3)}` : ''}
-                              {attempt.reasonCode ? ` · ${attempt.reasonCode}` : ''}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))
-                  )}
+                <CardContent>
+                  <DispatchActivityFeed events={[
+                    ...activityEvents,
+                    ...(dispatchCaseFull?.events ?? []).map((e) => ({
+                      kind: 'case_event' as const,
+                      at: new Date(e.createdAt),
+                      summary: caseEventSummary(e),
+                      caseEventType: e.type,
+                      actorUserId: e.actorUserId,
+                    })),
+                  ]} />
                 </CardContent>
               </Card>
-
-              {requestAuditTrail.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Audit trail</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {requestAuditTrail.map((entry) => (
-                      <div key={entry.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="shrink-0 tabular-nums">{formatDispatchAge(entry.timestamp)}</span>
-                        <span className="font-medium text-foreground/70">{entry.action.replace(/\./g, ' · ')}</span>
-                        <span className="ml-auto shrink-0">{entry.actorRole}</span>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
 
               {showCloseOut && dispatchCaseFull && (
                 <Card>
@@ -707,11 +814,6 @@ export default async function AdminDispatchPage({
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-2">Notes</p>
                       <CaseNotesPanel notes={dispatchCaseFull.notes} addNoteAction={addNoteAction} />
-                    </div>
-                    <Separator />
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-2">Activity</p>
-                      <CaseActivityTimeline events={dispatchCaseFull.events} />
                     </div>
                   </CardContent>
                 </Card>
@@ -737,6 +839,20 @@ function formatDispatchAge(date: Date) {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h`
   return `${Math.floor(hours / 24)}d`
+}
+
+function caseEventSummary(event: { type: string; payload: unknown }): string {
+  const p = event.payload as Record<string, unknown>
+  switch (event.type) {
+    case 'STATE_CHANGE':    return `Status changed${p.from ? ` from ${p.from}` : ''} to ${p.to ?? '—'}${p.reasonCode ? ` · ${p.reasonCode}` : ''}`
+    case 'ASSIGNMENT_CHANGE': return p.released ? 'Released — back to unassigned' : p.to ? `Assigned to ${p.to}` : 'Assignment changed'
+    case 'NOTE_ADDED':      return `Note added${p.preview ? `: "${p.preview}…"` : ''}`
+    case 'ESCALATION':      return `Escalated${p.reason ? `: ${p.reason}` : ''}`
+    case 'OPS_ACTION':      return p.action ? String(p.action) : 'Ops action'
+    case 'SYSTEM_EVENT':    return p.event ? String(p.event) : 'System event'
+    case 'BREACH_DETECTED': return 'SLA breach detected'
+    default: return event.type
+  }
 }
 
 function ageMinutes(from: Date, to: Date) {

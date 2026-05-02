@@ -39,6 +39,8 @@ const JOB_REQUEST_CONFIG: Record<JobRequestStatus, { label: string; variant: Bad
   PENDING_VALIDATION: { label: 'Draft', variant: 'neutral' },
   OPEN: { label: 'Open', variant: 'info' },
   MATCHING: { label: 'Matching', variant: 'brand' },
+  SHORTLIST_READY: { label: 'Choose provider', variant: 'warning' },
+  PROVIDER_CONFIRMATION_PENDING: { label: 'Provider confirming', variant: 'brand' },
   MATCHED: { label: 'Matched', variant: 'success' },
   EXPIRED: { label: 'Expired', variant: 'neutral' },
   CANCELLED: { label: 'Cancelled', variant: 'danger' },

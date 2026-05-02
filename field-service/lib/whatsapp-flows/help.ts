@@ -52,8 +52,6 @@ async function handleHelpMenu(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleFaqAnswer(ctx: FlowContext): Promise<FlowResult> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-
   switch (ctx.reply.id) {
     case 'faq_cost':
       await sendButtons(

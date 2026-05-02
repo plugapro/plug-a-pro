@@ -43,6 +43,7 @@ describe('internal test cohort', () => {
     expect(INTERNAL_TEST_PHONE_NUMBERS).toEqual([
       '+27773923802',
       '+27764010810',
+      '+27823035070',
       '+27832114183',
       '+27824978565',
       '+27827006695',

@@ -96,11 +96,13 @@ export async function orchestrateMatch(
       usePool: useCandidatePool,
     })
 
-    // Hard-exclude providers who already declined a lead for this job request.
-    // A fresh dispatch decision must not reselect a provider who explicitly declined
-    // in a prior dispatch window — this prevents offer storms on the same provider.
+    // Hard-exclude providers who already declined or ghosted (EXPIRED lead) for this job.
+    // DECLINED = explicit rejection. EXPIRED = no response within the offer window (ghosted).
+    // Ghosted providers are also auto-paused by pauseProviderAfterRepeatedOfferTimeouts,
+    // but excluding their EXPIRED lead here ensures they are never immediately re-offered
+    // on the same job even if the pause hasn't landed yet.
     const declinedLeads = await db.lead.findMany({
-      where: { jobRequestId, status: 'DECLINED' },
+      where: { jobRequestId, status: { in: ['DECLINED', 'EXPIRED'] } },
       select: { providerId: true },
     })
     const declinedProviderIds = new Set(declinedLeads.map((l) => l.providerId))

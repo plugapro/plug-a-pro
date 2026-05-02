@@ -37,6 +37,7 @@ type LeadAccepted = {
   currentCreditBalance?: number
   alreadyUnlocked?: boolean
   inspectionNeeded: boolean
+  notificationSent: boolean
 }
 
 type LeadRejected = {
@@ -152,21 +153,80 @@ export async function acceptLead(params: {
   inspectionNeeded?: boolean
   source?: 'whatsapp' | 'pwa' | 'api'
 }): Promise<LeadAcceptanceResult> {
+  const selectedLead = await db.lead.findUnique({
+    where: { id: params.leadId },
+    select: {
+      id: true,
+      customerSelectedAt: true,
+      jobRequest: {
+        select: {
+          status: true,
+          selectedProviderId: true,
+          selectedLeadInviteId: true,
+        },
+      },
+    },
+  })
+
+  if (
+    selectedLead?.customerSelectedAt &&
+    selectedLead.jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING' &&
+    selectedLead.jobRequest.selectedProviderId === params.providerId &&
+    selectedLead.jobRequest.selectedLeadInviteId === params.leadId
+  ) {
+    const { acceptSelectedProviderJob } = await import('./selected-provider-acceptance')
+    const selectedResult = await acceptSelectedProviderJob({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      source: params.source,
+    })
+
+    if (!selectedResult.ok) {
+      if (selectedResult.reason === 'INSUFFICIENT_CREDITS') {
+        return {
+          ok: false,
+          reason: 'INSUFFICIENT_CREDITS',
+          currentCreditBalance: selectedResult.currentCreditBalance,
+        }
+      }
+      if (selectedResult.reason === 'PROVIDER_NOT_SELECTED') return { ok: false, reason: 'FORBIDDEN' }
+      if (selectedResult.reason === 'LEAD_EXPIRED') return { ok: false, reason: 'EXPIRED' }
+      if (selectedResult.reason === 'DUPLICATE_ACCEPT_IGNORED') return { ok: false, reason: 'CONCURRENT_UNLOCK' }
+      return { ok: false, reason: 'LEAD_ACCEPTANCE_FAILED' }
+    }
+
+    return {
+      ok: true,
+      leadId: selectedResult.leadId,
+      matchId: selectedResult.matchId,
+      creditTransactionId: selectedResult.creditTransactionId,
+      currentCreditBalance: selectedResult.currentCreditBalance,
+      alreadyUnlocked: selectedResult.alreadyUnlocked,
+      inspectionNeeded: false,
+      notificationSent: selectedResult.notificationSent,
+    }
+  }
+
   const result = await acceptAssignmentOffer(params)
   if (!result.ok) return result
 
-  await notifyPostMatchAcceptance({
-    leadId: params.leadId,
-    providerId: params.providerId,
-    matchId: result.matchId ?? '',
-    creditTransactionId: result.creditTransactionId ?? null,
-  }).catch((error: unknown) => {
+  let notificationSent = false
+  try {
+    const notifyResult = await notifyPostMatchAcceptance({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      matchId: result.matchId ?? '',
+      creditTransactionId: result.creditTransactionId ?? null,
+    })
+    notificationSent = notifyResult.providerNotified
+  } catch (error: unknown) {
     console.error('[matching-engine] post-match communication failed:', {
       leadId: params.leadId,
       providerId: params.providerId,
+      notificationSent,
       error,
     })
-  })
+  }
 
   return {
     ok: true,
@@ -176,6 +236,7 @@ export async function acceptLead(params: {
     currentCreditBalance: result.currentCreditBalance,
     alreadyUnlocked: result.alreadyUnlocked,
     inspectionNeeded: params.inspectionNeeded === true,
+    notificationSent,
   }
 }
 

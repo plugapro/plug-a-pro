@@ -5,11 +5,14 @@
 // Usage:
 //   npx tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --dry-run
 //   ALLOW_TEST_DATA_IMPORT=true npx tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit
+//   ALLOW_TEST_DATA_IMPORT=true npx tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit --requests-only
 //
 // Flags:
 //   --dry-run            Print plan without writing (default)
 //   --commit             Write to DB (requires ALLOW_TEST_DATA_IMPORT=true)
 //   --reset-existing     On re-run, extend expiry of existing SENT leads
+//   --requests-only      Create customers + job requests only; skip lead chain creation
+//                        (use when you want to trigger dispatch via the admin panel instead)
 //   --image-dir=<path>   Override source image folder
 //   --send-whatsapp=true Intentionally unsupported; script throws if supplied
 
@@ -579,6 +582,7 @@ async function main() {
   const args = process.argv.slice(2)
   const commit = args.includes('--commit') && !args.includes('--dry-run')
   const resetExisting = args.includes('--reset-existing=true')
+  const requestsOnly = args.includes('--requests-only')
   const imageDir = (() => {
     const flag = args.find((a) => a.startsWith('--image-dir='))
     return flag ? flag.slice('--image-dir='.length) : '/Users/shimane/Desktop/defects/plugapro/images'
@@ -599,9 +603,10 @@ async function main() {
     'http://localhost:3000'
   ).replace(/\/+$/, '')
 
-  console.log(`Mode:      ${commit ? 'COMMIT' : 'DRY-RUN'}`)
-  console.log(`Image dir: ${imageDir}`)
-  console.log(`App URL:   ${appUrl}`)
+  console.log(`Mode:          ${commit ? 'COMMIT' : 'DRY-RUN'}`)
+  console.log(`Requests only: ${requestsOnly ? 'YES — skipping lead chain creation' : 'no'}`)
+  console.log(`Image dir:     ${imageDir}`)
+  console.log(`App URL:       ${appUrl}`)
 
   if (
     appUrl === 'http://localhost:3000' &&
@@ -774,7 +779,13 @@ async function main() {
   }
 
   // ─── Create lead chains ───────────────────────────────────────────────────
-  if (fannie) {
+  if (requestsOnly) {
+    console.log('\n⏭  --requests-only: skipping lead chain creation.')
+    console.log('   Go to /admin/dispatch and trigger AUTO_ASSIGN (or Manual Override → Fannie)')
+    console.log('   to send Fannie a real WhatsApp lead notification.\n')
+  }
+
+  if (fannie && !requestsOnly) {
     for (const ctx of customerContexts) {
       if (!ctx.jobRequestId) {
         report.leads.push({ leadId: null, jobRequestId: 'n/a', leadUrl: null, alreadyExisted: false })

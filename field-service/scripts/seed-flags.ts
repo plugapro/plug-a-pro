@@ -77,6 +77,14 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'ops.v2.cases',
     description: 'Case lifecycle: claim, note, resolve, and reopen exception cases across all ops queues.',
   },
+  {
+    key: 'qualified_shortlist.dispatch_v2',
+    description: 'Qualified Shortlist: send free I\'m interested / Not interested buttons on dispatch instead of legacy paid Accept Lead buttons.',
+  },
+  {
+    key: 'qualified_shortlist.auto_trigger',
+    description: 'Qualified Shortlist: automatically generate the customer shortlist after enough interested provider responses.',
+  },
 ]
 
 async function main() {

@@ -14,6 +14,17 @@ import { findLatestActiveProviderApplicationByPhone } from '../provider-applicat
 import { createTestCohortContext } from '../internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from '../location-format'
 import {
+  formatRandAmountForProviderOnboarding,
+  validateProviderOnboardingRates,
+  ProviderOnboardingValidationError,
+} from '../provider-onboarding-data'
+import {
+  PROVIDER_APPLY_BUTTON_TITLE,
+  PROVIDER_NOT_NOW_BUTTON_TITLE,
+  buildProviderApplicationSubmittedMessage,
+  buildProviderOnboardingIntroMessage,
+} from '../provider-credit-copy'
+import {
   SERVICE_CATEGORY_OPTIONS,
   resolveServiceCategoryTag,
 } from '../service-categories'
@@ -111,6 +122,7 @@ function validateSubmitData(ctx: FlowContext) {
   const selectedRegionLabels = uniqueStrings(ctx.data.selectedRegionLabels ?? [])
   const availability = uniqueStrings(ctx.data.availability ?? [])
   const evidenceAttachmentIds = uniqueStrings(ctx.data.evidenceFileUrls ?? []).slice(0, MAX_EVIDENCE_FILES)
+  const idNumber = ctx.data.providerIdNumber?.trim()
 
   if (!name || name.length < 2) {
     throw new ProviderApplicationSubmitError(
@@ -157,11 +169,20 @@ function validateSubmitData(ctx: FlowContext) {
     )
   }
 
+  if (!idNumber || idNumber.length < 6) {
+    throw new ProviderApplicationSubmitError(
+      'PROVIDER_APPLICATION_VALIDATION_FAILED',
+      'Provider application requires an ID or passport number for review.',
+      { missingField: 'idNumber' },
+    )
+  }
+
   return {
     name,
     skills,
     availability,
     evidenceAttachmentIds,
+    idNumber,
     resolvedAreaLabels: normaliseLocationDisplayNames(locationNodeIds.length > 0
       ? (selectedSuburbLabels.length ? selectedSuburbLabels : selectedRegionLabels.length ? selectedRegionLabels : serviceAreas)
       : serviceAreas),
@@ -173,6 +194,22 @@ function formatAvailabilityLabel(availability: string[] | undefined) {
   return (availability?.length ?? 0) >= 7 ? 'Any day'
     : (availability?.length ?? 0) >= 6 ? 'Mon–Sat'
     : 'Weekdays only'
+}
+
+function yearsExperienceFromLabel(label: string | undefined) {
+  if (!label) return null
+  if (label.includes('Less')) return 0
+  if (label.includes('1–3')) return 2
+  if (label.includes('3–5')) return 4
+  if (label.includes('5+')) return 5
+  return null
+}
+
+function skillLevelFromExperienceLabel(label: string | undefined) {
+  if (!label) return null
+  if (label.includes('Less')) return 'BEGINNER'
+  if (label.includes('1–3')) return 'INTERMEDIATE'
+  return 'EXPERIENCED'
 }
 
 async function sendEvidenceFileProgress(phone: string, count: number) {
@@ -205,6 +242,10 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return startRegistration(ctx)
     case 'reg_collect_name':
       return handleCollectName(ctx)
+    case 'reg_collect_email':
+      return handleCollectEmail(ctx)
+    case 'reg_collect_id':
+      return handleCollectId(ctx)
     case 'reg_collect_skills':
       return handleCollectSkills(ctx)
     case 'reg_collect_skills_more':
@@ -225,6 +266,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectSuburbText(ctx)
     case 'reg_collect_availability':
       return handleCollectAvailability(ctx)
+    case 'reg_collect_rates':
+      return handleCollectRates(ctx)
     case 'reg_collect_evidence':
       return handleCollectEvidence(ctx)
     case 'reg_confirm':
@@ -309,10 +352,10 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `👷 *Join Plug A Pro as a Service Provider*\n\nEarn money doing odd jobs, repairs, and once-off work in your area.\n\n*Here's how it works:*\n• Share your name, skills, and work area\n• We send suitable job leads\n• You send a simple quote or arrangement\n• You and the client arrange the work directly\n\nReady to join?`,
+    buildProviderOnboardingIntroMessage(),
     [
-      { id: 'reg_start', title: '✅ Yes, Apply Now' },
-      { id: 'reg_cancel', title: '❌ Not Now' },
+      { id: 'reg_start', title: PROVIDER_APPLY_BUTTON_TITLE },
+      { id: 'reg_cancel', title: PROVIDER_NOT_NOW_BUTTON_TITLE },
     ]
   )
   return { nextStep: 'reg_collect_name' }
@@ -341,9 +384,53 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 
   await sendText(
     ctx.phone,
-    buildSkillPromptText(`Nice to meet you, *${name}*! 👋\n\n🔧 *What type of work do you do?*`)
+    '✉️ What is your email address?\n\nReply with your email, or type *skip* if you do not want to add one now.'
   )
-  return { nextStep: 'reg_collect_skills_more', nextData: { name, skills: [] } }
+  return { nextStep: 'reg_collect_email', nextData: { name } }
+}
+
+function validateOptionalProviderEmail(raw: string | undefined) {
+  const value = raw?.trim()
+  if (!value || /^skip$/i.test(value)) return null
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return undefined
+  return value.toLowerCase()
+}
+
+async function handleCollectEmail(ctx: FlowContext): Promise<FlowResult> {
+  const providerEmail = validateOptionalProviderEmail(ctx.reply.text)
+  if (providerEmail === undefined) {
+    await sendText(ctx.phone, 'Please reply with a valid email address, for example *name@example.com*, or type *skip*.')
+    return { nextStep: 'reg_collect_email' }
+  }
+
+  await sendText(
+    ctx.phone,
+    '🪪 Please send your *ID or passport number* for application review.\n\nWe use this for provider vetting and do not share it with customers.'
+  )
+  return {
+    nextStep: 'reg_collect_id',
+    nextData: providerEmail ? { providerEmail } : {},
+  }
+}
+
+function validateProviderIdNumber(raw: string | undefined) {
+  const value = raw?.trim().replace(/\s+/g, '')
+  if (!value || value.length < 6 || value.length > 30 || !/^[a-z0-9-]+$/i.test(value)) return null
+  return value.toUpperCase()
+}
+
+async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
+  const providerIdNumber = validateProviderIdNumber(ctx.reply.text)
+  if (!providerIdNumber) {
+    await sendText(ctx.phone, 'Please send a valid ID or passport number with at least 6 characters.')
+    return { nextStep: 'reg_collect_id' }
+  }
+
+  await sendText(
+    ctx.phone,
+    buildSkillPromptText(`Thanks, *${ctx.data.name}*. 👋\n\n🔧 *What type of work do you do?*`)
+  )
+  return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber, skills: [] } }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
@@ -1006,15 +1093,11 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     const avail = availMap[ctx.reply.id]
     const availability = avail?.days ?? []
 
-    await sendButtons(
+    await sendText(
       ctx.phone,
-      '🧾 Would you like to add an optional work note?\n\nExamples: past jobs, references, or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
-      [
-        { id: 'evidence_add', title: '✍️ Add proof note' },
-        { id: 'evidence_skip', title: '⏭️ Skip for now' },
-      ]
+      '💰 What is your usual *call-out fee* for jobs in your area?\n\nReply with a number, for example *250* or *R250*.\n\nIf you do not charge a call-out fee, reply *0*.'
     )
-    return { nextStep: 'reg_collect_evidence', nextData: { availability } }
+    return { nextStep: 'reg_collect_rates', nextData: { availability } }
   }
 
   if (ctx.reply.id === 'evidence_add') {
@@ -1118,6 +1201,56 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   return showRegistrationSummary(ctx, { evidenceNote })
 }
 
+async function handleCollectRates(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id === 'rate_negotiable_yes' || ctx.reply.id === 'rate_negotiable_no') {
+    const rateNegotiable = ctx.reply.id === 'rate_negotiable_yes'
+    const callOutFee = Number(ctx.data.callOutFee ?? 0)
+
+    await sendButtons(
+      ctx.phone,
+      [
+        '🧾 Would you like to add an optional work note?',
+        '',
+        `Call-out fee saved: *${formatRandAmountForProviderOnboarding(callOutFee)}*`,
+        `Rate negotiable: *${rateNegotiable ? 'Yes' : 'No'}*`,
+        '',
+        'Examples: past jobs, references, or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
+      ].join('\n'),
+      [
+        { id: 'evidence_add', title: '✍️ Add proof note' },
+        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+      ]
+    )
+    return { nextStep: 'reg_collect_evidence', nextData: { callOutFee, rateNegotiable } }
+  }
+
+  try {
+    const rates = validateProviderOnboardingRates({ callOutFeeText: ctx.reply.text })
+    if (rates.callOutFee == null) {
+      throw new ProviderOnboardingValidationError('INVALID_FEE', 'Call-out fee is required.')
+    }
+    await sendButtons(
+      ctx.phone,
+      [
+        `✅ Call-out fee saved: *${formatRandAmountForProviderOnboarding(rates.callOutFee)}*`,
+        '',
+        'Is this rate negotiable?',
+      ].join('\n'),
+      [
+        { id: 'rate_negotiable_yes', title: 'Yes, negotiable' },
+        { id: 'rate_negotiable_no', title: 'No, fixed' },
+      ],
+    )
+    return { nextStep: 'reg_collect_rates', nextData: { callOutFee: rates.callOutFee } }
+  } catch (error) {
+    if (error instanceof ProviderOnboardingValidationError) {
+      await sendText(ctx.phone, 'Please reply with a valid call-out fee number, for example *250* or *R250*.')
+      return { nextStep: 'reg_collect_rates' }
+    }
+    throw error
+  }
+}
+
 async function showRegistrationSummary(
   ctx: FlowContext,
   overrides?: Partial<FlowContext['data']>
@@ -1128,7 +1261,18 @@ async function showRegistrationSummary(
     : 'Weekdays only'
 
   const merged = { ...ctx.data, ...overrides }
-  const { name, skills, serviceAreas, experience, evidenceNote, evidenceFileUrls } = merged
+  const {
+    name,
+    skills,
+    serviceAreas,
+    experience,
+    evidenceNote,
+    evidenceFileUrls,
+    callOutFee,
+    rateNegotiable,
+    providerEmail,
+    providerIdNumber,
+  } = merged
   const skillList = (skills ?? []).join(', ')
   // Prefer suburb-level labels if the provider drilled down, else fall back to region/area labels
   const suburbLabels = merged.selectedSuburbLabels as string[] | undefined
@@ -1138,7 +1282,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\nShall I submit your application?`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\nShall I submit your application?`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1263,6 +1407,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       const providerId = await syncProviderRecord(tx as typeof db, {
         phone: normalizedPhone,
         name: submitData.name,
+        email: ctx.data.providerEmail ?? null,
         skills: submitData.skills,
         serviceAreas: submitData.resolvedAreaLabels,
         active: true,
@@ -1287,13 +1432,46 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           serviceAreas: submitData.resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
           availability: formatAvailabilityLabel(submitData.availability),
+          callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+          rateNegotiable: ctx.data.rateNegotiable !== false,
+          weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
+          sameDayJobs: true,
           evidenceNote: ctx.data.evidenceNote ?? null,
           evidenceFileUrls: submitData.evidenceAttachmentIds,
+          idNumber: submitData.idNumber,
           isTestUser: cohort.isTestUser,
           cohortName: cohort.cohortName,
           status: 'PENDING',
         },
       })
+
+      const providerCategoryRows = submitData.skills.map((skill) => ({
+        providerId,
+        categorySlug: resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
+        yearsExperience: yearsExperienceFromLabel(ctx.data.experience),
+        skillLevel: skillLevelFromExperienceLabel(ctx.data.experience),
+        approvalStatus: 'PENDING_REVIEW',
+      }))
+
+      if (providerCategoryRows.length > 0) {
+        await (tx as any).providerCategory?.createMany?.({
+          data: providerCategoryRows,
+          skipDuplicates: true,
+        })
+      }
+
+      if (typeof ctx.data.callOutFee === 'number') {
+        await (tx as any).providerRate?.createMany?.({
+          data: providerCategoryRows.map((row) => ({
+            providerId,
+            categorySlug: row.categorySlug,
+            callOutFee: ctx.data.callOutFee,
+            rateNegotiable: ctx.data.rateNegotiable !== false,
+            quoteAfterInspection: false,
+          })),
+          skipDuplicates: true,
+        })
+      }
 
       if (submitData.evidenceAttachmentIds.length > 0) {
         const linked = await tx.attachment.updateMany({
@@ -1361,7 +1539,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     if (submitResult.outcome === 'existing_pending') {
       await sendButtons(
         ctx.phone,
-        `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${submitResult.ref}*\n\nWe'll update you here once it's approved.`,
+        `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${submitResult.ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
         [
           { id: 'provider_application_status', title: 'Check Status' },
           { id: 'back_home', title: 'Main Menu' },
@@ -1397,9 +1575,11 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     try {
       await sendButtons(
         ctx.phone,
-        isComingSoonRegion
-          ? `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nThis area is not live yet. We'll update you here when Plug A Pro opens leads in this region.\n\nIf approved later, your Worker Portal will show your credit balance and any starter promo credits awarded.`
-          : `✅ *Application submitted!*\n\nThanks, *${firstName(ctx.data.name)}*. We've received your Plug A Pro provider application.\n\nRef: *${submitResult.ref}*\n\nWe'll review your application and update you here within 24 hours.\n\nIf approved, your Worker Portal will show your credit balance and any starter promo credits awarded.`,
+        buildProviderApplicationSubmittedMessage({
+          providerName: ctx.data.name,
+          applicationRef: submitResult.ref,
+          isComingSoonRegion,
+        }),
         [
           { id: 'provider_application_status', title: 'Check Status' },
           { id: 'back_home', title: 'Main Menu' },
@@ -1484,7 +1664,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           ctx.phone,
           racedExisting.status === 'APPROVED'
             ? `✅ You're already registered as a Plug A Pro provider.\n\nRef: *${ref}*\n\nYou can manage jobs from the provider menu.`
-            : `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nWe'll update you here once it's approved.`,
+            : `⏳ Your provider application is already submitted and waiting for review.\n\nRef: *${ref}*\n\nApproval is not automatic. We'll update you here after the review is complete.`,
           [
             { id: racedExisting.status === 'APPROVED' ? 'provider_my_jobs' : 'provider_application_status', title: racedExisting.status === 'APPROVED' ? 'My Jobs' : 'Check Status' },
             { id: 'back_home', title: 'Main Menu' },

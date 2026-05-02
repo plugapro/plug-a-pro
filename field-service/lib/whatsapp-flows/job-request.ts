@@ -41,6 +41,11 @@ import {
 } from '../whatsapp-identity'
 import { createTraceId } from '../support-diagnostics'
 import {
+  budgetPreferenceFromReply,
+  mapAvailabilityToUrgency,
+  providerPreferenceFromReply,
+} from '../client-request-data'
+import {
   DuplicateActiveRequestError,
   JobRequestPhotoLinkError,
 } from '../job-requests/create-job-request'
@@ -255,6 +260,10 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleCollectIssueDescription(ctx)
     case 'collect_availability':
       return handleCollectAvailability(ctx)
+    case 'collect_request_preferences':
+      return handleCollectRequestPreferences(ctx)
+    case 'collect_budget_preference':
+      return handleCollectBudgetPreference(ctx)
     case 'confirm_job_request':
       return handleConfirmJobRequest(ctx)
     case 'collect_photos':
@@ -840,7 +849,90 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
     return handleCollectAvailability(ctx)
   }
 
-  // Prompt for optional photos before showing the confirmation summary
+  const urgency = mapAvailabilityToUrgency(ctx.reply.id)
+  await sendList(
+    ctx.phone,
+    'What matters most when choosing a provider?',
+    [{
+      title: 'Preference',
+      rows: [
+        { id: 'pref_fastest', title: 'Fastest available' },
+        { id: 'pref_experienced', title: 'Most experienced' },
+        { id: 'pref_rated', title: 'Best rated' },
+        { id: 'pref_budget', title: 'Budget friendly' },
+        { id: 'pref_verified', title: 'Verified only' },
+      ],
+    }],
+    { buttonLabel: 'Choose Preference' },
+  )
+  return { nextStep: 'collect_request_preferences', nextData: { availabilityNote, urgency } }
+}
+
+async function handleCollectRequestPreferences(ctx: FlowContext): Promise<FlowResult> {
+  if (!ctx.reply.id?.startsWith('pref_')) {
+    await sendList(
+      ctx.phone,
+      'Please choose what matters most when comparing providers.',
+      [{
+        title: 'Preference',
+        rows: [
+          { id: 'pref_fastest', title: 'Fastest available' },
+          { id: 'pref_experienced', title: 'Most experienced' },
+          { id: 'pref_rated', title: 'Best rated' },
+          { id: 'pref_budget', title: 'Budget friendly' },
+          { id: 'pref_verified', title: 'Verified only' },
+        ],
+      }],
+      { buttonLabel: 'Choose Preference' },
+    )
+    return { nextStep: 'collect_request_preferences' }
+  }
+
+  await sendList(
+    ctx.phone,
+    'Do you have a budget preference?',
+    [{
+      title: 'Budget',
+      rows: [
+        { id: 'budget_balanced', title: 'Balanced value' },
+        { id: 'budget_lowest', title: 'Lowest call-out' },
+        { id: 'budget_quality', title: 'Quality first' },
+        { id: 'budget_quote', title: 'Quote first' },
+        { id: 'budget_unsure', title: 'Not sure' },
+      ],
+    }],
+    { buttonLabel: 'Choose Budget' },
+  )
+  const providerPreference = providerPreferenceFromReply(ctx.reply.id)
+  return {
+    nextStep: 'collect_budget_preference',
+    nextData: {
+      providerPreference,
+      verifiedOnly: providerPreference === 'verified_only',
+    },
+  }
+}
+
+async function handleCollectBudgetPreference(ctx: FlowContext): Promise<FlowResult> {
+  if (!ctx.reply.id?.startsWith('budget_')) {
+    await sendList(
+      ctx.phone,
+      'Please choose a budget preference.',
+      [{
+        title: 'Budget',
+        rows: [
+          { id: 'budget_balanced', title: 'Balanced value' },
+          { id: 'budget_lowest', title: 'Lowest call-out' },
+          { id: 'budget_quality', title: 'Quality first' },
+          { id: 'budget_quote', title: 'Quote first' },
+          { id: 'budget_unsure', title: 'Not sure' },
+        ],
+      }],
+      { buttonLabel: 'Choose Budget' },
+    )
+    return { nextStep: 'collect_budget_preference' }
+  }
+
   await sendButtons(
     ctx.phone,
     `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
@@ -849,18 +941,21 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
       { id: 'photos_start', title: '📷 Add photo' },
     ]
   )
-  return { nextStep: 'collect_photos', nextData: { availabilityNote, photoAttachmentIds: [] } }
+  return {
+    nextStep: 'collect_photos',
+    nextData: { budgetPreference: budgetPreferenceFromReply(ctx.reply.id), photoAttachmentIds: [] },
+  }
 }
 
 async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
-  const { selectedCategory, address, issueDescription, availabilityNote } = ctx.data
+  const { selectedCategory, address, issueDescription, availabilityNote, urgency, providerPreference, budgetPreference } = ctx.data
   const photoCount = (ctx.data.photoAttachmentIds ?? []).length
   const descriptionLine = issueDescription ? `\n📝 ${issueDescription}` : ''
   const photoLine = photoCount > 0 ? `\n📸 Photos: *${photoCount} attached*` : ''
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}${photoLine}\n\nShall I submit this request? We'll share it with nearby providers whose profiles match this type of work.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}\n⚡ Urgency: *${urgency ?? 'flexible'}*\n⭐ Preference: *${providerPreference ?? 'fastest_available'}*\n💰 Budget: *${budgetPreference ?? 'balanced_value'}*${photoLine}\n\nYour phone number and exact address will only be shared after you select a provider and that provider accepts the job.\n\nShall I submit this request? We'll share a safe preview with suitable providers.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },
@@ -1062,6 +1157,11 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         phone: ctx.phone,
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
+        source: 'whatsapp',
+        urgency: ctx.data.urgency ?? null,
+        budgetPreference: ctx.data.budgetPreference ?? null,
+        providerPreference: ctx.data.providerPreference ?? null,
+        verifiedOnly: ctx.data.verifiedOnly === true,
         title: ctx.data.selectedCategory ?? category,
         description: buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote),
         existingAddressId: ctx.data.savedAddressId ?? undefined,
@@ -1085,6 +1185,11 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         phone: ctx.phone,
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
+        source: 'whatsapp',
+        urgency: ctx.data.urgency ?? null,
+        budgetPreference: ctx.data.budgetPreference ?? null,
+        providerPreference: ctx.data.providerPreference ?? null,
+        verifiedOnly: ctx.data.verifiedOnly === true,
         title: ctx.data.selectedCategory ?? category,
         description: buildDescription(ctx.data.issueDescription, ctx.data.availabilityNote),
         street:   ctx.data.addressStreet ?? addrParts[0] ?? '',
@@ -1102,8 +1207,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       : ''
 
     const successMessage =
-      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.jobRequestId.slice(-8).toUpperCase()}*${photoNote}\n\n` +
-      `We're finding you a nearby worker — you'll get a WhatsApp update when matched.` +
+      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.requestRef}*${photoNote}\n\n` +
+      `We're checking suitable providers in your area. Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.` +
       (categoryRequirements.policy.bookingOnAssignment
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
         : '')
@@ -1402,7 +1507,7 @@ export async function showMainMenu(phone: string): Promise<void> {
       {
         title: 'For Service Providers',
         rows: [
-          { id: 'find_work', title: '👷 Find Work',         description: 'Apply to join as a service provider' },
+          { id: 'find_work', title: '👷 Find Work',         description: 'Apply, get reviewed, then accept leads with credits' },
         ],
       },
     ],

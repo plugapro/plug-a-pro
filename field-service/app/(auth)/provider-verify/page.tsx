@@ -2,17 +2,8 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { OtpInput } from '@/components/ui/otp-input'
-import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
 import { getSafeNextPath } from '@/lib/safe-redirect'
-
-function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
 
 function formatPhoneForDisplay(e164: string) {
   const digits = e164.replace(/\D/g, '')
@@ -27,6 +18,42 @@ function createClientTraceId() {
 type VerifyError = {
   message: string
   traceId: string
+}
+
+type VerifyCodePayload = {
+  ok?: boolean
+  code?: string
+  message?: string
+  traceId?: string
+  error?: {
+    code?: string
+    reason?: string
+    traceId?: string
+  }
+}
+
+function messageForCode(code: string | undefined) {
+  switch (code) {
+    case 'INVALID_OTP':
+    case 'OTP_EXPIRED':
+    case 'OTP_PROVIDER_REJECTED':
+      return 'That code is incorrect or expired. Please try again.'
+    case 'WORKER_NOT_APPROVED':
+      return "Your provider application is still under review. We'll notify you on WhatsApp once it has been approved."
+    case 'WORKER_INACTIVE':
+      return 'This provider account is not active. Please contact support.'
+    case 'WORKER_NOT_FOUND':
+      return "We couldn't find a provider account for this number. Please apply first or contact support."
+    case 'WORKER_PROFILE_LINK_MISSING':
+    case 'WORKER_AUTH_IDENTITY_MISSING':
+    case 'WORKER_ROLE_MISSING':
+    case 'AUTH_SESSION_MISSING':
+      return 'Your provider login could not be linked automatically. Please contact support.'
+    case 'DUPLICATE_WORKER_PROFILE':
+      return 'We found more than one provider account for this login. Please contact support.'
+    default:
+      return 'Something went wrong. Please try again or contact support.'
+  }
 }
 
 function ProviderVerifyForm() {
@@ -67,51 +94,23 @@ function ProviderVerifyForm() {
     const traceId = createClientTraceId()
 
     try {
-      const supabase = getSupabaseClient()
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        phone,
-        token: code.trim(),
-        type: 'sms',
+      const response = await fetch('/api/auth/provider/verify-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-trace-id': traceId,
+        },
+        body: JSON.stringify({ phone, code: code.trim(), traceId }),
       })
+      const payload = await response.json().catch(() => ({})) as VerifyCodePayload
 
-      if (verifyError || !data.user) {
-        setError({ message: getOtpVerifyErrorMessage(verifyError?.message), traceId })
-        return
-      }
-
-      const role = data.user.user_metadata?.role
-      if (role !== 'provider') {
-        await supabase.auth.signOut()
-        // Distinguish between a customer account and a truly unrecognised account so
-        // the user knows what action to take instead of waiting for an approval that
-        // may never come.
-        if (role === 'customer') {
-          setError({
-            message: "This number is linked to a customer account. To become a service provider, please apply via WhatsApp — send \"Register\" to our business number.",
-            traceId,
-          })
-        } else {
-          setError({
-            message: "Your provider account hasn't been approved yet. Once your application is reviewed you'll receive a WhatsApp notification. If you haven't applied yet, send \"Register\" to our WhatsApp number.",
-            traceId,
-          })
-        }
-        return
-      }
-
-      if (data.session?.access_token) {
-        const sessionRes = await fetch('/api/auth/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            accessToken: data.session.access_token,
-            expiresIn: data.session.expires_in ?? 3600,
-          }),
+      if (!response.ok || !payload.ok) {
+        const errorCode = payload.error?.code ?? payload.code
+        setError({
+          message: payload.error?.reason ?? payload.message ?? messageForCode(errorCode),
+          traceId: payload.error?.traceId ?? payload.traceId ?? traceId,
         })
-        if (!sessionRes.ok) {
-          setError({ message: 'Session could not be established. Please try again.', traceId })
-          return
-        }
+        return
       }
 
       // Mark as done before navigating so the form does not reappear while the
@@ -134,10 +133,20 @@ function ProviderVerifyForm() {
     if (resendCooldown > 0) return
     const traceId = createClientTraceId()
     try {
-      const supabase = getSupabaseClient()
-      const { error: resendError } = await supabase.auth.signInWithOtp({ phone })
-      if (resendError) {
-        setError({ message: getOtpVerifyErrorMessage(resendError.message), traceId })
+      const response = await fetch('/api/auth/provider/send-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-trace-id': traceId,
+        },
+        body: JSON.stringify({ phone, traceId }),
+      })
+      const payload = await response.json().catch(() => ({})) as VerifyCodePayload
+      if (!response.ok || !payload.ok) {
+        setError({
+          message: payload.error?.reason ?? payload.message ?? 'Could not resend code. Please try again.',
+          traceId: payload.error?.traceId ?? payload.traceId ?? traceId,
+        })
         return
       }
       setResendCooldown(30)

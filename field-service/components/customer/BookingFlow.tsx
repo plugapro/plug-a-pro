@@ -3,7 +3,7 @@
 // ─── Multi-step job request flow ──────────────────────────────────────────────
 // Steps: address → description → confirm → submitted
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,18 @@ import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
+import {
+  BUDGET_PREFERENCE_OPTIONS,
+  JOB_TYPE_OPTIONS,
+  PROVIDER_PREFERENCE_OPTIONS,
+  TIME_WINDOW_OPTIONS,
+  resolvePreferredTimingWindow,
+  validateClientRequestDetails,
+  type BudgetPreference,
+  type JobType,
+  type PreferredTimeWindow,
+  type ProviderPreference,
+} from '@/lib/client-request-flow'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +44,17 @@ interface CategoryData {
 
 interface BookingFlowProps {
   category: CategoryData
+  initialDraft?: Partial<{
+    subcategory: string
+    jobType: string
+    title: string
+    description: string
+    urgency: string
+    preferredDate: string
+    preferredTimeWindow: string
+    providerPreference: string
+    budgetPreference: string
+  }>
 }
 
 interface Address {
@@ -75,7 +98,7 @@ const URGENCY_LABELS: Record<Urgency, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BookingFlow({ category }: BookingFlowProps) {
+export function BookingFlow({ category, initialDraft }: BookingFlowProps) {
   const [step, setStep] = useState<Step>('address')
   const [address, setAddress] = useState<Address>({
     addressLine1: '',
@@ -88,11 +111,26 @@ export function BookingFlow({ category }: BookingFlowProps) {
     province: 'Gauteng',
     postalCode: '',
   })
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [subcategory, setSubcategory] = useState(initialDraft?.subcategory ?? '')
+  const [jobType, setJobType] = useState<JobType>(coerceOption(initialDraft?.jobType, JOB_TYPE_OPTIONS, 'repair'))
+  const [title, setTitle] = useState(initialDraft?.title ?? '')
+  const [description, setDescription] = useState(initialDraft?.description ?? '')
   const [photos, setPhotos] = useState<File[]>([])
   const [closestCategory, setClosestCategory] = useState('')
-  const [urgency, setUrgency] = useState<Urgency>('flexible')
+  const [urgency, setUrgency] = useState<Urgency>(coerceUrgency(initialDraft?.urgency))
+  const [preferredDate, setPreferredDate] = useState(initialDraft?.preferredDate ?? '')
+  const [preferredTimeWindow, setPreferredTimeWindow] = useState<PreferredTimeWindow>(
+    coerceOption(initialDraft?.preferredTimeWindow, TIME_WINDOW_OPTIONS, 'flexible'),
+  )
+  const [providerPreference, setProviderPreference] = useState<ProviderPreference>(
+    coerceOption(initialDraft?.providerPreference, PROVIDER_PREFERENCE_OPTIONS, 'fastest_available'),
+  )
+  const [budgetPreference, setBudgetPreference] = useState<BudgetPreference>(
+    coerceOption(initialDraft?.budgetPreference, BUDGET_PREFERENCE_OPTIONS, 'balanced_value'),
+  )
+  const [maxCallOutFee, setMaxCallOutFee] = useState('')
+  const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false)
+  const [termsAcknowledged, setTermsAcknowledged] = useState(false)
   const [locationNodeId, setLocationNodeId] = useState<string | null>(null)
   const [locationDetectedLabel, setLocationDetectedLabel] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -102,6 +140,69 @@ export function BookingFlow({ category }: BookingFlowProps) {
   const [ticketUrl, setTicketUrl] = useState<string | null>(null)
   const [waitlistedCity, setWaitlistedCity] = useState<string | null>(null)
   const streetSummary = buildLegacyStreetAddress(address)
+  const draftStorageKey = `plugapro:client-request-draft:${category.slug}`
+  const hasInitialDraft = Boolean(initialDraft && Object.values(initialDraft).some(Boolean))
+
+  useEffect(() => {
+    if (hasInitialDraft) return
+    const savedDraft = window.localStorage.getItem(draftStorageKey)
+    if (!savedDraft) return
+
+    try {
+      const draft = JSON.parse(savedDraft) as Partial<{
+        subcategory: string
+        jobType: string
+        title: string
+        description: string
+        urgency: Urgency
+        preferredDate: string
+        preferredTimeWindow: PreferredTimeWindow
+        providerPreference: ProviderPreference
+        budgetPreference: BudgetPreference
+        maxCallOutFee: string
+      }>
+      setSubcategory(draft.subcategory ?? '')
+      setJobType(coerceOption(draft.jobType, JOB_TYPE_OPTIONS, 'repair'))
+      setTitle(draft.title ?? '')
+      setDescription(draft.description ?? '')
+      setUrgency(coerceUrgency(draft.urgency))
+      setPreferredDate(draft.preferredDate ?? '')
+      setPreferredTimeWindow(coerceOption(draft.preferredTimeWindow, TIME_WINDOW_OPTIONS, 'flexible'))
+      setProviderPreference(coerceOption(draft.providerPreference, PROVIDER_PREFERENCE_OPTIONS, 'fastest_available'))
+      setBudgetPreference(coerceOption(draft.budgetPreference, BUDGET_PREFERENCE_OPTIONS, 'balanced_value'))
+      setMaxCallOutFee(draft.maxCallOutFee ?? '')
+    } catch {
+      window.localStorage.removeItem(draftStorageKey)
+    }
+  }, [draftStorageKey, hasInitialDraft])
+
+  useEffect(() => {
+    const draft = {
+      subcategory,
+      jobType,
+      title,
+      description,
+      urgency,
+      preferredDate,
+      preferredTimeWindow,
+      providerPreference,
+      budgetPreference,
+      maxCallOutFee,
+    }
+    window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+  }, [
+    budgetPreference,
+    description,
+    draftStorageKey,
+    jobType,
+    maxCallOutFee,
+    preferredDate,
+    preferredTimeWindow,
+    providerPreference,
+    subcategory,
+    title,
+    urgency,
+  ])
 
   function normalizeValue(value: string) {
     return value.trim().replace(/\s+/g, ' ')
@@ -142,17 +243,12 @@ export function BookingFlow({ category }: BookingFlowProps) {
     if (category.slug === 'other' && !closestCategory) {
       return 'Please choose the closest type of work so we can match you with the right provider.'
     }
-    const normalizedTitle = normalizeValue(title)
-    if (normalizedTitle.length < 6) {
-      return 'Please enter a short job title so the provider can identify the work clearly.'
-    }
-    if (normalizedTitle.length > 120) {
-      return 'Job title is too long. Please keep it under 120 characters.'
-    }
-    if (description.trim().length > 1200) {
-      return 'Job details are too long. Please keep them under 1200 characters.'
-    }
-    return null
+    return validateClientRequestDetails({
+      title,
+      description,
+      privacyAcknowledged: true,
+      termsAcknowledged: true,
+    })
   }
 
   async function handleUseMyLocation() {
@@ -265,6 +361,13 @@ export function BookingFlow({ category }: BookingFlowProps) {
 
       const descriptionError = validateDescriptionStep()
       if (descriptionError) throw new Error(descriptionError)
+      const acknowledgementError = validateClientRequestDetails({
+        title,
+        description,
+        privacyAcknowledged,
+        termsAcknowledged,
+      })
+      if (acknowledgementError) throw new Error(acknowledgementError)
 
       // Resolve category: when client picks "Other" they must also choose the closest
       // real category so the matching engine can find a suitable provider.
@@ -272,11 +375,17 @@ export function BookingFlow({ category }: BookingFlowProps) {
         category.slug === 'other' && closestCategory ? closestCategory : category.slug
       const effectiveDescription =
         category.slug === 'other'
-          ? `[Other — originally uncategorised]\n${description.trim()}`
-          : description.trim()
+          ? `[Other — originally uncategorised]\nJob type: ${jobType}\n${description.trim()}`
+          : `Job type: ${jobType}\n${description.trim()}`
+      const timing = resolvePreferredTimingWindow({
+        urgency,
+        preferredDate: preferredDate || null,
+        preferredTimeWindow,
+      })
 
       const formData = new FormData()
       formData.set('category', effectiveCategory)
+      formData.set('subcategory', normalizeValue(subcategory))
       formData.set('title', normalizeValue(title))
       formData.set('description', effectiveDescription)
       formData.set('addressLine1', normalizeValue(address.addressLine1))
@@ -284,16 +393,16 @@ export function BookingFlow({ category }: BookingFlowProps) {
       formData.set('complexName', normalizeValue(address.complexName))
       formData.set('unitNumber', normalizeValue(address.unitNumber))
       formData.set('locationNodeId', locationNodeId ?? '')
+      formData.set('urgency', urgency)
+      formData.set('providerPreference', providerPreference)
+      formData.set('budgetPreference', budgetPreference)
+      formData.set('verifiedOnly', String(providerPreference === 'verified_only'))
+      if (maxCallOutFee.trim()) formData.set('maxCallOutFee', maxCallOutFee.trim())
 
       // Urgency → timing window fields (extracted by the bookings API route)
-      const now = Date.now()
-      if (urgency === 'asap') {
-        formData.set('requestedWindowEnd', new Date(now + 48 * 60 * 60 * 1000).toISOString())
-        formData.set('requestedArrivalLatest', new Date(now + 24 * 60 * 60 * 1000).toISOString())
-      } else if (urgency === 'this_week') {
-        formData.set('requestedWindowEnd', new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString())
-        formData.set('requestedArrivalLatest', new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString())
-      }
+      if (timing.requestedWindowStart) formData.set('requestedWindowStart', timing.requestedWindowStart.toISOString())
+      if (timing.requestedWindowEnd) formData.set('requestedWindowEnd', timing.requestedWindowEnd.toISOString())
+      if (timing.requestedArrivalLatest) formData.set('requestedArrivalLatest', timing.requestedArrivalLatest.toISOString())
 
       // Photos are optional evidence. They travel with the request so the matched
       // provider can quote without asking the client to repeat the problem.
@@ -324,6 +433,7 @@ export function BookingFlow({ category }: BookingFlowProps) {
 
       setJobRequestId(data.jobRequestId)
       setTicketUrl(data.ticketUrl ?? null)
+      window.localStorage.removeItem(draftStorageKey)
       setStep('submitted')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
@@ -376,6 +486,18 @@ export function BookingFlow({ category }: BookingFlowProps) {
       {step === 'address' && (
         <form onSubmit={handleAddressSubmit} className="space-y-4">
           <h2 className="font-medium">Service address</h2>
+
+          <Card>
+            <CardContent className="space-y-1 px-4 py-4 text-sm">
+              <p className="font-medium">Your address stays private</p>
+              <p className="text-muted-foreground">
+                Providers will only see your suburb, city, and province before you select one and they accept the job.
+              </p>
+              <p className="text-muted-foreground">
+                Your exact address and phone number are only shared after acceptance.
+              </p>
+            </CardContent>
+          </Card>
 
           {/* Primary CTA: Use my location */}
           <Card className="border-dashed bg-muted/40">
@@ -574,6 +696,33 @@ export function BookingFlow({ category }: BookingFlowProps) {
             )}
 
             <div className="space-y-1">
+              <Label htmlFor="subcategory" className="text-muted-foreground">
+                Specific type of work <span className="text-muted-foreground/60">(optional)</span>
+              </Label>
+              <Input
+                id="subcategory"
+                type="text"
+                value={subcategory}
+                onChange={(e) => setSubcategory(e.target.value)}
+                placeholder="e.g. leaking tap, gate motor, DB board"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="jobType" className="text-muted-foreground">Job type</Label>
+              <Select value={jobType} onValueChange={(value) => setJobType(value as JobType)}>
+                <SelectTrigger id="jobType" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {JOB_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
               <Label htmlFor="title" className="text-muted-foreground">Job title</Label>
               <Input
                 id="title"
@@ -614,9 +763,25 @@ export function BookingFlow({ category }: BookingFlowProps) {
                 Add up to 5 photos of the problem so the provider can quote with less back-and-forth.
               </p>
               {photos.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {photos.length} photo{photos.length === 1 ? '' : 's'} selected.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {photos.length} photo{photos.length === 1 ? '' : 's'} selected.
+                  </p>
+                  <div className="space-y-1">
+                    {photos.map((photo, index) => (
+                      <div key={`${photo.name}-${index}`} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs">
+                        <span className="truncate">{photo.name}</span>
+                        <button
+                          type="button"
+                          className="font-medium text-destructive"
+                          onClick={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -640,10 +805,106 @@ export function BookingFlow({ category }: BookingFlowProps) {
                 ))}
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="preferredDate" className="text-muted-foreground">
+                  Preferred date <span className="text-muted-foreground/60">(optional)</span>
+                </Label>
+                <Input
+                  id="preferredDate"
+                  type="date"
+                  value={preferredDate}
+                  onChange={(e) => setPreferredDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="preferredTimeWindow" className="text-muted-foreground">Time</Label>
+                <Select
+                  value={preferredTimeWindow}
+                  onValueChange={(value) => setPreferredTimeWindow(value as PreferredTimeWindow)}
+                >
+                  <SelectTrigger id="preferredTimeWindow" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_WINDOW_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="providerPreference" className="text-muted-foreground">Provider preference</Label>
+              <Select
+                value={providerPreference}
+                onValueChange={(value) => setProviderPreference(value as ProviderPreference)}
+              >
+                <SelectTrigger id="providerPreference" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_PREFERENCE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="budgetPreference" className="text-muted-foreground">Budget</Label>
+                <Select
+                  value={budgetPreference}
+                  onValueChange={(value) => setBudgetPreference(value as BudgetPreference)}
+                >
+                  <SelectTrigger id="budgetPreference" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BUDGET_PREFERENCE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="maxCallOutFee" className="text-muted-foreground">
+                  Max call-out <span className="text-muted-foreground/60">(optional)</span>
+                </Label>
+                <Input
+                  id="maxCallOutFee"
+                  inputMode="numeric"
+                  min="0"
+                  type="number"
+                  value={maxCallOutFee}
+                  onChange={(e) => setMaxCallOutFee(e.target.value)}
+                  placeholder="R"
+                />
+              </div>
+            </div>
           </div>
 
           <Button type="submit" className="w-full" size="lg">
             Review request →
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            onClick={() => {
+              const validationError = validateDescriptionStep()
+              if (validationError) {
+                setError(validationError)
+                return
+              }
+              setError(null)
+              setStep('confirm')
+            }}
+          >
+            Continue without photos
           </Button>
         </form>
       )}
@@ -660,15 +921,56 @@ export function BookingFlow({ category }: BookingFlowProps) {
                   ? `${REAL_CATEGORIES.find((c) => c.tag === closestCategory)?.label ?? closestCategory} (Other)`
                   : category.name}
               </Row>
+              {subcategory && <Row label="Specific">{subcategory}</Row>}
+              <Row label="Type">{JOB_TYPE_OPTIONS.find((option) => option.value === jobType)?.label ?? jobType}</Row>
               <Row label="Job">{title}</Row>
               {description && <Row label="Details">{description}</Row>}
               {photos.length > 0 && <Row label="Photos">{photos.length} attached</Row>}
               <Row label="Timing">{URGENCY_LABELS[urgency]}</Row>
+              {preferredDate && (
+                <Row label="Preferred">
+                  {preferredDate} · {TIME_WINDOW_OPTIONS.find((option) => option.value === preferredTimeWindow)?.label ?? preferredTimeWindow}
+                </Row>
+              )}
+              <Row label="Provider">
+                {PROVIDER_PREFERENCE_OPTIONS.find((option) => option.value === providerPreference)?.label ?? providerPreference}
+              </Row>
+              <Row label="Budget">
+                {BUDGET_PREFERENCE_OPTIONS.find((option) => option.value === budgetPreference)?.label ?? budgetPreference}
+                {maxCallOutFee ? ` · Max R${maxCallOutFee}` : ''}
+              </Row>
               <Row label="Address">
                 {[streetSummary, address.suburb, address.region, address.city, address.province, address.postalCode]
                   .filter(Boolean)
                   .join(', ')}
               </Row>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3 px-4 py-4 text-sm">
+              <p className="font-medium">Before we send this to providers</p>
+              <p className="text-muted-foreground">
+                Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.
+              </p>
+              <label className="flex items-start gap-2">
+                <input
+                  checked={privacyAcknowledged}
+                  className="mt-1"
+                  type="checkbox"
+                  onChange={(event) => setPrivacyAcknowledged(event.target.checked)}
+                />
+                <span>I understand when my contact and exact address are shared.</span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input
+                  checked={termsAcknowledged}
+                  className="mt-1"
+                  type="checkbox"
+                  onChange={(event) => setTermsAcknowledged(event.target.checked)}
+                />
+                <span>I confirm these request details are accurate.</span>
+              </label>
             </CardContent>
           </Card>
 
@@ -722,7 +1024,7 @@ export function BookingFlow({ category }: BookingFlowProps) {
                 Ref: {jobRequestId.slice(-8).toUpperCase()}
               </p>
               <p className="text-sm text-muted-foreground">
-                We&apos;re matching you with a provider. You&apos;ll receive a WhatsApp message when a provider accepts your job.
+                We&apos;re checking suitable providers in your area. We&apos;ll send you a WhatsApp message when your shortlist is ready.
               </p>
             </CardContent>
           </Card>
@@ -753,4 +1055,16 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span>{children}</span>
     </div>
   )
+}
+
+function coerceUrgency(value?: string | null): Urgency {
+  return value === 'asap' || value === 'this_week' || value === 'flexible' ? value : 'flexible'
+}
+
+function coerceOption<T extends readonly { value: string }[]>(
+  value: string | null | undefined,
+  options: T,
+  fallback: T[number]['value'],
+): T[number]['value'] {
+  return options.some((option) => option.value === value) ? value! : fallback
 }

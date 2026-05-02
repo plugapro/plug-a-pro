@@ -24,6 +24,15 @@ export const FLAG_KEYS = {
   OPS_PROFILE_V2:      'ops.v2.profileV2',
   OPS_BULK_ACTIONS:    'ops.v2.bulkActions',
   OPS_DUPLICATES:      'ops.v2.duplicates',
+  // Qualified Shortlist Model — when enabled, dispatchMatchLead sends
+  // free "I'm interested" / "Not interested" buttons instead of the legacy
+  // paid "Accept Lead" buttons. Selected-provider acceptance still occurs via
+  // the confirm_accept:<leadId> button surfaced after customer selection.
+  SHORTLIST_DISPATCH_V2: 'qualified_shortlist.dispatch_v2',
+  // When enabled, respondToProviderOpportunity automatically triggers
+  // generateCustomerShortlistForRequest after the Nth interested response
+  // (default N=2; configurable via SHORTLIST_AUTO_TRIGGER_THRESHOLD).
+  SHORTLIST_AUTO_TRIGGER: 'qualified_shortlist.auto_trigger',
 } as const
 
 export type FlagKey = typeof FLAG_KEYS[keyof typeof FLAG_KEYS]

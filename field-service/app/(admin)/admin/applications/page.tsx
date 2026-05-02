@@ -19,6 +19,7 @@ import {
   getConflictingActiveProviderApplicationIds,
 } from '@/lib/provider-applications'
 import { buildMetadata } from '@/lib/metadata'
+import { resolveServiceCategoryTag } from '@/lib/service-categories'
 import {
   OPS_QUEUE_TYPES,
   claimOpsQueueItem,
@@ -54,6 +55,10 @@ const RejectApplicationSchema = ApplicationActionSchema.extend({
   reason: z.string().optional(),
 })
 
+const MoreInfoApplicationSchema = ApplicationActionSchema.extend({
+  reason: z.string().min(5),
+})
+
 const providerApplicationSelect = {
   id: true,
   providerId: true,
@@ -83,7 +88,7 @@ async function approveApplication(formData: FormData) {
     where: { id },
     select: providerApplicationSelect,
   })
-  if (!app || app.status !== 'PENDING') return
+  if (!app || !['PENDING', 'MORE_INFO_REQUIRED'].includes(app.status)) return
 
   const conflictingApplications = await findConflictingActiveProviderApplications(db, app.phone, {
     excludeId: app.id,
@@ -174,6 +179,26 @@ async function approveApplication(formData: FormData) {
         }
       }
 
+      const providerCategoryRows = app.skills.map((skill) => ({
+        providerId,
+        categorySlug: resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
+        approvalStatus: 'APPROVED',
+      }))
+
+      if (providerCategoryRows.length > 0) {
+        await (tx as any).providerCategory?.createMany?.({
+          data: providerCategoryRows,
+          skipDuplicates: true,
+        })
+        await (tx as any).providerCategory?.updateMany?.({
+          where: {
+            providerId,
+            categorySlug: { in: providerCategoryRows.map((row) => row.categorySlug) },
+          },
+          data: { approvalStatus: 'APPROVED' },
+        })
+      }
+
       await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
         referenceType: 'provider_application',
         referenceId: app.id,
@@ -218,6 +243,84 @@ async function approveApplication(formData: FormData) {
       console.error('[applications] new-provider availability check failed:', error)
     })
   }
+
+  revalidatePath('/admin/applications')
+  revalidatePath('/admin')
+}
+
+async function requestMoreInfo(formData: FormData) {
+  'use server'
+  const id = formData.get('id') as string
+  const reason = String(formData.get('reason') ?? '').trim()
+  const session = await requireAdmin()
+
+  const app = await db.providerApplication.findUnique({
+    where: { id },
+    select: providerApplicationSelect,
+  })
+  if (!app || app.status !== 'PENDING') return
+
+  await crudAction({
+    entity: 'ProviderApplication',
+    entityId: app.id,
+    action: 'provider_application.request_more_info',
+    requiredRole: [...APPLICATION_ROLES],
+    requiredFlag: FLAG,
+    schema: MoreInfoApplicationSchema,
+    input: { id, reason },
+    before: {
+      status: app.status,
+      providerId: app.providerId,
+      reviewedById: app.reviewedById,
+    },
+    run: async (_data, tx) => {
+      await tx.providerApplication.update({
+        where: { id },
+        data: {
+          status: 'MORE_INFO_REQUIRED',
+          reviewedAt: new Date(),
+          reviewedById: session.id,
+          notes: reason,
+        },
+      })
+
+      await releaseOpsQueueItem(tx as typeof db, {
+        queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
+        entityId: app.id,
+      })
+
+      return {
+        id: app.id,
+        status: 'MORE_INFO_REQUIRED',
+        reviewedById: session.id,
+        notes: reason,
+      }
+    },
+  })
+
+  const { sendText } = await import('@/lib/whatsapp-interactive')
+  await sendText(
+    app.phone,
+    [
+      'ℹ️ *More information needed*',
+      '',
+      `Hi ${app.name.split(' ')[0] || 'there'}, Plug A Pro needs more information before approving your provider application.`,
+      '',
+      `Reason: ${reason}`,
+      '',
+      'Please reply here with the requested information. Your application is not approved yet, so you cannot receive leads.',
+    ].join('\n'),
+    {
+      templateName: 'interactive:provider_more_info_required',
+      metadata: { applicationId: app.id, reviewedById: session.id },
+    },
+  ).catch((error) => {
+    console.error('[applications] more-info WhatsApp notification failed', {
+      applicationId: app.id,
+      phone: app.phone,
+      error,
+    })
+  })
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
@@ -358,6 +461,7 @@ async function releaseApplication(formData: FormData) {
 function getStatusVariant(status: ApplicationStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'APPROVED') return 'default'
   if (status === 'REJECTED') return 'destructive'
+  if (status === 'MORE_INFO_REQUIRED') return 'outline'
   return 'secondary'
 }
 
@@ -509,6 +613,20 @@ export default async function ApplicationsPage({
                     />
                     <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
                       Reject
+                    </Button>
+                  </form>
+
+                  <form action={requestMoreInfo} className="flex gap-2">
+                    <input type="hidden" name="id" value={app.id} />
+                    <Input
+                      type="text"
+                      name="reason"
+                      placeholder="Info needed"
+                      className="h-8 w-48 text-sm"
+                      required
+                    />
+                    <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
+                      More info
                     </Button>
                   </form>
                 </div>

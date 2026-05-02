@@ -80,7 +80,7 @@ function ledgerLabel(entryType: WalletLedgerEntryType) {
     case 'TOPUP_CREDIT':
       return 'Credit top-up'
     case 'PROMO_CREDIT':
-      return 'Promo credits added'
+      return 'Starter/onboarding credits added'
     case 'LEAD_UNLOCK_DEBIT':
       return 'Lead unlock charge'
     case 'LEAD_REFUND_CREDIT':
@@ -90,7 +90,7 @@ function ledgerLabel(entryType: WalletLedgerEntryType) {
     case 'PROMO_EXPIRY':
       // Forward-compatible display label. Promo expiry is not fired until the
       // expiry job is implemented.
-      return 'Promo credits expired'
+      return 'Starter/onboarding credits expired'
     case 'PAYMENT_REVERSAL':
       // Forward-compatible display label. Payment reversals are not fired until
       // bank/gateway reversal handling is implemented.

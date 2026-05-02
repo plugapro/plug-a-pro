@@ -1,4 +1,9 @@
 import { db } from './db'
+import {
+  creditCountLabel,
+  getProviderTermsUrl,
+  getWorkerPortalUrl,
+} from './provider-credit-copy'
 
 const APPROVAL_NOTIFICATION_LOCK_STALE_MINUTES = 10
 
@@ -19,16 +24,20 @@ export function buildProviderApplicationApprovedMessage(
     paidCredits: 0,
     promoCredits: 0,
   },
-): string {
+): { mainBody: string; termsBody: string } {
   const totalCredits = credits.paidCredits + credits.promoCredits
   const creditLine = credits.starterPromoCreditsAwarded > 0
-    ? `🎁 Starter credits awarded: *${credits.starterPromoCreditsAwarded} promo credit${credits.starterPromoCreditsAwarded === 1 ? '' : 's'}*\n💳 Available balance: *${totalCredits} credit${totalCredits === 1 ? '' : 's'}*`
-    : `💳 Credit balance: *${totalCredits} credit${totalCredits === 1 ? '' : 's'}*. You'll need credits to accept eligible job leads.`
+    ? `🎁 Starter credits awarded: *${creditCountLabel(credits.starterPromoCreditsAwarded)}*\n💳 Available balance: *${creditCountLabel(totalCredits)}*`
+    : `💳 Available balance: *${creditCountLabel(totalCredits)}*. You'll need credits to accept matched job leads.`
 
   const breakdownLine = totalCredits > 0
-    ? `\nPromo: *${credits.promoCredits}* · Purchased: *${credits.paidCredits}*`
+    ? `\nStarter/onboarding: *${credits.promoCredits}* · Purchased: *${credits.paidCredits}*`
     : ''
-  return `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nCredits are used when you accept eligible job leads. You can view your balance and credit history in the Worker Portal.\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`
+
+  return {
+    mainBody: `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nEach lead you accept uses 1 credit. Full customer details unlock after acceptance.\n\nYou can view your credits, working hours, and jobs in the Worker Portal:`,
+    termsBody: `Provider terms and credit rules:\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`,
+  }
 }
 
 async function getApprovalCreditSummary(applicationId: string): Promise<ProviderApprovalCreditSummary> {
@@ -115,13 +124,28 @@ export async function notifyProviderApplicationApprovedOnce(params: {
   }
 
   try {
-    const { sendText } = await import('./whatsapp-interactive')
+    const { sendCtaUrl } = await import('./whatsapp-interactive')
     const credits = await getApprovalCreditSummary(params.applicationId)
-    const body = buildProviderApplicationApprovedMessage(params.name, credits)
-    const externalId = await sendText(params.phone, body, {
-      templateName: 'provider_application_approved',
-      metadata: { providerApplicationId: params.applicationId },
-    })
+    const { mainBody, termsBody } = buildProviderApplicationApprovedMessage(params.name, credits)
+
+    const externalId = await sendCtaUrl(
+      params.phone,
+      mainBody,
+      'Access Worker Portal',
+      getWorkerPortalUrl('/provider'),
+      undefined,
+      {
+        templateName: 'provider_application_approved',
+        metadata: { providerApplicationId: params.applicationId },
+      },
+    )
+
+    await sendCtaUrl(
+      params.phone,
+      termsBody,
+      'View Credits Rules',
+      getProviderTermsUrl(),
+    )
 
     await db.providerApplication.update({
       where: { id: params.applicationId },

@@ -5,6 +5,7 @@ import { getManualEftBankAccountInstructions } from './provider-credit-payment-i
 import { sendTemplate } from './whatsapp'
 import type { WhatsAppComponent } from './whatsapp'
 import { normaliseLocationDisplayName } from './location-format'
+import { getWorkerPortalUrl } from './provider-credit-copy'
 
 const SENT_OR_BETTER: MessageStatus[] = ['SENT', 'DELIVERED', 'READ']
 
@@ -106,11 +107,11 @@ function preferredWindowLabel(jobRequest: {
 }
 
 export function buildLowBalanceWarningMessage() {
-  return 'You have 1 Plug-A-Pro Credit left. Top up now so you do not miss new leads. R100 = 5 credits.'
+  return `You have 1 Plug-A-Pro Credit left. Each accepted lead uses 1 credit. Top up now so you do not miss matched leads: ${getWorkerPortalUrl('/provider/credits')}`
 }
 
 export function buildZeroBalanceLeadAvailableMessage() {
-  return 'New matched lead available, but your wallet has 0 credits. Top up R100 to unlock this and future leads.'
+  return `New matched lead available, but your wallet has 0 credits. You need 1 credit to accept a lead and unlock full customer details. Top up here: ${getWorkerPortalUrl('/provider/credits')}`
 }
 
 export function buildPaymentIntentCreatedMessage(params: {
@@ -127,6 +128,7 @@ export function buildPaymentIntentCreatedMessage(params: {
 }) {
   return compactLines([
     `Plug-A-Pro Credits top-up created: ${params.amountFormatted} = ${params.creditsToIssue} credits.`,
+    'Credits are used when you accept matched leads. Full customer details unlock after acceptance.',
     '',
     'Use these EFT details:',
     `Account: ${params.bankAccount.accountName}`,
@@ -141,7 +143,7 @@ export function buildPaymentIntentCreatedMessage(params: {
 }
 
 export function buildPaymentCreditedMessage(creditsIssued: number) {
-  return `Payment received. Your wallet has been credited with ${creditsIssued} Plug-A-Pro Credits.`
+  return `Payment received. Your wallet has been credited with ${creditsIssued} Plug-A-Pro Credits. Each accepted lead uses 1 credit.`
 }
 
 export function buildPayfastTopUpInitiatedMessage(params: {
@@ -152,12 +154,14 @@ export function buildPayfastTopUpInitiatedMessage(params: {
     `Your Plug-A-Pro top-up of ${params.amountFormatted} (${params.creditsToIssue} credits) has been initiated.`,
     'Complete your payment on the checkout page.',
     'Credits will appear in your wallet once Payfast confirms payment.',
+    'Each accepted lead uses 1 credit.',
   ])
 }
 
 export function buildLeadUnlockedProviderMessage(params: LeadUnlockNotificationContext) {
   return compactLines([
-    `Lead unlocked: ${params.category}`,
+    `Lead accepted and unlocked: ${params.category}`,
+    '1 credit used.',
     `Customer: ${params.customerName}`,
     `Phone: ${params.customerPhone}`,
     `Address: ${params.fullAddress}`,

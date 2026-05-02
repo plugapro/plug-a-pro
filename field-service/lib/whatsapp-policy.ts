@@ -13,6 +13,7 @@
 
 import { db } from './db'
 import { TEMPLATES, TemplateName } from './messaging-templates'
+import { maskPhone } from './support-diagnostics'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ export async function applyOptOut(
 ): Promise<void> {
   const customer = await db.customer.findUnique({ where: { phone } })
   if (!customer) {
-    console.warn(`[whatsapp-policy] applyOptOut: customer not found for phone ${phone}`)
+    console.warn(`[whatsapp-policy] applyOptOut: customer not found for phone ${maskPhone(phone)}`)
     return
   }
 
@@ -145,7 +146,7 @@ export async function applyOptIn(
 ): Promise<void> {
   const customer = await db.customer.findUnique({ where: { phone } })
   if (!customer) {
-    console.warn(`[whatsapp-policy] applyOptIn: customer not found for phone ${phone}`)
+    console.warn(`[whatsapp-policy] applyOptIn: customer not found for phone ${maskPhone(phone)}`)
     return
   }
 

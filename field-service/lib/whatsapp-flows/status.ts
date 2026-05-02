@@ -7,6 +7,7 @@
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { db } from '../db'
 import { getJobRequestAccessUrl } from '../job-request-access'
+import { getPublicAppUrl } from '../provider-credit-copy'
 import type { FlowContext, FlowResult } from './types'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
@@ -227,7 +228,7 @@ async function showRequestStatus(
     ? JOB_STATUS_LABELS[jobStatus] ?? jobStatus
     : JOB_REQUEST_STATUS_LABELS[requestStatus] ?? requestStatus
 
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+  const appUrl = getPublicAppUrl()
 
   log(`resolved status=${statusLabel} jobStatus=${jobStatus ?? 'none'} requestStatus=${requestStatus} appUrl=${appUrl || '(empty)'}`)
 
@@ -238,14 +239,22 @@ async function showRequestStatus(
     })
     if (extra) {
       if (!appUrl) {
-        log('WARN: NEXT_PUBLIC_APP_URL is not set — cannot send approval CTA')
+        log('WARN: app base URL is not set — cannot send approval CTA')
         await sendText(
           phone,
           `⚠️ *Action needed: ${jr.category}*\n\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nContact support to approve or decline: support@plugapro.co.za`
         )
         return { nextStep: 'done' }
       }
-      const approvalUrl = `${appUrl}/approve/${extra.approvalToken}`
+      const approvalUrl = getPublicAppUrl(`/approve/${extra.approvalToken}`)
+      if (!approvalUrl) {
+        log('WARN: Could not build approval URL from app base config')
+        await sendText(
+          phone,
+          `⚠️ *Action needed on your job*\n\n🔧 ${jr.category}\n${statusLabel}\n\nYour provider needs approval for additional work:\n_${extra.description}_ — R${Number(extra.amount).toFixed(0)}\n\nContact support to approve or decline: support@plugapro.co.za`
+        )
+        return { nextStep: 'done' }
+      }
       log(`sending extra-work approval CTA approvalUrl=${approvalUrl}`)
       try {
         await sendCtaUrl(

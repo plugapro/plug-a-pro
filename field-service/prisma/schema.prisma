@@ -77,6 +77,11 @@ model Address {
   city       String
   province   String
   postalCode     String?
+  // Sensitive structured access details (gate codes, building access info, dog
+  // warnings, etc). MUST NOT be returned in any provider safe-preview payload.
+  // Visible only after the selected provider has completed final acceptance
+  // and the LeadUnlock for that lead exists.
+  accessNotes    String?
   locationNodeId String?
   lat            Float?
   lng            Float?
@@ -216,12 +221,17 @@ model Provider {
   pushSubscriptions PushSubscription[]
   applications      ProviderApplication[]
   preferredByRequests JobRequest[] @relation("PreferredProvider")
+  selectedForRequests JobRequest[] @relation("SelectedProvider")
   assignmentHolds   AssignmentHold[]
   matchAttempts     MatchAttempt[]
   selectedDispatchDecisions DispatchDecision[] @relation("DispatchDecisionSelectedProvider")
   providerNotes             ProviderNote[]
   adminCertifications       ProviderCertification[]
   equipment                 ProviderEquipment[]
+  providerCategories        ProviderCategory[]
+  providerRates             ProviderRate[]
+  leadResponses             ProviderLeadResponse[]
+  shortlistItems            ProviderShortlistItem[]
   liveStatus                ProviderLiveStatus?
   candidatePool             CandidatePool[]
   capacity                  ProviderCapacity?
@@ -273,6 +283,13 @@ model ProviderApplication {
   serviceAreas String[]          @default([])
   experience   String?           // e.g. "3–5 years" — set on application submit
   availability String?           // e.g. "Any day" or "Mon–Sat" — set on application submit
+  callOutFee   Decimal?          @db.Decimal(10, 2)
+  hourlyRate   Decimal?          @db.Decimal(10, 2)
+  rateNegotiable Boolean         @default(true)
+  quoteAfterInspection Boolean   @default(false)
+  emergencyAvailable Boolean     @default(false)
+  sameDayJobs Boolean            @default(true)
+  weekendJobs Boolean            @default(false)
   evidenceNote     String?
   evidenceFileUrls String[]          @default([])
   idNumber         String?           // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
@@ -304,8 +321,19 @@ model JobRequest {
   customerId  String
   addressId   String?
   category    String           // "plumbing" | "painting" | "garden" | etc.
+  requestRef  String?          @unique
+  source      String?
+  subcategory String?
   title       String           // short description: "Leaking tap in bathroom"
   description String           // full details provided by customer
+  urgency     String?
+  budgetPreference String?
+  maxCallOutFee Decimal?       @db.Decimal(10, 2)
+  providerPreference String?
+  verifiedOnly Boolean         @default(false)
+  riskLevel String?
+  certifiedProviderRequired Boolean @default(false)
+  submittedAt DateTime?
   requestedWindowStart DateTime?
   requestedWindowEnd DateTime?
   requestedArrivalLatest DateTime?
@@ -315,6 +343,8 @@ model JobRequest {
   requiredEquipmentTags String[] @default([])
   requiredVehicleTypes String[] @default([])
   preferredProviderId String?
+  selectedProviderId String?
+  selectedLeadInviteId String? @unique
   assignmentMode AssignmentMode @default(AUTO_ASSIGN)
   customerAcceptedAmount Decimal? @db.Decimal(10, 2)
   customerAcceptedScope String?
@@ -340,8 +370,11 @@ model JobRequest {
   customer    Customer     @relation(fields: [customerId], references: [id])
   address     Address?     @relation(fields: [addressId], references: [id])
   preferredProvider Provider? @relation("PreferredProvider", fields: [preferredProviderId], references: [id])
+  selectedProvider Provider? @relation("SelectedProvider", fields: [selectedProviderId], references: [id])
+  selectedLeadInvite Lead? @relation("SelectedLeadInvite", fields: [selectedLeadInviteId], references: [id])
   attachments Attachment[]
   leads       Lead[]
+  shortlists  ProviderShortlist[]
   match       Match?
   scheduleItems TechnicianScheduleItem[]
   matchAttempts MatchAttempt[]
@@ -364,9 +397,17 @@ model Lead {
   dispatchDecisionId String?
   matchAttemptId String?
   assignmentHoldId String?
+  safePreviewToken String? @unique
+  matchScore Float?
+  rankingPosition Int?
   status       LeadStatus @default(SENT)
   sentAt       DateTime   @default(now())
+  viewedAt     DateTime?
   respondedAt  DateTime?
+  customerSelectedAt DateTime?
+  providerAcceptedAt DateTime?
+  expiredAt    DateTime?
+  cancelledAt  DateTime?
   expiresAt    DateTime?  // provider must respond within this window
   reminderSentAt DateTime? // set once when the 1-hour reminder WhatsApp is sent
   isTestLead Boolean @default(false)
@@ -378,9 +419,14 @@ model Lead {
   matchAttempt MatchAttempt? @relation(fields: [matchAttemptId], references: [id], onDelete: SetNull)
   assignmentHold AssignmentHold? @relation(fields: [assignmentHoldId], references: [id], onDelete: SetNull)
   unlock       LeadUnlock?
+  providerResponses ProviderLeadResponse[]
+  shortlistItems ProviderShortlistItem[]
+  selectedForJobRequest JobRequest? @relation("SelectedLeadInvite")
+  selectedForJob Job? @relation("JobSelectedLeadInvite")
 
   @@unique([jobRequestId, providerId])
   @@index([jobRequestId, status])
+  @@index([providerId, status])
   @@index([isTestLead, status])
   @@map("leads")
 }
@@ -550,11 +596,16 @@ model Job {
   id             String    @id @default(cuid())
   bookingId      String    @unique
   providerId     String
+  jobRef         String?   @unique
+  selectedLeadInviteId String? @unique
   status         JobStatus @default(SCHEDULED)
   isTestJob      Boolean   @default(false)
   cohortName     String?
   notes          String?
   completionNote String?
+  assignedAt     DateTime?
+  scheduledArrivalAt DateTime?
+  arrivalTimeConfirmedAt DateTime?
   arrivedAt      DateTime?
   startedAt      DateTime?
   completedAt    DateTime?
@@ -564,12 +615,116 @@ model Job {
 
   booking       Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   provider      Provider         @relation(fields: [providerId], references: [id])
+  selectedLeadInvite Lead?       @relation("JobSelectedLeadInvite", fields: [selectedLeadInviteId], references: [id])
   photos        Attachment[]
   extras        ExtraWork[]
   statusHistory JobStatusEvent[]
   payout        ProviderPayout?
 
   @@map("jobs")
+}
+
+model ProviderCategory {
+  id                    String   @id @default(cuid())
+  providerId            String
+  categoryId            String?
+  categorySlug          String
+  subServices           String[] @default([])
+  yearsExperience       Float?
+  skillLevel            String?
+  approvalStatus        String   @default("PENDING_REVIEW")
+  certificationRequired Boolean  @default(false)
+  certificationStatus   String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([providerId, categorySlug])
+  @@index([categorySlug, approvalStatus])
+  @@map("provider_categories")
+}
+
+model ProviderRate {
+  id                    String   @id @default(cuid())
+  providerId            String
+  categoryId            String?
+  categorySlug          String
+  callOutFee            Decimal? @db.Decimal(10, 2)
+  hourlyRate            Decimal? @db.Decimal(10, 2)
+  dayRate               Decimal? @db.Decimal(10, 2)
+  rateNegotiable        Boolean  @default(true)
+  quoteAfterInspection  Boolean  @default(false)
+  emergencySurcharge    Decimal? @db.Decimal(10, 2)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([providerId, categorySlug])
+  @@index([categorySlug])
+  @@map("provider_rates")
+}
+
+model ProviderLeadResponse {
+  id                 String   @id @default(cuid())
+  leadInviteId       String
+  providerId         String
+  response           String
+  callOutFee         Decimal? @db.Decimal(10, 2)
+  estimatedArrivalAt DateTime?
+  rateType           String?
+  rateAmount         Decimal? @db.Decimal(10, 2)
+  negotiable         Boolean  @default(true)
+  providerNote       String?
+  source             String?
+  idempotencyKey     String?  @unique
+  createdAt          DateTime @default(now())
+
+  leadInvite Lead     @relation(fields: [leadInviteId], references: [id], onDelete: Cascade)
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([leadInviteId, createdAt])
+  @@index([providerId, createdAt])
+  @@map("provider_lead_responses")
+}
+
+model ProviderShortlist {
+  id          String   @id @default(cuid())
+  requestId   String
+  status      String   @default("DRAFT")
+  createdAt   DateTime @default(now())
+  publishedAt DateTime?
+  updatedAt   DateTime @updatedAt
+
+  request JobRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  items   ProviderShortlistItem[]
+
+  @@index([requestId, status])
+  @@map("provider_shortlists")
+}
+
+model ProviderShortlistItem {
+  id                    String   @id @default(cuid())
+  shortlistId           String
+  leadInviteId          String
+  providerId            String
+  rank                  Int
+  matchScore            Float?
+  displayCallOutFee     Decimal? @db.Decimal(10, 2)
+  displayArrivalTime    DateTime?
+  customerSelectedAt    DateTime?
+  createdAt             DateTime @default(now())
+
+  shortlist ProviderShortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  leadInvite Lead             @relation(fields: [leadInviteId], references: [id], onDelete: Cascade)
+  provider   Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([shortlistId, leadInviteId])
+  @@index([providerId])
+  @@map("provider_shortlist_items")
 }
 
 model JobStatusEvent {
@@ -618,6 +773,12 @@ model Attachment {
   sizeBytes             Int
   label                 String?  // "before", "after", "inspection", "receipt", "evidence"
   caption               String?
+  // Qualified Shortlist: when false, the attachment must be excluded from
+  // provider safe-preview payloads. Customer-uploaded photos are safe by
+  // default; identity-document or sensitive-asset photos can be flagged false
+  // by uploaders or admin moderation. Server-side preview renderers should
+  // honour this flag in addition to the customer/address visibility gate.
+  safeForPreview        Boolean  @default(true)
   uploadedBy            String   // user ID or "system:whatsapp" for bot uploads
   createdAt             DateTime @default(now())
 
@@ -1183,6 +1344,8 @@ enum JobRequestStatus {
   PENDING_VALIDATION // just submitted, platform reviewing
   OPEN               // validated, broadcasting leads to providers
   MATCHING           // at least one lead sent, awaiting acceptance
+  SHORTLIST_READY     // interested providers are ready for customer comparison
+  PROVIDER_CONFIRMATION_PENDING // customer selected a provider, awaiting provider final acceptance
   MATCHED            // a provider accepted — Match created
   EXPIRED            // no provider accepted within the window
   CANCELLED          // customer cancelled before match
@@ -1191,9 +1354,14 @@ enum JobRequestStatus {
 enum LeadStatus {
   SENT      // sent to provider, awaiting response
   VIEWED    // provider opened the lead
+  INTERESTED        // Qualified Shortlist: provider expressed free interest with rate/arrival
+  SHORTLISTED       // Qualified Shortlist: included in customer-visible shortlist
+  CUSTOMER_SELECTED // Qualified Shortlist: customer selected this provider; awaiting final acceptance
+  SUPERSEDED        // Qualified Shortlist: customer chose another shortlisted provider
   ACCEPTED  // provider accepted — triggers Match creation
   DECLINED  // provider passed on this job
   EXPIRED   // provider didn't respond in time
+  CANCELLED // customer cancelled before final acceptance
 }
 
 enum LeadUnlockStatus {
@@ -1456,6 +1624,7 @@ enum ApprovalStatus {
 
 enum ApplicationStatus {
   PENDING
+  MORE_INFO_REQUIRED
   APPROVED
   REJECTED
 }
@@ -1695,6 +1864,8 @@ model Category {
   requiredCertifications CategoryRequiredCertification[]
   requiredEquipment      CategoryRequiredEquipment[]
   requiredVehicleTypes   CategoryRequiredVehicleType[]
+  providerCategories     ProviderCategory[]
+  providerRates          ProviderRate[]
 
   @@index([active, sortOrder])
   @@map("categories")

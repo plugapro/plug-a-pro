@@ -55,9 +55,17 @@ function assertCohortSendAllowed(to: string, context?: OutboundInteractiveContex
         Boolean(metadata.isTestLead)
       : isInternalTestPhone(to)
 
+  // Caller may supply recipientIsTest sourced from Customer.isTestUser /
+  // Provider.isTestUser. If absent, fall back to the bootstrap phone list.
+  const recipientIsTest =
+    typeof metadata.recipientIsTest === 'boolean'
+      ? (metadata.recipientIsTest as boolean)
+      : undefined
+
   if (isCohortMismatch({
     subjectIsTest: isTestEvent,
     recipientPhone: to,
+    recipientIsTest,
     allowTestOverride: Boolean(metadata.allowTestCohortOverride),
   })) {
     console.warn('[test-cohort] outbound WhatsApp blocked before send', {
@@ -65,6 +73,7 @@ function assertCohortSendAllowed(to: string, context?: OutboundInteractiveContex
       to,
       templateName: context?.templateName,
       subject_is_test: isTestEvent,
+      recipient_is_test: recipientIsTest ?? null,
       trace_id: metadata.traceId ?? metadata.trace_id ?? null,
     })
     throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
@@ -94,7 +103,13 @@ export async function sendText(
       body: text,
       externalId,
       metadata: context.metadata,
-    }).catch(() => {})
+    }).catch((err) => {
+      console.warn('[whatsapp] logOutboundMessage failed (non-fatal)', {
+        to,
+        templateName: context.templateName,
+        error: String(err),
+      })
+    })
   }
   return externalId
 }

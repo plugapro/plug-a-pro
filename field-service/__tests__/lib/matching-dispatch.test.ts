@@ -102,7 +102,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
       expect.stringContaining('Area: *Ruimsig*'),
       'View Lead',
       expect.stringMatching(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//),
-      { footer: 'View the lead preview. Accepting uses 1 credit.' },
+      { footer: 'Preview first. Acceptance uses 1 credit.' },
       expect.objectContaining({
         templateName: 'dispatch:job_lead',
         metadata: expect.objectContaining({

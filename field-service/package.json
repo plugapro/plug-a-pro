@@ -18,6 +18,7 @@
     "seed:test-leads": "tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --dry-run",
     "seed:test-leads:commit": "ALLOW_TEST_DATA_IMPORT=true tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit",
     "seed:test-leads:reset": "ALLOW_TEST_DATA_IMPORT=true tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit --reset-existing=true",
+    "seed:test-leads:requests-only": "ALLOW_TEST_DATA_IMPORT=true tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit --requests-only",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset"
   },

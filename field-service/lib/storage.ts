@@ -57,6 +57,7 @@ export async function uploadJobRequestPhoto(params: {
   label?: 'evidence' | string
   caption?: string | null
   uploadedBy: string
+  safeForPreview?: boolean
 }): Promise<string> {
   validateFile(params.file)
 
@@ -80,6 +81,7 @@ export async function uploadJobRequestPhoto(params: {
       sizeBytes: params.file.size,
       label: params.label ?? 'evidence',
       caption: params.caption ?? null,
+      safeForPreview: params.safeForPreview ?? true,
       uploadedBy: params.uploadedBy,
     },
   })

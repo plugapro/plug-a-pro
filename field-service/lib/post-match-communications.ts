@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { db } from './db'
 import { recordAuditLog } from './audit'
 import { AUDIT_ENTITY } from './audit-entities'
@@ -9,6 +10,8 @@ import {
 } from './provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { normaliseLocationDisplayName } from './location-format'
+import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
+import { testEventFields } from './internal-test-cohort'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -70,19 +73,76 @@ async function hasSentPostMatchMessage(params: {
   templateName: string
   leadId: string
 }) {
-  const existing = await db.messageEvent.findFirst({
-    where: {
+  try {
+    const existing = await db.messageEvent.findFirst({
+      where: {
+        to: params.to,
+        templateName: params.templateName,
+        status: { in: [...SENT_OR_BETTER] },
+        metadata: {
+          path: ['leadId'],
+          equals: params.leadId,
+        },
+      },
+      select: { id: true },
+    })
+    return Boolean(existing)
+  } catch (err) {
+    // Treat lookup failures as "not sent yet" so we proceed with the notification
+    // attempt rather than crashing the whole post-match flow.
+    console.warn('[post-match] hasSentPostMatchMessage lookup failed (proceeding as not-sent)', {
       to: params.to,
       templateName: params.templateName,
-      status: { in: [...SENT_OR_BETTER] },
-      metadata: {
-        path: ['leadId'],
-        equals: params.leadId,
+      leadId: params.leadId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+}
+
+async function recordPostMatchSendFailure(params: {
+  to: string
+  templateName: string
+  leadId: string
+  jobRequestId: string
+  providerId: string
+  customerId?: string | null
+  reason: string
+  body?: string
+  metadata?: Record<string, unknown>
+  isTestEvent?: boolean
+}) {
+  try {
+    const metadata = {
+      ...params.metadata,
+      leadId: params.leadId,
+      jobRequestId: params.jobRequestId,
+      providerId: params.providerId,
+      source: 'post_match_communications',
+    }
+    await db.messageEvent.create({
+      data: {
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: params.templateName,
+        body: params.body,
+        to: params.to,
+        status: 'FAILED',
+        sentAt: new Date(),
+        failureReason: params.reason,
+        customerId: params.customerId ?? undefined,
+        metadata: metadata as Prisma.InputJsonValue,
+        ...testEventFields(Boolean(params.isTestEvent)),
       },
-    },
-    select: { id: true },
-  })
-  return Boolean(existing)
+    })
+  } catch (err) {
+    console.warn('[post-match] failed to record FAILED MessageEvent (non-fatal)', {
+      to: params.to,
+      templateName: params.templateName,
+      leadId: params.leadId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 export async function notifyPostMatchAcceptance(params: {
@@ -90,15 +150,15 @@ export async function notifyPostMatchAcceptance(params: {
   providerId: string
   matchId: string
   creditTransactionId?: string | null
-}) {
+}): Promise<{ providerNotified: boolean; customerNotified: boolean }> {
   const lead = await db.lead.findUnique({
     where: { id: params.leadId },
     include: {
-      provider: { select: { id: true, name: true, phone: true } },
+      provider: { select: { id: true, name: true, phone: true, isTestUser: true } },
       unlock: { select: { id: true, creditsCharged: true, unlockedAt: true } },
       jobRequest: {
         include: {
-          customer: { select: { id: true, name: true, phone: true } },
+          customer: { select: { id: true, name: true, phone: true, isTestUser: true } },
           address: { select: { street: true, suburb: true, city: true, province: true } },
           match: { select: { id: true, providerId: true, status: true, createdAt: true } },
         },
@@ -106,7 +166,9 @@ export async function notifyPostMatchAcceptance(params: {
     },
   })
 
-  if (!lead || lead.providerId !== params.providerId) return
+  if (!lead || lead.providerId !== params.providerId) {
+    return { providerNotified: false, customerNotified: false }
+  }
 
   const customer = lead.jobRequest.customer
   const provider = lead.provider
@@ -115,18 +177,39 @@ export async function notifyPostMatchAcceptance(params: {
   const customerName = firstName(customer.name)
   const category = lead.jobRequest.category
   const address = addressLabel(lead.jobRequest.address)
-  const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id)
+
+  // Non-throwing URL lookups — null means we fall back to plain text messages.
+  const leadUrl = await getProviderSignedJobHandoverUrlByLeadId(lead.id).catch(() => null)
   const customerHandoverUrl = await getCustomerProviderHandoverUrl({
     leadId: lead.id,
     providerId: provider.id,
     jobRequestId: lead.jobRequestId,
-  })
+  }).catch(() => null)
+
   const preferredAvailability = preferredAvailabilityLabel(lead.jobRequest)
   const creditsCharged = lead.unlock?.creditsCharged ?? 1
-  const walletBalance = await getProviderWalletBalanceReadOnly(provider.id)
+  const walletBalance = await getProviderWalletBalanceReadOnly(provider.id).catch((err) => {
+    console.error('[post-match] provider wallet balance lookup failed (non-fatal)', {
+      lead_id: lead.id,
+      provider_id: provider.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return {
+      providerId: provider.id,
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
+      totalCreditBalance: 0,
+      status: 'UNKNOWN',
+    }
+  })
 
   const { sendText, sendCtaUrl, sendButtons } = await import('./whatsapp-interactive')
 
+  let customerNotified = false
+  let providerNotified = false
+
+  // Customer notification — non-fatal. A customer-side WhatsApp failure must
+  // never block the provider confirmation that follows.
   if (customer.phone && !(await hasSentPostMatchMessage({
     to: customer.phone,
     templateName: 'post_match_customer_provider_accepted',
@@ -149,32 +232,61 @@ export async function notifyPostMatchAcceptance(params: {
         handoverUrlCreated: Boolean(customerHandoverUrl),
         isTestLead,
         isTestRequest: isTestLead,
+        recipientIsTest: customer.isTestUser,
       },
     }
 
-    if (customerHandoverUrl) {
-      await sendCtaUrl(
-        customer.phone,
-        customerBody,
-        'View Provider',
-        customerHandoverUrl,
-        { footer: 'Secure link for this request only.' },
-        customerContext,
-      )
-    } else {
-      await sendText(customer.phone, customerBody, customerContext)
+    try {
+      if (customerHandoverUrl) {
+        await sendCtaUrl(
+          customer.phone,
+          customerBody,
+          'View Provider',
+          customerHandoverUrl,
+          { footer: 'Secure link for this request only.' },
+          customerContext,
+        )
+      } else {
+        await sendText(customer.phone, customerBody, customerContext)
+      }
+      customerNotified = true
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      console.error('[post-match] customer notification failed (non-fatal — provider confirmation continues)', {
+        lead_id: lead.id,
+        customer_id: customer.id,
+        error: reason,
+      })
+      await recordPostMatchSendFailure({
+        to: customer.phone,
+        templateName: 'post_match_customer_provider_accepted',
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        providerId: provider.id,
+        customerId: customer.id,
+        reason,
+        body: customerBody,
+        metadata: customerContext.metadata,
+        isTestEvent: isTestLead,
+      })
     }
   }
 
+  // Provider notification — must always be attempted regardless of customer outcome.
   if (provider.phone && !(await hasSentPostMatchMessage({
     to: provider.phone,
     templateName: 'post_match_provider_job_accepted',
     leadId: lead.id,
   }))) {
     const body =
-      `✅ *Job accepted! — ${firstName(provider.name)}*\n\n` +
-      `You've unlocked this lead using *${creditsCharged} credit${creditsCharged === 1 ? '' : 's'}*.\n` +
-      `Remaining balance: *${walletBalance.totalCreditBalance} credit${walletBalance.totalCreditBalance === 1 ? '' : 's'}* (Promo: *${walletBalance.promoCreditBalance}* · Purchased: *${walletBalance.paidCreditBalance}*).\n\n` +
+      `✅ *Lead accepted — ${firstName(provider.name)}*\n\n` +
+      `${buildLeadAcceptedCreditLine({
+        creditsUsed: creditsCharged,
+        remainingCredits: walletBalance.totalCreditBalance,
+        starterCredits: walletBalance.promoCreditBalance,
+        paidCredits: walletBalance.paidCreditBalance,
+      })}\n\n` +
+      `Full customer and job details are now available.\n\n` +
       `Client: *${customer.name}*\n` +
       `Service: *${category}*\n` +
       `Address: *${address}*\n` +
@@ -183,15 +295,73 @@ export async function notifyPostMatchAcceptance(params: {
       `Customer contact:\n${customer.name}\n${customer.phone}\n\n` +
       `You can manage this job from the link below. No login is needed for this job link.`
 
-    if (leadUrl) {
-      await sendCtaUrl(
-        provider.phone,
+    const providerContext = {
+      templateName: 'post_match_provider_job_accepted',
+      metadata: {
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        matchId: params.matchId,
+        providerId: provider.id,
+        leadUnlockId: lead.unlock?.id,
+        creditTransactionId: params.creditTransactionId ?? null,
+        customerContactReleased: true,
+        isTestLead,
+        isTestRequest: isTestLead,
+        recipientIsTest: provider.isTestUser,
+      },
+    }
+
+    try {
+      if (leadUrl) {
+        await sendCtaUrl(
+          provider.phone,
+          body,
+          'View Job',
+          leadUrl,
+          { footer: 'Secure link for this accepted job only.' },
+          providerContext,
+        )
+      } else {
+        await sendText(provider.phone, body, providerContext)
+      }
+      // Mark as notified here — before the Contact Customer button — so that a
+      // failure on the secondary button does not incorrectly mark providerNotified false.
+      providerNotified = true
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      console.error('[post-match] provider confirmation failed', {
+        lead_id: lead.id,
+        provider_id: provider.id,
+        error: reason,
+      })
+      await recordPostMatchSendFailure({
+        to: provider.phone,
+        templateName: 'post_match_provider_job_accepted',
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        providerId: provider.id,
+        reason,
         body,
-        'View Job',
-        leadUrl,
-        { footer: 'Secure link for this accepted job only.' },
+        metadata: providerContext.metadata,
+        isTestEvent: isTestLead,
+      })
+    }
+  }
+
+  // Contact Customer button — non-fatal; failure must not affect providerNotified.
+  if (provider.phone && !(await hasSentPostMatchMessage({
+    to: provider.phone,
+    templateName: 'post_match_provider_next_actions',
+    leadId: lead.id,
+  }))) {
+    try {
+      await sendButtons(
+        provider.phone,
+        `Customer contact is released for this accepted job. Tap below to open WhatsApp with ${customerName}.`,
+        [{ id: `post_match_contact:${lead.id}`, title: 'Contact Customer' }],
+        { footer: 'This contact handover is logged on the ticket.' },
         {
-          templateName: 'post_match_provider_job_accepted',
+          templateName: 'post_match_provider_next_actions',
           metadata: {
             leadId: lead.id,
             jobRequestId: lead.jobRequestId,
@@ -199,54 +369,19 @@ export async function notifyPostMatchAcceptance(params: {
             providerId: provider.id,
             leadUnlockId: lead.unlock?.id,
             creditTransactionId: params.creditTransactionId ?? null,
-            customerContactReleased: true,
             isTestLead,
             isTestRequest: isTestLead,
+            recipientIsTest: provider.isTestUser,
           },
         },
       )
-    } else {
-      await sendText(provider.phone, body, {
-        templateName: 'post_match_provider_job_accepted',
-        metadata: {
-          leadId: lead.id,
-          jobRequestId: lead.jobRequestId,
-          matchId: params.matchId,
-          providerId: provider.id,
-          leadUnlockId: lead.unlock?.id,
-          creditTransactionId: params.creditTransactionId ?? null,
-          customerContactReleased: true,
-          isTestLead,
-          isTestRequest: isTestLead,
-        },
+    } catch (err) {
+      console.error('[post-match] contact-customer button failed (non-fatal)', {
+        lead_id: lead.id,
+        provider_id: provider.id,
+        error: err instanceof Error ? err.message : String(err),
       })
     }
-  }
-
-  if (provider.phone && !(await hasSentPostMatchMessage({
-    to: provider.phone,
-    templateName: 'post_match_provider_next_actions',
-    leadId: lead.id,
-  }))) {
-    await sendButtons(
-      provider.phone,
-      `Customer contact is released for this accepted job. Tap below to open WhatsApp with ${customerName}.`,
-      [{ id: `post_match_contact:${lead.id}`, title: 'Contact Customer' }],
-      { footer: 'This contact handover is logged on the ticket.' },
-      {
-        templateName: 'post_match_provider_next_actions',
-        metadata: {
-          leadId: lead.id,
-          jobRequestId: lead.jobRequestId,
-          matchId: params.matchId,
-          providerId: provider.id,
-          leadUnlockId: lead.unlock?.id,
-          creditTransactionId: params.creditTransactionId ?? null,
-          isTestLead,
-          isTestRequest: isTestLead,
-        },
-      },
-    )
   }
 
   console.info('[post-match] accepted lead handover notifications processed', {
@@ -257,8 +392,8 @@ export async function notifyPostMatchAcceptance(params: {
     customer_id: customer.id,
     credit_transaction_id: params.creditTransactionId ?? null,
     lead_unlock_id: lead.unlock?.id ?? null,
-    customer_notification_result: customer.phone ? 'attempted' : 'skipped_no_phone',
-    provider_notification_result: provider.phone ? 'attempted' : 'skipped_no_phone',
+    customer_notified: customerNotified,
+    provider_notified: providerNotified,
     signed_link_generation_result: {
       provider_view_job: Boolean(leadUrl),
       customer_view_provider: Boolean(customerHandoverUrl),
@@ -279,6 +414,8 @@ export async function notifyPostMatchAcceptance(params: {
       customerContactReleased: true,
     },
   }).catch(() => {})
+
+  return { providerNotified, customerNotified }
 }
 
 export async function buildAcceptedLeadContactUrl(params: {

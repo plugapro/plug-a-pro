@@ -55,7 +55,6 @@ describe('normalizeOtpPhoneNumber', () => {
   it('wires shared helper copy into customer and provider sign-in screens', () => {
     const authPages = [
       'app/(auth)/sign-in/page.tsx',
-      'app/(auth)/technician-sign-in/page.tsx',
       'app/(auth)/provider-sign-in/page.tsx',
     ]
     const oldExampleNumbers = [

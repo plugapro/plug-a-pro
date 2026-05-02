@@ -11,6 +11,7 @@ import {
   resolveProviderLeadAccessToken,
   verifyProviderLeadAccessToken,
   providerLeadTokenAllowsScope,
+  LEAD_RESPONSE_SCOPES,
   type ProviderLeadAccessScope,
 } from './provider-lead-access'
 
@@ -96,7 +97,13 @@ function tokenAllowsAcceptedJobScope(params: {
   scope: ProviderLeadAccessScope
 }) {
   const verified = verifyProviderLeadAccessToken(params.token)
-  return verified.status === 'active' && providerLeadTokenAllowsScope(verified.payload, params.scope)
+  if (verified.status !== 'active') return false
+  const { payload } = verified
+  if (providerLeadTokenAllowsScope(payload, params.scope)) return true
+  // A LEAD_RESPONSE_SCOPES token (the original WhatsApp invite URL) identifies the
+  // assigned provider. After acceptance the same token may be used to perform job
+  // actions — the actual accepted-state check happens in resolveAcceptedLeadFromToken.
+  return payload.scopes?.some((s) => LEAD_RESPONSE_SCOPES.includes(s as ProviderLeadAccessScope)) ?? false
 }
 
 async function notifyCustomer(params: {
@@ -132,6 +139,11 @@ export async function saveAcceptedLeadArrival(params: {
 > {
   const traceId = createTraceId()
   if (!tokenAllowsAcceptedJobScope({ token: params.token, scope: 'confirm_arrival' })) {
+    console.warn('[accepted-job] arrival save blocked: token scope check failed', {
+      lead_id: params.leadId,
+      scope: 'confirm_arrival',
+      trace_id: traceId,
+    })
     return {
       ok: false as const,
       reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB',
@@ -142,6 +154,10 @@ export async function saveAcceptedLeadArrival(params: {
 
   const lead = await resolveAcceptedLeadFromToken({ leadId: params.leadId, token: params.token })
   if (!lead) {
+    console.warn('[accepted-job] arrival save blocked: lead not found or not accepted for this provider', {
+      lead_id: params.leadId,
+      trace_id: traceId,
+    })
     return {
       ok: false as const,
       reason: 'PROVIDER_NOT_ASSIGNED_TO_JOB',

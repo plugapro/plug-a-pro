@@ -24,7 +24,7 @@ describe('provider application identity helpers', () => {
     expect(client.providerApplication.findFirst).toHaveBeenCalledWith({
       where: {
         phone: '+27821234567',
-        status: { in: ['PENDING', 'APPROVED'] },
+        status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] },
       },
       orderBy: { submittedAt: 'desc' },
       select: {
@@ -56,7 +56,7 @@ describe('provider application identity helpers', () => {
     expect(client.providerApplication.findMany).toHaveBeenCalledWith({
       where: {
         phone: '+27821234567',
-        status: { in: ['PENDING', 'APPROVED'] },
+        status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] },
         id: { not: 'app_current' },
       },
       orderBy: { submittedAt: 'desc' },
@@ -77,8 +77,9 @@ describe('provider application identity helpers', () => {
       { id: 'app_2', phone: '+27821234567', status: 'APPROVED' },
       { id: 'app_3', phone: '+27825550000', status: 'REJECTED' },
       { id: 'app_4', phone: '+27826660000', status: 'PENDING' },
+      { id: 'app_5', phone: '+27826660000', status: 'MORE_INFO_REQUIRED' },
     ])
 
-    expect(conflictingIds).toEqual(new Set(['app_1', 'app_2']))
+    expect(conflictingIds).toEqual(new Set(['app_1', 'app_2', 'app_4', 'app_5']))
   })
 })

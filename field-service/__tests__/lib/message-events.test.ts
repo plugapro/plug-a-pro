@@ -76,4 +76,26 @@ describe('outbound message event cohort guard', () => {
       }),
     })
   })
+
+  it('records the explicit DB recipient test flag on blocked sends', async () => {
+    const { logOutboundMessage } = await import('@/lib/message-events')
+
+    await expect(logOutboundMessage({
+      to: '+27821234567',
+      templateName: 'test-template',
+      body: 'Internal test',
+      metadata: { isTestRequest: true, recipientIsTest: false, traceId: 'trace-4' },
+    })).rejects.toThrow('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
+
+    expect(mockDb.messageEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: 'FAILED',
+        metadata: expect.objectContaining({
+          recipientIsTest: false,
+          recipientIsTestUser: false,
+          blockedReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
+        }),
+      }),
+    })
+  })
 })

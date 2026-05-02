@@ -34,7 +34,7 @@ type ProviderRecordSyncClient = {
   }
 }
 
-type ProviderApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+type ProviderApplicationStatus = 'PENDING' | 'MORE_INFO_REQUIRED' | 'APPROVED' | 'REJECTED'
 
 type ProviderRecordReconcileClient = ProviderRecordSyncClient & {
   providerApplication?: {
@@ -56,6 +56,7 @@ type ProviderRecordReconcileClient = ProviderRecordSyncClient & {
 type SyncProviderRecordInput = {
   phone: string
   name: string
+  email?: string | null
   userId?: string | null
   skills: string[]
   serviceAreas: string[]
@@ -147,7 +148,7 @@ async function ensureDefaultProviderAvailability(
       providerId,
       availabilityMode: 'ALWAYS_AVAILABLE',
       availabilityState: 'AVAILABLE',
-      emergencyAvailable: false,
+      emergencyAvailable: true,
       sameDayAvailable: true,
       lastUpdatedBy: 'system',
       lastUpdatedChannel: 'approval',
@@ -160,7 +161,7 @@ async function ensureDefaultProviderAvailability(
       breakUntil: null,
       pausedAt: null,
       pauseReason: null,
-      emergencyAvailable: false,
+      emergencyAvailable: true,
       sameDayAvailable: true,
       lastUpdatedBy: 'system',
       lastUpdatedChannel: 'approval',
@@ -187,6 +188,7 @@ export async function syncProviderRecord(
   if (existing) {
     const data: Record<string, unknown> = {
       name: input.name,
+      email: input.email ?? null,
       skills: input.skills,
       serviceAreas,
       active: leadEligible,
@@ -235,6 +237,7 @@ export async function syncProviderRecord(
       id,
       phone,
       name: input.name,
+      email: input.email ?? null,
       userId: input.userId ?? null,
       skills: input.skills,
       serviceAreas,

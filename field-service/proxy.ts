@@ -7,12 +7,14 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
+import { checkWorkerPortalAccess, logWorkerPortalDecision } from '@/lib/worker-provider-auth'
 
 // Routes that are public (no auth required)
 // Auth model:
 //   Customers   → phone OTP    → /sign-in → /verify
 //   Providers   → phone OTP    → /provider-sign-in → /provider-verify
-//                             (legacy: /technician-sign-in → /technician-verify also supported)
+//                             (legacy /technician-sign-in and /technician-verify
+//                              now server-redirect to the canonical routes above)
 //   Admin/Owner → email+pass   → /admin-sign-in
 // Email is reserved for admin/owner. LSM users (customers, providers) use phone only.
 const PUBLIC_PATHS = [
@@ -21,8 +23,9 @@ const PUBLIC_PATHS = [
   '/verify',               // customer OTP verification + identity link
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
-  '/technician-sign-in',   // legacy — kept for backward compat
-  '/technician-verify',    // legacy — kept for backward compat
+  '/provider/terms',       // provider credit rules are linked before login/application
+  '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
+  '/technician-verify',    // legacy — server-redirects to /provider-verify
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
   '/requests/access',      // signed single-ticket links are scoped to one request
@@ -31,9 +34,12 @@ const PUBLIC_PATHS = [
   '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
   '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
-  '/api/auth/session',     // called client-side after sign-in to persist the HttpOnly session cookie
-  '/api/auth/link',        // called client-side after OTP — no session cookie yet
-  '/api/health',           // monitoring probe — must be reachable without a session cookie
+  '/api/auth/session',              // called client-side after sign-in to persist the HttpOnly session cookie
+  '/api/auth/link',                 // called client-side after OTP — no session cookie yet
+  '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
+  '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
+  '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
+  '/api/health',                    // monitoring probe — must be reachable without a session cookie
 ]
 
 const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/
@@ -114,12 +120,44 @@ export async function proxy(request: NextRequest) {
 
     const legacyRole = user.user_metadata?.role ?? 'customer'
     let effectiveRole = legacyRole
+    const rawPhone = user.phone as string | undefined
+    const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`) : null
 
     // Enforce provider-only routes
     if (PROVIDER_PATHS.some((p) => pathname.startsWith(p))) {
-      if (legacyRole !== 'provider') {
+      const provider = await db.provider
+        .findFirst({
+          where: {
+            OR: [
+              { userId: user.id },
+              ...(phone ? [{ phone, userId: null }] : []),
+            ],
+          },
+          select: {
+            id: true,
+            userId: true,
+            phone: true,
+            active: true,
+            verified: true,
+            status: true,
+          },
+        })
+        .catch(() => null)
+      const access = checkWorkerPortalAccess(provider)
+      logWorkerPortalDecision({
+        event: 'middleware',
+        traceId: request.headers.get('x-trace-id') ?? 'middleware',
+        normalizedPhone: phone,
+        authUserId: user.id,
+        provider,
+        roleCheckResult: legacyRole === 'provider' ? 'metadata_provider' : 'resolved_from_provider_record',
+        code: access.ok ? 'OK' : access.code,
+      })
+
+      if (!access.ok) {
         return NextResponse.redirect(new URL('/provider-sign-in', request.url))
       }
+      effectiveRole = 'provider'
     }
 
     // Enforce admin-only routes

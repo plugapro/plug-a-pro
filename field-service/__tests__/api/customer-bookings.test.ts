@@ -7,6 +7,7 @@ const {
   mockResolveStructuredAddressCapture,
   mockIsInActiveServiceArea,
   mockAddToServiceAreaWaitlist,
+  mockNotifyCustomerPwaRequestSubmitted,
   mockUploadJobRequestPhoto,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
@@ -14,6 +15,7 @@ const {
   mockResolveStructuredAddressCapture: vi.fn(),
   mockIsInActiveServiceArea: vi.fn(),
   mockAddToServiceAreaWaitlist: vi.fn(),
+  mockNotifyCustomerPwaRequestSubmitted: vi.fn(),
   mockUploadJobRequestPhoto: vi.fn(),
 }))
 
@@ -26,6 +28,9 @@ vi.mock('@/lib/structured-address', () => ({
 vi.mock('@/lib/service-area-guard', () => ({
   isInActiveServiceArea: mockIsInActiveServiceArea,
   addToServiceAreaWaitlist: mockAddToServiceAreaWaitlist,
+}))
+vi.mock('@/lib/client-pwa-submission-notifications', () => ({
+  notifyCustomerPwaRequestSubmitted: mockNotifyCustomerPwaRequestSubmitted,
 }))
 vi.mock('@/lib/storage', () => ({ uploadJobRequestPhoto: mockUploadJobRequestPhoto }))
 
@@ -53,6 +58,7 @@ describe('POST /api/customer/bookings', () => {
       ticketUrl: 'https://app.example/requests/access/token',
     })
     mockUploadJobRequestPhoto.mockResolvedValue('https://blob.example/photo.png')
+    mockNotifyCustomerPwaRequestSubmitted.mockResolvedValue({ sent: true })
   })
 
   it('creates a job request with optional customer photos attached to the request', async () => {
@@ -83,8 +89,17 @@ describe('POST /api/customer/bookings', () => {
     }))
     expect(mockUploadJobRequestPhoto).toHaveBeenCalledWith(expect.objectContaining({
       jobRequestId: 'jr-1',
-      label: 'evidence',
+      label: 'customer_photo',
+      safeForPreview: true,
       uploadedBy: 'customer-user-1',
+    }))
+    expect(mockNotifyCustomerPwaRequestSubmitted).toHaveBeenCalledWith(expect.objectContaining({
+      customerPhone: '+27821234567',
+      category: 'plumbing',
+      suburb: 'Sandton',
+      city: 'Johannesburg',
+      ticketUrl: 'https://app.example/requests/access/token',
+      requestId: 'jr-1',
     }))
   })
 

@@ -184,10 +184,10 @@ export const TEMPLATES = {
     name: 'job_offer',
     language: 'en_ZA',
     category: 'MARKETING',
-    description: 'Sent to a technician when a new job is available for them to accept',
+    description: 'Sent to a provider when a new matched lead is available to preview and accept',
     // {{1}} tech first name, {{2}} service, {{3}} area (suburb/city), {{4}} date/window, {{5}} job URL
     example:
-      'Hi {{1}}, new job: {{2}} in {{3}} on {{4}}. Tap to accept — {{5}} — good luck!',
+      'Hi {{1}}, new lead: {{2}} in {{3}} on {{4}}. Preview here: {{5}}. Accepting uses 1 credit and unlocks full customer details.',
   },
 
   technician_job_reminder: {
@@ -219,7 +219,7 @@ export const TEMPLATES = {
     description: 'Sent as template confirmation after application submission',
     // {{1}} applicant name, {{2}} application ref
     example:
-      'Hi {{1}}, we received your application to join Plug A Pro. Ref: {{2}}. We review all applications within 30 minutes and will update you here.',
+      'Hi {{1}}, we received your Plug A Pro provider application. Ref: {{2}}. We will review your details and update you here. Approval is not automatic.',
   },
 
   technician_welcome: {
@@ -229,7 +229,7 @@ export const TEMPLATES = {
     description: 'Sent on approval — includes app link. Used as template for >24h outreach',
     // {{1}} tech name, {{2}} app URL
     example:
-      'Welcome to Plug A Pro, {{1}}! Your application has been approved. Download the app — {{2}} — jobs are waiting!',
+      'Welcome to Plug A Pro, {{1}}! Your application is approved. Starter credits were awarded. Each accepted lead uses 1 credit. Worker Portal: {{2}}',
   },
 
   technician_application_declined: {
@@ -251,7 +251,7 @@ export const TEMPLATES = {
     description: 'Sent when a provider wallet reaches one remaining credit',
     // {{1}} remaining credits, {{2}} top-up amount, {{3}} credits issued
     example:
-      'You have {{1}} Plug-A-Pro Credit left. Top up now so you do not miss new leads. {{2}} = {{3}} credits.',
+      'You have {{1}} Plug-A-Pro Credit left. Each accepted lead uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
   },
 
   wallet_zero_balance_lead: {
@@ -261,7 +261,7 @@ export const TEMPLATES = {
     description: 'Sent when a matched lead is available but the provider wallet has no credits',
     // {{1}} current credits, {{2}} minimum top-up amount
     example:
-      'New matched lead available, but your wallet has {{1}} credits. Top up {{2}} to unlock this and future leads.',
+      'New matched lead available, but your wallet has {{1}} credits. You need 1 credit to accept and unlock full customer details. Top up {{2}}.',
   },
 
   wallet_payment_intent_created: {
@@ -282,7 +282,7 @@ export const TEMPLATES = {
     description: 'Sent after admin reconciliation credits a provider wallet top-up',
     // {{1}} credits issued
     example:
-      'Payment received. Your wallet has been credited with {{1}} Plug-A-Pro Credits.',
+      'Payment received. Your wallet has been credited with {{1}} Plug-A-Pro Credits. Each accepted lead uses 1 credit.',
   },
 
   wallet_payfast_topup_initiated: {
@@ -304,7 +304,7 @@ export const TEMPLATES = {
     // {{1}} category, {{2}} customer name, {{3}} customer phone, {{4}} address,
     // {{5}} preferred time, {{6}} details
     example:
-      'Lead unlocked: {{1}}. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}',
+      'Lead accepted and unlocked: {{1}}. 1 credit used. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}',
   },
 
   lead_unlock_customer_intro: {

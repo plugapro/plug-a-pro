@@ -4,12 +4,16 @@
 // remains active and the provider can still be notified by retry.
 
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { hasSuccessfulMessageForRecipient } from '@/lib/message-events'
 import { getProviderLeadAccessUrl } from '@/lib/provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '@/lib/provider-wallet'
-import { LEAD_UNLOCK_COST_CREDITS } from '@/lib/lead-unlocks'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { notifyProviderZeroBalanceLeadAvailable } from '@/lib/provider-wallet-notifications'
+import {
+  buildProviderLeadActionsMessage,
+  buildProviderLeadPreviewMessage,
+} from '@/lib/provider-credit-copy'
 import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
@@ -47,12 +51,16 @@ export async function dispatchMatchLead(params: {
       status: 'SENT',
       sentAt: new Date(),
       expiresAt: hold.expiresAt,
+      isTestLead: jobRequest.isTestRequest ?? false,
+      cohortName: jobRequest.cohortName ?? null,
     },
     update: {
       status: 'SENT',
       sentAt: new Date(),
       expiresAt: hold.expiresAt,
       assignmentHoldId: hold.id,
+      isTestLead: jobRequest.isTestRequest ?? false,
+      cohortName: jobRequest.cohortName ?? null,
     },
   })
 
@@ -62,13 +70,48 @@ export async function dispatchMatchLead(params: {
   const expiryStr = hold.expiresAt.toLocaleTimeString('en-ZA', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg',
   })
+  const preferredTime = jobRequest.requestedWindowStart
+    ? jobRequest.requestedWindowStart.toLocaleString('en-ZA', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Africa/Johannesburg',
+      })
+    : jobRequest.requestedArrivalLatest
+      ? `Before ${jobRequest.requestedArrivalLatest.toLocaleString('en-ZA', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Africa/Johannesburg',
+        })}`
+      : 'Flexible'
   const balance = await getProviderWalletBalanceReadOnly(provider.id)
-  const creditCost = `${LEAD_UNLOCK_COST_CREDITS} credit${LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}`
-  const balanceLine = `Accepting this lead will use ${creditCost}.\nAvailable balance: ${balance.totalCreditBalance} credit${balance.totalCreditBalance === 1 ? '' : 's'} (Promo: ${balance.promoCreditBalance} · Purchased: ${balance.paidCreditBalance}).`
-  const titleLine = jobRequest.title ? `*${jobRequest.title}*\n` : ''
-  const body = `🔔 *New Job Lead — ${category}*\n\n${titleLine}Area: *${suburb}*\n\n${jobRequest.description ?? ''}\n\n${balanceLine}\n\nRespond by *${expiryStr}* or this lead will go to another provider.`
-  const actionsBody = `Quick response for *${category}* in *${suburb}*.\n\n${balanceLine}`
-  const msgMeta = { jobRequestId: jobRequest.id, leadId: lead.id, holdId: hold.id, providerId: provider.id }
+  const body = buildProviderLeadPreviewMessage({
+    category,
+    area: suburb,
+    preferredTime,
+    deadlineTime: expiryStr,
+    balance,
+    title: jobRequest.title,
+    description: jobRequest.description,
+    subcategory: jobRequest.subcategory,
+    urgency: jobRequest.urgency,
+    budgetPreference: jobRequest.budgetPreference,
+  })
+  const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
+  const msgMeta = {
+    jobRequestId: jobRequest.id,
+    leadId: lead.id,
+    holdId: hold.id,
+    providerId: provider.id,
+    isTestLead: lead.isTestLead,
+    isTestRequest: jobRequest.isTestRequest ?? false,
+    recipientIsTest: provider.isTestUser ?? false,
+  }
   const leadUrl = await getProviderLeadAccessUrl({
     leadId: lead.id,
     providerId: provider.id,
@@ -122,7 +165,7 @@ export async function dispatchMatchLead(params: {
       body,
       'View Lead',
       leadUrl,
-      { footer: 'View the lead preview. Accepting uses 1 credit.' },
+      { footer: 'Preview first. Acceptance uses 1 credit.' },
       { templateName: 'dispatch:job_lead', metadata: msgMeta }
     ).catch(async (err: unknown) => {
       const failureReason = err instanceof Error ? err.message : String(err)
@@ -149,13 +192,24 @@ export async function dispatchMatchLead(params: {
 
   if (actionsAlreadySent) return
 
+  // Qualified Shortlist Model: when the dispatch_v2 flag is on, the buttons
+  // capture free interest instead of triggering a paid acceptance. This keeps
+  // the legacy paid sequential dispatch reachable until pilots are ready.
+  const dispatchV2 = await isEnabled('qualified_shortlist.dispatch_v2').catch(() => false)
+  const buttons = dispatchV2
+    ? [
+        { id: `interested:${lead.id}`, title: "I'm interested" },
+        { id: `not_interested:${lead.id}`, title: 'Not interested' },
+      ]
+    : [
+        { id: `accept:${hold.id}`, title: 'Accept Lead' },
+        { id: `decline:${hold.id}`, title: 'Decline' },
+      ]
+
   await sendButtons(
     provider.phone,
     actionsBody,
-    [
-      { id: `accept:${hold.id}`, title: 'Accept Lead' },
-      { id: `decline:${hold.id}`, title: 'Decline' },
-    ],
+    buttons,
     undefined,
     { templateName: 'dispatch:job_lead_actions', metadata: msgMeta }
   ).catch(async (err: unknown) => {

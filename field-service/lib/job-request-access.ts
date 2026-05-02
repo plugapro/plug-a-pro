@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto'
 import { db } from './db'
+import { getPublicAppUrl } from './provider-credit-copy'
 
 const ACCESS_TOKEN_TTL_DAYS = 90
 
@@ -56,11 +57,12 @@ export async function ensureJobRequestAccessToken(jobRequestId: string) {
   return { token, expiresAt }
 }
 
-export async function getJobRequestAccessUrl(jobRequestId: string) {
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim()
+export async function getJobRequestAccessUrl(jobRequestId: string, intent?: string) {
+  const appUrl = getPublicAppUrl()
   if (!appUrl) return null
   const { token } = await ensureJobRequestAccessToken(jobRequestId)
-  return `${appUrl}/requests/access/${token}`
+  const query = intent ? `?intent=${encodeURIComponent(intent)}` : ''
+  return `${appUrl}/requests/access/${token}${query}`
 }
 
 export async function resolveJobRequestAccessScope(token: string) {
@@ -96,7 +98,7 @@ export async function resolveJobRequestAccessToken(token: string) {
       customer: { select: { id: true, userId: true, name: true, phone: true } },
       address: true,
       attachments: {
-        where: { label: 'customer_photo' },
+        where: { label: { in: ['customer_photo', 'evidence'] } },
         orderBy: { createdAt: 'asc' },
       },
       leads: {
