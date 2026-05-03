@@ -322,6 +322,7 @@ function buildMatchingJobRequest(record: {
   autoCreateBookingOnAssignment: boolean
   isTestRequest: boolean
   cohortName: string | null
+  providerPreference: string | null
   status: MatchingJobRequest['status']
   expiresAt?: Date | null
   customer?: { id: string; name: string; phone: string } | null
@@ -357,6 +358,7 @@ function buildMatchingJobRequest(record: {
     autoCreateBookingOnAssignment: record.autoCreateBookingOnAssignment,
     isTestRequest: record.isTestRequest,
     cohortName: record.cohortName,
+    providerPreference: record.providerPreference ?? null,
     status: record.status,
     expiresAt: record.expiresAt ?? null,
     customer: record.customer ?? { id: record.customerId, name: 'Customer', phone: '' },
@@ -400,6 +402,7 @@ export async function loadMatchingJobRequest(client: any, jobRequestId: string) 
       autoCreateBookingOnAssignment: true,
       isTestRequest: true,
       cohortName: true,
+      providerPreference: true,
       status: true,
       expiresAt: true,
       customer: {

@@ -1270,3 +1270,292 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     )
   })
 })
+
+// ─── collect_request_preferences step ────────────────────────────────────────
+
+describe('WhatsApp job-request flow — collect_request_preferences step (MVP)', () => {
+  const PHONE = '+27821234567'
+
+  function makePrefCtx(replyId?: string, replyText?: string) {
+    return {
+      phone: PHONE,
+      step: 'collect_request_preferences' as const,
+      data: {
+        selectedCategory: 'Plumbing',
+        address: '14 Main Rd, Sandton',
+        availabilityNote: 'This week',
+        urgency: 'soon',
+      } as any,
+      flow: 'job_request' as const,
+      reply: {
+        type: replyId ? 'button_reply' : 'text',
+        id: replyId,
+        text: replyText,
+        title: replyId,
+      } as any,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('advances to collect_photos (skipping budget) when Save money is chosen', async () => {
+    const result = await handleJobRequestFlow(makePrefCtx('pref_money'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(result.nextData?.providerPreference).toBe('save_money')
+    expect(result.nextData?.verifiedOnly).toBe(false)
+  })
+
+  it('advances to collect_photos when Best value is chosen', async () => {
+    const result = await handleJobRequestFlow(makePrefCtx('pref_value'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(result.nextData?.providerPreference).toBe('best_value')
+  })
+
+  it('advances to collect_photos when Best quality is chosen', async () => {
+    const result = await handleJobRequestFlow(makePrefCtx('pref_quality'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(result.nextData?.providerPreference).toBe('best_quality')
+  })
+
+  it('does NOT ask a budget preference question after preference is chosen', async () => {
+    await handleJobRequestFlow(makePrefCtx('pref_value'))
+    const listCalls = (wa.sendList as any).mock.calls
+    expect(listCalls.length).toBe(0)
+    const buttonTexts = (wa.sendButtons as any).mock.calls.map((c: any[]) => c[1] as string)
+    expect(buttonTexts.some((t: string) => t.toLowerCase().includes('budget'))).toBe(false)
+  })
+
+  it('shows the photo prompt after preference is selected', async () => {
+    await handleJobRequestFlow(makePrefCtx('pref_money'))
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Add a photo?'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'photos_skip' }),
+        expect.objectContaining({ id: 'photos_start' }),
+      ])
+    )
+  })
+
+  it('re-prompts with three MVP options on invalid reply', async () => {
+    const result = await handleJobRequestFlow(makePrefCtx(undefined, 'some random text'))
+    expect(result.nextStep).toBe('collect_request_preferences')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('matters most'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'pref_money' }),
+        expect.objectContaining({ id: 'pref_value' }),
+        expect.objectContaining({ id: 'pref_quality' }),
+      ])
+    )
+  })
+
+  it('maps legacy pref_budget button to save_money for in-flight sessions', async () => {
+    const result = await handleJobRequestFlow(makePrefCtx('pref_budget'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(result.nextData?.providerPreference).toBe('save_money')
+  })
+
+  it('maps legacy pref_experienced button to best_quality for in-flight sessions', async () => {
+    const result = await handleJobRequestFlow(makePrefCtx('pref_experienced'))
+    expect(result.nextStep).toBe('collect_photos')
+    expect(result.nextData?.providerPreference).toBe('best_quality')
+  })
+})
+
+// ─── confirm_job_request step — preference prompt ─────────────────────────────
+
+describe('WhatsApp job-request flow — confirm_job_request preference prompt', () => {
+  const PHONE = '+27821234567'
+
+  function makeAvailCtx(replyId: string) {
+    return {
+      phone: PHONE,
+      step: 'confirm_job_request' as const,
+      data: {
+        selectedCategory: 'Plumbing',
+        address: '14 Main Rd, Sandton',
+        availabilityNote: undefined,
+        urgency: undefined,
+      } as any,
+      flow: 'job_request' as const,
+      reply: {
+        type: 'button_reply',
+        id: replyId,
+        text: replyId,
+        title: replyId,
+      } as any,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows three MVP preference buttons after availability is selected', async () => {
+    const result = await handleJobRequestFlow(makeAvailCtx('avail_asap'))
+    expect(result.nextStep).toBe('collect_request_preferences')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('What matters most when choosing a provider?'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'pref_money',   title: expect.stringContaining('Save money') }),
+        expect.objectContaining({ id: 'pref_value',   title: expect.stringContaining('Best value') }),
+        expect.objectContaining({ id: 'pref_quality', title: expect.stringContaining('Best quality') }),
+      ])
+    )
+  })
+
+  it('does NOT show Fastest available or Closest provider as preference options', async () => {
+    await handleJobRequestFlow(makeAvailCtx('avail_asap'))
+    const allCalls = [
+      ...(wa.sendButtons as any).mock.calls,
+      ...(wa.sendList as any).mock.calls,
+    ]
+    const allButtonIds = allCalls.flatMap((call: any[]) => {
+      const buttons = call[2] ?? []
+      return Array.isArray(buttons) ? buttons.map((b: any) => b.id ?? '') : []
+    })
+    expect(allButtonIds).not.toContain('pref_fastest')
+    expect(allButtonIds).not.toContain('pref_closest')
+  })
+
+  it('stores urgency from the availability reply', async () => {
+    const result = await handleJobRequestFlow(makeAvailCtx('avail_asap'))
+    expect(result.nextData?.urgency).toBe('urgent')
+  })
+})
+
+// ─── collect_budget_preference step — pass-through for in-flight sessions ────
+
+describe('WhatsApp job-request flow — collect_budget_preference pass-through', () => {
+  const PHONE = '+27821234567'
+
+  function makeBudgetCtx(replyId?: string) {
+    return {
+      phone: PHONE,
+      step: 'collect_budget_preference' as const,
+      data: {
+        selectedCategory: 'Plumbing',
+        address: '14 Main Rd, Sandton',
+        providerPreference: 'save_money',
+      } as any,
+      flow: 'job_request' as const,
+      reply: {
+        type: replyId ? 'button_reply' : 'text',
+        id: replyId,
+        text: replyId ?? 'something',
+        title: replyId,
+      } as any,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('advances to collect_photos regardless of what was sent', async () => {
+    const result = await handleJobRequestFlow(makeBudgetCtx('budget_balanced'))
+    expect(result.nextStep).toBe('collect_photos')
+  })
+
+  it('shows the photo prompt (not a budget list) for in-flight users', async () => {
+    await handleJobRequestFlow(makeBudgetCtx())
+    expect(wa.sendList).not.toHaveBeenCalled()
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Add a photo?'),
+      expect.any(Array)
+    )
+  })
+})
+
+// ─── showJobRequestSummary — human-readable preference labels ─────────────────
+
+describe('WhatsApp job-request flow — job request summary preference display', () => {
+  const PHONE = '+27821234567'
+
+  function makeSummaryCtx(providerPreference?: string) {
+    return {
+      phone: PHONE,
+      step: 'collect_photos' as const,
+      data: {
+        selectedCategory: 'Plumbing',
+        address: '14 Main Rd, Sandton',
+        availabilityNote: 'As soon as possible',
+        urgency: 'urgent',
+        providerPreference,
+        photoAttachmentIds: [],
+      } as any,
+      flow: 'job_request' as const,
+      reply: { type: 'button_reply', id: 'photos_skip', text: '', title: 'Skip' } as any,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows "Matching preference: Save money" for save_money', async () => {
+    await handleJobRequestFlow(makeSummaryCtx('save_money'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Matching preference: *Save money*')
+    expect(body).not.toContain('save_money')
+  })
+
+  it('shows "Matching preference: Best value" for best_value', async () => {
+    await handleJobRequestFlow(makeSummaryCtx('best_value'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Matching preference: *Best value*')
+    expect(body).not.toContain('best_value')
+  })
+
+  it('shows "Matching preference: Best quality" for best_quality', async () => {
+    await handleJobRequestFlow(makeSummaryCtx('best_quality'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Matching preference: *Best quality*')
+    expect(body).not.toContain('best_quality')
+  })
+
+  it('maps legacy budget_friendly to "Save money" in summary', async () => {
+    await handleJobRequestFlow(makeSummaryCtx('budget_friendly'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Matching preference: *Save money*')
+    expect(body).not.toContain('budget_friendly')
+  })
+
+  it('maps legacy balanced_value to "Best value" in summary', async () => {
+    await handleJobRequestFlow(makeSummaryCtx('balanced_value'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Matching preference: *Best value*')
+    expect(body).not.toContain('balanced_value')
+  })
+
+  it('defaults to "Best value" when no preference was stored', async () => {
+    await handleJobRequestFlow(makeSummaryCtx(undefined))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).toContain('Matching preference: *Best value*')
+  })
+
+  it('does not show a separate Budget line in the summary', async () => {
+    await handleJobRequestFlow(makeSummaryCtx('best_value'))
+    const body: string = (wa.sendButtons as any).mock.calls[0][1]
+    expect(body).not.toMatch(/💰 Budget:/i)
+  })
+
+  it('never shows a raw snake_case preference value to the customer', async () => {
+    const legacyValues = [
+      'fastest_available', 'budget_friendly', 'balanced_value',
+      'quality_first', 'verified_only', 'most_experienced',
+    ]
+    for (const pref of legacyValues) {
+      vi.clearAllMocks()
+      await handleJobRequestFlow(makeSummaryCtx(pref))
+      const body: string = (wa.sendButtons as any).mock.calls[0][1]
+      expect(body).not.toContain(pref)
+    }
+  })
+})

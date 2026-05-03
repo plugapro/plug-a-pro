@@ -128,8 +128,8 @@ export interface ConversationData {
   issueDescription?: string     // free-text issue description captured before availability step
   availabilityNote?: string     // free-text preferred availability from customer
   urgency?: string              // urgent | soon | flexible
-  providerPreference?: string   // fastest_available | most_experienced | best_rated | budget_friendly | verified_only
-  budgetPreference?: string     // customer budget preference for shortlist sorting/copy
+  providerPreference?: string   // MVP: save_money | best_value | best_quality (legacy: fastest_available | budget_friendly | …)
+  budgetPreference?: string     // legacy field — no longer populated by new requests; kept for in-flight conversation reads
   verifiedOnly?: boolean
   photoAttachmentIds?: string[] // Attachment IDs for customer job photos linked during request creation
   jobRequestId?: string

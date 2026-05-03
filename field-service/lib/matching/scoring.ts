@@ -35,6 +35,14 @@ function getReliabilityScore(provider: EligibleProvider): number {
   )
 }
 
+// TODO(preference-scoring): jobRequest.providerPreference now carries the MVP value
+// (save_money | best_value | best_quality). When the matching dataset is reliable enough,
+// apply weight shifts here before computing scores:
+//   save_money   → boost marginEfficiency weight, moderate reliability boost
+//   best_quality → boost reliability weight, allow higher-cost providers to rank up
+//   best_value   → use default weights (current baseline)
+// Keep minimum quality/trust thresholds regardless of preference; never rank untrusted
+// providers highly just because they are cheap.
 function buildScoreBreakdown(
   provider: EligibleProvider,
   jobRequest: MatchingJobRequest

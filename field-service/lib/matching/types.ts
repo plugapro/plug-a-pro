@@ -40,6 +40,11 @@ export type MatchingJobRequest = Pick<
   cohortName?: string | null
   subcategory?: string | null
   urgency?: string | null
+  // MVP matching preference: save_money | best_value | best_quality
+  // Legacy values (budget_friendly, balanced_value, fastest_available, …) are mapped to the MVP set
+  // via preferenceLabel() in client-request-data.ts before display; scoring uses the raw stored value.
+  providerPreference?: string | null
+  // Kept for backward-compatible reads of old DB records; no longer populated by new requests.
   budgetPreference?: string | null
 }
 

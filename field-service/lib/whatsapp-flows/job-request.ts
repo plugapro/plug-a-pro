@@ -41,8 +41,8 @@ import {
 } from '../whatsapp-identity'
 import { createTraceId } from '../support-diagnostics'
 import {
-  budgetPreferenceFromReply,
   mapAvailabilityToUrgency,
+  preferenceLabel,
   providerPreferenceFromReply,
 } from '../client-request-data'
 import {
@@ -850,89 +850,40 @@ async function handleConfirmJobRequest(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const urgency = mapAvailabilityToUrgency(ctx.reply.id)
-  await sendList(
+  await sendButtons(
     ctx.phone,
-    'What matters most when choosing a provider?',
-    [{
-      title: 'Preference',
-      rows: [
-        { id: 'pref_fastest', title: 'Fastest available' },
-        { id: 'pref_experienced', title: 'Most experienced' },
-        { id: 'pref_rated', title: 'Best rated' },
-        { id: 'pref_budget', title: 'Budget friendly' },
-        { id: 'pref_verified', title: 'Verified only' },
-      ],
-    }],
-    { buttonLabel: 'Choose Preference' },
+    'What matters most when choosing a provider?\n\nWe\'ll use this to show better provider matches.',
+    [
+      { id: 'pref_money',   title: '💰 Save money' },
+      { id: 'pref_value',   title: '⚖️ Best value' },
+      { id: 'pref_quality', title: '⭐ Best quality' },
+    ],
   )
   return { nextStep: 'collect_request_preferences', nextData: { availabilityNote, urgency } }
 }
 
+const PREF_BUTTON_IDS = new Set([
+  // MVP button IDs
+  'pref_money', 'pref_value', 'pref_quality',
+  // Legacy IDs — in-flight conversations from before the MVP simplification
+  'pref_fastest', 'pref_experienced', 'pref_rated', 'pref_budget', 'pref_verified',
+])
+
 async function handleCollectRequestPreferences(ctx: FlowContext): Promise<FlowResult> {
-  if (!ctx.reply.id?.startsWith('pref_')) {
-    await sendList(
+  if (!ctx.reply.id || !PREF_BUTTON_IDS.has(ctx.reply.id)) {
+    await sendButtons(
       ctx.phone,
       'Please choose what matters most when comparing providers.',
-      [{
-        title: 'Preference',
-        rows: [
-          { id: 'pref_fastest', title: 'Fastest available' },
-          { id: 'pref_experienced', title: 'Most experienced' },
-          { id: 'pref_rated', title: 'Best rated' },
-          { id: 'pref_budget', title: 'Budget friendly' },
-          { id: 'pref_verified', title: 'Verified only' },
-        ],
-      }],
-      { buttonLabel: 'Choose Preference' },
+      [
+        { id: 'pref_money',   title: '💰 Save money' },
+        { id: 'pref_value',   title: '⚖️ Best value' },
+        { id: 'pref_quality', title: '⭐ Best quality' },
+      ],
     )
     return { nextStep: 'collect_request_preferences' }
   }
 
-  await sendList(
-    ctx.phone,
-    'Do you have a budget preference?',
-    [{
-      title: 'Budget',
-      rows: [
-        { id: 'budget_balanced', title: 'Balanced value' },
-        { id: 'budget_lowest', title: 'Lowest call-out' },
-        { id: 'budget_quality', title: 'Quality first' },
-        { id: 'budget_quote', title: 'Quote first' },
-        { id: 'budget_unsure', title: 'Not sure' },
-      ],
-    }],
-    { buttonLabel: 'Choose Budget' },
-  )
   const providerPreference = providerPreferenceFromReply(ctx.reply.id)
-  return {
-    nextStep: 'collect_budget_preference',
-    nextData: {
-      providerPreference,
-      verifiedOnly: providerPreference === 'verified_only',
-    },
-  }
-}
-
-async function handleCollectBudgetPreference(ctx: FlowContext): Promise<FlowResult> {
-  if (!ctx.reply.id?.startsWith('budget_')) {
-    await sendList(
-      ctx.phone,
-      'Please choose a budget preference.',
-      [{
-        title: 'Budget',
-        rows: [
-          { id: 'budget_balanced', title: 'Balanced value' },
-          { id: 'budget_lowest', title: 'Lowest call-out' },
-          { id: 'budget_quality', title: 'Quality first' },
-          { id: 'budget_quote', title: 'Quote first' },
-          { id: 'budget_unsure', title: 'Not sure' },
-        ],
-      }],
-      { buttonLabel: 'Choose Budget' },
-    )
-    return { nextStep: 'collect_budget_preference' }
-  }
-
   await sendButtons(
     ctx.phone,
     `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
@@ -943,19 +894,40 @@ async function handleCollectBudgetPreference(ctx: FlowContext): Promise<FlowResu
   )
   return {
     nextStep: 'collect_photos',
-    nextData: { budgetPreference: budgetPreferenceFromReply(ctx.reply.id), photoAttachmentIds: [] },
+    nextData: {
+      providerPreference,
+      verifiedOnly: false,
+      photoAttachmentIds: [],
+    },
+  }
+}
+
+// Budget preference step removed in MVP — kept as a pass-through so in-flight conversations
+// already at this step advance gracefully to photos without re-asking the removed question.
+async function handleCollectBudgetPreference(ctx: FlowContext): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    `📸 *Add a photo?*\n\nA photo of the problem helps the provider understand the job and quote more accurately.\n\n_Optional — you can skip this step._`,
+    [
+      { id: 'photos_skip', title: '⏭ Skip' },
+      { id: 'photos_start', title: '📷 Add photo' },
+    ]
+  )
+  return {
+    nextStep: 'collect_photos',
+    nextData: { photoAttachmentIds: [] },
   }
 }
 
 async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
-  const { selectedCategory, address, issueDescription, availabilityNote, urgency, providerPreference, budgetPreference } = ctx.data
+  const { selectedCategory, address, issueDescription, availabilityNote, urgency, providerPreference } = ctx.data
   const photoCount = (ctx.data.photoAttachmentIds ?? []).length
   const descriptionLine = issueDescription ? `\n📝 ${issueDescription}` : ''
   const photoLine = photoCount > 0 ? `\n📸 Photos: *${photoCount} attached*` : ''
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}\n⚡ Urgency: *${urgency ?? 'flexible'}*\n⭐ Preference: *${providerPreference ?? 'fastest_available'}*\n💰 Budget: *${budgetPreference ?? 'balanced_value'}*${photoLine}\n\nYour phone number and exact address will only be shared after you select a provider and that provider accepts the job.\n\nReady to submit this request? We'll share a safe preview with suitable providers.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}\n⚡ Urgency: *${urgency ?? 'flexible'}*\n⭐ Matching preference: *${preferenceLabel(providerPreference)}*${photoLine}\n\nYour phone number and exact address will only be shared after you select a provider and that provider accepts the job.\n\nReady to submit this request? We'll share a safe preview with suitable providers.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },
