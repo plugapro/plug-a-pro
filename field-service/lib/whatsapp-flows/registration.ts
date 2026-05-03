@@ -414,7 +414,10 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
 
 async function handleCollectName(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'reg_cancel') {
-    await sendText(ctx.phone, "No problem! Reply *join* anytime when you're ready to apply. 👋")
+    console.info('[registration-flow] provider application cancelled at intro', {
+      normalized_phone: normalizePhone(ctx.phone),
+    })
+    await sendText(ctx.phone, "No problem! Reply *join* anytime when you're ready to apply.")
     return { nextStep: 'done' }
   }
 
@@ -1567,7 +1570,79 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'submit_no') {
-    await sendText(ctx.phone, "Application cancelled. Reply *join* anytime to apply. 👋")
+    const normalizedPhone = normalizePhone(ctx.phone)
+    const cancelTraceId = `provider_app_cancel_${crypto.randomUUID().slice(0, 12)}`
+    const cohort = createTestCohortContext(normalizedPhone)
+    const name = ctx.data.name?.trim() ?? 'unknown'
+    const skills = uniqueStrings(ctx.data.skills ?? [])
+    const serviceAreas = uniqueStrings(
+      (ctx.data.selectedSuburbLabels?.length ? ctx.data.selectedSuburbLabels :
+       ctx.data.selectedRegionLabels?.length ? ctx.data.selectedRegionLabels :
+       ctx.data.serviceAreas) ?? [],
+    )
+    const now = new Date()
+    let cancelledApplicationId: string | undefined
+
+    try {
+      const cancelled = await db.$transaction(async (tx) => {
+        const app = await tx.providerApplication.create({
+          data: {
+            phone: normalizedPhone,
+            email: ctx.data.providerEmail ?? null,
+            name,
+            skills,
+            serviceAreas,
+            experience: ctx.data.experience ?? null,
+            availability: formatAvailabilityLabel(uniqueStrings(ctx.data.availability ?? [])),
+            callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+            hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
+            rateNegotiable: ctx.data.rateNegotiable !== false,
+            evidenceNote: ctx.data.evidenceNote ?? null,
+            evidenceFileUrls: uniqueStrings(ctx.data.evidenceFileUrls ?? []),
+            idNumber: ctx.data.providerIdNumber?.trim(),
+            isTestUser: cohort.isTestUser,
+            cohortName: cohort.cohortName,
+            status: 'CANCELLED',
+            cancelledAt: now,
+          },
+          select: { id: true },
+        })
+        await (tx as any).auditLog?.create?.({
+          data: {
+            actorId: normalizedPhone,
+            actorRole: 'provider_applicant',
+            action: 'provider_application.cancelled',
+            entityType: 'ProviderApplication',
+            entityId: app.id,
+            after: {
+              status: 'CANCELLED',
+              cancelledAt: now.toISOString(),
+              selectedSkillsCount: skills.length,
+              selectedAreasCount: serviceAreas.length,
+              traceId: cancelTraceId,
+            },
+            isTestEvent: cohort.isTestUser,
+            cohortName: cohort.cohortName,
+          },
+        })
+        return app
+      })
+      cancelledApplicationId = cancelled.id
+    } catch (err) {
+      console.warn('[registration-flow] cancel record creation failed (non-fatal)', {
+        trace_id: cancelTraceId,
+        normalized_phone: normalizedPhone,
+        error: safeErrorMessage(err),
+      })
+    }
+
+    console.info('[registration-flow] provider application cancelled at summary', {
+      trace_id: cancelTraceId,
+      normalized_phone: normalizedPhone,
+      cancelled_application_id: cancelledApplicationId ?? null,
+      is_test_user: cohort.isTestUser,
+    })
+    await sendText(ctx.phone, "Application cancelled. Reply *join* anytime to apply again.")
     return { nextStep: 'done' }
   }
 

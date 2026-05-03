@@ -304,6 +304,7 @@ model ProviderApplication {
   approvalWhatsappSentAt DateTime?
   approvalWhatsappExternalId String?
   submittedAt  DateTime          @default(now())
+  cancelledAt  DateTime?
   updatedAt    DateTime          @updatedAt
 
   provider    Provider?    @relation(fields: [providerId], references: [id])
@@ -1628,6 +1629,7 @@ enum ApplicationStatus {
   MORE_INFO_REQUIRED
   APPROVED
   REJECTED
+  CANCELLED
 }
 
 enum MessageChannel {
