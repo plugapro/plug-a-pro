@@ -68,7 +68,7 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
   const phoneVariants = phoneLookupVariants(phone)
   const traceId = crypto.randomUUID().slice(0, 8)
 
-  const [customer, provider] = await Promise.all([
+  const [customer, providerRows] = await Promise.all([
     // TODO(prisma-gen): remove `as any` once the generated Prisma client exposes Customer/Provider/Job models
     (db as any).customer?.findFirst?.({
       where: { phone: { in: phoneVariants } },
@@ -95,9 +95,18 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
         },
       },
     }) ?? null,
+    // Duplicate-record trap fix (Phase 4 follow-up — Task 4):
+    // We previously called findFirst with no orderBy, so if a phone had
+    // multiple Provider rows (rare but possible after migrations or test
+    // data), Prisma returned an arbitrary first match — sometimes a stale
+    // APPLICATION_PENDING row instead of the active one. Pull all matches,
+    // order by recency, and post-filter so an ACTIVE+verified row always
+    // wins over a pending/suspended one.
     // TODO(prisma-gen): remove `as any` once the generated Prisma client exposes Customer/Provider/Job models
-    (db as any).provider?.findFirst?.({
+    (db as any).provider?.findMany?.({
       where: { phone: { in: phoneVariants } },
+      orderBy: [{ updatedAt: 'desc' }],
+      take: 5,
       select: {
         id: true,
         phone: true,
@@ -117,8 +126,37 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
           },
         },
       },
-    }) ?? null,
+    }) ?? [],
   ])
+
+  // ── Provider candidate selection (active+verified+ACTIVE wins) ────────────
+  // After the duplicate-trap fix above, `providerRows` is an Array<Row> sorted
+  // by updatedAt desc. Pick the first ACTIVE+verified+active row so a stale
+  // APPLICATION_PENDING / SUSPENDED row never wins over a usable one.
+  // Falls back to the most recent row of any status if none is ACTIVE — that
+  // way the role detection (provider_pending / provider_inactive) still works
+  // for callers in those states.
+  const providerCandidates: Array<{
+    id: string
+    phone: string
+    name: string | null
+    status: string
+    active: boolean
+    verified: boolean
+    availableNow: boolean
+    suspendedUntil: Date | null
+    suspendedReason: string | null
+    technicianAvailability: {
+      availabilityMode: string | null
+      availabilityState: string | null
+      breakUntil: Date | null
+      emergencyAvailable: boolean | null
+    } | null
+  }> = Array.isArray(providerRows) ? providerRows : []
+  const provider =
+    providerCandidates.find(
+      (row) => row.active && row.verified && row.status === 'ACTIVE',
+    ) ?? providerCandidates[0] ?? null
 
   const application = provider
     ? null

@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/db', () => ({
   db: {
     customer: { findFirst: vi.fn() },
-    provider: { findFirst: vi.fn() },
+    // After the duplicate-record trap fix (Phase 4 follow-up), the resolver
+    // calls findMany so it can prefer ACTIVE+verified rows over stale ones.
+    provider: { findFirst: vi.fn(), findMany: vi.fn() },
     providerApplication: { findFirst: vi.fn() },
     job: { count: vi.fn() },
   },
@@ -18,6 +20,7 @@ describe('WhatsApp identity resolution', () => {
     vi.clearAllMocks()
     vi.mocked(db.customer.findFirst).mockResolvedValue(null)
     vi.mocked(db.provider.findFirst).mockResolvedValue(null)
+    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([])
     vi.mocked(db.providerApplication.findFirst).mockResolvedValue(null)
     vi.mocked(db.job.count).mockResolvedValue(0)
   })
@@ -47,16 +50,19 @@ describe('WhatsApp identity resolution', () => {
   })
 
   it('returns provider for an approved active provider number', async () => {
-    vi.mocked(db.provider.findFirst).mockResolvedValue({
-      id: 'prv_1',
-      phone: '+27821234567',
-      name: 'Jacob Hesser',
-      status: 'ACTIVE',
-      active: true,
-      availableNow: true,
-      suspendedUntil: null,
-      technicianAvailability: null,
-    } as any)
+    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+      {
+        id: 'prv_1',
+        phone: '+27821234567',
+        name: 'Jacob Hesser',
+        status: 'ACTIVE',
+        active: true,
+        verified: true,
+        availableNow: true,
+        suspendedUntil: null,
+        technicianAvailability: null,
+      },
+    ] as any)
 
     await expect(resolveWhatsAppIdentity('27821234567')).resolves.toMatchObject({
       role: 'provider',
@@ -90,16 +96,19 @@ describe('WhatsApp identity resolution', () => {
   })
 
   it('returns provider_inactive for a suspended provider', async () => {
-    vi.mocked(db.provider.findFirst).mockResolvedValue({
-      id: 'prv_suspended',
-      phone: '+27821234567',
-      name: 'Thabo Nkosi',
-      status: 'SUSPENDED',
-      active: false,
-      availableNow: false,
-      suspendedUntil: null,
-      technicianAvailability: null,
-    } as any)
+    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+      {
+        id: 'prv_suspended',
+        phone: '+27821234567',
+        name: 'Thabo Nkosi',
+        status: 'SUSPENDED',
+        active: false,
+        verified: false,
+        availableNow: false,
+        suspendedUntil: null,
+        technicianAvailability: null,
+      },
+    ] as any)
 
     await expect(resolveWhatsAppIdentity('+27821234567')).resolves.toMatchObject({
       role: 'provider_inactive',
@@ -114,16 +123,19 @@ describe('WhatsApp identity resolution', () => {
       name: 'Dual Role',
       addresses: [],
     } as any)
-    vi.mocked(db.provider.findFirst).mockResolvedValue({
-      id: 'prv_conflict',
-      phone: '+27821234567',
-      name: 'Dual Role',
-      status: 'ACTIVE',
-      active: true,
-      availableNow: true,
-      suspendedUntil: null,
-      technicianAvailability: null,
-    } as any)
+    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+      {
+        id: 'prv_conflict',
+        phone: '+27821234567',
+        name: 'Dual Role',
+        status: 'ACTIVE',
+        active: true,
+        verified: true,
+        availableNow: true,
+        suspendedUntil: null,
+        technicianAvailability: null,
+      },
+    ] as any)
 
     await expect(resolveWhatsAppIdentity('+27821234567')).resolves.toMatchObject({
       conflict: true,
@@ -132,5 +144,67 @@ describe('WhatsApp identity resolution', () => {
       customerId: 'cust_conflict',
       providerId: 'prv_conflict',
     })
+  })
+
+  // ── Duplicate-record trap regression test (Phase 4 follow-up — Task 4) ───
+  // Pre-fix: db.provider.findFirst with no orderBy returned an arbitrary row
+  // when multiple Provider records existed for the same phone — sometimes the
+  // stale APPLICATION_PENDING row, leading the bot to misroute the user.
+  // Post-fix: findMany ordered by updatedAt desc + post-filter prefers the
+  // ACTIVE+verified row, so the active provider always wins.
+  it('prefers ACTIVE+verified provider over a stale pending duplicate for the same phone', async () => {
+    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+      // updatedAt desc means the pending row arrives first if it was touched later.
+      {
+        id: 'prv_stale_pending',
+        phone: '+27821234567',
+        name: 'Stale Pending',
+        status: 'APPLICATION_PENDING',
+        active: false,
+        verified: false,
+        availableNow: false,
+        suspendedUntil: null,
+        technicianAvailability: null,
+      },
+      {
+        id: 'prv_real_active',
+        phone: '+27821234567',
+        name: 'Real Active',
+        status: 'ACTIVE',
+        active: true,
+        verified: true,
+        availableNow: true,
+        suspendedUntil: null,
+        technicianAvailability: null,
+      },
+    ] as any)
+
+    const identity = await resolveWhatsAppIdentity('+27821234567')
+    expect(identity.role).toBe('provider')
+    expect(identity.providerId).toBe('prv_real_active')
+    expect(identity.providerStatus).toBe('ACTIVE')
+  })
+
+  it('falls back to the most recent row of any status when no row is fully ACTIVE+verified', async () => {
+    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+      {
+        id: 'prv_under_review',
+        phone: '+27821234567',
+        name: 'Under Review',
+        status: 'UNDER_REVIEW',
+        // UNDER_REVIEW means "approved app, not yet ACTIVE on the platform";
+        // the row stays `active: true` so the platform can flip status when
+        // ready. We assert the resolver still classifies this as pending.
+        active: true,
+        verified: false,
+        availableNow: true,
+        suspendedUntil: null,
+        technicianAvailability: null,
+      },
+    ] as any)
+
+    const identity = await resolveWhatsAppIdentity('+27821234567')
+    expect(identity.role).toBe('provider_pending')
+    expect(identity.providerId).toBe('prv_under_review')
   })
 })
