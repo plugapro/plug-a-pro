@@ -9,7 +9,7 @@ import {
   timestamp,
   type DiagnosticCode,
 } from '@/lib/support-diagnostics'
-import { checkWorkerPortalAccess } from '@/lib/worker-provider-auth'
+import { checkWorkerPortalAccess, findProviderForOtpLogin } from '@/lib/worker-provider-auth'
 
 const STEP = 'Worker portal send-code'
 const OTP_TIMEOUT_MS = 10_000
@@ -253,10 +253,28 @@ export async function POST(request: NextRequest) {
 
     let provider: { id: string; userId: string | null; phone: string; active: boolean; verified: boolean; status: string } | null
     try {
-      provider = await db.provider.findUnique({
-        where: { phone },
-        select: { id: true, userId: true, phone: true, active: true, verified: true, status: true },
-      })
+      const lookupResult = await findProviderForOtpLogin(phone, rawPhone, db)
+      if (!lookupResult.found) {
+        const hasPendingApp = Boolean(lookupResult.pendingApplicationId)
+        console.warn('[provider-send-code] provider not found', {
+          trace_id: traceId,
+          rawPhone,
+          normalizedPhone: phone,
+          countryCode,
+          providerLookupResult: hasPendingApp ? 'pending_application' : 'not_found',
+          pendingApplicationId: lookupResult.pendingApplicationId ?? null,
+          pendingApplicationStatus: lookupResult.pendingApplicationStatus ?? null,
+          providerId: null,
+          otpProviderCalled,
+          timestamp: timestamp(),
+          step: STEP,
+        })
+        if (hasPendingApp) {
+          return errorPayload({ code: 'WORKER_NOT_APPROVED', traceId, phone, countryCode, status: statusFor('WORKER_NOT_APPROVED') })
+        }
+        return errorPayload({ code: 'WORKER_NOT_FOUND', traceId, phone, countryCode, status: statusFor('WORKER_NOT_FOUND') })
+      }
+      provider = lookupResult.provider
     } catch (dbError) {
       console.error('[provider-send-code] provider lookup failed', {
         trace_id: traceId,
@@ -279,21 +297,6 @@ export async function POST(request: NextRequest) {
       })
     }
     providerId = provider?.id
-
-    if (!provider) {
-      console.warn('[provider-send-code] provider not found', {
-        trace_id: traceId,
-        rawPhone,
-        normalizedPhone: phone,
-        countryCode,
-        providerLookupResult: 'not_found',
-        providerId: null,
-        otpProviderCalled,
-        timestamp: timestamp(),
-        step: STEP,
-      })
-      return errorPayload({ code: 'WORKER_NOT_FOUND', traceId, phone, countryCode, status: statusFor('WORKER_NOT_FOUND') })
-    }
 
     const access = checkWorkerPortalAccess(provider)
 

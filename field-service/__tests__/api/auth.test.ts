@@ -18,6 +18,7 @@ vi.mock('@/lib/db', () => ({
     },
     provider: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
     },
@@ -336,6 +337,8 @@ describe('POST /api/auth/provider/send-code', () => {
 
     const { db } = await import('@/lib/db')
     ;(db.provider.findUnique as any).mockResolvedValue(null)
+    ;(db.provider.findFirst as any).mockResolvedValue(null)
+    ;(db.providerApplication.findFirst as any).mockResolvedValue(null)
 
     const { createClient } = await import('@supabase/supabase-js')
     ;(createClient as any).mockReturnValue({
@@ -454,6 +457,90 @@ describe('POST /api/auth/provider/send-code', () => {
       phoneMasked: '082****567',
     })
     expect(body.error.traceId).toMatch(/^auth_/)
+  })
+
+  it.each([
+    ['27821234567', '+27821234567', 'without-plus prefix'],
+    ['0821234567', '+27821234567', 'local SA format'],
+  ])('finds provider stored as %s via variant fallback and repairs phone', async (storedPhone, e164, _label) => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null })
+    ;(db.provider.findUnique as any).mockResolvedValue(null)
+    ;(db.provider.findFirst as any).mockResolvedValue({
+      id: 'prov-1',
+      userId: null,
+      phone: storedPhone,
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+    })
+    ;(db.provider.update as any).mockResolvedValue({})
+    ;(createClient as any).mockReturnValue({ auth: { signInWithOtp } })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0821234567' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, phone: '+27821234567' })
+    expect(signInWithOtp).toHaveBeenCalledWith({ phone: '+27821234567' })
+    if (storedPhone !== e164) {
+      expect(db.provider.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { phone: '+27821234567' } }),
+      )
+    }
+  })
+
+  it('returns WORKER_NOT_APPROVED when no Provider row but a pending ProviderApplication exists', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockResolvedValue(null)
+    ;(db.provider.findFirst as any).mockResolvedValue(null)
+    ;(db.providerApplication.findFirst as any).mockResolvedValue({
+      id: 'app-001',
+      status: 'PENDING',
+      providerId: null,
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0821234567' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(body).toMatchObject({ ok: false, code: 'WORKER_NOT_APPROVED' })
+    expect(body.error.title).toBe('Application still under review.')
+  })
+
+  it('returns WORKER_NOT_APPROVED for MORE_INFO_REQUIRED application', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findUnique as any).mockResolvedValue(null)
+    ;(db.provider.findFirst as any).mockResolvedValue(null)
+    ;(db.providerApplication.findFirst as any).mockResolvedValue({
+      id: 'app-002',
+      status: 'MORE_INFO_REQUIRED',
+      providerId: null,
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0821234567' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toMatchObject({ ok: false, code: 'WORKER_NOT_APPROVED' })
   })
 
   it.each([

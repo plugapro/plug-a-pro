@@ -1,5 +1,8 @@
 import type { User } from '@supabase/supabase-js'
 import { normalizeOtpPhoneNumber } from './phone-normalization'
+import { normalizePhone } from './utils'
+import { phoneLookupVariants } from './whatsapp-identity'
+import { db } from './db'
 import { maskPhone, safeErrorMessage, timestamp, type DiagnosticCode } from './support-diagnostics'
 
 type WorkerProviderStatus = {
@@ -62,6 +65,115 @@ export type WorkerResolutionResult =
 
 export function normaliseWorkerOtpPhone(rawPhone: string, countryCode = 'ZA') {
   return normalizeOtpPhoneNumber(rawPhone, countryCode)
+}
+
+type OtpProviderRow = {
+  id: string
+  userId: string | null
+  phone: string
+  active: boolean
+  verified: boolean
+  status: string
+}
+
+type FindProviderForOtpLoginClient = {
+  provider: {
+    findUnique: (...args: any[]) => Promise<OtpProviderRow | null>
+    findFirst?: (...args: any[]) => Promise<OtpProviderRow | null>
+    update?: (...args: any[]) => Promise<unknown>
+  }
+  providerApplication?: {
+    findFirst: (...args: any[]) => Promise<{ id: string; status: string; providerId: string | null } | null>
+  }
+}
+
+export type FindProviderForOtpLoginResult =
+  | { found: true; provider: OtpProviderRow }
+  | { found: false; pendingApplicationId?: string; pendingApplicationStatus?: string }
+
+/**
+ * Resilient provider lookup for OTP login that handles legacy phone formats.
+ *
+ * Tries an exact E.164 match first. If not found, falls back to all format
+ * variants (27xxxxxxxxx, 0xxxxxxxxx, +27xxxxxxxxx). On a variant hit the
+ * stored phone is repaired to E.164 in-place so subsequent lookups are fast.
+ *
+ * When no provider is found, checks for a pending ProviderApplication so
+ * callers can return WORKER_NOT_APPROVED instead of WORKER_NOT_FOUND.
+ */
+export async function findProviderForOtpLogin(
+  e164Phone: string,
+  rawPhone: string,
+  client: FindProviderForOtpLoginClient = db as unknown as FindProviderForOtpLoginClient,
+): Promise<FindProviderForOtpLoginResult> {
+  const select = {
+    id: true as const,
+    userId: true as const,
+    phone: true as const,
+    active: true as const,
+    verified: true as const,
+    status: true as const,
+  }
+
+  // Fast path — exact E.164 match
+  const exact = await client.provider.findUnique({ where: { phone: e164Phone }, select })
+  if (exact) return { found: true, provider: exact }
+
+  // Fallback — try all format variants to handle legacy non-E.164 storage
+  if (client.provider.findFirst) {
+    const variants = phoneLookupVariants(rawPhone)
+    const byVariant = await client.provider.findFirst({
+      where: { phone: { in: variants } },
+      select,
+    })
+
+    if (byVariant) {
+      // Auto-repair: normalize stored phone to E.164 for future fast-path hits
+      if (byVariant.phone !== e164Phone && client.provider.update) {
+        try {
+          await client.provider.update({ where: { id: byVariant.id }, data: { phone: e164Phone } })
+          console.info('[worker-provider-auth] repaired non-E164 phone on OTP login', {
+            providerId: byVariant.id,
+            oldPhoneMasked: maskPhone(byVariant.phone),
+            newPhoneMasked: maskPhone(e164Phone),
+            timestamp: timestamp(),
+          })
+          byVariant.phone = e164Phone
+        } catch (repairErr) {
+          // Non-fatal: unique conflict (another record already has E.164) or DB error
+          console.warn('[worker-provider-auth] phone repair skipped', {
+            providerId: byVariant.id,
+            safeErrorMessage: safeErrorMessage(repairErr),
+            timestamp: timestamp(),
+          })
+        }
+      }
+      return { found: true, provider: byVariant }
+    }
+  }
+
+  // No Provider row found — check for a pending application so callers can
+  // return WORKER_NOT_APPROVED instead of the less helpful WORKER_NOT_FOUND
+  if (client.providerApplication) {
+    const variants = phoneLookupVariants(rawPhone)
+    const pendingApp = await client.providerApplication.findFirst({
+      where: {
+        phone: { in: variants },
+        status: { in: ['PENDING', 'MORE_INFO_REQUIRED'] },
+      },
+      orderBy: { submittedAt: 'desc' },
+      select: { id: true, status: true, providerId: true },
+    })
+    if (pendingApp) {
+      return {
+        found: false,
+        pendingApplicationId: pendingApp.id,
+        pendingApplicationStatus: pendingApp.status,
+      }
+    }
+  }
+
+  return { found: false }
 }
 
 export function checkWorkerPortalAccess(
