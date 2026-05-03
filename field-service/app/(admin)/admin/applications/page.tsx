@@ -510,13 +510,13 @@ export default async function ApplicationsPage({
       </div>
 
       {banner ? (
-        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'tone-success'}`}>
           {banner.text}
         </div>
       ) : null}
 
       {!crudEnabled && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
           Application mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim, approve, or reject provider applications.
         </div>
       )}
@@ -579,7 +579,7 @@ export default async function ApplicationsPage({
                 </p>
 
                 {hasConflict && (
-                  <div className="rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <div className="tone-warning rounded-xl border px-3 py-2 text-sm">
                     Duplicate active application detected for this phone number. Reject or resolve the duplicate before approving so one provider does not end up with multiple active application records.
                   </div>
                 )}
@@ -607,7 +607,7 @@ export default async function ApplicationsPage({
                       type="submit"
                       size="sm"
                       disabled={!crudEnabled || hasConflict}
-                      className="bg-green-600 hover:bg-green-700 text-white disabled:bg-muted disabled:text-muted-foreground"
+                      className="bg-[var(--tone-success-fg)] text-white hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground"
                     >
                       Approve
                     </Button>

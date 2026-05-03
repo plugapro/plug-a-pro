@@ -123,13 +123,13 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
       </div>
 
       {!crudEnabled && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning mb-4 rounded-lg border px-4 py-2 text-sm">
           Customer mutations are disabled. Enable the <code>admin.crud.customers</code> feature flag to block, deactivate, or add notes.
         </div>
       )}
 
       {filters.message && (
-        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+        <div className="tone-success mb-4 rounded-lg border px-4 py-2 text-sm">
           {filters.message}
         </div>
       )}

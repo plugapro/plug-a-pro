@@ -345,13 +345,13 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
       </div>
 
       {query.message && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+        <div className="tone-success rounded-lg border px-4 py-2 text-sm">
           {query.message}
         </div>
       )}
 
       {provider.suspendedUntil && provider.suspendedUntil > new Date() && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
           <p className="font-medium">
             Provider suspended until{' '}
             {provider.suspendedUntil.toLocaleString('en-ZA', {
@@ -363,7 +363,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             })}
           </p>
           {provider.suspendedReason && (
-            <p className="mt-1 text-amber-800">{provider.suspendedReason}</p>
+            <p className="mt-1">{provider.suspendedReason}</p>
           )}
         </div>
       )}
@@ -374,7 +374,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
           completeness.canApprove
             ? completeness.canShowToCustomers
               ? 'border-slate-200'
-              : 'border-amber-200 bg-amber-50/40'
+              : ''
             : 'border-rose-200 bg-rose-50/40'
         }>
           <CardHeader className="pb-3">
@@ -400,8 +400,8 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                       entry.severity === 'block_submit' || entry.severity === 'block_approve'
                         ? 'border-rose-300 bg-rose-100 text-rose-800'
                         : entry.severity === 'block_customer_display'
-                        ? 'border-amber-300 bg-amber-100 text-amber-800'
-                        : 'border-slate-300 bg-slate-100 text-slate-700'
+                        ? 'tone-warning'
+                        : 'tone-neutral'
                     }
                   >
                     {entry.severity === 'block_submit' ? 'BLOCKS SUBMIT'
@@ -427,7 +427,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
 
       {/* ── Flag banner ──────────────────────────────────────────────────────── */}
       {!crudEnabled && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
           Provider mutations are disabled. Enable the <code>admin.crud.providers</code> feature flag to verify, suspend, or update providers.
         </div>
       )}
@@ -1038,7 +1038,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             <p className="text-muted-foreground">No notes yet.</p>
           )}
           {provider.providerNotes.map((note) => (
-            <div key={note.id} className={`rounded-md border p-3 text-sm ${note.pinned ? 'border-amber-300 bg-amber-50' : ''}`}>
+            <div key={note.id} className={`rounded-md border p-3 text-sm ${note.pinned ? 'tone-warning' : ''}`}>
               <p>{note.body}</p>
               {(note.reasonCode || note.strikeDelta > 0) && (
                 <p className="mt-2 text-xs text-muted-foreground">
@@ -1048,7 +1048,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
               )}
               <p className="text-xs text-muted-foreground mt-1">
                 {note.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
-                {note.pinned && <span className="ml-2 text-amber-600 font-medium">pinned</span>}
+                {note.pinned && <span className="ml-2 font-medium">pinned</span>}
               </p>
             </div>
           ))}

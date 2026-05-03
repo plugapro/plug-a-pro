@@ -85,22 +85,23 @@ function DotFor({ item }: { item: RenderItem }) {
 }
 
 function dotClass(item: RenderItem): string {
-  if (item.type === 'collapsed') return 'bg-zinc-300 text-zinc-700'
+  const neutral = 'bg-[var(--tone-neutral-bg)] text-[var(--tone-neutral-fg)]'
+  if (item.type === 'collapsed') return neutral
   const ev = item.event
   switch (ev.kind) {
-    case 'dispatch_no_match': return 'bg-zinc-300 text-zinc-700'
-    case 'dispatch_offered':  return 'bg-blue-400 text-white'
-    case 'dispatch_matched':  return 'bg-emerald-500 text-white'
-    case 'lead_sent':         return 'bg-blue-400 text-white'
-    case 'lead_accepted':     return 'bg-emerald-500 text-white'
-    case 'lead_declined':     return 'bg-red-400 text-white'
-    case 'lead_expired':      return 'bg-zinc-400 text-white'
-    case 'credit_debit':      return 'bg-amber-400 text-amber-900'
-    case 'msg_out':           return 'bg-violet-400 text-white'
-    case 'msg_in':            return 'bg-slate-400 text-white'
-    case 'audit':             return 'bg-zinc-300 text-zinc-600'
-    case 'case_event':        return 'bg-cyan-400 text-white'
-    default: return 'bg-zinc-300'
+    case 'dispatch_no_match': return neutral
+    case 'dispatch_offered':  return 'bg-[var(--tone-info-bg)] text-[var(--tone-info-fg)]'
+    case 'dispatch_matched':  return 'bg-[var(--tone-success-bg)] text-[var(--tone-success-fg)]'
+    case 'lead_sent':         return 'bg-[var(--tone-info-bg)] text-[var(--tone-info-fg)]'
+    case 'lead_accepted':     return 'bg-[var(--tone-success-bg)] text-[var(--tone-success-fg)]'
+    case 'lead_declined':     return 'bg-[var(--tone-danger-bg)] text-[var(--tone-danger-fg)]'
+    case 'lead_expired':      return neutral
+    case 'credit_debit':      return 'bg-[var(--tone-warning-bg)] text-[var(--tone-warning-fg)]'
+    case 'msg_out':           return 'bg-[var(--tone-brand-bg)] text-[var(--tone-brand-fg)]'
+    case 'msg_in':            return neutral
+    case 'audit':             return neutral
+    case 'case_event':        return 'bg-[var(--tone-info-bg)] text-[var(--tone-info-fg)]'
+    default: return neutral
   }
 }
 

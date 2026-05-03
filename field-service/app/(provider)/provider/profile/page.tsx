@@ -10,6 +10,7 @@ import { buildMetadata } from '@/lib/metadata'
 import { getCities } from '@/lib/location-nodes'
 import { SignOutButton } from '@/components/technician/SignOutButton'
 import { PushSubscribeButton } from '@/components/technician/PushSubscribeButton'
+import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -496,6 +497,18 @@ export default async function ProviderProfilePage({
       </Card>
 
       <PushSubscribeButton />
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Appearance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ThemeToggle className="w-full" />
+        </CardContent>
+      </Card>
+
       <SignOutButton />
     </div>
   )

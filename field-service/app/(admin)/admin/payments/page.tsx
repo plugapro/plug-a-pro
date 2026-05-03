@@ -281,13 +281,13 @@ export default async function PaymentsPage({
       </div>
 
       {banner ? (
-        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'tone-success'}`}>
           {banner.text}
         </div>
       ) : null}
 
       {!crudEnabled && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
           Payment mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim follow-ups or issue refunds.
         </div>
       )}

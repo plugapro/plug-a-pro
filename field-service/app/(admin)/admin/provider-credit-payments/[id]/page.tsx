@@ -151,14 +151,14 @@ export default async function ProviderCreditPaymentDetailPage({
         <div className={`rounded-xl border px-4 py-3 text-sm ${
           message?.endsWith('_failed')
             ? 'border-destructive/30 bg-destructive/5 text-destructive'
-            : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+            : 'tone-success'
         }`}>
           {banner}
         </div>
       ) : null}
 
       {!paymentActionsEnabled ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="tone-warning rounded-xl border px-4 py-3 text-sm">
           Manual EFT reconciliation actions are disabled by feature flag
           <span className="font-mono"> {PAYMENT_ADMIN_FLAG}</span>.
         </div>
@@ -345,17 +345,17 @@ export default async function ProviderCreditPaymentDetailPage({
             </form>
           ) : null}
 
-          <form action={creditTopUpIntentFormAction} className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <form action={creditTopUpIntentFormAction} className="space-y-3 rounded-xl border border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] p-4">
             <input type="hidden" name="paymentIntentId" value={intent.id} />
-            <h2 className="font-semibold text-emerald-950">Credit wallet</h2>
-            <p className="text-sm text-emerald-900">
+            <h2 className="font-semibold">Credit wallet</h2>
+            <p className="text-sm">
               {isPayfastIntent
                 ? `Manually credit ${intent.creditsToIssue} paid Plug-A-Pro Credits to ${intent.provider.name}. Use only when the ITN was verified but automatic crediting failed.`
                 : `Confirm this will add ${intent.creditsToIssue} paid Plug-A-Pro Credits to ${intent.provider.name}. This action cannot be repeated.`}
             </p>
             <textarea
               name="adminNote"
-              className="min-h-20 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+              className="min-h-20 w-full rounded-xl border bg-card px-3 py-2 text-sm text-foreground"
               placeholder={isPayfastIntent ? 'Reason for manual credit' : 'Credit note'}
               disabled={!canCredit}
               required={isPayfastIntent}

@@ -120,7 +120,7 @@ export default async function ProviderCreditPaymentsPage({
       </div>
 
       {!paymentActionsEnabled ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="tone-warning rounded-xl border px-4 py-3 text-sm">
           Manual EFT reconciliation actions are disabled by feature flag
           <span className="font-mono"> {PAYMENT_ADMIN_FLAG}</span>.
         </div>

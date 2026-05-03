@@ -223,13 +223,13 @@ export default async function CustomerDetailPage({
       </div>
 
       {query.message && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+        <div className="tone-success rounded-lg border px-4 py-2 text-sm">
           {query.message}
         </div>
       )}
 
       {isSuspended && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
           <p className="font-medium">
             Customer suspended until{' '}
             {customer.suspendedUntil?.toLocaleString('en-ZA', {
@@ -241,7 +241,7 @@ export default async function CustomerDetailPage({
             })}
           </p>
           {customer.suspendedReason && (
-            <p className="mt-1 text-amber-800">{customer.suspendedReason}</p>
+            <p className="mt-1">{customer.suspendedReason}</p>
           )}
         </div>
       )}
@@ -457,11 +457,11 @@ export default async function CustomerDetailPage({
             <p className="text-muted-foreground">No notes yet.</p>
           )}
           {customer.customerNotes.map((note) => (
-            <div key={note.id} className={`rounded-md border p-3 text-sm ${note.pinned ? 'border-amber-300 bg-amber-50' : ''}`}>
+            <div key={note.id} className={`rounded-md border p-3 text-sm ${note.pinned ? 'tone-warning' : ''}`}>
               <p>{note.body}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {note.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
-                {note.pinned && <span className="ml-2 text-amber-600 font-medium">pinned</span>}
+                {note.pinned && <span className="ml-2 font-medium">pinned</span>}
               </p>
             </div>
           ))}

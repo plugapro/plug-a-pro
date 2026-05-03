@@ -661,23 +661,23 @@ export default async function ProviderLeadAccessPage({
         </div>
 
         {showExpiryCountdown && lead.expiresAt && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
             Expires {formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · {format(lead.expiresAt, 'HH:mm, d MMM')}
           </div>
         )}
 
         {isAccepted && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 space-y-1">
+          <div className="tone-success rounded-lg border px-4 py-3 text-sm space-y-1">
             <p className="font-semibold">Job assigned to you</p>
             {jr.match?.createdAt && (
               <p>Accepted {format(jr.match.createdAt, 'HH:mm, d MMM yyyy')} · 1 credit used.</p>
             )}
-            <p className="text-emerald-700">Next step: contact the customer and confirm your arrival time below.</p>
+            <p>Next step: contact the customer and confirm your arrival time below.</p>
           </div>
         )}
 
         {resolvedSearchParams.accepted === '1' && (
-          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <div className="tone-success rounded-lg border px-4 py-3 text-sm">
             <p className="font-medium">Lead accepted.</p>
             {resolvedSearchParams.alreadyAccepted === '1' ? (
               <p className="mt-1">You had already accepted this lead — no credit was used on this action.</p>
@@ -688,24 +688,24 @@ export default async function ProviderLeadAccessPage({
             )}
             <p className="mt-1">Full customer and job details are now available.</p>
             {resolvedSearchParams.actionTraceId ? (
-              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.actionTraceId}</p>
+              <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
           </div>
         )}
 
         {resolvedSearchParams.declined === '1' && (
-          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <div className="tone-success rounded-lg border px-4 py-3 text-sm">
             <p className="font-medium">Lead declined</p>
             <p className="mt-1">We will send it to another provider.</p>
-            <p className="mt-2 text-xs font-medium uppercase tracking-wide text-emerald-800">
+            <p className="mt-2 text-xs font-medium uppercase tracking-wide">
               Ref: {jobRef}
             </p>
             {resolvedSearchParams.actionTraceId ? (
-              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.actionTraceId}</p>
+              <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
             <div className="mt-4 grid gap-2">
               {backToWhatsAppHref ? (
-                <Button asChild size="sm" className="bg-emerald-700 hover:bg-emerald-800">
+                <Button asChild size="sm" className="bg-[var(--tone-success-fg)] hover:opacity-90 text-white">
                   <a href={backToWhatsAppHref}>Back to WhatsApp</a>
                 </Button>
               ) : null}
@@ -720,12 +720,12 @@ export default async function ProviderLeadAccessPage({
         )}
 
         {resolvedSearchParams.declined === 'already' && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
             <p className="font-medium">Lead already closed</p>
             <p className="mt-1">This lead has already expired or been taken. No action was needed.</p>
             <div className="mt-4 grid gap-2">
               {backToWhatsAppHref ? (
-                <Button asChild size="sm" className="bg-amber-700 hover:bg-amber-800">
+                <Button asChild size="sm" className="bg-[var(--tone-warning-fg)] hover:opacity-90 text-white">
                   <a href={backToWhatsAppHref}>Back to WhatsApp</a>
                 </Button>
               ) : null}
@@ -740,18 +740,18 @@ export default async function ProviderLeadAccessPage({
         )}
 
         {resolvedSearchParams.updated === 'arrival' && (
-          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <div className="tone-success rounded-lg border px-4 py-3 text-sm">
             <p className="font-medium">Arrival time saved.</p>
             <p className="mt-1">
               Customer has been notified on WhatsApp.
             </p>
             {resolvedSearchParams.savedAt ? (
-              <p className="mt-1 text-xs text-emerald-800">
+              <p className="mt-1 text-xs">
                 Last updated: {format(new Date(resolvedSearchParams.savedAt), 'HH:mm, d MMM yyyy')}
               </p>
             ) : null}
             {resolvedSearchParams.traceId ? (
-              <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.traceId}</p>
+              <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.traceId}</p>
             ) : null}
           </div>
         )}
@@ -770,24 +770,24 @@ export default async function ProviderLeadAccessPage({
         )}
 
         {resolvedSearchParams.error === 'credits' && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
             <p className="font-medium">You need 1 Plug-A-Pro Credit to accept this lead.</p>
             <p className="mt-1">
               Your current balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
             <p className="mt-1">Please top up in the Worker Portal to continue. Customer contact and exact address details remain hidden.</p>
             {resolvedSearchParams.actionTraceId ? (
-              <p className="mt-2 text-xs text-amber-800">Error code: INSUFFICIENT_CREDITS · Trace ID: {resolvedSearchParams.actionTraceId}</p>
+              <p className="mt-2 text-xs">Error code: INSUFFICIENT_CREDITS · Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : (
-              <p className="mt-2 text-xs text-amber-800">Error code: INSUFFICIENT_CREDITS</p>
+              <p className="mt-2 text-xs">Error code: INSUFFICIENT_CREDITS</p>
             )}
           </div>
         )}
 
         {resolvedSearchParams.error === 'inactive' && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
             <p>Your provider profile is not active, so you cannot accept leads right now.</p>
-            <p className="mt-2 text-xs text-amber-800">
+            <p className="mt-2 text-xs">
               Error code: PROVIDER_NOT_ACTIVE
               {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
             </p>
@@ -795,9 +795,9 @@ export default async function ProviderLeadAccessPage({
         )}
 
         {resolvedSearchParams.error === 'approval' && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
             <p>Your provider application must be approved before you can accept leads.</p>
-            <p className="mt-2 text-xs text-amber-800">
+            <p className="mt-2 text-xs">
               Error code: PROVIDER_NOT_APPROVED
               {resolvedSearchParams.actionTraceId ? ` · Trace ID: ${resolvedSearchParams.actionTraceId}` : ''}
             </p>
@@ -841,7 +841,7 @@ export default async function ProviderLeadAccessPage({
         )}
 
         {confirmingAccept && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-950">
+          <div className="tone-info rounded-lg border px-4 py-4 text-sm">
             <p className="font-semibold">Confirm lead acceptance</p>
             {hasEnoughCredits ? (
               <>
@@ -1067,7 +1067,7 @@ export default async function ProviderLeadAccessPage({
               </label>
               <ArrivalSubmitButton disabled={actionDisabled} />
             </form>
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+            <div className="tone-warning rounded-md border px-3 py-3 text-sm">
               <p className="font-medium">Need a time outside this availability?</p>
               <p className="mt-1">
                 Outside requested availability. Please contact the customer before scheduling this time.

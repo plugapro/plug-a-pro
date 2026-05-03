@@ -101,8 +101,8 @@ export function QuoteForm({
       </div>
 
       {preChecked && (
-        <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950 px-4 py-3">
-          <p className="text-xs text-yellow-800 dark:text-yellow-200">
+        <div className="tone-warning rounded-lg border px-4 py-3">
+          <p className="text-xs">
             You marked this as needing an inspection. Submit your quote once you&apos;ve assessed the site.
           </p>
         </div>

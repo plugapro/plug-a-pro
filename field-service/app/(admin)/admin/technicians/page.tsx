@@ -124,13 +124,13 @@ export default async function ProvidersPage({ searchParams }: ProvidersPageProps
       </div>
 
       {!crudEnabled && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning mb-4 rounded-lg border px-4 py-2 text-sm">
           Provider mutations are disabled. Enable the <code>admin.crud.providers</code> feature flag to verify, suspend, or update providers.
         </div>
       )}
 
       {filters.message && (
-        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+        <div className="tone-success mb-4 rounded-lg border px-4 py-2 text-sm">
           {filters.message}
         </div>
       )}

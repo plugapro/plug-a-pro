@@ -127,9 +127,9 @@ export default async function QuotePage({
       </div>
 
       {match.inspectionNeeded && match.status === 'INSPECTION_SCHEDULED' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm">
-          <p className="font-medium text-amber-900">Inspection still needs to be completed</p>
-          <p className="text-amber-800">
+        <div className="tone-warning rounded-xl border p-4 space-y-3 text-sm">
+          <p className="font-medium">Inspection still needs to be completed</p>
+          <p>
             Mark the site visit complete before submitting the quote. This records the inspection step in the lifecycle.
           </p>
           <form action={markInspectionComplete}>
@@ -150,13 +150,13 @@ export default async function QuotePage({
       )}
 
       {quoteCanBeRevised && latestQuote && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2 text-sm">
-          <p className="font-medium text-blue-900">Revise and resend your quote</p>
-          <p className="text-blue-800">
+        <div className="tone-info rounded-xl border p-4 space-y-2 text-sm">
+          <p className="font-medium">Revise and resend your quote</p>
+          <p>
             The previous quote was not accepted. Review the scope, update your pricing, and send a revised quote.
           </p>
           {latestQuote.notes && (
-            <div className="rounded-lg border border-blue-200 bg-white/80 px-3 py-2 text-blue-900">
+            <div className="tone-info rounded-lg border px-3 py-2">
               <p className="text-xs font-semibold uppercase tracking-wide">Customer feedback</p>
               <p className="mt-1 text-sm">{latestQuote.notes}</p>
             </div>
@@ -165,9 +165,9 @@ export default async function QuotePage({
       )}
 
       {quoteApproved && (
-        <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-2 text-sm">
-          <p className="font-medium text-green-900">Quote already approved</p>
-          <p className="text-green-800">
+        <div className="tone-success rounded-xl border p-4 space-y-2 text-sm">
+          <p className="font-medium">Quote already approved</p>
+          <p>
             This job has already moved past the quote stage. Open the technician dashboard to continue execution.
           </p>
         </div>

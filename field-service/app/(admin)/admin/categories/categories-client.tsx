@@ -95,7 +95,7 @@ export function CategoriesClient({ categories, crudEnabled }: Props) {
           loading={creating}
         />
       ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
           Category mutations are disabled. Enable the <code>admin.crud.categories</code> feature flag to create, edit, or delete category config.
         </div>
       )}

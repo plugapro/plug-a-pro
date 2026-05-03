@@ -106,7 +106,7 @@ export default async function ProviderJobHandoverEntryPage({
         jobId={jobId}
       >
         {resolvedSearch.fresh === 'sent' ? (
-          <p className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-emerald-900">
+          <p className="tone-success mt-4 rounded-md border px-3 py-2">
             We sent a fresh secure link to the accepted provider WhatsApp number.
           </p>
         ) : null}

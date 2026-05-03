@@ -283,14 +283,12 @@ export default function ProviderSignInPage() {
         {error && (
           <div className={`rounded-md border p-3 text-sm space-y-2 ${
             error.tone === 'info'
-              ? 'border-amber-300/70 bg-amber-50 text-amber-950'
+              ? 'tone-warning'
               : 'border-destructive/30 bg-destructive/5 text-destructive'
           }`}>
             <p className="font-medium">{error.title}</p>
             <p>{error.reason}</p>
-            <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs ${
-              error.tone === 'info' ? 'text-amber-950/80' : 'text-destructive/90'
-            }`}>
+            <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs opacity-80`}>
               <dt>Error code</dt><dd className="text-right font-medium">{error.code}</dd>
               {(error.phoneMasked || error.mobileChecked) && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.phoneMasked ?? error.mobileChecked}</dd></>}
               {error.countryCode && <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></>}

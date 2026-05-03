@@ -1,16 +1,25 @@
 @import "tailwindcss";
 @source "../**/*.{js,ts,jsx,tsx,mdx}";
 
+/* Class-based dark mode: `dark:` utilities activate when `.dark` is on an
+   ancestor element (applied by next-themes), not via prefers-color-scheme.
+   This keeps Tailwind dark: utilities and CSS-variable .dark overrides in sync. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ──────────────────────────────────────────────────────────────────
    Plug A Pro — Design Tokens
-   Premium dark visual system. Inspired by high-end consumer hardware
-   UIs: near-black surfaces, soft elevated cards, restrained accents,
-   high-contrast type, refined shadows, generous spacing.
+   Dual-theme visual system. Defaults to the user's system preference
+   (light or dark). Dark mode retains the premium near-black aesthetic;
+   light mode is clean, crisp, and readable for outdoor working conditions.
 
    All colour, radius, spacing, shadow, and motion values are exposed
    as CSS custom properties so screens never hardcode hex values.
    Tailwind utilities reach the same tokens through `bg-background`,
    `text-foreground`, `border-border`, etc.
+
+   Adding new components: use token utilities (bg-card, text-foreground,
+   border-border) and tone classes (.tone-info, .tone-success, etc.).
+   Avoid hardcoded colours like bg-black, text-white, bg-zinc-950.
    ────────────────────────────────────────────────────────────────── */
 
 @layer base {
@@ -41,6 +50,7 @@
     --accent: #eef2f8;
     --accent-foreground: #19233a;
     --destructive: #d64242;
+    --destructive-foreground: #ffffff;
     --border: #d9dee6;
     --input: #c9d0db;
     --ring: rgba(37, 99, 235, 0.55);
@@ -108,6 +118,7 @@
 
     /* Status */
     --destructive: #ff5b52;
+    --destructive-foreground: #ffffff;
 
     /* Soft translucent borders — Apple-style hairlines */
     --border: rgba(255, 255, 255, 0.08);
@@ -166,7 +177,11 @@
   }
 
   html {
-    color-scheme: dark light;
+    color-scheme: light dark;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
@@ -203,11 +218,11 @@
     background-clip: padding-box;
   }
 
-  /* Native iOS time/date pickers — keep readable on dark */
+  /* Native iOS time/date pickers — inherit active color scheme */
   input[type="time"],
   input[type="date"],
   input[type="datetime-local"] {
-    color-scheme: dark light;
+    color-scheme: inherit;
   }
 }
 

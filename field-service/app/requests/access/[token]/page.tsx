@@ -272,8 +272,8 @@ export default async function TicketAccessPage({
       )}
 
       {resolvedSearchParams.selection === 'provider-confirming' && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="space-y-1 px-4 py-4 text-sm text-emerald-900">
+        <Card className="border-[var(--tone-success-border)] bg-[var(--tone-success-bg)]">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-success-fg)]">
             <p className="font-medium">Provider selected</p>
             <p>
               You selected {selectedShortlistItem?.provider.name ?? 'your provider'}. We are asking them to confirm the job now on WhatsApp.
@@ -284,14 +284,14 @@ export default async function TicketAccessPage({
       )}
 
       {destination.screen === 'provider_confirmation' && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="space-y-2 px-4 py-4 text-sm text-amber-950">
+        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+          <CardContent className="space-y-2 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
             <p className="font-medium">Waiting for provider confirmation</p>
             <p>
               You selected {selectedShortlistItem?.provider.name ?? 'your provider'}. We notified them on WhatsApp and are asking them to confirm the job now.
               You will be notified once accepted.
             </p>
-            <Button asChild variant="outline" className="w-full bg-white/70">
+            <Button asChild variant="outline" className="w-full">
               <Link href={supportHref}>Contact support</Link>
             </Button>
           </CardContent>
@@ -322,8 +322,8 @@ export default async function TicketAccessPage({
       )}
 
       {resolvedSearchParams.selection === 'more-options' && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="space-y-1 px-4 py-4 text-sm text-amber-900">
+        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
             <p className="font-medium">Looking for more options</p>
             <p>We are reaching out to additional providers. We&apos;ll update you here when more responses come in.</p>
           </CardContent>
@@ -340,12 +340,12 @@ export default async function TicketAccessPage({
       )}
 
       {destination.screen === 'expired' && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="space-y-3 px-4 py-4 text-sm text-amber-950">
+        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+          <CardContent className="space-y-3 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
             <p className="font-medium">We could not find enough suitable providers yet.</p>
             <p>You can change your preferred time, expand your area, request manual assistance, or start a new request.</p>
             <div className="grid grid-cols-2 gap-2">
-              <Button asChild variant="outline" className="bg-white/70">
+              <Button asChild variant="outline">
                 <Link href={supportHref}>Ask for help</Link>
               </Button>
               <Button asChild className="w-full">
@@ -560,8 +560,8 @@ export default async function TicketAccessPage({
       )}
 
       {provider && match && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardContent className="space-y-3 px-4 py-4 text-sm text-emerald-950">
+        <Card className="border-[var(--tone-success-border)] bg-[var(--tone-success-bg)]">
+          <CardContent className="space-y-3 px-4 py-4 text-sm text-[var(--tone-success-fg)]">
             <p className="font-medium">Your provider accepted the job</p>
             <Row label="Provider">{provider.name}</Row>
             <Row label="Expected">{formatDateTime(expectedArrivalAt)}</Row>
@@ -572,7 +572,7 @@ export default async function TicketAccessPage({
                   <Link href={`/bookings/${booking.id}`}>Track job</Link>
                 </Button>
               )}
-              <Button asChild variant="outline" className="w-full bg-white/70">
+              <Button asChild variant="outline" className="w-full">
                 <Link href={`/requests/access/${encodeURIComponent(token)}?view=shortlist&provider=${encodeURIComponent(provider.id)}`}>
                   View provider
                 </Link>
@@ -624,9 +624,9 @@ export default async function TicketAccessPage({
             {trackingSteps.map((step, index) => (
               <div key={step.label} className="flex gap-3">
                 <div className="flex flex-col items-center">
-                  <div className={`mt-1 h-4 w-4 rounded-full border-2 ${step.done ? 'border-green-500 bg-green-500' : step.current ? 'border-foreground bg-foreground' : 'border-muted-foreground/30'}`} />
+                  <div className={`mt-1 h-4 w-4 rounded-full border-2 ${step.done ? 'border-[var(--tone-success-fg)] bg-[var(--tone-success-fg)]' : step.current ? 'border-foreground bg-foreground' : 'border-muted-foreground/30'}`} />
                   {index < trackingSteps.length - 1 && (
-                    <div className={`my-0.5 w-0.5 flex-1 ${step.done ? 'bg-green-500' : 'bg-border'}`} />
+                    <div className={`my-0.5 w-0.5 flex-1 ${step.done ? 'bg-[var(--tone-success-fg)]' : 'bg-border'}`} />
                   )}
                 </div>
                 <div className={`pb-4 ${step.current ? '' : step.done ? 'opacity-70' : 'opacity-35'}`}>

@@ -10,6 +10,7 @@ import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { SignOutButton } from '@/components/customer/SignOutButton'
 import { buildMetadata } from '@/lib/metadata'
+import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -106,6 +107,13 @@ export default async function ProfilePage() {
           </Link>
         </Button>
       </div>
+
+      <Card>
+        <CardContent className="px-4 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Appearance</p>
+          <ThemeToggle className="w-full" />
+        </CardContent>
+      </Card>
 
       <SignOutButton />
     </div>

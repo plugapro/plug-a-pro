@@ -51,7 +51,7 @@ export default async function NewCustomerPage({
       </div>
 
       {query.message && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
           {query.message}
         </div>
       )}

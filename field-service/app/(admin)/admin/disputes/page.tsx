@@ -243,7 +243,7 @@ export default async function AdminDisputesPage() {
       </div>
 
       {!crudEnabled && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="tone-warning rounded-lg border px-4 py-2 text-sm">
           Dispute mutations are disabled. Enable the <code>{FLAG}</code> feature flag to claim or update disputes.
         </div>
       )}

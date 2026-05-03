@@ -134,5 +134,5 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function SafetyRule({ label }: { label: string }) {
-  return <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">{label}</div>
+  return <div className="tone-success rounded-lg border px-3 py-2 text-sm">{label}</div>
 }
