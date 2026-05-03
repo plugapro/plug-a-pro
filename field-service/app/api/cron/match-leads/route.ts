@@ -86,10 +86,8 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1d. Route pending provider applications for Ops review.
-  // Final provider approval must remain an explicit Ops/Admin action. This cron
-  // may perform completeness/risk checks and queue routing, but it must not mark
-  // providers approved, award credits, or make them eligible for matching.
+  // 1d. Route pending provider applications for Ops review and queue them for
+  // the ops dashboard. Step 1e auto-approves complete applications immediately.
   try {
     const routed = await routeProviderApplicationsForOpsReview(db, { actorId: 'cron:match-leads' })
     results.reviewRoutedApplications = routed.routed
@@ -99,7 +97,7 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1e. Retry approved provider application WhatsApp confirmations that were
+  // 1g. Retry approved provider application WhatsApp confirmations that were
   // missed because Meta, network, or a prior deploy failed after DB approval.
   try {
     const approvedMissingNotifications = await db.providerApplication.findMany({
@@ -130,7 +128,7 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1f. Expire OPEN job requests that have passed their expiresAt deadline.
+  // 1h. Expire OPEN job requests that have passed their expiresAt deadline.
   // Only processes jobs where expiresAt was explicitly set (legacy jobs without
   // the field are ignored). Notify customer after each transition.
   try {
@@ -163,7 +161,7 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1f. Catch-up sweep: EXPIRED jobs from the last 24h that never received a
+  // 1i. Catch-up sweep: EXPIRED jobs from the last 24h that never received a
   // no-match notification (e.g. if 1e fired but the notify call failed).
   // notifyExpiredJobParties() is idempotent — it guards on customerNoMatchNotifiedAt.
   try {
@@ -186,7 +184,7 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1g. Auto-resume providers whose temporary pause has expired (breakUntil <= now).
+  // 1j. Auto-resume providers whose temporary pause has expired (breakUntil <= now).
   // Hard-paused providers (breakUntil=null) are excluded — they must re-enable manually via WhatsApp.
   try {
     const expiredPauses = await db.technicianAvailability.findMany({
