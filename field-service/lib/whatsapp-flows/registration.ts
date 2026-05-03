@@ -171,25 +171,24 @@ function validateSubmitData(ctx: FlowContext) {
     )
   }
 
-  if (!idNumber || idNumber.length < 6) {
-    throw new ProviderApplicationSubmitError(
-      'PROVIDER_APPLICATION_VALIDATION_FAILED',
-      'Provider application requires an ID or passport number for review.',
-      { missingField: 'idNumber' },
-    )
-  }
-
   return {
     name,
     skills,
     availability,
     evidenceAttachmentIds,
-    idNumber,
+    idNumber: idNumber || undefined,
     resolvedAreaLabels: normaliseLocationDisplayNames(locationNodeIds.length > 0
       ? (selectedSuburbLabels.length ? selectedSuburbLabels : selectedRegionLabels.length ? selectedRegionLabels : serviceAreas)
       : serviceAreas),
     locationNodeIds,
   }
+}
+
+function verificationStatusLabel(data: Partial<{ providerIdNumber?: string; verificationMethod?: string; verificationDocAttachmentId?: string }>): string {
+  if (data.providerIdNumber) return 'ID/passport provided'
+  if (data.verificationDocAttachmentId) return 'Document uploaded'
+  if (data.verificationMethod === 'skipped') return 'Skipped (optional)'
+  return 'Not provided (optional)'
 }
 
 function formatAvailabilityLabel(availability: string[] | undefined) {
@@ -277,6 +276,12 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleMigratedEmailStep(ctx)
     case 'reg_collect_id':
       return handleCollectId(ctx)
+    case 'reg_verify_enter_id':
+      return handleVerifyEnterId(ctx)
+    case 'reg_verify_upload_doc':
+      return handleVerifyUploadDoc(ctx)
+    case 'reg_verify_upload_selfie':
+      return handleVerifyUploadSelfie(ctx)
     case 'reg_collect_skills':
       return handleCollectSkills(ctx)
     case 'reg_collect_skills_more':
@@ -436,48 +441,254 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'reg_collect_skills' }
   }
 
-  await sendText(
-    ctx.phone,
-    '🪪 Please send your *ID or passport number* for application review.\n\nWe use this for provider vetting and do not share it with customers.'
-  )
+  // If provider already answered the verification step (name edit path), skip re-prompting.
+  if (ctx.data.verificationMethod || ctx.data.providerIdNumber || ctx.data.verificationDocAttachmentId) {
+    await sendText(ctx.phone, buildSkillPromptText(`👤 Name updated to *${name}*.\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { name } }
+  }
+
+  await sendVerificationChoicePrompt(ctx.phone)
   return { nextStep: 'reg_collect_id', nextData: { name } }
 }
 
 // Handles providers whose conversation is still on 'reg_collect_email' from before
 // the email step was removed from the onboarding flow. Whatever they reply, we
-// accept it and advance to the ID step. A well-formed email is saved as optional
-// profile enrichment; any other reply (including "skip") continues without capturing.
+// accept it and advance to the optional verification prompt. A well-formed email
+// is saved as optional profile enrichment; any other reply continues without it.
 async function handleMigratedEmailStep(ctx: FlowContext): Promise<FlowResult> {
   const raw = ctx.reply.text?.trim() ?? ''
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)
-  await sendText(
-    ctx.phone,
-    '🪪 Please send your *ID or passport number* for application review.\n\nWe use this for provider vetting and do not share it with customers.'
-  )
+  await sendVerificationChoicePrompt(ctx.phone)
   return {
     nextStep: 'reg_collect_id',
     nextData: isValidEmail ? { providerEmail: raw.toLowerCase() } : {},
   }
 }
 
-function validateProviderIdNumber(raw: string | undefined) {
-  const value = raw?.trim().replace(/\s+/g, '')
-  if (!value || value.length < 6 || value.length > 30 || !/^[a-z0-9-]+$/i.test(value)) return null
-  return value.toUpperCase()
+async function sendVerificationChoicePrompt(phone: string) {
+  await sendButtons(
+    phone,
+    [
+      '🪪 *Verify your identity (optional)*',
+      '',
+      'Providing ID helps us review your application faster. Your details are never shared with customers.',
+      '',
+      'Choose how to verify, or skip and apply without it:',
+    ].join('\n'),
+    [
+      { id: 'verify_enter_id', title: 'Enter ID/passport' },
+      { id: 'verify_upload_doc', title: 'Upload document' },
+      { id: 'verify_skip', title: 'Skip for now' },
+    ],
+  )
 }
 
+// Standard Luhn check (rightmost digit = position 1, not doubled).
+function luhnCheck(num: string): boolean {
+  let sum = 0
+  let doubleDigit = false
+  for (let i = num.length - 1; i >= 0; i--) {
+    let digit = parseInt(num[i], 10)
+    if (doubleDigit) {
+      digit *= 2
+      if (digit > 9) digit -= 9
+    }
+    sum += digit
+    doubleDigit = !doubleDigit
+  }
+  return sum % 10 === 0
+}
+
+function validateSaId(raw: string): string | null {
+  const digits = raw.replace(/\s+/g, '')
+  if (!/^\d{13}$/.test(digits)) return null
+  const mm = parseInt(digits.slice(2, 4), 10)
+  const dd = parseInt(digits.slice(4, 6), 10)
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null
+  if (!luhnCheck(digits)) return null
+  return digits
+}
+
+function validatePassportNumber(raw: string): string | null {
+  const trimmed = raw.trim()
+  // Reject if the input contains spaces — passport numbers never have spaces
+  if (/\s/.test(trimmed)) return null
+  // Passport: 6–30 alphanumeric, must contain at least one letter (not all digits)
+  if (trimmed.length >= 6 && trimmed.length <= 30 && /^[a-z0-9]+$/i.test(trimmed) && /[a-z]/i.test(trimmed)) {
+    return trimmed.toUpperCase()
+  }
+  return null
+}
+
+// Migration handler for in-progress users still on the old mandatory ID step.
+// Accepts a typed ID/passport number for backward compatibility; shows the
+// optional verification prompt for any other reply.
 async function handleCollectId(ctx: FlowContext): Promise<FlowResult> {
-  const providerIdNumber = validateProviderIdNumber(ctx.reply.text)
-  if (!providerIdNumber) {
-    await sendText(ctx.phone, 'Please send a valid ID or passport number with at least 6 characters.')
-    return { nextStep: 'reg_collect_id' }
+  // Handle button replies from the optional verification prompt or from error re-prompts.
+  if (ctx.reply.id === 'verify_enter_id') {
+    await sendText(ctx.phone, '🪪 Please send your *SA ID number* (13 digits) or *passport number*.\n\nType *skip* at any time to continue without verifying.')
+    return { nextStep: 'reg_verify_enter_id' }
   }
 
-  await sendText(
+  if (ctx.reply.id === 'verify_upload_doc') {
+    await sendText(ctx.phone, '📄 Please send a *photo of your ID document* (SA ID card or passport).')
+    return { nextStep: 'reg_verify_upload_doc' }
+  }
+
+  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
+    await sendText(ctx.phone, 'No problem. You can verify your identity later from the Worker Portal.')
+    await sendText(ctx.phone, buildSkillPromptText(`Now let's set up your profile, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
+  }
+
+  // Backward compat: a user who types a plausible ID number goes through directly.
+  const raw = ctx.reply.text?.trim() ?? ''
+  const saId = validateSaId(raw)
+  if (saId) {
+    await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: saId, verificationMethod: 'id_number', skills: [] } }
+  }
+  const passport = validatePassportNumber(raw)
+  if (passport) {
+    await sendText(ctx.phone, buildSkillPromptText(`Thanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: passport, verificationMethod: 'id_number', skills: [] } }
+  }
+
+  // Any other input (including old 6-char alphanumeric IDs in flight) — re-show the choice.
+  await sendVerificationChoicePrompt(ctx.phone)
+  return { nextStep: 'reg_collect_id' }
+}
+
+async function handleVerifyEnterId(ctx: FlowContext): Promise<FlowResult> {
+  // Button or text "skip" — escape hatch so users with unusual IDs are never trapped.
+  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
+    await sendText(ctx.phone, 'No problem. You can verify your identity later from the Worker Portal.')
+    await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
+  }
+
+  const raw = ctx.reply.text?.trim() ?? ''
+
+  // Try 13-digit SA ID with Luhn validation first.
+  const noSpace = raw.replace(/\s+/g, '')
+  if (/^\d{13}$/.test(noSpace)) {
+    const saId = validateSaId(noSpace)
+    if (!saId) {
+      await sendButtons(
+        ctx.phone,
+        "❌ That SA ID number didn't pass the checksum check. Please check and try again, or send your passport number instead.",
+        [{ id: 'verify_skip', title: 'Skip verification' }],
+      )
+      return { nextStep: 'reg_verify_enter_id' }
+    }
+    await sendText(ctx.phone, buildSkillPromptText(`✅ ID verified.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: saId, verificationMethod: 'id_number', skills: [] } }
+  }
+
+  // Passport number: 6–30 alphanumeric, must not be all digits.
+  const passport = validatePassportNumber(raw)
+  if (passport) {
+    await sendText(ctx.phone, buildSkillPromptText(`✅ Passport number saved.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber: passport, verificationMethod: 'id_number', skills: [] } }
+  }
+
+  await sendButtons(
     ctx.phone,
-    buildSkillPromptText(`Thanks, *${ctx.data.name}*. 👋\n\n🔧 *What type of work do you do?*`)
+    '❌ Please send a valid *SA ID number* (13 digits) or *passport number* (6–30 alphanumeric characters). Or tap below to skip.',
+    [{ id: 'verify_skip', title: 'Skip verification' }],
   )
-  return { nextStep: 'reg_collect_skills_more', nextData: { providerIdNumber, skills: [] } }
+  return { nextStep: 'reg_verify_enter_id' }
+}
+
+async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
+    await sendText(ctx.phone, 'Skipping document upload. You can verify your identity later from the Worker Portal.')
+    await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'skipped', skills: [] } }
+  }
+
+  if (ctx.reply.type === 'image' || ctx.reply.type === 'document') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, "⚠️ Couldn't read that file. Please try again.")
+      return { nextStep: 'reg_verify_upload_doc' }
+    }
+    try {
+      const { PROVIDER_ID_DOCUMENT_LABEL } = await import('../provider-attachment-labels')
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        label: PROVIDER_ID_DOCUMENT_LABEL,
+      })
+      console.info('[registration:handleVerifyUploadDoc] ID document saved', {
+        phone: ctx.phone,
+        mediaIdSuffix: ctx.reply.mediaId.slice(-8),
+        attachmentId,
+      })
+      await sendText(ctx.phone, '✅ Document received.\n\n🤳 Now please send a *selfie holding your ID document* so we can match your face to it.')
+      return {
+        nextStep: 'reg_verify_upload_selfie',
+        nextData: { verificationDocAttachmentId: attachmentId, verificationDocMediaId: ctx.reply.mediaId },
+      }
+    } catch (err) {
+      console.error('[registration:handleVerifyUploadDoc] media upload failed', { phone: ctx.phone, err })
+      await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or tap *Skip*.")
+      return { nextStep: 'reg_verify_upload_doc' }
+    }
+  }
+
+  await sendButtons(
+    ctx.phone,
+    '📄 Please send a *photo of your ID document* (SA ID card or passport).',
+    [{ id: 'verify_skip', title: 'Skip for now' }],
+  )
+  return { nextStep: 'reg_verify_upload_doc' }
+}
+
+async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
+  if (ctx.reply.id === 'verify_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
+    await sendText(ctx.phone, 'Skipping selfie. You can complete verification later from the Worker Portal.')
+    await sendText(ctx.phone, buildSkillPromptText(`🔧 *What type of work do you do?*`))
+    return { nextStep: 'reg_collect_skills_more', nextData: { verificationMethod: 'documents', skills: [] } }
+  }
+
+  if (ctx.reply.type === 'image') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, "⚠️ Couldn't read that photo. Please try again.")
+      return { nextStep: 'reg_verify_upload_selfie' }
+    }
+    try {
+      const { PROVIDER_ID_SELFIE_LABEL } = await import('../provider-attachment-labels')
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        label: PROVIDER_ID_SELFIE_LABEL,
+      })
+      console.info('[registration:handleVerifyUploadSelfie] ID selfie saved', {
+        phone: ctx.phone,
+        mediaIdSuffix: ctx.reply.mediaId.slice(-8),
+        attachmentId,
+      })
+      await sendText(ctx.phone, buildSkillPromptText(`✅ Selfie received. Identity documents uploaded.\n\nThanks, *${ctx.data.name ?? 'there'}*. 👋\n\n🔧 *What type of work do you do?*`))
+      return {
+        nextStep: 'reg_collect_skills_more',
+        nextData: {
+          verificationSelfieAttachmentId: attachmentId,
+          verificationSelfieMediaId: ctx.reply.mediaId,
+          verificationMethod: 'documents',
+          skills: [],
+        },
+      }
+    } catch (err) {
+      console.error('[registration:handleVerifyUploadSelfie] media upload failed', { phone: ctx.phone, err })
+      await sendText(ctx.phone, "⚠️ Couldn't upload that photo. Please try again or tap *Skip*.")
+      return { nextStep: 'reg_verify_upload_selfie' }
+    }
+  }
+
+  await sendButtons(
+    ctx.phone,
+    '🤳 Please send a *selfie holding your ID document*.',
+    [{ id: 'verify_skip', title: 'Skip selfie' }],
+  )
+  return { nextStep: 'reg_verify_upload_selfie' }
 }
 
 async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
@@ -1319,7 +1530,6 @@ async function showRegistrationSummary(
     evidenceFileUrls,
     callOutFee,
     rateNegotiable,
-    providerIdNumber,
   } = merged
   const skillList = (skills ?? []).join(', ')
   // Prefer suburb-level labels if the provider drilled down, else fall back to region/area labels
@@ -1330,7 +1540,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 Identity: *${verificationStatusLabel(merged)}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1876,6 +2086,27 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
             trace_id: traceId,
             providerApplicationId: application.id,
             profilePhotoAttachmentId,
+            error: safeErrorMessage(err),
+          })
+        }
+      }
+
+      // Link optional verification doc and selfie attachments (non-fatal).
+      const verificationAttachmentIds = [
+        ctx.data.verificationDocAttachmentId,
+        ctx.data.verificationSelfieAttachmentId,
+      ].filter((id): id is string => Boolean(id))
+      if (verificationAttachmentIds.length > 0) {
+        try {
+          await tx.attachment.updateMany({
+            where: { id: { in: verificationAttachmentIds }, providerApplicationId: null },
+            data: { providerApplicationId: application.id },
+          })
+        } catch (err) {
+          console.warn('[registration-flow] verification attachment link failed (non-fatal)', {
+            trace_id: traceId,
+            providerApplicationId: application.id,
+            verificationAttachmentIds,
             error: safeErrorMessage(err),
           })
         }

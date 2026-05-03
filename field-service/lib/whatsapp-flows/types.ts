@@ -64,6 +64,10 @@ export type FlowStep =
   | 'reg_confirm'
   | 'reg_pending'
   | 'reg_edit_field'          // field-level edit selection
+  // Optional identity verification (post-name, pre-skills)
+  | 'reg_verify_enter_id'     // text-based SA ID / passport entry with Luhn validation
+  | 'reg_verify_upload_doc'   // ID document image upload
+  | 'reg_verify_upload_selfie' // selfie holding ID document
   // Status flow
   | 'status_show'
   | 'status_pick'   // disambiguation step: customer choosing between multiple active requests
@@ -156,6 +160,11 @@ export interface ConversationData {
   name?: string
   providerEmail?: string
   providerIdNumber?: string
+  verificationMethod?: 'id_number' | 'documents' | 'skipped'
+  verificationDocAttachmentId?: string
+  verificationDocMediaId?: string
+  verificationSelfieAttachmentId?: string
+  verificationSelfieMediaId?: string
   pendingOpportunityLeadId?: string
   providerOpportunityStep?: 'callout' | 'arrival' | 'negotiable' | 'note'
   providerOpportunityCallOutFeeText?: string
