@@ -575,13 +575,29 @@ async function processInboundMessageUnlocked(
 
     // Drop reactions, voice notes, stickers — nothing actionable.
     // image/document are allowed through for:
-    //   - evidence collection in the provider registration flow
-    //   - customer photo upload in the job-request flow
+    //   - evidence collection in the provider registration flow (reg_collect_evidence)
+    //   - profile photo capture in the provider registration flow (reg_collect_profile_photo)
+    //   - customer photo upload in the job-request flow (collect_photos)
     // Must be checked BEFORE flow dispatch so mid-flow reactions don't retrigger menus.
+    // WHY profile-photo is here: omitting it caused images uploaded at the
+    // profile-photo step to be silently dropped — the flow went dead, the user
+    // typed "Hi" and got the main menu (provider onboarding silent-failure
+    // incident, LoveMojo / Lovemore application).
     if (reply.type === 'other') return
-    if ((reply.type === 'image' || reply.type === 'document') &&
-        !((conversation.flow === 'registration' && conversation.step === 'reg_collect_evidence') ||
-          (conversation.flow === 'job_request' && conversation.step === 'collect_photos'))) {
+    const isMediaAllowedStep =
+      (conversation.flow === 'registration' &&
+        (conversation.step === 'reg_collect_evidence' ||
+          conversation.step === 'reg_collect_profile_photo')) ||
+      (conversation.flow === 'job_request' && conversation.step === 'collect_photos')
+    if ((reply.type === 'image' || reply.type === 'document') && !isMediaAllowedStep) {
+      console.info('[whatsapp-bot] dropped media at non-media step', {
+        normalized_phone: phone,
+        whatsapp_message_id: message.id,
+        flow: conversation.flow,
+        step: conversation.step,
+        replyType: reply.type,
+        mediaIdSuffix: reply.mediaId?.slice(-8) ?? null,
+      })
       return
     }
 
@@ -722,6 +738,34 @@ async function processInboundMessageUnlocked(
       // Other flows — just return to main menu
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    // Active onboarding: never let a casual "hi"/"menu"/etc. silently wipe an
+    // in-progress provider application. Offer a resume prompt instead. Without
+    // this guard, a brief silence — e.g. while a media upload is being
+    // processed — followed by "Hi" would dump the user at the main menu and
+    // lose every step they had already filled in.
+    if (
+      isReset &&
+      !isExpired &&
+      conversation.flow === 'registration' &&
+      conversation.step !== 'welcome' &&
+      conversation.step !== 'reg_start' &&
+      !isStatelessReply &&
+      !isProviderMenuReply
+    ) {
+      await sendButtons(
+        phone,
+        "👋 You're still completing your provider application.\n\nContinue from where you left off?",
+        [
+          { id: 'reg_start', title: '▶️ Continue application' },
+          { id: 'session_restart', title: '🏠 Main Menu' },
+        ],
+      )
+      // Preserve the current step + accumulated data: do NOT call
+      // saveConversation. The user picks Continue (resumes) or Main Menu
+      // (which clears state via the existing session_restart handler).
       return
     }
 
