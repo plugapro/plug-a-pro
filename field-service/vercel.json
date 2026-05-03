@@ -7,6 +7,8 @@
     { "path": "/api/cron/match-leads", "schedule": "*/5 5-16 * * *" },
     { "path": "/api/cron/match-leads", "schedule": "*/30 17-23,0-4 * * *" },
     { "path": "/api/internal/cron/rebuild-candidate-pool", "schedule": "*/5 6-22 * * *" },
-    { "path": "/api/cron/session-timeout", "schedule": "*/20 5-20 * * *" }
+    { "path": "/api/cron/session-timeout", "schedule": "*/20 5-20 * * *" },
+    { "path": "/api/cron/provider-auto-approve", "schedule": "*/25 5-16 * * *" },
+    { "path": "/api/cron/provider-auto-approve", "schedule": "0,55 17-23,0-4 * * *" }
   ]
 }

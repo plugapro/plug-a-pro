@@ -87,7 +87,8 @@ export async function GET(request: Request) {
   }
 
   // 1d. Route pending provider applications for Ops review and queue them for
-  // the ops dashboard. Step 1e auto-approves complete applications immediately.
+  // the ops dashboard. Auto-approval runs on the dedicated
+  // /api/cron/provider-auto-approve schedule — not here.
   try {
     const routed = await routeProviderApplicationsForOpsReview(db, { actorId: 'cron:match-leads' })
     results.reviewRoutedApplications = routed.routed
