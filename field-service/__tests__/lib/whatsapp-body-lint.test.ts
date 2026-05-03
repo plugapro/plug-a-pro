@@ -50,7 +50,7 @@ describe('repo-wide WhatsApp body-text lint — no raw URLs in customer-facing c
           city: 'Johannesburg',
           province: 'Gauteng',
           urgency: 'soon',
-          budgetPreference: 'balanced_value',
+          matchingPreference: 'best_value',
           photosCount: 2,
           description: 'Shower drain is blocked.',
         })

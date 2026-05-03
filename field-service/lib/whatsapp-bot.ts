@@ -44,6 +44,7 @@ import {
   getWorkerPortalUrl,
   providerCreditBreakdownLabel,
 } from './provider-credit-copy'
+import { preferenceLabel } from './client-request-data'
 import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
 import {
   completeProviderJobFromWhatsApp,
@@ -1660,7 +1661,7 @@ export async function notifyProviderNewJob(params: {
     `Area: ${previewArea}`,
     preview?.area?.region ? `Region: ${preview.area.region}` : null,
     preview?.urgency ? `Urgency: ${preview.urgency}` : null,
-    preview?.budgetPreference ? `Budget: ${preview.budgetPreference}` : null,
+    (preview?.providerPreference ?? preview?.budgetPreference) ? `Matching preference: ${preferenceLabel(preview?.providerPreference ?? preview?.budgetPreference)}` : null,
     preview?.requestedWindowStart
       ? `Preferred time: ${preview.requestedWindowStart.toLocaleString('en-ZA')}`
       : preview?.requestedArrivalLatest

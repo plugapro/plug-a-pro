@@ -100,7 +100,7 @@ export async function dispatchMatchLead(params: {
     description: jobRequest.description,
     subcategory: jobRequest.subcategory,
     urgency: jobRequest.urgency,
-    budgetPreference: jobRequest.budgetPreference,
+    matchingPreference: jobRequest.providerPreference ?? jobRequest.budgetPreference,
   })
   const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
   const msgMeta = {

@@ -1,3 +1,5 @@
+import { preferenceLabel } from './client-request-data'
+
 export const PROVIDER_TERMS_PATH = '/provider/terms/credits'
 export const PROVIDER_APPLY_BUTTON_TITLE = 'Yes, Apply Now'
 export const PROVIDER_NOT_NOW_BUTTON_TITLE = 'Not Now'
@@ -316,7 +318,9 @@ export function buildProviderLeadPreviewMessage(params: {
   city?: string | null
   province?: string | null
   urgency?: string | null
-  budgetPreference?: string | null
+  // Accepts the stored providerPreference (MVP: save_money | best_value | best_quality) or the
+  // legacy budgetPreference field. Rendered via preferenceLabel() — never as a raw enum value.
+  matchingPreference?: string | null
   photosCount?: number | null
 }) {
   const titleLine = params.title ? [`*${params.title}*`, ''] : []
@@ -329,7 +333,9 @@ export function buildProviderLeadPreviewMessage(params: {
   const subcategoryLine = params.subcategory ? [`Subcategory: *${params.subcategory}*`] : []
   const regionLine = params.region ? [`Region: *${params.region}*`] : []
   const urgencyLine = params.urgency ? [`Urgency: *${params.urgency}*`] : []
-  const budgetLine = params.budgetPreference ? [`Budget preference: *${params.budgetPreference}*`] : []
+  const budgetLine = params.matchingPreference
+    ? [`Matching preference: *${preferenceLabel(params.matchingPreference)}*`]
+    : []
   const photosLine = params.photosCount != null ? [`Photos: *${params.photosCount} available*`] : []
 
   return [

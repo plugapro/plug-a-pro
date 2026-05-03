@@ -199,7 +199,7 @@ describe('provider credit copy', () => {
       province: 'Gauteng',
       region: 'JHB South',
       urgency: 'soon',
-      budgetPreference: 'balanced_value',
+      matchingPreference: 'best_value',
       photosCount: 2,
       preferredTime: 'Fri, 1 May, 10:00',
       deadlineTime: '12:00',
@@ -218,7 +218,7 @@ describe('provider credit copy', () => {
     expect(message).toContain('Area: *Soweto, Johannesburg, Gauteng*')
     expect(message).toContain('Region: *JHB South*')
     expect(message).toContain('Urgency: *soon*')
-    expect(message).toContain('Budget preference: *balanced_value*')
+    expect(message).toContain('Matching preference: *Best value*')
     expect(message).toContain('Photos: *2 available*')
     expect(message).toContain('Shower drain is blocked.')
     expect(message).toContain('Previewing and responding is free')
