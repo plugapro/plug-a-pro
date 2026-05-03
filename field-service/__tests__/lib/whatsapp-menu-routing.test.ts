@@ -9,6 +9,11 @@ vi.mock('@/lib/db', () => ({
     provider: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
+      // After the duplicate-record trap fix in lib/whatsapp-identity.ts
+      // (Phase 4 follow-up), the resolver calls findMany. Each test that
+      // sets findFirst on a provider-bearing scenario also mirrors that
+      // mock onto findMany via setupProviderRow() below.
+      findMany: vi.fn(),
     },
     providerApplication: {
       findFirst: vi.fn(),
@@ -113,10 +118,21 @@ function listRows() {
   return vi.mocked(wa.sendList).mock.calls[0]?.[2]?.flatMap((section: any) => section.rows) ?? []
 }
 
+// Helper: mirror the same row onto BOTH findFirst AND findMany so existing
+// tests written before the Phase 4 follow-up duplicate-trap fix keep working.
+// The whatsapp-identity resolver now reads via findMany; some other helpers
+// (e.g. menu routing) still use findFirst directly.
+function setupProviderRow(row: Record<string, unknown> | null) {
+  vi.mocked(db.provider.findFirst).mockResolvedValue(row as never)
+  vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue(
+    (row ? [row] : []) as never,
+  )
+}
+
 describe('role-aware WhatsApp main menu routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(db.provider.findFirst).mockResolvedValue(null)
+    setupProviderRow(null)
     vi.mocked(db.providerApplication.findFirst).mockResolvedValue(null)
     vi.mocked(db.job.count).mockResolvedValue(0)
     vi.mocked(db.customer.findFirst).mockResolvedValue(null)
@@ -207,6 +223,19 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: ['plumbing'],
       serviceAreas: ['Bromhof'],
     } as any)
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+      id: 'prv_1',
+      name: 'Jacob Hesser',
+      phone: PHONE,
+      status: 'ACTIVE',
+      active: true,
+      verified: true,
+      availableNow: true,
+      suspendedUntil: null,
+      suspendedReason: null,
+      skills: ['plumbing'],
+      serviceAreas: ['Bromhof'],
+    }] as never)
 
     await showMainMenu(PHONE)
 
@@ -240,6 +269,19 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: [],
       serviceAreas: [],
     } as any)
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+      id: 'prv_1',
+      name: 'Jacob Hesser',
+      phone: PHONE,
+      status: 'ACTIVE',
+      active: true,
+      verified: true,
+      availableNow: true,
+      suspendedUntil: null,
+      suspendedReason: null,
+      skills: [],
+      serviceAreas: [],
+    }] as never)
     vi.mocked(db.job.count).mockResolvedValue(2)
 
     await showMainMenu(PHONE)
@@ -261,6 +303,19 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: [],
       serviceAreas: [],
     } as any)
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+      id: 'prv_1',
+      name: 'Jacob Hesser',
+      phone: PHONE,
+      status: 'SUSPENDED',
+      active: false,
+      verified: true,
+      availableNow: false,
+      suspendedUntil: null,
+      suspendedReason: 'Manual review',
+      skills: [],
+      serviceAreas: [],
+    }] as never)
 
     await showMainMenu(PHONE)
 
@@ -281,7 +336,10 @@ describe('role-aware WhatsApp main menu routing', () => {
   it('normalizes SA phone numbers before provider lookup', async () => {
     await showMainMenu('0821234567')
 
-    expect(db.provider.findFirst).toHaveBeenCalledWith(
+    // Phase 4 follow-up: the identity resolver now uses findMany (with
+    // ordering + post-filter) to avoid the duplicate-record trap. Assert
+    // on the new surface; behaviour around phone normalization is unchanged.
+    expect((db.provider as unknown as { findMany: typeof vi.fn }).findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           phone: { in: expect.arrayContaining(['+27821234567', '27821234567', '0821234567']) },
@@ -299,6 +357,14 @@ describe('role-aware WhatsApp main menu routing', () => {
       active: true,
       availableNow: true,
     } as any)
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+      id: 'prv_1',
+      name: 'Jacob Hesser',
+      phone: PHONE,
+      status: 'ACTIVE',
+      active: true,
+      availableNow: true,
+    }] as never)
 
     const result = await handleRegistrationFlow({
       phone: PHONE,
@@ -356,6 +422,19 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: [],
       serviceAreas: [],
     } as any)
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+      id: 'prv_1',
+      name: 'Jacob Hesser',
+      phone: PHONE,
+      status: 'ACTIVE',
+      active: true,
+      verified: true,
+      availableNow: true,
+      suspendedUntil: null,
+      suspendedReason: null,
+      skills: [],
+      serviceAreas: [],
+    }] as never)
 
     await processInboundMessage({
       id: 'wamid-book',

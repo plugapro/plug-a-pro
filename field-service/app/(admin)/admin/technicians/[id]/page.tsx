@@ -10,6 +10,7 @@ import { crudAction } from '@/lib/crud-action'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
+import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -192,12 +193,20 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     take: 20,
   })
 
-  // Fetch evidence attachments from the latest provider application
+  // Fetch evidence attachments from the latest provider application + the
+  // fields the onboarding-completeness validator needs (Phase 4 follow-up).
   const latestApplication = await db.providerApplication.findFirst({
     where: { phone: provider.phone },
     orderBy: { submittedAt: 'desc' },
     select: {
       evidenceFileUrls: true,
+      evidenceNote: true,
+      callOutFee: true,
+      hourlyRate: true,
+      rateNegotiable: true,
+      experience: true,
+      availability: true,
+      idNumber: true,
       attachments: {
         where: { label: 'evidence' },
         select: { id: true, mimeType: true, createdAt: true },
@@ -206,6 +215,26 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     },
   })
   const evidenceAttachments = latestApplication?.attachments ?? []
+
+  // Build a ProviderProfileLike for the completeness validator. Provider holds
+  // identity / availability / KYC; the latest application holds rates +
+  // ID/passport (POPIA-protected, not duplicated onto Provider).
+  const completeness = evaluateProviderProfileCompleteness({
+    name: provider.name,
+    phone: provider.phone,
+    email: provider.email,
+    skills: provider.skills,
+    serviceAreas: provider.serviceAreas,
+    experience: latestApplication?.experience ?? provider.experience,
+    availability: latestApplication?.availability ?? null,
+    callOutFee: latestApplication?.callOutFee ? Number(latestApplication.callOutFee) : null,
+    hourlyRate: latestApplication?.hourlyRate ? Number(latestApplication.hourlyRate) : null,
+    rateNegotiable: latestApplication?.rateNegotiable ?? null,
+    evidenceFileCount: latestApplication?.evidenceFileUrls?.length ?? 0,
+    evidenceNote: latestApplication?.evidenceNote ?? null,
+    idNumber: latestApplication?.idNumber ?? null,
+    avatarUrl: provider.avatarUrl,
+  })
 
   // Stats
   const totalJobs = provider._count.jobs
@@ -337,6 +366,63 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             <p className="mt-1 text-amber-800">{provider.suspendedReason}</p>
           )}
         </div>
+      )}
+
+      {/* ── Profile completeness panel (Phase 4 follow-up Task 3) ──────────── */}
+      {!completeness.ok && (
+        <Card className={
+          completeness.canApprove
+            ? completeness.canShowToCustomers
+              ? 'border-slate-200'
+              : 'border-amber-200 bg-amber-50/40'
+            : 'border-rose-200 bg-rose-50/40'
+        }>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              {completeness.canApprove ? (
+                completeness.canShowToCustomers ? (
+                  <span className="text-slate-700">📋 Profile completeness — recommended fields missing</span>
+                ) : (
+                  <span className="text-amber-800">⚠️ Profile completeness — customer-display gaps</span>
+                )
+              ) : (
+                <span className="text-rose-800">⛔ Profile completeness — approval blockers</span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className="space-y-1.5 text-sm">
+              {completeness.missing.map((entry) => (
+                <li key={entry.field} className="flex items-start gap-2">
+                  <Badge
+                    variant="outline"
+                    className={
+                      entry.severity === 'block_submit' || entry.severity === 'block_approve'
+                        ? 'border-rose-300 bg-rose-100 text-rose-800'
+                        : entry.severity === 'block_customer_display'
+                        ? 'border-amber-300 bg-amber-100 text-amber-800'
+                        : 'border-slate-300 bg-slate-100 text-slate-700'
+                    }
+                  >
+                    {entry.severity === 'block_submit' ? 'BLOCKS SUBMIT'
+                      : entry.severity === 'block_approve' ? 'BLOCKS APPROVAL'
+                      : entry.severity === 'block_customer_display' ? 'HIDES FROM CUSTOMERS'
+                      : 'RECOMMENDED'}
+                  </Badge>
+                  <div className="flex-1">
+                    <span className="font-medium text-slate-900">{entry.field}</span>
+                    <span className="text-slate-600"> — {entry.reason}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-slate-500">
+              {completeness.canApprove
+                ? 'Approval is permitted but the customer shortlist card will be incomplete until these fields are filled. Source of truth: lib/provider-onboarding-completeness.ts'
+                : 'Required fields must be filled before this provider can be approved.'}
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* ── Flag banner ──────────────────────────────────────────────────────── */}
