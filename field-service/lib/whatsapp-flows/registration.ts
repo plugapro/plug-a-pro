@@ -291,6 +291,8 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectRegion(ctx)
     case 'reg_collect_region_more':
       return handleCollectRegionMore(ctx)
+    case 'reg_collect_profile_photo':
+      return handleCollectProfilePhoto(ctx)
     case 'reg_collect_suburb_select':
       return handleCollectSuburbSelect(ctx)
     case 'reg_collect_suburb_text':
@@ -1251,22 +1253,24 @@ async function handleCollectRates(ctx: FlowContext): Promise<FlowResult> {
     const rateNegotiable = ctx.reply.id === 'rate_negotiable_yes'
     const callOutFee = Number(ctx.data.callOutFee ?? 0)
 
+    // Phase 4b: prompt for the optional profile photo BEFORE evidence/work
+    // notes. Customers see profile photos on shortlist cards, so this is a
+    // high-impact addition. Skip is always allowed.
     await sendButtons(
       ctx.phone,
       [
-        '🧾 Would you like to add an optional work note?',
+        '📸 Add an optional *profile photo* — customers are more likely to choose providers with a clear photo.',
         '',
         `Call-out fee saved: *${formatRandAmountForProviderOnboarding(callOutFee)}*`,
         `Rate negotiable: *${rateNegotiable ? 'Yes' : 'No'}*`,
         '',
-        'Examples: past jobs, references, or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
+        'Send one photo of yourself, or tap *Skip* to continue without one. You can add it later from the Worker Portal.',
       ].join('\n'),
       [
-        { id: 'evidence_add', title: '✍️ Add proof note' },
-        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+        { id: 'profile_photo_skip', title: '⏭️ Skip' },
       ]
     )
-    return { nextStep: 'reg_collect_evidence', nextData: { callOutFee, rateNegotiable } }
+    return { nextStep: 'reg_collect_profile_photo', nextData: { callOutFee, rateNegotiable } }
   }
 
   try {
@@ -1327,7 +1331,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1335,6 +1339,98 @@ async function showRegistrationSummary(
     ]
   )
   return { nextStep: 'reg_pending', nextData: overrides }
+}
+
+// Phase 4b: optional profile photo step. Provider may upload one image or
+// type "skip" / tap the Skip button. Persisted as Attachment with the
+// `provider_profile_photo` label. Linked to ProviderApplication on submit
+// (the existing evidence backfill handles attachmentId linkage). Customer
+// shortlist cards consume this via the existing avatar resolver once
+// approval copies it onto Provider.avatarUrl.
+async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> {
+  // Skip path — explicit button or text fallback.
+  if (
+    ctx.reply.id === 'profile_photo_skip' ||
+    ctx.reply.text?.trim().toLowerCase() === 'skip'
+  ) {
+    await sendText(
+      ctx.phone,
+      'No photo for now. You can add one later from the Worker Portal. Continuing to the next step…'
+    )
+    return promptEvidenceAfterPhoto(ctx, { profilePhotoSkipped: true })
+  }
+
+  // Image upload — replace any prior photo. Single image only; if a previous
+  // attachment exists for this provider's photo we accept the new one.
+  if (ctx.reply.type === 'image') {
+    if (!ctx.reply.mediaId) {
+      await sendText(ctx.phone, "⚠️ Couldn't read that photo. Please try again or tap *Skip*.")
+      return { nextStep: 'reg_collect_profile_photo' }
+    }
+    if (ctx.data.profilePhotoMediaId === ctx.reply.mediaId) {
+      // Same media re-delivered — idempotent.
+      return promptEvidenceAfterPhoto(ctx, {})
+    }
+    try {
+      const { PROVIDER_PROFILE_PHOTO_LABEL } = await import('../provider-attachment-labels')
+      const { attachmentId } = await downloadAndStoreWhatsAppMedia({
+        mediaId: ctx.reply.mediaId,
+        prefix: 'profile_photo',
+        label: PROVIDER_PROFILE_PHOTO_LABEL,
+      })
+      console.info('[registration:handleCollectProfilePhoto] profile photo saved', {
+        phone: ctx.phone,
+        mediaIdSuffix: ctx.reply.mediaId.slice(-8),
+        attachmentId,
+      })
+      await sendText(ctx.phone, '✅ Profile photo saved. Continuing to the next step…')
+      return promptEvidenceAfterPhoto(ctx, {
+        profilePhotoAttachmentId: attachmentId,
+        profilePhotoMediaId: ctx.reply.mediaId,
+        profilePhotoSkipped: false,
+      })
+    } catch (err) {
+      console.error(
+        `[registration:handleCollectProfilePhoto] media upload failed — mediaId=${ctx.reply.mediaId}:`,
+        err,
+      )
+      await sendText(
+        ctx.phone,
+        "⚠️ Couldn't upload that photo. Please try again or tap *Skip* to continue without one.",
+      )
+      return { nextStep: 'reg_collect_profile_photo' }
+    }
+  }
+
+  // Anything else (free text other than skip, document upload, button reply
+  // we don't handle) — re-prompt.
+  await sendText(
+    ctx.phone,
+    'Send one *photo* of yourself, or tap *Skip* (or type *skip*) to continue without a profile photo.',
+  )
+  return { nextStep: 'reg_collect_profile_photo' }
+}
+
+// After the profile photo step (upload OR skip), prompt for the optional
+// evidence/proof note. Centralised so the photo handler never re-creates the
+// evidence prompt by hand.
+async function promptEvidenceAfterPhoto(
+  ctx: FlowContext,
+  nextData: Partial<typeof ctx.data>,
+): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    [
+      '🧾 Would you like to add an optional work note?',
+      '',
+      'Examples: past jobs, references, or types of repairs you have done. This stays provider-supplied unless Plug A Pro says a specific item was reviewed.',
+    ].join('\n'),
+    [
+      { id: 'evidence_add', title: '✍️ Add proof note' },
+      { id: 'evidence_skip', title: '⏭️ Skip for now' },
+    ],
+  )
+  return { nextStep: 'reg_collect_evidence', nextData }
 }
 
 async function handleConfirm(ctx: FlowContext): Promise<FlowResult> {
@@ -1537,6 +1633,38 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
               linkedFiles: linked.count,
             },
           )
+        }
+      }
+
+      // Phase 4b: link the optional profile photo Attachment to the
+      // ProviderApplication, then copy its URL onto Provider.avatarUrl so
+      // the customer-facing shortlist card has a photo to render
+      // immediately. Failures here are non-fatal — the application still
+      // goes through; the photo can be re-attached from admin tooling.
+      const profilePhotoAttachmentId = ctx.data.profilePhotoAttachmentId
+      if (profilePhotoAttachmentId) {
+        try {
+          await tx.attachment.updateMany({
+            where: { id: profilePhotoAttachmentId, providerApplicationId: null },
+            data: { providerApplicationId: application.id },
+          })
+          const photoRow = await tx.attachment.findUnique({
+            where: { id: profilePhotoAttachmentId },
+            select: { url: true },
+          })
+          if (photoRow?.url) {
+            await tx.provider.updateMany({
+              where: { id: providerId },
+              data: { avatarUrl: photoRow.url },
+            })
+          }
+        } catch (err) {
+          console.warn('[registration-flow] profile photo link/avatar update failed (non-fatal)', {
+            trace_id: traceId,
+            providerApplicationId: application.id,
+            profilePhotoAttachmentId,
+            error: safeErrorMessage(err),
+          })
         }
       }
 

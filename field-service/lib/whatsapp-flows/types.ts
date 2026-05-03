@@ -57,6 +57,7 @@ export type FlowStep =
   | 'reg_collect_region_more'    // select additional regions
   | 'reg_collect_suburb_select'  // numbered multi-select of suburbs within chosen region
   | 'reg_collect_suburb_text'    // free-text suburb fallback when location_nodes has no data
+  | 'reg_collect_profile_photo'  // optional profile photo upload (Phase 4b)
   | 'reg_collect_evidence'
   | 'reg_confirm'
   | 'reg_pending'
@@ -172,6 +173,9 @@ export interface ConversationData {
   evidenceNote?: string
   evidenceFileUrls?: string[]       // Attachment IDs for uploaded proof images/documents
   evidenceMediaIds?: string[]       // WhatsApp media IDs already processed for evidence dedupe
+  profilePhotoAttachmentId?: string // Attachment ID for the optional profile photo
+  profilePhotoMediaId?: string      // WhatsApp media ID for profile photo dedupe
+  profilePhotoSkipped?: boolean     // true if provider explicitly skipped the photo step
 
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider

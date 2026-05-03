@@ -30,7 +30,7 @@ CLAUDE.md house rules).
 | `evidenceNote` | ProviderApplication | optional | no | no | yes | `reg_collect_evidence` | OK |
 | `verified` | Provider | system-set | yes | yes (verification badge) | no (set by admin on approval) | — | OK |
 | `kycStatus` | Provider | system-set | yes | indirect | no (set by admin) | — | OK |
-| `avatarUrl` (profile photo) | Provider | recommended | no | yes | **NO — gap** | — | **Phase 4b**: add `reg_collect_profile_photo` step + Attachment with `label: 'profile_photo'` + on-approval copy to `Provider.avatarUrl`. Schema unchanged (existing fields suffice). |
+| `avatarUrl` (profile photo) | Provider | recommended | no | yes | **YES (Phase 4b)** | `reg_collect_profile_photo` (between `reg_collect_rates` and `reg_collect_evidence`) | OK after Phase 4b. Persisted as Attachment with `label: 'provider_profile_photo'`, linked to ProviderApplication on submit, URL copied to `Provider.avatarUrl` in the same transaction so customer shortlist cards show it immediately. Skip is always allowed. |
 | `bio` | Provider | optional | no | yes | no | — | Future enhancement (4b) |
 | `averageRating`, `completedJobsCount`, `reliabilityScore` | Provider | system-derived | yes | yes (when present) | no | — | OK — derived from job activity |
 
@@ -42,12 +42,13 @@ CLAUDE.md house rules).
 - The `callOutFee` field is the canonical "labour rate excluding materials"
   per Phase 4. The WhatsApp prompt copy was updated in Phase 4 to make this
   explicit ("call-out fee for labour (excluding materials)").
-- `avatarUrl` (profile photo) is the only customer-display field NOT
-  collected during onboarding. It's marked as `recommended` in the
-  completeness validator so it doesn't block submission/approval, but a
-  follow-up commit (Phase 4b) will add a dedicated `reg_collect_profile_photo`
-  step persisting via `Attachment(label: 'profile_photo')` and copying the
-  resulting URL to `Provider.avatarUrl` on approval.
+- `avatarUrl` (profile photo) is now collected via the optional
+  `reg_collect_profile_photo` step (Phase 4b). It's persisted as an
+  `Attachment` with `label: 'provider_profile_photo'`, linked to the
+  ProviderApplication on submit, and copied onto `Provider.avatarUrl`
+  in the same transaction so the customer shortlist card has a photo
+  immediately. The completeness validator keeps `avatarUrl` at the
+  `recommended` severity (not blocking) because the step is skippable.
 - All other fields either default safely, are derived from platform
   activity, or are admin-set on approval/review.
 
@@ -73,9 +74,12 @@ Severity ladder (most strict first):
 3. `block_customer_display` — admin can approve but customer shortlist excludes them (callOutFee, experience)
 4. `recommended` — soft (avatarUrl)
 
-## Phase 4b follow-ups
+## Phase 4b status
 
-1. Add `reg_collect_profile_photo` step before `reg_collect_evidence`. Single-image upload, debounced via `lib/whatsapp-media-batch.ts`. Persist as `Attachment(label: 'profile_photo')` linked to ProviderApplication, then copy to `Provider.avatarUrl` on approval.
-2. Optional second rate field for hourly billing if Plug A Pro decides to expose hourly rates separately on the customer card.
-3. Consider whether `bio` should be collected during onboarding for richer customer-card content.
-4. Surface the completeness validator output on the admin review screen so reviewers see exactly what's missing before approving.
+1. ✅ `reg_collect_profile_photo` step shipped between `reg_collect_rates` and `reg_collect_evidence`. Single-image upload, persisted as `Attachment(label: 'provider_profile_photo')`, linked to ProviderApplication on submit, URL copied onto `Provider.avatarUrl` in the same transaction so the customer shortlist card displays it immediately. Skip is always allowed (button + free-text fallback).
+
+## Future enhancements (not yet scheduled)
+
+1. Optional second rate field for hourly billing if Plug A Pro decides to expose hourly rates separately on the customer card.
+2. Consider whether `bio` should be collected during onboarding for richer customer-card content.
+3. Surface the completeness validator output on the admin review screen so reviewers see exactly what's missing before approving.
