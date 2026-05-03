@@ -274,7 +274,7 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
     case 'reg_collect_name':
       return handleCollectName(ctx)
     case 'reg_collect_email':
-      return handleCollectEmail(ctx)
+      return handleMigratedEmailStep(ctx)
     case 'reg_collect_id':
       return handleCollectId(ctx)
     case 'reg_collect_skills':
@@ -438,32 +438,25 @@ async function handleCollectSkills(ctx: FlowContext): Promise<FlowResult> {
 
   await sendText(
     ctx.phone,
-    '✉️ What is your email address?\n\nReply with your email, or type *skip* if you do not want to add one now.'
+    '🪪 Please send your *ID or passport number* for application review.\n\nWe use this for provider vetting and do not share it with customers.'
   )
-  return { nextStep: 'reg_collect_email', nextData: { name } }
+  return { nextStep: 'reg_collect_id', nextData: { name } }
 }
 
-function validateOptionalProviderEmail(raw: string | undefined) {
-  const value = raw?.trim()
-  if (!value || /^skip$/i.test(value)) return null
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return undefined
-  return value.toLowerCase()
-}
-
-async function handleCollectEmail(ctx: FlowContext): Promise<FlowResult> {
-  const providerEmail = validateOptionalProviderEmail(ctx.reply.text)
-  if (providerEmail === undefined) {
-    await sendText(ctx.phone, 'Please reply with a valid email address, for example *name@example.com*, or type *skip*.')
-    return { nextStep: 'reg_collect_email' }
-  }
-
+// Handles providers whose conversation is still on 'reg_collect_email' from before
+// the email step was removed from the onboarding flow. Whatever they reply, we
+// accept it and advance to the ID step. A well-formed email is saved as optional
+// profile enrichment; any other reply (including "skip") continues without capturing.
+async function handleMigratedEmailStep(ctx: FlowContext): Promise<FlowResult> {
+  const raw = ctx.reply.text?.trim() ?? ''
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)
   await sendText(
     ctx.phone,
     '🪪 Please send your *ID or passport number* for application review.\n\nWe use this for provider vetting and do not share it with customers.'
   )
   return {
     nextStep: 'reg_collect_id',
-    nextData: providerEmail ? { providerEmail } : {},
+    nextData: isValidEmail ? { providerEmail: raw.toLowerCase() } : {},
   }
 }
 
@@ -1326,7 +1319,6 @@ async function showRegistrationSummary(
     evidenceFileUrls,
     callOutFee,
     rateNegotiable,
-    providerEmail,
     providerIdNumber,
   } = merged
   const skillList = (skills ?? []).join(', ')
@@ -1338,7 +1330,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },

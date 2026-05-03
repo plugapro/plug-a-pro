@@ -249,7 +249,6 @@ describe('registration flow — duplicate prevention', () => {
   describe('handlePending (reg_pending step) — submit_yes', () => {
     const dataWithFullProfile = {
       name: 'Thabo Nkosi',
-      providerEmail: 'thabo@example.com',
       providerIdNumber: '8001015009087',
       skills: ['Plumbing'],
       serviceAreas: ['Gauteng'],
@@ -431,7 +430,7 @@ describe('registration flow — duplicate prevention', () => {
 
       expect(providerRecord.syncProviderRecord).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ phone, email: 'thabo@example.com' }),  // +27 format preserved
+        expect.objectContaining({ phone, email: null }),  // email not collected during onboarding
       )
       expect(db.providerApplication.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -474,15 +473,16 @@ describe('registration flow — numbered bulk skill selection', () => {
     resetDbMocks()
   })
 
-  it('captures optional email after name is collected', async () => {
+  it('advances directly to ID step after name — email step no longer prompted', async () => {
     const result = await handleRegistrationFlow(makeCtx('reg_collect_skills', undefined, 'Thabo Nkosi'))
 
-    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('email address'))
-    expect(result.nextStep).toBe('reg_collect_email')
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('ID or passport'))
+    expect(wa.sendText).not.toHaveBeenCalledWith(phone, expect.stringContaining('email address'))
+    expect(result.nextStep).toBe('reg_collect_id')
     expect(result.nextData).toMatchObject({ name: 'Thabo Nkosi' })
   })
 
-  it('captures ID/passport after a valid email', async () => {
+  it('reg_collect_email migration: valid email is saved as optional enrichment and flow advances to ID step', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_email', undefined, 'thabo@example.com', { name: 'Thabo Nkosi' })
     )
@@ -492,9 +492,29 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextData).toMatchObject({ providerEmail: 'thabo@example.com' })
   })
 
+  it('reg_collect_email migration: "skip" advances to ID step without saving email', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_email', undefined, 'skip', { name: 'Thabo Nkosi' })
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('ID or passport'))
+    expect(result.nextStep).toBe('reg_collect_id')
+    expect(result.nextData?.providerEmail).toBeUndefined()
+  })
+
+  it('reg_collect_email migration: any non-email reply advances without capturing email', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_email', undefined, 'not an email', { name: 'Thabo Nkosi' })
+    )
+
+    expect(wa.sendText).toHaveBeenCalledWith(phone, expect.stringContaining('ID or passport'))
+    expect(result.nextStep).toBe('reg_collect_id')
+    expect(result.nextData?.providerEmail).toBeUndefined()
+  })
+
   it('shows a numbered text list of skills after ID/passport is collected', async () => {
     const result = await handleRegistrationFlow(
-      makeCtx('reg_collect_id', undefined, '8001015009087', { name: 'Thabo Nkosi', providerEmail: 'thabo@example.com' })
+      makeCtx('reg_collect_id', undefined, '8001015009087', { name: 'Thabo Nkosi' })
     )
 
     expect(wa.sendList).not.toHaveBeenCalled()

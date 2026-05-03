@@ -44,7 +44,7 @@ export type FlowStep =
   // Registration (provider onboarding)
   | 'reg_start'           // shows intro + yes/no — entry point
   | 'reg_collect_name'
-  | 'reg_collect_email'
+  | 'reg_collect_email'  // legacy: step removed from active flow; retained for in-progress conversation migration
   | 'reg_collect_id'
   | 'reg_collect_skills'
   | 'reg_collect_skills_more'
