@@ -20,6 +20,7 @@
 // The seq lives in Conversation.data.mediaBatchSeq_<scope> so no schema
 // migration is required.
 
+import { Prisma } from '@prisma/client'
 import { db } from './db'
 
 export type MediaBatchScope = 'provider_evidence' | 'customer_photo'
@@ -64,9 +65,12 @@ export async function claimMediaBatchSeq(
       const current = typeof data[key] === 'number' ? (data[key] as number) : 0
       const next = current + 1
       if (row) {
+        // The merged payload widens to `Record<string, unknown>`; assert as
+        // `Prisma.InputJsonValue` so Prisma accepts it on the JSON column.
+        const nextData = { ...data, [key]: next } as Prisma.InputJsonValue
         await tx.conversation.update({
           where: { phone },
-          data: { data: { ...data, [key]: next } },
+          data: { data: nextData },
         })
       }
       return next
