@@ -12,6 +12,10 @@ describe('legacy /technician-* auth pages', () => {
     join(process.cwd(), 'app/(auth)/technician-verify/page.tsx'),
     'utf8',
   )
+  const providerVerify = readFileSync(
+    join(process.cwd(), 'app/(auth)/provider-verify/page.tsx'),
+    'utf8',
+  )
 
   it('technician-sign-in is a server-side redirect to /provider-sign-in', () => {
     expect(signIn).toContain("from 'next/navigation'")
@@ -26,6 +30,17 @@ describe('legacy /technician-* auth pages', () => {
     expect(verify).not.toContain("'use client'")
     expect(verify).not.toContain('verifyOtp')
     expect(verify).not.toContain("hasn't been approved yet")
+  })
+
+  it('/provider-verify is a live client-side OTP form — not a redirect shell', () => {
+    // Must be a real interactive page, not accidentally converted back to a server redirect.
+    expect(providerVerify).toContain("'use client'")
+    // Must not borrow the redirect helper used by the legacy shim pages.
+    expect(providerVerify).not.toContain('buildLegacyAuthRedirectPath')
+    // Must not call Supabase client-side auth directly (uses custom /api/auth/provider/* routes).
+    expect(providerVerify).not.toContain('signInWithOtp')
+    // Must not reference the legacy route being redirected away from.
+    expect(providerVerify).not.toContain('/technician-verify')
   })
 
   it('preserves legacy query parameters when redirecting to canonical provider auth', () => {
