@@ -130,6 +130,16 @@ async function approveApplication(formData: FormData) {
         console.error('[applications] Supabase user create failed:', authError)
       }
 
+      // Phase 4 follow-up Task 5 — atomicity invariant:
+      //   - syncProviderRecord(verified: true) flips Provider.status -> 'ACTIVE'
+      //     (lib/provider-record.ts:199 maps `verified: true` to status ACTIVE).
+      //   - The `tx.providerApplication.updateMany({ status: 'APPROVED' })` call
+      //     below runs in the same crudAction transaction.
+      // Both writes either commit together or roll back together, so a stale
+      // Provider.status = 'APPLICATION_PENDING' alongside an APPROVED
+      // application is structurally impossible. Existing coverage:
+      // __tests__/lib/provider-record.test.ts asserts the verified->ACTIVE
+      // mapping on every code path.
       const providerId = await syncProviderRecord(tx as typeof db, {
         userId: authData?.user?.id ?? null,
         phone: app.phone,

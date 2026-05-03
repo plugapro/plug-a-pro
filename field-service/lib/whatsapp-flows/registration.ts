@@ -1364,7 +1364,10 @@ async function handleCollectHourlyRate(ctx: FlowContext): Promise<FlowResult> {
   try {
     const rates = validateProviderOnboardingRates({ hourlyRateText: ctx.reply.text })
     if (rates.hourlyRate == null || rates.hourlyRate < 0) {
-      throw new ProviderOnboardingValidationError('INVALID_RATE', 'Hourly rate is required.')
+      // INVALID_FEE is the existing error code in the validation helper —
+      // reuse it so the catch handler below renders the same recovery copy
+      // as the call-out fee path.
+      throw new ProviderOnboardingValidationError('INVALID_FEE', 'Hourly rate is required.')
     }
     await sendText(
       ctx.phone,

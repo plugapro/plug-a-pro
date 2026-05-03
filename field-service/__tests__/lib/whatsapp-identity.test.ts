@@ -20,7 +20,7 @@ describe('WhatsApp identity resolution', () => {
     vi.clearAllMocks()
     vi.mocked(db.customer.findFirst).mockResolvedValue(null)
     vi.mocked(db.provider.findFirst).mockResolvedValue(null)
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([])
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([] as never)
     vi.mocked(db.providerApplication.findFirst).mockResolvedValue(null)
     vi.mocked(db.job.count).mockResolvedValue(0)
   })
@@ -50,7 +50,7 @@ describe('WhatsApp identity resolution', () => {
   })
 
   it('returns provider for an approved active provider number', async () => {
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
       {
         id: 'prv_1',
         phone: '+27821234567',
@@ -96,7 +96,7 @@ describe('WhatsApp identity resolution', () => {
   })
 
   it('returns provider_inactive for a suspended provider', async () => {
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
       {
         id: 'prv_suspended',
         phone: '+27821234567',
@@ -123,7 +123,7 @@ describe('WhatsApp identity resolution', () => {
       name: 'Dual Role',
       addresses: [],
     } as any)
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
       {
         id: 'prv_conflict',
         phone: '+27821234567',
@@ -153,7 +153,7 @@ describe('WhatsApp identity resolution', () => {
   // Post-fix: findMany ordered by updatedAt desc + post-filter prefers the
   // ACTIVE+verified row, so the active provider always wins.
   it('prefers ACTIVE+verified provider over a stale pending duplicate for the same phone', async () => {
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
       // updatedAt desc means the pending row arrives first if it was touched later.
       {
         id: 'prv_stale_pending',
@@ -186,7 +186,7 @@ describe('WhatsApp identity resolution', () => {
   })
 
   it('falls back to the most recent row of any status when no row is fully ACTIVE+verified', async () => {
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([
       {
         id: 'prv_under_review',
         phone: '+27821234567',

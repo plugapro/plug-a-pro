@@ -124,7 +124,7 @@ function listRows() {
 // (e.g. menu routing) still use findFirst directly.
 function setupProviderRow(row: Record<string, unknown> | null) {
   vi.mocked(db.provider.findFirst).mockResolvedValue(row as never)
-  vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue(
+  vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue(
     (row ? [row] : []) as never,
   )
 }
@@ -223,7 +223,7 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: ['plumbing'],
       serviceAreas: ['Bromhof'],
     } as any)
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
       id: 'prv_1',
       name: 'Jacob Hesser',
       phone: PHONE,
@@ -269,7 +269,7 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: [],
       serviceAreas: [],
     } as any)
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
       id: 'prv_1',
       name: 'Jacob Hesser',
       phone: PHONE,
@@ -303,7 +303,7 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: [],
       serviceAreas: [],
     } as any)
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
       id: 'prv_1',
       name: 'Jacob Hesser',
       phone: PHONE,
@@ -339,7 +339,7 @@ describe('role-aware WhatsApp main menu routing', () => {
     // Phase 4 follow-up: the identity resolver now uses findMany (with
     // ordering + post-filter) to avoid the duplicate-record trap. Assert
     // on the new surface; behaviour around phone normalization is unchanged.
-    expect((db.provider as { findMany: typeof vi.fn }).findMany).toHaveBeenCalledWith(
+    expect((db.provider as unknown as { findMany: typeof vi.fn }).findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           phone: { in: expect.arrayContaining(['+27821234567', '27821234567', '0821234567']) },
@@ -357,7 +357,7 @@ describe('role-aware WhatsApp main menu routing', () => {
       active: true,
       availableNow: true,
     } as any)
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
       id: 'prv_1',
       name: 'Jacob Hesser',
       phone: PHONE,
@@ -422,7 +422,7 @@ describe('role-aware WhatsApp main menu routing', () => {
       skills: [],
       serviceAreas: [],
     } as any)
-    vi.mocked((db.provider as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
       id: 'prv_1',
       name: 'Jacob Hesser',
       phone: PHONE,
