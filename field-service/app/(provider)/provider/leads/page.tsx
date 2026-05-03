@@ -2,11 +2,15 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { Inbox, MapPin, Clock3, ChevronRight } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
-import { formatDistanceToNow } from 'date-fns'
 import { getProviderLeadListForProvider } from '@/lib/provider-lead-list'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Badge } from '@/components/ui/badge'
 
 export const metadata = buildMetadata({ title: 'My Leads', noIndex: true })
 
@@ -19,8 +23,12 @@ export default async function ProviderLeadsPage() {
 
   if (!provider) {
     return (
-      <div className="px-4 py-8 text-center text-muted-foreground">
-        <p>Your provider account is not yet set up.</p>
+      <div className="px-4 py-10">
+        <EmptyState
+          icon={<Inbox className="size-5" />}
+          title="Your provider account isn’t set up yet"
+          description="Reach out to support to finish onboarding."
+        />
       </div>
     )
   }
@@ -28,23 +36,23 @@ export default async function ProviderLeadsPage() {
   const leads = await getProviderLeadListForProvider(provider.id)
 
   return (
-    <div className="px-4 py-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Leads</h1>
-        <p className="text-sm text-muted-foreground">
-          {leads.length === 0
-            ? 'No pending leads'
-            : `${leads.length} pending lead${leads.length === 1 ? '' : 's'} awaiting your response`}
-        </p>
-      </div>
+    <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
+      <PageHeader
+        eyebrow="Leads"
+        title="Open opportunities"
+        description={
+          leads.length === 0
+            ? 'You’re all caught up — we’ll WhatsApp you the moment a new lead arrives.'
+            : `${leads.length} ${leads.length === 1 ? 'lead' : 'leads'} waiting for your response.`
+        }
+      />
 
       {leads.length === 0 ? (
-        <div className="flex flex-col items-center py-12 text-center space-y-2">
-          <p className="text-muted-foreground">No new leads right now.</p>
-          <p className="text-sm text-muted-foreground">
-            You&apos;ll get a WhatsApp notification when a new lead arrives.
-          </p>
-        </div>
+        <EmptyState
+          icon={<Inbox className="size-5" />}
+          title="No new leads right now"
+          description="Stay available and keep credits topped up — leads land here as soon as customers raise jobs in your area."
+        />
       ) : (
         <div className="space-y-3">
           {leads.map((lead) => {
@@ -55,39 +63,63 @@ export default async function ProviderLeadsPage() {
                 : `Expires ${formatDistanceToNow(lead.expiresAt, { addSuffix: true })}`
               : null
 
+            const statusVariant: 'neutral' | 'info' | 'warning' = isExpired
+              ? 'neutral'
+              : lead.status === 'VIEWED'
+                ? 'info'
+                : 'warning'
+            const statusLabel = isExpired
+              ? 'Expired'
+              : lead.status === 'VIEWED'
+                ? 'Viewed'
+                : 'New'
+
             return (
               <Link
                 key={lead.id}
                 href={`/provider/leads/${lead.id}`}
-                className="block rounded-xl border bg-card p-4 space-y-2 hover:bg-accent/40 transition-colors"
+                className="group block rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)] transition-colors hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <p className="font-semibold text-foreground">{lead.category}</p>
-                    <p className="text-sm text-muted-foreground">{lead.area}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold capitalize text-foreground">
+                      {lead.category.replaceAll('_', ' ')}
+                    </p>
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <MapPin className="size-3.5" />
+                      {lead.area}
+                    </p>
                   </div>
-                  <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                    isExpired
-                      ? 'bg-muted text-muted-foreground'
-                      : lead.status === 'VIEWED'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {isExpired ? 'Expired' : lead.status === 'VIEWED' ? 'Viewed' : 'New'}
-                  </span>
+                  <Badge variant={statusVariant}>{statusLabel}</Badge>
                 </div>
 
-                {lead.shortDescription && (
-                  <p className="text-sm text-muted-foreground line-clamp-2">
+                {lead.shortDescription ? (
+                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
                     {lead.shortDescription}
                   </p>
-                )}
+                ) : null}
 
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Ref: {lead.id.slice(-8).toUpperCase()}</span>
-                  {timeLeft && (
-                    <span className={isExpired ? 'text-destructive' : ''}>{timeLeft}</span>
-                  )}
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/70 pt-3 text-xs">
+                  <span className="text-muted-foreground">
+                    Ref · {lead.id.slice(-8).toUpperCase()}
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 font-medium ${
+                      isExpired ? 'text-[var(--tone-danger-fg)]' : 'text-primary'
+                    }`}
+                  >
+                    {timeLeft ? (
+                      <>
+                        <Clock3 className="size-3.5" />
+                        {timeLeft}
+                      </>
+                    ) : (
+                      <>
+                        Open
+                        <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                      </>
+                    )}
+                  </span>
                 </div>
               </Link>
             )

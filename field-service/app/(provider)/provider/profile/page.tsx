@@ -396,7 +396,7 @@ export default async function ProviderProfilePage({
                       type="checkbox"
                       name={`day_${day}_active`}
                       defaultChecked={isActive}
-                      className="h-4 w-4 rounded border-gray-300 accent-primary"
+                      className="h-4 w-4 rounded border-input accent-primary"
                     />
                     <span className="text-sm">{label.slice(0, 3)}</span>
                   </label>

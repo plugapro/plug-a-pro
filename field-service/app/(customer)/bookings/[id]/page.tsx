@@ -16,6 +16,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { AlertCallout } from '@/components/shared/AlertCallout'
 
 export const metadata = buildMetadata({ title: 'Booking Details' })
 
@@ -301,36 +302,38 @@ export default async function BookingDetailPage({
 
       {/* Pending approval */}
       {currentJobStatus === 'AWAITING_APPROVAL' && booking.job?.extras[0] && (
-        <div className="rounded-xl border border-orange-300 bg-orange-50 dark:bg-orange-900/10 p-4 space-y-3">
-          <p className="font-medium text-orange-800 dark:text-orange-300">
-            Additional work needs your approval
-          </p>
-          <p className="text-sm">
-            {booking.job.extras[0].description} —{' '}
-            <span className="font-medium">R {Number(booking.job.extras[0].amount).toFixed(2)}</span>
-          </p>
-          <Button asChild className="bg-orange-600 hover:bg-orange-700 text-white">
-            <a href={`${appUrl}/approve/${booking.job.extras[0].approvalToken}`}>
-              Review &amp; approve
-            </a>
-          </Button>
-        </div>
+        <AlertCallout
+          tone="warning"
+          title="Additional work needs your approval"
+          action={
+            <Button asChild size="sm">
+              <a href={`${appUrl}/approve/${booking.job.extras[0].approvalToken}`}>
+                Review
+              </a>
+            </Button>
+          }
+        >
+          {booking.job.extras[0].description} —{' '}
+          <span className="font-semibold">
+            R {Number(booking.job.extras[0].amount).toFixed(2)}
+          </span>
+        </AlertCallout>
       )}
 
       {currentJobStatus === 'PENDING_COMPLETION_CONFIRMATION' && booking.job && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20 p-4 space-y-3">
-          <p className="font-medium text-emerald-800 dark:text-emerald-300">
-            Your provider has marked the work as complete
-          </p>
-          <p className="text-sm text-emerald-900/80 dark:text-emerald-100/80">
+        <AlertCallout
+          tone="success"
+          title="Your provider has marked the work as complete"
+        >
+          <p>
             Review the job photos and details above. If the work is complete, confirm it here so we can close the job and ask for your review.
           </p>
-          <form action={confirmCompletion}>
-            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+          <form action={confirmCompletion} className="mt-3">
+            <Button type="submit" className="w-full">
               Confirm completion
             </Button>
           </form>
-        </div>
+        </AlertCallout>
       )}
 
       {/* Job timeline */}
@@ -347,12 +350,12 @@ export default async function BookingDetailPage({
                 <div key={step.status} className="flex gap-3">
                   <div className="flex flex-col items-center">
                     <div className={`mt-1 h-4 w-4 rounded-full border-2 flex-shrink-0 ${
-                      isDone    ? 'border-green-500 bg-green-500'
+                      isDone    ? 'border-primary bg-primary'
                       : isCurrent ? 'border-foreground bg-foreground'
                       : 'border-muted-foreground/30 bg-transparent'
                     }`} />
                     {i < JOB_TIMELINE.length - 1 && (
-                      <div className={`w-0.5 flex-1 my-0.5 ${isDone ? 'bg-green-500' : 'bg-border'}`} />
+                      <div className={`w-0.5 flex-1 my-0.5 ${isDone ? 'bg-primary' : 'bg-border'}`} />
                     )}
                   </div>
                   <div className={`pb-4 ${isCurrent ? '' : isDone ? 'opacity-70' : 'opacity-30'}`}>

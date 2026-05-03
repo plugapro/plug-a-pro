@@ -38,7 +38,7 @@ export function AttachmentThumbnail({
       <div
         role="status"
         aria-label={fallbackText}
-        className="flex min-h-32 flex-col justify-center rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+        className="flex min-h-32 flex-col justify-center rounded-lg border tone-warning p-3 text-xs"
       >
         <p className="font-medium">{fallbackText}</p>
         {showDiagnostics && (

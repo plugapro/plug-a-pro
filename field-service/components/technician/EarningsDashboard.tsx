@@ -138,9 +138,9 @@ export function EarningsDashboard({ data }: { data: EarningsData }) {
                   <div className="flex items-center gap-3">
                     <span>{fmt(h.net)}</span>
                     <span
-                      className={`text-xs ${
+                      className={`text-xs font-medium ${
                         h.paid
-                          ? 'text-green-600 dark:text-green-400'
+                          ? 'text-[var(--tone-success-fg)]'
                           : 'text-muted-foreground'
                       }`}
                     >

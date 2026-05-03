@@ -9,6 +9,7 @@ import { buildMetadata } from '@/lib/metadata'
 import { QuoteForm } from '@/components/technician/QuoteForm'
 import { Button } from '@/components/ui/button'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { AlertCallout } from '@/components/shared/AlertCallout'
 
 export const metadata = buildMetadata({ title: 'Submit Quote', noIndex: true })
 
@@ -148,50 +149,38 @@ export default async function QuotePage({
       </div>
 
       {match.inspectionNeeded && match.status === 'INSPECTION_SCHEDULED' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm">
-          <p className="font-medium text-amber-900">Inspection still needs to be completed</p>
-          <p className="text-amber-800">
-            Mark the site visit complete before submitting the quote. This records the inspection step in the lifecycle.
-          </p>
-          <form action={markInspectionComplete}>
+        <AlertCallout tone="warning" title="Inspection still needs to be completed">
+          <p>Mark the site visit complete before submitting the quote. This records the inspection step in the lifecycle.</p>
+          <form action={markInspectionComplete} className="mt-3">
             <input type="hidden" name="matchId" value={matchId} />
             <Button type="submit" className="w-full">Mark inspection complete</Button>
           </form>
-        </div>
+        </AlertCallout>
       )}
 
       {quoteAwaitingDecision && latestQuote && (
-        <div className="rounded-xl border bg-muted/40 p-4 space-y-2 text-sm">
-          <p className="font-medium">Quote awaiting customer decision</p>
-          <p className="text-muted-foreground">
-            Your latest quote for R {Number(latestQuote.amount).toFixed(2)} has been sent to the customer.
-            Wait for them to accept or decline before sending another one.
-          </p>
-        </div>
+        <AlertCallout tone="neutral" title="Quote awaiting customer decision">
+          Your latest quote for R {Number(latestQuote.amount).toFixed(2)} has been sent to the customer.
+          Wait for them to accept or decline before sending another one.
+        </AlertCallout>
       )}
 
       {quoteCanBeRevised && latestQuote && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2 text-sm">
-          <p className="font-medium text-blue-900">Revise and resend your quote</p>
-          <p className="text-blue-800">
-            The previous quote was not accepted. Review the scope, update your pricing, and send a revised quote.
-          </p>
+        <AlertCallout tone="info" title="Revise and resend your quote">
+          <p>The previous quote was not accepted. Review the scope, update your pricing, and send a revised quote.</p>
           {latestQuote.notes && (
-            <div className="rounded-lg border border-blue-200 bg-white/80 px-3 py-2 text-blue-900">
-              <p className="text-xs font-semibold uppercase tracking-wide">Customer feedback</p>
+            <div className="mt-3 rounded-lg border border-current/20 bg-black/10 px-3 py-2 dark:bg-white/5">
+              <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Customer feedback</p>
               <p className="mt-1 text-sm">{latestQuote.notes}</p>
             </div>
           )}
-        </div>
+        </AlertCallout>
       )}
 
       {quoteApproved && (
-        <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-2 text-sm">
-          <p className="font-medium text-green-900">Quote already approved</p>
-          <p className="text-green-800">
-            This job has already moved past the quote stage. Open the provider dashboard to continue execution.
-          </p>
-        </div>
+        <AlertCallout tone="success" title="Quote already approved">
+          This job has already moved past the quote stage. Open the provider dashboard to continue execution.
+        </AlertCallout>
       )}
 
       {match.quotes.length > 0 && (

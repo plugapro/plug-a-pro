@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { AlertCallout } from '@/components/shared/AlertCallout'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { buildMetadata } from '@/lib/metadata'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import {
@@ -111,7 +113,13 @@ function ActivityRow({ item }: { item: ProviderWalletLedgerItem }) {
         </p>
       </div>
       <div className="shrink-0 text-right">
-        <p className={positive ? 'font-semibold text-emerald-700' : 'font-semibold text-foreground'}>
+        <p
+          className={
+            positive
+              ? 'font-semibold tabular-nums text-[var(--tone-success-fg)]'
+              : 'font-semibold tabular-nums text-foreground'
+          }
+        >
           {signedCredits(item.signedAmountCredits)}
         </p>
         <Badge variant="outline" className="mt-1">
@@ -141,17 +149,16 @@ export default async function ProviderCreditsPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-5 px-4 py-6 pb-24">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Plug-A-Pro Credits</h1>
-          <p className="text-sm text-muted-foreground">
-            Previewing and saying you are interested are free. 1 credit is used only when a customer selects you and you accept that selected job.
-          </p>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/provider">Jobs</Link>
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Wallet"
+        title="Plug-A-Pro Credits"
+        description="Previewing and saying you’re interested are free. 1 credit is used only when a customer selects you and you accept that selected job."
+        action={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/provider">Jobs</Link>
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -181,21 +188,15 @@ export default async function ProviderCreditsPage({
 
       {/* Payfast return-URL banners */}
       {topupParam === 'success' ? (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-          <p className="font-medium">Payment submitted</p>
-          <p className="mt-1 text-emerald-800">
-            Your credits will appear in your wallet once Payfast confirms the payment — this usually takes a few seconds.
-          </p>
-        </div>
+        <AlertCallout tone="success" title="Payment submitted">
+          Your credits will appear in your wallet once Payfast confirms the payment — this usually takes a few seconds.
+        </AlertCallout>
       ) : null}
 
       {topupParam === 'cancelled' ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <p className="font-medium">Payment not completed</p>
-          <p className="mt-1 text-amber-800">
-            Your wallet was not charged. Select a package below to try again.
-          </p>
-        </div>
+        <AlertCallout tone="warning" title="Payment not completed">
+          Your wallet was not charged. Select a package below to try again.
+        </AlertCallout>
       ) : null}
 
       {/* Manual EFT instructions (if a manual intent was just created) */}

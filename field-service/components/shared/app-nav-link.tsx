@@ -84,18 +84,25 @@ export function AppNavLink({
     <Link
       href={href}
       className={cn(
-        'flex flex-1 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[0.72rem] font-medium transition-colors',
+        'relative flex flex-1 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[0.72rem] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
         active
           ? 'text-primary'
-          : 'text-muted-foreground hover:bg-accent/80 hover:text-foreground'
+          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
       )}
       aria-current={active ? 'page' : undefined}
     >
+      {/* Active indicator — visible cue beyond colour for accessibility. */}
+      {active ? (
+        <span
+          aria-hidden
+          className="absolute top-1 left-1/2 h-1 w-6 -translate-x-1/2 rounded-full bg-primary"
+        />
+      ) : null}
       {Icon ? (
         <Icon
           className={cn(
             'h-5 w-5',
-            active ? 'text-primary' : 'text-muted-foreground'
+            active ? 'text-primary' : 'text-muted-foreground',
           )}
         />
       ) : null}

@@ -9,6 +9,8 @@ import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
+import { AlertCallout } from '@/components/shared/AlertCallout'
+import { ActionBar } from '@/components/shared/ActionBar'
 import { LeadActionSubmitButton } from '@/components/provider/LeadActionSubmitButton'
 import { formatDistanceToNow, format } from 'date-fns'
 import { createTraceId, safeErrorMessage } from '@/lib/support-diagnostics'
@@ -206,115 +208,113 @@ export default async function LeadDetailPage({
 
       {/* Expiry banner */}
       {lead.expiresAt && (
-        <div className={`rounded-xl border px-4 py-3 text-sm ${
-          isExpired
-            ? 'border-destructive/30 bg-destructive/5 text-destructive'
-            : 'border-amber-200 bg-amber-50 text-amber-800'
-        }`}>
+        <AlertCallout tone={isExpired ? 'danger' : 'warning'}>
           {isExpired
             ? 'This lead has expired and can no longer be accepted.'
             : `Expires ${formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · ${format(lead.expiresAt, 'HH:mm, d MMM')}`}
-        </div>
+        </AlertCallout>
       )}
 
       {isResponded && (
-        <div className="rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+        <AlertCallout tone="neutral">
           You have already {lead.status === 'ACCEPTED' ? 'accepted' : 'declined'} this lead.
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.declined && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          <p className="font-medium">Lead declined</p>
-          <p className="mt-1">We&apos;ll offer this lead to another provider.</p>
-          <p className="mt-2 text-xs font-medium uppercase tracking-wide text-emerald-800">
+        <AlertCallout tone="success" title="Lead declined">
+          <p>We&apos;ll offer this lead to another provider.</p>
+          <p className="mt-2 text-xs font-medium uppercase tracking-wide opacity-80">
             Ref: {lead.id.slice(-8).toUpperCase()}
           </p>
           {resolvedSearchParams.traceId ? (
-            <p className="mt-2 text-xs text-emerald-800">Trace ID: {resolvedSearchParams.traceId}</p>
+            <p className="mt-1 text-xs opacity-80">Trace ID: {resolvedSearchParams.traceId}</p>
           ) : null}
-          <div className="mt-4 grid gap-2">
-            <Button asChild size="sm" variant="outline" className="bg-background">
-              <Link href="/provider/leads">Available Jobs</Link>
+          <div className="mt-3 grid gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/provider/leads">Available jobs</Link>
             </Button>
-            <Button asChild size="sm" variant="outline" className="bg-background">
-              <Link href="/provider">Main Menu</Link>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/provider">Main menu</Link>
             </Button>
           </div>
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.declineError && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          <p className="font-medium">We could not decline this lead.</p>
-          <p className="mt-1">
+        <AlertCallout tone="danger" title="We couldn&apos;t decline this lead">
+          <p>
             {resolvedSearchParams.declineError === 'PROVIDER_LEAD_ACCESS_DENIED'
               ? 'You do not have access to decline this lead.'
               : resolvedSearchParams.declineError === 'LEAD_NOT_FOUND'
                 ? 'This lead could not be found.'
                 : 'The decline action could not be completed.'}
           </p>
-          <p className="mt-2 text-xs">
+          <p className="mt-1 text-xs opacity-80">
             Error code: {resolvedSearchParams.declineError}
             {resolvedSearchParams.traceId ? ` · Trace ID: ${resolvedSearchParams.traceId}` : ''}
           </p>
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.accepted && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          Lead accepted. {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} used. Balance remaining: {acceptedRemainingBalance}.
-          Full customer and job details are now available.
-        </div>
+        <AlertCallout tone="success" title="Lead accepted">
+          {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} used. Balance remaining: {acceptedRemainingBalance}.
+          Full customer and job details are now available below.
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.acceptError === 'credits' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <AlertCallout
+          tone="warning"
+          action={
+            <Button asChild size="sm" variant="outline">
+              <Link href="/provider/credits">Top up</Link>
+            </Button>
+          }
+        >
           You need {lead.unlockCostCredits} Plug-A-Pro Credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
           Your current balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
-          <Link href="/provider/credits" className="ml-1 font-medium underline underline-offset-4">
-            Top up credits
-          </Link>
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.acceptError === 'inactive' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <AlertCallout tone="warning">
           Your provider profile is not active, so you cannot accept leads right now.
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.acceptError === 'approval' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <AlertCallout tone="warning">
           Your provider application is still under review. You can accept leads once your profile is approved.
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.acceptError === 'expired' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <AlertCallout tone="warning">
           This lead has expired and can no longer be accepted. No credits were used.
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.acceptError === 'taken' && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <AlertCallout tone="warning">
           This lead has already been accepted by another provider. No credits were used.
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.acceptError && !['credits', 'inactive', 'approval', 'expired', 'taken'].includes(resolvedSearchParams.acceptError) && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <AlertCallout tone="danger">
           This lead could not be accepted. It may no longer be available.
-        </div>
+        </AlertCallout>
       )}
 
       {!isResponded && (
-        <div className="rounded-xl border bg-card px-4 py-3 text-sm">
-          <p className="font-medium">Lead preview</p>
-          <p className="mt-1 text-muted-foreground">
+        <div className="app-shell-panel space-y-2 px-4 py-3 text-sm">
+          <p className="font-semibold">Lead preview</p>
+          <p className="text-muted-foreground">
             Customer contact, exact street address, unit, complex and access details are hidden until you accept this lead.
           </p>
-          <p className="mt-2">
+          <p>
             Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
             Your current balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
           </p>
@@ -322,11 +322,10 @@ export default async function LeadDetailPage({
       )}
 
       {confirmingAccept && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-950">
-          <p className="font-semibold">Confirm lead acceptance</p>
+        <AlertCallout tone="info" title="Confirm lead acceptance">
           {hasEnoughCredits ? (
             <>
-              <p className="mt-1">
+              <p>
                 Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
                 Your current balance is {totalCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
               </p>
@@ -334,26 +333,26 @@ export default async function LeadDetailPage({
             </>
           ) : (
             <>
-              <p className="mt-1">
+              <p>
                 You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
                 Your current balance is {totalCreditBalance}.
               </p>
               <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
             </>
           )}
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.dispute === 'submitted' && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <AlertCallout tone="success">
           Refund dispute submitted. Plug-A-Pro will review it before any credits are refunded.
-        </div>
+        </AlertCallout>
       )}
 
       {resolvedSearchParams.dispute && resolvedSearchParams.dispute !== 'submitted' && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <AlertCallout tone="danger">
           This refund dispute could not be submitted. It may already be resolved.
-        </div>
+        </AlertCallout>
       )}
 
       {/* Job details */}
@@ -480,9 +479,9 @@ export default async function LeadDetailPage({
           ) : null}
 
           {lead.unlock?.status === 'REFUNDED' && (
-            <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-3 text-sm text-emerald-900">
+            <AlertCallout tone="success">
               This unlock was refunded. Reason: {lead.unlock.refundReason ?? 'Approved invalid lead dispute'}.
-            </div>
+            </AlertCallout>
           )}
 
           {canDisputeUnlock ? (
@@ -518,7 +517,7 @@ export default async function LeadDetailPage({
 
       {/* Actions */}
       {canAct && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t px-4 py-4 space-y-2 safe-bottom">
+        <div className="app-action-bar fixed bottom-0 left-0 right-0 z-40 space-y-2 px-4 py-4 safe-bottom">
           {!confirmingAccept ? (
             <>
               <Button asChild size="lg" className="w-full">

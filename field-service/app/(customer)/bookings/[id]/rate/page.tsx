@@ -11,6 +11,7 @@ import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { StarRating } from '@/components/customer/StarRating'
 
 export const metadata = buildMetadata({ title: 'Rate your experience', noIndex: true })
 
@@ -114,24 +115,11 @@ export default async function RatePage({
 
         <form action={submitRating} className="space-y-5">
           {/* Star selector */}
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Your rating</legend>
-            <div className="flex gap-3 justify-center">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <label key={n} className="cursor-pointer">
-                  <input
-                    type="radio"
-                    name="score"
-                    value={n}
-                    required
-                    className="sr-only peer"
-                  />
-                  <span className="text-3xl select-none peer-checked:scale-110 transition-transform block">
-                    ★
-                  </span>
-                </label>
-              ))}
-            </div>
+          <fieldset className="space-y-3">
+            <legend className="block text-center text-sm font-medium">
+              Your rating
+            </legend>
+            <StarRating name="score" required />
           </fieldset>
 
           {/* Comment */}
