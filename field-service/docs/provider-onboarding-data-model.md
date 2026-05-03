@@ -22,7 +22,7 @@ CLAUDE.md house rules).
 | `experience` | Provider, ProviderApplication | recommended | no | yes | yes | `reg_collect_experience` | OK |
 | `availability` | Provider, ProviderApplication | yes | yes | indirect | yes | `reg_collect_availability` (Mon–Sun buttons) | OK |
 | `callOutFee` (labour, excluding materials) | ProviderApplication, ProviderRate | yes for customer display | yes (sort/filter by budget) | yes | yes | `reg_collect_rates` (Phase 1 — improved copy) | OK after Phase 4 copy update |
-| `hourlyRate` | ProviderApplication, ProviderRate | optional | no (yet) | no (yet) | no | — | Future enhancement (4b) |
+| `hourlyRate` | ProviderApplication, ProviderRate | optional | no (yet — see 4b roadmap) | yes (when present, on customer card) | yes | `reg_collect_hourly_rate` (Phase 4 follow-up Task 1) | OK after Task 1 — skippable, persisted to ProviderApplication.hourlyRate AND ProviderRate.hourlyRate per category |
 | `rateNegotiable` | ProviderApplication, ProviderRate | optional | no | yes | yes | `reg_collect_rates` | OK |
 | `quoteAfterInspection` | ProviderApplication | optional | no (yet) | no (yet) | no | — | Future enhancement (4b) |
 | `emergencyAvailable` | ProviderApplication | optional | yes (post-MVP) | no | no | — | Defaults to false; future flag-driven step |
@@ -31,7 +31,7 @@ CLAUDE.md house rules).
 | `verified` | Provider | system-set | yes | yes (verification badge) | no (set by admin on approval) | — | OK |
 | `kycStatus` | Provider | system-set | yes | indirect | no (set by admin) | — | OK |
 | `avatarUrl` (profile photo) | Provider | recommended | no | yes | **YES (Phase 4b)** | `reg_collect_profile_photo` (between `reg_collect_rates` and `reg_collect_evidence`) | OK after Phase 4b. Persisted as Attachment with `label: 'provider_profile_photo'`, linked to ProviderApplication on submit, URL copied to `Provider.avatarUrl` in the same transaction so customer shortlist cards show it immediately. Skip is always allowed. |
-| `bio` | Provider | optional | no | yes | no | — | Future enhancement (4b) |
+| `bio` | Provider | optional | no | yes | yes | `reg_collect_bio` (Phase 4 follow-up Task 2) | OK after Task 2 — skippable, max 280 chars, persisted to Provider.bio in submit transaction |
 | `averageRating`, `completedJobsCount`, `reliabilityScore` | Provider | system-derived | yes | yes (when present) | no | — | OK — derived from job activity |
 
 ## Decision summary
@@ -80,6 +80,8 @@ Severity ladder (most strict first):
 
 ## Future enhancements (not yet scheduled)
 
-1. Optional second rate field for hourly billing if Plug A Pro decides to expose hourly rates separately on the customer card.
-2. Consider whether `bio` should be collected during onboarding for richer customer-card content.
-3. Surface the completeness validator output on the admin review screen so reviewers see exactly what's missing before approving.
+1. ✅ Optional hourly-rate capture (was Phase 4 follow-up Task 1) — shipped.
+2. ✅ Bio capture during onboarding (was Phase 4 follow-up Task 2) — shipped.
+3. Surface the completeness validator output on the admin review screen so reviewers see exactly what's missing before approving (Phase 4 follow-up Task 3 — pending).
+4. Audit `Provider.status` auto-update on application APPROVAL race (Phase 4 follow-up Task 5 — pending).
+5. Customer shortlist card UI surface for the new hourly rate field — already present in `lib/customer-shortlists.ts` via `displayCallOutFee`; consumers reading `ProviderApplication.hourlyRate` directly will pick up Task 1 data automatically.

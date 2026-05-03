@@ -291,8 +291,12 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectRegion(ctx)
     case 'reg_collect_region_more':
       return handleCollectRegionMore(ctx)
+    case 'reg_collect_hourly_rate':
+      return handleCollectHourlyRate(ctx)
     case 'reg_collect_profile_photo':
       return handleCollectProfilePhoto(ctx)
+    case 'reg_collect_bio':
+      return handleCollectBio(ctx)
     case 'reg_collect_suburb_select':
       return handleCollectSuburbSelect(ctx)
     case 'reg_collect_suburb_text':
@@ -1253,24 +1257,24 @@ async function handleCollectRates(ctx: FlowContext): Promise<FlowResult> {
     const rateNegotiable = ctx.reply.id === 'rate_negotiable_yes'
     const callOutFee = Number(ctx.data.callOutFee ?? 0)
 
-    // Phase 4b: prompt for the optional profile photo BEFORE evidence/work
-    // notes. Customers see profile photos on shortlist cards, so this is a
-    // high-impact addition. Skip is always allowed.
+    // Phase 4 follow-up Task 1: optional hourly rate. Customers can use this
+    // to compare providers by labour cost; ProviderApplication.hourlyRate
+    // already exists in the schema, so this just collects the value.
     await sendButtons(
       ctx.phone,
       [
-        '📸 Add an optional *profile photo* — customers are more likely to choose providers with a clear photo.',
+        '⏱️ *Optional:* what is your usual *hourly rate* (Rand) for labour, excluding materials?',
         '',
         `Call-out fee saved: *${formatRandAmountForProviderOnboarding(callOutFee)}*`,
         `Rate negotiable: *${rateNegotiable ? 'Yes' : 'No'}*`,
         '',
-        'Send one photo of yourself, or tap *Skip* to continue without one. You can add it later from the Worker Portal.',
+        'Reply with a number (e.g. *250* or *R250*), or tap *Skip* to continue without one.',
       ].join('\n'),
       [
-        { id: 'profile_photo_skip', title: '⏭️ Skip' },
+        { id: 'hourly_rate_skip', title: '⏭️ Skip' },
       ]
     )
-    return { nextStep: 'reg_collect_profile_photo', nextData: { callOutFee, rateNegotiable } }
+    return { nextStep: 'reg_collect_hourly_rate', nextData: { callOutFee, rateNegotiable } }
   }
 
   try {
@@ -1331,7 +1335,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n✉️ Email: *${providerEmail ?? 'Not provided'}*\n🪪 ID/passport: *${providerIdNumber ? 'Provided' : 'Missing'}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1339,6 +1343,69 @@ async function showRegistrationSummary(
     ]
   )
   return { nextStep: 'reg_pending', nextData: overrides }
+}
+
+// Phase 4 follow-up Task 1: optional hourly rate. Captured between the
+// negotiable yes/no and the profile photo step. Skip is always allowed.
+async function handleCollectHourlyRate(ctx: FlowContext): Promise<FlowResult> {
+  const callOutFee = typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : 0
+  const rateNegotiable = ctx.data.rateNegotiable !== false
+
+  // Skip path — explicit button or text fallback.
+  if (
+    ctx.reply.id === 'hourly_rate_skip' ||
+    ctx.reply.text?.trim().toLowerCase() === 'skip'
+  ) {
+    await sendText(ctx.phone, 'No hourly rate for now. You can add one later from the Worker Portal.')
+    return promptProfilePhotoAfterRate(ctx, { hourlyRateSkipped: true, callOutFee, rateNegotiable })
+  }
+
+  // Number capture — accept "250", "R250", "250.00", etc.
+  try {
+    const rates = validateProviderOnboardingRates({ hourlyRateText: ctx.reply.text })
+    if (rates.hourlyRate == null || rates.hourlyRate < 0) {
+      throw new ProviderOnboardingValidationError('INVALID_RATE', 'Hourly rate is required.')
+    }
+    await sendText(
+      ctx.phone,
+      `✅ Hourly rate saved: *${formatRandAmountForProviderOnboarding(rates.hourlyRate)}/hour*`,
+    )
+    return promptProfilePhotoAfterRate(ctx, {
+      hourlyRate: rates.hourlyRate,
+      hourlyRateSkipped: false,
+      callOutFee,
+      rateNegotiable,
+    })
+  } catch (error) {
+    if (error instanceof ProviderOnboardingValidationError) {
+      await sendText(
+        ctx.phone,
+        'Please reply with a valid hourly rate number (e.g. *250* or *R250*), or tap *Skip*.',
+      )
+      return { nextStep: 'reg_collect_hourly_rate' }
+    }
+    throw error
+  }
+}
+
+// Centralised "transition to profile photo prompt" so both the hourly rate
+// handler (skip + capture) emit the same downstream UX.
+async function promptProfilePhotoAfterRate(
+  ctx: FlowContext,
+  nextData: Partial<typeof ctx.data>,
+): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    [
+      '📸 Add an optional *profile photo* — customers are more likely to choose providers with a clear photo.',
+      '',
+      'Send one photo of yourself, or tap *Skip* to continue without one. You can add it later from the Worker Portal.',
+    ].join('\n'),
+    [
+      { id: 'profile_photo_skip', title: '⏭️ Skip' },
+    ],
+  )
+  return { nextStep: 'reg_collect_profile_photo', nextData }
 }
 
 // Phase 4b: optional profile photo step. Provider may upload one image or
@@ -1411,10 +1478,63 @@ async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> 
   return { nextStep: 'reg_collect_profile_photo' }
 }
 
-// After the profile photo step (upload OR skip), prompt for the optional
-// evidence/proof note. Centralised so the photo handler never re-creates the
-// evidence prompt by hand.
+// After the profile photo step (upload OR skip), route through the optional
+// bio step (Phase 4 follow-up Task 2) before reaching evidence/work-note.
+// Centralised so the photo handler never re-creates the bio prompt by hand.
 async function promptEvidenceAfterPhoto(
+  ctx: FlowContext,
+  nextData: Partial<typeof ctx.data>,
+): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    [
+      '📝 Add an optional *short bio* — 1–2 sentences customers will see on your profile card.',
+      '',
+      'Examples:',
+      '• "10 years fixing geysers and bathroom leaks. Gauteng-based. Always on time."',
+      '• "Friendly handyman, no job too small. Family business since 2018."',
+      '',
+      'Type your bio (max 280 characters), or tap *Skip*.',
+    ].join('\n'),
+    [
+      { id: 'provider_bio_skip', title: '⏭️ Skip' },
+    ],
+  )
+  return { nextStep: 'reg_collect_bio', nextData }
+}
+
+// Phase 4 follow-up Task 2: optional bio capture. Skip is always allowed.
+// Bio shows on the customer shortlist provider card; long bios are
+// truncated to 280 chars to keep cards uniform.
+const PROVIDER_BIO_MAX_CHARS = 280
+
+async function handleCollectBio(ctx: FlowContext): Promise<FlowResult> {
+  if (
+    ctx.reply.id === 'provider_bio_skip' ||
+    ctx.reply.text?.trim().toLowerCase() === 'skip'
+  ) {
+    await sendText(ctx.phone, 'No bio for now. You can add one later from the Worker Portal.')
+    return promptEvidenceAfterBio(ctx, { providerBioSkipped: true })
+  }
+
+  const bio = ctx.reply.text?.trim()
+  if (!bio) {
+    await sendText(ctx.phone, 'Type your short bio, or tap *Skip*.')
+    return { nextStep: 'reg_collect_bio' }
+  }
+
+  const trimmed = bio.length > PROVIDER_BIO_MAX_CHARS ? bio.slice(0, PROVIDER_BIO_MAX_CHARS) : bio
+  await sendText(
+    ctx.phone,
+    bio.length > PROVIDER_BIO_MAX_CHARS
+      ? `✅ Bio saved (trimmed to ${PROVIDER_BIO_MAX_CHARS} characters for the customer card).`
+      : '✅ Bio saved.',
+  )
+  return promptEvidenceAfterBio(ctx, { providerBio: trimmed, providerBioSkipped: false })
+}
+
+// Centralised "transition to evidence/work-note prompt".
+async function promptEvidenceAfterBio(
   ctx: FlowContext,
   nextData: Partial<typeof ctx.data>,
 ): Promise<FlowResult> {
@@ -1575,6 +1695,8 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           experience: ctx.data.experience ?? null,
           availability: formatAvailabilityLabel(submitData.availability),
           callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
+          // Phase 4 follow-up Task 1: optional hourly rate.
+          hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
           rateNegotiable: ctx.data.rateNegotiable !== false,
           weekendJobs: (submitData.availability ?? []).includes('Sat') || (submitData.availability ?? []).includes('Sun'),
           sameDayJobs: true,
@@ -1608,11 +1730,32 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
             providerId,
             categorySlug: row.categorySlug,
             callOutFee: ctx.data.callOutFee,
+            // Phase 4 follow-up Task 1: hourly rate stored per-category if
+            // provided. ProviderRate.hourlyRate already exists in schema.
+            hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
             rateNegotiable: ctx.data.rateNegotiable !== false,
             quoteAfterInspection: false,
           })),
           skipDuplicates: true,
         })
+      }
+
+      // Phase 4 follow-up Task 2: optional bio onto Provider.bio. Non-fatal
+      // failure mirrors the profile-photo pattern.
+      const providerBio = ctx.data.providerBio?.trim()
+      if (providerBio) {
+        try {
+          await tx.provider.updateMany({
+            where: { id: providerId },
+            data: { bio: providerBio },
+          })
+        } catch (err) {
+          console.warn('[registration-flow] provider bio update failed (non-fatal)', {
+            trace_id: traceId,
+            providerId,
+            error: safeErrorMessage(err),
+          })
+        }
       }
 
       if (submitData.evidenceAttachmentIds.length > 0) {

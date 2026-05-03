@@ -57,7 +57,9 @@ export type FlowStep =
   | 'reg_collect_region_more'    // select additional regions
   | 'reg_collect_suburb_select'  // numbered multi-select of suburbs within chosen region
   | 'reg_collect_suburb_text'    // free-text suburb fallback when location_nodes has no data
+  | 'reg_collect_hourly_rate'    // optional hourly labour rate (Phase 4 follow-up Task 1)
   | 'reg_collect_profile_photo'  // optional profile photo upload (Phase 4b)
+  | 'reg_collect_bio'            // optional short bio for the customer card (Phase 4 follow-up Task 2)
   | 'reg_collect_evidence'
   | 'reg_confirm'
   | 'reg_pending'
@@ -176,6 +178,9 @@ export interface ConversationData {
   profilePhotoAttachmentId?: string // Attachment ID for the optional profile photo
   profilePhotoMediaId?: string      // WhatsApp media ID for profile photo dedupe
   profilePhotoSkipped?: boolean     // true if provider explicitly skipped the photo step
+  hourlyRateSkipped?: boolean       // true if provider explicitly skipped the hourly rate step
+  providerBio?: string              // optional short bio shown on the customer shortlist card
+  providerBioSkipped?: boolean      // true if provider explicitly skipped the bio step
 
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider

@@ -82,13 +82,13 @@ beforeEach(() => {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('reg_collect_profile_photo step', () => {
-  it('skip via button id transitions to reg_collect_evidence and marks photo skipped', async () => {
+  it('skip via button id transitions to reg_collect_bio and marks photo skipped', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({
       reply: { type: 'button_reply', id: 'profile_photo_skip', title: '⏭️ Skip' },
     })
     const result = await handleRegistrationFlow(ctx)
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_bio')
     expect(result.nextData?.profilePhotoSkipped).toBe(true)
     expect(result.nextData?.profilePhotoAttachmentId).toBeUndefined()
     // The "no photo for now" notice must have been sent.
@@ -97,15 +97,15 @@ describe('reg_collect_profile_photo step', () => {
     expect(downloadMock).not.toHaveBeenCalled()
   })
 
-  it('skip via free-text "skip" transitions to reg_collect_evidence', async () => {
+  it('skip via free-text "skip" transitions to reg_collect_bio', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({ reply: { type: 'text', text: 'skip' } })
     const result = await handleRegistrationFlow(ctx)
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_bio')
     expect(result.nextData?.profilePhotoSkipped).toBe(true)
   })
 
-  it('image upload stores attachment and transitions to reg_collect_evidence', async () => {
+  it('image upload stores attachment and transitions to reg_collect_bio', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({
       reply: { type: 'image', mediaId: 'media_xyz', mimeType: 'image/jpeg' },
@@ -118,7 +118,7 @@ describe('reg_collect_profile_photo step', () => {
         label: 'provider_profile_photo',
       }),
     )
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_bio')
     expect(result.nextData?.profilePhotoAttachmentId).toBe('att_profile_001')
     expect(result.nextData?.profilePhotoMediaId).toBe('media_xyz')
     expect(result.nextData?.profilePhotoSkipped).toBe(false)
@@ -132,7 +132,7 @@ describe('reg_collect_profile_photo step', () => {
     })
     const result = await handleRegistrationFlow(ctx)
     expect(downloadMock).not.toHaveBeenCalled()
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_bio')
   })
 
   it('upload failure re-prompts and keeps the user in the photo step', async () => {
