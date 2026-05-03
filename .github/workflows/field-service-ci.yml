@@ -16,6 +16,13 @@ defaults:
   run:
     working-directory: field-service
 
+# Match production: the app pins TZ to Africa/Johannesburg in
+# `next.config.ts` and `instrumentation.ts`, but Vitest runs Node directly
+# without going through Next, so we have to export it here. Without this,
+# any test that touches local-clock dates fails on UTC runners.
+env:
+  TZ: Africa/Johannesburg
+
 jobs:
   lint-and-test:
     name: Lint and Test
@@ -89,11 +96,13 @@ jobs:
     name: Smoke Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Run after every push when E2E_BASE_URL is configured (points at a deploy preview).
-    # Gate on the secret existing so the job is safely skipped on forks and first-time setups.
-    if: >
-      github.event_name == 'push' &&
-      secrets.E2E_BASE_URL != ''
+    # Run after every push when the E2E_SMOKE_ENABLED repo variable is set.
+    # GitHub forbids referencing `secrets.*` in a job-level `if:` — doing so
+    # invalidates the entire workflow file and prevents *all* jobs from
+    # running. Gate on a repo variable instead, and keep a defensive secret
+    # check inside the run step.
+    # Set it via: GitHub repo → Settings → Variables → Actions → E2E_SMOKE_ENABLED='true'.
+    if: github.event_name == 'push' && vars.E2E_SMOKE_ENABLED == 'true'
 
     steps:
       - uses: actions/checkout@v4
