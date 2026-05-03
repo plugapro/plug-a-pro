@@ -14,20 +14,24 @@ describe('provider wallet notification message builders', () => {
     vi.unstubAllEnvs()
   })
 
-  it('builds the low-balance warning copy with resolved portal URL', () => {
+  it('builds the low-balance warning copy — body has no raw URL (URL is in CTA follow-up)', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
     const message = buildLowBalanceWarningMessage()
 
     expect(message).toContain('You have 1 Plug-A-Pro Credit left')
-    expect(message).toContain('Each accepted lead uses 1 credit')
-    expect(message).toContain('https://app.example.com/provider/credits')
+    expect(message).toContain('No credits are used for previewing or saying you are interested')
+    expect(message).toContain('1 credit is used only when a customer selects you')
+    expect(message).toContain('You can continue here on WhatsApp')
+    expect(message).toContain('top up in the Worker Portal')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('app.example.com')
   })
 
-  it('builds the low-balance warning copy with empty portal URL when NEXT_PUBLIC_APP_URL is absent', () => {
+  it('builds the low-balance warning copy when NEXT_PUBLIC_APP_URL is absent — still no raw URL in body', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
     const message = buildLowBalanceWarningMessage()
 
-    expect(message).toContain('Top up now so you do not miss matched leads:')
+    expect(message).toContain('top up in the Worker Portal')
     expect(message).not.toContain('https://')
   })
 
@@ -35,8 +39,9 @@ describe('provider wallet notification message builders', () => {
     const message = buildZeroBalanceLeadAvailableMessage()
 
     expect(message).toContain('wallet has 0 credits')
-    expect(message).toContain('You need 1 credit to accept a lead')
-    expect(message).toContain('unlock full customer details')
+    expect(message).toContain('Previewing and saying you are interested are free')
+    expect(message).toContain('You need 1 credit only if the customer selects you')
+    expect(message).toContain('You can continue here on WhatsApp')
   })
 
   it('builds manual EFT top-up instructions with bank details and reference', () => {
@@ -54,16 +59,18 @@ describe('provider wallet notification message builders', () => {
     })
 
     expect(message).toContain('R 100,00 = 5 credits')
-    expect(message).toContain('Credits are used when you accept matched leads')
+    expect(message).toContain('No credits are used for previewing or saying you are interested')
+    expect(message).toContain('1 credit is used only when a customer selects you')
     expect(message).toContain('Test Bank')
     expect(message).toContain('123456789')
     expect(message).toContain('Use exact reference: PAP-7842-9F3K')
   })
 
   it('builds the payment credited receipt copy', () => {
-    expect(buildPaymentCreditedMessage(10)).toBe(
-      'Payment received. Your wallet has been credited with 10 Plug-A-Pro Credits. Each accepted lead uses 1 credit.',
+    expect(buildPaymentCreditedMessage(10)).toContain(
+      'Payment received. Your wallet has been credited with 10 Plug-A-Pro Credits.',
     )
+    expect(buildPaymentCreditedMessage(10)).toContain('1 credit is used only when a customer selects you')
   })
 
   it('builds provider lead unlock copy with post-unlock customer details', () => {
@@ -120,6 +127,23 @@ describe('provider wallet notification message builders', () => {
         creditsToIssue: 25,
       })
       expect(message).toContain('Credits will appear in your wallet once Payfast confirms payment')
+      expect(message).toContain('1 credit is used only when a customer selects you')
+    })
+
+    it('does not leak any URL or localhost into the body — URLs travel via CTA buttons only', () => {
+      vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
+      vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+      vi.stubEnv('NODE_ENV', 'production')
+
+      const messages = [
+        buildLowBalanceWarningMessage(),
+        buildZeroBalanceLeadAvailableMessage(),
+      ].join('\n')
+
+      expect(messages).not.toMatch(/https?:\/\//)
+      expect(messages).not.toContain('app.plugapro.co.za')
+      expect(messages).not.toContain('localhost')
+      expect(messages).not.toContain('127.0.0.1')
     })
 
     it('does not contain bank account details', () => {

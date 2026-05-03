@@ -64,7 +64,7 @@ export function SkillPicker({ initialSkillLabels }: Props) {
               type="checkbox"
               checked={selectedTags.has(option.tag)}
               onChange={(event) => toggle(option.tag, event.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-gray-300 accent-primary"
+              className="mt-1 h-4 w-4 rounded border-input accent-primary"
             />
             <span className="space-y-1">
               <span className="block font-medium">{option.label}</span>

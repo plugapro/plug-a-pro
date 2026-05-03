@@ -15,8 +15,8 @@ import {
   suspendProviderWalletInTransaction,
 } from '@/lib/provider-wallet'
 
-const MANAGE_WALLET_ROLES = ['OPS'] as const
-const MANAGE_WALLET_EXCLUDED_ROLES = ['FINANCE', 'TRUST', 'ADMIN', 'OWNER'] as const
+const MANAGE_WALLET_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
+const MANAGE_WALLET_EXCLUDED_ROLES = ['TRUST'] as const
 
 const AdjustProviderCreditsSchema = z.object({
   providerId: z.string().min(1),

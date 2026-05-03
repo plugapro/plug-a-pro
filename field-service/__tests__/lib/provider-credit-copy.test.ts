@@ -151,15 +151,18 @@ describe('provider credit copy', () => {
     expect(getProviderTermsUrl()).toBe('https://app.example.com/provider/terms/credits')
   })
 
-  it('builds onboarding intro copy with terms and lead credit rules', () => {
-    const message = buildProviderOnboardingIntroMessage('https://example.com/provider/terms/credits')
+  it('builds onboarding intro copy with terms and lead credit rules — body has no raw URL', () => {
+    const message = buildProviderOnboardingIntroMessage()
 
     expect(message).toContain('We review your application using the information you provide')
     expect(message).toContain('starter credits')
     expect(message).toContain('Previewing and showing interest in jobs is free')
     expect(message).toContain('You spend 1 credit only when a customer selects you')
     expect(message).toContain('Full customer and job details unlock after selected-job acceptance')
-    expect(message).toContain('https://example.com/provider/terms/credits')
+    // The terms URL is exposed via a sendCtaUrl follow-up, never inline.
+    expect(message).toContain('View credit policy')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('app.plugapro.co.za')
     expect(message.toLowerCase()).not.toContain('promo pilot')
   })
 
@@ -168,10 +171,11 @@ describe('provider credit copy', () => {
     expect(PROVIDER_NOT_NOW_BUTTON_TITLE.length).toBeLessThanOrEqual(20)
   })
 
-  it('builds application submitted copy with review and approval wording', () => {
+  it('builds application submitted copy with review and approval wording — body has no raw URL', () => {
     const message = buildProviderApplicationSubmittedMessage({
       providerName: 'Jacob Hesser',
       applicationRef: 'APP123',
+      // termsUrl param is preserved for backward compat but must NOT appear in body.
       termsUrl: 'https://example.com/provider-terms',
     })
 
@@ -180,10 +184,13 @@ describe('provider credit copy', () => {
     expect(message).toContain('Approval is not automatic')
     expect(message).toContain('If approved, your provider profile will be activated')
     expect(message).toContain('starter credits for customer-selected jobs')
-    expect(message).toContain('https://example.com/provider-terms')
+    // The terms URL is exposed via a sendCtaUrl follow-up, never inline.
+    expect(message).toContain('View credit policy')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('example.com')
   })
 
-  it('builds lead preview copy with credit cost and customer detail unlock rules', () => {
+  it('builds lead preview copy with credit cost and customer detail unlock rules — body has no raw URL', () => {
     const message = buildProviderLeadPreviewMessage({
       category: 'Plumbing',
       subcategory: 'Blocked drain',
@@ -197,7 +204,8 @@ describe('provider credit copy', () => {
       preferredTime: 'Fri, 1 May, 10:00',
       deadlineTime: '12:00',
       description: 'Shower drain is blocked.',
-      previewUrl: 'https://app.plugapro.co.za/leads/access/token',
+      // previewUrl param has been removed — the signed lead URL is exposed via
+      // dispatch.ts's sendCtaUrl ("View Lead" CTA), not inline in the body.
       balance: {
         totalCreditBalance: 2,
         promoCreditBalance: 1,
@@ -217,7 +225,8 @@ describe('provider credit copy', () => {
     expect(message).toContain('You spend 1 credit only if the customer selects you')
     expect(message).toContain('Full customer contact and exact address stay locked')
     expect(message).toContain('Available balance: 2 credits')
-    expect(message).toContain('View full preview: https://app.plugapro.co.za/leads/access/token')
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toContain('app.plugapro.co.za')
     expect(message).not.toContain('customer@example.com')
     expect(message).not.toContain('+27821234567')
     expect(message).not.toContain('12 Exact Street')

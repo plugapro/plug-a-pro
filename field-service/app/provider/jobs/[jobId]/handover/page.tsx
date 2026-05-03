@@ -10,6 +10,7 @@ import {
   resolveProviderLeadAccessToken,
   verifyProviderLeadAccessToken,
 } from '@/lib/provider-lead-access'
+import { resolveProviderPwaHandoffPath } from '@/lib/provider-pwa-handoff'
 import { createTraceId, type DiagnosticCode } from '@/lib/support-diagnostics'
 
 export const dynamic = 'force-dynamic'
@@ -193,5 +194,9 @@ export default async function ProviderJobHandoverEntryPage({
     timestamp: new Date().toISOString(),
   })
 
-  redirect(`/leads/access/${encodeURIComponent(token)}`)
+  redirect(resolveProviderPwaHandoffPath({
+    event: 'job_accepted',
+    token,
+    lead,
+  }))
 }

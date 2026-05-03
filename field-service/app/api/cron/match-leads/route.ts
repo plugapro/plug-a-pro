@@ -14,10 +14,9 @@ import { sendLeadReminders } from '@/lib/matching-engine'
 import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from '@/lib/matching/service'
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
-import { reconcileProviderRecordsFromApplications, syncProviderRecord } from '@/lib/provider-record'
-import { syncProviderSkills } from '@/lib/provider-skills'
+import { reconcileProviderRecordsFromApplications } from '@/lib/provider-record'
 import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-application-notifications'
-import { awardMobileVerifiedPromoCreditsInTransaction } from '@/lib/provider-promo-awards'
+import { routeProviderApplicationsForOpsReview } from '@/lib/provider-application-review-support'
 import { expireStaleQuotes } from '@/lib/quotes'
 import { expireOpenJobRequest } from '@/lib/job-requests/expire-job-request'
 import { sendText } from '@/lib/whatsapp-interactive'
@@ -27,9 +26,6 @@ import { getPublicAppUrl } from '@/lib/provider-credit-copy'
 
 const ADMIN_PHONE = process.env.ADMIN_WHATSAPP_NUMBER ?? ''
 const ALERT_COOLDOWN_MINUTES = 90
-const PROVIDER_AUTO_APPROVAL_WINDOW_MINUTES = 30
-const PROVIDER_AUTO_APPROVAL_TRANSACTION_TIMEOUT_MS = 20_000
-const PROVIDER_AUTO_APPROVAL_TRANSACTION_MAX_WAIT_MS = 10_000
 
 function formatAge(ageMinutes: number) {
   if (ageMinutes < 60) return `${ageMinutes}m`
@@ -48,7 +44,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, autoApproved: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0 }
+  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0 }
 
   // 0. Reconcile stale capacity counters (safety net — corrects counter drift)
   try {
@@ -90,93 +86,16 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1d. Auto-approve provider applications older than 30 min with all required fields
+  // 1d. Route pending provider applications for Ops review.
+  // Final provider approval must remain an explicit Ops/Admin action. This cron
+  // may perform completeness/risk checks and queue routing, but it must not mark
+  // providers approved, award credits, or make them eligible for matching.
   try {
-    const approvalCutoff = new Date(Date.now() - PROVIDER_AUTO_APPROVAL_WINDOW_MINUTES * 60 * 1000)
-    const pendingApplications = await db.providerApplication.findMany({
-      where: {
-        status: 'PENDING',
-        submittedAt: { lte: approvalCutoff },
-        name: { not: '' },
-        skills: { isEmpty: false },
-        serviceAreas: { isEmpty: false },
-      },
-      select: { id: true, phone: true, name: true, skills: true, serviceAreas: true, isTestUser: true, cohortName: true },
-      take: 50,
-    })
-
-    for (const app of pendingApplications) {
-      try {
-        const reviewedAt = new Date()
-        let providerId: string | null = null
-        let approved = false
-        await db.$transaction(async (tx) => {
-          providerId = await syncProviderRecord(tx as typeof db, {
-            phone: app.phone,
-            name: app.name,
-            skills: app.skills,
-            serviceAreas: app.serviceAreas,
-            active: true,
-            availableNow: true,
-            verified: true,
-            isTestUser: app.isTestUser,
-            cohortName: app.cohortName,
-            // Enrichment must not run inside the transaction — a caught DB error inside those
-            // helpers puts the PostgreSQL connection in ABORTED state even when swallowed at the
-            // JS level, causing all subsequent tx queries to fail. Run enrichment post-commit below.
-            skipEnrichment: true,
-          })
-
-          const update = await tx.providerApplication.updateMany({
-            where: { id: app.id, status: 'PENDING' },
-            data: {
-              status: 'APPROVED',
-              reviewedAt,
-              providerId,
-            },
-          })
-          approved = update.count > 0
-          if (approved && providerId) {
-            await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
-              referenceType: 'provider_application',
-              referenceId: app.id,
-              createdBy: 'system',
-            })
-          }
-        }, {
-          maxWait: PROVIDER_AUTO_APPROVAL_TRANSACTION_MAX_WAIT_MS,
-          timeout: PROVIDER_AUTO_APPROVAL_TRANSACTION_TIMEOUT_MS,
-        })
-        if (!approved) continue
-
-        // Post-commit enrichment — run on real db client, not tx
-        const approvedProviderId = providerId
-        if (approvedProviderId) {
-          syncProviderSkills(db, approvedProviderId, app.skills).catch((err: unknown) => {
-            console.error(`[cron/match-leads:${reqId}] post-commit skills sync failed for provider ${approvedProviderId}:`, err)
-          })
-        }
-
-        await notifyProviderApplicationApprovedOnce({
-          applicationId: app.id,
-          phone: app.phone,
-          name: app.name,
-        }).catch((err: unknown) => {
-          console.error(`[cron/match-leads:${reqId}] Failed to notify auto-approved provider ${app.id}:`, err)
-        })
-        if (approvedProviderId) {
-          await checkJobsForNewProviderAvailability(approvedProviderId).catch((err: unknown) => {
-            console.error(`[cron/match-leads:${reqId}] new-provider job check failed for ${approvedProviderId}:`, err)
-          })
-        }
-        results.autoApproved++
-      } catch (err) {
-        console.error(`[cron/match-leads:${reqId}] Failed to auto-approve application ${app.id}:`, err)
-        results.errors++
-      }
-    }
+    const routed = await routeProviderApplicationsForOpsReview(db, { actorId: 'cron:match-leads' })
+    results.reviewRoutedApplications = routed.routed
+    results.flaggedApplications = routed.flagged
   } catch (err) {
-    console.error(`[cron/match-leads:${reqId}] Error running auto-approve:`, err)
+    console.error(`[cron/match-leads:${reqId}] Error routing provider applications for review:`, err)
     results.errors++
   }
 

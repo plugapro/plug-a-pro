@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { AlertCallout } from '@/components/shared/AlertCallout'
 
 export const metadata = buildMetadata({ title: 'Availability', noIndex: true })
 
@@ -176,9 +177,9 @@ export default async function ProviderAvailabilityPage({
       </div>
 
       {resolvedSearchParams.saved === '1' && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        <AlertCallout tone="success">
           Availability saved. Current status: {statusLabel}.
-        </div>
+        </AlertCallout>
       )}
 
       <form action={saveAvailability} className="space-y-6">
@@ -186,36 +187,70 @@ export default async function ProviderAvailabilityPage({
           <CardHeader>
             <CardTitle className="text-base">Lead Availability</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="flex items-start gap-3 rounded-lg border p-3">
-              <input type="radio" name="availabilityMode" value="ALWAYS_AVAILABLE" defaultChecked={currentMode === 'ALWAYS_AVAILABLE'} />
+          <CardContent className="space-y-3">
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-card p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 hover:border-border">
+              <input
+                type="radio"
+                name="availabilityMode"
+                value="ALWAYS_AVAILABLE"
+                defaultChecked={currentMode === 'ALWAYS_AVAILABLE'}
+                className="mt-1 size-4 accent-primary"
+              />
               <span>
                 <span className="block font-medium">Always available</span>
-                <span className="block text-sm text-muted-foreground">Receive matching leads whenever you are active.</span>
+                <span className="block text-sm text-muted-foreground">
+                  Receive matching leads whenever you are active.
+                </span>
               </span>
             </label>
-            <label className="flex items-start gap-3 rounded-lg border p-3">
-              <input type="radio" name="availabilityMode" value="SCHEDULE" defaultChecked={currentMode === 'SCHEDULE'} />
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-card p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 hover:border-border">
+              <input
+                type="radio"
+                name="availabilityMode"
+                value="SCHEDULE"
+                defaultChecked={currentMode === 'SCHEDULE'}
+                className="mt-1 size-4 accent-primary"
+              />
               <span>
                 <span className="block font-medium">Set working hours</span>
-                <span className="block text-sm text-muted-foreground">Use your weekly schedule to control lead eligibility.</span>
+                <span className="block text-sm text-muted-foreground">
+                  Use your weekly schedule to control lead eligibility.
+                </span>
               </span>
             </label>
-            <label className="flex items-start gap-3 rounded-lg border p-3">
-              <input type="radio" name="availabilityMode" value="PAUSED" defaultChecked={currentMode === 'PAUSED'} />
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-card p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 hover:border-border">
+              <input
+                type="radio"
+                name="availabilityMode"
+                value="PAUSED"
+                defaultChecked={currentMode === 'PAUSED'}
+                className="mt-1 size-4 accent-primary"
+              />
               <span>
                 <span className="block font-medium">Paused</span>
-                <span className="block text-sm text-muted-foreground">Stop receiving new leads until you reactivate.</span>
+                <span className="block text-sm text-muted-foreground">
+                  Stop receiving new leads until you reactivate.
+                </span>
               </span>
             </label>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="emergencyAvailable" defaultChecked={availability?.emergencyAvailable ?? false} />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 rounded-xl border border-border/80 bg-card p-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="emergencyAvailable"
+                  defaultChecked={availability?.emergencyAvailable ?? false}
+                  className="size-4 rounded border-input accent-primary"
+                />
                 Available for emergency jobs
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="sameDayAvailable" defaultChecked={availability?.sameDayAvailable ?? true} />
+              <label className="flex items-center gap-2 rounded-xl border border-border/80 bg-card p-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="sameDayAvailable"
+                  defaultChecked={availability?.sameDayAvailable ?? true}
+                  className="size-4 rounded border-input accent-primary"
+                />
                 Accept same-day jobs
               </label>
             </div>
@@ -246,13 +281,31 @@ export default async function ProviderAvailabilityPage({
             {DAYS.map((day) => {
               const row = scheduleMap[day.value]
               return (
-                <div key={day.value} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-lg border p-3">
+                <div
+                  key={day.value}
+                  className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-border/80 bg-card p-3 sm:gap-3"
+                >
                   <label className="flex items-center gap-2 text-sm font-medium">
-                    <input type="checkbox" name={`day_${day.value}_active`} defaultChecked={row?.active ?? (day.value >= 1 && day.value <= 5)} />
+                    <input
+                      type="checkbox"
+                      name={`day_${day.value}_active`}
+                      defaultChecked={row?.active ?? (day.value >= 1 && day.value <= 5)}
+                      className="size-4 rounded border-input accent-primary"
+                    />
                     {day.label}
                   </label>
-                  <Input name={`day_${day.value}_start`} type="time" defaultValue={row?.startTime ?? '08:00'} className="w-28" />
-                  <Input name={`day_${day.value}_end`} type="time" defaultValue={row?.endTime ?? '17:00'} className="w-28" />
+                  <Input
+                    name={`day_${day.value}_start`}
+                    type="time"
+                    defaultValue={row?.startTime ?? '08:00'}
+                    className="w-24 text-center sm:w-28"
+                  />
+                  <Input
+                    name={`day_${day.value}_end`}
+                    type="time"
+                    defaultValue={row?.endTime ?? '17:00'}
+                    className="w-24 text-center sm:w-28"
+                  />
                 </div>
               )
             })}
@@ -270,7 +323,7 @@ export default async function ProviderAvailabilityPage({
               provider.technicianServiceAreas.map((area) => (
                 <div key={area.label} className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <span>{area.label}</span>
-                  <span className={area.active ? 'text-emerald-700' : 'text-muted-foreground'}>
+                  <span className={area.active ? 'text-[var(--tone-success-fg)] font-medium' : 'text-muted-foreground'}>
                     {area.active ? 'Active pilot' : 'Coming soon'}
                   </span>
                 </div>

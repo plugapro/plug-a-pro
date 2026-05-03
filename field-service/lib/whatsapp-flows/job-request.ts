@@ -955,7 +955,7 @@ async function showJobRequestSummary(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}\n⚡ Urgency: *${urgency ?? 'flexible'}*\n⭐ Preference: *${providerPreference ?? 'fastest_available'}*\n💰 Budget: *${budgetPreference ?? 'balanced_value'}*${photoLine}\n\nYour phone number and exact address will only be shared after you select a provider and that provider accepts the job.\n\nShall I submit this request? We'll share a safe preview with suitable providers.`,
+    `✅ *Job Request Summary*\n\n🔧 ${selectedCategory}\n📍 ${address}${descriptionLine}\n🗓 ${availabilityNote}\n⚡ Urgency: *${urgency ?? 'flexible'}*\n⭐ Preference: *${providerPreference ?? 'fastest_available'}*\n💰 Budget: *${budgetPreference ?? 'balanced_value'}*${photoLine}\n\nYour phone number and exact address will only be shared after you select a provider and that provider accepts the job.\n\nReady to submit this request? We'll share a safe preview with suitable providers.`,
     [
       { id: 'confirm_yes', title: '✅ Submit Request' },
       { id: 'confirm_no', title: '❌ Cancel' },
@@ -972,7 +972,35 @@ function uniqueStrings(values: Array<string | null | undefined>) {
 }
 
 async function sendCustomerPhotoProgress(phone: string, count: number) {
-  const remaining = MAX_CUSTOMER_PHOTOS - count
+  // Debounce across Vercel function instances — see lib/whatsapp-media-batch.ts.
+  // Each media event claims a seq and waits; only the latest event sends the
+  // consolidated count, eliminating "2 photos received" → "3 photos received"
+  // partial-count regressions for multi-file uploads.
+  const { debounceMediaBatch, readMediaBatchSeq } = await import('../whatsapp-media-batch')
+  const { isLatest, mySeq } = await debounceMediaBatch({
+    phone,
+    scope: 'customer_photo',
+  })
+  if (!isLatest) {
+    const currentSeq = await readMediaBatchSeq(phone, 'customer_photo')
+    console.info('[job-request-flow:sendCustomerPhotoProgress] superseded — newer media event in batch', {
+      phone,
+      mySeq,
+      currentSeq,
+      countObservedAtClaim: count,
+    })
+    return
+  }
+
+  // Re-read the settled count from the conversation record.
+  const { db } = await import('../db')
+  const fresh = await db.conversation.findUnique({
+    where: { phone },
+    select: { data: true },
+  })
+  const freshIds = ((fresh?.data as { photoAttachmentIds?: unknown[] } | null)?.photoAttachmentIds ?? []) as unknown[]
+  const settledCount = Math.max(count, Math.min(freshIds.length, MAX_CUSTOMER_PHOTOS))
+  const remaining = MAX_CUSTOMER_PHOTOS - settledCount
 
   if (remaining <= 0) {
     const outboundId = await sendButtons(
@@ -991,7 +1019,7 @@ async function sendCustomerPhotoProgress(phone: string, count: number) {
 
   const outboundId = await sendButtons(
     phone,
-    `✅ *${count} photo${count === 1 ? '' : 's'} received.* You can add ${remaining} more or continue.`,
+    `✅ *${settledCount} photo${settledCount === 1 ? '' : 's'} received.* You can add ${remaining} more or continue.`,
     [
       { id: 'photos_done', title: '✅ Continue' },
       { id: 'photos_add_more', title: '📷 Add more photos' },
@@ -999,7 +1027,7 @@ async function sendCustomerPhotoProgress(phone: string, count: number) {
   )
   console.info('[job-request-flow] customer photo confirmation sent', {
     normalized_phone: phone,
-    final_count_shown: count,
+    final_count_shown: settledCount,
     remaining_slots: remaining,
     outbound_confirmation_message_id: outboundId || null,
   })

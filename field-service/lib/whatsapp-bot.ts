@@ -1212,6 +1212,23 @@ async function processInboundMessageUnlocked(
         }
       }
 
+      // Idle / unknown — for providers with free-text input that didn't match
+      // any command, show a tip with the most common shortcuts before the menu.
+      if (isProviderRole && !reply.id && rawText.length >= 2) {
+        await sendText(
+          phone,
+          `Sorry, I didn't understand "${reply.text?.slice(0, 60) ?? ''}".\n\n` +
+          `Quick provider commands:\n` +
+          `• *menu* — main menu\n` +
+          `• *credits* — check balance\n` +
+          `• *my jobs* — your active jobs\n` +
+          `• *14:00* or *arrive 14:00* — confirm arrival\n` +
+          `• *on the way* / *arrived* / *start* / *complete* — update job\n` +
+          `• *interested* / *not interested* — respond to a lead\n` +
+          `• Multiple jobs? Add the job ref, e.g. *arrive 14:00 #PAP-JOB-ABC12345*`,
+        )
+      }
+
       // Idle / unknown — show main menu
       await showMainMenu(phone)
       result = { nextStep: 'welcome', nextData: {} }
@@ -2194,7 +2211,8 @@ export async function sendQuoteToClient(params: {
   validUntil: Date
   approvalToken: string
 }): Promise<void> {
-  const { sendButtons } = await import('./whatsapp-interactive')
+  const { sendButtons, sendCtaUrl } = await import('./whatsapp-interactive')
+  const { ctaLabelFor } = await import('./whatsapp-copy')
   const webLink = getPublicAppUrl(`/quotes/${params.approvalToken}`)
 
   const materialsLine = params.materialsCost > 0
@@ -2203,14 +2221,30 @@ export async function sendQuoteToClient(params: {
   const hoursLine = params.estimatedHours ? `\n• Est. time: ${params.estimatedHours}h` : ''
   const validLine = `\n• Valid until: ${params.validUntil.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}`
 
+  // Body intentionally contains no URL. Accept/Decline travel as quick-reply
+  // buttons; the full quote URL is exposed via a sendCtaUrl follow-up below.
   await sendButtons(
     params.customerPhone,
-    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${params.description}_\n\nReview and respond online 👇\n${webLink}`,
+    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${params.description}_\n\nTap a button below to accept or decline, or open the full quote.`,
     [
       { id: `quote_accept_${params.quoteId}`, title: '✅ Accept Quote' },
       { id: `quote_decline_${params.quoteId}`, title: '❌ Decline' },
     ]
   )
+  if (webLink) {
+    try {
+      await sendCtaUrl(
+        params.customerPhone,
+        'Open the full quote in your browser.',
+        ctaLabelFor('quote_view'),
+        webLink,
+        undefined,
+        { templateName: 'interactive:quote_view_cta', metadata: { quoteId: params.quoteId } },
+      )
+    } catch (error) {
+      console.warn('[whatsapp-bot] quote view CTA follow-up failed', { quoteId: params.quoteId, error })
+    }
+  }
 }
 
 // ─── Customer quote response handler ─────────────────────────────────────────

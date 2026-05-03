@@ -102,6 +102,44 @@ describe('parseProviderJobCommand', () => {
     expect(parseProviderJobCommand('')).toBeNull()
     expect(parseProviderJobCommand(null)).toBeNull()
   })
+
+  it('parses "arrive in 2 hours" as a relative arrival command', () => {
+    const fixedNow = new Date('2026-05-02T08:00:00.000Z')
+    const result = parseProviderJobCommand('arrive in 2 hours', { now: fixedNow })
+    expect(result?.kind).toBe('arrive')
+    if (result && result.kind === 'arrive') {
+      expect(result.arrivalAt.getUTCHours()).toBe(10)
+    }
+  })
+
+  it('parses "arrive noon" as 12:00 today (or tomorrow if past)', () => {
+    const fixedNow = new Date('2026-05-02T08:00:00.000Z')
+    const result = parseProviderJobCommand('arrive noon', { now: fixedNow })
+    expect(result?.kind).toBe('arrive')
+    if (result && result.kind === 'arrive') {
+      expect(result.arrivalAt.getHours()).toBe(12)
+    }
+  })
+
+  it('extracts a job-ref suffix from a status command', () => {
+    const result = parseProviderJobCommand('arrived #PAP-JOB-ABC12345')
+    expect(result?.kind).toBe('arrived')
+    if (result) expect(result.jobRef).toBe('PAP-JOB-ABC12345')
+  })
+
+  it('extracts a job-ref suffix from an arrival command', () => {
+    const fixedNow = new Date('2026-05-02T08:00:00.000Z')
+    const result = parseProviderJobCommand('arrive 14:00 #PAP-JOB-ABC12345', { now: fixedNow })
+    expect(result?.kind).toBe('arrive')
+    if (result && result.kind === 'arrive') {
+      expect(result.arrivalAt.getHours()).toBe(14)
+      expect(result.jobRef).toBe('PAP-JOB-ABC12345')
+    }
+  })
+
+  it('returns null when ref is present but body is empty', () => {
+    expect(parseProviderJobCommand('#PAP-JOB-ABC12345')).toBeNull()
+  })
 })
 
 describe('executeProviderJobCommand', () => {

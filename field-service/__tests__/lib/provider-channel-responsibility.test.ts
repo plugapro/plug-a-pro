@@ -25,8 +25,11 @@ describe('provider channel responsibility model', () => {
     expect(pwaPrimary.every((item) => item.core === false)).toBe(true)
   })
 
-  it('documents known WhatsApp gaps as blockers instead of hiding them behind PWA', () => {
-    expect(getProviderChannelResponsibility('interest_response')?.blocker).toContain('fee and arrival')
+  it('marks every core action as having an existing WhatsApp path with no remaining blockers', () => {
+    expect(getProviderChannelResponsibility('interest_response')?.whatsapp).toBe('existing')
+    expect(getProviderChannelResponsibility('interest_response')?.blocker).toBeUndefined()
+    expect(getProviderChannelResponsibility('opportunity_preview')?.whatsapp).toBe('existing')
+    expect(getProviderChannelResponsibility('opportunity_preview')?.blocker).toBeUndefined()
     expect(getProviderChannelResponsibility('full_customer_details')?.whatsapp).toBe('existing')
     expect(getProviderChannelResponsibility('full_customer_details')?.blocker).toBeUndefined()
     expect(getProviderChannelResponsibility('arrival_confirmation')?.whatsapp).toBe('existing')

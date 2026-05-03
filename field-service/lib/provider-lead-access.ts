@@ -271,6 +271,7 @@ export async function resolveProviderLeadAccessToken(token: string) {
             },
           },
           attachments: {
+            where: { safeForPreview: true },
             orderBy: { createdAt: 'asc' },
             select: {
               id: true,
@@ -313,7 +314,7 @@ export async function resolveProviderLeadAccessToken(token: string) {
     return { status: 'invalid' as const, lead: null, payload: verified.payload }
   }
 
-  const hasAcceptedUnlock = lead.status === 'ACCEPTED' && Boolean(lead.unlock)
+  const hasAcceptedUnlock = lead.status === 'ACCEPTED' && lead.unlock?.providerId === lead.providerId
   const scopedLead = {
     ...lead,
     jobRequest: {

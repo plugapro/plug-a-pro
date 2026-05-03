@@ -4,8 +4,8 @@
   "description": "Request, track, and manage trusted field service jobs with Plug A Pro.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f7fb",
-  "theme_color": "#2563eb",
+  "background_color": "#050608",
+  "theme_color": "#050608",
   "orientation": "portrait",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },

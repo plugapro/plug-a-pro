@@ -51,8 +51,8 @@ export default async function CustomerHomePage() {
   return (
     <div className="min-h-screen">
       <section className="relative overflow-hidden px-4 py-16 sm:py-24">
-        <div className="app-hero-surface mx-auto max-w-5xl rounded-[2rem] border border-border/70 px-6 py-12 text-center sm:px-10 sm:py-16">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--tone-brand-border)] bg-[var(--tone-brand-bg)] px-3 py-1 text-xs font-medium text-[var(--tone-brand-fg)]">
+        <div className="app-hero-surface mx-auto max-w-5xl px-6 py-12 text-center sm:px-10 sm:py-16">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border tone-brand px-3 py-1 text-xs font-medium">
             <Star className="h-3 w-3" />
             Built for written quotes and tracked jobs
           </div>

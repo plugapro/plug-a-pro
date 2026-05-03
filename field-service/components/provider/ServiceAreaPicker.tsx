@@ -174,7 +174,7 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
                   type="checkbox"
                   checked={selectedIds.has(result.id)}
                   onChange={e => handleToggle(result.id, result.label, e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 accent-primary"
+                  className="h-4 w-4 rounded border-input accent-primary"
                 />
                 <span className="text-sm">{result.label}</span>
                 <span className="text-xs text-muted-foreground ml-auto">
@@ -255,7 +255,7 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
                     type="checkbox"
                     checked={selectedIds.has(suburb.id)}
                     onChange={e => handleToggle(suburb.id, suburb.label, e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 accent-primary"
+                    className="h-4 w-4 rounded border-input accent-primary"
                   />
                   <span className="text-sm">{suburb.label}</span>
                 </label>

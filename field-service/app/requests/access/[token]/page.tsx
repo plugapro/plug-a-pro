@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 import {
   cancelRequestFromShortlist,
   getCustomerShortlistForRequest,
@@ -154,6 +155,13 @@ export default async function TicketAccessPage({
   const booking = match?.booking ?? null
   const provider = match?.provider ?? null
   const currentJobStatus = booking?.job?.status ?? null
+  const expectedArrivalAt = booking?.job?.scheduledArrivalAt ?? selectedShortlistItem?.estimatedArrivalAt ?? null
+  const trackingSteps = booking?.job
+    ? buildClientPwaJobTrackingSteps({
+        status: currentJobStatus,
+        arrivalTimeConfirmedAt: booking.job.arrivalTimeConfirmedAt,
+      })
+    : []
   const supportHref = 'https://plugapro.co.za/contact'
   const providerSignals = provider
     ? buildProviderTrustSignals({
@@ -268,7 +276,7 @@ export default async function TicketAccessPage({
           <CardContent className="space-y-1 px-4 py-4 text-sm text-emerald-900">
             <p className="font-medium">Provider selected</p>
             <p>
-              You selected {selectedShortlistItem?.provider.name ?? 'your provider'}. We are asking them to confirm the job now.
+              You selected {selectedShortlistItem?.provider.name ?? 'your provider'}. We are asking them to confirm the job now on WhatsApp.
               You will be notified once accepted.
             </p>
           </CardContent>
@@ -280,7 +288,7 @@ export default async function TicketAccessPage({
           <CardContent className="space-y-2 px-4 py-4 text-sm text-amber-950">
             <p className="font-medium">Waiting for provider confirmation</p>
             <p>
-              You selected {selectedShortlistItem?.provider.name ?? 'your provider'}. We are asking them to confirm the job now.
+              You selected {selectedShortlistItem?.provider.name ?? 'your provider'}. We notified them on WhatsApp and are asking them to confirm the job now.
               You will be notified once accepted.
             </p>
             <Button asChild variant="outline" className="w-full bg-white/70">
@@ -492,7 +500,7 @@ export default async function TicketAccessPage({
                     </Button>
                     {selected ? (
                       <div className="rounded-md bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
-                        Selected. We are asking this provider to confirm.
+                        Selected. We are asking this provider to confirm on WhatsApp.
                       </div>
                     ) : (
                       <form action={selectShortlistProvider}>
@@ -556,7 +564,7 @@ export default async function TicketAccessPage({
           <CardContent className="space-y-3 px-4 py-4 text-sm text-emerald-950">
             <p className="font-medium">Your provider accepted the job</p>
             <Row label="Provider">{provider.name}</Row>
-            <Row label="Expected">{formatDateTime(selectedShortlistItem?.estimatedArrivalAt ?? null)}</Row>
+            <Row label="Expected">{formatDateTime(expectedArrivalAt)}</Row>
             <Row label="Call-out">{formatCurrency(selectedShortlistItem?.callOutFee ?? null)}</Row>
             <div className="grid grid-cols-2 gap-2">
               {booking && (
@@ -613,11 +621,11 @@ export default async function TicketAccessPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-0 text-sm">
-            {jobTrackingSteps(currentJobStatus).map((step, index) => (
+            {trackingSteps.map((step, index) => (
               <div key={step.label} className="flex gap-3">
                 <div className="flex flex-col items-center">
                   <div className={`mt-1 h-4 w-4 rounded-full border-2 ${step.done ? 'border-green-500 bg-green-500' : step.current ? 'border-foreground bg-foreground' : 'border-muted-foreground/30'}`} />
-                  {index < jobTrackingSteps(currentJobStatus).length - 1 && (
+                  {index < trackingSteps.length - 1 && (
                     <div className={`my-0.5 w-0.5 flex-1 ${step.done ? 'bg-green-500' : 'bg-border'}`} />
                   )}
                 </div>
@@ -724,35 +732,4 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-medium">{value}</p>
     </div>
   )
-}
-
-function jobTrackingSteps(currentStatus: string | null) {
-  const steps = [
-    { key: 'REQUEST_SUBMITTED', label: 'Request submitted', description: 'We received your request.' },
-    { key: 'PROVIDERS_MATCHED', label: 'Providers matched', description: 'Suitable providers reviewed your request.' },
-    { key: 'CUSTOMER_SELECTED', label: 'You selected provider', description: 'Your selected provider was asked to confirm.' },
-    { key: 'SCHEDULED', label: 'Provider accepted', description: 'Your provider accepted the job.' },
-    { key: 'SCHEDULED', label: 'Arrival time confirmed', description: 'Arrival details are confirmed.' },
-    { key: 'EN_ROUTE', label: 'Provider on the way', description: 'Your provider is travelling to you.' },
-    { key: 'ARRIVED', label: 'Provider arrived', description: 'Your provider is on site.' },
-    { key: 'STARTED', label: 'Job in progress', description: 'Work is in progress.' },
-    { key: 'COMPLETED', label: 'Job completed', description: 'Please confirm everything is in order.' },
-  ]
-  const rankByStatus: Record<string, number> = {
-    SCHEDULED: 4,
-    EN_ROUTE: 5,
-    ARRIVED: 6,
-    STARTED: 7,
-    PAUSED: 7,
-    AWAITING_APPROVAL: 7,
-    PENDING_COMPLETION_CONFIRMATION: 8,
-    COMPLETED: 8,
-  }
-  const currentIndex = currentStatus ? rankByStatus[currentStatus] ?? 4 : 4
-
-  return steps.map((step, index) => ({
-    ...step,
-    done: index < currentIndex,
-    current: index === currentIndex,
-  }))
 }

@@ -12,6 +12,8 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Inbox } from 'lucide-react'
 
 export const metadata = buildMetadata({ title: 'My Requests & Bookings' })
 
@@ -24,14 +26,17 @@ export default async function CustomerBookingsPage() {
   if (!customer) {
     // Authenticated but no Customer record yet — fresh PWA signup
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-4 text-center space-y-4">
-        <p className="text-lg font-medium">No requests or bookings yet</p>
-        <p className="text-sm text-muted-foreground">
-          Book your first service to get started.
-        </p>
-        <Button asChild>
-          <Link href="/services">Browse services</Link>
-        </Button>
+      <div className="mx-auto max-w-lg px-4 py-10">
+        <EmptyState
+          icon={<Inbox className="size-5" />}
+          title="No requests or bookings yet"
+          description="Book your first service to get started."
+          action={
+            <Button asChild>
+              <Link href="/services">Browse services</Link>
+            </Button>
+          }
+        />
       </div>
     )
   }

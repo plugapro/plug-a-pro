@@ -149,7 +149,7 @@ export default async function JobDetailPage({
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-500 underline"
+                className="font-medium text-primary underline-offset-4 hover:underline"
               >
                 {address.street}, {normaliseLocationDisplayName(address.suburb)}, {normaliseLocationDisplayName(address.city)}
               </a>

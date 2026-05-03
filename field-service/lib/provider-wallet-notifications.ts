@@ -106,12 +106,18 @@ function preferredWindowLabel(jobRequest: {
   return 'Flexible'
 }
 
+// Body intentionally contains no raw URL. Caller pairs the message with a
+// sendCtaUrl follow-up that exposes getWorkerPortalUrl('/provider/credits')
+// behind a "Top up credits" / "Open dashboard" CTA.
 export function buildLowBalanceWarningMessage() {
-  return `You have 1 Plug-A-Pro Credit left. Each accepted lead uses 1 credit. Top up now so you do not miss matched leads: ${getWorkerPortalUrl('/provider/credits')}`
+  return 'You have 1 Plug-A-Pro Credit left. No credits are used for previewing or saying you are interested. 1 credit is used only when a customer selects you and you accept that selected job. You can continue here on WhatsApp. Tap the button below to top up in the Worker Portal.'
 }
 
+// Body intentionally contains no raw URL. Caller pairs with a sendCtaUrl
+// follow-up exposing getWorkerPortalUrl('/provider/credits') behind a
+// "Top up credits" / "Open dashboard" CTA.
 export function buildZeroBalanceLeadAvailableMessage() {
-  return `New matched lead available, but your wallet has 0 credits. You need 1 credit to accept a lead and unlock full customer details. Top up here: ${getWorkerPortalUrl('/provider/credits')}`
+  return 'New matched lead available, but your wallet has 0 credits. Previewing and saying you are interested are free. You need 1 credit only if the customer selects you and you accept that selected job. You can continue here on WhatsApp. Tap the button below to top up in the Worker Portal.'
 }
 
 export function buildPaymentIntentCreatedMessage(params: {
@@ -128,7 +134,8 @@ export function buildPaymentIntentCreatedMessage(params: {
 }) {
   return compactLines([
     `Plug-A-Pro Credits top-up created: ${params.amountFormatted} = ${params.creditsToIssue} credits.`,
-    'Credits are used when you accept matched leads. Full customer details unlock after acceptance.',
+    'No credits are used for previewing or saying you are interested.',
+    '1 credit is used only when a customer selects you and you accept that selected job.',
     '',
     'Use these EFT details:',
     `Account: ${params.bankAccount.accountName}`,
@@ -143,7 +150,7 @@ export function buildPaymentIntentCreatedMessage(params: {
 }
 
 export function buildPaymentCreditedMessage(creditsIssued: number) {
-  return `Payment received. Your wallet has been credited with ${creditsIssued} Plug-A-Pro Credits. Each accepted lead uses 1 credit.`
+  return `Payment received. Your wallet has been credited with ${creditsIssued} Plug-A-Pro Credits. 1 credit is used only when a customer selects you and you accept that selected job.`
 }
 
 export function buildPayfastTopUpInitiatedMessage(params: {
@@ -154,7 +161,7 @@ export function buildPayfastTopUpInitiatedMessage(params: {
     `Your Plug-A-Pro top-up of ${params.amountFormatted} (${params.creditsToIssue} credits) has been initiated.`,
     'Complete your payment on the checkout page.',
     'Credits will appear in your wallet once Payfast confirms payment.',
-    'Each accepted lead uses 1 credit.',
+    '1 credit is used only when a customer selects you and you accept that selected job.',
   ])
 }
 
