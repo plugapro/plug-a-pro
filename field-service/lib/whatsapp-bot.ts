@@ -993,6 +993,9 @@ async function processInboundMessageUnlocked(
     } else if (reply.id === 'provider_support') {
       flow = 'provider_journey'
       step = 'pj_support'
+    } else if (reply.id === 'provider_verify_identity') {
+      flow = 'provider_journey'
+      step = 'pj_verify_identity'
     } else if (reply.id === 'provider_status') {
       flow = 'provider_journey'
       step = 'pj_provider_status'
@@ -1181,6 +1184,12 @@ async function processInboundMessageUnlocked(
     } else if (isProviderJobList && flow === 'idle') {
       flow = 'provider_job'
       step = 'tech_job_list'
+    } else if (
+      flow === 'idle' &&
+      ['verify', 'verification', 'verify identity', 'complete verification'].some((k) => rawText === k)
+    ) {
+      flow = 'provider_journey'
+      step = 'pj_verify_identity'
     } else if (PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) && flow === 'idle') {
       flow = 'provider_journey'
       step = 'pj_menu'

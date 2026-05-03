@@ -105,6 +105,7 @@ export type FlowStep =
   | 'pj_status_update'
   | 'pj_status_confirm'
   | 'pj_problem_report'
+  | 'pj_verify_identity'
   // Terminal
   | 'done'
   | 'cancelled'

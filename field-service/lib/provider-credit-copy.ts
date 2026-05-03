@@ -295,7 +295,7 @@ export function buildProviderApplicationSubmittedMessage(params: {
     '',
     'If approved, your provider profile will be activated and you will receive starter credits for customer-selected jobs you accept.',
     '',
-    'Once approved, you can add more profile details — including your email address and portfolio photos — in the Worker Portal.',
+    'Once approved, you can add more profile details — including your email address, portfolio photos, and identity verification — in the Worker Portal.',
     '',
     'Provider terms and credit rules are available below — tap *View credit policy* to read them.',
   ].filter(Boolean).join('\n')

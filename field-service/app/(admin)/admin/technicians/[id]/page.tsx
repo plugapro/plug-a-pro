@@ -208,13 +208,17 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
       availability: true,
       idNumber: true,
       attachments: {
-        where: { label: 'evidence' },
-        select: { id: true, mimeType: true, createdAt: true },
+        where: { label: { in: ['evidence', 'provider_id_document', 'provider_id_selfie'] } },
+        select: { id: true, label: true, mimeType: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
       },
     },
   })
-  const evidenceAttachments = latestApplication?.attachments ?? []
+  const allApplicationAttachments = latestApplication?.attachments ?? []
+  const evidenceAttachments = allApplicationAttachments.filter((a) => a.label === 'evidence')
+  const idDocAttachments = allApplicationAttachments.filter((a) =>
+    a.label === 'provider_id_document' || a.label === 'provider_id_selfie'
+  )
 
   // Build a ProviderProfileLike for the completeness validator. Provider holds
   // identity / availability / KYC; the latest application holds rates +
@@ -626,6 +630,34 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                         {att.mimeType.startsWith('image/') ? '🖼' : '📄'} File {i + 1} — {att.mimeType}
                       </a>
                     ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {(idDocAttachments.length > 0 || latestApplication?.idNumber) && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Identity verification</p>
+                  <div className="space-y-2">
+                    {latestApplication?.idNumber && (
+                      <p className="text-sm">🪪 ID/passport: <span className="font-mono">{latestApplication.idNumber}</span></p>
+                    )}
+                    {idDocAttachments.map((att) => {
+                      const typeLabel = att.label === 'provider_id_selfie' ? 'Selfie with ID' : 'ID document'
+                      return (
+                        <a
+                          key={att.id}
+                          href={`/api/attachments/${att.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-sm text-primary hover:underline"
+                        >
+                          {att.mimeType.startsWith('image/') ? '🖼' : '📄'} {typeLabel} — {att.mimeType}
+                        </a>
+                      )
+                    })}
                   </div>
                 </div>
               </>

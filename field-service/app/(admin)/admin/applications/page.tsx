@@ -75,6 +75,8 @@ const providerApplicationSelect = {
   isTestUser: true,
   cohortName: true,
   submittedAt: true,
+  idNumber: true,
+  _count: { select: { attachments: true } },
 } as const
 
 // ─── Server Actions ───────────────────────────────────────────────────────────
@@ -576,6 +578,7 @@ export default async function ApplicationsPage({
                 <p className="text-xs text-muted-foreground">
                   Submitted {app.submittedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
                   {' · '}Ref: {app.id.slice(-8).toUpperCase()}
+                  {' · '}ID: {app.idNumber ? '✓ provided' : app._count.attachments > 0 ? `${app._count.attachments} file(s)` : 'not provided'}
                 </p>
 
                 {hasConflict && (

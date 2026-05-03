@@ -37,6 +37,7 @@ export const PROVIDER_JOURNEY_TRIGGERS = [
   'available', 'online', 'im available', "i'm available", 'ek is beskikbaar',
   'offline', 'not available', 'not working', 'ek is nie beskikbaar',
   'provider menu', 'my dashboard',
+  'verify', 'verification', 'verify identity', 'complete verification',
 ]
 
 function isProviderPaused(provider: {
@@ -177,6 +178,8 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
       return handleStatusConfirm(ctx)
     case 'pj_problem_report':
       return handleProblemReport(ctx)
+    case 'pj_verify_identity':
+      return handleVerifyIdentity(ctx)
     default:
       return handleProviderMenu(ctx)
   }
@@ -1155,5 +1158,57 @@ async function handleProblemReport(ctx: FlowContext): Promise<FlowResult> {
     ctx.phone,
     `🚨 *Report a Problem*\n\nPlease reply with a description of the issue and we'll follow up within 2 hours.\n\nInclude:\n• Your job reference number\n• What went wrong\n\nOr call: ${process.env.SUPPORT_WHATSAPP_NUMBER ?? 'our support line'}`
   )
+  return { nextStep: 'done' }
+}
+
+async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await db.provider.findUnique({
+    where: { phone: normalizePhone(ctx.phone) },
+    select: { kycStatus: true },
+  })
+
+  if (!provider) {
+    // Could be an applicant — direct them to support
+    await sendButtons(
+      ctx.phone,
+      "You're not yet registered as an active provider. Once your application is approved, you can complete identity verification in the Worker Portal.",
+      [{ id: 'provider_support', title: 'Support' }],
+    )
+    return { nextStep: 'done' }
+  }
+
+  if (provider.kycStatus === 'VERIFIED') {
+    await sendButtons(
+      ctx.phone,
+      '✅ *Identity already verified*\n\nYour identity has been confirmed. No further action is needed.',
+      [{ id: 'back_home', title: 'Main Menu' }],
+    )
+    return { nextStep: 'done' }
+  }
+
+  const statusLabel: Record<string, string> = {
+    NOT_STARTED: 'Not started',
+    IN_PROGRESS: 'In progress',
+    SUBMITTED: 'Under review',
+    REJECTED: 'Rejected — resubmission required',
+    EXPIRED: 'Expired',
+  }
+  const status = statusLabel[(provider.kycStatus as string) ?? 'NOT_STARTED'] ?? (provider.kycStatus ?? 'Not started')
+  const portalUrl = getPublicAppUrl('/provider/verification')
+
+  if (portalUrl) {
+    await sendCtaUrl(
+      ctx.phone,
+      `🪪 *Identity Verification*\n\nStatus: *${status}*\n\nComplete or update your identity verification in the Worker Portal. Verified providers build more trust with customers.`,
+      'Verify Identity',
+      portalUrl,
+    )
+  } else {
+    await sendButtons(
+      ctx.phone,
+      `🪪 *Identity Verification*\n\nStatus: *${status}*\n\nTo complete verification, log in to the Worker Portal and navigate to Provider > Verification.`,
+      [{ id: 'back_home', title: 'Main Menu' }],
+    )
+  }
   return { nextStep: 'done' }
 }
