@@ -45,6 +45,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Several tests transitively import @/lib/db (Prisma client). Without
+      # `prisma generate` the .prisma/client/default file is missing on a
+      # fresh install and every Prisma-touching test errors out. The build
+      # job already runs this step; lint-and-test must too.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Lint
         run: pnpm lint
 
