@@ -16,6 +16,13 @@ defaults:
   run:
     working-directory: field-service
 
+# Match production: the app pins TZ to Africa/Johannesburg in
+# `next.config.ts` and `instrumentation.ts`, but Vitest runs Node directly
+# without going through Next, so we have to export it here. Without this,
+# any test that touches local-clock dates fails on UTC runners.
+env:
+  TZ: Africa/Johannesburg
+
 jobs:
   lint-and-test:
     name: Lint and Test
