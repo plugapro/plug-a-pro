@@ -25,10 +25,15 @@ const CATEGORIES = Object.fromEntries(
 
 export default async function RequestJobPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ serviceId: string }>
+  searchParams: Promise<{ template?: string }>
 }) {
-  const { serviceId: category } = await params
+  const [{ serviceId: category }, { template: templateId }] = await Promise.all([
+    params,
+    searchParams,
+  ])
   const session = await getSession()
   if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/book/${category}`)}`)
 
@@ -54,11 +59,27 @@ export default async function RequestJobPage({
       })
     : []
 
+  // Resolve template pre-fill — silently ignore invalid/missing ids.
+  let initialDraft: { title: string; description: string } | undefined
+  if (templateId && customer) {
+    const template = await db.jobRequest.findFirst({
+      where: { id: templateId, customerId: customer.id },
+      select: { title: true, description: true },
+    })
+    if (template) {
+      initialDraft = {
+        title: template.title,
+        description: template.description ?? '',
+      }
+    }
+  }
+
   return (
     <BookingFlow
       category={categoryData}
       savedSites={savedSites}
       addressBookEnabled={addressBookEnabled}
+      initialDraft={initialDraft}
     />
   )
 }
