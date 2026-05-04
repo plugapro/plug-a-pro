@@ -127,7 +127,7 @@ export async function autoApproveProviderApplications(
         })
 
         return { providerId }
-      })
+      }, { timeout: 15000 })
 
       if (!result) {
         skipped++
