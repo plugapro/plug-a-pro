@@ -185,6 +185,19 @@ export default async function CustomerBookingsPage() {
                 <p className="text-xs text-muted-foreground">
                   Ref: {b.id.slice(-8).toUpperCase()}
                 </p>
+
+                {b.job?.status === 'COMPLETED' && (
+                  <div className="pt-1">
+                    <Button asChild variant="outline" size="sm" className="h-7 text-xs">
+                      <Link
+                        href={`/book/${jobRequest.category}?template=${jobRequest.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Book again
+                      </Link>
+                    </Button>
+                  </div>
+                )}
               </Link>
             )
           })}

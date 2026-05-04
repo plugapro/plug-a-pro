@@ -15,6 +15,7 @@ import type { Prisma } from '@prisma/client'
 import { parseInbound, sendText, sendButtons, sendCtaUrl, type InboundMessage } from './whatsapp-interactive'
 import {
   handleJobRequestFlow,
+  handleRebookFlow,
   showMainMenu,
 } from './whatsapp-flows/job-request'
 import {
@@ -25,6 +26,9 @@ import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
 import {
   handleProviderJourneyFlow,
+  handleRunningLateFlow,
+  handleProviderDisputeFlow,
+  handleInvoiceFlow,
   PROVIDER_JOURNEY_TRIGGERS,
 } from './whatsapp-flows/provider-journey'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
@@ -204,6 +208,9 @@ const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no market
 // Keywords that trigger marketing opt-in
 const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in', 'optin']
 
+// Keywords that trigger re-booking from the last completed job
+const REBOOK_KEYWORDS = ['rebook', 'book again', 'same job', 'repeat', 'book same']
+
 function firstName(name: string | null | undefined) {
   return (name?.trim() || 'there').split(/\s+/)[0]
 }
@@ -253,6 +260,8 @@ function isStatelessNotificationReply(
     id.startsWith('quote_accept_') ||
     id.startsWith('quote_decline_') ||
     id.startsWith('post_match_contact:') ||
+    id.startsWith('rebook_confirm:') ||
+    id === 'rebook_cancel' ||
     (!id && rawText === 'accept')
   )
 }
@@ -610,6 +619,7 @@ async function processInboundMessageUnlocked(
     const isHelp = HELP_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))
     const isReschedule = RESCHEDULE_KEYWORDS.some((k) => rawText.includes(k))
     const isCancel = CANCEL_KEYWORDS.some((k) => rawText.includes(k))
+    const isRebook = REBOOK_KEYWORDS.some((k) => rawText === k || rawText.includes(k))
     const providerCommand = resolveProviderWhatsappCommand(rawText)
 
     let flow: FlowName = conversation.flow as FlowName
@@ -626,6 +636,11 @@ async function processInboundMessageUnlocked(
       'provider_pause_manual',
       'provider_pause_cancel',
       'provider_go_available',
+      'pause_30m',
+      'pause_1h',
+      'pause_2h',
+      'pause_today',
+      'pause_indefinite',
       'provider_worker_portal',
       'provider_service_areas',
       'provider_profile',
@@ -786,6 +801,21 @@ async function processInboundMessageUnlocked(
       return
     }
 
+    // ── Provider location share (post-accept) ──────────────────────────────────
+    if (step === 'post_accept_location_prompt') {
+      if (reply.id === 'location_skip' || rawText === 'skip') {
+        await sendText(phone, "No problem! You can share your location later if needed.")
+        await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+        return
+      }
+      if (reply.type === 'location' && reply.latitude != null && reply.longitude != null) {
+        await handleProviderLocationShare(phone, reply.latitude, reply.longitude)
+        return
+      }
+      // Any other message while waiting — re-prompt or ignore
+      // Fall through so reset keywords still work
+    }
+
     if (reply.id === 'back_home' || reply.id === 'session_restart') {
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
@@ -939,6 +969,26 @@ async function processInboundMessageUnlocked(
       return
     }
 
+    if (reply.id?.startsWith('rebook_confirm:')) {
+      // ── Rebook: customer confirmed — load prior job and enter pre-fill flow ──
+      await handleRebookConfirm(phone, reply.id)
+      return
+    }
+
+    if (reply.id === 'rebook_cancel') {
+      // ── Rebook: customer declined — graceful exit ────────────────────────────
+      await sendText(phone, "No problem! Type *Request a job* when you're ready.")
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (isRebook && flow === 'idle' && !isReset) {
+      // ── Rebook keyword — trigger from idle state only ────────────────────────
+      await handleRebookFlow(phone)
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
     if (flow === 'job_request' && step !== 'addr_select_city' &&
         (reply.id?.startsWith('city__') || reply.id === 'city_prev' || reply.id === 'city_next')) {
       console.info('[whatsapp-bot] ignored stale city-selection reply after flow advanced', {
@@ -976,7 +1026,12 @@ async function processInboundMessageUnlocked(
     } else if (reply.id === 'provider_pause_leads' ||
       reply.id === 'provider_pause_today' ||
       reply.id === 'provider_pause_manual' ||
-      reply.id === 'provider_pause_cancel') {
+      reply.id === 'provider_pause_cancel' ||
+      reply.id === 'pause_30m' ||
+      reply.id === 'pause_1h' ||
+      reply.id === 'pause_2h' ||
+      reply.id === 'pause_today' ||
+      reply.id === 'pause_indefinite') {
       flow = 'provider_journey'
       step = 'pj_pause_confirm'
     } else if (reply.id === 'provider_go_available') {
@@ -1191,6 +1246,30 @@ async function processInboundMessageUnlocked(
     ) {
       flow = 'provider_journey'
       step = 'pj_verify_identity'
+    } else if (
+      flow === 'idle' &&
+      ['running late', 'delayed', 'late', 'stuck in traffic'].some((k) => rawText === k)
+    ) {
+      // M5-T3: running-late — stateless, handle immediately
+      const lateResult = await handleRunningLateFlow(phone)
+      await saveConversation({ phone, flow: 'idle', step: lateResult.nextStep === 'done' ? 'welcome' : lateResult.nextStep, data })
+      return
+    } else if (
+      flow === 'idle' &&
+      ['dispute', 'issue with job', 'raise issue'].some((k) => rawText === k)
+    ) {
+      // M5-T4: dispute — two-step; first message sent here, reply handled by provider_journey dispatcher
+      const disputeResult = await handleProviderDisputeFlow(phone)
+      await saveConversation({ phone, flow: 'provider_journey', step: disputeResult.nextStep, data })
+      return
+    } else if (
+      flow === 'idle' &&
+      ['invoice', 'send invoice', 'receipt'].some((k) => rawText === k)
+    ) {
+      // M5-T5: invoice — stateless, handle immediately
+      const invoiceResult = await handleInvoiceFlow(phone)
+      await saveConversation({ phone, flow: 'idle', step: invoiceResult.nextStep === 'done' ? 'welcome' : invoiceResult.nextStep, data })
+      return
     } else if (PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) && flow === 'idle') {
       flow = 'provider_journey'
       step = 'pj_menu'
@@ -2508,6 +2587,102 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       currentCreditBalance: result.currentCreditBalance,
     })
   }
+
+  // ── Location prompt ──────────────────────────────────────────────────────────
+  // Ask the provider to share their current location so the customer can be
+  // notified the provider is en route. This is optional — the provider can skip.
+  await saveConversation({ phone, flow: 'provider_journey', step: 'post_accept_location_prompt', data: {} })
+  await sendButtons(
+    phone,
+    "📍 *Share your location*\n\nThanks for accepting! Share your current location so we can give your customer an estimated arrival time.",
+    [{ id: 'location_skip', title: 'Skip for now' }],
+    undefined,
+    { templateName: 'provider_location_prompt' }
+  )
+}
+
+async function handleProviderLocationShare(
+  phone: string,
+  latitude: number,
+  longitude: number,
+): Promise<void> {
+  const traceId = createTraceId('wbot')
+
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true })
+  if (!provider) {
+    console.warn('[whatsapp-bot] location-share: provider not found', { traceId, normalizedPhone: phone })
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  // Find the provider's most recent active job (pre-completion statuses)
+  const job = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      booking: {
+        include: {
+          match: {
+            include: {
+              jobRequest: {
+                include: {
+                  customer: {
+                    select: { phone: true, name: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!job) {
+    console.warn('[whatsapp-bot] location-share: no active job found for provider', {
+      traceId, providerId: provider.id,
+    })
+    await sendText(phone, "We couldn't find an active job to attach your location to. If this looks wrong, please contact support.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  // Persist location on the Job
+  await db.job.update({
+    where: { id: job.id },
+    data: {
+      providerCurrentLat: latitude,
+      providerCurrentLng: longitude,
+      providerLocationSharedAt: new Date(),
+    },
+  })
+
+  const customer = job.booking?.match?.jobRequest?.customer
+  const jobCategory = job.booking?.match?.jobRequest?.category ?? 'service'
+
+  if (customer?.phone) {
+    const { sendCustomerEnRouteNotification } = await import('./whatsapp')
+    await sendCustomerEnRouteNotification({
+      customerPhone: customer.phone,
+      customerName: customer.name ?? 'there',
+      providerName: provider.name ?? 'Your provider',
+      jobCategory,
+    }).catch((err) => {
+      console.error('[whatsapp-bot] location-share: failed to notify customer', {
+        traceId,
+        jobId: job.id,
+        providerId: provider.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+
+  await sendText(phone, "✅ Location shared! Your customer has been notified.")
+  await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
 }
 
 async function sendLeadInsufficientCreditsMessage(
@@ -2964,6 +3139,55 @@ async function handleProviderCompletionCapture(
     if (result.ok) {
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
     }
+  }
+}
+
+// ─── Rebook confirm handler ───────────────────────────────────────────────────
+
+async function handleRebookConfirm(phone: string, buttonId: string): Promise<void> {
+  const jobRequestId = buttonId.slice('rebook_confirm:'.length)
+
+  const priorJob = await db.jobRequest.findUnique({
+    where: { id: jobRequestId },
+    select: { id: true, category: true, title: true, description: true, customerId: true },
+  })
+
+  if (!priorJob) {
+    await sendText(phone, "Sorry, we couldn't find that job. Type *Request a job* to start a new booking.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  const identity = await resolveWhatsAppIdentity(phone)
+  const baseData: ConversationData = {
+    selectedCategory: priorJob.category ?? undefined,
+    category: priorJob.category ?? undefined,
+    customerName: identity.displayName ?? undefined,
+    customerId: identity.customerId ?? undefined,
+    issueDescription: priorJob.description ?? undefined,
+    isFirstBooking: false,
+  }
+
+  const savedAddresses = identity.savedAddresses
+  if (savedAddresses.length > 0) {
+    // Has saved address(es) — show the site picker (collect_site handles the prompt)
+    const ctx = {
+      phone,
+      flow: 'job_request' as const,
+      step: 'collect_site' as const,
+      data: baseData,
+      reply: { type: 'button_reply' as const, id: 'collect_site_start', text: undefined, title: undefined },
+    }
+    const result = await handleJobRequestFlow(ctx)
+    await saveConversation({ phone, flow: 'job_request', step: result.nextStep, data: { ...baseData, ...result.nextData } })
+  } else {
+    // No saved addresses — go straight to address entry; description is already pre-filled
+    const category = priorJob.category ?? 'your service'
+    await sendText(
+      phone,
+      `📍 *Where do you need the ${category} work done?*\n\nType your street address:\n\n_Example: 14 Main Street_`,
+    )
+    await saveConversation({ phone, flow: 'job_request', step: 'collect_address_street', data: baseData })
   }
 }
 

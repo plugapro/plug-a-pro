@@ -3,6 +3,8 @@
 // Entry: keywords "available", "offline", "my jobs", or "provider menu"
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
+import { sendCustomerRunningLateNotification } from '../whatsapp'
+import { logOutboundMessage } from '../message-events'
 import { db } from '../db'
 import { transitionJob } from '../jobs'
 import { promptCustomersForNewProviderAvailability } from '../matching/customer-recontact'
@@ -38,6 +40,13 @@ export const PROVIDER_JOURNEY_TRIGGERS = [
   'offline', 'not available', 'not working', 'ek is nie beskikbaar',
   'provider menu', 'my dashboard',
   'verify', 'verification', 'verify identity', 'complete verification',
+  'pause', 'break', 'back later', 'back in 1 hour', 'back in 2 hours', 'back in an hour', 'back tomorrow',
+  // M5-T3: running-late
+  'running late', 'delayed', 'late', 'stuck in traffic',
+  // M5-T4: dispute
+  'dispute', 'issue with job', 'raise issue',
+  // M5-T5: invoice
+  'invoice', 'send invoice', 'receipt',
 ]
 
 function isProviderPaused(provider: {
@@ -180,6 +189,12 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
       return handleProblemReport(ctx)
     case 'pj_verify_identity':
       return handleVerifyIdentity(ctx)
+    case 'pj_running_late':
+      return handleRunningLateFlow(ctx.phone)
+    case 'pj_dispute_collect':
+      return handleProviderDisputeCollect(ctx)
+    case 'pj_invoice':
+      return handleInvoiceFlow(ctx.phone)
     default:
       return handleProviderMenu(ctx)
   }
@@ -452,16 +467,66 @@ async function setProviderAvailable(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function promptPauseLeads(ctx: FlowContext): Promise<FlowResult> {
+  return handlePauseFlow(ctx.phone)
+}
+
+export async function handlePauseFlow(phone: string): Promise<FlowResult> {
   await sendButtons(
-    ctx.phone,
-    `Pause new job leads?\n\nYou won't receive new leads while paused. Existing accepted jobs are not affected.`,
+    phone,
+    `How long do you need a break? Your leads will be paused until you resume.`,
     [
-      { id: 'provider_pause_today', title: 'Pause Today' },
-      { id: 'provider_pause_manual', title: 'Until I Turn On' },
-      { id: 'provider_pause_cancel', title: 'Cancel' },
+      { id: 'pause_30m', title: '30 minutes' },
+      { id: 'pause_1h', title: '1 hour' },
+      { id: 'pause_2h', title: '2 hours' },
+      { id: 'pause_today', title: 'Rest of today' },
+      { id: 'pause_indefinite', title: 'Until I turn on' },
     ],
   )
   return { nextStep: 'pj_pause_confirm' }
+}
+
+function getPauseDuration(id: string): { breakUntil: Date | null; label: string; reason: string } | null {
+  const now = new Date()
+  if (id === 'pause_30m') {
+    const t = new Date(now.getTime() + 30 * 60 * 1000)
+    return {
+      breakUntil: t,
+      label: `until ${t.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`,
+      reason: 'Paused for 30 minutes from WhatsApp',
+    }
+  }
+  if (id === 'pause_1h') {
+    const t = new Date(now.getTime() + 60 * 60 * 1000)
+    return {
+      breakUntil: t,
+      label: `until ${t.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`,
+      reason: 'Paused for 1 hour from WhatsApp',
+    }
+  }
+  if (id === 'pause_2h') {
+    const t = new Date(now.getTime() + 120 * 60 * 1000)
+    return {
+      breakUntil: t,
+      label: `until ${t.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`,
+      reason: 'Paused for 2 hours from WhatsApp',
+    }
+  }
+  if (id === 'pause_today' || id === 'provider_pause_today') {
+    const t = endOfToday()
+    return {
+      breakUntil: t,
+      label: 'for the rest of today',
+      reason: 'Paused for today from WhatsApp',
+    }
+  }
+  if (id === 'pause_indefinite' || id === 'provider_pause_manual') {
+    return {
+      breakUntil: null,
+      label: 'until you turn back on',
+      reason: 'Paused until manually reactivated from WhatsApp',
+    }
+  }
+  return null
 }
 
 async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
@@ -469,7 +534,8 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  if (ctx.reply.id !== 'provider_pause_today' && ctx.reply.id !== 'provider_pause_manual') {
+  const duration = ctx.reply.id ? getPauseDuration(ctx.reply.id) : null
+  if (!duration) {
     return promptPauseLeads(ctx)
   }
 
@@ -480,10 +546,7 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const now = new Date()
-  const breakUntil = ctx.reply.id === 'provider_pause_today' ? endOfToday() : null
-  const pauseReason = ctx.reply.id === 'provider_pause_today'
-    ? 'Paused for today from WhatsApp'
-    : 'Paused until manually reactivated from WhatsApp'
+  const { breakUntil, label, reason: pauseReason } = duration
 
   await db.$transaction(async (tx) => {
     await tx.provider.update({ where: { id: provider.id }, data: { availableNow: false } })
@@ -527,7 +590,7 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `🔴 *Leads paused.*\n\nYou won't receive new job leads until you go available again.\n\nExisting accepted jobs are still active.`,
+    `🔴 *You're paused ${label}.*\n\nReply *available* to resume anytime.\n\nExisting accepted jobs are still active.`,
     [
       { id: 'provider_go_available', title: 'Go Available' },
       { id: 'provider_my_jobs', title: 'My Jobs' },
@@ -1210,5 +1273,205 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
       [{ id: 'back_home', title: 'Main Menu' }],
     )
   }
+  return { nextStep: 'done' }
+}
+
+// ─── M5-T3: Running-late comms ────────────────────────────────────────────────
+
+export async function handleRunningLateFlow(phone: string): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(phone)
+  if (!provider) {
+    await sendText(phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  // Find active job with customer data
+  const activeJob = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: [...ACTIVE_JOB_STATUSES] },
+    },
+    include: {
+      booking: {
+        include: {
+          match: {
+            include: {
+              jobRequest: {
+                include: { customer: { select: { phone: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!activeJob) {
+    await sendText(phone, "No active job found. If you have a job in progress, reply *my jobs* for details.")
+    return { nextStep: 'done' }
+  }
+
+  const jobAny = activeJob as any
+  const category = jobAny.booking?.match?.jobRequest?.category ?? 'service'
+  const customerPhone = jobAny.booking?.match?.jobRequest?.customer?.phone
+
+  if (customerPhone) {
+    await sendCustomerRunningLateNotification({
+      customerPhone,
+      providerName: provider.name,
+      jobCategory: category,
+    })
+  }
+
+  // Log JobStatusEvent
+  await db.jobStatusEvent.create({
+    data: {
+      jobId: activeJob.id,
+      fromStatus: (activeJob as any).status,
+      toStatus: (activeJob as any).status,
+      actorId: provider.id,
+      actorRole: 'provider',
+      notes: 'provider_running_late',
+    },
+  }).catch((err: Error) => {
+    console.error('[provider-journey] running-late JobStatusEvent failed:', err)
+  })
+
+  // Log MessageEvent for the outbound notification to provider
+  await logOutboundMessage({
+    to: phone,
+    templateName: 'customer_provider_running_late',
+    body: 'Provider running-late notification sent to customer.',
+  }).catch(() => {})
+
+  await sendText(phone, "Your customer has been notified that you're running late.")
+  return { nextStep: 'done' }
+}
+
+// ─── M5-T4: Provider dispute trigger ─────────────────────────────────────────
+
+export async function handleProviderDisputeFlow(phone: string): Promise<FlowResult> {
+  await sendText(phone, 'Briefly describe the issue (reply with at least 10 characters):')
+  return { nextStep: 'pj_dispute_collect' }
+}
+
+async function handleProviderDisputeCollect(ctx: FlowContext): Promise<FlowResult> {
+  const reason = ctx.reply.text?.trim() ?? ''
+
+  if (reason.length < 10) {
+    await sendText(ctx.phone, 'Description too short. Please reply with at least 10 characters describing the issue:')
+    return { nextStep: 'pj_dispute_collect' }
+  }
+
+  const provider = await findProviderForWhatsApp(ctx.phone)
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  // Find most recent active or recently completed job
+  const job = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: [...ACTIVE_JOB_STATUSES, 'COMPLETED'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  })
+
+  if (!job) {
+    await sendText(ctx.phone, "No active or recent job found to raise a dispute against. Contact support if you need further help.")
+    return { nextStep: 'done' }
+  }
+
+  const dispute = await db.dispute.create({
+    data: {
+      jobId: job.id,
+      raisedById: provider.id,
+      raisedByRole: 'provider',
+      reason,
+      status: 'OPEN',
+    },
+  })
+
+  await recordAuditLog({
+    actorId: provider.id,
+    actorRole: 'provider',
+    action: 'dispute.created',
+    entityType: AUDIT_ENTITY.DISPUTE,
+    entityId: dispute.id,
+    after: toAuditJson({ jobId: job.id, raisedByRole: 'provider', status: 'OPEN', channel: 'whatsapp' }),
+  }).catch((err: Error) => {
+    console.error('[provider-journey] dispute audit log failed:', err)
+  })
+
+  const shortId = shortRef(dispute.id)
+  await sendText(ctx.phone, `Dispute #${shortId} raised. Our team will review and contact you within 24 hours.`)
+  return { nextStep: 'done' }
+}
+
+// ─── M5-T5: Post-job invoice keyword ─────────────────────────────────────────
+
+export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(phone)
+  if (!provider) {
+    await sendText(phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  const job = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: 'COMPLETED',
+    },
+    include: {
+      booking: {
+        include: {
+          quote: { select: { amount: true } },
+          match: {
+            include: {
+              jobRequest: {
+                include: { customer: { select: { name: true, phone: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!job) {
+    await sendText(phone, "No completed jobs found. Contact support if you need help.")
+    return { nextStep: 'done' }
+  }
+
+  const jobAny = job as any
+  const category = jobAny.booking?.match?.jobRequest?.category ?? 'Service'
+  const customerName = jobAny.booking?.match?.jobRequest?.customer?.name ?? 'Customer'
+  const customerPhone = jobAny.booking?.match?.jobRequest?.customer?.phone
+  const quoteAmount = jobAny.booking?.quote?.amount ?? 0
+  const bookingId: string = jobAny.booking?.id ?? job.id
+  const dateStr = jobAny.completedAt
+    ? new Date(jobAny.completedAt).toLocaleDateString('en-ZA')
+    : jobAny.booking?.scheduledDate
+      ? new Date(jobAny.booking.scheduledDate).toLocaleDateString('en-ZA')
+      : new Date().toLocaleDateString('en-ZA')
+
+  const invoiceText =
+    `Invoice — ${category} job\n` +
+    `Date: ${dateStr}\n` +
+    `Customer: ${customerName}\n` +
+    `Amount: R${quoteAmount}\n` +
+    `Reference: ${bookingId.slice(-8).toUpperCase()}\n` +
+    `Thank you for your service!`
+
+  if (customerPhone) {
+    // Send invoice to customer — use sendText from whatsapp-interactive (positional form)
+    await sendText(customerPhone, invoiceText)
+  }
+
+  await sendText(phone, "Invoice sent to your customer.")
   return { nextStep: 'done' }
 }

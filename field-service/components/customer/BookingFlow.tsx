@@ -42,6 +42,17 @@ interface CategoryData {
   description: string | null
 }
 
+interface SavedSite {
+  id: string
+  label: string | null
+  street: string
+  suburb: string
+  city: string
+  province: string
+  postalCode: string | null
+  locationNodeId: string | null
+}
+
 interface BookingFlowProps {
   category: CategoryData
   initialDraft?: Partial<{
@@ -55,6 +66,10 @@ interface BookingFlowProps {
     providerPreference: string
     budgetPreference: string
   }>
+  /** Saved customer addresses (address book). Only shown when addressBookEnabled=true. */
+  savedSites?: SavedSite[]
+  /** Whether the feature.customer.address_book flag is enabled. */
+  addressBookEnabled?: boolean
 }
 
 interface Address {
@@ -98,8 +113,16 @@ const URGENCY_LABELS: Record<Urgency, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BookingFlow({ category, initialDraft }: BookingFlowProps) {
+export function BookingFlow({
+  category,
+  initialDraft,
+  savedSites = [],
+  addressBookEnabled = false,
+}: BookingFlowProps) {
   const [step, setStep] = useState<Step>('address')
+  // null = no site chosen yet (show site picker), 'new' = user wants manual form
+  const [selectedSiteId, setSelectedSiteId] = useState<string | 'new' | null>(null)
+  const showSitePicker = addressBookEnabled && savedSites.length > 0
   const [address, setAddress] = useState<Address>({
     addressLine1: '',
     addressLine2: '',
@@ -322,6 +345,44 @@ export function BookingFlow({ category, initialDraft }: BookingFlowProps) {
     }
   }
 
+  // ── Site picker helpers ────────────────────────────────────────────────────
+
+  function applySavedSite(site: SavedSite) {
+    setAddress((current) => ({
+      ...current,
+      addressLine1: site.street,
+      suburb: site.suburb,
+      city: site.city,
+      province: site.province,
+      postalCode: site.postalCode ?? '',
+      // Clear fields that are not stored on CustomerAddress
+      addressLine2: '',
+      complexName: '',
+      unitNumber: '',
+      region: '',
+    }))
+    setLocationNodeId(site.locationNodeId ?? null)
+    setLocationDetectedLabel(null)
+    setSelectedSiteId(site.id)
+  }
+
+  function handleEnterNewAddress() {
+    setAddress({
+      addressLine1: '',
+      addressLine2: '',
+      complexName: '',
+      unitNumber: '',
+      suburb: '',
+      region: '',
+      city: '',
+      province: 'Gauteng',
+      postalCode: '',
+    })
+    setLocationNodeId(null)
+    setLocationDetectedLabel(null)
+    setSelectedSiteId('new')
+  }
+
   // ── Step 1: Address submit ──────────────────────────────────────────────────
 
   function handleAddressSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -487,6 +548,48 @@ export function BookingFlow({ category, initialDraft }: BookingFlowProps) {
         <form onSubmit={handleAddressSubmit} className="space-y-4">
           <h2 className="font-medium">Service address</h2>
 
+          {/* ── Saved site picker (flag-gated) ────────────────────────── */}
+          {showSitePicker && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Choose a saved site</p>
+              <div className="space-y-2">
+                {savedSites.map((site) => (
+                  <button
+                    key={site.id}
+                    type="button"
+                    onClick={() => applySavedSite(site)}
+                    className={`w-full text-left rounded-xl border px-4 py-3 text-sm transition-colors ${
+                      selectedSiteId === site.id
+                        ? 'border-primary bg-primary/10 font-medium'
+                        : 'border-border bg-card hover:bg-muted'
+                    }`}
+                  >
+                    <span className="block font-medium">
+                      {site.label ?? site.suburb}
+                    </span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      {[site.street, site.suburb, site.city].filter(Boolean).join(', ')}
+                    </span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleEnterNewAddress}
+                  className={`w-full text-left rounded-xl border px-4 py-3 text-sm transition-colors ${
+                    selectedSiteId === 'new'
+                      ? 'border-primary bg-primary/10 font-medium'
+                      : 'border-border bg-card hover:bg-muted'
+                  }`}
+                >
+                  + Enter a new address
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Show the privacy notice + manual form when: no site picker, OR user chose "new", OR a site is selected */}
+          {(!showSitePicker || selectedSiteId !== null) && (
+            <>
           <Card>
             <CardContent className="space-y-1 px-4 py-4 text-sm">
               <p className="font-medium">Your address stays private</p>
@@ -646,8 +749,15 @@ export function BookingFlow({ category, initialDraft }: BookingFlowProps) {
               />
             </div>
           </div>
+            </>
+          )}
 
-          <Button type="submit" className="w-full" size="lg">
+          <Button
+            type="submit"
+            className="w-full"
+            size="lg"
+            disabled={showSitePicker && selectedSiteId === null}
+          >
             Next: Describe your job →
           </Button>
         </form>

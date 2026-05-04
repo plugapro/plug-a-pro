@@ -131,10 +131,13 @@ describe('handleProviderJourneyFlow', () => {
       expect(db.provider.update).not.toHaveBeenCalled()
       expect(wa.sendButtons).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Pause new job leads'),
+        expect.stringContaining('How long do you need a break'),
         expect.arrayContaining([
-          expect.objectContaining({ id: 'provider_pause_today' }),
-          expect.objectContaining({ id: 'provider_pause_manual' }),
+          expect.objectContaining({ id: 'pause_30m' }),
+          expect.objectContaining({ id: 'pause_1h' }),
+          expect.objectContaining({ id: 'pause_2h' }),
+          expect.objectContaining({ id: 'pause_today' }),
+          expect.objectContaining({ id: 'pause_indefinite' }),
         ]),
       )
     })

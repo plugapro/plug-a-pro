@@ -51,7 +51,12 @@ model Customer {
   channel        String?   // "PWA" | "WHATSAPP" | "BOTH"
   address        String?   // free-text address for quick-edit / display
 
+  isBusinessAccount Boolean       @default(false)
+  businessName      String?
+
   addresses              Address[]
+  customerAddresses      CustomerAddress[]
+  members                CustomerMember[] @relation("PrincipalCustomerMembers")
   jobRequests            JobRequest[]
   ratings                Review[]
   messages               MessageEvent[]
@@ -94,6 +99,43 @@ model Address {
 
   @@index([locationNodeId])
   @@map("addresses")
+}
+
+model CustomerAddress {
+  id             String        @id @default(cuid())
+  customerId     String
+  label          String?
+  street         String
+  suburb         String
+  city           String
+  province       String
+  postalCode     String?
+  lat            Float?
+  lng            Float?
+  locationNodeId String?
+  isDefault      Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  locationNode   LocationNode? @relation(fields: [locationNodeId], references: [id])
+
+  @@map("customer_addresses")
+}
+
+model CustomerMember {
+  id                  String   @id @default(cuid())
+  principalCustomerId String
+  memberUserId        String
+  memberName          String
+  memberPhone         String
+  role                String   @default("BOOKER")
+  active              Boolean  @default(true)
+  addedAt             DateTime @default(now())
+
+  principal Customer @relation("PrincipalCustomerMembers", fields: [principalCustomerId], references: [id], onDelete: Cascade)
+
+  @@map("customer_members")
 }
 
 // ─── Service area waitlist ────────────────────────────────────────────────────
@@ -146,6 +188,7 @@ model LocationNode {
 
   technicianServiceAreas TechnicianServiceArea[]
   addresses              Address[]
+  customerAddresses      CustomerAddress[]
   candidatePool          CandidatePool[]
 
   @@index([nodeType, active])
@@ -355,6 +398,7 @@ model JobRequest {
   customerAccessTokenExpiresAt DateTime?
   customerAccessTokenRevokedAt DateTime?
   latestDispatchDecisionId String?
+  customerAddressId String?
   isTestRequest Boolean @default(false)
   cohortName String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
@@ -366,6 +410,7 @@ model JobRequest {
   // Alternative-slot negotiation — set when orchestrator sends slot options after a NO_MATCH
   altSlotNegotiationSentAt    DateTime?
   altSlotNegotiationOutcome   String?   // 'CUSTOMER_SELECTED' | 'CUSTOMER_DECLINED' | 'PROVIDER_DECLINED' | 'EXPIRED'
+  matchFoundWhatsappSentAt    DateTime? // idempotency guard — set when WA match-found notification is sent
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -553,6 +598,7 @@ model Quote {
   status         QuoteStatus @default(PENDING)
   approvedAt     DateTime?
   declinedAt     DateTime?
+  approvalWhatsappSentAt DateTime? // idempotency guard — set when WA approval notification is sent
   notes          String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
@@ -612,6 +658,9 @@ model Job {
   startedAt      DateTime?
   completedAt    DateTime?
   failureReason  String?
+  providerCurrentLat       Float?
+  providerCurrentLng       Float?
+  providerLocationSharedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

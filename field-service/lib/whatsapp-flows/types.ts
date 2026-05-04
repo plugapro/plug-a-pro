@@ -23,6 +23,7 @@ export type FlowStep =
   | 'browse_categories'
   | 'collect_name'              // captures name on first job request
   | 'collect_address'           // addr_same / addr_new decision for returning customers
+  | 'collect_site'              // site picker for first-booking customers with saved addresses
   | 'collect_address_street'    // captures free-text street / unit (addressLine1)
   // Structured location selection — replaces old suburb/city free-text steps
   | 'addr_select_province'      // list-based province selection
@@ -106,6 +107,11 @@ export type FlowStep =
   | 'pj_status_confirm'
   | 'pj_problem_report'
   | 'pj_verify_identity'
+  | 'pj_running_late'
+  | 'pj_dispute_collect'
+  | 'pj_invoice'
+  // Provider post-accept location prompt
+  | 'post_accept_location_prompt'
   // Terminal
   | 'done'
   | 'cancelled'

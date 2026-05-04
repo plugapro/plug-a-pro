@@ -19,6 +19,7 @@ import { scoreAndRankCandidates } from './scoring'
 import { reserveBestProviderAtomically } from './reservation'
 import { dispatchMatchLead } from './dispatch'
 import { emitMatchEvent } from './events'
+import { sendCustomerMatchFoundNotification } from '@/lib/whatsapp'
 import { isEnabled } from '@/lib/flags'
 import { findAlternativeSlots } from './alternative-slots'
 import type { SlotOption } from './types'
@@ -225,6 +226,21 @@ export async function orchestrateMatch(
       hold: reserved.hold,
       provider: reserved.provider,
     })
+
+    // 5b. Notify customer that a provider has been matched (CW2)
+    // Defensive: failure must not crash the orchestrator
+    await sendCustomerMatchFoundNotification({
+      customerPhone: jobRequest.customer?.phone ?? '',
+      customerName: jobRequest.customer?.name ?? 'Customer',
+      providerName: reserved.provider.name,
+      serviceName: jobRequest.category,
+      jobRequestId: jobRequest.id,
+    }).catch((err) =>
+      console.error('[orchestrator] customer match-found notification failed', {
+        jobRequestId: jobRequest.id,
+        err,
+      })
+    )
 
     // 6. Audit trail
     await recordDispatchDecision(db, {

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
+import { isEnabled } from '@/lib/flags'
 
 export const metadata = buildMetadata({ title: 'Provider Profile', noIndex: true })
 
@@ -22,6 +23,9 @@ export default async function CustomerProviderProfilePage({
     redirect('/sign-in')
   }
 
+  const flagEnabled = await isEnabled('feature.customer.provider_browse', { userId: session.id })
+  if (!flagEnabled) redirect('/')
+
   const customer = await db.customer.findUnique({
     where: { userId: session.id },
     select: { id: true },
@@ -30,18 +34,6 @@ export default async function CustomerProviderProfilePage({
   if (!customer) redirect('/bookings')
 
   const { id } = await params
-
-  const hasRelationship = await db.jobRequest.findFirst({
-    where: {
-      customerId: customer.id,
-      match: { providerId: id },
-    },
-    select: { id: true },
-  })
-
-  if (!hasRelationship) {
-    redirect('/bookings')
-  }
 
   const provider = await db.provider.findUnique({
     where: { id },

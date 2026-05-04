@@ -257,12 +257,14 @@ export async function sendCtaUrl(
 // ─── Parse inbound interactive replies ───────────────────────────────────────
 
 export interface InboundReply {
-  type: 'button_reply' | 'list_reply' | 'text' | 'image' | 'document' | 'other'
+  type: 'button_reply' | 'list_reply' | 'text' | 'image' | 'document' | 'location' | 'other'
   id?: string      // button/list row ID
   title?: string   // button/list row title
   text?: string    // raw text (for free-text steps)
   mediaId?: string // WhatsApp media ID (for image/document)
   mimeType?: string
+  latitude?: number  // location message
+  longitude?: number // location message
 }
 
 export interface OutboundInteractiveContext {
@@ -298,6 +300,9 @@ export function parseInbound(message: InboundMessage): InboundReply {
   if (message.type === 'document' && message.document?.id) {
     return { type: 'document', mediaId: message.document.id, mimeType: message.document.mime_type, text: message.document.caption }
   }
+  if (message.type === 'location' && message.location != null) {
+    return { type: 'location', latitude: message.location.latitude, longitude: message.location.longitude }
+  }
   return { type: 'other' }
 }
 
@@ -315,5 +320,6 @@ export interface InboundMessage {
   }
   image?: { id: string; mime_type: string; caption?: string }
   document?: { id: string; mime_type: string; filename?: string; caption?: string }
+  location?: { latitude: number; longitude: number; name?: string; address?: string }
   timestamp: string
 }

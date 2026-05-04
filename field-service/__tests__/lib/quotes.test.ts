@@ -9,6 +9,7 @@ const { mockDb } = vi.hoisted(() => ({
     booking: { create: vi.fn() },
     job: { create: vi.fn() },
     technicianScheduleItem: { create: vi.fn(), updateMany: vi.fn() },
+    auditLog: { create: vi.fn().mockResolvedValue({}) },
   },
 }))
 
