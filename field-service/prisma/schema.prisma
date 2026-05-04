@@ -104,7 +104,7 @@ model Address {
 model CustomerAddress {
   id             String        @id @default(cuid())
   customerId     String
-  label          String
+  label          String?
   street         String
   suburb         String
   city           String
@@ -117,7 +117,7 @@ model CustomerAddress {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  customer       Customer      @relation(fields: [customerId], references: [id])
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   locationNode   LocationNode? @relation(fields: [locationNodeId], references: [id])
 
   @@map("customer_addresses")
@@ -133,7 +133,7 @@ model CustomerMember {
   active              Boolean  @default(true)
   addedAt             DateTime @default(now())
 
-  principal Customer @relation("PrincipalCustomerMembers", fields: [principalCustomerId], references: [id])
+  principal Customer @relation("PrincipalCustomerMembers", fields: [principalCustomerId], references: [id], onDelete: Cascade)
 
   @@map("customer_members")
 }
