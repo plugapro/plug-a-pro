@@ -410,6 +410,7 @@ model JobRequest {
   // Alternative-slot negotiation — set when orchestrator sends slot options after a NO_MATCH
   altSlotNegotiationSentAt    DateTime?
   altSlotNegotiationOutcome   String?   // 'CUSTOMER_SELECTED' | 'CUSTOMER_DECLINED' | 'PROVIDER_DECLINED' | 'EXPIRED'
+  matchFoundWhatsappSentAt    DateTime? // idempotency guard — set when WA match-found notification is sent
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -597,6 +598,7 @@ model Quote {
   status         QuoteStatus @default(PENDING)
   approvedAt     DateTime?
   declinedAt     DateTime?
+  approvalWhatsappSentAt DateTime? // idempotency guard — set when WA approval notification is sent
   notes          String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
