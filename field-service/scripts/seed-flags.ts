@@ -93,6 +93,14 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'feature.deadlineed.b2b_landing',
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',
   },
+  {
+    key: 'feature.provider.pwa_inbox',
+    description: 'Enable provider PWA lead inbox, profile editor, availability toggle, and earnings dashboard (M4).',
+  },
+  {
+    key: 'feature.customer.provider_browse',
+    description: 'Enable public provider catalogue browsing on customer PWA (M6).',
+  },
 ]
 
 async function main() {
