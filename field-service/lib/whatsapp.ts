@@ -826,6 +826,76 @@ export async function sendProviderPaymentReleased(params: {
 /** Notify admin when a new provider application is submitted via WhatsApp.
  *  Admin phone is set via ADMIN_WHATSAPP_NUMBER env var.
  *  Falls back silently if not configured — non-critical. */
+// ─── Customer quote-ready notification (WA flow CW3) ─────────────────────────
+
+export interface SendCustomerQuoteReadyParams {
+  customerPhone: string
+  customerName: string
+  providerName: string
+  serviceName: string
+  amount: number        // in ZAR rands (e.g. 350 == R 350.00)
+  validUntil: Date
+  quoteId: string
+  jobRequestId: string
+}
+
+/**
+ * Notify a customer that a provider has submitted a quote (CW3).
+ *
+ * Uses `sendButtons()` (interactive message) as a stand-in while the
+ * `customer_quote_ready` Meta template is pending approval. Once approved,
+ * swap this for a `sendTemplate('customer_quote_ready', ...)` call.
+ *
+ * Idempotency: checks `Quote.approvalWhatsappSentAt` before sending.
+ * If already set the function returns early without sending a duplicate.
+ */
+export async function sendCustomerQuoteReadyNotification(
+  params: SendCustomerQuoteReadyParams
+): Promise<void> {
+  // Idempotency guard
+  const quote = await db.quote.findUnique({
+    where: { id: params.quoteId },
+    select: { approvalWhatsappSentAt: true },
+  })
+  if (quote?.approvalWhatsappSentAt) {
+    return
+  }
+
+  const validUntilStr = params.validUntil.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+  const amountStr = `R ${params.amount.toFixed(2)}`
+  const body = `${params.providerName} has quoted ${amountStr} for your ${params.serviceName} job. Valid until ${validUntilStr}.`
+
+  const { sendButtons } = await import('./whatsapp-interactive')
+
+  const externalId = await sendButtons(
+    params.customerPhone,
+    body,
+    [
+      { id: `quote_accept_${params.quoteId}`, title: 'Accept quote' },
+      { id: `quote_decline_${params.quoteId}`, title: 'Decline' },
+    ],
+    undefined,
+    { templateName: 'customer_quote_ready' }
+  )
+
+  await db.quote.update({
+    where: { id: params.quoteId },
+    data: { approvalWhatsappSentAt: new Date() },
+  })
+
+  await logOutboundMessage({
+    to: params.customerPhone,
+    templateName: 'customer_quote_ready',
+    body,
+    externalId,
+    metadata: { quoteId: params.quoteId, jobRequestId: params.jobRequestId },
+  }).catch(() => {})
+}
+
 export async function sendAdminNewApplication(params: {
   applicantName: string
   applicantPhone: string
