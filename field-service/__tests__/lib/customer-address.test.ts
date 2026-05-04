@@ -95,13 +95,18 @@ describe('CustomerAddress — Prisma model (M1-T1)', () => {
     mockDb.customerAddress.create.mockResolvedValue({
       id: 'addr_1',
       customerId: 'cust_1',
-      ...payload,
+      label:      payload.label ?? null,
+      street:     payload.street as string,
+      suburb:     payload.suburb as string,
+      city:       payload.city as string,
+      province:   payload.province as string,
+      isDefault:  payload.isDefault ?? false,
       postalCode: null,
-      lat: null,
-      lng: null,
+      lat:        null,
+      lng:        null,
       locationNodeId: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt:  new Date(),
+      updatedAt:  new Date(),
     } satisfies CustomerAddress)
 
     const result = await mockDb.customerAddress.create({ data: payload })
