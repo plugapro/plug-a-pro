@@ -51,7 +51,11 @@ model Customer {
   channel        String?   // "PWA" | "WHATSAPP" | "BOTH"
   address        String?   // free-text address for quick-edit / display
 
+  isBusinessAccount Boolean       @default(false)
+  businessName      String?
+
   addresses              Address[]
+  customerAddresses      CustomerAddress[]
   jobRequests            JobRequest[]
   ratings                Review[]
   messages               MessageEvent[]
@@ -94,6 +98,28 @@ model Address {
 
   @@index([locationNodeId])
   @@map("addresses")
+}
+
+model CustomerAddress {
+  id             String        @id @default(cuid())
+  customerId     String
+  label          String
+  street         String
+  suburb         String
+  city           String
+  province       String
+  postalCode     String?
+  lat            Float?
+  lng            Float?
+  locationNodeId String?
+  isDefault      Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  locationNode   LocationNode? @relation(fields: [locationNodeId], references: [id])
+
+  @@map("customer_addresses")
 }
 
 // ─── Service area waitlist ────────────────────────────────────────────────────
@@ -146,6 +172,7 @@ model LocationNode {
 
   technicianServiceAreas TechnicianServiceArea[]
   addresses              Address[]
+  customerAddresses      CustomerAddress[]
   candidatePool          CandidatePool[]
 
   @@index([nodeType, active])
@@ -355,6 +382,7 @@ model JobRequest {
   customerAccessTokenExpiresAt DateTime?
   customerAccessTokenRevokedAt DateTime?
   latestDispatchDecisionId String?
+  customerAddressId String?
   isTestRequest Boolean @default(false)
   cohortName String?
   status      JobRequestStatus @default(PENDING_VALIDATION)
