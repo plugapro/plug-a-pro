@@ -56,6 +56,7 @@ model Customer {
 
   addresses              Address[]
   customerAddresses      CustomerAddress[]
+  members                CustomerMember[] @relation("PrincipalCustomerMembers")
   jobRequests            JobRequest[]
   ratings                Review[]
   messages               MessageEvent[]
@@ -120,6 +121,21 @@ model CustomerAddress {
   locationNode   LocationNode? @relation(fields: [locationNodeId], references: [id])
 
   @@map("customer_addresses")
+}
+
+model CustomerMember {
+  id                  String   @id @default(cuid())
+  principalCustomerId String
+  memberUserId        String
+  memberName          String
+  memberPhone         String
+  role                String   @default("BOOKER")
+  active              Boolean  @default(true)
+  addedAt             DateTime @default(now())
+
+  principal Customer @relation("PrincipalCustomerMembers", fields: [principalCustomerId], references: [id])
+
+  @@map("customer_members")
 }
 
 // ─── Service area waitlist ────────────────────────────────────────────────────

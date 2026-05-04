@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { CustomerAddress, Customer, JobRequest, Prisma } from '@prisma/client'
+import type { CustomerAddress, Customer, JobRequest, CustomerMember, Prisma } from '@prisma/client'
 
 // ─── Mock wiring ──────────────────────────────────────────────────────────────
 
@@ -30,6 +30,13 @@ const { mockDb } = vi.hoisted(() => ({
     },
     jobRequest: {
       findUnique: vi.fn(),
+    },
+    customerMember: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
   },
 }))
@@ -143,5 +150,117 @@ describe('JobRequest.customerAddressId (M1-T1)', () => {
 
     const result = await mockDb.jobRequest.findUnique({ where: { id: 'jr_1' } })
     expect(result?.customerAddressId).toBe('addr_1')
+  })
+})
+
+// ─── M1-T2: CustomerMember ────────────────────────────────────────────────────
+
+// Type-level check: all expected fields must exist on the generated type
+type _AssertCustomerMemberFields = {
+  id: CustomerMember['id']
+  principalCustomerId: CustomerMember['principalCustomerId']
+  memberUserId: CustomerMember['memberUserId']
+  memberName: CustomerMember['memberName']
+  memberPhone: CustomerMember['memberPhone']
+  role: CustomerMember['role']
+  active: CustomerMember['active']
+  addedAt: CustomerMember['addedAt']
+}
+
+describe('CustomerMember (M1-T2)', () => {
+  it('db.customerMember accessor is present on the mocked client', () => {
+    expect(mockDb.customerMember).toBeDefined()
+    expect(typeof mockDb.customerMember.findMany).toBe('function')
+    expect(typeof mockDb.customerMember.create).toBe('function')
+  })
+
+  it('CustomerMember type includes all expected fields', () => {
+    const member: Pick<
+      CustomerMember,
+      'id' | 'principalCustomerId' | 'memberUserId' | 'memberName' | 'memberPhone' | 'role' | 'active' | 'addedAt'
+    > = {
+      id: 'cm_1',
+      principalCustomerId: 'cust_1',
+      memberUserId: 'user_1',
+      memberName: 'Jane Doe',
+      memberPhone: '+27821234567',
+      role: 'BOOKER',
+      active: true,
+      addedAt: new Date(),
+    }
+    expect(member.role).toBe('BOOKER')
+    expect(member.active).toBe(true)
+  })
+
+  it('CustomerMember create shape accepts all required fields', async () => {
+    const payload: Prisma.CustomerMemberCreateInput = {
+      memberUserId: 'user_2',
+      memberName: 'Bob Smith',
+      memberPhone: '+27831234567',
+      principal: { connect: { id: 'cust_1' } },
+    }
+
+    mockDb.customerMember.create.mockResolvedValue({
+      id: 'cm_2',
+      principalCustomerId: 'cust_1',
+      memberUserId: 'user_2',
+      memberName: 'Bob Smith',
+      memberPhone: '+27831234567',
+      role: 'BOOKER',
+      active: true,
+      addedAt: new Date(),
+    } satisfies CustomerMember)
+
+    const result = await mockDb.customerMember.create({ data: payload })
+    expect(result.id).toBe('cm_2')
+    expect(result.memberName).toBe('Bob Smith')
+    expect(result.role).toBe('BOOKER')
+    expect(result.active).toBe(true)
+  })
+
+  it('db.customerMember.findMany returns members for a principal customer', async () => {
+    mockDb.customerMember.findMany.mockResolvedValue([
+      {
+        id: 'cm_1',
+        principalCustomerId: 'cust_1',
+        memberUserId: 'user_1',
+        memberName: 'Jane Doe',
+        memberPhone: '+27821234567',
+        role: 'BOOKER',
+        active: true,
+        addedAt: new Date(),
+      },
+    ])
+
+    const results = await mockDb.customerMember.findMany({
+      where: { principalCustomerId: 'cust_1', active: true },
+    })
+    expect(results).toHaveLength(1)
+    expect(results[0].principalCustomerId).toBe('cust_1')
+    expect(results[0].memberPhone).toBe('+27821234567')
+  })
+
+  it('CustomerMember defaults role to BOOKER and active to true', async () => {
+    mockDb.customerMember.create.mockResolvedValue({
+      id: 'cm_3',
+      principalCustomerId: 'cust_2',
+      memberUserId: 'user_3',
+      memberName: 'Alice',
+      memberPhone: '+27841234567',
+      role: 'BOOKER',
+      active: true,
+      addedAt: new Date(),
+    } satisfies CustomerMember)
+
+    const result = await mockDb.customerMember.create({
+      data: {
+        memberUserId: 'user_3',
+        memberName: 'Alice',
+        memberPhone: '+27841234567',
+        principal: { connect: { id: 'cust_2' } },
+      },
+    })
+    expect(result.role).toBe('BOOKER')
+    expect(result.active).toBe(true)
   })
 })
