@@ -191,6 +191,16 @@ export async function processQuoteDecision(
           where: { id: quote.matchId },
           data: { status: 'QUOTE_DECLINED' },
         })
+        await tx.auditLog.create({
+          data: {
+            actorId: customer.id,
+            actorRole: 'customer',
+            action: 'quote.declined',
+            entityType: 'Quote',
+            entityId: quoteId,
+            after: { matchId: quote.matchId, feedback } as Prisma.InputJsonValue,
+          },
+        })
         return {
           action: 'declined' as const,
           quoteId,
@@ -232,6 +242,20 @@ export async function processQuoteDecision(
         isTestJob: quote.match.jobRequest.isTestRequest,
         cohortName: quote.match.jobRequest.cohortName,
         source: 'quote_approval',
+      })
+
+      await tx.auditLog.create({
+        data: {
+          actorId: customer.id,
+          actorRole: 'customer',
+          action: 'quote.approved',
+          entityType: 'Quote',
+          entityId: quoteId,
+          after: {
+            matchId: quote.matchId,
+            bookingId: booking.bookingId,
+          } as Prisma.InputJsonValue,
+        },
       })
 
       return {
