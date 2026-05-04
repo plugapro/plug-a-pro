@@ -77,7 +77,10 @@ export const PROVIDER_WHATSAPP_COMMANDS: ProviderWhatsappCommand[] = [
   },
   {
     command: 'unavailable',
-    aliases: ['unavailable', 'offline', 'not available', 'pause', 'pause leads'],
+    aliases: [
+      'unavailable', 'offline', 'not available', 'pause', 'pause leads',
+      'break', 'back later', 'back in 1 hour', 'back in 2 hours', 'back in an hour', 'back tomorrow',
+    ],
     flow: 'provider_journey',
     step: 'pj_toggle_available',
     replyId: 'provider_pause_leads',

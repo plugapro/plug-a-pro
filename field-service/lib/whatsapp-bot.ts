@@ -633,6 +633,11 @@ async function processInboundMessageUnlocked(
       'provider_pause_manual',
       'provider_pause_cancel',
       'provider_go_available',
+      'pause_30m',
+      'pause_1h',
+      'pause_2h',
+      'pause_today',
+      'pause_indefinite',
       'provider_worker_portal',
       'provider_service_areas',
       'provider_profile',
@@ -1003,7 +1008,12 @@ async function processInboundMessageUnlocked(
     } else if (reply.id === 'provider_pause_leads' ||
       reply.id === 'provider_pause_today' ||
       reply.id === 'provider_pause_manual' ||
-      reply.id === 'provider_pause_cancel') {
+      reply.id === 'provider_pause_cancel' ||
+      reply.id === 'pause_30m' ||
+      reply.id === 'pause_1h' ||
+      reply.id === 'pause_2h' ||
+      reply.id === 'pause_today' ||
+      reply.id === 'pause_indefinite') {
       flow = 'provider_journey'
       step = 'pj_pause_confirm'
     } else if (reply.id === 'provider_go_available') {

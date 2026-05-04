@@ -38,6 +38,7 @@ export const PROVIDER_JOURNEY_TRIGGERS = [
   'offline', 'not available', 'not working', 'ek is nie beskikbaar',
   'provider menu', 'my dashboard',
   'verify', 'verification', 'verify identity', 'complete verification',
+  'pause', 'break', 'back later', 'back in 1 hour', 'back in 2 hours', 'back in an hour', 'back tomorrow',
 ]
 
 function isProviderPaused(provider: {
@@ -452,16 +453,66 @@ async function setProviderAvailable(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function promptPauseLeads(ctx: FlowContext): Promise<FlowResult> {
+  return handlePauseFlow(ctx.phone)
+}
+
+export async function handlePauseFlow(phone: string): Promise<FlowResult> {
   await sendButtons(
-    ctx.phone,
-    `Pause new job leads?\n\nYou won't receive new leads while paused. Existing accepted jobs are not affected.`,
+    phone,
+    `How long do you need a break? Your leads will be paused until you resume.`,
     [
-      { id: 'provider_pause_today', title: 'Pause Today' },
-      { id: 'provider_pause_manual', title: 'Until I Turn On' },
-      { id: 'provider_pause_cancel', title: 'Cancel' },
+      { id: 'pause_30m', title: '30 minutes' },
+      { id: 'pause_1h', title: '1 hour' },
+      { id: 'pause_2h', title: '2 hours' },
+      { id: 'pause_today', title: 'Rest of today' },
+      { id: 'pause_indefinite', title: 'Until I turn on' },
     ],
   )
   return { nextStep: 'pj_pause_confirm' }
+}
+
+function getPauseDuration(id: string): { breakUntil: Date | null; label: string; reason: string } | null {
+  const now = new Date()
+  if (id === 'pause_30m') {
+    const t = new Date(now.getTime() + 30 * 60 * 1000)
+    return {
+      breakUntil: t,
+      label: `until ${t.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`,
+      reason: 'Paused for 30 minutes from WhatsApp',
+    }
+  }
+  if (id === 'pause_1h') {
+    const t = new Date(now.getTime() + 60 * 60 * 1000)
+    return {
+      breakUntil: t,
+      label: `until ${t.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`,
+      reason: 'Paused for 1 hour from WhatsApp',
+    }
+  }
+  if (id === 'pause_2h') {
+    const t = new Date(now.getTime() + 120 * 60 * 1000)
+    return {
+      breakUntil: t,
+      label: `until ${t.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`,
+      reason: 'Paused for 2 hours from WhatsApp',
+    }
+  }
+  if (id === 'pause_today' || id === 'provider_pause_today') {
+    const t = endOfToday()
+    return {
+      breakUntil: t,
+      label: 'for the rest of today',
+      reason: 'Paused for today from WhatsApp',
+    }
+  }
+  if (id === 'pause_indefinite' || id === 'provider_pause_manual') {
+    return {
+      breakUntil: null,
+      label: 'until you turn back on',
+      reason: 'Paused until manually reactivated from WhatsApp',
+    }
+  }
+  return null
 }
 
 async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
@@ -469,7 +520,8 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'done' }
   }
 
-  if (ctx.reply.id !== 'provider_pause_today' && ctx.reply.id !== 'provider_pause_manual') {
+  const duration = ctx.reply.id ? getPauseDuration(ctx.reply.id) : null
+  if (!duration) {
     return promptPauseLeads(ctx)
   }
 
@@ -480,10 +532,7 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
   }
 
   const now = new Date()
-  const breakUntil = ctx.reply.id === 'provider_pause_today' ? endOfToday() : null
-  const pauseReason = ctx.reply.id === 'provider_pause_today'
-    ? 'Paused for today from WhatsApp'
-    : 'Paused until manually reactivated from WhatsApp'
+  const { breakUntil, label, reason: pauseReason } = duration
 
   await db.$transaction(async (tx) => {
     await tx.provider.update({ where: { id: provider.id }, data: { availableNow: false } })
@@ -527,7 +576,7 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
 
   await sendButtons(
     ctx.phone,
-    `🔴 *Leads paused.*\n\nYou won't receive new job leads until you go available again.\n\nExisting accepted jobs are still active.`,
+    `🔴 *You're paused ${label}.*\n\nReply *available* to resume anytime.\n\nExisting accepted jobs are still active.`,
     [
       { id: 'provider_go_available', title: 'Go Available' },
       { id: 'provider_my_jobs', title: 'My Jobs' },
