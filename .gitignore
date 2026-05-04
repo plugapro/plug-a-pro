@@ -13,6 +13,9 @@ Thumbs.db
 # MCP tooling
 .playwright-mcp/
 
+# Git worktrees
+.worktrees/
+
 # Media source files (raw assets — processed outputs go into app public/ dirs)
 media assets/
 .vercel
