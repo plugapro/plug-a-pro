@@ -85,6 +85,14 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'qualified_shortlist.auto_trigger',
     description: 'Qualified Shortlist: automatically generate the customer shortlist after enough interested provider responses.',
   },
+  {
+    key: 'feature.customer.address_book',
+    description: 'Enable multi-site address book for customers (M1-T4/T5).',
+  },
+  {
+    key: 'feature.deadlineed.b2b_landing',
+    description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',
+  },
 ]
 
 async function main() {
