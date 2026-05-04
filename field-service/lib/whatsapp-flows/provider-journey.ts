@@ -3,6 +3,8 @@
 // Entry: keywords "available", "offline", "my jobs", or "provider menu"
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
+import { sendCustomerRunningLateNotification } from '../whatsapp'
+import { logOutboundMessage } from '../message-events'
 import { db } from '../db'
 import { transitionJob } from '../jobs'
 import { promptCustomersForNewProviderAvailability } from '../matching/customer-recontact'
@@ -39,6 +41,12 @@ export const PROVIDER_JOURNEY_TRIGGERS = [
   'provider menu', 'my dashboard',
   'verify', 'verification', 'verify identity', 'complete verification',
   'pause', 'break', 'back later', 'back in 1 hour', 'back in 2 hours', 'back in an hour', 'back tomorrow',
+  // M5-T3: running-late
+  'running late', 'delayed', 'late', 'stuck in traffic',
+  // M5-T4: dispute
+  'dispute', 'issue with job', 'raise issue',
+  // M5-T5: invoice
+  'invoice', 'send invoice', 'receipt',
 ]
 
 function isProviderPaused(provider: {
@@ -181,6 +189,12 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
       return handleProblemReport(ctx)
     case 'pj_verify_identity':
       return handleVerifyIdentity(ctx)
+    case 'pj_running_late':
+      return handleRunningLateFlow(ctx.phone)
+    case 'pj_dispute_collect':
+      return handleProviderDisputeCollect(ctx)
+    case 'pj_invoice':
+      return handleInvoiceFlow(ctx.phone)
     default:
       return handleProviderMenu(ctx)
   }
@@ -1259,5 +1273,205 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
       [{ id: 'back_home', title: 'Main Menu' }],
     )
   }
+  return { nextStep: 'done' }
+}
+
+// ─── M5-T3: Running-late comms ────────────────────────────────────────────────
+
+export async function handleRunningLateFlow(phone: string): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(phone)
+  if (!provider) {
+    await sendText(phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  // Find active job with customer data
+  const activeJob = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: [...ACTIVE_JOB_STATUSES] },
+    },
+    include: {
+      booking: {
+        include: {
+          match: {
+            include: {
+              jobRequest: {
+                include: { customer: { select: { phone: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!activeJob) {
+    await sendText(phone, "No active job found. If you have a job in progress, reply *my jobs* for details.")
+    return { nextStep: 'done' }
+  }
+
+  const jobAny = activeJob as any
+  const category = jobAny.booking?.match?.jobRequest?.category ?? 'service'
+  const customerPhone = jobAny.booking?.match?.jobRequest?.customer?.phone
+
+  if (customerPhone) {
+    await sendCustomerRunningLateNotification({
+      customerPhone,
+      providerName: provider.name,
+      jobCategory: category,
+    })
+  }
+
+  // Log JobStatusEvent
+  await db.jobStatusEvent.create({
+    data: {
+      jobId: activeJob.id,
+      fromStatus: (activeJob as any).status,
+      toStatus: (activeJob as any).status,
+      actorId: provider.id,
+      actorRole: 'provider',
+      notes: 'provider_running_late',
+    },
+  }).catch((err: Error) => {
+    console.error('[provider-journey] running-late JobStatusEvent failed:', err)
+  })
+
+  // Log MessageEvent for the outbound notification to provider
+  await logOutboundMessage({
+    to: phone,
+    templateName: 'customer_provider_running_late',
+    body: 'Provider running-late notification sent to customer.',
+  }).catch(() => {})
+
+  await sendText(phone, "Your customer has been notified that you're running late.")
+  return { nextStep: 'done' }
+}
+
+// ─── M5-T4: Provider dispute trigger ─────────────────────────────────────────
+
+export async function handleProviderDisputeFlow(phone: string): Promise<FlowResult> {
+  await sendText(phone, 'Briefly describe the issue (reply with at least 10 characters):')
+  return { nextStep: 'pj_dispute_collect' }
+}
+
+async function handleProviderDisputeCollect(ctx: FlowContext): Promise<FlowResult> {
+  const reason = ctx.reply.text?.trim() ?? ''
+
+  if (reason.length < 10) {
+    await sendText(ctx.phone, 'Description too short. Please reply with at least 10 characters describing the issue:')
+    return { nextStep: 'pj_dispute_collect' }
+  }
+
+  const provider = await findProviderForWhatsApp(ctx.phone)
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  // Find most recent active or recently completed job
+  const job = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: [...ACTIVE_JOB_STATUSES, 'COMPLETED'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  })
+
+  if (!job) {
+    await sendText(ctx.phone, "No active or recent job found to raise a dispute against. Contact support if you need further help.")
+    return { nextStep: 'done' }
+  }
+
+  const dispute = await db.dispute.create({
+    data: {
+      jobId: job.id,
+      raisedById: provider.id,
+      raisedByRole: 'provider',
+      reason,
+      status: 'OPEN',
+    },
+  })
+
+  await recordAuditLog({
+    actorId: provider.id,
+    actorRole: 'provider',
+    action: 'dispute.created',
+    entityType: AUDIT_ENTITY.DISPUTE,
+    entityId: dispute.id,
+    after: toAuditJson({ jobId: job.id, raisedByRole: 'provider', status: 'OPEN', channel: 'whatsapp' }),
+  }).catch((err: Error) => {
+    console.error('[provider-journey] dispute audit log failed:', err)
+  })
+
+  const shortId = shortRef(dispute.id)
+  await sendText(ctx.phone, `Dispute #${shortId} raised. Our team will review and contact you within 24 hours.`)
+  return { nextStep: 'done' }
+}
+
+// ─── M5-T5: Post-job invoice keyword ─────────────────────────────────────────
+
+export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(phone)
+  if (!provider) {
+    await sendText(phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  const job = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: 'COMPLETED',
+    },
+    include: {
+      booking: {
+        include: {
+          quote: { select: { amount: true } },
+          match: {
+            include: {
+              jobRequest: {
+                include: { customer: { select: { name: true, phone: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  if (!job) {
+    await sendText(phone, "No completed jobs found. Contact support if you need help.")
+    return { nextStep: 'done' }
+  }
+
+  const jobAny = job as any
+  const category = jobAny.booking?.match?.jobRequest?.category ?? 'Service'
+  const customerName = jobAny.booking?.match?.jobRequest?.customer?.name ?? 'Customer'
+  const customerPhone = jobAny.booking?.match?.jobRequest?.customer?.phone
+  const quoteAmount = jobAny.booking?.quote?.amount ?? 0
+  const bookingId: string = jobAny.booking?.id ?? job.id
+  const dateStr = jobAny.completedAt
+    ? new Date(jobAny.completedAt).toLocaleDateString('en-ZA')
+    : jobAny.booking?.scheduledDate
+      ? new Date(jobAny.booking.scheduledDate).toLocaleDateString('en-ZA')
+      : new Date().toLocaleDateString('en-ZA')
+
+  const invoiceText =
+    `Invoice — ${category} job\n` +
+    `Date: ${dateStr}\n` +
+    `Customer: ${customerName}\n` +
+    `Amount: R${quoteAmount}\n` +
+    `Reference: ${bookingId.slice(-8).toUpperCase()}\n` +
+    `Thank you for your service!`
+
+  if (customerPhone) {
+    // Send invoice to customer — use sendText from whatsapp-interactive (positional form)
+    await sendText(customerPhone, invoiceText)
+  }
+
+  await sendText(phone, "Invoice sent to your customer.")
   return { nextStep: 'done' }
 }

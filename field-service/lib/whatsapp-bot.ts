@@ -26,6 +26,9 @@ import { handleStatusFlow } from './whatsapp-flows/status'
 import { handleHelpFlow, HELP_TRIGGERS } from './whatsapp-flows/help'
 import {
   handleProviderJourneyFlow,
+  handleRunningLateFlow,
+  handleProviderDisputeFlow,
+  handleInvoiceFlow,
   PROVIDER_JOURNEY_TRIGGERS,
 } from './whatsapp-flows/provider-journey'
 import type { FlowName, FlowStep, ConversationData } from './whatsapp-flows/types'
@@ -1243,6 +1246,30 @@ async function processInboundMessageUnlocked(
     ) {
       flow = 'provider_journey'
       step = 'pj_verify_identity'
+    } else if (
+      flow === 'idle' &&
+      ['running late', 'delayed', 'late', 'stuck in traffic'].some((k) => rawText === k)
+    ) {
+      // M5-T3: running-late — stateless, handle immediately
+      const lateResult = await handleRunningLateFlow(phone)
+      await saveConversation({ phone, flow: 'idle', step: lateResult.nextStep === 'done' ? 'welcome' : lateResult.nextStep, data })
+      return
+    } else if (
+      flow === 'idle' &&
+      ['dispute', 'issue with job', 'raise issue'].some((k) => rawText === k)
+    ) {
+      // M5-T4: dispute — two-step; first message sent here, reply handled by provider_journey dispatcher
+      const disputeResult = await handleProviderDisputeFlow(phone)
+      await saveConversation({ phone, flow: 'provider_journey', step: disputeResult.nextStep, data })
+      return
+    } else if (
+      flow === 'idle' &&
+      ['invoice', 'send invoice', 'receipt'].some((k) => rawText === k)
+    ) {
+      // M5-T5: invoice — stateless, handle immediately
+      const invoiceResult = await handleInvoiceFlow(phone)
+      await saveConversation({ phone, flow: 'idle', step: invoiceResult.nextStep === 'done' ? 'welcome' : invoiceResult.nextStep, data })
+      return
     } else if (PROVIDER_JOURNEY_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k)) && flow === 'idle') {
       flow = 'provider_journey'
       step = 'pj_menu'

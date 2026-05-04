@@ -1228,3 +1228,23 @@ export async function sendAdminEscalation(params: {
     text: `📣 *Escalation Alert*\n\nReason: ${params.reason}\nUser: ${params.userPhone}\nContext: ${params.context}\n\nPlease follow up directly.`,
   })
 }
+
+// ─── M5-T3: Running-late customer notification (PW3) ─────────────────────────
+
+/**
+ * Notify a customer that their provider is running late.
+ * Called from handleRunningLateFlow in provider-journey.ts.
+ */
+export async function sendCustomerRunningLateNotification(params: {
+  customerPhone: string
+  providerName: string
+  jobCategory: string
+}): Promise<void> {
+  const body = `${params.providerName} is running a little late for your ${params.jobCategory} job. They're on their way — apologies for any inconvenience.`
+
+  await sendText({
+    to: params.customerPhone,
+    text: body,
+    templateName: 'customer_provider_running_late',
+  })
+}
