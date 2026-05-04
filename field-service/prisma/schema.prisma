@@ -658,6 +658,9 @@ model Job {
   startedAt      DateTime?
   completedAt    DateTime?
   failureReason  String?
+  providerCurrentLat       Float?
+  providerCurrentLng       Float?
+  providerLocationSharedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

@@ -107,6 +107,8 @@ export type FlowStep =
   | 'pj_status_confirm'
   | 'pj_problem_report'
   | 'pj_verify_identity'
+  // Provider post-accept location prompt
+  | 'post_accept_location_prompt'
   // Terminal
   | 'done'
   | 'cancelled'

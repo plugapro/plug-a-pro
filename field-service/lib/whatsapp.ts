@@ -946,6 +946,35 @@ export async function sendCustomerQuoteReadyNotification(
   }).catch(() => {})
 }
 
+// ─── Customer en-route notification (WA flow PW2) ────────────────────────────
+
+/**
+ * Notify a customer that their provider is on the way (PW2).
+ *
+ * Sent after the provider shares their current location via WhatsApp.
+ */
+export async function sendCustomerEnRouteNotification(params: {
+  customerPhone: string
+  customerName: string
+  providerName: string
+  jobCategory: string
+}): Promise<void> {
+  const body = `${params.providerName} is on their way for your ${params.jobCategory} job! They'll arrive shortly.`
+
+  const externalId = await sendText({
+    to: params.customerPhone,
+    text: body,
+    templateName: 'customer_provider_en_route',
+  })
+
+  await logOutboundMessage({
+    to: params.customerPhone,
+    templateName: 'customer_provider_en_route',
+    body,
+    externalId,
+  }).catch(() => {})
+}
+
 export async function sendAdminNewApplication(params: {
   applicantName: string
   applicantPhone: string

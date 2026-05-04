@@ -798,6 +798,21 @@ async function processInboundMessageUnlocked(
       return
     }
 
+    // ── Provider location share (post-accept) ──────────────────────────────────
+    if (step === 'post_accept_location_prompt') {
+      if (reply.id === 'location_skip' || rawText === 'skip') {
+        await sendText(phone, "No problem! You can share your location later if needed.")
+        await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+        return
+      }
+      if (reply.type === 'location' && reply.latitude != null && reply.longitude != null) {
+        await handleProviderLocationShare(phone, reply.latitude, reply.longitude)
+        return
+      }
+      // Any other message while waiting — re-prompt or ignore
+      // Fall through so reset keywords still work
+    }
+
     if (reply.id === 'back_home' || reply.id === 'session_restart') {
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
@@ -2545,6 +2560,102 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       currentCreditBalance: result.currentCreditBalance,
     })
   }
+
+  // ── Location prompt ──────────────────────────────────────────────────────────
+  // Ask the provider to share their current location so the customer can be
+  // notified the provider is en route. This is optional — the provider can skip.
+  await saveConversation({ phone, flow: 'provider_journey', step: 'post_accept_location_prompt', data: {} })
+  await sendButtons(
+    phone,
+    "📍 *Share your location*\n\nThanks for accepting! Share your current location so we can give your customer an estimated arrival time.",
+    [{ id: 'location_skip', title: 'Skip for now' }],
+    undefined,
+    { templateName: 'provider_location_prompt' }
+  )
+}
+
+async function handleProviderLocationShare(
+  phone: string,
+  latitude: number,
+  longitude: number,
+): Promise<void> {
+  const traceId = createTraceId('wbot')
+
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true })
+  if (!provider) {
+    console.warn('[whatsapp-bot] location-share: provider not found', { traceId, normalizedPhone: phone })
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  // Find the provider's most recent active job (pre-completion statuses)
+  const job = await db.job.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      booking: {
+        include: {
+          match: {
+            include: {
+              jobRequest: {
+                include: {
+                  customer: {
+                    select: { phone: true, name: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!job) {
+    console.warn('[whatsapp-bot] location-share: no active job found for provider', {
+      traceId, providerId: provider.id,
+    })
+    await sendText(phone, "We couldn't find an active job to attach your location to. If this looks wrong, please contact support.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  // Persist location on the Job
+  await db.job.update({
+    where: { id: job.id },
+    data: {
+      providerCurrentLat: latitude,
+      providerCurrentLng: longitude,
+      providerLocationSharedAt: new Date(),
+    },
+  })
+
+  const customer = job.booking?.match?.jobRequest?.customer
+  const jobCategory = job.booking?.match?.jobRequest?.category ?? 'service'
+
+  if (customer?.phone) {
+    const { sendCustomerEnRouteNotification } = await import('./whatsapp')
+    await sendCustomerEnRouteNotification({
+      customerPhone: customer.phone,
+      customerName: customer.name ?? 'there',
+      providerName: provider.name ?? 'Your provider',
+      jobCategory,
+    }).catch((err) => {
+      console.error('[whatsapp-bot] location-share: failed to notify customer', {
+        traceId,
+        jobId: job.id,
+        providerId: provider.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+
+  await sendText(phone, "✅ Location shared! Your customer has been notified.")
+  await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
 }
 
 async function sendLeadInsufficientCreditsMessage(
