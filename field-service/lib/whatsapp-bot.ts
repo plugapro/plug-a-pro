@@ -15,6 +15,7 @@ import type { Prisma } from '@prisma/client'
 import { parseInbound, sendText, sendButtons, sendCtaUrl, type InboundMessage } from './whatsapp-interactive'
 import {
   handleJobRequestFlow,
+  handleRebookFlow,
   showMainMenu,
 } from './whatsapp-flows/job-request'
 import {
@@ -204,6 +205,9 @@ const STOP_PHRASES = ['stop offers', 'unsubscribe', 'stop marketing', 'no market
 // Keywords that trigger marketing opt-in
 const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in', 'optin']
 
+// Keywords that trigger re-booking from the last completed job
+const REBOOK_KEYWORDS = ['rebook', 'book again', 'same job', 'repeat', 'book same']
+
 function firstName(name: string | null | undefined) {
   return (name?.trim() || 'there').split(/\s+/)[0]
 }
@@ -253,6 +257,8 @@ function isStatelessNotificationReply(
     id.startsWith('quote_accept_') ||
     id.startsWith('quote_decline_') ||
     id.startsWith('post_match_contact:') ||
+    id.startsWith('rebook_confirm:') ||
+    id === 'rebook_cancel' ||
     (!id && rawText === 'accept')
   )
 }
@@ -610,6 +616,7 @@ async function processInboundMessageUnlocked(
     const isHelp = HELP_TRIGGERS.some((k) => rawText === k || rawText.startsWith(k))
     const isReschedule = RESCHEDULE_KEYWORDS.some((k) => rawText.includes(k))
     const isCancel = CANCEL_KEYWORDS.some((k) => rawText.includes(k))
+    const isRebook = REBOOK_KEYWORDS.some((k) => rawText === k || rawText.includes(k))
     const providerCommand = resolveProviderWhatsappCommand(rawText)
 
     let flow: FlowName = conversation.flow as FlowName
@@ -936,6 +943,26 @@ async function processInboundMessageUnlocked(
 
     if (reply.id?.startsWith('post_match_contact:')) {
       await handlePostMatchContactCustomer(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('rebook_confirm:')) {
+      // ── Rebook: customer confirmed — load prior job and enter pre-fill flow ──
+      await handleRebookConfirm(phone, reply.id)
+      return
+    }
+
+    if (reply.id === 'rebook_cancel') {
+      // ── Rebook: customer declined — graceful exit ────────────────────────────
+      await sendText(phone, "No problem! Type *Request a job* when you're ready.")
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (isRebook && flow === 'idle' && !isReset) {
+      // ── Rebook keyword — trigger from idle state only ────────────────────────
+      await handleRebookFlow(phone)
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
     }
 
@@ -2964,6 +2991,55 @@ async function handleProviderCompletionCapture(
     if (result.ok) {
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
     }
+  }
+}
+
+// ─── Rebook confirm handler ───────────────────────────────────────────────────
+
+async function handleRebookConfirm(phone: string, buttonId: string): Promise<void> {
+  const jobRequestId = buttonId.slice('rebook_confirm:'.length)
+
+  const priorJob = await db.jobRequest.findUnique({
+    where: { id: jobRequestId },
+    select: { id: true, category: true, title: true, description: true, customerId: true },
+  })
+
+  if (!priorJob) {
+    await sendText(phone, "Sorry, we couldn't find that job. Type *Request a job* to start a new booking.")
+    await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+    return
+  }
+
+  const identity = await resolveWhatsAppIdentity(phone)
+  const baseData: ConversationData = {
+    selectedCategory: priorJob.category ?? undefined,
+    category: priorJob.category ?? undefined,
+    customerName: identity.displayName ?? undefined,
+    customerId: identity.customerId ?? undefined,
+    issueDescription: priorJob.description ?? undefined,
+    isFirstBooking: false,
+  }
+
+  const savedAddresses = identity.savedAddresses
+  if (savedAddresses.length > 0) {
+    // Has saved address(es) — show the site picker (collect_site handles the prompt)
+    const ctx = {
+      phone,
+      flow: 'job_request' as const,
+      step: 'collect_site' as const,
+      data: baseData,
+      reply: { type: 'button_reply' as const, id: 'collect_site_start', text: undefined, title: undefined },
+    }
+    const result = await handleJobRequestFlow(ctx)
+    await saveConversation({ phone, flow: 'job_request', step: result.nextStep, data: { ...baseData, ...result.nextData } })
+  } else {
+    // No saved addresses — go straight to address entry; description is already pre-filled
+    const category = priorJob.category ?? 'your service'
+    await sendText(
+      phone,
+      `📍 *Where do you need the ${category} work done?*\n\nType your street address:\n\n_Example: 14 Main Street_`,
+    )
+    await saveConversation({ phone, flow: 'job_request', step: 'collect_address_street', data: baseData })
   }
 }
 

@@ -1636,3 +1636,71 @@ export async function showMainMenu(phone: string): Promise<void> {
     { buttonLabel: 'Choose Option' }
   )
 }
+
+// ─── Rebook flow ──────────────────────────────────────────────────────────────
+// Entry point when a customer sends a rebook keyword ("book again", "rebook", etc.)
+// Finds their most recent COMPLETED job request and offers a one-tap pre-fill.
+
+export async function handleRebookFlow(phone: string): Promise<void> {
+  const customer = await db.customer.findFirst({
+    where: { phone },
+    select: { id: true },
+  })
+
+  if (!customer) {
+    await sendText(
+      phone,
+      "You don't have any completed jobs to re-book. To start a new booking, type *Request a job*."
+    )
+    return
+  }
+
+  // Find the most recent completed job for this customer by traversing
+  // Customer → JobRequest → Match → Booking → Job (status COMPLETED)
+  const completedJob = await db.job.findFirst({
+    where: {
+      status: 'COMPLETED',
+      booking: {
+        match: {
+          jobRequest: {
+            customerId: customer.id,
+          },
+        },
+      },
+    },
+    orderBy: { completedAt: 'desc' },
+    select: {
+      booking: {
+        select: {
+          match: {
+            select: {
+              jobRequest: {
+                select: { id: true, category: true, title: true, description: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  const jobRequest = completedJob?.booking?.match?.jobRequest
+  if (!jobRequest) {
+    await sendText(
+      phone,
+      "You don't have any completed jobs to re-book. To start a new booking, type *Request a job*."
+    )
+    return
+  }
+
+  const label = jobRequest.title || jobRequest.category || 'previous job'
+
+  await sendButtons(
+    phone,
+    `Book again? Your last job was: *${label}*.\n\nShall I pre-fill the details so you can skip ahead?`,
+    [
+      { id: `rebook_confirm:${jobRequest.id}`, title: 'Yes, book again' },
+      { id: 'rebook_cancel', title: 'No thanks' },
+    ]
+  )
+}
