@@ -239,6 +239,15 @@ export default async function RequestDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
+            {(
+              jobRequest.status === 'PENDING_VALIDATION' ||
+              jobRequest.status === 'OPEN' ||
+              jobRequest.status === 'MATCHING'
+            ) && (
+              <div className="rounded-lg bg-muted/50 border px-4 py-3 text-sm text-foreground">
+                {getMatchEtaCopy()}
+              </div>
+            )}
             {jobRequest.leads.length === 0 ? (
               <p className="text-muted-foreground">
                 We&apos;re still validating the request before it is sent to providers.
@@ -273,6 +282,13 @@ export default async function RequestDetailPage({
       )}
     </div>
   )
+}
+
+function getMatchEtaCopy(): string {
+  const hour = new Date().getHours()
+  if (hour >= 8 && hour < 18) return "We're looking for a provider — typically matched within 5–15 minutes."
+  if (hour >= 18 && hour < 22) return "We're looking for a provider — typically within 30–60 minutes during off-peak hours."
+  return "We'll pick this up first thing in the morning and match you quickly."
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
