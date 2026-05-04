@@ -23,6 +23,7 @@ export type FlowStep =
   | 'browse_categories'
   | 'collect_name'              // captures name on first job request
   | 'collect_address'           // addr_same / addr_new decision for returning customers
+  | 'collect_site'              // site picker for first-booking customers with saved addresses
   | 'collect_address_street'    // captures free-text street / unit (addressLine1)
   // Structured location selection — replaces old suburb/city free-text steps
   | 'addr_select_province'      // list-based province selection

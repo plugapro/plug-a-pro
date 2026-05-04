@@ -238,6 +238,8 @@ export async function handleJobRequestFlow(ctx: FlowContext): Promise<FlowResult
       return handleCollectNameStep(ctx)
     case 'collect_address':
       return handleCollectAddress(ctx)
+    case 'collect_site':
+      return handleCollectSite(ctx)
     case 'collect_address_street':
       return handleCollectStreet(ctx)
     // Structured location selection
@@ -414,14 +416,134 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     data: { name: text },
   })
 
-  await sendText(
-    ctx.phone,
-    `Nice to meet you, *${text}*! 👋\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
-  )
-  return { nextStep: 'collect_address_street', nextData: { customerName: text } }
+  // After capturing the name, check for saved addresses so first-booking
+  // customers with existing Address records can reuse a site instead of
+  // re-entering their address from scratch.
+  return handleCollectSite({
+    ...ctx,
+    step: 'collect_site',
+    // Inject a synthetic "name entered" reply so the handler knows to show
+    // the site picker prompt rather than process a list selection.
+    reply: { ...ctx.reply, id: 'collect_site_start', text: undefined },
+    data: { ...ctx.data, customerName: text },
+  })
 }
 
 // ─── Address collection ───────────────────────────────────────────────────────
+
+/**
+ * Multi-site picker — shown to first-booking customers who already have saved
+ * Address records (e.g. created via the web portal or a previous booking on a
+ * different channel).
+ *
+ * Entry conditions:
+ *  - reply.id === 'collect_site_start'  → show the picker (or fall through if 0 addresses)
+ *  - reply.id === 'site_new'            → customer wants to enter a new address
+ *  - reply.id starts with 'site:'       → customer selected a saved address
+ */
+async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
+  const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
+  const customerName = ctx.data.customerName ?? 'there'
+
+  // ── Entry — show the picker (or fall through) ─────────────────────────────
+  if (ctx.reply.id === 'collect_site_start') {
+    // Look up addresses for this customer.  customerId may not be in ctx.data
+    // yet for a first-booking user, so resolve via phone.
+    const customer = await db.customer.findFirst({
+      where: { phone: ctx.phone },
+      select: {
+        id: true,
+        addresses: {
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+          take: 9, // leave one slot for the "Enter new address" row (WA cap = 10)
+          select: {
+            id: true,
+            label: true,
+            street: true,
+            addressLine1: true,
+            suburb: true,
+            city: true,
+            locationNodeId: true,
+            isDefault: true,
+          },
+        },
+      },
+    })
+
+    if (!customer || customer.addresses.length === 0) {
+      // No saved addresses — skip the site picker entirely and go straight to
+      // manual street entry (unchanged legacy path).
+      await sendText(
+        ctx.phone,
+        `Nice to meet you, *${customerName}*! 👋\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+      )
+      return { nextStep: 'collect_address_street', nextData: { customerId: customer?.id } }
+    }
+
+    const rows: ListRow[] = [
+      ...customer.addresses.map((a) => ({
+        id: `site:${a.id}`,
+        title: (a.label ?? (savedAddressShortLabel(a as Parameters<typeof savedAddressShortLabel>[0]) || 'Saved address')).slice(0, 24),
+        description: `${a.addressLine1 ?? a.street}, ${a.suburb}`.slice(0, 72),
+      })),
+      { id: 'site_new', title: 'Enter a new address', description: 'Type my address manually' },
+    ]
+
+    await sendList(
+      ctx.phone,
+      `Nice to meet you, *${customerName}*! 👋\n\nWhich site is this *${category}* service for?`,
+      [{ title: 'Saved sites', rows }],
+      { buttonLabel: 'Choose Site' },
+    )
+    return { nextStep: 'collect_site', nextData: { customerId: customer.id } }
+  }
+
+  // ── Customer chose "Enter a new address" ─────────────────────────────────
+  if (ctx.reply.id === 'site_new') {
+    await sendText(
+      ctx.phone,
+      `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+    )
+    return { nextStep: 'collect_address_street' }
+  }
+
+  // ── Customer selected a saved site ────────────────────────────────────────
+  if (ctx.reply.id?.startsWith('site:')) {
+    const addressId = ctx.reply.id.slice('site:'.length)
+    const customerId = ctx.data.customerId
+
+    const address = await db.address.findFirst({
+      where: { id: addressId, ...(customerId ? { customerId } : {}) },
+    })
+
+    if (!address) {
+      await sendText(ctx.phone, '❗ I could not find that saved address. Please choose again or add a new one.')
+      return { nextStep: 'collect_site' }
+    }
+
+    const addressData = await savedAddressToConversationData(address as WhatsAppSavedAddress)
+    if (!addressData) {
+      await sendText(
+        ctx.phone,
+        `That saved address needs to be re-confirmed.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+      )
+      return { nextStep: 'collect_address_street' }
+    }
+
+    // Address resolved — skip straight to issue description (same as collect_address with addr_saved_*)
+    return handleCollectIssueDescription({
+      ...ctx,
+      data: { ...ctx.data, ...addressData, savedAddressId: addressId },
+    })
+  }
+
+  // ── Unknown reply — resend the site picker ────────────────────────────────
+  // Re-enter via a synthetic start reply so the DB lookup runs again.
+  return handleCollectSite({
+    ...ctx,
+    reply: { ...ctx.reply, id: 'collect_site_start', text: undefined },
+  })
+}
 
 async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
   if (ctx.reply.id === 'addr_same') {
