@@ -2,6 +2,7 @@ import type { QuoteStatus } from '@prisma/client'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
+import { QuoteDecisionButtons } from './QuoteDecisionButtons'
 
 export interface QuoteHistoryItem {
   id: string
@@ -23,9 +24,11 @@ export interface QuoteHistoryItem {
 export function QuoteHistoryTimeline({
   quotes,
   audience,
+  requestId,
 }: {
   quotes: QuoteHistoryItem[]
   audience: 'customer' | 'provider'
+  requestId?: string
 }) {
   if (quotes.length === 0) return null
 
@@ -42,6 +45,11 @@ export function QuoteHistoryTimeline({
           isLatest &&
           quote.status === 'PENDING' &&
           quote.approvalToken
+        const showInlineButtons =
+          audience === 'customer' &&
+          isLatest &&
+          quote.status === 'PENDING' &&
+          !!requestId
 
         return (
           <div
@@ -125,9 +133,12 @@ export function QuoteHistoryTimeline({
               </div>
             )}
 
+            {showInlineButtons && (
+              <QuoteDecisionButtons quoteId={quote.id} requestId={requestId!} />
+            )}
             {showReviewLink && (
               <div className="mt-3">
-                <Button asChild className="w-full">
+                <Button asChild variant="outline" className="w-full">
                   <Link href={`/quotes/${quote.approvalToken}`}>Review current quote</Link>
                 </Button>
               </div>

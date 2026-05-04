@@ -175,6 +175,7 @@ export default async function RequestDetailPage({
           <CardContent className="space-y-3 text-sm">
             <QuoteHistoryTimeline
               audience="customer"
+              requestId={id}
               quotes={match?.quotes.map((quote) => ({
                 id: quote.id,
                 amount: Number(quote.amount),
