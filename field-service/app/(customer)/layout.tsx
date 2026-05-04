@@ -9,6 +9,7 @@ import { AppLogo } from '@/components/shared/app-logo'
 import { AppNavLink } from '@/components/shared/app-nav-link'
 import { MobileGate } from '@/components/shared/mobile-gate'
 import { siteConfig } from '@/lib/metadata'
+import { BusinessTypePrompt } from '@/components/customer/BusinessTypePrompt'
 
 export const metadata: Metadata = {
   title: {
@@ -32,9 +33,28 @@ export default async function CustomerLayout({
   // DB lookup is best-effort — a backend outage must not crash the public shell.
   // Fall back to session-only display data if the query fails.
   let customer = null
+  let showBusinessPrompt = false
   if (session) {
     try {
       customer = await resolveCustomerForSession(db, session)
+
+      // Show the business-type prompt only for brand-new accounts that haven't
+      // answered the question yet. Since isBusinessAccount defaults to false we
+      // use businessName === null as the "unanswered" signal, combined with a
+      // 10-minute createdAt window so returning users never see it again.
+      if (customer) {
+        const promptFields = await db.customer.findUnique({
+          where: { id: customer.id },
+          select: { businessName: true, createdAt: true },
+        })
+        if (
+          promptFields &&
+          promptFields.businessName === null &&
+          Date.now() - promptFields.createdAt.getTime() < 10 * 60 * 1000
+        ) {
+          showBusinessPrompt = true
+        }
+      }
     } catch {
       // intentionally swallowed — shell renders with session phone/null label
     }
@@ -73,6 +93,8 @@ export default async function CustomerLayout({
           })}
         </div>
       </nav>
+
+      {showBusinessPrompt && <BusinessTypePrompt />}
     </div>
     </MobileGate>
   )
