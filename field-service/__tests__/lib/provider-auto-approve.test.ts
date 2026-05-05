@@ -107,6 +107,54 @@ describe('provider auto-approval', () => {
     }))
   })
 
+  it('still approves when promo-credit awarding fails', async () => {
+    const tx = {
+      providerApplication: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerCategory: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    }
+
+    const client: any = {
+      providerApplication: {
+        findMany: vi.fn()
+          .mockResolvedValueOnce([
+            {
+              id: 'app-award-fail',
+              phone: '+27820000001',
+              name: 'Noah',
+              skills: ['Plumbing'],
+              serviceAreas: ['Roodepoort'],
+              experience: '4 years',
+              notes: null,
+              providerId: null,
+              isTestUser: false,
+              cohortName: 'default',
+            },
+          ])
+          .mockResolvedValueOnce([]),
+      },
+      $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
+    }
+
+    mockAwardMobileVerifiedPromoCreditsInTransaction.mockRejectedValueOnce(new Error('award column missing'))
+
+    const result = await autoApproveProviderApplications(client)
+
+    expect(result).toEqual({ approved: 1, skipped: 0, errors: 0 })
+    expect(mockSyncProviderRecord).toHaveBeenCalledWith(tx, expect.objectContaining({
+      phone: '+27820000001',
+      name: 'Noah',
+    }))
+    expect(mockReleaseOpsQueueItem).toHaveBeenCalledWith(tx, {
+      queueType: 'PROVIDER_ONBOARDING',
+      entityId: 'app-award-fail',
+    })
+  })
+
   it('skips auto-approval when required profile fields are missing', async () => {
     const client: any = {
       providerApplication: {
