@@ -96,6 +96,8 @@ import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { handleJobRequestFlow, showMainMenu } from '@/lib/whatsapp-flows/job-request'
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 import { handleStatusFlow } from '@/lib/whatsapp-flows/status'
+import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey'
+import { resolveWhatsAppIdentity } from '@/lib/whatsapp-identity'
 
 const PHONE = '+27821234567'
 
@@ -251,7 +253,47 @@ describe('processInboundMessage stateless notification replies', () => {
     )
     expect(mockSendJourneyRecovery).toHaveBeenCalledTimes(1)
   })
+  it('uses provider-aware recovery when provider journey flow throws before rendering', async () => {
+    vi.mocked(resolveWhatsAppIdentity).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567'],
+      customerId: null,
+      providerId: 'provider-1',
+      applicationId: null,
+      displayName: 'Sipho',
+      firstName: 'Sipho',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: null,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'provider-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValue({
+      phone: PHONE,
+      flow: 'provider_journey',
+      step: 'pj_menu',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+    ;(handleProviderJourneyFlow as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('provider journey timeout'))
 
+    await processInboundMessage(buttonMessage('provider_my_jobs'))
+
+    expect(mockSendJourneyRecovery).toHaveBeenCalledWith(
+      PHONE,
+      expect.objectContaining({
+        userRole: 'provider',
+        flowName: 'provider_journey',
+        currentStep: 'pj_job_list',
+        failureType: 'unexpected_error',
+        recoveryClass: 'retry_same_step',
+      }),
+    )
+    expect(mockSendJourneyRecovery).toHaveBeenCalledTimes(1)
+  })
   it('handles malformed WhatsApp accept payloads without falling through to the generic bot error', async () => {
     await processInboundMessage(buttonMessage('accept:'))
 
