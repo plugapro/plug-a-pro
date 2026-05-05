@@ -695,6 +695,7 @@ async function processInboundMessageUnlocked(
       'provider_profile',
       'provider_support',
       'provider_status',
+      'provider_status_retry',
       'provider_application_status',
       'provider_update_application',
       'provider_top_up_credits',
@@ -1116,7 +1117,7 @@ async function processInboundMessageUnlocked(
     } else if (reply.id === 'provider_verify_identity') {
       flow = 'provider_journey'
       step = 'pj_verify_identity'
-    } else if (reply.id === 'provider_status') {
+    } else if (reply.id === 'provider_status' || reply.id === 'provider_status_retry') {
       flow = 'provider_journey'
       step = 'pj_provider_status'
     } else if (reply.id === 'provider_application_status') {

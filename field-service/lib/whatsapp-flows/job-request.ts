@@ -1843,12 +1843,12 @@ export async function showMainMenu(phone: string): Promise<void> {
 
     await sendList(
       phone,
-      `Hi ${name}, your provider profile is currently inactive.\n\nYou won't receive new job leads until this is resolved.`,
+      `Hi ${name}, your provider profile is currently inactive.\n\nIf your application is waiting for review, your profile will stay inactive until approval is complete. You won't receive job leads yet.`,
       [
         {
           title: 'Provider',
           rows: [
-            { id: 'provider_status', title: 'Provider Status', description: 'See why your account is inactive' },
+            { id: 'provider_status', title: 'Provider Status', description: 'Check application and profile status' },
             { id: 'provider_support', title: 'Contact Support', description: 'Get help with your account' },
           ],
         },

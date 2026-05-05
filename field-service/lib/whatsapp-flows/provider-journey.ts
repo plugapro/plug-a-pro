@@ -92,6 +92,75 @@ function firstName(name?: string | null) {
   return name?.trim().split(/\s+/)[0] || 'Customer'
 }
 
+function providerFirstName(name?: string | null) {
+  return name?.trim().split(/\s+/)[0] || 'Provider'
+}
+
+function providerApplicationRef(id?: string | null) {
+  return id ? id.slice(-8).toUpperCase() : 'Pending'
+}
+
+function providerApplicationStatusLabel(status?: string | null) {
+  switch (status) {
+    case 'PENDING':
+      return 'Under review'
+    case 'MORE_INFO_REQUIRED':
+      return 'More details needed'
+    case 'APPROVED':
+      return 'Approved'
+    case 'REJECTED':
+      return 'Not approved'
+    case 'CANCELLED':
+      return 'Cancelled'
+    default:
+      return 'Unknown'
+  }
+}
+
+function providerApplicationStatusSentence(status?: string | null) {
+  switch (status) {
+    case 'APPROVED':
+      return 'approved'
+    case 'REJECTED':
+      return 'not approved'
+    case 'MORE_INFO_REQUIRED':
+      return 'waiting for more details'
+    case 'CANCELLED':
+      return 'cancelled'
+    case 'PENDING':
+    default:
+      return 'waiting for review'
+  }
+}
+
+function isProviderInactive(provider: {
+  active?: boolean | null
+  status?: string | null
+  suspendedUntil?: Date | null
+}) {
+  return (
+    provider.active === false ||
+    ['SUSPENDED', 'ARCHIVED', 'BANNED'].includes(provider.status ?? '') ||
+    Boolean(provider.suspendedUntil && provider.suspendedUntil > new Date())
+  )
+}
+
+function isProviderPendingReview(provider: {
+  active?: boolean | null
+  status?: string | null
+}) {
+  return ['APPLICATION_PENDING', 'UNDER_REVIEW'].includes(provider.status ?? '')
+}
+
+function safeProviderStatusReason(reason?: string | null) {
+  return reason?.trim() ? `\nReason: ${reason.trim()}` : ''
+}
+
+function maskPhoneForJourneyLog(phone: string) {
+  const normalized = normalizePhone(phone)
+  return normalized.length > 4 ? `***${normalized.slice(-4)}` : '***'
+}
+
 async function providerCreditBalanceLine(providerId: string) {
   const balance = await getProviderWalletBalanceReadOnly(providerId)
   return `Credits balance: *${creditCountLabel(balance.totalCreditBalance)}* (${providerCreditBreakdownLabel(balance)})`
@@ -126,6 +195,35 @@ async function findProviderForWhatsApp(phone: string, include?: Prisma.ProviderI
   }
 
   return matches[0] ?? null
+}
+
+async function findLatestProviderApplicationForWhatsApp(phone: string, providerId?: string | null) {
+  const phoneVariants = phoneLookupVariants(phone)
+  const orFilters: Prisma.ProviderApplicationWhereInput[] = [
+    { phone: { in: phoneVariants } },
+  ]
+  if (providerId) {
+    orFilters.push({ providerId })
+  }
+
+  return await db.providerApplication.findFirst({
+    where: { OR: orFilters },
+    orderBy: { submittedAt: 'desc' },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      status: true,
+      providerId: true,
+      notes: true,
+      submittedAt: true,
+      skills: true,
+      serviceAreas: true,
+      availability: true,
+      callOutFee: true,
+      hourlyRate: true,
+    },
+  })
 }
 
 async function recordProviderAvailabilityAudit(params: {
@@ -667,6 +765,7 @@ async function handleProviderSupport(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
+  const traceId = crypto.randomUUID().slice(0, 8)
   const provider = await findProviderForWhatsApp(ctx.phone, {
     technicianAvailability: true,
     schedule: { where: { active: true }, orderBy: { dayOfWeek: 'asc' } },
@@ -675,8 +774,74 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
       select: { label: true },
     },
   })
+  const application = await findLatestProviderApplicationForWhatsApp(ctx.phone, provider?.id)
+
+  console.info('[provider-journey] provider status requested', {
+    traceId,
+    phone: maskPhoneForJourneyLog(ctx.phone),
+    providerId: provider?.id ?? null,
+    applicationId: application?.id ?? null,
+    applicationStatus: application?.status ?? null,
+    profileStatus: provider?.status ?? null,
+    profileActive: provider?.active ?? null,
+    actionId: ctx.reply.id ?? null,
+  })
+
   if (!provider) {
-    return handleApplicationStatus(ctx)
+    return handleApplicationStatus(ctx, application)
+  }
+
+  // Root cause: Provider Status used to enter the active-provider availability
+  // and credits path immediately. Pending/inactive providers can legitimately
+  // lack wallet, verification, or availability records, so explain application
+  // and profile state first and only use active-provider services after that.
+  if (
+    isProviderPendingReview(provider) ||
+    (isProviderInactive(provider) && application && ['PENDING', 'MORE_INFO_REQUIRED'].includes(application.status))
+  ) {
+    const needsMoreInfo = application?.status === 'MORE_INFO_REQUIRED'
+    await sendButtons(
+      ctx.phone,
+      needsMoreInfo
+        ? `Hi ${providerFirstName(provider.name ?? application?.name)}, your provider application needs a few more details before review can continue.\n\nRef: *${providerApplicationRef(application?.id)}*\nStatus: *${providerApplicationStatusLabel(application?.status)}*\n\nYour provider profile will stay inactive until approval is complete.`
+        : `Hi ${providerFirstName(provider.name ?? application?.name)}, your provider application is waiting for review.\n\nRef: *${providerApplicationRef(application?.id)}*\nStatus: *${providerApplicationStatusLabel(application?.status ?? 'PENDING')}*\n\nYour provider profile will stay inactive until approval is complete. You won't receive job leads yet. We'll update you here once reviewed.`,
+      needsMoreInfo
+        ? [
+            { id: 'provider_update_application', title: 'Complete details' },
+            { id: 'provider_status_retry', title: 'Check again' },
+            { id: 'back_home', title: 'Main Menu' },
+          ]
+        : [
+            { id: 'provider_status_retry', title: 'Check again' },
+            { id: 'provider_update_application', title: 'Complete profile' },
+            { id: 'back_home', title: 'Main Menu' },
+          ],
+    )
+    return { nextStep: 'pj_toggle_available' }
+  }
+
+  if (application?.status === 'REJECTED') {
+    await sendButtons(
+      ctx.phone,
+      `Hi ${providerFirstName(provider.name ?? application.name)}, your provider application was not approved.\n\nRef: *${providerApplicationRef(application.id)}*${safeProviderStatusReason(application.notes)}\n\nIf you believe this is incorrect, contact support and we can review it.`,
+      [
+        { id: 'provider_support', title: 'Support' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+    )
+    return { nextStep: 'pj_toggle_available' }
+  }
+
+  if (['SUSPENDED', 'ARCHIVED', 'BANNED'].includes(provider.status ?? '')) {
+    await sendButtons(
+      ctx.phone,
+      `Hi ${providerFirstName(provider.name)}, your provider profile is inactive because it has been ${provider.status === 'SUSPENDED' ? 'suspended' : 'disabled'}.\n\nYou won't receive job leads until support reviews the account.${safeProviderStatusReason(provider.suspendedReason)}`,
+      [
+        { id: 'provider_support', title: 'Support' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+    )
+    return { nextStep: 'pj_toggle_available' }
   }
 
   const paused = isProviderPaused(provider)
@@ -699,11 +864,21 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
     : mode === 'SCHEDULE'
       ? `🟡 *Your availability is schedule-based.*\n\nToday: ${todaySchedule ? `Available ${todaySchedule.startTime}–${todaySchedule.endTime}` : 'Not available'}\nCurrent status: ${provider.availableNow ? 'Available' : 'Not available'}`
       : `🟢 *You're currently available for new leads.*`
-  const creditSummary = await providerCreditSummary(provider.id)
+  let creditSummary = 'Credits balance: not available yet.'
+  try {
+    creditSummary = await providerCreditSummary(provider.id)
+  } catch (error) {
+    console.warn('[provider-journey] provider status credits unavailable', {
+      traceId,
+      phone: maskPhoneForJourneyLog(ctx.phone),
+      providerId: provider.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 
   await sendButtons(
     ctx.phone,
-    `${statusBody}\n\n${creditSummary}\n\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when available.`,
+    `${statusBody}\n\n${creditSummary}\n\nApplication status: *${providerApplicationStatusLabel(application?.status)}*\nProvider profile: *${provider.active ? provider.status : 'Inactive'}*\nAvailability mode: *${availabilityModeLabel(mode)}*\nService areas: *${serviceAreas}*\nServices: *${services}*\nEmergency jobs: *${provider.technicianAvailability?.emergencyAvailable ? 'On' : 'Off'}*${inactiveReason}${suspendedUntil}\n\nYou'll receive matching leads on this WhatsApp number when approved, active, and available.`,
     paused
       ? [
           { id: 'provider_go_available', title: 'Go Available' },
@@ -747,24 +922,31 @@ async function handleWorkerPortal(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'done' }
 }
 
-async function handleApplicationStatus(ctx: FlowContext): Promise<FlowResult> {
-  const application = await db.providerApplication.findFirst({
-    where: { phone: ctx.phone, status: { in: ['PENDING', 'APPROVED'] } },
-    orderBy: { submittedAt: 'desc' },
-    select: { id: true, name: true, status: true },
-  })
+async function handleApplicationStatus(
+  ctx: FlowContext,
+  resolvedApplication?: Awaited<ReturnType<typeof findLatestProviderApplicationForWhatsApp>> | null,
+): Promise<FlowResult> {
+  const application = resolvedApplication ?? await findLatestProviderApplicationForWhatsApp(ctx.phone)
 
   if (!application) {
-    await sendText(ctx.phone, "We couldn't find a provider application for this number. Reply *join* if you'd like to apply.")
+    await sendButtons(
+      ctx.phone,
+      "We couldn't find a provider application for this WhatsApp number.",
+      [
+        { id: 'reg_start', title: 'Apply as provider' },
+        { id: 'back_home', title: 'Main Menu' },
+      ],
+    )
     return { nextStep: 'done' }
   }
 
   await sendButtons(
     ctx.phone,
-    `Hi ${application.name}, your provider application is still under review.\n\nRef: *${application.id.slice(-8).toUpperCase()}*\n\nWe'll notify you here once it's approved.`,
+    `Hi ${providerFirstName(application.name)}, your provider application is ${providerApplicationStatusSentence(application.status)}.\n\nRef: *${providerApplicationRef(application.id)}*\nStatus: *${providerApplicationStatusLabel(application.status)}*\n\nYour provider profile will stay inactive until approval is complete. We'll notify you here once reviewed.`,
     [
-      { id: 'provider_update_application', title: 'Update Application' },
-      { id: 'provider_support', title: 'Support' },
+      { id: 'provider_status_retry', title: 'Check again' },
+      { id: 'provider_update_application', title: 'Complete profile' },
+      { id: 'back_home', title: 'Main Menu' },
     ],
   )
   return { nextStep: 'pj_toggle_available' }

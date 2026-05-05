@@ -7,6 +7,7 @@ vi.mock('@/lib/db', () => {
   return {
     db: {
       provider: providerMock,
+      providerApplication: { findFirst: vi.fn() },
       technicianAvailability: availabilityMock,
       auditLog: { create: vi.fn().mockResolvedValue({}) },
       lead: { findMany: vi.fn(), findUnique: vi.fn() },
@@ -77,6 +78,7 @@ describe('handleProviderJourneyFlow', () => {
     ;(db.lead.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
     ;(db.lead.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
     ;((db.provider as any).findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;((db as any).providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
   })
 
   describe('pj_menu step', () => {
@@ -649,6 +651,7 @@ describe('handleProviderJourneyFlow', () => {
       id: 'prov_1',
       name: 'Sipho',
       availableNow: true,
+      active: true,
       status: 'ACTIVE',
       skills: ['Plumbing'],
       serviceAreas: [],
@@ -725,6 +728,69 @@ describe('handleProviderJourneyFlow', () => {
         '+27711111111',
         expect.stringContaining('paused'),
         expect.arrayContaining([expect.objectContaining({ id: 'provider_go_available' })]),
+      )
+    })
+
+    it('explains pending review for inactive provider instead of using active-provider credits path', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...baseProvider,
+        id: 'prov_pending',
+        name: 'Lovemore Moyo',
+        active: false,
+        availableNow: false,
+        status: 'APPLICATION_PENDING',
+        technicianAvailability: null,
+      })
+      ;((db as any).providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'app_lovemore_12345678',
+        name: 'Lovemore Moyo',
+        status: 'PENDING',
+        providerId: 'prov_pending',
+        notes: null,
+      })
+
+      await handleProviderJourneyFlow(mockCtx('pj_provider_status', 'provider_status'))
+
+      const message = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls[0][1] as string
+      expect(message).toContain('provider application is waiting for review')
+      expect(message).toContain('Ref: *12345678*')
+      expect(message).toContain('profile will stay inactive until approval is complete')
+      expect(message).not.toContain("couldn't complete that step")
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.any(String),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'provider_status_retry', title: 'Check again' }),
+          expect.objectContaining({ id: 'back_home', title: 'Main Menu' }),
+        ]),
+      )
+    })
+
+    it('does not crash provider status when active provider credits wallet is missing', async () => {
+      const wallet = await import('@/lib/provider-wallet')
+      vi.mocked(wallet.getProviderWalletBalanceReadOnly).mockRejectedValueOnce(new Error('wallet missing'))
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(baseProvider)
+
+      await handleProviderJourneyFlow(mockCtx('pj_provider_status', 'provider_status_retry'))
+
+      const message = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls[0][1] as string
+      expect(message).toContain('Credits balance: not available yet')
+      expect(message).toContain('Provider profile: *ACTIVE*')
+    })
+
+    it('shows no-application recovery when provider and application are missing', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+      ;((db.provider as any).findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+      ;((db as any).providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+      await handleProviderJourneyFlow(mockCtx('pj_provider_status', 'provider_status'))
+
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining("couldn't find a provider application"),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'reg_start', title: 'Apply as provider' }),
+        ]),
       )
     })
   })

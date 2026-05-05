@@ -355,6 +355,8 @@ describe('role-aware WhatsApp main menu routing', () => {
     const body = vi.mocked(wa.sendList).mock.calls[0][1]
     const rows = listRows()
     expect(body).toContain('currently inactive')
+    expect(body).toContain('approval is complete')
+    expect(body).not.toContain('until this is resolved')
     expect(rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'provider_status' }),
       expect.objectContaining({ id: 'provider_support' }),

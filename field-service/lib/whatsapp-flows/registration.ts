@@ -408,7 +408,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
     await sendButtons(
       ctx.phone,
       inactive
-        ? `👷 Hi ${existingProvider.name}, your provider profile is currently inactive.\n\nYou won't receive new job leads until this is resolved.`
+        ? `👷 Hi ${existingProvider.name}, your provider profile is currently inactive.\n\nIf your application is waiting for review, your profile will stay inactive until approval is complete. You won't receive job leads yet.`
         : `✅ Hi ${existingProvider.name}, you're already registered as a Plug A Pro provider.\n\nWhat would you like to manage?`,
       inactive
         ? [
