@@ -74,6 +74,10 @@ const STREET_ADDRESS_RETRY =
 const STREET_ADDRESS_SAVED_NEXT_STEP_RETRY =
   "We saved that street address. Please reply *continue* and we'll show the province list again."
 const STREET_ADDRESS_SEND_TIMEOUT_MS = Number(process.env.WHATSAPP_STREET_ADDRESS_SEND_TIMEOUT_MS) || 8000
+// Mirror the bot-level TTL floor so persistStreetAddressProgress sets an expiry
+// that's consistent with what whatsapp-bot.ts writes on every other save.
+// Cannot import the constant from whatsapp-bot.ts (circular dependency).
+const ADDR_STEP_TTL_MS = Math.max(Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000, 30 * 60 * 1000)
 
 // WhatsApp list cap is 10 rows total per message.
 // When paging is needed we use 8 item rows + up to 2 nav rows.
@@ -130,13 +134,13 @@ async function persistStreetAddressProgress(ctx: FlowContext, street: string): P
       // Prisma's recursive Json type is not structurally compatible with
       // ConversationData at compile time — cast required on all Json field writes.
       data: nextData as any,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      expiresAt: new Date(Date.now() + ADDR_STEP_TTL_MS),
     },
     update: {
       flow: 'job_request',
       step: 'addr_select_province',
       data: nextData as any, // same Prisma Json type reason
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      expiresAt: new Date(Date.now() + ADDR_STEP_TTL_MS),
     },
   })
 
@@ -657,7 +661,7 @@ async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
     phone: maskedPhone(ctx.phone),
     flow: ctx.flow,
     step: ctx.step,
-    requestId: ctx.data.jobRequestId ?? null,
+    // jobRequestId is only populated after submission — null here is expected
     draftId: ctx.data.savedAddressId ?? null,
   }
 

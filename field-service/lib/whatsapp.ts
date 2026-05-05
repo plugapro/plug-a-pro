@@ -12,6 +12,7 @@ import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 import { getPublicAppUrl } from './provider-credit-copy'
 import { maskPhone } from './support-diagnostics'
+import { assertNoRawUrlsInWhatsAppBody } from './whatsapp-copy'
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
@@ -103,6 +104,7 @@ export async function sendTemplate(params: {
     allowTestCohortOverride: params.allowTestCohortOverride,
     templateName: params.template,
   })
+  assertTemplateBodyComponentsDoNotContainRawUrls(params.template, params.components ?? [])
 
   const body = {
     messaging_product: 'whatsapp',
@@ -130,6 +132,15 @@ export async function sendTemplate(params: {
 
   if (!response.ok) {
     const error = await response.json()
+    const metaCode = error?.error?.code
+    // Meta error codes 132000 / 132001 / 132007 indicate the template is not yet
+    // approved, is paused, or was rejected. Surface these explicitly so deployment
+    // logs immediately show the approval dependency rather than a generic send failure.
+    if (metaCode === 132000 || metaCode === 132001 || metaCode === 132007) {
+      throw new Error(
+        `[TEMPLATE_NOT_APPROVED] Template "${params.template}" is not approved or does not exist in Meta Business Manager. Approve it before deploying. code=${metaCode}`
+      )
+    }
     throw new Error(
       `WhatsApp send failed: ${JSON.stringify(error)}`
     )
@@ -154,6 +165,7 @@ export async function sendText(params: {
     allowTestCohortOverride: params.allowTestCohortOverride,
     templateName: params.templateName ?? 'freeform:text',
   })
+  assertNoRawUrlsInWhatsAppBody(params.text, params.templateName ?? 'freeform:text')
 
   const response = await fetch(
     `${BASE_URL}/${phoneNumberId}/messages`,
@@ -193,6 +205,25 @@ export async function sendText(params: {
   return externalId
 }
 
+function assertTemplateBodyComponentsDoNotContainRawUrls(templateName: string, components: WhatsAppComponent[]) {
+  for (const component of components) {
+    if (component.type !== 'body' && component.type !== 'header') continue
+    component.parameters.forEach((parameter, index) => {
+      if (parameter.type !== 'text') return
+      assertNoRawUrlsInWhatsAppBody(parameter.text, `${templateName}:${component.type}:${index}`)
+    })
+  }
+}
+
+function urlButtonComponent(index: number, url: string): WhatsAppComponent {
+  return {
+    type: 'button',
+    sub_type: 'url',
+    index,
+    parameters: [{ type: 'text', text: url }],
+  }
+}
+
 // ─── High-level messaging functions ──────────────────────────────────────────
 // These are called from booking/job lifecycle hooks.
 
@@ -223,9 +254,9 @@ export async function sendBookingConfirmation(params: {
           { type: 'text', text: params.customerName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.scheduledWindow },
-          { type: 'text', text: params.bookingUrl },
         ],
       },
+      urlButtonComponent(0, params.bookingUrl),
     ],
   })
 
@@ -303,9 +334,9 @@ export async function sendExtraWorkApproval(params: {
           { type: 'text', text: params.customerName },
           { type: 'text', text: params.description },
           { type: 'text', text: params.amount },
-          { type: 'text', text: params.approvalUrl },
         ],
       },
+      urlButtonComponent(0, params.approvalUrl),
     ],
   })
 
@@ -340,9 +371,9 @@ export async function sendJobCompleted(params: {
         type: 'body',
         parameters: [
           { type: 'text', text: params.customerName },
-          { type: 'text', text: params.invoiceUrl },
         ],
       },
+      urlButtonComponent(0, params.invoiceUrl),
     ],
   })
 
@@ -451,9 +482,9 @@ export async function sendFollowUp(params: {
         type: 'body',
         parameters: [
           { type: 'text', text: params.customerName },
-          { type: 'text', text: params.ratingUrl },
         ],
       },
+      urlButtonComponent(0, params.ratingUrl),
     ],
   })
   await logMessage({
@@ -491,9 +522,9 @@ export async function sendQuoteReady(params: {
           { type: 'text', text: params.customerName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.quotedPrice },
-          { type: 'text', text: params.quoteUrl },
         ],
       },
+      urlButtonComponent(0, params.quoteUrl),
     ],
   })
   await logMessage({
@@ -569,9 +600,9 @@ export async function sendPaymentReminder(params: {
           { type: 'text', text: params.customerName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.amount },
-          { type: 'text', text: params.paymentUrl },
         ],
       },
+      urlButtonComponent(0, params.paymentUrl),
     ],
   })
   await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'payment_reminder', externalId })
@@ -676,9 +707,9 @@ export async function sendBookingRescheduled(params: {
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.oldSlot },
           { type: 'text', text: params.newSlot },
-          { type: 'text', text: params.bookingUrl },
         ],
       },
+      urlButtonComponent(0, params.bookingUrl),
     ],
   })
   await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'booking_rescheduled', externalId })
@@ -710,9 +741,9 @@ export async function sendSlotAvailable(params: {
           { type: 'text', text: params.customerName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.slotLabel },
-          { type: 'text', text: params.bookingUrl },
         ],
       },
+      urlButtonComponent(0, params.bookingUrl),
     ],
   })
   await logOutboundMessage({ to: params.customerPhone, templateName: 'slot_available', externalId })
@@ -745,9 +776,9 @@ export async function sendNoProviderAvailable(params: {
           { type: 'text', text: params.customerName },
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.originalDate },
-          { type: 'text', text: params.bookingUrl },
         ],
       },
+      urlButtonComponent(0, params.bookingUrl),
     ],
   })
   await logMessage({ bookingId: params.bookingId, to: params.customerPhone, template: 'no_technician_available', externalId })
@@ -773,9 +804,9 @@ export async function sendJobOffer(params: {
           { type: 'text', text: params.serviceName },
           { type: 'text', text: normaliseLocationDisplayName(params.area) },
           { type: 'text', text: params.scheduledWindow },
-          { type: 'text', text: params.jobUrl },
         ],
       },
+      urlButtonComponent(0, params.jobUrl),
     ],
   })
   await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'job_offer', externalId })
@@ -801,9 +832,9 @@ export async function sendProviderJobReminder(params: {
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.address },
           { type: 'text', text: params.scheduledWindow },
-          { type: 'text', text: params.jobUrl },
         ],
       },
+      urlButtonComponent(0, params.jobUrl),
     ],
   })
   await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'technician_job_reminder', externalId })

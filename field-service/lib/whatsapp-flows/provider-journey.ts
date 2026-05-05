@@ -13,6 +13,7 @@ import { AUDIT_ENTITY } from '../audit-entities'
 import { getProviderSignedJobHandoverUrlByLeadId } from '../provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from '../provider-wallet'
 import { buildProviderCreditSummaryMessage, creditCountLabel, getPublicAppUrl, providerCreditBreakdownLabel } from '../provider-credit-copy'
+import { ctaLabelFor } from '../whatsapp-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
 import type { Prisma } from '@prisma/client'
@@ -719,6 +720,17 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
           { id: 'provider_my_jobs', title: 'My Jobs' },
         ],
   )
+  const creditHistoryUrl = getPublicAppUrl('/provider/credits')
+  if (creditHistoryUrl) {
+    await sendCtaUrl(
+      ctx.phone,
+      'Credit history is available below.',
+      ctaLabelFor('credit_history'),
+      creditHistoryUrl,
+      undefined,
+      { templateName: 'interactive:provider_credit_history_cta' },
+    )
+  }
   return { nextStep: 'pj_toggle_available' }
 }
 
@@ -732,7 +744,7 @@ async function handleWorkerPortal(ctx: FlowContext): Promise<FlowResult> {
   await sendCtaUrl(
     ctx.phone,
     'Manage your detailed working hours, emergency jobs, same-day jobs, and temporary pauses in the Worker Portal.',
-    'Worker Portal',
+    ctaLabelFor('worker_portal'),
     portalUrl,
     { footer: 'WhatsApp supports quick status changes only' },
   )
@@ -1263,7 +1275,7 @@ async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
     await sendCtaUrl(
       ctx.phone,
       `🪪 *Identity Verification*\n\nStatus: *${status}*\n\nComplete or update your identity verification in the Worker Portal. Verified providers build more trust with customers.`,
-      'Verify Identity',
+      ctaLabelFor('identity_verification'),
       portalUrl,
     )
   } else {
@@ -1447,7 +1459,7 @@ export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
         },
       },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { completedAt: 'desc' },
   })
 
   if (!job) {
