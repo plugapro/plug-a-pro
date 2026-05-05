@@ -250,6 +250,48 @@ describe('processInboundMessage stateless notification replies', () => {
     )
   })
 
+  it('does not use duplicate button IDs when a non-job_request flow is active', async () => {
+    // Use reschedule — one of the flows covered by the generic guard (registration has its own)
+    mockDb.conversation.upsert.mockResolvedValue({
+      phone: PHONE,
+      flow: 'reschedule',
+      step: 'select_booking',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.reschedule-hi', 'Hi'))
+
+    expect(showMainMenu).not.toHaveBeenCalled()
+    const resumeCall = mockSendButtons.mock.calls.find(([, , btns]) =>
+      Array.isArray(btns) && btns.some((b: { id: string }) => b.id === 'flow_continue'),
+    )
+    expect(resumeCall).toBeDefined()
+    const buttons = resumeCall![2] as Array<{ id: string }>
+    const ids = buttons.map((b) => b.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).toContain('flow_continue')
+    expect(ids).toContain('cancel_flow')
+    expect(ids).toContain('session_restart')
+  })
+
+  it('does not show the active-flow resume prompt when the session has expired', async () => {
+    mockDb.conversation.upsert.mockResolvedValue({
+      phone: PHONE,
+      flow: 'job_request',
+      step: 'collect_address_street',
+      data: { selectedCategory: 'Plumbing' },
+      expiresAt: new Date(Date.now() - 60_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.expired-hi', 'Hi'))
+
+    const resumeCall = mockSendButtons.mock.calls.find(([, copy]) =>
+      typeof copy === 'string' && copy.includes('still completing'),
+    )
+    expect(resumeCall).toBeUndefined()
+  })
+
   it('sends an expired-lead message when acceptLead returns EXPIRED', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
     mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })

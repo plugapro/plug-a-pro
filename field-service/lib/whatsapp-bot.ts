@@ -854,7 +854,7 @@ async function processInboundMessageUnlocked(
       // Fall through so reset keywords still work
     }
 
-    if (reply.id === 'back_home' || reply.id === 'session_restart') {
+    if (reply.id === 'back_home' || reply.id === 'session_restart' || reply.id === 'cancel_flow') {
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
@@ -1372,6 +1372,7 @@ async function processInboundMessageUnlocked(
 
     if (
       isReset &&
+      !isExpired &&
       reply.id !== 'flow_continue' &&
       hasActiveFlow(persistedFlow, persistedStep) &&
       !isStatelessReply &&
@@ -1390,7 +1391,7 @@ async function processInboundMessageUnlocked(
         activeFlowResumeCopy(persistedFlow, persistedStep),
         [
           { id: 'flow_continue', title: 'Continue' },
-          { id: persistedFlow === 'job_request' ? 'start_cancel' : 'session_restart', title: persistedFlow === 'job_request' ? 'Cancel request' : 'Main menu' },
+          { id: persistedFlow === 'job_request' ? 'start_cancel' : 'cancel_flow', title: persistedFlow === 'job_request' ? 'Cancel request' : 'Cancel' },
           { id: 'session_restart', title: 'Main menu' },
         ],
       )

@@ -127,13 +127,15 @@ async function persistStreetAddressProgress(ctx: FlowContext, street: string): P
       phone: ctx.phone,
       flow: 'job_request',
       step: 'addr_select_province',
+      // Prisma's recursive Json type is not structurally compatible with
+      // ConversationData at compile time — cast required on all Json field writes.
       data: nextData as any,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     },
     update: {
       flow: 'job_request',
       step: 'addr_select_province',
-      data: nextData as any,
+      data: nextData as any, // same Prisma Json type reason
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     },
   })

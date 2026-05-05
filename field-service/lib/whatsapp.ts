@@ -842,7 +842,6 @@ export async function sendProviderPaymentReleased(params: {
 
 export interface SendCustomerMatchFoundParams {
   customerPhone: string
-  customerName: string
   providerName: string
   serviceName: string
   jobRequestId: string
@@ -1305,8 +1304,9 @@ export async function sendAdminEscalation(params: {
  * Notify a customer that their provider is running late.
  * Called from handleRunningLateFlow in provider-journey.ts.
  *
- * Idempotency: checks for an existing JobStatusEvent(notes='provider_running_late')
- * for this job before sending. The write side lives in handleRunningLateFlow.
+ * Idempotency: checks and sets `Job.runningLateWhatsappSentAt`. The field is
+ * written inside this function so the guard is always paired with the send,
+ * regardless of what the caller does afterward.
  */
 export async function sendCustomerRunningLateNotification(params: {
   customerPhone: string
@@ -1316,12 +1316,13 @@ export async function sendCustomerRunningLateNotification(params: {
   jobCategory: string
   jobId: string
 }): Promise<void> {
-  // Idempotency guard — skip if the audit event was already written for this job
-  const existing = await db.jobStatusEvent.findFirst({
-    where: { jobId: params.jobId, notes: 'provider_running_late' },
-    select: { id: true },
+  // Idempotency guard — owned here so duplicate webhook deliveries are blocked
+  // even if the caller's JobStatusEvent write hasn't committed yet.
+  const job = await db.job.findUnique({
+    where: { id: params.jobId },
+    select: { runningLateWhatsappSentAt: true },
   })
-  if (existing) return
+  if (job?.runningLateWhatsappSentAt) return
 
   const providerFirstName = params.providerName.split(' ')[0]
 
@@ -1339,6 +1340,11 @@ export async function sendCustomerRunningLateNotification(params: {
         ],
       },
     ],
+  })
+
+  await db.job.update({
+    where: { id: params.jobId },
+    data: { runningLateWhatsappSentAt: new Date() },
   })
 
   await logOutboundMessage({

@@ -231,7 +231,6 @@ export async function orchestrateMatch(
     // Defensive: failure must not crash the orchestrator
     await sendCustomerMatchFoundNotification({
       customerPhone: jobRequest.customer?.phone ?? '',
-      customerName: jobRequest.customer?.name ?? 'Customer',
       providerName: reserved.provider.name,
       serviceName: jobRequest.category,
       jobRequestId: jobRequest.id,

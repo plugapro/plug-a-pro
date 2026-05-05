@@ -662,7 +662,8 @@ model Job {
   providerCurrentLat       Float?
   providerCurrentLng       Float?
   providerLocationSharedAt DateTime?
-  invoiceWhatsappSentAt    DateTime? // idempotency guard — set when invoice WA template is sent to customer
+  invoiceWhatsappSentAt       DateTime? // idempotency guard — set when invoice WA template is sent to customer
+  runningLateWhatsappSentAt   DateTime? // idempotency guard — set when running-late WA template is sent to customer
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
