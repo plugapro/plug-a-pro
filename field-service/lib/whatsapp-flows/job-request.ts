@@ -1059,7 +1059,10 @@ async function handleCollectIssueDescription(ctx: FlowContext): Promise<FlowResu
       ctx.phone,
       `📝 *Describe the ${category} issue*\n\nIn a few sentences, tell us what needs to be done.\n\n_Example: "My kitchen tap is dripping and needs a new washer."_`,
     )
-    return { nextStep: 'collect_issue_description' }
+    // Preserve address/site data from the inline transition. Without this,
+    // selecting a saved address could move the flow to description while the
+    // persisted conversation row still only contained category/customer data.
+    return { nextStep: 'collect_issue_description', nextData: ctx.data }
   }
 
   if (text.length < 5) {
@@ -1067,10 +1070,51 @@ async function handleCollectIssueDescription(ctx: FlowContext): Promise<FlowResu
       ctx.phone,
       '❗ Please describe the issue in a little more detail so the worker knows what to expect.',
     )
-    return { nextStep: 'collect_issue_description' }
+    return { nextStep: 'collect_issue_description', nextData: ctx.data }
   }
 
-  return handleCollectAvailability({ ...ctx, data: { ...ctx.data, issueDescription: text } })
+  const dataWithRecoveredAddress = await recoverMissingAddressData(ctx)
+  if (!hasRequestAddressData(dataWithRecoveredAddress)) {
+    const category = ctx.data.selectedCategory ?? ctx.data.category ?? 'your service'
+    await sendText(
+      ctx.phone,
+      `📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+    )
+    return { nextStep: 'collect_address_street', nextData: { ...ctx.data, issueDescription: text } }
+  }
+
+  return handleCollectAvailability({ ...ctx, data: { ...dataWithRecoveredAddress, issueDescription: text } })
+}
+
+function hasRequestAddressData(data: ConversationData) {
+  return Boolean(data.address && data.addressLine1 && data.addrLocationNodeId)
+}
+
+async function recoverMissingAddressData(ctx: FlowContext): Promise<ConversationData> {
+  if (hasRequestAddressData(ctx.data)) return ctx.data
+  if (!ctx.data.customerId && !ctx.data.savedAddressId) return ctx.data
+
+  const address = await db.address.findFirst({
+    where: {
+      ...(ctx.data.savedAddressId ? { id: ctx.data.savedAddressId } : {}),
+      ...(ctx.data.customerId ? { customerId: ctx.data.customerId } : {}),
+      locationNodeId: { not: null },
+    },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+  })
+
+  if (!address) return ctx.data
+  const addressData = await savedAddressToConversationData(address as WhatsAppSavedAddress)
+  if (!addressData) return ctx.data
+
+  console.info('[job-request-flow] recovered saved address for description step', {
+    phone: maskedPhone(ctx.phone),
+    customerId: ctx.data.customerId ?? null,
+    addressId: address.id,
+    locationNodeId: address.locationNodeId,
+  })
+
+  return { ...ctx.data, ...addressData, savedAddressId: address.id }
 }
 
 // ─── Availability ─────────────────────────────────────────────────────────────
@@ -1101,7 +1145,7 @@ async function handleCollectAvailability(ctx: FlowContext): Promise<FlowResult> 
     }],
     { buttonLabel: 'Choose Availability' }
   )
-  return { nextStep: 'confirm_job_request' }
+  return { nextStep: 'confirm_job_request', nextData: ctx.data }
 }
 
 // ─── Confirm & submit ─────────────────────────────────────────────────────────

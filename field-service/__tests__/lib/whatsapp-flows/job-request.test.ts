@@ -735,12 +735,53 @@ describe('WhatsApp job-request flow — structured address', () => {
       const result = await handleJobRequestFlow(
         makeCtx('collect_address', 'addr_same', undefined, {
           addrLocationNodeId: 'sub_sandton',
+          addressLine1: '14 Main Road',
           address: '14 Main Road, Sandton, Johannesburg',
         })
       )
 
       // addr_same now routes to issue description before availability
       expect(result.nextStep).toBe('collect_issue_description')
+      expect(result.nextData).toMatchObject({
+        addrLocationNodeId: 'sub_sandton',
+        addressLine1: '14 Main Road',
+      })
+    })
+
+    it('recovers saved address data when returning customer is already at description step', async () => {
+      ;(db.address.findFirst as any).mockResolvedValue({
+        id: 'addr_1',
+        customerId: 'cust_1',
+        street: '21 Jump Street',
+        addressLine1: '21 Jump Street',
+        suburb: 'Bromhof',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        locationNodeId: 'sub_sandton',
+        isDefault: true,
+      })
+
+      const result = await handleJobRequestFlow(
+        makeCtx('collect_issue_description', undefined, 'Paint two bedrooms', {
+          customerId: 'cust_1',
+          selectedCategory: 'Painting',
+          category: 'Painting',
+        })
+      )
+
+      expect(result.nextStep).toBe('confirm_job_request')
+      expect(result.nextData).toMatchObject({
+        issueDescription: 'Paint two bedrooms',
+        addressLine1: '21 Jump Street',
+        addrLocationNodeId: 'sub_sandton',
+        savedAddressId: 'addr_1',
+      })
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('When are you available'),
+        expect.any(Array),
+        expect.any(Object),
+      )
     })
   })
 
