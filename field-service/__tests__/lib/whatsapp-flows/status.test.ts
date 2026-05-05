@@ -45,6 +45,7 @@ function makeCtx(overrides: Partial<Parameters<typeof handleStatusFlow>[0]> = {}
 function makeJobRequest(overrides: Record<string, unknown> = {}) {
   return {
     id:        'jr_abc123',
+    requestRef: 'PAP-ABC123',
     customerId: 'cust_1',
     category:  'Plumbing',
     status:    'OPEN',
@@ -122,7 +123,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Ticket #ABC123'),
+      expect.stringContaining('Request PAP-ABC123'),
       'Refresh status',
       `${APP_URL}/requests/access/jr_abc123`
     )
@@ -207,7 +208,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     const body: string =
       vi.mocked(wa.sendCtaUrl).mock.calls[0]?.[1] ??
       vi.mocked(wa.sendButtons).mock.calls[0]?.[1] ?? ''
-    expect(body).toContain('Ticket #ABC123')
+    expect(body).toContain('Request PAP-ABC123')
     expect(body).toContain('Checking your request')
     expect(result.nextStep).toBe('done')
   })
@@ -216,6 +217,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     const stale = makeJobRequest({ id: 'jr_other', customerId: 'other_customer' })
     const latest = makeJobRequest({
       id: 'jr_latest',
+      requestRef: 'PAP-LATEST',
       status: 'OPEN',
       category: 'Plumbing',
       createdAt: new Date('2026-04-11T10:00:00Z'),
@@ -236,7 +238,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Ticket #LATEST'),
+      expect.stringContaining('Request PAP-LATEST'),
       'Refresh status',
       `${APP_URL}/requests/access/jr_latest`
     )
@@ -297,8 +299,8 @@ describe('handleStatusFlow — completed job shows request-level status', () => 
 
 // ─── Multiple active requests — disambiguation ────────────────────────────────
 
-describe('handleStatusFlow — multiple active requests', () => {
-  it('sends disambiguation list and returns status_pick', async () => {
+describe('handleStatusFlow — My Requests list', () => {
+  it('sends recent request list and returns status_pick', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([
       makeJobRequest({ id: 'jr_1', category: 'Plumbing',   status: 'OPEN',     createdAt: new Date('2026-04-10') }),
@@ -309,12 +311,12 @@ describe('handleStatusFlow — multiple active requests', () => {
 
     expect(wa.sendList).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('2 active requests'),
+      expect.stringContaining('Here are your recent requests'),
       expect.arrayContaining([
         expect.objectContaining({
           rows: expect.arrayContaining([
-            expect.objectContaining({ id: 'status_req_jr_1', title: expect.stringContaining('Plumbing') }),
-            expect.objectContaining({ id: 'status_req_jr_2', title: expect.stringContaining('Electrical') }),
+            expect.objectContaining({ id: 'status_req_jr_1', description: expect.stringContaining('Plumbing') }),
+            expect.objectContaining({ id: 'status_req_jr_2', description: expect.stringContaining('Electrical') }),
           ]),
         }),
       ]),
@@ -326,9 +328,9 @@ describe('handleStatusFlow — multiple active requests', () => {
   it('uses distinct picker labels for requests in the same category', async () => {
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([
-      makeJobRequest({ id: 'jr_1', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-12T08:31:00Z') }),
-      makeJobRequest({ id: 'jr_2', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-02T08:31:00Z') }),
-      makeJobRequest({ id: 'jr_3', category: 'DIY & Assembly', status: 'PENDING_VALIDATION', createdAt: new Date('2026-03-31T08:31:00Z') }),
+      makeJobRequest({ id: 'jr_1', requestRef: 'PAP-PAINT1', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-12T08:31:00Z') }),
+      makeJobRequest({ id: 'jr_2', requestRef: 'PAP-PAINT2', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-02T08:31:00Z') }),
+      makeJobRequest({ id: 'jr_3', requestRef: 'PAP-DIY333', category: 'DIY & Assembly', status: 'PENDING_VALIDATION', createdAt: new Date('2026-03-31T08:31:00Z') }),
     ] as never)
 
     await handleStatusFlow(makeCtx())
@@ -338,28 +340,27 @@ describe('handleStatusFlow — multiple active requests', () => {
 
     expect(rows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'status_req_jr_1', title: expect.stringContaining('12 Apr') }),
-        expect.objectContaining({ id: 'status_req_jr_2', title: expect.stringContaining('02 Apr') }),
+        expect.objectContaining({ id: 'status_req_jr_1', title: expect.stringContaining('PAP-PAINT1') }),
+        expect.objectContaining({ id: 'status_req_jr_2', title: expect.stringContaining('PAP-PAINT2') }),
       ])
     )
-    expect(rows[0].title).not.toBe(rows[1].title)
+    expect(rows[0].description).not.toBe(rows[1].description)
   })
 
-  it('filters out terminal requests from the disambiguation list', async () => {
+  it('includes terminal requests after active requests in the recent list', async () => {
     const activeJr = makeJobRequest({ id: 'jr_1', category: 'Plumbing', status: 'OPEN' })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([
       activeJr,
       makeJobRequest({ id: 'jr_2', category: 'Old job', status: 'CANCELLED' }),
     ] as never)
-    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(activeJr as never)
 
-    // Only 1 active → no disambiguation, goes straight to status response
     const result = await handleStatusFlow(makeCtx())
 
-    expect(wa.sendList).not.toHaveBeenCalled()
-    expect(wa.sendCtaUrl).toHaveBeenCalled()
-    expect(result.nextStep).toBe('done')
+    const rows = vi.mocked(wa.sendList).mock.calls[0]?.[2]?.[0]?.rows ?? []
+    expect(rows[0]).toEqual(expect.objectContaining({ id: 'status_req_jr_1' }))
+    expect(rows[1]).toEqual(expect.objectContaining({ id: 'status_req_jr_2' }))
+    expect(result.nextStep).toBe('status_pick')
   })
 
   it('falls back to buttons when the disambiguation list send fails', async () => {
@@ -374,17 +375,18 @@ describe('handleStatusFlow — multiple active requests', () => {
 
     expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('2 active requests'),
+      expect.stringContaining('Here are your recent requests'),
       expect.arrayContaining([
         expect.objectContaining({ id: 'status_req_jr_1' }),
         expect.objectContaining({ id: 'status_req_jr_2' }),
+        expect.objectContaining({ id: 'book' }),
       ]),
       expect.any(Object)
     )
     expect(result.nextStep).toBe('status_pick')
   })
 
-  it('falls back to the newest request when list and button picker sends both fail', async () => {
+  it('falls back to a text request list when list and button picker sends both fail', async () => {
     const latest = makeJobRequest({ id: 'jr_1', category: 'Painting', status: 'OPEN', createdAt: new Date('2026-04-12') })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([
@@ -400,15 +402,13 @@ describe('handleStatusFlow — multiple active requests', () => {
 
     expect(wa.sendText).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining("showing your newest active request instead")
+      expect.stringContaining('Reply with the request reference you want to track')
     )
-    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+    expect(wa.sendText).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Ticket #JR_1'),
-      'Refresh status',
-      `${APP_URL}/requests/access/jr_1`
+      expect.stringContaining('Reply with the request reference you want to track')
     )
-    expect(result.nextStep).toBe('done')
+    expect(result.nextStep).toBe('status_pick')
   })
 })
 
@@ -416,8 +416,9 @@ describe('handleStatusFlow — multiple active requests', () => {
 
 describe('handleStatusFlow — status_pick step', () => {
   it('resolves the chosen request and shows its status', async () => {
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(
-      makeJobRequest({ id: 'jr_2', category: 'Electrical', status: 'MATCHING' }) as never
+      makeJobRequest({ id: 'jr_2', requestRef: 'PAP-ELEC2', category: 'Electrical', status: 'MATCHING' }) as never
     )
 
     const result = await handleStatusFlow(
@@ -432,9 +433,35 @@ describe('handleStatusFlow — status_pick step', () => {
     )
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Ticket #JR_2'),
+      expect.stringContaining('Request PAP-ELEC2'),
       'Refresh status',
       `${APP_URL}/requests/access/jr_2`
+    )
+    expect(result.nextStep).toBe('done')
+  })
+})
+
+describe('handleStatusFlow — refresh status', () => {
+  it('refreshes a specific request when the button carries the request id', async () => {
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(
+      makeJobRequest({ id: 'jr_refresh', requestRef: 'PAP-REFRESH', category: 'Appliances', status: 'OPEN' }) as never
+    )
+
+    const result = await handleStatusFlow(
+      makeCtx({
+        reply: { type: 'button_reply' as const, id: 'status_refresh_jr_refresh', text: 'Refresh status' },
+      })
+    )
+
+    expect(db.jobRequest.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'jr_refresh' } })
+    )
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Request PAP-REFRESH'),
+      'Refresh status',
+      `${APP_URL}/requests/access/jr_refresh`
     )
     expect(result.nextStep).toBe('done')
   })
@@ -489,7 +516,7 @@ describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
     // Must send buttons with status info but no tracking URL
     expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Ticket #ABC123'),
+      expect.stringContaining('Request PAP-ABC123'),
       expect.any(Array),
       expect.any(Object)
     )
@@ -519,11 +546,11 @@ describe('handleStatusFlow — send fallback resilience', () => {
 })
 
 describe('handleStatusFlow — resilience for invalid disambiguation id', () => {
-  it('handles a stale status_pick id by showing latest active request status', async () => {
+  it('handles a stale status_pick id by asking the user to choose from current requests', async () => {
     const latest = makeJobRequest({ id: 'jr_latest', category: 'Electrical', status: 'OPEN', createdAt: new Date('2026-04-12') })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([latest] as never)
-    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(latest as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(null)
 
     const result = await handleStatusFlow(
       makeCtx({
@@ -532,11 +559,10 @@ describe('handleStatusFlow — resilience for invalid disambiguation id', () => 
       })
     )
 
-    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+    expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Ticket #LATEST'),
-      'Refresh status',
-      `${APP_URL}/requests/access/jr_latest`
+      expect.stringContaining("couldn't find that request"),
+      expect.any(Array),
     )
     expect(result.nextStep).toBe('done')
   })

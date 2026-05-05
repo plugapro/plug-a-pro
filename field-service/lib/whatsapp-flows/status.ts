@@ -1,15 +1,16 @@
 // ─── Job request / job status check flow ─────────────────────────────────────
-// Customer replies "status" or taps "My Request" → sees their latest job request
+// Customer replies "status" or taps "My Requests" → sees recent logged requests.
 //
-// Multi-request users (>1 active) get a disambiguation list.
-// Single-active or latest-only users see status + deep-link CTA.
+// Root cause note: this flow previously reused single-request tracking for the
+// "My Requests" menu item. When the hidden latest-request render failed, the
+// user saw a generic refresh loop instead of a request list. Keep list and
+// specific-request status/refresh as separate concepts.
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { db } from '../db'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { getPublicAppUrl } from '../provider-credit-copy'
 import type { FlowContext, FlowResult } from './types'
-import { sendWhatsAppJourneyRecovery } from '../journey-recovery'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
   SCHEDULED:                       '📋 Provider scheduled',
@@ -37,6 +38,7 @@ const JOB_REQUEST_STATUS_LABELS: Record<string, string> = {
 
 const TERMINAL_JOB_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED']
 const TERMINAL_REQUEST_STATUSES = ['EXPIRED', 'CANCELLED']
+const MY_REQUESTS_LIMIT = 10
 
 type LeadStatusSummary = {
   total: number
@@ -64,8 +66,10 @@ function formatRequestDate(date: Date) {
 
 type JobRequestWithRuntime = {
   id: string
+  requestRef: string | null
   customerId: string
   status: string
+  createdAt: Date
   match: {
     booking: {
       job: {
@@ -88,6 +92,31 @@ function isRequestTerminalForTracking(request: Pick<JobRequestWithRuntime, 'stat
 
   const job = request.match?.booking?.job ?? null
   return !!job && TERMINAL_JOB_STATUSES.includes(job.status)
+}
+
+function requestReference(request: Pick<JobRequestWithRuntime, 'id' | 'requestRef'>) {
+  return request.requestRef || `PAP-${request.id.slice(-8).toUpperCase()}`
+}
+
+function requestStatusLabel(request: Pick<JobRequestWithRuntime, 'status' | 'match'>) {
+  const job = request.match?.booking?.job ?? null
+  const activeJob = (job && !TERMINAL_JOB_STATUSES.includes(job.status)) ? job : null
+  return activeJob
+    ? JOB_STATUS_LABELS[activeJob.status] ?? 'Status update pending'
+    : JOB_REQUEST_STATUS_LABELS[request.status] ?? 'Status update pending'
+}
+
+function sortRequestsForMyRequests<T extends Pick<JobRequestWithRuntime, 'status' | 'match' | 'createdAt'>>(requests: T[]) {
+  return [...requests].sort((a, b) => {
+    const aTerminal = isRequestTerminalForTracking(a)
+    const bTerminal = isRequestTerminalForTracking(b)
+    if (aTerminal !== bTerminal) return aTerminal ? 1 : -1
+    return b.createdAt.getTime() - a.createdAt.getTime()
+  })
+}
+
+function requestListLine(request: JobRequestWithRuntime, index: number) {
+  return `${index + 1}. ${requestReference(request)} — ${request.category} — ${requestStatusLabel(request).replace(/^[^\p{L}\p{N}]+/u, '')}`
 }
 
 function createDefaultLeadSummary(): LeadSummaryErrorSafe {
@@ -139,6 +168,14 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       )
     }
 
+    if (ctx.reply.id?.startsWith('status_refresh_')) {
+      const jobRequestId = ctx.reply.id.replace('status_refresh_', '')
+      if (jobRequestId) {
+        log(`refresh requested → jobRequestId=${jobRequestId}`)
+        return showRequestStatus(ctx.phone, jobRequestId, reqId, customer.id)
+      }
+    }
+
     if (ctx.step === 'status_pick' && ctx.reply.id?.startsWith('status_req_')) {
       const jobRequestId = ctx.reply.id.replace('status_req_', '')
       log(`disambiguation pick → jobRequestId=${jobRequestId}`)
@@ -146,7 +183,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
     }
 
     if (ctx.step === 'status_pick') {
-      log('status_pick reached with stale/invalid request id; showing current status by latest request')
+      log('status_pick reached with stale/invalid request id; showing request list')
     }
 
     log(`customerId=${customer.id} — fetching job requests`)
@@ -181,45 +218,43 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'welcome' }
     }
 
-    // Separate active from terminal requests
-    const activeRequests = jobRequests.filter((jr) => {
-      if (TERMINAL_REQUEST_STATUSES.includes(jr.status)) return false
-      const job = jr.match?.booking?.job ?? null
-      if (job && TERMINAL_JOB_STATUSES.includes(job.status)) return false
-      return true
-    })
+    const sortedRequests = sortRequestsForMyRequests(jobRequests as JobRequestWithRuntime[])
+    const activeRequests = sortedRequests.filter((jr) => !isRequestTerminalForTracking(jr))
 
     log(`total=${jobRequests.length} active=${activeRequests.length}`)
 
-    // ── Disambiguation: >1 active requests ──────────────────────────────────
-    if (activeRequests.length > 1) {
-      log('multiple active requests — sending disambiguation list')
-      const requestChoices = activeRequests.slice(0, 9).map((jr) => {
-        const job = jr.match?.booking?.job ?? null
-        const activeJob = (job && !TERMINAL_JOB_STATUSES.includes(job.status)) ? job : null
-        const statusLabel = activeJob
-          ? JOB_STATUS_LABELS[activeJob.status] ?? activeJob.status
-          : JOB_REQUEST_STATUS_LABELS[jr.status] ?? jr.status
+    // ── My Requests: list recent requests when there is more than one ───────
+    if (sortedRequests.length > 1 || ctx.step === 'status_pick') {
+      log('sending recent request list')
+      const visibleRequests = sortedRequests.slice(0, MY_REQUESTS_LIMIT)
+      const requestChoices = visibleRequests.slice(0, 9).map((jr) => {
         const date = formatRequestDate(jr.createdAt)
         return {
           id: `status_req_${jr.id}`,
-          title: truncate(`${jr.category} · ${date}`, 24),
-          description: truncate(`${statusLabel} · Ref ${jr.id.slice(-6).toUpperCase()}`, 72),
-          buttonTitle: truncate(`${jr.category} ${date}`, 20),
+          title: truncate(`${requestReference(jr)} · ${date}`, 24),
+          description: truncate(`${jr.category} · ${requestStatusLabel(jr).replace(/^[^\p{L}\p{N}]+/u, '')} · ${date}`, 72),
+          buttonTitle: truncate(requestReference(jr), 20),
         }
       })
+      const listBody = `📋 *Here are your recent requests:*\n\n${visibleRequests.map(requestListLine).join('\n')}\n\nChoose a request to view its status.`
 
       try {
         await sendList(
           ctx.phone,
-          `📋 *You have ${activeRequests.length} active requests.*\n\nWhich one would you like to check?`,
+          listBody,
           [{
-            title: 'Active Requests',
+            title: 'Recent Requests',
             rows: requestChoices.map(({ id, title, description }) => ({
               id,
               title,
               description,
             })),
+          }, {
+            title: 'Actions',
+            rows: [
+              { id: 'book', title: 'Start new request', description: 'Log another service request' },
+              { id: 'back_home', title: 'Main menu', description: 'Return to the main menu' },
+            ],
           }],
           { buttonLabel: 'Choose Request' }
         )
@@ -227,49 +262,49 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       } catch (error) {
         log(`WARN: sendList failed for request picker — falling back. error=${error instanceof Error ? error.message : String(error)}`)
 
-        const buttonChoices = requestChoices.slice(0, 3).map(({ id, buttonTitle }) => ({
+        const buttonChoices = requestChoices.slice(0, 2).map(({ id, buttonTitle }) => ({
           id,
           title: buttonTitle,
         }))
+        buttonChoices.push({ id: 'book', title: 'New Request' })
 
-        if (buttonChoices.length >= 2) {
-          try {
-            await sendButtons(
-              ctx.phone,
-              `📋 *You have ${activeRequests.length} active requests.*\n\nTap one below to view its latest status.${activeRequests.length > 3 ? '\n\nIf you do not see the one you want, reply *status* again and we will show your newest request.' : ''}`,
-              buttonChoices,
-              { footer: 'Reply "menu" for main menu' }
-            )
-            return { nextStep: 'status_pick' }
-          } catch (fallbackError) {
-            log(`WARN: sendButtons fallback failed for request picker — showing latest request. error=${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
-          }
+        try {
+          await sendButtons(
+            ctx.phone,
+            listBody,
+            buttonChoices,
+            { footer: 'Reply "menu" for main menu' }
+          )
+          return { nextStep: 'status_pick' }
+        } catch (fallbackError) {
+          log(`WARN: sendButtons fallback failed for request picker — showing text list. error=${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`)
         }
 
         await sendText(
           ctx.phone,
-          `📋 I couldn't show the full request list right now, so I'm showing your newest active request instead.`
+          `${listBody}\n\nReply with the request reference you want to track, or reply *menu*.`
         )
-        return showRequestStatus(ctx.phone, activeRequests[0].id, reqId, customer.id)
+        return { nextStep: 'status_pick' }
       }
     }
 
     // ── Single active request — or fall back to most recent ─────────────────
-    const target = activeRequests[0] ?? jobRequests[0]
+    const target = activeRequests[0] ?? sortedRequests[0]
     log(`resolved to jobRequestId=${target.id} category=${target.category} status=${target.status}`)
     return showRequestStatus(ctx.phone, target.id, reqId, customer.id)
   } catch (error) {
     log(`WARN: status flow failed before rendering. error=${error instanceof Error ? error.message : String(error)}`)
-    await sendWhatsAppJourneyRecovery(ctx.phone, {
-      userRole: 'customer',
-      channel: 'whatsapp',
-      flowName: ctx.flow,
-      currentStep: ctx.step,
-      failureType: 'dependency_failure',
-      recoveryClass: 'show_status',
-      error,
-    })
-    return { nextStep: 'done' }
+    await sendButtons(
+      ctx.phone,
+      "📋 We couldn't load your requests right now. Please try again.",
+      [
+        { id: 'status', title: 'Try again' },
+        { id: 'book', title: 'Start new request' },
+        { id: 'back_home', title: 'Main menu' },
+      ],
+      { footer: 'Reply "menu" for main menu' },
+    )
+    return { nextStep: 'welcome' }
   }
 }
 
@@ -377,19 +412,12 @@ async function showRequestStatus(
 
     if (!jr) {
       log(`jobRequest not found id=${jobRequestId}`)
-      const latestForCustomer = await loadLatestRequestForCustomer()
-
-      if (latestForCustomer) {
-        log(`fallback to latest request id=${latestForCustomer.id} for stale/missing id=${jobRequestId}`)
-        return showRequestStatus(phone, latestForCustomer.id, reqId, expectedCustomerId)
-      }
-
       await sendButtons(
         phone,
-        "⚠️ We couldn't find that request. Open your latest request message and tap Track My Request again, or go back to the main menu.",
+        "⚠️ We couldn't find that request. It may be old or no longer active.\n\nPlease choose the request you want to track.",
         [
+          { id: 'status', title: 'My Requests' },
           { id: 'book', title: '🔧 New Request' },
-          { id: 'back_home', title: '🏠 Main Menu' },
         ],
       )
       return { nextStep: 'done' }
@@ -411,8 +439,8 @@ async function showRequestStatus(
         phone,
         '⚠️ That request could not be loaded for this account.',
         [
-          { id: 'book', title: '🔧 Request a Service' },
-          { id: 'back_home', title: '🏠 Main Menu' },
+          { id: 'status', title: 'My Requests' },
+          { id: 'book', title: 'Request Service' },
         ],
       )
       return { nextStep: 'done' }
@@ -485,10 +513,10 @@ async function showRequestStatus(
         : 'This request is no longer active.'
       await sendButtons(
         phone,
-        `📋 *Ticket #${jr.id.slice(-6).toUpperCase()}*\n\n🔧 ${jr.category}\n${fallbackText}\n\nIf you want, submit another request now.`,
+        `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${fallbackText}\n\nIf you want, submit another request now.`,
         [
-          { id: 'book', title: '🔧 Start New Request' },
-          { id: 'back_home', title: '🏠 Main Menu' },
+          { id: 'book', title: 'Start new request' },
+          { id: 'back_home', title: 'Main menu' },
         ],
       )
       return { nextStep: 'done' }
@@ -501,10 +529,10 @@ async function showRequestStatus(
         : ''
       await sendButtons(
         phone,
-        `📋 *Ticket #${jr.id.slice(-6).toUpperCase()}*\n\n🔧 ${jr.category}\n${statusLabel}${selectedLine}\n\nWe'll notify you when they confirm so we can unlock full details.`,
+        `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${statusLabel}${selectedLine}\n\nWe'll notify you when they confirm so we can unlock full details.`,
         [
-          { id: 'status', title: '🔁 Refresh status' },
-          { id: 'back_home', title: '🏠 Main Menu' },
+          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: 'back_home', title: 'Main menu' },
         ],
       )
       return { nextStep: 'done' }
@@ -516,15 +544,14 @@ async function showRequestStatus(
         phone,
         body,
         [
-          { id: 'status', title: '🔁 Refresh status' },
-          { id: 'back_home', title: '🏠 Main Menu' },
+          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: 'back_home', title: 'Main menu' },
         ],
       )
       return { nextStep: 'done' }
     }
 
     if (requestStatus === 'OPEN' || requestStatus === 'MATCHING' || requestStatus === 'PENDING_VALIDATION') {
-      const ticketRef = jr.id.slice(-6).toUpperCase()
       let body = requestStatusBody(
         requestStatus,
         `🔧 ${jr.category}`,
@@ -533,7 +560,7 @@ async function showRequestStatus(
         shortlist,
         latestDispatchStatus,
       )
-      body = `📋 *Ticket #${ticketRef}*\n\n${body}`
+      body = `📋 *Request ${requestReference(jr)}*\n\n${body}`
 
       const appUrl = getPublicAppUrl()
       const trackingUrl = appUrl ? await safeTrackingUrl(jr.id) : null
@@ -554,8 +581,8 @@ async function showRequestStatus(
           phone,
           `${body}\n\nTap Refresh status to check for provider responses.`,
           [
-            { id: 'status', title: '🔁 Refresh status' },
-            { id: 'back_home', title: '🏠 Main Menu' },
+            { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+            { id: 'back_home', title: 'Main menu' },
           ],
           { footer: 'Reply "menu" to return to the main menu' },
         )
@@ -563,23 +590,22 @@ async function showRequestStatus(
       return { nextStep: 'done' }
     }
 
-    const ticketRef = jr.id.slice(-6).toUpperCase()
     const trackingUrl = await safeTrackingUrl(jr.id)
 
     if (trackingUrl) {
       await sendCtaUrl(
         phone,
-        `📋 *Ticket #${ticketRef}*\n\n🔧 ${jr.category}\n${statusLabel}\n\nTap below to view your ticket.`,
+        `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${statusLabel}\n\nTap below to view your request.`,
         'View Ticket',
         trackingUrl,
       )
     } else {
       await sendButtons(
         phone,
-        `📋 *Ticket #${ticketRef}*\n\n🔧 ${jr.category}\n${statusLabel}`,
+        `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${statusLabel}`,
         [
-          { id: 'status', title: '🔁 Refresh status' },
-          { id: 'back_home', title: '🏠 Main Menu' },
+          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: 'back_home', title: 'Main menu' },
         ],
         { footer: 'Reply "menu" to return to the main menu' },
       )
@@ -588,16 +614,15 @@ async function showRequestStatus(
     return { nextStep: 'done' }
   } catch (error) {
     log(`WARN: status render failed, using fallback. error=${error instanceof Error ? error.message : String(error)}`)
-    await sendWhatsAppJourneyRecovery(phone, {
-      userRole: 'customer',
-      channel: 'whatsapp',
-      flowName: 'status',
-      currentStep: 'status_show',
-      failureType: 'dependency_failure',
-      recoveryClass: 'show_status',
-      requestId: jobRequestId,
-      error,
-    })
+    await sendButtons(
+      phone,
+      "📋 We couldn't load that request right now. Please try again or choose another request.",
+      [
+        { id: `status_refresh_${jobRequestId}`, title: 'Try again' },
+        { id: 'status', title: 'My Requests' },
+        { id: 'book', title: 'New request' },
+      ],
+    )
     return { nextStep: 'done' }
   }
 }
