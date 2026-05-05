@@ -2959,7 +2959,7 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
         currentStep: 'assignment_decline',
         failureType: 'dependency_failure',
         actionId: `hd_${reason}`,
-        requestId: leadId,
+        requestId: lead.id,
         traceId,
         error,
         recoveryClass: 'retry_same_step',
