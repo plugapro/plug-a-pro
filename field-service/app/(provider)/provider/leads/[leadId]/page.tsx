@@ -327,7 +327,7 @@ export default async function LeadDetailPage({
             <>
               <p>
                 Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
-                Your current balance is {totalCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
+                Your current credits balance is {totalCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
               </p>
               <p className="mt-1">Full customer details will be released only after acceptance succeeds.</p>
             </>
@@ -335,7 +335,7 @@ export default async function LeadDetailPage({
             <>
               <p>
                 You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
-                Your current balance is {totalCreditBalance}.
+                Your current credits balance is {totalCreditBalance}.
               </p>
               <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
             </>

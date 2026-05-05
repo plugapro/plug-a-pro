@@ -15,14 +15,14 @@ WhatsApp body text is not HTML. There is no anchor tag. There is no Markdown lin
 await sendText(phone, `Provider terms: ${getProviderTermsUrl()}`)
 
 // ✅ Right
-await sendButtons(phone, 'Provider terms and credit rules are available below.', [
+await sendButtons(phone, 'Provider credits terms and rules are available below.', [
   { id: 'check_status', title: 'Check Status' },
   { id: 'back_home', title: 'Main Menu' },
 ])
 await sendCtaUrl(
   phone,
-  'Provider terms and credit rules.',
-  ctaLabelFor('credit_policy'),       // → "View credit policy"
+  'Provider credits terms and rules.',
+  ctaLabelFor('credits_terms'),       // → "View credits rules"
   getProviderTermsUrl(),
 )
 ```
@@ -53,17 +53,22 @@ The lint test rejects `Shall I`, `Would you like me to`, and `Do you want me to`
 
 | Purpose | Label |
 |---|---|
-| `credit_policy` | View credit policy |
+| `credits_terms` | View credits rules |
+| `credit_history` | View credits history |
+| `buy_credits` | Buy credits |
+| `top_up_credits` | Top up credits |
 | `provider_terms` | View terms |
 | `application_status` | Check status |
-| `worker_portal` | Open dashboard |
+| `worker_portal` | Open Worker Portal |
+| `provider_profile` | Complete profile |
+| `identity_verification` | Complete verification |
+| `job_detail` | View job |
 | `booking_view` | View booking |
 | `quote_view` | View quote |
 | `quote_approval` | Approve quote |
 | `payment` | Make payment |
 | `invoice_view` | View invoice |
 | `receipt_view` | View receipt |
-| `job_card` | View job card |
 | `support` | Contact support |
 | `generic_details` | View details |
 

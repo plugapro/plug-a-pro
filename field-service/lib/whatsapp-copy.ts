@@ -13,7 +13,6 @@
 
 export type WhatsAppCtaPurpose =
   | 'credit_history'
-  | 'credit_policy'
   | 'credits_terms'
   | 'buy_credits'
   | 'top_up_credits'
@@ -41,7 +40,6 @@ export type WhatsAppCtaLink = {
 
 const CTA_LABELS: Record<WhatsAppCtaPurpose, string> = {
   credit_history: 'View credits history',
-  credit_policy: 'View credits rules',
   credits_terms: 'View credits rules',
   buy_credits: 'Buy credits',
   top_up_credits: 'Top up credits',
