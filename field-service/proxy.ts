@@ -91,6 +91,13 @@ export async function proxy(request: NextRequest) {
     return res
   }
 
+  // Legacy /technician/* → /provider/* redirect (app group removed)
+  if (pathname.startsWith('/technician')) {
+    const target = request.nextUrl.clone()
+    target.pathname = pathname.replace(/^\/technician/, '/provider')
+    return NextResponse.redirect(target, { status: 308 })
+  }
+
   // Allow public paths (checked against the internal path)
   if (isPublicPath(pathname)) {
     return buildResponse()
