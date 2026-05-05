@@ -62,7 +62,7 @@ vi.mock('@/lib/whatsapp-interactive', () => ({
 }))
 
 vi.mock('@/lib/whatsapp-identity', () => ({
-  resolveWhatsAppIdentity: vi.fn(),
+  resolveWhatsAppUserContext: vi.fn(),
   phoneLookupVariants: vi.fn().mockReturnValue([]),
 }))
 

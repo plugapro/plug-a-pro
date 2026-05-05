@@ -16,6 +16,7 @@ import { buildProviderCreditSummaryMessage, creditCountLabel, getPublicAppUrl, p
 import { ctaLabelFor } from '../whatsapp-copy'
 import { normaliseLocationDisplayName } from '../location-format'
 import { normalizePhone } from '../utils'
+import { phoneLookupVariants } from '../whatsapp-identity'
 import type { Prisma } from '@prisma/client'
 import type { FlowContext, FlowResult } from './types'
 
@@ -101,13 +102,6 @@ async function providerCreditSummary(providerId: string) {
   return buildProviderCreditSummaryMessage(balance)
 }
 
-function providerPhoneVariants(phone: string) {
-  const normalized = normalizePhone(phone)
-  const digits = normalized.replace(/^\+/, '')
-  const local = digits.startsWith('27') ? `0${digits.slice(2)}` : null
-  return [...new Set([normalized, phone, digits, local].filter(Boolean) as string[])]
-}
-
 async function findProviderForWhatsApp(phone: string, include?: Prisma.ProviderInclude) {
   const normalizedPhone = normalizePhone(phone)
   const exact = await db.provider.findUnique({
@@ -116,7 +110,7 @@ async function findProviderForWhatsApp(phone: string, include?: Prisma.ProviderI
   } as Prisma.ProviderFindUniqueArgs)
   if (exact) return exact as any
 
-  const variants = providerPhoneVariants(phone)
+  const variants = phoneLookupVariants(phone)
   const matches = await (db as any).provider.findMany?.({
     where: { phone: { in: variants } },
     include,
@@ -602,9 +596,10 @@ async function handlePauseConfirm(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({
-    where: { phone: normalizePhone(ctx.phone) },
+  const provider = await db.provider.findFirst({
+    where: { phone: { in: phoneLookupVariants(ctx.phone) } },
     select: { serviceAreas: true, technicianServiceAreas: { select: { label: true, active: true } } },
+    orderBy: { updatedAt: 'desc' },
   })
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
@@ -629,8 +624,8 @@ async function handleServiceAreas(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleProviderProfile(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({
-    where: { phone: normalizePhone(ctx.phone) },
+  const provider = await db.provider.findFirst({
+    where: { phone: { in: phoneLookupVariants(ctx.phone) } },
     select: {
       name: true,
       phone: true,
@@ -641,6 +636,7 @@ async function handleProviderProfile(ctx: FlowContext): Promise<FlowResult> {
       skills: true,
       serviceAreas: true,
     },
+    orderBy: { updatedAt: 'desc' },
   })
   if (!provider) {
     await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
@@ -1237,9 +1233,10 @@ async function handleProblemReport(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleVerifyIdentity(ctx: FlowContext): Promise<FlowResult> {
-  const provider = await db.provider.findUnique({
-    where: { phone: normalizePhone(ctx.phone) },
+  const provider = await db.provider.findFirst({
+    where: { phone: { in: phoneLookupVariants(ctx.phone) } },
     select: { kycStatus: true },
+    orderBy: { updatedAt: 'desc' },
   })
 
   if (!provider) {

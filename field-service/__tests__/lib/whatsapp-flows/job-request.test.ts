@@ -823,7 +823,29 @@ describe('WhatsApp job-request flow — structured address', () => {
     })
   })
 
-  // ── 8. Pagination works for lists > 10 rows ───────────────────────────────
+  // ── 8. New customer (no record) → name prompt before address capture ─────────
+
+  describe('new customer — first booking name prompt', () => {
+    it('sends the name prompt and flags isFirstBooking when customer.findFirst returns null', async () => {
+      // beforeEach already sets db.customer.findFirst → null
+      const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_plumbing'))
+
+      expect(result.nextStep).toBe('collect_name')
+      expect(result.nextData).toMatchObject({
+        selectedCategory: 'Plumbing',
+        category: 'Plumbing',
+        isFirstBooking: true,
+      })
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('first name'),
+      )
+      expect(wa.sendButtons).not.toHaveBeenCalled()
+      expect(wa.sendList).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── 9. Pagination works for lists > 10 rows ───────────────────────────────
 
   describe('pagination', () => {
     it('shows 8 items + Next on page 0 when suburb list > 10', async () => {

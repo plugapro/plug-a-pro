@@ -37,7 +37,7 @@ import {
 } from '../structured-address'
 import {
   phoneLookupVariants,
-  resolveWhatsAppIdentity,
+  resolveWhatsAppUserContext,
   type WhatsAppSavedAddress,
 } from '../whatsapp-identity'
 import { createTraceId } from '../support-diagnostics'
@@ -406,7 +406,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     const categoryEntry = JOB_CATEGORIES.find((c) => c.id === ctx.reply.id)
     const category = categoryEntry?.label ?? ctx.reply.title ?? ''
 
-    const identity = await resolveWhatsAppIdentity(ctx.phone)
+    const identity = await resolveWhatsAppUserContext(ctx.phone)
     if ((identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive') && !identity.customerId) {
       await sendText(
         ctx.phone,
@@ -499,7 +499,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
   }
 
   await db.customer.updateMany({
-    where: { phone: ctx.phone, name: { in: ['WhatsApp Customer', 'Customer'] } },
+    where: { phone: { in: phoneLookupVariants(ctx.phone) }, name: { in: ['WhatsApp Customer', 'Customer'] } },
     data: { name: text },
   })
 
@@ -1099,6 +1099,19 @@ async function recoverMissingAddressData(ctx: FlowContext): Promise<Conversation
       ...(ctx.data.savedAddressId ? { id: ctx.data.savedAddressId } : {}),
       ...(ctx.data.customerId ? { customerId: ctx.data.customerId } : {}),
       locationNodeId: { not: null },
+    },
+    select: {
+      id: true,
+      label: true,
+      street: true,
+      addressLine1: true,
+      suburb: true,
+      region: true,
+      city: true,
+      province: true,
+      postalCode: true,
+      locationNodeId: true,
+      isDefault: true,
     },
     orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
   })
@@ -1721,7 +1734,7 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
 // ─── Exported helpers ─────────────────────────────────────────────────────────
 
 export async function showMainMenu(phone: string): Promise<void> {
-  const menu = await resolveWhatsAppIdentity(phone)
+  const menu = await resolveWhatsAppUserContext(phone)
 
   if (menu.conflict && menu.customerId) {
     const name = menu.customerFirstName ?? firstName(menu.customerDisplayName ?? menu.displayName)

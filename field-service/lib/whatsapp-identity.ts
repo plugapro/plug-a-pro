@@ -273,12 +273,13 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
   }
 }
 
-export async function resolveWhatsAppUserContext(params: { whatsappSender: string }): Promise<WhatsAppIdentity> {
+export async function resolveWhatsAppUserContext(phone: string): Promise<WhatsAppIdentity> {
   // Reusable WhatsApp context resolver for all journeys. It deliberately
   // returns customer and provider candidates independently so a multi-role
   // number can be handled with role-aware options instead of losing the known
   // customer name/address when the provider role wins primary routing.
-  return resolveWhatsAppIdentity(params.whatsappSender)
+  // All external call sites should use this rather than resolveWhatsAppIdentity directly.
+  return resolveWhatsAppIdentity(phone)
 }
 
 export async function assertPhoneCanCreateCustomer(phone: string): Promise<void> {

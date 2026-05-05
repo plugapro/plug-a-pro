@@ -72,7 +72,7 @@ vi.mock('@/lib/post-match-communications', () => ({
   buildAcceptedLeadContactUrlForProvider: mockBuildAcceptedLeadContactUrlForProvider,
 }))
 vi.mock('@/lib/whatsapp-identity', () => ({
-  resolveWhatsAppIdentity: vi.fn().mockResolvedValue({
+  resolveWhatsAppUserContext: vi.fn().mockResolvedValue({
     role: 'unknown',
     normalizedPhone: '+27821234567',
     phoneVariants: ['+27821234567'],
@@ -97,7 +97,7 @@ import { handleJobRequestFlow, showMainMenu } from '@/lib/whatsapp-flows/job-req
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 import { handleStatusFlow } from '@/lib/whatsapp-flows/status'
 import { handleProviderJourneyFlow } from '@/lib/whatsapp-flows/provider-journey'
-import { resolveWhatsAppIdentity } from '@/lib/whatsapp-identity'
+import { resolveWhatsAppUserContext } from '@/lib/whatsapp-identity'
 
 const PHONE = '+27821234567'
 
@@ -254,7 +254,7 @@ describe('processInboundMessage stateless notification replies', () => {
     expect(mockSendJourneyRecovery).toHaveBeenCalledTimes(1)
   })
   it('uses provider-aware recovery when provider journey flow throws before rendering', async () => {
-    vi.mocked(resolveWhatsAppIdentity).mockResolvedValueOnce({
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
       role: 'provider',
       normalizedPhone: '+27821234567',
       phoneVariants: ['+27821234567'],

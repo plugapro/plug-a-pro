@@ -68,7 +68,7 @@ vi.mock('@/lib/post-match-communications', () => ({
   buildAcceptedLeadContactUrlForProvider: vi.fn(),
 }))
 vi.mock('@/lib/whatsapp-identity', () => ({
-  resolveWhatsAppIdentity: vi.fn().mockResolvedValue({
+  resolveWhatsAppUserContext: vi.fn().mockResolvedValue({
     role: 'unknown',
     normalizedPhone: '+27821234567',
     phoneVariants: ['+27821234567'],

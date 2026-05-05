@@ -37,7 +37,7 @@ import { normalizePhone } from './utils'
 import { createTraceId } from './support-diagnostics'
 import { createTestCohortContext } from './internal-test-cohort'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
-import { phoneLookupVariants, resolveWhatsAppIdentity } from './whatsapp-identity'
+import { phoneLookupVariants, resolveWhatsAppUserContext } from './whatsapp-identity'
 import { normaliseLocationDisplayName } from './location-format'
 import { parseProviderOpportunityArrivalText } from './provider-opportunity-whatsapp'
 import {
@@ -699,7 +699,7 @@ async function processInboundMessageUnlocked(
       'provider_update_application',
       'provider_top_up_credits',
     ].includes(reply.id))
-    const identity = await resolveWhatsAppIdentity(phone)
+    const identity = await resolveWhatsAppUserContext(phone)
     const selectedMenuPath = reply.id ?? rawText ?? 'unknown'
     const isCustomerRole = identity.role === 'customer'
     const isProviderRole = identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive'
@@ -3278,7 +3278,7 @@ async function handleRebookConfirm(phone: string, buttonId: string): Promise<voi
     return
   }
 
-  const identity = await resolveWhatsAppIdentity(phone)
+  const identity = await resolveWhatsAppUserContext(phone)
   const baseData: ConversationData = {
     selectedCategory: priorJob.category ?? undefined,
     category: priorJob.category ?? undefined,
