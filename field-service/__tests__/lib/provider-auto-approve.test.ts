@@ -1,13 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockSyncProviderRecord = vi.fn()
-const mockAwardMobileVerifiedPromoCreditsInTransaction = vi.fn()
-const mockReleaseOpsQueueItem = vi.fn()
-const mockNotifyProviderApplicationApprovedOnce = vi.fn()
-const mockCheckJobsForNewProviderAvailability = vi.fn()
-const mockFindConflictingActiveProviderApplications = vi.fn()
-const mockResolveServiceCategoryTag = vi.fn()
-const mockRecordAuditLog = vi.fn()
+const {
+  mockAwardMobileVerifiedPromoCreditsInTransaction,
+  mockCheckJobsForNewProviderAvailability,
+  mockFindConflictingActiveProviderApplications,
+  mockNotifyProviderApplicationApprovedOnce,
+  mockRecordAuditLog,
+  mockReleaseOpsQueueItem,
+  mockResolveServiceCategoryTag,
+  mockSyncProviderRecord,
+} = vi.hoisted(() => ({
+  mockAwardMobileVerifiedPromoCreditsInTransaction: vi.fn(),
+  mockCheckJobsForNewProviderAvailability: vi.fn(),
+  mockFindConflictingActiveProviderApplications: vi.fn(),
+  mockNotifyProviderApplicationApprovedOnce: vi.fn(),
+  mockRecordAuditLog: vi.fn(),
+  mockReleaseOpsQueueItem: vi.fn(),
+  mockResolveServiceCategoryTag: vi.fn(),
+  mockSyncProviderRecord: vi.fn(),
+}))
 
 vi.mock('@/lib/provider-record', () => ({ syncProviderRecord: mockSyncProviderRecord }))
 vi.mock('@/lib/provider-promo-awards', () => ({ awardMobileVerifiedPromoCreditsInTransaction: mockAwardMobileVerifiedPromoCreditsInTransaction }))
@@ -62,7 +73,7 @@ describe('provider auto-approval', () => {
           ])
           .mockResolvedValueOnce([]),
       },
-      $transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<unknown>) => callback(tx)),
+      $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
     }
 
     const result = await autoApproveProviderApplications(client)
