@@ -115,6 +115,72 @@ function safeErrorMessage(error: unknown) {
   return String(error)
 }
 
+function maskPhoneForLog(phone: string) {
+  return phone.replace(/(\+?\d{2})\d+(\d{3})$/, '$1***$2')
+}
+
+function prismaFailureDetails(error: unknown) {
+  if (typeof error !== 'object' || error === null) return null
+  const candidate = error as { code?: unknown; meta?: Record<string, unknown> }
+  if (typeof candidate.code !== 'string' || !candidate.code.startsWith('P')) return null
+  const meta = candidate.meta ?? {}
+  return {
+    prismaCode: candidate.code,
+    modelName: typeof meta.modelName === 'string' ? meta.modelName : undefined,
+    column: typeof meta.column === 'string' ? meta.column : undefined,
+    constraint: typeof meta.constraint === 'string' ? meta.constraint : undefined,
+    target: Array.isArray(meta.target) ? meta.target.join(',') : typeof meta.target === 'string' ? meta.target : undefined,
+    fieldName: typeof meta.field_name === 'string' ? meta.field_name : undefined,
+  }
+}
+
+function submitFailureMessage(error: unknown, traceId: string) {
+  if (error instanceof ProviderApplicationSubmitError) {
+    if (
+      error.code === 'PROVIDER_APPLICATION_VALIDATION_FAILED' ||
+      error.code === 'PROVIDER_APPLICATION_SKILLS_INVALID' ||
+      error.code === 'PROVIDER_APPLICATION_AREAS_INVALID' ||
+      error.code === 'PROVIDER_APPLICATION_AVAILABILITY_INVALID'
+    ) {
+      return [
+        "Some required details are missing before we can submit your application.",
+        '',
+        error.message,
+        '',
+        'Please choose Edit Application to update this section.',
+        '',
+        `Support ref: ${traceId}`,
+      ].join('\n')
+    }
+
+    if (error.code === 'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY') {
+      return [
+        "We're still saving one or more uploaded files.",
+        '',
+        'Your progress is saved. Please try Submit again in a moment, or choose Edit Application.',
+        '',
+        `Support ref: ${traceId}`,
+      ].join('\n')
+    }
+
+    return [
+      "Some details need to be checked before we can submit your application.",
+      '',
+      'Your progress is saved. Please choose Edit Application or contact support.',
+      '',
+      `Support ref: ${traceId}`,
+    ].join('\n')
+  }
+
+  return [
+    "We couldn't submit your application right now, but your progress is saved.",
+    '',
+    'Please try again. If it keeps failing, contact support with the reference below.',
+    '',
+    `Support ref: ${traceId}`,
+  ].join('\n')
+}
+
 function validateSubmitData(ctx: FlowContext) {
   const name = ctx.data.name?.trim()
   const skills = uniqueStrings(ctx.data.skills ?? [])
@@ -1891,7 +1957,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
     console.info('[registration-flow] provider application submit started', {
       trace_id: traceId,
-      normalized_phone: normalizedPhone,
+      phone_masked: maskPhoneForLog(normalizedPhone),
       reply_id: ctx.reply.id ?? null,
       selected_skills_count: submitData.skills.length,
       selected_areas_count: submitData.resolvedAreaLabels.length,
@@ -2258,7 +2324,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
     console.info('[registration-flow] provider application submit committed', {
       trace_id: traceId,
-      normalized_phone: normalizedPhone,
+      phone_masked: maskPhoneForLog(normalizedPhone),
       application_id: submitResult.applicationId,
       provider_id: submitResult.providerId,
       application_ref: submitResult.ref,
@@ -2338,24 +2404,27 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
     }
 
     const errorCode = errorCodeFromUnknown(err)
+    const dbFailure = prismaFailureDetails(err)
     console.error('[registration-flow] provider application submit failed', {
       trace_id: traceId,
-      normalized_phone: normalizedPhone,
+      phone_masked: maskPhoneForLog(normalizedPhone),
       reply_id: ctx.reply.id ?? null,
       selected_skills_count: ctx.data.skills?.length ?? 0,
       selected_areas_count: ctx.data.locationNodeIds?.length ?? ctx.data.serviceAreas?.length ?? 0,
       uploaded_files_count_from_session: ctx.data.evidenceFileUrls?.length ?? 0,
       error_code: errorCode,
       error_message: safeErrorMessage(err),
+      db_table_or_model: dbFailure?.modelName,
+      db_column: dbFailure?.column,
+      db_constraint: dbFailure?.constraint,
+      db_target: dbFailure?.target,
+      db_field_name: dbFailure?.fieldName,
+      prisma_code: dbFailure?.prismaCode,
       stack: err instanceof Error ? err.stack : undefined,
     })
-    const detail =
-      err instanceof ProviderApplicationSubmitError && err.code === 'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'
-        ? `\n\nExpected files: ${err.details.expectedFiles ?? 'unknown'}\nSaved files: ${err.details.savedFiles ?? 'unknown'}`
-        : ''
     await sendButtons(
       ctx.phone,
-      `😔 We couldn't submit your application.\n\nReason: ${err instanceof ProviderApplicationSubmitError ? err.message : 'An unexpected submit error occurred.'}${detail}\n\nError code: ${errorCode}\nTrace ID: ${traceId}\n\nYour progress is saved. Please try Submit again or choose Edit.`,
+      `😔 ${submitFailureMessage(err, traceId)}`,
       [
         { id: 'submit_yes', title: 'Try Again' },
         { id: 'reg_edit', title: 'Edit Application' },

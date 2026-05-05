@@ -26,6 +26,12 @@ vi.mock('@/lib/db', () => {
       updateMany: vi.fn(),
       createMany: vi.fn(),
     },
+    providerCategory: {
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    providerRate: {
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     attachment: {
       findMany: vi.fn().mockResolvedValue([]),
       updateMany: vi.fn(),
@@ -111,6 +117,8 @@ function resetDbMocks() {
   ;(db.providerApplication.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null)
   ;(db.providerApplication.create as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'app_default_12345678' })
   ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+  ;((db as any).providerCategory.createMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 0 })
+  ;((db as any).providerRate.createMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 0 })
   ;(db.attachment.findMany as ReturnType<typeof vi.fn>).mockImplementation(async (args: any) => (
     (args.where.id.in as string[]).map((id) => ({ id, providerApplicationId: null }))
   ))
@@ -385,14 +393,14 @@ describe('registration flow — duplicate prevention', () => {
       expect(db.providerApplication.create).not.toHaveBeenCalled()
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'),
+        expect.stringContaining("We're still saving one or more uploaded files"),
         expect.any(Array),
         undefined,
         expect.any(Object),
       )
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('Trace ID: provider_app_submit_'),
+        expect.stringContaining('Support ref: provider_app_submit_'),
         expect.any(Array),
         undefined,
         expect.any(Object),
@@ -462,6 +470,56 @@ describe('registration flow — duplicate prevention', () => {
         expect.any(Array),
         undefined,
         expect.any(Object),
+      )
+    })
+
+    it('maps provider enrichment schema drift to a recoverable submit failure without exposing DB internals', async () => {
+      ;((db as any).providerCategory.createMany as ReturnType<typeof vi.fn>).mockRejectedValue({
+        code: 'P2022',
+        meta: { modelName: 'ProviderCategory', column: 'id' },
+      })
+
+      const result = await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, dataWithFullProfile)
+      )
+
+      expect(result.nextStep).toBe('reg_pending')
+      expect(result.nextData).toMatchObject(dataWithFullProfile)
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        phone,
+        expect.stringContaining("We couldn't submit your application right now"),
+        expect.any(Array),
+        undefined,
+        expect.objectContaining({
+          metadata: expect.objectContaining({ errorCode: 'PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED' }),
+        }),
+      )
+      const body = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as string
+      expect(body).not.toContain('P2022')
+      expect(body).not.toContain('ProviderCategory')
+      expect(body).not.toContain('column')
+      expect(body).not.toContain('PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED')
+    })
+
+    it('does not require email or identity verification for MVP submit', async () => {
+      const result = await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, {
+          ...dataWithFullProfile,
+          providerIdNumber: undefined,
+          providerEmail: undefined,
+          verificationMethod: 'skipped',
+        })
+      )
+
+      expect(result.nextStep).toBe('done')
+      expect(db.providerApplication.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            email: null,
+            idNumber: undefined,
+            status: 'PENDING',
+          }),
+        }),
       )
     })
   })
