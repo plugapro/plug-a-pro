@@ -9,6 +9,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { cancelBookingLifecycle } from '@/lib/bookings'
+import { BOOKING_CANCEL_REASONS } from '@/lib/booking-cancel-reasons'
 import { transitionJob } from '@/lib/jobs'
 import { recordAuditLog } from '@/lib/audit'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
@@ -425,6 +426,17 @@ export default async function BookingDetailPage({
         </div>
       )}
 
+      {/* Invoice download — only for completed jobs */}
+      {booking.job?.status === 'COMPLETED' && (
+        <a
+          href={`/api/customer/bookings/${booking.id}/invoice`}
+          download
+          className="flex items-center justify-center gap-2 w-full rounded-xl border bg-card p-4 text-sm font-medium hover:bg-accent transition-colors"
+        >
+          Download invoice (PDF)
+        </a>
+      )}
+
       {booking.job && (
         <Card>
           <CardContent className="p-4 space-y-3">
@@ -489,11 +501,9 @@ export default async function BookingDetailPage({
               required
             >
               <option value="" disabled>Select a reason…</option>
-              <option value="Found another provider">Found another provider</option>
-              <option value="No longer needed">No longer needed</option>
-              <option value="Cost too high">Cost too high</option>
-              <option value="Taking too long">Taking too long</option>
-              <option value="Other">Other</option>
+              {BOOKING_CANCEL_REASONS.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
             </select>
           </div>
           <div className="space-y-1">

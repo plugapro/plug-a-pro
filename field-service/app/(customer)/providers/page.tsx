@@ -33,7 +33,12 @@ export default async function ProviderCataloguePage({
       ...(category ? { skills: { has: category } } : {}),
       ...(area ? { serviceAreas: { has: area } } : {}),
     },
-    orderBy: { averageRating: 'desc' },
+    orderBy: [
+      { availableNow: 'desc' },
+      { reliabilityScore: 'desc' },
+      { averageRating: 'desc' },
+      { completedJobsCount: 'desc' },
+    ],
     take: 20,
     select: {
       id: true,
@@ -45,6 +50,8 @@ export default async function ProviderCataloguePage({
       completedJobsCount: true,
       verified: true,
       avatarUrl: true,
+      availableNow: true,
+      reliabilityScore: true,
     },
   })
 
@@ -106,6 +113,7 @@ export default async function ProviderCataloguePage({
                 averageRating: provider.averageRating,
                 completedJobsCount: provider.completedJobsCount,
                 verified: provider.verified,
+                availableNow: provider.availableNow,
               }}
             />
           ))}
