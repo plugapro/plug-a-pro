@@ -4,9 +4,10 @@
 //   0,55 17-23,0-4 * * * -- every ~55 min during off-hours (19:00-06:59 SAST)
 //
 // Approves PENDING applications that have all required fields. Applications
-// missing name / skills / service areas / experience / ID are skipped until
-// corrected. HIGH_RISK_CATEGORY (electrical, gas, security) requires manual
-// ops review and is not auto-approved.
+// missing name / skills / service areas / experience are skipped until
+// corrected. HIGH_RISK_CATEGORY (Electrical, Roofing, Pest Control, Air
+// Conditioning) requires manual ops review and is not auto-approved. Plumbing
+// is standard and must not block approval.
 // Secured by CRON_SECRET header (Authorization: Bearer <secret>).
 
 import { NextResponse } from 'next/server'

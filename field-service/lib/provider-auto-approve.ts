@@ -1,8 +1,9 @@
 // Phase 1 auto-approval — approves PENDING provider applications that have all
 // required fields (name, skills, service areas, and experience).
-// HIGH_RISK_CATEGORY applications (e.g. electrical or pest control) are routed
-// to manual review and are not auto-approved until review tooling records an
-// explicit certification decision.
+// HIGH_RISK_CATEGORY applications (Electrical, Roofing, Pest Control, and Air
+// Conditioning) are routed to manual review and are not auto-approved until
+// review tooling records an explicit certification decision. Plumbing is
+// standard and must not block auto-approval.
 // MISSING_* reason codes block approval until the provider supplies the missing
 // information.
 //
@@ -20,7 +21,7 @@ import { checkJobsForNewProviderAvailability } from './matching/customer-reconta
 import { findConflictingActiveProviderApplications } from './provider-applications'
 import { resolveServiceCategoryTag } from './service-categories'
 import { recordAuditLog } from './audit'
-import { hasHighRiskServiceSelection } from './service-category-policy'
+import { hasAutoApprovalBlockingServiceSelection } from './service-category-policy'
 
 const ACTOR_ID = 'system:auto-approve'
 
@@ -51,13 +52,13 @@ export async function autoApproveProviderApplications(
   let errors = 0
 
   for (const app of applications) {
-    // Incomplete profiles and high-risk/regulated categories require manual
+    // Incomplete profiles and configured auto-approval-blocking categories require manual
     // review. Uploading proof is provider-supplied only; it does not become a
     // verified certification until an ops reviewer records that decision.
     const assessment = assessProviderApplicationForOpsReview(app)
     const hasMissingFields = assessment.reasonCodes.some((code) => code.startsWith('MISSING_'))
-    const hasHighRiskCategory = hasHighRiskServiceSelection(app.skills)
-    if (hasMissingFields || hasHighRiskCategory) {
+    const hasAutoApprovalBlocker = hasAutoApprovalBlockingServiceSelection(app.skills)
+    if (hasMissingFields || hasAutoApprovalBlocker) {
       skipped++
       continue
     }
