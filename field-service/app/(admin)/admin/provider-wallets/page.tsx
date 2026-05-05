@@ -77,7 +77,7 @@ export default async function ProviderWalletsPage({
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link href="/admin/provider-credit-payments">Credits top-ups</Link>
+          <Link href="/admin/provider-credit-payments">Credit top-ups</Link>
         </Button>
       </div>
 

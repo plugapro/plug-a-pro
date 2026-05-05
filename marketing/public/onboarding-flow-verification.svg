@@ -1,0 +1,117 @@
+<svg width="1600" height="1200" viewBox="0 0 1600 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="160" y1="80" x2="1440" y2="1120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4FFF8"/>
+      <stop offset="0.45" stop-color="#F7FAFC"/>
+      <stop offset="1" stop-color="#EEF7F1"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="180" y1="140" x2="1420" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#134E4A"/>
+    </linearGradient>
+    <linearGradient id="good" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#DCFCE7"/>
+      <stop offset="1" stop-color="#BBF7D0"/>
+    </linearGradient>
+    <linearGradient id="warn" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FEF3C7"/>
+      <stop offset="1" stop-color="#FDE68A"/>
+    </linearGradient>
+    <linearGradient id="bad" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FEE2E2"/>
+      <stop offset="1" stop-color="#FECACA"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1600" height="1200" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto">
+      <path d="M2 2L10 7L2 12" stroke="#0F172A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto">
+      <path d="M2 2L10 7L2 12" stroke="#B91C1C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1200" fill="url(#bg)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="120" y="90" width="1360" height="170" rx="34" fill="url(#hero)"/>
+  </g>
+  <text x="180" y="160" fill="#86EFAC" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" letter-spacing="4">PLUG A PRO VERIFICATION FLOW</text>
+  <text x="180" y="215" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="700">Self-registration to WhatsApp onboarding</text>
+  <text x="180" y="255" fill="#D1FAE5" font-family="Arial, Helvetica, sans-serif" font-size="24">Visual summary of the current user journey, what works now, and where the real flow stops.</text>
+
+  <g>
+    <rect x="180" y="340" width="290" height="140" rx="28" fill="url(#good)" stroke="#22C55E" stroke-width="2"/>
+    <text x="210" y="385" fill="#14532D" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">1. User opens /waitlist</text>
+    <text x="210" y="420" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">Page loads successfully</text>
+    <text x="210" y="450" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">New WhatsApp-first message is visible</text>
+  </g>
+
+  <g>
+    <rect x="555" y="340" width="290" height="140" rx="28" fill="url(#good)" stroke="#22C55E" stroke-width="2"/>
+    <text x="585" y="385" fill="#14532D" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">2. User fills form</text>
+    <text x="585" y="420" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">Name, mobile, area, service</text>
+    <text x="585" y="450" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">Customer / provider / both</text>
+  </g>
+
+  <g>
+    <rect x="930" y="340" width="290" height="140" rx="28" fill="url(#good)" stroke="#22C55E" stroke-width="2"/>
+    <text x="960" y="385" fill="#14532D" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">3. User taps submit</text>
+    <text x="960" y="420" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">Save and continue</text>
+    <text x="960" y="450" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">on WhatsApp</text>
+  </g>
+
+  <g>
+    <rect x="290" y="580" width="320" height="150" rx="28" fill="url(#good)" stroke="#22C55E" stroke-width="2"/>
+    <text x="322" y="625" fill="#14532D" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">4. API receives POST /api/leads</text>
+    <text x="322" y="660" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">Payload validates correctly</text>
+    <text x="322" y="690" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18">Onboarding route is wired up</text>
+  </g>
+
+  <g>
+    <rect x="700" y="580" width="320" height="150" rx="28" fill="url(#bad)" stroke="#EF4444" stroke-width="2"/>
+    <text x="732" y="625" fill="#7F1D1D" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">5. Save to Supabase</text>
+    <text x="732" y="660" fill="#991B1B" font-family="Arial, Helvetica, sans-serif" font-size="18">This is where the live flow breaks</text>
+    <text x="732" y="690" fill="#991B1B" font-family="Arial, Helvetica, sans-serif" font-size="18">Missing env vars block persistence</text>
+  </g>
+
+  <g>
+    <rect x="1110" y="580" width="320" height="150" rx="28" fill="url(#warn)" stroke="#F59E0B" stroke-width="2"/>
+    <text x="1142" y="625" fill="#78350F" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">6. User sees error state</text>
+    <text x="1142" y="660" fill="#92400E" font-family="Arial, Helvetica, sans-serif" font-size="18">“Failed to save. Please try again.”</text>
+    <text x="1142" y="690" fill="#92400E" font-family="Arial, Helvetica, sans-serif" font-size="18">No WhatsApp redirect yet</text>
+  </g>
+
+  <g>
+    <rect x="320" y="855" width="390" height="190" rx="30" fill="white" stroke="#22C55E" stroke-width="2"/>
+    <text x="355" y="905" fill="#14532D" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">What is already working</text>
+    <text x="355" y="945" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="19">• Page renders cleanly</text>
+    <text x="355" y="975" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="19">• Form layout and role options are clear</text>
+    <text x="355" y="1005" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="19">• API endpoint is reachable</text>
+  </g>
+
+  <g>
+    <rect x="810" y="855" width="470" height="190" rx="30" fill="white" stroke="#EF4444" stroke-width="2"/>
+    <text x="845" y="905" fill="#7F1D1D" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">What must be fixed for the full journey</text>
+    <text x="845" y="945" fill="#991B1B" font-family="Arial, Helvetica, sans-serif" font-size="19">• Add NEXT_PUBLIC_SUPABASE_URL</text>
+    <text x="845" y="975" fill="#991B1B" font-family="Arial, Helvetica, sans-serif" font-size="19">• Add SUPABASE_SERVICE_ROLE_KEY</text>
+    <text x="845" y="1005" fill="#991B1B" font-family="Arial, Helvetica, sans-serif" font-size="19">• Re-test save, then verify WhatsApp handoff</text>
+  </g>
+
+  <path d="M470 410H555" stroke="#0F172A" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M845 410H930" stroke="#0F172A" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M1075 480V555" stroke="#0F172A" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M610 655H700" stroke="#0F172A" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M1020 655H1110" stroke="#B91C1C" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowRed)"/>
+
+  <rect x="1180" y="335" width="230" height="115" rx="24" fill="white" stroke="#0F766E" stroke-width="2"/>
+  <text x="1210" y="375" fill="#115E59" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Expected happy path</text>
+  <text x="1210" y="405" fill="#0F766E" font-family="Arial, Helvetica, sans-serif" font-size="17">Save succeeds</text>
+  <text x="1210" y="430" fill="#0F766E" font-family="Arial, Helvetica, sans-serif" font-size="17">Then WhatsApp opens</text>
+
+  <path d="M860 730V820" stroke="#B91C1C" stroke-width="3" stroke-dasharray="10 10" stroke-linecap="round" marker-end="url(#arrowRed)"/>
+  <path d="M1265 730V820" stroke="#B45309" stroke-width="3" stroke-dasharray="10 10" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <text x="180" y="1115" fill="#475569" font-family="Arial, Helvetica, sans-serif" font-size="20">Current status: UI and validation pass. Database persistence is the first broken boundary, which blocks the WhatsApp success step.</text>
+</svg>

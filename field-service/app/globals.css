@@ -1,0 +1,344 @@
+@import "tailwindcss";
+@source "../**/*.{js,ts,jsx,tsx,mdx}";
+
+/* Class-based dark mode: `dark:` utilities activate when `.dark` is on an
+   ancestor element (applied by next-themes), not via prefers-color-scheme.
+   This keeps Tailwind dark: utilities and CSS-variable .dark overrides in sync. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ──────────────────────────────────────────────────────────────────
+   Plug A Pro — Design Tokens
+   Dual-theme visual system. Defaults to the user's system preference
+   (light or dark). Dark mode retains the premium near-black aesthetic;
+   light mode is clean, crisp, and readable for outdoor working conditions.
+
+   All colour, radius, spacing, shadow, and motion values are exposed
+   as CSS custom properties so screens never hardcode hex values.
+   Tailwind utilities reach the same tokens through `bg-background`,
+   `text-foreground`, `border-border`, etc.
+
+   Adding new components: use token utilities (bg-card, text-foreground,
+   border-border) and tone classes (.tone-info, .tone-success, etc.).
+   Avoid hardcoded colours like bg-black, text-white, bg-zinc-950.
+   ────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  :root {
+    /* Brand */
+    --color-whatsapp: #25d366;
+    --color-whatsapp-hover: #1fb85a;
+    --brand-blue: #2563eb;
+    --brand-blue-strong: #1d4ed8;
+    --brand-magenta: #e64691;
+    --brand-violet: #7c3aed;
+    --brand-sky: #0ea5e9;
+
+    /* Light surface (kept as fallback for users who explicitly choose
+       light mode; the product defaults to dark — see ThemeProvider) */
+    --background: #f6f7f9;
+    --foreground: #0d1117;
+    --card: rgba(255, 255, 255, 0.96);
+    --card-foreground: #0d1117;
+    --popover: rgba(255, 255, 255, 0.98);
+    --popover-foreground: #0d1117;
+    --primary: #2563eb;
+    --primary-foreground: #f8fbff;
+    --secondary: #eef1f6;
+    --secondary-foreground: #1a2333;
+    --muted: #eef1f6;
+    --muted-foreground: #5b6473;
+    --accent: #eef2f8;
+    --accent-foreground: #19233a;
+    --destructive: #d64242;
+    --destructive-foreground: #ffffff;
+    --border: #d9dee6;
+    --input: #c9d0db;
+    --ring: rgba(37, 99, 235, 0.55);
+    --radius: 0.875rem;
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.25rem;
+    --radius-2xl: 1.5rem;
+    --chart-1: #2563eb;
+    --chart-2: #0ea5e9;
+    --chart-3: #e64691;
+    --chart-4: #14b8a6;
+    --chart-5: #f59e0b;
+    --surface-subtle: rgba(255, 255, 255, 0.74);
+    --surface-raised: rgba(255, 255, 255, 0.94);
+    --surface-elevated: rgba(255, 255, 255, 1);
+    --surface-hero: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(238, 242, 248, 0.95));
+    --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.08);
+    --shadow-float: 0 20px 50px rgba(15, 23, 42, 0.16);
+    --shadow-pop: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 18px 44px rgba(15, 23, 42, 0.18);
+    --tone-neutral-bg: #eef1f6;
+    --tone-neutral-border: #d8dee7;
+    --tone-neutral-fg: #485264;
+    --tone-info-bg: #e8f1ff;
+    --tone-info-border: #bcd2fb;
+    --tone-info-fg: #1d4ed8;
+    --tone-success-bg: #e8f8ef;
+    --tone-success-border: #b9e8c9;
+    --tone-success-fg: #157040;
+    --tone-warning-bg: #fff3d9;
+    --tone-warning-border: #f3ce82;
+    --tone-warning-fg: #8a5a07;
+    --tone-danger-bg: #ffeceb;
+    --tone-danger-border: #f1b3ad;
+    --tone-danger-fg: #a82828;
+    --tone-brand-bg: #fbe7f0;
+    --tone-brand-border: #f0c0d8;
+    --tone-brand-fg: #b02a6b;
+  }
+
+  /* Default presentation: premium dark system. Applied when the
+     user picks dark mode or system prefers dark. The product also
+     forces dark-first via ThemeProvider defaultTheme="dark". */
+  .dark {
+    /* Surfaces — near-black foundation, gently elevated cards */
+    --background: #050608;
+    --foreground: #f4f5f7;
+    --card: #0d0e12;
+    --card-foreground: #f4f5f7;
+    --popover: #101218;
+    --popover-foreground: #f4f5f7;
+
+    /* Primary action — clean, high-contrast accent on near-black */
+    --primary: #4a8cff;
+    --primary-foreground: #050608;
+
+    /* Secondary / quiet surfaces */
+    --secondary: #14161c;
+    --secondary-foreground: #f4f5f7;
+    --muted: #0e1015;
+    --muted-foreground: #8a909c;
+    --accent: #181b22;
+    --accent-foreground: #f4f5f7;
+
+    /* Status */
+    --destructive: #ff5b52;
+    --destructive-foreground: #ffffff;
+
+    /* Soft translucent borders — Apple-style hairlines */
+    --border: rgba(255, 255, 255, 0.08);
+    --input: rgba(255, 255, 255, 0.1);
+    --ring: rgba(74, 140, 255, 0.55);
+
+    /* Charts — saturated but readable on near-black */
+    --chart-1: #4a8cff;
+    --chart-2: #30d6c5;
+    --chart-3: #ff6fae;
+    --chart-4: #34d399;
+    --chart-5: #ffb340;
+
+    /* Layered surfaces */
+    --surface-subtle: #0a0b0f;
+    --surface-raised: #0f1116;
+    --surface-elevated: #14161c;
+    --surface-hero: linear-gradient(180deg, #0a0b0f 0%, #050608 100%);
+
+    /* Refined dark shadows — depth without sparkle */
+    --shadow-soft:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-float:
+      0 1px 0 rgba(255, 255, 255, 0.05) inset,
+      0 24px 60px rgba(0, 0, 0, 0.6);
+    --shadow-pop:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 20px 50px rgba(0, 0, 0, 0.55);
+
+    /* Semantic tones — restrained on dark, never neon */
+    --tone-neutral-bg: rgba(148, 163, 184, 0.1);
+    --tone-neutral-border: rgba(148, 163, 184, 0.18);
+    --tone-neutral-fg: #c5cbd6;
+    --tone-info-bg: rgba(74, 140, 255, 0.12);
+    --tone-info-border: rgba(74, 140, 255, 0.28);
+    --tone-info-fg: #9ec0ff;
+    --tone-success-bg: rgba(48, 209, 88, 0.12);
+    --tone-success-border: rgba(48, 209, 88, 0.28);
+    --tone-success-fg: #7eddaa;
+    --tone-warning-bg: rgba(255, 159, 10, 0.14);
+    --tone-warning-border: rgba(255, 159, 10, 0.3);
+    --tone-warning-fg: #ffcd80;
+    --tone-danger-bg: rgba(255, 91, 82, 0.14);
+    --tone-danger-border: rgba(255, 91, 82, 0.3);
+    --tone-danger-fg: #ffb1ab;
+    --tone-brand-bg: rgba(230, 70, 145, 0.14);
+    --tone-brand-border: rgba(230, 70, 145, 0.32);
+    --tone-brand-fg: #ffb3d2;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light dark;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Typography rhythm — Geist Sans handles the rest */
+  h1, h2, h3, h4 {
+    letter-spacing: -0.015em;
+  }
+
+  /* Slightly tighter caret colour on dark backgrounds */
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 30%, transparent);
+  }
+
+  /* Mobile-first PWA: no flash on tap, 44px minimum touch target */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Form controls inherit better dark defaults */
+  input, textarea, select {
+    background-clip: padding-box;
+  }
+
+  /* Native iOS time/date pickers — inherit active color scheme */
+  input[type="time"],
+  input[type="date"],
+  input[type="datetime-local"] {
+    color-scheme: inherit;
+  }
+}
+
+@layer components {
+  /* App frame */
+  .app-shell {
+    min-height: 100vh;
+    background: transparent;
+  }
+
+  .app-shell-header {
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--background) 80%, transparent);
+    backdrop-filter: saturate(180%) blur(18px);
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+  }
+
+  .app-shell-panel {
+    border: 1px solid var(--border);
+    background: var(--card);
+    box-shadow: var(--shadow-soft);
+    border-radius: var(--radius-lg);
+  }
+
+  .app-shell-subtle {
+    background: var(--surface-subtle);
+  }
+
+  .app-hero-surface {
+    background: var(--surface-hero);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-soft);
+    border-radius: var(--radius-xl);
+  }
+
+  .app-kicker {
+    color: var(--muted-foreground);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .app-bottom-nav {
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--background) 80%, transparent);
+    backdrop-filter: saturate(180%) blur(18px);
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+  }
+
+  /* Sticky bottom action bar (used by ActionBar component). */
+  .app-action-bar {
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--background) 90%, transparent);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  /* Subtle hairline divider used inside cards */
+  .app-hairline {
+    border-color: var(--border);
+  }
+
+  /* Semantic tone classes — used by AlertCallout, Badge, status pills */
+  .tone-neutral {
+    border-color: var(--tone-neutral-border);
+    background: var(--tone-neutral-bg);
+    color: var(--tone-neutral-fg);
+  }
+  .tone-info {
+    border-color: var(--tone-info-border);
+    background: var(--tone-info-bg);
+    color: var(--tone-info-fg);
+  }
+  .tone-success {
+    border-color: var(--tone-success-border);
+    background: var(--tone-success-bg);
+    color: var(--tone-success-fg);
+  }
+  .tone-warning {
+    border-color: var(--tone-warning-border);
+    background: var(--tone-warning-bg);
+    color: var(--tone-warning-fg);
+  }
+  .tone-danger {
+    border-color: var(--tone-danger-border);
+    background: var(--tone-danger-bg);
+    color: var(--tone-danger-fg);
+  }
+  .tone-brand {
+    border-color: var(--tone-brand-border);
+    background: var(--tone-brand-bg);
+    color: var(--tone-brand-fg);
+  }
+}
+
+/* Safe-area utilities for iPhone notch / home indicator. */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Reduced motion: kill non-essential animation but keep focus rings. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -10,7 +10,7 @@ import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 
-export const metadata = buildMetadata({ title: 'Credits Top-ups', noIndex: true })
+export const metadata = buildMetadata({ title: 'Credit Top-ups', noIndex: true })
 
 const PAYMENT_ADMIN_FLAG = 'admin.crud.payments'
 
@@ -109,7 +109,7 @@ export default async function ProviderCreditPaymentsPage({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Credits top-ups</h1>
+          <h1 className="text-xl font-semibold">Credit top-ups</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Reconcile manual EFT deposits before issuing Plug A Pro provider credits.
           </p>

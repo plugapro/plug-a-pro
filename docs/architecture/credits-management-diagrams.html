@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plug A Pro — Credits Management Lifecycle</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f0f13;
+    color: #e2e8f0;
+    font-family: 'Inter', -apple-system, sans-serif;
+    padding: 40px;
+  }
+  .page-title {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .page-title h1 {
+    font-size: 32px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+  .page-title p {
+    color: #94a3b8;
+    margin-top: 8px;
+    font-size: 15px;
+  }
+  .page-title .meta {
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    font-size: 12px;
+    color: #64748b;
+  }
+  .page-title .meta span { display: flex; align-items: center; gap: 6px; }
+
+  .summary-card {
+    background: #131520;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    padding: 28px 32px;
+    margin-bottom: 48px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .summary-card h3 {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #fbbf24;
+    margin-bottom: 14px;
+  }
+  .summary-card p {
+    font-size: 14px;
+    color: #94a3b8;
+    line-height: 1.7;
+    margin-bottom: 10px;
+  }
+  .risk-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .risk-chip {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .risk-p1 { background: #3b1515; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .risk-ok  { background: #0c2a1e; color: #86efac; border: 1px solid #064e3b; }
+
+  .section {
+    margin-bottom: 64px;
+  }
+  .section-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #1e293b;
+    flex-wrap: wrap;
+  }
+  .section-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .badge-overview  { background: #1c1d2e; color: #fbbf24; border: 1px solid #78350f; }
+  .badge-grant     { background: #0c2a1e; color: #34d399; border: 1px solid #064e3b; }
+  .badge-topup     { background: #0f2744; color: #93c5fd; border: 1px solid #1e3a5f; }
+  .badge-deduction { background: #2d1b0e; color: #fb923c; border: 1px solid #7c2d12; }
+  .badge-recon     { background: #1e1b4b; color: #a5b4fc; border: 1px solid #312e81; }
+
+  .section-header-text { flex: 1; }
+  .section-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+  .section-header .desc {
+    font-size: 13px;
+    color: #64748b;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+  .section-header .subtitle {
+    font-size: 12px;
+    color: #475569;
+    white-space: nowrap;
+    align-self: flex-end;
+    padding-bottom: 2px;
+  }
+
+  .key-facts {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .key-fact {
+    background: #131520;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+  .key-fact strong { color: #e2e8f0; display: block; margin-bottom: 2px; }
+
+  .diagram-card {
+    background: #131520;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    padding: 32px;
+    overflow-x: auto;
+  }
+  .diagram-card .mermaid {
+    display: flex;
+    justify-content: center;
+  }
+  .mermaid svg { max-width: 100%; }
+
+  .gap-note {
+    margin-top: 16px;
+    background: #2a1f00;
+    border: 1px solid #78350f;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12px;
+    color: #fbbf24;
+    line-height: 1.6;
+  }
+  .gap-note strong { display: block; margin-bottom: 4px; color: #fcd34d; }
+
+  .toc {
+    max-width: 900px;
+    margin: 0 auto 48px;
+    background: #131520;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 20px 24px;
+  }
+  .toc h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; margin-bottom: 12px; }
+  .toc ol { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .toc li a {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+  .toc li a:hover { opacity: 0.75; }
+  .toc li:nth-child(1) a { background: #1c1d2e; color: #fbbf24; border: 1px solid #78350f; }
+  .toc li:nth-child(2) a { background: #0c2a1e; color: #34d399; border: 1px solid #064e3b; }
+  .toc li:nth-child(3) a { background: #0f2744; color: #93c5fd; border: 1px solid #1e3a5f; }
+  .toc li:nth-child(4) a { background: #2d1b0e; color: #fb923c; border: 1px solid #7c2d12; }
+  .toc li:nth-child(5) a { background: #1e1b4b; color: #a5b4fc; border: 1px solid #312e81; }
+</style>
+</head>
+<body>
+
+<div class="page-title">
+  <h1>💳 Plug A Pro — Credits Lifecycle</h1>
+  <p>End-to-end flow: onboarding grants · top-up purchases · lead unlock debits · reconciliation</p>
+  <div class="meta">
+    <span>📅 2026-04-30</span>
+    <span>🔍 Source-code audit</span>
+    <span>📄 credits-management-review.md</span>
+  </div>
+</div>
+
+<div class="summary-card">
+  <h3>Architecture verdict</h3>
+  <p>
+    The credits implementation is materially present and stronger than a shallow balance counter.
+    A dedicated wallet module, immutable ledger rows, paid vs promo credit separation,
+    transaction-scoped debits, and idempotency guards for grants/top-ups/unlocks are all in place.
+  </p>
+  <p>
+    The core top-up and lead-unlock transaction paths are <strong style="color:#86efac">robust</strong>.
+    Reconciliation, reversals, test-cohort isolation, and operational recovery are <strong style="color:#fbbf24">partial</strong>.
+    No P0 production-money issue was found.
+    Safe for controlled pilot with manual ops oversight.
+  </p>
+  <div class="risk-row">
+    <span class="risk-chip risk-ok">P0 clear — no money leak found in core path</span>
+    <span class="risk-chip risk-p1">P1 — no automated reconciliation report</span>
+    <span class="risk-chip risk-p1">P1 — test cohort ledger not isolated</span>
+    <span class="risk-chip risk-p1">P1 — reversal &amp; expiry wired in schema only</span>
+    <span class="risk-chip risk-p1">P1 — suspend/reactivate ledger check constraint conflict</span>
+    <span class="risk-chip risk-p1">P1 — no balance drift repair command</span>
+  </div>
+</div>
+
+<div class="toc">
+  <h3>Diagrams in this document</h3>
+  <ol>
+    <li><a href="#overview">1 — End-to-end overview</a></li>
+    <li><a href="#grant">2 — Onboarding credit grant</a></li>
+    <li><a href="#topup">3 — Top-up / purchase flow</a></li>
+    <li><a href="#unlock">4 — Lead unlock &amp; deduction</a></li>
+    <li><a href="#recon">5 — Reconciliation</a></li>
+  </ol>
+</div>
+
+<!-- ── SECTION 1: OVERVIEW ───────────────────────────────────────────────── -->
+<div class="section" id="overview">
+  <div class="section-header">
+    <span class="section-badge badge-overview">Overview</span>
+    <div class="section-header-text">
+      <h2>End-to-End Credits Lifecycle</h2>
+      <p class="desc">
+        All credit entry points, balance store, debit paths, dispute refunds, and reconciliation
+        loops in a single view. Orange nodes = unimplemented placeholders.
+      </p>
+    </div>
+    <span class="subtitle">credits-overview-flow.mmd</span>
+  </div>
+
+  <div class="key-facts">
+    <div class="key-fact"><strong>Balance store</strong>ProviderWallet · paidCreditBalance + promoCreditBalance</div>
+    <div class="key-fact"><strong>Ledger</strong>WalletLedgerEntry — immutable rows, balance-after snapshots</div>
+    <div class="key-fact"><strong>Debit cost</strong>1 credit per lead unlock (promo first, then paid)</div>
+    <div class="key-fact"><strong>Idempotency</strong>ProviderPromoAward · LeadUnlock @unique · optimistic wallet updateMany</div>
+    <div class="key-fact"><strong>Payment gateway</strong>PayFast (ITN) + manual EFT (admin reconciled)</div>
+  </div>
+
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+  A["[Provider] Onboard or operate as approved provider"]
+
+  subgraph Onboarding["Onboarding / Promo Credits"]
+    O1["[Admin/System] Provider application approved"]
+    O2["[Backend] awardMobileVerifiedPromoCreditsInTransaction"]
+    O3{"[Backend] ProviderPromoAward exists for MOBILE_VERIFIED?"}
+    O4["[Ledger] PROMO_CREDIT ledger entry"]
+    O5["[Wallet] Increment promoCreditBalance"]
+    O6["[Backend] Skip duplicate award"]
+  end
+
+  subgraph TopUp["Credit Purchase / Top-up"]
+    T1["[Worker Portal OTP] Provider opens Credits"]
+    T2{"[Provider] Top-up method"}
+    T3["[Backend] Create PaymentIntent for manual EFT"]
+    T4["[Payment/Ops] Provider pays bank deposit and uploads proof"]
+    T5["[Admin/Ops] Reconcile statement and credit wallet"]
+    T6["[Backend] Create PayFast PaymentIntent"]
+    T7["[Payment] Provider completes PayFast checkout"]
+    T8["[Payment] Verified PayFast ITN"]
+    T9["[Ledger] TOPUP_CREDIT paid ledger entry"]
+    T10["[Wallet] Increment paidCreditBalance"]
+    T11["[Ledger] Optional FIRST_TOPUP PROMO_CREDIT"]
+  end
+
+  subgraph Balance["Balance and Statement"]
+    B1["[Wallet] ProviderWallet cached balances"]
+    B2["[Ledger] WalletLedgerEntry history"]
+    B3["[Worker Portal OTP] Provider credit statement"]
+    B4["[Admin] Provider wallet detail"]
+  end
+
+  subgraph LeadUnlock["Lead Unlock / Acceptance"]
+    L1["[WhatsApp/PWA] Provider accepts or unlocks lead"]
+    L2["[Backend] Check provider, lead, wallet status"]
+    L3{"[Ledger] Total credits >= 1?"}
+    L4["[Ledger] LEAD_UNLOCK_DEBIT promo first, then paid"]
+    L5["[Backend] Create LeadUnlock and credit breakdown"]
+    L6["[Backend] Accept assignment and create Match"]
+    L7["[WhatsApp] Notify customer/provider after commit"]
+    L8["[WhatsApp/PWA] Block and show top-up guidance"]
+  end
+
+  subgraph Refunds["Disputes / Refunds / Adjustments"]
+    R1["[Provider/Admin] Lead unlock dispute opened"]
+    R2{"[Admin] Dispute approved?"}
+    R3["[Ledger] LEAD_REFUND_CREDIT by original split"]
+    R4["[Wallet] Restore paid/promo balance"]
+    R5["[Admin] Manual ADMIN_ADJUSTMENT"]
+    R6["[Placeholder] PAYMENT_REVERSAL and PROMO_EXPIRY not wired"]
+  end
+
+  subgraph Reconciliation["Reconciliation / Audit"]
+    C1["[Ops] PaymentIntent vs bank/PayFast records"]
+    C2["[Ops] Wallet balance vs latest ledger snapshots"]
+    C3["[Ops] LeadUnlock vs LEAD_UNLOCK_DEBIT"]
+    C4["[Ops] ProviderPromoAward vs PROMO_CREDIT"]
+    C5["[Gap] No first-class automated reconciliation report/job found"]
+  end
+
+  A --> O1
+  O1 --> O2 --> O3
+  O3 -- "No" --> O4 --> O5 --> B1
+  O3 -- "Yes" --> O6 --> B1
+
+  A --> T1 --> T2
+  T2 -- "Manual EFT" --> T3 --> T4 --> T5 --> T9 --> T10 --> T11 --> B1
+  T2 -- "PayFast" --> T6 --> T7 --> T8 --> T9
+
+  B1 --> B3
+  B1 --> B4
+  B2 --> B3
+  B2 --> B4
+
+  A --> L1 --> L2 --> L3
+  L3 -- "Yes" --> L4 --> L5 --> L6 --> L7 --> B1
+  L3 -- "No" --> L8 --> T1
+
+  L5 --> R1 --> R2
+  R2 -- "Approved" --> R3 --> R4 --> B1
+  R2 -- "Rejected" --> B2
+  B4 --> R5 --> B1
+  R6 --> C1
+
+  O4 --> B2
+  T9 --> B2
+  T11 --> B2
+  L4 --> B2
+  R3 --> B2
+  R5 --> B2
+  B1 --> C2
+  B2 --> C2
+  L5 --> C3
+  O2 --> C4
+  C1 --> C5
+  C2 --> C5
+  C3 --> C5
+  C4 --> C5
+    </div>
+  </div>
+
+  <div class="gap-note">
+    <strong>Gap — orange nodes</strong>
+    <code>PAYMENT_REVERSAL</code> and <code>PROMO_EXPIRY</code> exist as transaction types in the schema and admin UI but are not wired to business flows.
+    No automated reconciliation job or finance exception report was found in the codebase.
+  </div>
+</div>
+
+<!-- ── SECTION 2: ONBOARDING GRANT ───────────────────────────────────────── -->
+<div class="section" id="grant">
+  <div class="section-header">
+    <span class="section-badge badge-grant">Onboarding</span>
+    <div class="section-header-text">
+      <h2>Onboarding Credit Grant</h2>
+      <p class="desc">
+        Triggered on provider application approval. Idempotent via
+        <code>ProviderPromoAward(providerId, MOBILE_VERIFIED)</code> unique constraint.
+        Internal-staff phones receive a separate configurable credit amount.
+      </p>
+    </div>
+    <span class="subtitle">credits-onboarding-grant-flow.mmd</span>
+  </div>
+
+  <div class="key-facts">
+    <div class="key-fact"><strong>Trigger</strong>approveApplication → awardMobileVerifiedPromoCreditsInTransaction</div>
+    <div class="key-fact"><strong>Idempotency</strong>ProviderPromoAward @unique(providerId, awardType)</div>
+    <div class="key-fact"><strong>Config</strong>PROVIDER_PROMO_CREDIT_REWARDS.MOBILE_VERIFIED env var</div>
+    <div class="key-fact"><strong>Internal test</strong>INTERNAL_TEST_ONBOARDING_CREDITS env var (separate amount)</div>
+    <div class="key-fact"><strong>Cap</strong>Pre-payment promo cap — skip grant if promoCreditBalance already high</div>
+    <div class="key-fact"><strong>Transaction type</strong>PROMO_CREDIT ledger entry, reference = provider_promo_award</div>
+  </div>
+
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+  subgraph AdminApproval["Admin / System Approval"]
+    A1["[Admin] Approve provider application"]
+    A2["[Backend] approveApplication or cron approval path"]
+    A3["[Backend] syncProviderRecord active=true verified=true status=ACTIVE"]
+    A4["[Backend] ProviderApplication status becomes APPROVED"]
+  end
+
+  subgraph PromoAward["Promo Award Service"]
+    P1["[Backend] awardMobileVerifiedPromoCreditsInTransaction"]
+    P2["[Backend] Load provider phone"]
+    P3{"[Backend] Internal test onboarding credit phone?"}
+    P4["[Backend] Credits = INTERNAL_TEST_ONBOARDING_CREDITS"]
+    P5["[Backend] Credits = PROVIDER_PROMO_CREDIT_REWARDS.MOBILE_VERIFIED"]
+    P6{"[Backend] Existing ProviderPromoAward for MOBILE_VERIFIED?"}
+    P7{"[Backend] Pre-payment promo cap exceeded?"}
+    P8["[Backend] Create ProviderPromoAward"]
+    P9["[Backend] Return duplicate or cap skip"]
+  end
+
+  subgraph WalletLedger["Wallet / Ledger"]
+    W1["[Wallet] getOrCreateProviderWalletInTx"]
+    W2{"[Wallet] Wallet ACTIVE?"}
+    W3["[Wallet] Increment promoCreditBalance"]
+    W4["[Ledger] Create PROMO_CREDIT entry with reference provider_promo_award"]
+    W5["[Error] WALLET_NOT_ACTIVE blocks grant"]
+  end
+
+  subgraph AuditNotify["Audit / Notification"]
+    N1["[Admin Audit] crudAction approval event"]
+    N2["[WhatsApp] Approval notification after commit"]
+    N3["[Logs] Approval notification failure logged, DB approval remains"]
+  end
+
+  A1 --> A2 --> A3 --> A4 --> P1
+  P1 --> P2 --> P3
+  P3 -- "Yes" --> P4 --> P6
+  P3 -- "No" --> P5 --> P6
+  P6 -- "Yes" --> P9
+  P6 -- "No" --> P7
+  P7 -- "Yes" --> P9
+  P7 -- "No" --> P8 --> W1 --> W2
+  W2 -- "Yes" --> W3 --> W4 --> N1 --> N2
+  W2 -- "No" --> W5
+  N2 --> N3
+
+  classDef gap fill:#2a1f00,stroke:#78350f,color:#fbbf24;
+  class P9,N3 gap;
+    </div>
+  </div>
+
+  <div class="gap-note">
+    <strong>Risk — silent skip on cap or duplicate</strong>
+    When the pre-payment promo cap is exceeded, or a <code>ProviderPromoAward</code> already exists,
+    the grant returns silently. The approval succeeds; no log or admin alert surfaces the skip.
+    A double-approval attempt (e.g. re-approving a previously declined application) would be blocked
+    by the unique constraint but not reported.
+  </div>
+</div>
+
+<!-- ── SECTION 3: TOP-UP PURCHASE ────────────────────────────────────────── -->
+<div class="section" id="topup">
+  <div class="section-header">
+    <span class="section-badge badge-topup">Top-up</span>
+    <div class="section-header-text">
+      <h2>Credit Purchase / Top-up Flow</h2>
+      <p class="desc">
+        Two paths: <strong>Manual EFT</strong> (admin-reconciled) and <strong>PayFast</strong> (ITN webhook).
+        Credits are never issued speculatively — only after verified payment.
+        Duplicate callbacks are blocked by <code>updateMany</code> optimistic lock on <code>creditedAt IS NULL</code>.
+      </p>
+    </div>
+    <span class="subtitle">credits-topup-purchase-flow.mmd</span>
+  </div>
+
+  <div class="key-facts">
+    <div class="key-fact"><strong>Intent creation</strong>createManualEftTopUpIntent / createPayfastTopUpIntent</div>
+    <div class="key-fact"><strong>PayFast callback</strong>POST /api/webhooks/payfast → verifyItn → creditWallet</div>
+    <div class="key-fact"><strong>Idempotency</strong>updateMany with creditedAt IS NULL as optimistic lock</div>
+    <div class="key-fact"><strong>Dedup storage</strong>creditedLedgerEntryId on PaymentIntent</div>
+    <div class="key-fact"><strong>First top-up bonus</strong>Optional FIRST_TOPUP PROMO_CREDIT after paid credit is issued</div>
+    <div class="key-fact"><strong>Transaction type</strong>TOPUP_CREDIT (paid) · PROMO_CREDIT (first-topup bonus)</div>
+  </div>
+
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+  subgraph ProviderPortal["Worker Portal OTP"]
+    P1["[Provider] Open Credits page"]
+    P2["[Provider] Select package R100, R200, or R500"]
+    P3{"[Provider] Payment method"}
+  end
+
+  subgraph IntentCreation["Backend Intent Creation"]
+    I1["[Backend] createManualEftTopUpIntent"]
+    I2["[Backend] createPayfastTopUpIntent"]
+    I3{"[Backend] Amount valid and whole credits?"}
+    I4["[DB] PaymentIntent status=PENDING_PAYMENT"]
+    I5["[WhatsApp] Non-blocking top-up initiated notification"]
+    I6["[Error] INVALID_AMOUNT or PROVIDER_NOT_FOUND"]
+  end
+
+  subgraph ManualEFT["Manual EFT"]
+    M1["[Provider] Bank transfer using PAP reference"]
+    M2["[Provider] Upload proof of payment"]
+    M3["[DB] PaymentIntent status=PROOF_UPLOADED"]
+    M4["[Admin/Ops] Match bank statement reference"]
+    M5["[DB] PaymentIntent status=MATCHED_ON_STATEMENT"]
+    M6["[Admin/Ops] Credit wallet"]
+  end
+
+  subgraph PayFast["PayFast Gateway"]
+    F1["[Payment] Browser posts checkout form to PayFast"]
+    F2["[Payment] PayFast sends ITN"]
+    F3{"[Backend] Verify IP, signature, COMPLETE status"}
+    F4{"[Backend] Amount matches PaymentIntent?"}
+    F5["[DB] Store ITN fields and status=ITN_RECEIVED"]
+    F6["[DB] Mark FAILED on amount mismatch"]
+    F7["[Backend] Return HTTP 200 without credit on invalid ITN"]
+  end
+
+  subgraph CreditWallet["Credit Wallet"]
+    C1{"[Backend] Intent creditable and creditedAt null?"}
+    C2["[DB] updateMany intent to CREDITED as optimistic lock"]
+    C3{"[Backend] Lock acquired?"}
+    C4["[Wallet] Increment paidCreditBalance"]
+    C5["[Ledger] TOPUP_CREDIT entry reference=payment_intent"]
+    C6["[Backend] Optional FIRST_TOPUP promo award"]
+    C7["[DB] Store creditedLedgerEntryId for PayFast path"]
+    C8["[WhatsApp] Payment credited notification after commit"]
+    C9["[Backend] Duplicate or invalid status: no credit"]
+  end
+
+  subgraph Recovery["Failure / Recovery"]
+    R1["[Admin] ITN_RECEIVED can be credited manually after failed auto-credit"]
+    R2["[Placeholder] EXPIRED cleanup not wired"]
+    R3["[Placeholder] PAYMENT_REVERSAL not implemented"]
+  end
+
+  P1 --> P2 --> P3
+  P3 -- "Manual EFT" --> I1 --> I3
+  P3 -- "PayFast" --> I2 --> I3
+  I3 -- "No" --> I6
+  I3 -- "Yes" --> I4 --> I5
+
+  I4 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> C1
+  I4 --> F1 --> F2 --> F3
+  F3 -- "No" --> F7
+  F3 -- "Yes" --> F4
+  F4 -- "No" --> F6
+  F4 -- "Yes" --> F5 --> C1
+
+  C1 -- "No" --> C9
+  C1 -- "Yes" --> C2 --> C3
+  C3 -- "No" --> C9
+  C3 -- "Yes" --> C4 --> C5 --> C6 --> C7 --> C8
+  F5 --> R1
+  C9 --> R1
+  R2 --> M4
+  R3 --> C5
+
+  classDef placeholder fill:#2a1f00,stroke:#78350f,color:#fbbf24;
+  class R2,R3 placeholder;
+    </div>
+  </div>
+
+  <div class="gap-note">
+    <strong>Gap — reversal and expiry are schema/UI placeholders only</strong>
+    <code>PAYMENT_REVERSAL</code> and intent <code>EXPIRED</code> status exist in the schema but no code path
+    transitions an intent to EXPIRED or executes a payment reversal. If PayFast reverses a payment after
+    credits are issued, no automated credit recovery exists today.
+  </div>
+</div>
+
+<!-- ── SECTION 4: DEDUCTION / UNLOCK ─────────────────────────────────────── -->
+<div class="section" id="unlock">
+  <div class="section-header">
+    <span class="section-badge badge-deduction">Lead Unlock</span>
+    <div class="section-header-text">
+      <h2>Credit Deduction — Lead Unlock &amp; Accept</h2>
+      <p class="desc">
+        One atomic transaction: eligibility check → unlock + ledger debit → assignment + match → notifications.
+        All three channels (WhatsApp, PWA signed link, Worker Portal) funnel through the same
+        <code>acceptLead → acceptAssignmentOffer → unlockLeadForProviderInTransaction</code> stack.
+        Promo credits are consumed before paid credits.
+      </p>
+    </div>
+    <span class="subtitle">credits-deduction-unlock-flow.mmd</span>
+  </div>
+
+  <div class="key-facts">
+    <div class="key-fact"><strong>Entry points</strong>WhatsApp bot · PWA /leads/access/[token] · Worker Portal</div>
+    <div class="key-fact"><strong>Core service</strong>matching-engine.acceptLead → acceptAssignmentOffer</div>
+    <div class="key-fact"><strong>Debit order</strong>Promo first, then paid (within same transaction)</div>
+    <div class="key-fact"><strong>Idempotency</strong>LeadUnlock.leadId @unique + alreadyUnlocked recovery path</div>
+    <div class="key-fact"><strong>Concurrency</strong>wallet.updateMany with exact balance as optimistic lock</div>
+    <div class="key-fact"><strong>Decline path</strong>rejectAssignmentOffer — no credit debit, lead → DECLINED</div>
+  </div>
+
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+  subgraph Channels["WhatsApp / PWA Channels"]
+    C1["[WhatsApp] Provider taps Unlock & Accept"]
+    C2["[PWA Signed Link] Provider taps Unlock or Accept"]
+    C3["[Worker Portal OTP] Provider lead action"]
+  end
+
+  subgraph AcceptService["Backend Accept / Unlock Service"]
+    A1["[Backend] matching-engine.acceptLead"]
+    A2["[Backend] acceptAssignmentOffer transaction"]
+    A3{"[Backend] Lead exists, belongs to provider, hold active, not expired?"}
+    A4{"[Backend] Provider active, verified, status ACTIVE?"}
+    A5{"[Backend] Existing Match for another provider?"}
+    A6["[Backend] unlockLeadForProviderInTransaction"]
+  end
+
+  subgraph UnlockLedger["Lead Unlock and Ledger"]
+    U1{"[Backend] LeadUnlock already exists?"}
+    U2{"[Backend] Same provider?"}
+    U3["[Backend] Return alreadyUnlocked with no ledger write"]
+    U4["[Wallet] Read paid + promo credit balances"]
+    U5{"[Wallet] Total credits >= 1 and wallet ACTIVE?"}
+    U6["[DB] Create LeadUnlock before debit"]
+    U7["[Wallet] Optimistic updateMany decrements promo first, then paid"]
+    U8{"[Wallet] Balance update count = 1?"}
+    U9["[Ledger] LEAD_UNLOCK_DEBIT entries"]
+    U10["[DB] Update LeadUnlock creditTypeBreakdown"]
+    U11["[Error] Insufficient credits, suspended wallet, or concurrent mutation"]
+  end
+
+  subgraph Assignment["Assignment Commit"]
+    M1["[DB] Lead status ACCEPTED"]
+    M2["[DB] AssignmentHold ACCEPTED"]
+    M3["[DB] Match created"]
+    M4["[DB] JobRequest status MATCHED"]
+    M5["[DB] Other offers expired or released"]
+    M6["[Audit] lead.accept audit log"]
+  end
+
+  subgraph Notifications["Post-Commit Notifications"]
+    N1["[WhatsApp] notifyPostMatchAcceptance"]
+    N2["[Customer Notification] Provider name and contact released"]
+    N3["[Provider Notification] Customer details and View Job link"]
+    N4["[Logs] Notification failure logged, accept remains committed"]
+    N5["[Wallet Notification] Lead unlocked and low-balance notifications"]
+  end
+
+  subgraph Decline["Decline Path"]
+    D1["[WhatsApp/PWA] Provider declines lead"]
+    D2["[Backend] rejectAssignmentOffer"]
+    D3["[DB] Lead DECLINED and hold REJECTED"]
+    D4["[Ledger] No credit debit"]
+    D5["[Backend] Offer next ranked candidate"]
+  end
+
+  C1 --> A1
+  C2 --> A1
+  C3 --> A1
+  A1 --> A2 --> A3
+  A3 -- "No" --> U11
+  A3 -- "Yes" --> A4
+  A4 -- "No" --> U11
+  A4 -- "Yes" --> A5
+  A5 -- "Yes" --> U11
+  A5 -- "No" --> A6 --> U1
+  U1 -- "Yes" --> U2
+  U2 -- "Yes" --> U3 --> M1
+  U2 -- "No" --> U11
+  U1 -- "No" --> U4 --> U5
+  U5 -- "No" --> U11
+  U5 -- "Yes" --> U6 --> U7 --> U8
+  U8 -- "No" --> U11
+  U8 -- "Yes" --> U9 --> U10 --> M1
+  M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> N1
+  N1 --> N2
+  N1 --> N3
+  N1 --> N4
+  U10 --> N5
+
+  C1 --> D1
+  C2 --> D1
+  D1 --> D2 --> D3 --> D4 --> D5
+
+  classDef error fill:#3b1515,stroke:#7f1d1d,color:#fca5a5;
+  class U11,N4 error;
+    </div>
+  </div>
+</div>
+
+<!-- ── SECTION 5: RECONCILIATION ─────────────────────────────────────────── -->
+<div class="section" id="recon">
+  <div class="section-header">
+    <span class="section-badge badge-recon">Reconciliation</span>
+    <div class="section-header-text">
+      <h2>Reconciliation &amp; Audit</h2>
+      <p class="desc">
+        Current reconciliation is entirely query-based and manual. No automated finance job or
+        exception report was found. The data model supports full reconciliation queries;
+        the ops tooling to run them does not yet exist.
+      </p>
+    </div>
+    <span class="subtitle">credits-reconciliation-flow.mmd</span>
+  </div>
+
+  <div class="key-facts">
+    <div class="key-fact"><strong>Grant check</strong>Approved providers → ProviderPromoAward → PROMO_CREDIT entries (at most 1 MOBILE_VERIFIED per provider)</div>
+    <div class="key-fact"><strong>Top-up check</strong>PaymentIntent CREDITED → TOPUP_CREDIT entry → creditedLedgerEntryId match</div>
+    <div class="key-fact"><strong>Unlock check</strong>LeadUnlock → LEAD_UNLOCK_DEBIT entries (should be exactly 1 per unlock)</div>
+    <div class="key-fact"><strong>Balance check</strong>ProviderWallet cached balance = latest ledger balanceAfter snapshot</div>
+    <div class="key-fact"><strong>Dispute check</strong>Approved LeadUnlockDispute → LEAD_REFUND_CREDIT entries present</div>
+    <div class="key-fact"><strong>Admin adj check</strong>ADMIN_ADJUSTMENT entries have non-empty reason + AdminAuditEvent</div>
+  </div>
+
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+  subgraph Inputs["Reconciliation Inputs"]
+    I1["[DB] Provider and approved ProviderApplication records"]
+    I2["[DB] ProviderPromoAward records"]
+    I3["[DB] PaymentIntent records"]
+    I4["[DB] WalletLedgerEntry records"]
+    I5["[DB] ProviderWallet cached balances"]
+    I6["[DB] LeadUnlock records"]
+    I7["[DB] LeadUnlockDispute records"]
+    I8["[Payment] Bank statement / PayFast ITN references"]
+    I9["[Audit] AdminAuditEvent and auditLog rows"]
+  end
+
+  subgraph Checks["Manual / Query-Based Checks"]
+    C1["[Ops] Approved providers should have at most one MOBILE_VERIFIED award"]
+    C2["[Ops] PaymentIntent CREDITED should have TOPUP_CREDIT ledger entry"]
+    C3["[Ops] PayFast intent should have creditedLedgerEntryId"]
+    C4["[Ops] LeadUnlock should have matching LEAD_UNLOCK_DEBIT ledger entries"]
+    C5["[Ops] Refund dispute should have LEAD_REFUND_CREDIT entries"]
+    C6["[Ops] Wallet balance should equal latest ledger balance snapshot"]
+    C7["[Ops] Admin adjustments should have reason and audit event"]
+  end
+
+  subgraph Exceptions["Exception Types"]
+    E1["[Exception] Duplicate promo grant"]
+    E2["[Exception] Credited payment without ledger"]
+    E3["[Exception] Ledger without PaymentIntent/LeadUnlock reference"]
+    E4["[Exception] Wallet cached balance drift"]
+    E5["[Exception] Unlock without debit or debit without unlock"]
+    E6["[Exception] Test cohort activity not isolated in balances"]
+    E7["[Exception] Reversal/expiry placeholders not operational"]
+  end
+
+  subgraph Outputs["Current Outputs"]
+    O1["[Worker Portal OTP] Provider credit ledger statement"]
+    O2["[Admin] Provider wallets page"]
+    O3["[Admin] Provider credit payments page"]
+    O4["[Admin] Lead unlock disputes page"]
+    O5["[Gap] No automated finance reconciliation job/report found"]
+  end
+
+  I1 --> C1
+  I2 --> C1
+  I3 --> C2
+  I3 --> C3
+  I4 --> C2
+  I4 --> C4
+  I4 --> C5
+  I4 --> C6
+  I5 --> C6
+  I6 --> C4
+  I7 --> C5
+  I8 --> C2
+  I8 --> C3
+  I9 --> C7
+
+  C1 --> E1
+  C2 --> E2
+  C2 --> E3
+  C3 --> E2
+  C4 --> E5
+  C5 --> E3
+  C6 --> E4
+  C7 --> E3
+  I4 --> E6
+  I4 --> E7
+
+  I4 --> O1
+  I5 --> O1
+  I4 --> O2
+  I5 --> O2
+  I3 --> O3
+  I7 --> O4
+  E1 --> O5
+  E2 --> O5
+  E3 --> O5
+  E4 --> O5
+  E5 --> O5
+  E6 --> O5
+  E7 --> O5
+
+  classDef gap fill:#2a1f00,stroke:#78350f,color:#fbbf24;
+  class O5,E6,E7 gap;
+    </div>
+  </div>
+
+  <div class="gap-note">
+    <strong>Gap — no automated reconciliation exists today</strong>
+    All reconciliation checks listed above must be run as manual SQL queries.
+    There is no cron job, admin report page, or finance export that surfaces exceptions automatically.
+    This is acceptable for a controlled pilot but must be addressed before scale.
+    <br><br>
+    <strong>Recommended first reconciliation query:</strong>
+    <code>SELECT p.id, p.name, w.paidCreditBalance + w.promoCreditBalance AS cached,
+    MAX(l.balanceAfter) AS ledger_last FROM providers p
+    JOIN provider_wallets w ON w.providerId = p.id
+    JOIN wallet_ledger_entries l ON l.providerId = p.id
+    GROUP BY p.id, p.name, w.paidCreditBalance, w.promoCreditBalance
+    HAVING cached != MAX(l.balanceAfter)</code>
+  </div>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#131520',
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#334155',
+      lineColor: '#475569',
+      secondaryColor: '#0f172a',
+      tertiaryColor: '#1e1b4b',
+      edgeLabelBackground: '#131520',
+      clusterBkg: '#0f172a',
+      clusterBorder: '#1e293b',
+      titleColor: '#f1f5f9',
+      nodeTextColor: '#e2e8f0',
+      fontFamily: 'Inter, -apple-system, sans-serif',
+      fontSize: '14px'
+    },
+    flowchart: {
+      curve: 'basis',
+      padding: 20,
+      nodeSpacing: 40,
+      rankSpacing: 60,
+      htmlLabels: true
+    }
+  });
+</script>
+</body>
+</html>

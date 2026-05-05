@@ -18,7 +18,7 @@ import {
   reconcileTopUpIntentFormAction,
 } from '../actions'
 
-export const metadata = buildMetadata({ title: 'Credits Top-up Review', noIndex: true })
+export const metadata = buildMetadata({ title: 'Credit Top-up Review', noIndex: true })
 
 const PAYMENT_ADMIN_FLAG = 'admin.crud.payments'
 
@@ -137,7 +137,7 @@ export default async function ProviderCreditPaymentDetailPage({
             href="/admin/provider-credit-payments"
             className="text-xs text-muted-foreground hover:text-foreground"
           >
-            Credits top-ups
+            Credit top-ups
           </Link>
           <h1 className="mt-1 text-xl font-semibold">{intent.paymentReference}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -293,7 +293,7 @@ export default async function ProviderCreditPaymentDetailPage({
           <div className="rounded-xl border bg-card p-4">
             <h2 className="font-semibold">Wallet ledger references</h2>
             {ledgerEntries.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No wallet credits have been issued for this intent.</p>
+              <p className="mt-3 text-sm text-muted-foreground">No wallet credit has been issued for this intent.</p>
             ) : (
               <ul className="mt-3 divide-y text-sm">
                 {ledgerEntries.map((entry) => (
@@ -347,7 +347,7 @@ export default async function ProviderCreditPaymentDetailPage({
 
           <form action={creditTopUpIntentFormAction} className="space-y-3 rounded-xl border border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] p-4">
             <input type="hidden" name="paymentIntentId" value={intent.id} />
-            <h2 className="font-semibold">Issue credits</h2>
+            <h2 className="font-semibold">Credit wallet</h2>
             <p className="text-sm">
               {isPayfastIntent
                 ? `Manually credit ${intent.creditsToIssue} paid Plug A Pro provider credits to ${intent.provider.name}. Use only when the ITN was verified but automatic crediting failed.`
@@ -356,12 +356,12 @@ export default async function ProviderCreditPaymentDetailPage({
             <textarea
               name="adminNote"
               className="min-h-20 w-full rounded-xl border bg-card px-3 py-2 text-sm text-foreground"
-              placeholder={isPayfastIntent ? 'Reason for issuing credits' : 'Note'}
+              placeholder={isPayfastIntent ? 'Reason for manual credit' : 'Credit note'}
               disabled={!canCredit}
               required={isPayfastIntent}
             />
             <Button type="submit" disabled={!canCredit} className="w-full">
-              Confirm and issue credits
+              Confirm and credit wallet
             </Button>
           </form>
 
