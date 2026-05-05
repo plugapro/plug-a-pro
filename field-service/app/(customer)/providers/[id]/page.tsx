@@ -10,8 +10,33 @@ import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { isEnabled } from '@/lib/flags'
+import { Button } from '@/components/ui/button'
 
-export const metadata = buildMetadata({ title: 'Provider Profile', noIndex: true })
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id } = await params
+
+  const provider = await db.provider.findUnique({
+    where: { id },
+    select: { name: true, bio: true },
+  })
+
+  if (!provider) {
+    return buildMetadata({ title: 'Provider Profile' })
+  }
+
+  const summary = provider.bio ?? ''
+  const description =
+    summary.length > 150 ? `${summary.slice(0, 150)}...` : summary
+
+  return buildMetadata({
+    title: provider.name,
+    description: description || undefined,
+  })
+}
 
 export default async function CustomerProviderProfilePage({
   params,
@@ -19,19 +44,10 @@ export default async function CustomerProviderProfilePage({
   params: Promise<{ id: string }>
 }) {
   const session = await getSession()
-  if (!session || session.role !== 'customer') {
-    redirect('/sign-in')
-  }
+  const isCustomerSignedIn = session?.role === 'customer'
 
-  const flagEnabled = await isEnabled('feature.customer.provider_browse', { userId: session.id })
+  const flagEnabled = await isEnabled('feature.customer.provider_browse')
   if (!flagEnabled) redirect('/')
-
-  const customer = await db.customer.findUnique({
-    where: { userId: session.id },
-    select: { id: true },
-  })
-
-  if (!customer) redirect('/bookings')
 
   const { id } = await params
 
@@ -98,17 +114,48 @@ export default async function CustomerProviderProfilePage({
     averageRating,
   })
 
+  const bookingCategory = provider.skills[0] ?? 'general'
+  const bookingUrl = `/book/${encodeURIComponent(bookingCategory)}?provider=${encodeURIComponent(
+    provider.id,
+  )}`
+
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
       <div>
-        <Link href="/bookings" className="text-xs text-muted-foreground hover:text-foreground">
+        {isCustomerSignedIn ? (
+          <Link
+            href="/bookings"
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
           ← My bookings
-        </Link>
+          </Link>
+        ) : null}
         <h1 className="text-xl font-semibold mt-1">{provider.name}</h1>
         <p className="text-sm text-muted-foreground">
           {provider.verified ? 'Reviewed marketplace profile' : 'Provider profile'}
         </p>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Request this provider
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isCustomerSignedIn ? (
+            <Button asChild className="w-full">
+              <Link href={bookingUrl}>Book</Link>
+            </Button>
+          ) : (
+            <Button asChild variant="outline" className="w-full">
+              <Link href={`/sign-in?next=${encodeURIComponent(`/providers/${provider.id}`)}`}>
+                Sign in to book
+              </Link>
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">

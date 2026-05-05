@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { OtpInput } from '@/components/ui/otp-input'
-import { getSafeProviderNextPath } from '@/lib/safe-redirect'
+import { Button } from '@/components/ui/button'
+import { getSafeCustomerNextPath, getSafeProviderNextPath } from '@/lib/safe-redirect'
 
 function formatPhoneForDisplay(e164: string) {
   const digits = e164.replace(/\D/g, '')
@@ -18,6 +20,7 @@ function createClientTraceId() {
 type VerifyError = {
   message: string
   traceId: string
+  code?: string
 }
 
 type VerifyCodePayload = {
@@ -64,6 +67,10 @@ function ProviderVerifyForm() {
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
     '/provider/jobs',
   )
+  const requestedNext = searchParams.get('next') ?? searchParams.get('callbackUrl')
+  const customerSignInHref = `/sign-in?next=${encodeURIComponent(
+    getSafeCustomerNextPath(requestedNext, '/bookings'),
+  )}`
 
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
@@ -109,6 +116,7 @@ function ProviderVerifyForm() {
         setError({
           message: payload.error?.reason ?? payload.message ?? messageForCode(errorCode),
           traceId: payload.error?.traceId ?? payload.traceId ?? traceId,
+          code: errorCode,
         })
         return
       }
@@ -170,9 +178,7 @@ function ProviderVerifyForm() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="app-kicker">
-          Worker Portal
-        </p>
+        <p className="app-kicker">Provider Portal</p>
         <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
         <p className="text-sm text-muted-foreground">
           Code sent to <span className="font-medium text-foreground">{formatPhoneForDisplay(phone)}</span>
@@ -186,7 +192,22 @@ function ProviderVerifyForm() {
         {error && (
           <div className="space-y-1 text-center">
             <p className="text-sm text-destructive">{error.message}</p>
-            <p className="text-xs text-muted-foreground">Trace ID: {error.traceId}</p>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Show technical details</summary>
+              <p className="mt-1">Trace ID: {error.traceId}</p>
+            </details>
+            {(error.code === 'WORKER_NOT_FOUND' || error.code === 'PROVIDER_NOT_FOUND') && (
+              <div className="pt-2">
+                <p className="mb-2 text-xs text-muted-foreground">
+                  If this is a customer account, open the customer sign-in flow:
+                </p>
+                <Button asChild size="sm" className="w-full">
+                  <Link href={customerSignInHref}>
+                    Sign in as customer
+                  </Link>
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

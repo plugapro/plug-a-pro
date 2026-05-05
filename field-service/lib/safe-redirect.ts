@@ -18,6 +18,10 @@ export function getSafeNextPath(
   }
 }
 
+// Route-safelist checks use explicit, role-aware prefixes. This prevents:
+// - /provider-sign-in links accidentally returning customers to provider-only views
+// - /sign-in links returning providers to customer-only pages
+// - /admin-sign-in links accepting customer/admin mixed callbacks
 const CUSTOMER_ROUTE_PREFIXES = [
   '/account',
   '/approve',
@@ -25,8 +29,9 @@ const CUSTOMER_ROUTE_PREFIXES = [
   '/bookings',
   '/confirm-completion',
   '/payments',
-  '/profile',
   '/providers',
+  '/profile',
+  '/request',
   '/quotes',
   '/requests',
   '/services',
@@ -34,11 +39,18 @@ const CUSTOMER_ROUTE_PREFIXES = [
 ]
 
 const PROVIDER_ROUTE_PREFIXES = [
-  '/provider',
+  '/provider/jobs',
+  '/provider/profile',
 ]
 
 const ADMIN_ROUTE_PREFIXES = [
   '/admin',
+  '/admin/dashboard',
+  '/admin/bookings',
+  '/admin/jobs',
+  '/admin/providers',
+  '/admin/customers',
+  '/admin/payments',
 ]
 
 function pathIsInPrefixes(path: string, prefixes: string[]): boolean {

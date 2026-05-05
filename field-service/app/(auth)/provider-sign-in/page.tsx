@@ -91,7 +91,7 @@ function fallbackReasonForCode(code: string) {
       return "We couldn't find a provider account for this number. If you're trying to view your customer bookings, sign in as a customer instead."
     case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
-      return 'Your provider application must be approved before you can sign in to the Worker Portal.'
+      return 'Your provider application must be approved before you can sign in to the Provider portal.'
     case 'WORKER_INACTIVE':
     case 'PROVIDER_INACTIVE':
       return 'This provider account is not active.'
@@ -173,6 +173,7 @@ export default function ProviderSignInPage() {
   const applyProviderHref = whatsappHref('Hi Plug A Pro, I would like to apply as a provider.')
   const supportHref = whatsappHref('Hi Plug A Pro, I need help signing in.')
   const showProviderNotFoundRecovery = error?.code === 'WORKER_NOT_FOUND' || error?.code === 'PROVIDER_NOT_FOUND'
+  const roleMismatchRecovery = searchParams.get('error') === 'unauthorized'
 
   function localError(params: {
     reason: string
@@ -264,17 +265,27 @@ export default function ProviderSignInPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="app-kicker">
-          Worker Portal
-        </p>
+        <p className="app-kicker">Provider portal</p>
         <h1 className="text-2xl font-semibold text-foreground">Provider sign in</h1>
         <p className="text-sm text-muted-foreground">
           Use the mobile number linked to your approved Plug-A-Pro provider profile.
         </p>
         <p className="text-xs text-muted-foreground">
-          Customers should use customer sign in to view bookings or quotes.
+          Customers should use customer sign in to view bookings, quotes, and job updates.
         </p>
       </div>
+
+      {roleMismatchRecovery && !error && (
+        <div className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning-foreground">
+          <p className="font-medium">This account is signed in as a customer.</p>
+          <p className="text-xs text-warning-foreground/80">
+            Provider sign in is for approved providers only. Use customer sign in if you were trying to view bookings or quotes.
+          </p>
+          <Button asChild size="sm" className="mt-2 w-full">
+            <Link href={customerSignInHref}>Sign in as customer</Link>
+          </Button>
+        </div>
+      )}
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -302,7 +313,7 @@ export default function ProviderSignInPage() {
           }`}>
             <p className="font-medium">{error.title}</p>
             <p>{error.reason}</p>
-            {showProviderNotFoundRecovery && (
+            {(showProviderNotFoundRecovery || roleMismatchRecovery) && (
               <div className="grid gap-2 pt-1">
                 <Button asChild size="sm" className="w-full">
                   <Link href={customerSignInHref}>Sign in as customer</Link>
@@ -316,9 +327,14 @@ export default function ProviderSignInPage() {
               </div>
             )}
             <details className="pt-1 text-xs text-muted-foreground">
-              <summary className="cursor-pointer font-medium">Show support details</summary>
+              <summary className="cursor-pointer font-medium">Show technical details</summary>
               <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                {error.code ? <><dt>Code</dt><dd className="text-right font-medium">{error.code}</dd></> : null}
+                {error.step ? <><dt>Step</dt><dd className="text-right font-medium">{error.step}</dd></> : null}
+                {error.mobileChecked ? <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.mobileChecked}</dd></> : null}
+                {error.countryCode ? <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></> : null}
                 <dt>Trace ID</dt><dd className="text-right font-medium">{error.traceId}</dd>
+                {error.time ? <><dt>Time</dt><dd className="text-right font-medium">{error.time}</dd></> : null}
               </dl>
             </details>
           </div>
@@ -330,11 +346,15 @@ export default function ProviderSignInPage() {
       </form>
 
       <p className="text-center text-xs text-muted-foreground">
-        Not registered yet? Apply via WhatsApp — send &quot;Register&quot; to our business number.
+        Not approved yet? Apply via WhatsApp:
+        {' '}
+        <a href={applyProviderHref} className="font-medium text-primary underline-offset-4 hover:underline">
+          Send &quot;Register&quot;
+        </a>
       </p>
 
       <p className="text-center text-xs text-muted-foreground">
-        Trying to view customer bookings?{' '}
+        Are you trying to view customer bookings?{' '}
         <Link href={customerSignInHref} className="font-medium text-primary underline-offset-4 hover:underline">
           Sign in as customer
         </Link>

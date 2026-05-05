@@ -7,6 +7,11 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { db } from '@/lib/db'
+import {
+  getSafeAdminNextPath,
+  getSafeCustomerNextPath,
+  getSafeProviderNextPath,
+} from '@/lib/safe-redirect'
 import { checkWorkerPortalAccess, logWorkerPortalDecision } from '@/lib/worker-provider-auth'
 
 // Routes that are public (no auth required)
@@ -26,6 +31,8 @@ const PUBLIC_PATHS = [
   '/provider/terms',       // provider credit rules are linked before login/application
   '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
   '/technician-verify',    // legacy — server-redirects to /provider-verify
+  '/providers',
+  '/providers/',
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
   '/requests/access',      // signed single-ticket links are scoped to one request
@@ -162,7 +169,19 @@ export async function proxy(request: NextRequest) {
       })
 
       if (!access.ok) {
-        return NextResponse.redirect(new URL('/provider-sign-in', request.url))
+        // Route authenticated users lacking provider access to the provider sign-in
+        // screen and include a role-mismatch hint so we can show recovery copy.
+        // The callback target is also sanitized so provider auth cannot be
+        // driven into customer/admin routes through crafted query params.
+        const callbackPath = getSafeProviderNextPath(
+          request.nextUrl.pathname,
+          '/provider/jobs',
+        )
+        const providerSignIn = new URL('/provider-sign-in', request.url)
+        providerSignIn.searchParams.set('callbackUrl', callbackPath)
+        providerSignIn.searchParams.set('next', callbackPath)
+        providerSignIn.searchParams.set('error', 'unauthorized')
+        return NextResponse.redirect(providerSignIn)
       }
       effectiveRole = 'provider'
     }
@@ -218,15 +237,23 @@ function redirectToSignIn(
   isAdminDomain = false,
 ): NextResponse {
   let destination = '/sign-in'
+  // Preserve route ownership on redirects:
+  // customer routes always return to /sign-in,
+  // provider routes always return to /provider-sign-in,
+  // admin routes always return to /admin-sign-in.
   if (effectivePath.startsWith('/provider') || effectivePath.startsWith('/technician')) destination = '/provider-sign-in'
   if (effectivePath.startsWith('/admin')) {
     // On admin domain keep URLs clean; on regular domain use full path
     destination = isAdminDomain ? '/sign-in' : '/admin-sign-in'
   }
 
-  const { search } = request.nextUrl
-  // callbackUrl uses original (clean) pathname so the post-login redirect is correct
-  const callbackPath = `${request.nextUrl.pathname}${search}`
+  const callbackCandidate = request.nextUrl.pathname
+  // Sanitize candidate paths to avoid open-redirects and role-mixed callbacks.
+  let callbackPath = callbackCandidate
+  if (destination === '/provider-sign-in') callbackPath = getSafeProviderNextPath(callbackCandidate, '/provider/jobs')
+  if (destination === '/admin-sign-in') callbackPath = getSafeAdminNextPath(callbackCandidate, '/admin')
+  if (destination === '/sign-in') callbackPath = getSafeCustomerNextPath(callbackCandidate, '/bookings')
+
   const url = new URL(destination, request.url)
   url.searchParams.set('callbackUrl', callbackPath)
   url.searchParams.set('next', callbackPath)

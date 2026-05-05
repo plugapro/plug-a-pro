@@ -137,7 +137,18 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fcredits&next=%2Fprovider%2Fcredits',
+      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fjobs&next=%2Fprovider%2Fjobs',
+    )
+  })
+
+  it('sanitizes provider callback destination when unauthenticated provider routes include invalid next params', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider/jobs?next=%2Fadmin%2Fbookings'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fjobs&next=%2Fprovider%2Fjobs',
     )
   })
 
@@ -216,6 +227,33 @@ describe('proxy admin access', () => {
     expect(res.headers.get('x-user-role')).toBe('provider')
   })
 
+  it('marks authenticated non-provider sessions as role-mismatch at provider routes', async () => {
+    const { proxy } = await import('../proxy')
+
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-customer-2',
+          phone: '27823035070',
+          user_metadata: { role: 'customer' },
+        },
+      },
+      error: null,
+    })
+    mockProviderFindFirst.mockResolvedValue(null)
+
+    const req = new NextRequest('http://localhost/provider/jobs', {
+      headers: { cookie: 'sb-access-token=test-token' },
+    })
+
+    const res = await proxy(req)
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fjobs&next=%2Fprovider%2Fjobs&error=unauthorized',
+    )
+  })
+
   it('blocks pending providers from provider routes after OTP', async () => {
     const { proxy } = await import('../proxy')
 
@@ -245,7 +283,9 @@ describe('proxy admin access', () => {
     const res = await proxy(req)
 
     expect(res.status).toBe(307)
-    expect(res.headers.get('location')).toBe('http://localhost/provider-sign-in')
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fjobs&next=%2Fprovider%2Fjobs&error=unauthorized',
+    )
   })
 
   it('allows signed provider contact-customer API without an OTP session', async () => {
