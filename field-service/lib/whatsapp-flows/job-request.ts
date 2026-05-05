@@ -225,6 +225,15 @@ const AREA_NOT_LISTED_ROW = { id: 'area_not_listed', title: '🔔 My area isn\'t
 async function renderProvinceList(phone: string): Promise<void> {
   const provinces = await getProvinces()
   const active = provinces.filter((p) => isActiveProvince(p.slug))
+  if (active.length === 0) {
+    // Location nodes not yet seeded — sending an empty list section fails at the Meta API level.
+    // Surface the "area not listed" path so the user is captured on the waitlist.
+    await sendText(
+      phone,
+      `📍 We're expanding our coverage soon! We don't have selectable provinces set up yet.\n\nReply *area not listed* and we'll add you to the waitlist to be notified when we launch in your area.`,
+    )
+    return
+  }
   const rows = active.map((p) => ({ id: `prov__${p.slug}`, title: p.label.slice(0, 24) }))
   await sendList(
     phone,
