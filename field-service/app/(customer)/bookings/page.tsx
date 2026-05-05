@@ -102,7 +102,8 @@ export default async function CustomerBookingsPage({
   ])
 
   const distinctCategories = [...new Set(allRequests.map((r) => r.category).filter(Boolean))]
-  const showSiteFilter = savedSites.length >= 2
+  const showSiteFilter = savedSites.length >= 1
+  const showCategoryFilter = distinctCategories.length >= 1
 
   // ── Data queries with filters ───────────────────────────────────────────────
 
@@ -187,7 +188,7 @@ export default async function CustomerBookingsPage({
       </div>
 
       {/* ── Category filter ── */}
-      {distinctCategories.length > 1 && (
+      {showCategoryFilter && (
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-hide">
           <FilterChip href={filterLink(filters, { category: undefined })} active={!category}>
             All categories

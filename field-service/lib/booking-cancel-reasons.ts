@@ -1,13 +1,11 @@
+// B2B booking reasons are focused on internal approvals and site-specific constraints.
+// Keep "Other" for edge cases without hard-coding one-off categories in UI.
 export const BOOKING_CANCEL_REASONS = [
-  'Found another provider',
-  'No longer needed',
-  'Cost too high',
-  'Taking too long',
-  // B2B reasons
   'Wrong site',
   'Authorisation withdrawn',
   'Procurement on hold',
   'Vendor on existing PO',
+  'Work scope changed',
   'Other',
 ] as const
 

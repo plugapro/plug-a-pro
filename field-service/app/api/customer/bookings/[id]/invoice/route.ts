@@ -51,6 +51,20 @@ export async function GET(
   }
 
   const pdfUrl = await generateInvoicePdf(bookingId)
+  const pdfResponse = await fetch(pdfUrl)
+  if (!pdfResponse.ok) {
+    return NextResponse.json({ error: 'Could not load invoice PDF' }, { status: 502 })
+  }
+  const pdfPayload = await pdfResponse.arrayBuffer()
+  const safeRef = booking.id.slice(-8).toUpperCase()
+  const fileName = `invoice-${safeRef}.pdf`
 
-  return NextResponse.redirect(pdfUrl)
+  // Return attachment payload so the booking detail CTA can download/preview reliably.
+  return new NextResponse(pdfPayload, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+    },
+  })
 }
