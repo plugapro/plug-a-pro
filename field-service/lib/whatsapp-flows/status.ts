@@ -9,6 +9,7 @@ import { db } from '../db'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { getPublicAppUrl } from '../provider-credit-copy'
 import type { FlowContext, FlowResult } from './types'
+import { sendWhatsAppJourneyRecovery } from '../journey-recovery'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
   SCHEDULED:                       '📋 Provider scheduled',
@@ -227,10 +228,15 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
     return showRequestStatus(ctx.phone, target.id, reqId, customer.id)
   } catch (error) {
     log(`WARN: status flow failed before rendering. error=${error instanceof Error ? error.message : String(error)}`)
-    await sendText(
-      ctx.phone,
-      "⚠️ We couldn't load your latest status right now. Tap Track My Request again to retry."
-    )
+    await sendWhatsAppJourneyRecovery(ctx.phone, {
+      userRole: 'customer',
+      channel: 'whatsapp',
+      flowName: ctx.flow,
+      currentStep: ctx.step,
+      failureType: 'dependency_failure',
+      recoveryClass: 'show_status',
+      error,
+    })
     return { nextStep: 'done' }
   }
 }
@@ -466,10 +472,16 @@ async function showRequestStatus(
     return { nextStep: 'done' }
   } catch (error) {
     log(`WARN: status render failed, using fallback. error=${error instanceof Error ? error.message : String(error)}`)
-    await sendText(
-      phone,
-      "⚠️ We couldn't load your latest status right now. Tap Track My Request again to retry."
-    )
+    await sendWhatsAppJourneyRecovery(phone, {
+      userRole: 'customer',
+      channel: 'whatsapp',
+      flowName: 'status',
+      currentStep: 'status_show',
+      failureType: 'dependency_failure',
+      recoveryClass: 'show_status',
+      requestId: jobRequestId,
+      error,
+    })
     return { nextStep: 'done' }
   }
 }

@@ -1110,7 +1110,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Something went wrong submitting your request')
+        expect.stringContaining('progress is saved')
       )
     })
   })
@@ -1320,7 +1320,16 @@ describe('WhatsApp job-request flow — collect_photos step', () => {
     ;(whatsappMedia.downloadAndStoreWhatsAppMedia as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Network error'))
     const result = await handleJobRequestFlow(makePhotoCtx(undefined, undefined, baseData, 'image', 'media-bad'))
     expect(result.nextStep).toBe('collect_photos')
-    expect(wa.sendText).toHaveBeenCalledWith(PHONE, expect.stringContaining("couldn't upload"))
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't upload that photo"),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'retry_step' }),
+        expect.objectContaining({ id: 'back_home' }),
+      ]),
+      undefined,
+      expect.objectContaining({ templateName: 'interactive:journey_recovery' }),
+    )
   })
 
   it('resends skip/start prompt on unknown reply when no photos yet', async () => {

@@ -5,6 +5,7 @@
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { WHATSAPP_COPY, ctaLabelFor } from '../whatsapp-copy'
 import { downloadAndStoreWhatsAppMedia } from '../whatsapp-media'
+import { sendWhatsAppJourneyRecovery } from '../journey-recovery'
 import { db } from '../db'
 import { syncProviderRecord, upsertStructuredServiceAreas } from '../provider-record'
 import { syncProviderSkills } from '../provider-skills'
@@ -630,7 +631,15 @@ async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
       }
     } catch (err) {
       console.error('[registration:handleVerifyUploadDoc] media upload failed', { phone: ctx.phone, err })
-      await sendText(ctx.phone, "⚠️ Couldn't upload that file. Please try again or tap *Skip*.")
+      await sendWhatsAppJourneyRecovery(ctx.phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: ctx.flow,
+        currentStep: ctx.step,
+        failureType: 'storage_failure',
+        recoveryClass: 'retry_same_step',
+        error: err,
+      })
       return { nextStep: 'reg_verify_upload_doc' }
     }
   }
@@ -678,7 +687,15 @@ async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
       }
     } catch (err) {
       console.error('[registration:handleVerifyUploadSelfie] media upload failed', { phone: ctx.phone, err })
-      await sendText(ctx.phone, "⚠️ Couldn't upload that photo. Please try again or tap *Skip*.")
+      await sendWhatsAppJourneyRecovery(ctx.phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: ctx.flow,
+        currentStep: ctx.step,
+        failureType: 'storage_failure',
+        recoveryClass: 'retry_same_step',
+        error: err,
+      })
       return { nextStep: 'reg_verify_upload_selfie' }
     }
   }
@@ -1669,10 +1686,15 @@ async function handleCollectProfilePhoto(ctx: FlowContext): Promise<FlowResult> 
         `[registration:handleCollectProfilePhoto] media upload failed — mediaId=${ctx.reply.mediaId}:`,
         err,
       )
-      await sendText(
-        ctx.phone,
-        "⚠️ Couldn't upload that photo. Please try again or tap *Skip* to continue without one.",
-      )
+      await sendWhatsAppJourneyRecovery(ctx.phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: ctx.flow,
+        currentStep: ctx.step,
+        failureType: 'storage_failure',
+        recoveryClass: 'retry_same_step',
+        error: err,
+      })
       return { nextStep: 'reg_collect_profile_photo' }
     }
   }

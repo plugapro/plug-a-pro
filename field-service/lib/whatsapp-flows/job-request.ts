@@ -40,6 +40,7 @@ import {
   type WhatsAppSavedAddress,
 } from '../whatsapp-identity'
 import { createTraceId } from '../support-diagnostics'
+import { JOURNEY_RECOVERY_COPY, sendWhatsAppJourneyRecovery } from '../journey-recovery'
 import {
   mapAvailabilityToUrgency,
   preferenceLabel,
@@ -1343,7 +1344,15 @@ async function handleCollectPhotos(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'collect_photos', nextData: { photoAttachmentIds: updated, photoMediaIds: updatedMediaIds } }
     } catch (err) {
       console.error('[job-request-flow:handleCollectPhotos] media upload failed:', err)
-      await sendText(ctx.phone, '❗ I couldn\'t upload that photo. Please try again or type *skip*.')
+      await sendWhatsAppJourneyRecovery(ctx.phone, {
+        userRole: 'customer',
+        channel: 'whatsapp',
+        flowName: ctx.flow,
+        currentStep: ctx.step,
+        failureType: 'storage_failure',
+        recoveryClass: 'retry_same_step',
+        error: err,
+      })
       return { nextStep: 'collect_photos' }
     }
   }
@@ -1574,9 +1583,9 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
     await sendText(
       ctx.phone,
-      `😔 Something went wrong submitting your request. Please try again or contact us directly.\n\n_Ref: ${traceId}_${debugSuffix}`
+      `${JOURNEY_RECOVERY_COPY.savedProgressRetry}\n\nRef: ${traceId}${debugSuffix}`
     )
-    return { nextStep: 'done' }
+    return { nextStep: 'confirm_job_request' }
   }
 }
 

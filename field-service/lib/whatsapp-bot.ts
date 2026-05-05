@@ -50,6 +50,7 @@ import {
 } from './provider-credit-copy'
 import { preferenceLabel } from './client-request-data'
 import { ctaLabelFor } from './whatsapp-copy'
+import { resolveJourneyRecovery, sendWhatsAppJourneyRecovery } from './journey-recovery'
 import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
 import {
   completeProviderJobFromWhatsApp,
@@ -238,18 +239,14 @@ function hasActiveFlow(flow: FlowName, step: FlowStep) {
 }
 
 function activeFlowResumeCopy(flow: FlowName, step: FlowStep) {
-  if (flow === 'job_request') {
-    if (step === 'collect_address_street') {
-      return "You're still completing your service request. Let's continue from the street address step."
-    }
-    return "You're still completing your service request. Let's continue with the next step."
-  }
-
-  if (flow === 'registration') {
-    return "You're still completing your provider application. Continue from where you left off?"
-  }
-
-  return "You're still in the middle of a WhatsApp flow. Continue from where you left off?"
+  return resolveJourneyRecovery({
+    userRole: flow === 'registration' || flow === 'provider_journey' || flow === 'provider_job' ? 'provider' : 'customer',
+    channel: 'whatsapp',
+    flowName: flow,
+    currentStep: step,
+    failureType: 'stale_action',
+    recoveryClass: 'resume_step',
+  }).message
 }
 
 async function findProviderByWhatsAppPhone(phone: string, select?: Prisma.ProviderSelect) {
@@ -644,6 +641,15 @@ async function processInboundMessageUnlocked(
         step: conversation.step,
         replyType: reply.type,
         mediaIdSuffix: reply.mediaId?.slice(-8) ?? null,
+      })
+      await sendWhatsAppJourneyRecovery(phone, {
+        userRole: 'unknown',
+        channel: 'whatsapp',
+        flowName: conversation.flow,
+        currentStep: conversation.step,
+        failureType: 'stale_action',
+        recoveryClass: hasActiveFlow(conversation.flow as FlowName, conversation.step as FlowStep) ? 'resume_step' : 'return_main_menu',
+        messageId: message.id,
       })
       return
     }
@@ -1471,12 +1477,20 @@ async function processInboundMessageUnlocked(
     })
   } catch (err) {
     console.error(`[whatsapp-bot] Error processing message from ${phone}:`, err)
-    // Fail gracefully — send a generic error message
+    // Fail gracefully and preserve recoverable state. Do not tell the user to
+    // restart blindly: the recovery resolver explains what happened and gives
+    // safe next actions without exposing internals.
     try {
-      await sendText(
-        phone,
-        "😔 Something went wrong on our end. Please try again or reply 'Hi' to restart."
-      )
+      await sendWhatsAppJourneyRecovery(phone, {
+        userRole: 'unknown',
+        channel: 'whatsapp',
+        flowName: 'idle',
+        currentStep: 'welcome',
+        failureType: 'unexpected_error',
+        recoveryClass: 'retry_same_step',
+        messageId: message.id,
+        error: err,
+      })
     } catch {
       // Ignore send errors in error handler
     }

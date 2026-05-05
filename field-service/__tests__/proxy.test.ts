@@ -137,7 +137,7 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fjobs&next=%2Fprovider%2Fjobs',
+      'http://localhost/provider-sign-in?callbackUrl=%2Fprovider%2Fcredits&next=%2Fprovider%2Fcredits',
     )
   })
 

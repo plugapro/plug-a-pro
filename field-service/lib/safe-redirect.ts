@@ -51,12 +51,23 @@ function pathIsInPrefixes(path: string, prefixes: string[]): boolean {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
+function stripNestedRedirectParams(path: string): string {
+  // Callback destinations may keep useful screen query params, but must never
+  // smuggle a second redirect target such as ?next=/admin/bookings.
+  const url = new URL(path, 'https://plugapro.local')
+  url.searchParams.delete('next')
+  url.searchParams.delete('callbackUrl')
+  url.searchParams.delete('redirect')
+  const search = url.searchParams.toString()
+  return `${url.pathname}${search ? `?${search}` : ''}${url.hash}`
+}
+
 export function getSafeCustomerNextPath(
   candidate: string | null | undefined,
   fallback = '/bookings',
 ): string {
   const safePath = getSafeNextPath(candidate, fallback)
-  return pathIsInPrefixes(safePath, CUSTOMER_ROUTE_PREFIXES) ? safePath : fallback
+  return pathIsInPrefixes(safePath, CUSTOMER_ROUTE_PREFIXES) ? stripNestedRedirectParams(safePath) : fallback
 }
 
 export function getSafeProviderNextPath(
@@ -64,7 +75,8 @@ export function getSafeProviderNextPath(
   fallback = '/provider/jobs',
 ): string {
   const safePath = getSafeNextPath(candidate, fallback)
-  return pathIsInPrefixes(safePath, PROVIDER_ROUTE_PREFIXES) ? safePath : fallback
+  if (new URL(safePath, 'https://plugapro.local').pathname === '/provider') return fallback
+  return pathIsInPrefixes(safePath, PROVIDER_ROUTE_PREFIXES) ? stripNestedRedirectParams(safePath) : fallback
 }
 
 export function getSafeAdminNextPath(
@@ -72,5 +84,5 @@ export function getSafeAdminNextPath(
   fallback = '/admin',
 ): string {
   const safePath = getSafeNextPath(candidate, fallback)
-  return pathIsInPrefixes(safePath, ADMIN_ROUTE_PREFIXES) ? safePath : fallback
+  return pathIsInPrefixes(safePath, ADMIN_ROUTE_PREFIXES) ? stripNestedRedirectParams(safePath) : fallback
 }

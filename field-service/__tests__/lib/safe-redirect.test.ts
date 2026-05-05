@@ -39,7 +39,7 @@ describe('getSafeNextPath', () => {
 
   it('keeps provider sign-in callbacks on provider-owned routes', () => {
     expect(getSafeProviderNextPath('/provider/jobs')).toBe('/provider/jobs')
-    expect(getSafeProviderNextPath('/provider/credits')).toBe('/provider/jobs')
+    expect(getSafeProviderNextPath('/provider/credits')).toBe('/provider/credits')
     expect(getSafeProviderNextPath('/bookings')).toBe('/provider/jobs')
     expect(getSafeProviderNextPath('/profile')).toBe('/provider/jobs')
   })

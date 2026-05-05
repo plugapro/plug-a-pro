@@ -144,10 +144,16 @@ describe('reg_collect_profile_photo step', () => {
     const result = await handleRegistrationFlow(ctx)
     expect(result.nextStep).toBe('reg_collect_profile_photo')
     expect(result.nextData?.profilePhotoAttachmentId).toBeUndefined()
-    const errored = sendTextMock.mock.calls.some(
-      (args) => typeof args[1] === 'string' && (args[1] as string).includes("Couldn't upload that photo"),
+    expect(sendButtonsMock).toHaveBeenCalledWith(
+      ctx.phone,
+      expect.stringContaining("couldn't upload that photo"),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'retry_step' }),
+        expect.objectContaining({ id: 'back_home' }),
+      ]),
+      undefined,
+      expect.objectContaining({ templateName: 'interactive:journey_recovery' }),
     )
-    expect(errored).toBe(true)
   })
 
   it('non-image, non-skip free text re-prompts the photo step', async () => {
