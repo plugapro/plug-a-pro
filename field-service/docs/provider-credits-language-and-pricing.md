@@ -37,9 +37,17 @@ Use:
 - Buy credits
 - Top up credits
 
-Avoid lending-style or singular-unit wording, including:
+Avoid the following terms in all user-facing copy:
 
-- policy labels that make credits sound like a lending product
-- rule labels that use the singular unit where prepaid units are meant
-- balance/history labels that use the singular unit where prepaid units are meant
-- lending, application, or bureau-check language
+| Banned term | Use instead |
+|---|---|
+| credit policy | credits rules / credits terms |
+| View credit policy | View credits rules |
+| credit balance | credits balance / available credits |
+| credit history | credits history |
+| credit facility | (do not use — Plug A Pro does not offer a credit facility) |
+| credit check | (do not use — Plug A Pro does not run credit bureau checks) |
+| loan | (do not use) |
+| advance | (do not use) |
+| financing | (do not use) |
+| apply for credit | (do not use — providers buy credits, not apply for them) |
