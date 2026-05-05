@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
+import { locationSearchTerms } from '@/lib/location-aliases'
 import { LocationNodeType, LocationNode } from '@prisma/client'
 
 // ─── Exported Types ────────────────────────────────────────────────────────────
@@ -250,11 +251,12 @@ export async function searchNodes(
     throw new Error('Search query must be at least 2 characters')
   }
 
+  const terms = locationSearchTerms(q)
   const nodes = await db.locationNode.findMany({
     where: {
       active: true,
       nodeType: { in: ['SUBURB', 'REGION'] },
-      label: { contains: q, mode: 'insensitive' },
+      OR: terms.map((term) => ({ label: { contains: term, mode: 'insensitive' as const } })),
       ...(provinceKey ? { provinceKey } : {}),
     },
     orderBy: { label: 'asc' },
@@ -290,11 +292,12 @@ export async function searchSuburbNodes(
     throw new Error('Search query must be at least 2 characters')
   }
 
+  const terms = locationSearchTerms(q)
   const nodes = await db.locationNode.findMany({
     where: {
       active: true,
       nodeType: 'SUBURB',
-      label: { contains: q, mode: 'insensitive' },
+      OR: terms.map((term) => ({ label: { contains: term, mode: 'insensitive' as const } })),
       ...(provinceKey ? { provinceKey } : {}),
     },
     orderBy: { label: 'asc' },
@@ -626,6 +629,11 @@ export async function deactivateLocationNode(id: string): Promise<void> {
  * Throws LocationNodeInUseError if any references exist.
  */
 export async function deleteLocationNode(id: string): Promise<void> {
+  if (process.env.ALLOW_LOCATION_HARD_DELETE !== 'true') {
+    await deactivateLocationNode(id)
+    return
+  }
+
   const [childCount, addressCount, serviceAreaCount] = await Promise.all([
     db.locationNode.count({ where: { parentId: id } }),
     db.address.count({ where: { locationNodeId: id } }),

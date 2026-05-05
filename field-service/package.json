@@ -13,6 +13,8 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:prod": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "seed:locations": "tsx scripts/seed-locations.ts",
+    "audit:locations": "tsx scripts/audit-locations.ts",
     "db:backfill": "tsx scripts/backfill-location-nodes.ts",
     "db:backfill-cases": "tsx scripts/backfill-cases.ts",
     "seed:test-leads": "tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --dry-run",

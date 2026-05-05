@@ -155,7 +155,7 @@ const GAUTENG: Province = {
         'Roodepoort':     { lat: -26.1644, lng: 27.8730 },
         'Florida':        { lat: -26.1681, lng: 27.9174 },
         'Weltevreden Park': { lat: -26.1157, lng: 27.9279 },
-        'Strubensvalley': { lat: -26.1013, lng: 27.8884 },
+        'Strubens Valley': { lat: -26.1013, lng: 27.8884 },
         'Johannesburg West': { lat: -26.1644, lng: 27.8730 },
         'Joburg West':    { lat: -26.1644, lng: 27.8730 },
         'Discovery':      { lat: -26.1389, lng: 27.8743 },
@@ -165,6 +165,17 @@ const GAUTENG: Province = {
         'Bromhof':        { lat: -26.0725, lng: 27.9604 },
         'Randpark Ridge': { lat: -26.0878, lng: 27.9782 },
         'Wilgeheuwel':    { lat: -26.0723, lng: 27.9063 },
+        'Honeydew':       { lat: -26.0660, lng: 27.9437 },
+        'Constantia Kloof': { lat: -26.1455, lng: 27.9262 },
+        'Horison':        { lat: -26.1635, lng: 27.8876 },
+        'Helderkruin':    { lat: -26.1250, lng: 27.8730 },
+        'Wilro Park':     { lat: -26.1288, lng: 27.8499 },
+        'Witpoortjie':    { lat: -26.1550, lng: 27.8275 },
+        "Allen's Nek":    { lat: -26.1136, lng: 27.9046 },
+        'Kloofendal':     { lat: -26.1369, lng: 27.8772 },
+        'Featherbrooke':  { lat: -26.0921, lng: 27.8407 },
+        'Laser Park':     { lat: -26.0616, lng: 27.9254 },
+        'Northcliff':     { lat: -26.1484, lng: 27.9502 },
       },
     },
 
@@ -362,12 +373,157 @@ const KWAZULU_NATAL: Province = {
   },
 }
 
+
+const EASTERN_CAPE: Province = {
+  name: 'Eastern Cape',
+  regions: {
+    gqeberha_metro: {
+      name: 'Gqeberha / Nelson Mandela Bay',
+      center: { lat: -33.9608, lng: 25.6022 },
+      radiusKm: 30,
+      suburbs: {
+        'Gqeberha': { lat: -33.9608, lng: 25.6022 },
+        'Port Elizabeth': { lat: -33.9608, lng: 25.6022 },
+        'Summerstrand': { lat: -33.9931, lng: 25.6615 },
+        'Walmer': { lat: -33.9806, lng: 25.5847 },
+        'Newton Park': { lat: -33.9431, lng: 25.5700 },
+        'Uitenhage': { lat: -33.7576, lng: 25.3971 },
+      },
+    },
+    buffalo_city: {
+      name: 'East London / Buffalo City',
+      center: { lat: -33.0292, lng: 27.8546 },
+      radiusKm: 30,
+      suburbs: {
+        'East London': { lat: -33.0292, lng: 27.8546 },
+        'Beacon Bay': { lat: -32.9562, lng: 27.9410 },
+        'Vincent': { lat: -32.9877, lng: 27.9028 },
+        'Mdantsane': { lat: -32.9333, lng: 27.7667 },
+      },
+    },
+  },
+}
+
+const FREE_STATE: Province = {
+  name: 'Free State',
+  regions: {
+    bloemfontein_mangaung: {
+      name: 'Bloemfontein / Mangaung',
+      center: { lat: -29.0852, lng: 26.1596 },
+      radiusKm: 30,
+      suburbs: {
+        'Bloemfontein': { lat: -29.0852, lng: 26.1596 },
+        'Mangaung': { lat: -29.1211, lng: 26.2140 },
+        'Universitas': { lat: -29.1113, lng: 26.1861 },
+        'Langenhoven Park': { lat: -29.0780, lng: 26.1360 },
+        'Fichardt Park': { lat: -29.1395, lng: 26.1875 },
+      },
+    },
+  },
+}
+
+const LIMPOPO: Province = {
+  name: 'Limpopo',
+  regions: {
+    polokwane: {
+      name: 'Polokwane',
+      center: { lat: -23.9045, lng: 29.4689 },
+      radiusKm: 30,
+      suburbs: {
+        'Polokwane': { lat: -23.9045, lng: 29.4689 },
+        'Pietersburg': { lat: -23.9045, lng: 29.4689 },
+        'Bendor': { lat: -23.8748, lng: 29.4890 },
+        'Flora Park': { lat: -23.9208, lng: 29.4681 },
+        'Seshego': { lat: -23.8468, lng: 29.3880 },
+      },
+    },
+  },
+}
+
+const MPUMALANGA: Province = {
+  name: 'Mpumalanga',
+  regions: {
+    mbombela: {
+      name: 'Mbombela / Nelspruit',
+      center: { lat: -25.4753, lng: 30.9694 },
+      radiusKm: 35,
+      suburbs: {
+        'Mbombela': { lat: -25.4753, lng: 30.9694 },
+        'Nelspruit': { lat: -25.4753, lng: 30.9694 },
+        'White River': { lat: -25.3318, lng: 31.0117 },
+        'Rocky Drift': { lat: -25.3726, lng: 31.0011 },
+      },
+    },
+    emalahleni: {
+      name: 'eMalahleni / Witbank',
+      center: { lat: -25.8713, lng: 29.2332 },
+      radiusKm: 30,
+      suburbs: {
+        'eMalahleni': { lat: -25.8713, lng: 29.2332 },
+        'Witbank': { lat: -25.8713, lng: 29.2332 },
+        'Highveld Park': { lat: -25.8898, lng: 29.2396 },
+        'Reyno Ridge': { lat: -25.8590, lng: 29.2640 },
+      },
+    },
+  },
+}
+
+const NORTHERN_CAPE: Province = {
+  name: 'Northern Cape',
+  regions: {
+    kimberley: {
+      name: 'Kimberley',
+      center: { lat: -28.7282, lng: 24.7499 },
+      radiusKm: 30,
+      suburbs: {
+        'Kimberley': { lat: -28.7282, lng: 24.7499 },
+        'Hadison Park': { lat: -28.7471, lng: 24.7651 },
+        'New Park': { lat: -28.7366, lng: 24.7624 },
+        'Galeshewe': { lat: -28.7380, lng: 24.7190 },
+      },
+    },
+  },
+}
+
+const NORTH_WEST: Province = {
+  name: 'North West',
+  regions: {
+    rustenburg: {
+      name: 'Rustenburg',
+      center: { lat: -25.6676, lng: 27.2421 },
+      radiusKm: 35,
+      suburbs: {
+        'Rustenburg': { lat: -25.6676, lng: 27.2421 },
+        'Cashan': { lat: -25.6765, lng: 27.2252 },
+        'Safari Gardens': { lat: -25.6760, lng: 27.2100 },
+        'Tlhabane': { lat: -25.6307, lng: 27.2616 },
+      },
+    },
+    mahikeng: {
+      name: 'Mahikeng',
+      center: { lat: -25.8652, lng: 25.6442 },
+      radiusKm: 30,
+      suburbs: {
+        'Mahikeng': { lat: -25.8652, lng: 25.6442 },
+        'Mafikeng': { lat: -25.8652, lng: 25.6442 },
+        'Mmabatho': { lat: -25.8276, lng: 25.6107 },
+      },
+    },
+  },
+}
+
 // ─── Public exports ───────────────────────────────────────────────────────────
 
 export const SA_PROVINCES: Record<string, Province> = {
   gauteng:       GAUTENG,
   western_cape:  WESTERN_CAPE,
   kwazulu_natal: KWAZULU_NATAL,
+  eastern_cape:  EASTERN_CAPE,
+  free_state:    FREE_STATE,
+  limpopo:       LIMPOPO,
+  mpumalanga:    MPUMALANGA,
+  northern_cape: NORTHERN_CAPE,
+  north_west:    NORTH_WEST,
 }
 
 /** Flat lookup: normalised suburb name → { lat, lng, region, province } */
@@ -403,7 +559,7 @@ export function lookupSuburb(suburb: string): (SuburbCoord & { region: string; p
  * Returns all regions for a given province with their center coordinates
  * and radius — useful for populating provider service area dropdowns.
  */
-export function getProvinceRegions(province: 'gauteng' | 'western_cape' | 'kwazulu_natal') {
+export function getProvinceRegions(province: keyof typeof SA_PROVINCES) {
   const p = SA_PROVINCES[province]
   if (!p) return []
   return Object.entries(p.regions).map(([key, r]) => ({
@@ -439,6 +595,21 @@ export const REGION_CITY_MAP: Record<string, { cityKey: string; cityLabel: strin
   // KwaZulu-Natal
   durban_north:      { cityKey: 'durban',            cityLabel: 'Durban' },
   durban_cbd:        { cityKey: 'durban',            cityLabel: 'Durban' },
+  // Eastern Cape
+  gqeberha_metro:    { cityKey: 'gqeberha',          cityLabel: 'Gqeberha / Nelson Mandela Bay' },
+  buffalo_city:      { cityKey: 'east_london',       cityLabel: 'East London / Buffalo City' },
+  // Free State
+  bloemfontein_mangaung: { cityKey: 'bloemfontein',  cityLabel: 'Bloemfontein / Mangaung' },
+  // Limpopo
+  polokwane:         { cityKey: 'polokwane',         cityLabel: 'Polokwane' },
+  // Mpumalanga
+  mbombela:          { cityKey: 'mbombela',          cityLabel: 'Mbombela / Nelspruit' },
+  emalahleni:        { cityKey: 'emalahleni',        cityLabel: 'eMalahleni / Witbank' },
+  // Northern Cape
+  kimberley:         { cityKey: 'kimberley',         cityLabel: 'Kimberley' },
+  // North West
+  rustenburg:        { cityKey: 'rustenburg',        cityLabel: 'Rustenburg' },
+  mahikeng:          { cityKey: 'mahikeng',          cityLabel: 'Mahikeng' },
 }
 
 /**
@@ -458,5 +629,26 @@ export const PROVINCE_CITIES: Record<string, Array<{ key: string; label: string 
   ],
   kwazulu_natal: [
     { key: 'durban', label: 'Durban' },
+  ],
+  eastern_cape: [
+    { key: 'gqeberha', label: 'Gqeberha / Nelson Mandela Bay' },
+    { key: 'east_london', label: 'East London / Buffalo City' },
+  ],
+  free_state: [
+    { key: 'bloemfontein', label: 'Bloemfontein / Mangaung' },
+  ],
+  limpopo: [
+    { key: 'polokwane', label: 'Polokwane' },
+  ],
+  mpumalanga: [
+    { key: 'mbombela', label: 'Mbombela / Nelspruit' },
+    { key: 'emalahleni', label: 'eMalahleni / Witbank' },
+  ],
+  northern_cape: [
+    { key: 'kimberley', label: 'Kimberley' },
+  ],
+  north_west: [
+    { key: 'rustenburg', label: 'Rustenburg' },
+    { key: 'mahikeng', label: 'Mahikeng' },
   ],
 }

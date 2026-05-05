@@ -49,7 +49,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     await deleteLocationNode(id)
-    return NextResponse.json({ ok: true, deleted: 'hard' })
+    return NextResponse.json({
+      ok: true,
+      deleted: process.env.ALLOW_LOCATION_HARD_DELETE === 'true' ? 'hard' : 'soft',
+    })
   } catch (err) {
     if (err instanceof LocationNodeInUseError && !force) {
       try {

@@ -238,7 +238,7 @@ describe('searchNodes', () => {
     expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          label: { contains: 'sand', mode: 'insensitive' },
+          OR: [{ label: { contains: 'sand', mode: 'insensitive' } }],
           nodeType: { in: ['SUBURB', 'REGION'] },
           active: true,
         }),
@@ -277,7 +277,9 @@ describe('searchNodes', () => {
     expect(result[0].label).toBe('Ruimsig')
     expect(mockDb.locationNode.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ label: { contains: 'ruim', mode: 'insensitive' } }),
+        where: expect.objectContaining({
+          OR: [{ label: { contains: 'ruim', mode: 'insensitive' } }],
+        }),
       }),
     )
   })
@@ -547,9 +549,23 @@ describe('deactivateLocationNode', () => {
 describe('deleteLocationNode', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    delete process.env.ALLOW_LOCATION_HARD_DELETE
   })
 
-  it('throws LocationNodeInUseError when node has children', async () => {
+  it('soft-deactivates by default because location reference data is protected', async () => {
+    mockDb.locationNode.update.mockResolvedValue({ id: 'node-1', active: false })
+
+    await deleteLocationNode('node-1')
+
+    expect(mockDb.locationNode.update).toHaveBeenCalledWith({
+      where: { id: 'node-1' },
+      data: { active: false },
+    })
+    expect(mockDb.locationNode.delete).not.toHaveBeenCalled()
+  })
+
+  it('throws LocationNodeInUseError when hard delete is explicitly enabled and node has children', async () => {
+    process.env.ALLOW_LOCATION_HARD_DELETE = 'true'
     mockDb.locationNode.count.mockResolvedValue(3)
     mockDb.address.count.mockResolvedValue(0)
     mockDb.technicianServiceArea.count.mockResolvedValue(0)
@@ -558,7 +574,8 @@ describe('deleteLocationNode', () => {
     await expect(deleteLocationNode('node-1')).rejects.toThrow('child node')
   })
 
-  it('throws LocationNodeInUseError when node has address references', async () => {
+  it('throws LocationNodeInUseError when hard delete is explicitly enabled and node has address references', async () => {
+    process.env.ALLOW_LOCATION_HARD_DELETE = 'true'
     mockDb.locationNode.count.mockResolvedValue(0)
     mockDb.address.count.mockResolvedValue(2)
     mockDb.technicianServiceArea.count.mockResolvedValue(0)
@@ -567,7 +584,8 @@ describe('deleteLocationNode', () => {
     await expect(deleteLocationNode('node-1')).rejects.toThrow('address')
   })
 
-  it('throws LocationNodeInUseError when node has service area references', async () => {
+  it('throws LocationNodeInUseError when hard delete is explicitly enabled and node has service area references', async () => {
+    process.env.ALLOW_LOCATION_HARD_DELETE = 'true'
     mockDb.locationNode.count.mockResolvedValue(0)
     mockDb.address.count.mockResolvedValue(0)
     mockDb.technicianServiceArea.count.mockResolvedValue(1)
@@ -575,7 +593,8 @@ describe('deleteLocationNode', () => {
     await expect(deleteLocationNode('node-1')).rejects.toThrow(LocationNodeInUseError)
   })
 
-  it('deletes node when no references exist', async () => {
+  it('hard-deletes only when explicitly enabled and no references exist', async () => {
+    process.env.ALLOW_LOCATION_HARD_DELETE = 'true'
     mockDb.locationNode.count.mockResolvedValue(0)
     mockDb.address.count.mockResolvedValue(0)
     mockDb.technicianServiceArea.count.mockResolvedValue(0)
