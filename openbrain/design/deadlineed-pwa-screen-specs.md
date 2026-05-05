@@ -1,11 +1,35 @@
 # Deadlineed — PWA Screen Specs
 
-> **Status:** Design target as of 2026-05-03
-> **Milestone:** M1 (identity/sites), M3 (quote approval), M4 (provider PWA), M6 (provider browse)
+> **Status:** Updated 2026-05-05 — M4 (provider PWA) and M6 (provider browse) delivered; M1 partial
 > **Related:** [To-Be Journey](../journeys/deadlineed-to-be-journey.md) · [Implementation Plan](../tasks/deadlineed-implementation-plan.md)
 >
 > **UI stack:** Next.js App Router · shadcn/ui (new-york) · Radix UI · Tailwind CSS v4 · lucide-react icons
 > **Server action pattern:** co-located `actions.ts` files following `app/(admin)/admin/{customers,providers,locations}/actions.ts`
+>
+> **Progress key:** ✅ Implemented · 🔄 Partial · ⬜ Not built
+
+---
+
+## Implementation Status
+
+| Screen | Route | Status |
+|--------|-------|--------|
+| C1 — Multi-Site Address Book | `/account/sites` | ✅ |
+| C2 — Business Onboarding Prompt | Modal (post-OTP) | ⬜ |
+| C3 — BookingFlow Address Step | `/book/[slug]` | 🔄 Prop wired; e2e confirm needed |
+| C4 — Bookings Dashboard (enhanced) | `/bookings` | 🔄 Book-again done; filters not built |
+| C5 — Booking Detail (enhanced) | `/bookings/[id]` | 🔄 Timeline done; invoice download ⬜ |
+| C6 — Provider Browse Catalogue | `/providers` | ✅ (flag-gated) |
+| C7 — Provider Profile (ungated) | `/providers/[id]` | ✅ (flag-gated) |
+| C8 — Quote Approval (inline) | `QuoteHistoryTimeline` | ✅ Inline buttons live |
+| P1 — Provider Lead Inbox | `/provider/leads` | ✅ |
+| P2 — Lead Detail + Accept/Decline | `/provider/leads/[leadId]` | ✅ |
+| P3 — Provider Profile Editor | `/provider/profile` | ✅ |
+| P4 — Availability Toggle | `/provider/availability` | ✅ |
+| P5 — Earnings Dashboard | `/provider/earnings` | ✅ |
+| P6 — Credits & Wallet | `/provider/credits` | ✅ |
+| P7 — Active Job Detail | `/provider/jobs/[id]` | ✅ |
+| P8 — Quote Submission | `/provider/quotes/[matchId]` | ✅ |
 
 ---
 

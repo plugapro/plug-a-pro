@@ -36,6 +36,7 @@ vi.mock('@/lib/db', () => {
     conversation: {
       findUnique: vi.fn().mockResolvedValue({ data: {} }),
       update: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
+      upsert: vi.fn().mockResolvedValue({ id: 'conv-mock' }),
     },
   }
   mockDb.$transaction.mockImplementation(async (callback) => {
@@ -194,6 +195,16 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(result.nextStep).toBe('addr_select_province')
       expect(result.nextData).toMatchObject({ addressLine1: '14 Main Road', addressStreet: '14 Main Road', addrPage: 0 })
+      expect(db.conversation.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { phone: PHONE },
+          update: expect.objectContaining({
+            flow: 'job_request',
+            step: 'addr_select_province',
+            data: expect.objectContaining({ addressLine1: '14 Main Road' }),
+          }),
+        }),
+      )
       expect(wa.sendList).toHaveBeenCalledWith(
         PHONE,
         expect.stringContaining('province'),
@@ -242,17 +253,30 @@ describe('WhatsApp job-request flow — structured address', () => {
       expect(wa.sendList).not.toHaveBeenCalled()
     })
 
-    it('keeps customer on street address step and responds when next-step send fails', async () => {
+    it('keeps saved address state and responds when next-step send fails', async () => {
       ;(wa.sendList as any).mockRejectedValueOnce(new Error('Meta list send failed'))
 
       const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '21 Jump Street'))
 
-      expect(result.nextStep).toBe('collect_address_street')
+      expect(result.nextStep).toBe('addr_select_province')
       expect(result.nextData).toMatchObject({ addressLine1: '21 Jump Street', addressStreet: '21 Jump Street' })
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('We saved that street address'),
+      )
+    })
+
+    it('keeps customer on street address step when the draft save fails', async () => {
+      ;(db.conversation.upsert as any).mockRejectedValueOnce(new Error('db unavailable'))
+
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '21 Jump Street'))
+
+      expect(result.nextStep).toBe('collect_address_street')
       expect(wa.sendText).toHaveBeenCalledWith(
         PHONE,
         expect.stringContaining("We couldn't save that address"),
       )
+      expect(wa.sendList).not.toHaveBeenCalled()
     })
   })
 

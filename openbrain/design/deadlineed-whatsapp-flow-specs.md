@@ -1,14 +1,34 @@
 # Deadlineed — WhatsApp Flow Specs
 
-> **Status:** Design target as of 2026-05-03
-> **Milestone:** M3 (quote parity), M5 (provider WA enhancements), M1 (multi-site WA)
+> **Status:** Updated 2026-05-05 — M5 provider WA flows delivered; customer quote handler still pending
 > **Related:** [To-Be Journey](../journeys/deadlineed-to-be-journey.md) · [Implementation Plan](../tasks/deadlineed-implementation-plan.md)
 >
 > **Meta API version:** v21.0
-> **Send helpers:** `sendText()`, `sendButtons()`, `sendList()`, `sendCtaUrl()` in `lib/whatsapp-interactive.ts`
+> **Send helpers:** `sendText()`, `sendButtons()`, `sendList()`, `sendCtaUrl()` in `lib/whatsapp.ts`
 > **Inbound router:** `processInboundMessage()` in `lib/whatsapp-bot.ts`
 > **Template logging:** `logOutboundMessage()` in `lib/message-events.ts`
-> **Cohort safety:** all sends pass through `assertCohortSendAllowed()` in `lib/whatsapp-interactive.ts`
+> **Cohort safety:** all sends pass through `assertCohortSendAllowed()` in `lib/whatsapp.ts`
+>
+> **Progress key:** ✅ Implemented · 🔄 Partial · ⬜ Not built · ⚠️ Code done but Meta approval pending
+
+---
+
+## Implementation Status
+
+| Flow | Trigger | Status | Meta Template |
+|------|---------|--------|---------------|
+| CW1 — Rebook Shortcut | `rebook`, `book again` | ⬜ | n/a |
+| CW2 — Multi-Site Address Picker | WA job-request flow | ⬜ | n/a |
+| CW3 — Customer Quote Approval | Quote created | ✅ Send wired · ⬜ Handler not wired | ⚠️ `customer_quote_ready` pending |
+| CW4 — Customer Match-Found | Lead dispatched | ✅ Wired in orchestrator | ⚠️ `customer_match_found` pending |
+| CW5 — Customer En-Route | Provider location share | ✅ Wired | ⚠️ `customer_provider_en_route` pending |
+| PW1 — Pause/Resume with Duration | `pause`, `break` | ⬜ (PWA availability page exists) | n/a |
+| PW2 — Location Share on Accept | After lead accept | ⬜ (en-route notification wired; location prompt not added) | n/a |
+| PW3 — Running Late Comms | `running late`, `late` | ✅ Wired | ⚠️ `customer_provider_running_late` pending |
+| PW4 — Provider Dispute Trigger | `dispute`, `issue` | ✅ Wired | n/a |
+| PW5 — Post-Job Invoice | `invoice`, `receipt` | ✅ Wired | ⚠️ `provider_invoice_send` pending |
+
+**⚠️ Ops action required:** All 5 new templates must be submitted to Meta Business Suite for review (24–72 h approval). Send is coded and idempotent — templates will only deliver once Meta approves them.
 
 ---
 

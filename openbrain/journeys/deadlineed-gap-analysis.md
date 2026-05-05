@@ -1,97 +1,101 @@
 # Deadlineed — Gap Analysis
 
-> **Status:** Current state as of 2026-05-03
+> **Status:** Updated 2026-05-05 — reflects M4 (provider PWA), M5 (WA enhancements), M6 (provider browse) delivery
 > **Related:** [As-Is Journey](deadlineed-as-is-journey.md) · [To-Be Journey](deadlineed-to-be-journey.md)
 >
 > **Severity key:** 🔴 Blocker (prevents Deadlineed from using the platform effectively) · 🟡 Major (significant friction, repeat workarounds) · 🟢 Minor (polish, nice-to-have)
+> **Status key:** ✅ Closed · 🔄 Partial · ⬜ Open
 
 ---
 
 ## Surface 1 — Customer PWA
 
-| # | Step | Current state | Gap | Severity | Source file |
-|---|------|---------------|-----|----------|-------------|
-| C1 | Booking creation | Address fields typed fresh every time | No saved address book; no multi-site management | 🔴 | `components/customer/BookingFlow.tsx:103–113` |
-| C2 | Booking creation | Single address per job request | No way to book for different sites under one account | 🔴 | `prisma/schema.prisma` – `Customer` has no `addresses` plural concept surfaced in booking UI |
-| C3 | Booking creation | No repeat-booking shortcut | No "book again" CTA that pre-fills from a previous request | 🟡 | `app/(customer)/bookings/page.tsx` |
-| C4 | Booking creation | No recurring job support | No cron rule or recurrence model on `JobRequest` | 🟡 | `prisma/schema.prisma` – `JobRequest` has no `recurringRule` field |
-| C5 | Job description | Manual title + description each time | No job template library ("monthly HVAC service") | 🟡 | `components/customer/BookingFlow.tsx:113–130` |
-| C6 | Category browsing | `/services` requires auth; no browsing before sign-in | Deadlineed cannot explore categories on landing page without logging in | 🟢 | `app/(customer)/services/page.tsx:11` |
-| C7 | Provider discovery | No public provider browse page | `components/shared/ProviderCard.tsx` exists but is unused; provider profile at `/providers/[id]` requires prior match | 🟡 | `app/(customer)/providers/[id]/page.tsx:34–44` |
-| C8 | Bookings dashboard | Flat undifferentiated list of all jobs | No grouping by site, category, date, or status; no search/filter | 🟡 | `app/(customer)/bookings/page.tsx` |
-| C9 | Business identity | Single phone OTP = personal account | No company account; no principal + operator model; multiple staff cannot share one booking history | 🔴 | `lib/auth.ts` – `getSession()` resolves user by Supabase UID, not org |
-| C10 | Billing | No invoice or receipt download | B2B customers need a paper trail for expense claims | 🔴 | `app/(customer)/bookings/[id]/page.tsx` – no invoice CTA |
-| C11 | Team members | No team member access | Multiple staff cannot book under one company account | 🔴 | No `CustomerMember` or `OrgMembership` model in schema |
-| C12 | Cancel reasons | Cancel reason list is homeowner-centric | "Found another provider", "No longer needed" don't map to B2B cancellation reasons | 🟢 | `app/(customer)/bookings/[id]/page.tsx:489–497` |
-| C13 | Quote approval | Quote approve/decline only via PWA link | No WhatsApp-native quote approval path for mobile-first users | 🟡 | `components/quotes/QuoteHistoryTimeline.tsx` (no WA CTA) |
-| C14 | Notifications | No match-found notification | Customer learns of match by polling; no WhatsApp push when provider accepts | 🟡 | `lib/whatsapp.ts` – no `notifyCustomerMatchFound` function |
-| C15 | Notifications | No booking created notification | Customer has no WhatsApp confirmation when their request transitions to `MATCHED` | 🟡 | Matching engine sends no customer notification on match |
-| C16 | Business cohort | No Deadlineed / B2B cohort flag | Cannot A/B test B2B features separately; no `isBusinessAccount` field | 🟢 | `lib/internal-test-cohort.ts` – only `internal_staff_test` cohort defined |
+| # | Step | Current state | Gap | Severity | Status | Source file |
+|---|------|---------------|-----|----------|--------|-------------|
+| C1 | Booking creation | `CustomerAddress` model exists; `/account/sites` page live; BookingFlow loads saved addresses | WA multi-site picker not yet wired; address auto-select UI flag still not on by default | 🔴 | 🔄 | `field-service/app/(customer)/account/sites/page.tsx` |
+| C2 | Multi-site | `CustomerAddress` table exists in schema | BookingFlow address-step picker needs confirmation it's shipping with flag | 🔴 | 🔄 | `field-service/prisma/schema.prisma` |
+| C3 | Repeat booking | "Book again" CTA on completed rows → `/book/[cat]?template=[id]` | Rebook shortcut implemented; no cron recurring-job rule | 🟡 | ✅ | `field-service/app/(customer)/bookings/page.tsx` |
+| C4 | Recurring jobs | No `recurringRule` field | Not planned for MVP; rebook shortcut is the workaround | 🟡 | ⬜ | `field-service/prisma/schema.prisma` |
+| C5 | Job templates | `?template=<id>` pre-fills title + description from past job | Implemented via `?template` param in BookingFlow | 🟡 | ✅ | `field-service/app/(customer)/book/[serviceId]/page.tsx` |
+| C6 | Category browsing | `/services` requires auth | First category grid visible on unauthenticated landing page; `/services` still auth-gated | 🟢 | 🔄 | `field-service/app/(customer)/services/page.tsx:11` |
+| C7 | Provider discovery | `/providers` catalogue exists; `/providers/[id]` accessible without prior match | Gated by `feature.customer.provider_browse` flag; ranking is rating-only (no availability/distance) | 🟡 | ✅ | `field-service/app/(customer)/providers/page.tsx` |
+| C8 | Bookings dashboard | Flat undifferentiated list | No grouping by site, category, date, or status; no search/filter | 🟡 | ⬜ | `field-service/app/(customer)/bookings/page.tsx` |
+| C9 | Business identity | `CustomerMember` model exists in schema | Operator auth resolution not yet wired in `getSession()`; no principal → operators login flow | 🔴 | 🔄 | `field-service/lib/auth.ts` |
+| C10 | Billing | No invoice or receipt download for completed jobs | B2B customers need a paper trail for expense claims | 🔴 | ⬜ | `field-service/app/(customer)/bookings/[id]/page.tsx` |
+| C11 | Team members | `CustomerMember` schema exists | No UI to invite/manage team members; no auth flow for operators | 🔴 | 🔄 | `field-service/prisma/schema.prisma` |
+| C12 | Cancel reasons | Cancel reason list is homeowner-centric | "Found another provider", "No longer needed" don't map to B2B cancellation reasons | 🟢 | ⬜ | `field-service/app/(customer)/bookings/[id]/page.tsx:489–497` |
+| C13 | Quote approval | PWA `QuoteHistoryTimeline` shows Approve / Decline inline buttons | Works on PWA; WA-native quote accept not yet handler-wired | 🟡 | 🔄 | `field-service/components/quotes/QuoteHistoryTimeline.tsx` |
+| C14 | Match-found notification | `sendCustomerMatchFoundNotification()` wired in matching orchestrator | Template `customer_match_found` must be submitted to Meta for approval | 🟡 | ✅ | `field-service/lib/matching/orchestrator.ts` |
+| C15 | Booking created notification | `customer_quote_ready` template wired in `/api/technician/quotes` | Template must be submitted to Meta; WA accept/decline handler not wired | 🟡 | 🔄 | `field-service/app/api/technician/quotes/route.ts` |
+| C16 | Business cohort flag | `feature.deadlineed.b2b_landing` seeded | Flag exists; landing page B2B variant not yet built | 🟢 | 🔄 | `field-service/scripts/seed-flags.ts` |
 
 ---
 
 ## Surface 2 — Customer WhatsApp
 
-| # | Step | Current state | Gap | Severity | Source file |
-|---|------|---------------|-----|----------|-------------|
-| W1 | Inbound bot | Job-request flow works via WA | No saved address reuse on second booking; `WhatsAppSavedAddress` saved after first booking but only partially surfaced | 🟡 | `lib/whatsapp-flows/job-request.ts` + `lib/whatsapp-identity.ts` |
-| W2 | Rebook | No rebook keyword | "I need the same job again" has no shortcut; full flow re-entry required | 🟡 | `lib/whatsapp-bot.ts:183–205` – no `rebook` in keyword lists |
-| W3 | Quote approval | No WA-native quote approve/decline | Customer receives quote via PWA link only; cannot approve inline via WA buttons | 🔴 | `lib/whatsapp.ts` – no `sendQuoteApprovalButtons` function |
-| W4 | Match notification | No customer match-found notification | Customer WhatsApp templates: only `slot_available` and `no_technician_available`; no "provider matched" template | 🟡 | `lib/whatsapp.ts:706–742` |
-| W5 | Job-start notification | No "provider en route" customer notification | Provider sends `EN_ROUTE` WhatsApp command but customer is not notified | 🟡 | `lib/provider-whatsapp-job-commands.ts` – no customer notify on `EN_ROUTE` |
-| W6 | Extra-work approval | Link sent in WhatsApp but approval is a separate PWA page | No inline WA button for extra work (as opposed to full quote) | 🟡 | `/approve/[token]` page – no WA button wrapper |
-| W7 | Multi-site WA booking | Saved address is a single last-used address | Multiple site addresses cannot be selected from a WA list | 🟡 | `lib/whatsapp-identity.ts` – `WhatsAppSavedAddress` is a single object |
-| W8 | Opt-in / opt-out | Marketing opt-in/out keywords exist | Service notification opt-out inadvertently possible via `stop` keyword (also a reset); policy handled in `lib/whatsapp-policy.ts` | 🟢 | `lib/whatsapp-bot.ts:197` – `'stop'` is in RESET_KEYWORDS |
+| # | Step | Current state | Gap | Severity | Status | Source file |
+|---|------|---------------|-----|----------|--------|-------------|
+| W1 | Saved address reuse | `WhatsAppSavedAddress` saved after first booking | Single last-used address; multi-site list picker not wired in `job-request.ts` | 🟡 | 🔄 | `field-service/lib/whatsapp-flows/job-request.ts` |
+| W2 | Rebook keyword | No rebook keyword in bot | `rebook`, `book again`, `same job`, `repeat` not yet added to keyword list | 🟡 | ⬜ | `field-service/lib/whatsapp-bot.ts:183–205` |
+| W3 | Quote approval | `quote_accept_*` / `quote_decline_*` payloads recognised in `isStatelessNotificationReply()` | Handler functions not yet wired; payloads fall through silently | 🔴 | 🔄 | `field-service/lib/whatsapp-bot.ts` |
+| W4 | Match notification | `sendCustomerMatchFoundNotification()` wired; `customer_match_found` registered in templates | Meta approval for template still pending | 🟡 | ✅ | `field-service/lib/whatsapp.ts` |
+| W5 | En-route notification | `sendCustomerEnRouteNotification()` wired; triggers on provider location share | Meta approval for `customer_provider_en_route` template pending | 🟡 | ✅ | `field-service/lib/whatsapp-bot.ts` |
+| W6 | Extra-work approval | `/approve/[token]` page sends WhatsApp link; no inline WA button | Approval still a separate PWA page; no WA button version | 🟡 | ⬜ | `field-service/app/(customer)/approve/[token]/page.tsx` |
+| W7 | Multi-site WA booking | Not yet wired; single saved address still used in flow | Requires `collect_site` step in `job-request.ts` after `collect_name` | 🟡 | ⬜ | `field-service/lib/whatsapp-flows/job-request.ts` |
+| W8 | Opt-in / opt-out edge | `stop` keyword is in both RESET_KEYWORDS and opt-out group | Low risk but `stop` as reset could inadvertently cancel marketing prefs | 🟢 | ⬜ | `field-service/lib/whatsapp-bot.ts:197` |
 
 ---
 
 ## Surface 3 — Provider PWA
 
-| # | Step | Current state | Gap | Severity | Source file |
-|---|------|---------------|-----|----------|-------------|
-| P1 | Lead management | No lead inbox | Provider cannot see open leads, accepted leads, or job queue on PWA | 🔴 | `app/(customer)/providers/` is customer-facing only; no `app/(provider)/` route group |
-| P2 | Profile management | No PWA profile editor | Provider cannot update skills, service areas, bio, portfolio URLs, or rates on PWA | 🔴 | No provider-facing profile edit route |
-| P3 | Availability | Availability only manageable via WA keywords | Provider cannot toggle availability or set a break via PWA | 🟡 | `lib/whatsapp-flows/provider-journey.ts:36–41` |
-| P4 | Earnings | No earnings dashboard | Provider cannot see credit balance, job history, or payment records on PWA | 🔴 | `lib/provider-wallet.ts` exists but has no PWA surface |
-| P5 | Document management | No document re-upload via PWA | Provider must restart registration WA flow to update ID / evidence docs | 🟡 | `lib/whatsapp-flows/registration.ts` – evidence only collected during onboarding |
-| P6 | Job progress | All job status commands via WhatsApp text | Provider cannot update job status (en-route, arrived, complete) from PWA | 🟡 | `lib/provider-whatsapp-job-commands.ts` |
-| P7 | Reviews | Provider cannot see their own reviews on PWA | Customer-facing `ProviderCard.tsx` and `/providers/[id]` show reviews but are not accessible to providers | 🟢 | `components/shared/ProviderCard.tsx` |
+| # | Step | Current state | Gap | Severity | Status | Source file |
+|---|------|---------------|-----|----------|--------|-------------|
+| P1 | Lead inbox | `/provider/leads` and `/provider/leads/[leadId]` fully implemented | None — closed | 🔴 | ✅ | `field-service/app/(provider)/provider/leads/page.tsx` |
+| P2 | Profile editor | `/provider/profile` implemented with full skill + area + schedule editing | None — closed | 🔴 | ✅ | `field-service/app/(provider)/provider/profile/page.tsx` |
+| P3 | Availability toggle | `/provider/availability` implemented with ALWAYS_AVAILABLE / SCHEDULE / PAUSED modes | Timed pause (e.g., "back in 2 hours") only via datetime picker; no quick duration buttons on PWA | 🟡 | ✅ | `field-service/app/(provider)/provider/availability/page.tsx` |
+| P4 | Earnings dashboard | `/provider/earnings` implemented | None — closed | 🔴 | ✅ | `field-service/app/(provider)/provider/earnings/page.tsx` |
+| P5 | Document management | Profile re-upload via PWA: creates amendment `ProviderApplication` | No streamlined doc re-upload without WA flow; ops review still required | 🟡 | 🔄 | `field-service/app/(provider)/provider/profile/page.tsx` |
+| P6 | Job status via PWA | `<JobStatusControls>` component in `/provider/jobs/[id]` | All status transitions available via PWA — closed | 🟡 | ✅ | `field-service/app/(provider)/provider/jobs/[id]/page.tsx` |
+| P7 | Provider reviews on PWA | Reviews visible in `/provider/profile` rating section | None — closed | 🟢 | ✅ | `field-service/app/(provider)/provider/profile/page.tsx` |
 
 ---
 
 ## Surface 4 — Provider WhatsApp
 
-| # | Step | Current state | Gap | Severity | Source file |
-|---|------|---------------|-----|----------|-------------|
-| Q1 | Pause / resume | `PROVIDER_JOURNEY_TRIGGERS` includes `offline` / `available` | No named pause keywords (e.g., `pause`, `break`, `back in 2 hours`) that set a timed `breakUntil`; currently `available`/`offline` are binary toggles only | 🟡 | `lib/whatsapp-flows/provider-journey.ts:36–41` |
-| Q2 | Location share | No on-accept location share | Provider does not send current GPS location after accepting a lead; customer gets no ETA signal | 🟡 | `lib/whatsapp-bot.ts` – no location message handling |
-| Q3 | Late-arrival comms | No "running late" keyword | Provider cannot easily notify customer of delay via WA | 🟡 | No `late`, `running late` keyword or template |
-| Q4 | Dispute trigger | Dispute can only be raised by customer on PWA | Provider cannot raise a dispute via WhatsApp | 🟡 | `app/(customer)/bookings/[id]/page.tsx:168–228` – customer-only dispute form |
-| Q5 | Invoice | No post-job invoice keyword | Provider cannot trigger an invoice send to the customer via WA after job completion | 🟡 | `lib/whatsapp.ts` – no invoice template or keyword |
-| Q6 | Interest rate negotiation | `parseProviderInterestRateText()` exists | Rate capture during onboarding only; no re-rate keyword after approval | 🟢 | `lib/provider-whatsapp-interest-capture.ts` |
+| # | Step | Current state | Gap | Severity | Status | Source file |
+|---|------|---------------|-----|----------|--------|-------------|
+| Q1 | Pause with duration | `/provider/availability` supports PAUSED mode with datetime picker | WA `offline` keyword is binary toggle; no WA quick-duration buttons (30 min, 1 h, etc.) | 🟡 | 🔄 | `field-service/lib/whatsapp-flows/provider-journey.ts` |
+| Q2 | Location share on accept | `sendCustomerEnRouteNotification()` wired; triggers when provider shares location after accepting | Automatic location prompt after WA lead acceptance not yet added to bot flow | 🟡 | 🔄 | `field-service/lib/whatsapp-bot.ts` |
+| Q3 | Running-late comms | `handleRunningLateFlow()` wired; `customer_provider_running_late` template registered | Meta template approval pending | 🟡 | ✅ | `field-service/lib/whatsapp-flows/provider-journey.ts` |
+| Q4 | Provider dispute trigger | `handleProviderDisputeFlow()` wired | None — closed | 🟡 | ✅ | `field-service/lib/whatsapp-flows/provider-journey.ts` |
+| Q5 | Post-job invoice | `handleInvoiceFlow()` + `sendProviderInvoiceTemplate()` wired; `Job.invoiceWhatsappSentAt` idempotency | Meta template approval pending | 🟡 | ✅ | `field-service/lib/whatsapp-flows/provider-journey.ts` |
+| Q6 | Interest rate re-capture | Rate captured during onboarding only | No re-rate keyword after approval | 🟢 | ⬜ | `field-service/lib/provider-whatsapp-interest-capture.ts` |
 
 ---
 
 ## Cross-Cutting Gaps
 
-| # | Area | Current state | Gap | Severity | Source file |
-|---|------|---------------|-----|----------|-------------|
-| X1 | Business identity | No `Organization` / `BusinessAccount` model | All bookings tied to a personal phone number; Deadlineed cannot separate business from personal | 🔴 | `prisma/schema.prisma` – no org model |
-| X2 | Audit trail visibility | `AuditLog` has rich data but no customer-facing view | Deadlineed cannot export a job history report or see who did what | 🟡 | `lib/audit.ts` – ops-only consumption via admin dashboard |
-| X3 | Notifications de-dup | `approvalWhatsappSentAt` + `approvalWhatsappSendStartedAt` guard on provider approval | No equivalent idempotency guard on customer notifications | 🟡 | `lib/provider-application-notifications.ts` – dedup only for provider |
-| X4 | Feature flags | `lib/flags.ts` has per-user `enabledForUsers` support | No B2B / Deadlineed feature flag cohort defined | 🟢 | `lib/flags.ts:25–30` |
-| X5 | SLA visibility | Matching engine runs on cron; no ETA shown to customer | Customer has no indication of how long matching will take | 🟡 | `lib/matching/orchestrator.ts` – no ETA calculation |
-| X6 | No-match follow-up | `notifyExpiredJobParties` fires when job expires | No intermediate "we're still looking" message for long-running requests | 🟡 | `lib/matching/customer-recontact.ts` |
-| X7 | WA conversation TTL | 30 min default (`WHATSAPP_SESSION_TIMEOUT_MS`) | No grace-period recovery if Deadlineed picks up a 45-min-old WA thread | 🟢 | `lib/whatsapp-bot.ts:58` |
+| # | Area | Current state | Gap | Severity | Status | Source file |
+|---|------|---------------|-----|----------|--------|-------------|
+| X1 | Business identity | `CustomerAddress` + `CustomerMember` models in schema | Operator auth resolution not wired in `getSession()`; no team invite UI | 🔴 | 🔄 | `field-service/prisma/schema.prisma` |
+| X2 | Audit trail visibility | `/account/activity` page lists last 50 AuditLog events for customer | Customer cannot export or filter activity log | 🟡 | ✅ | `field-service/app/(customer)/account/activity/page.tsx` |
+| X3 | Notification de-dup | Customer notification idempotency: `matchFoundWhatsappSentAt` on JobRequest; `approvalWhatsappSentAt` on Quote; `enRouteWhatsappSentAt` on JobRequest; `invoiceWhatsappSentAt` on Job | All 5 M5 templates have idempotency guards | 🟡 | ✅ | `field-service/lib/whatsapp.ts` |
+| X4 | Feature flags | `feature.deadlineed.b2b_landing`, `feature.customer.address_book`, `feature.provider.pwa_inbox`, `feature.customer.provider_browse` all seeded | No per-user B2B cohort auto-applied | 🟢 | 🔄 | `field-service/scripts/seed-flags.ts` |
+| X5 | SLA visibility | Hour-of-day matching ETA callout on `/requests/[id]` | Implemented — closed | 🟡 | ✅ | `field-service/app/(customer)/requests/[id]/page.tsx` |
+| X6 | No-match follow-up | `notifyExpiredJobParties` fires when job expires | No intermediate "we're still looking" WhatsApp message for long-running requests | 🟡 | ⬜ | `field-service/lib/matching/customer-recontact.ts` |
+| X7 | WA session TTL | 30 min default (`WHATSAPP_SESSION_TIMEOUT_MS`) | No grace-period recovery | 🟢 | ⬜ | `field-service/lib/whatsapp-bot.ts:58` |
+| X8 | Meta template approval | 5 new templates wired in code | All 5 must be submitted to Meta Business Suite before live sends succeed | 🔴 | ⬜ | `field-service/lib/messaging-templates.ts` |
 
 ---
 
 ## Gap Priority Summary
 
-| Priority | Count | Description |
-|----------|-------|-------------|
-| 🔴 Blocker | 7 | C1, C2, C9, C10, C11, W3, P1 |
-| 🟡 Major | 18 | C3–C8, C13–C16, W1, W2, W4–W7, P2–P6, Q1–Q5, X2, X3, X5, X6 |
-| 🟢 Minor | 7 | C6, C12, C16, W8, P7, Q6, X4, X7 |
+| Priority | Open / Partial count | Key items |
+|----------|---------------------|-----------|
+| 🔴 Blocker | 4 | C10 (invoice download), W3 (WA quote handler), X8 (Meta templates), C9/X1 (operator auth) |
+| 🟡 Major | 8 | C4, C8, W1, W2, W6, W7, Q1, Q2, X6 |
+| 🟢 Minor | 4 | C6, C12, W8, Q6, X4, X7 |
 
-Blockers define the minimum-viable Deadlineed product. Major gaps define the full B2B experience. Minor gaps are polish.
+**Closed since 2026-05-03:** C3, C5, C7, C14, P1–P7, Q3, Q4, Q5, W4, W5, X2, X3, X5 — representing completion of M4, M5, and M6 milestones plus M7-T3.
+
+**Remaining blockers** define the next sprint: Meta template submission (ops task, parallel), WA quote accept/decline handler (M3-T3), customer invoice download (M3/M7 new), and operator auth wiring (M1 remainder).

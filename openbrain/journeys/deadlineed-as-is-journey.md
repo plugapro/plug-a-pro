@@ -1,6 +1,6 @@
 # Deadlineed — As-Is Journey
 
-> **Status:** Current state as of 2026-05-03
+> **Status:** Current state as of 2026-05-05 (updated after M4 + M5 + M6 delivery)
 > **Related:** [Gap Analysis](deadlineed-gap-analysis.md) · [To-Be Journey](deadlineed-to-be-journey.md)
 
 ---
@@ -34,26 +34,24 @@
 ### Step 1: Discovery / Landing (`/`)
 
 - **Route:** `field-service/app/(customer)/page.tsx`
-- **State:** Unauthenticated user arrives on landing page
+- **Auth:** Not required
 - **What they see:**
   - Hero: "Request local home services" + "Nearby providers. Written quotes. Clear records."
   - Two CTAs: **Request a job** (→ `/services`) and **Track my booking** (→ `/bookings`)
   - "How it works" three-step explainer
   - Service category grid: 15 categories (`SERVICE_CATEGORY_OPTIONS` from `lib/service-categories.ts`), each linking to `/book/[slug]`
 
-- **Friction:** Deadlineed arrives via PWA home screen bookmark; landing page copy is pitched at individual homeowners ("local home services"), not a business managing multiple sites. No business account concept or multi-site entry point.
-- **Drop-off risk:** Low friction for first-time visit; friction increases when Deadlineed tries to book for a second site or a third time and has to re-enter address details every time.
-- **Instrumentation:** Page is force-dynamic (`export const dynamic = 'force-dynamic'`); no analytics events fired on category click.
+- **Friction:** Copy is pitched at individual homeowners, not a business managing multiple sites. No business account concept on the landing page.
+- **Instrumentation:** No analytics events fired on category click.
 
 ---
 
 ### Step 2: Authentication (`/sign-in` → `/verify`)
 
 - **State:** Unauthenticated user clicks a service category
-- **Redirect:** `/services` and `/book/[slug]` both check `getSession()` and redirect to `/sign-in?next=<url>` when no session
+- **Redirect:** `/services` and `/book/[slug]` check `getSession()` and redirect to `/sign-in?next=<url>` when no session
 - **Flow:** Phone OTP via Supabase Auth
-- **Friction:** Phone OTP is personal; Deadlineed has no concept of a "company account" — their personal phone number IS the account. Any team member who needs to book must use Deadlineed's credentials or have their own separate account with no linkage to the business.
-- **Instrumentation gap:** No sign-in event logged to `AuditLog`.
+- **Friction:** Single phone = single account. No company account. Multiple team members cannot share one booking history.
 
 ---
 
@@ -61,20 +59,21 @@
 
 - **Route:** `field-service/app/(customer)/services/page.tsx`
 - **Auth:** Required
-- **What they see:** List of 15 categories, tapping any one goes to `/book/[slug]`
-- **Friction:** No "recent" or "favourite" categories for Deadlineed who books the same 3–4 categories every month.
-- **Instrumentation gap:** No category selection event.
+- **What they see:** List of 15 categories; tapping any one goes to `/book/[slug]`
+- **Friction:** No "recent" or "favourite" categories for repeat bookings.
 
 ---
 
 ### Step 4: Job Request Entry — `BookingFlow` (`/book/[slug]`)
 
 - **Route:** `field-service/app/(customer)/book/[serviceId]/page.tsx` + `components/customer/BookingFlow.tsx`
-- **Steps within the flow:**
+- **Pre-fill support:** `?template=<jobRequestId>` loads a previous job's category, title, and description — enables "book again" rebook shortcut
+- **Address book integration:** Server page loads `CustomerAddress` records when `feature.customer.address_book` flag is enabled; passes to `BookingFlow` as `savedAddresses` prop
 
 #### Step 4a: Address
 
 Fields collected:
+- **Saved site picker** (when `feature.customer.address_book` on and addresses exist): displayed above manual entry form; selecting a site pre-fills all address fields
 - Street address (free text: `addressLine1`, `addressLine2`, `complexName`, `unitNumber`)
 - Suburb picker (controlled list via `SuburbPicker.tsx` → `lib/location-nodes.ts`)
 - Region, City, Province (derived from suburb selection or manual override)
@@ -85,7 +84,7 @@ Fields collected:
 
 **Service-area guard:** If the selected city is outside active service areas, customer is shown a waitlisted screen and added to `ServiceAreaWaitlist` table.
 
-**Friction:** Deadlineed has 3 sites and must type the full address from scratch every time. No saved address book. No "use last address" shortcut.
+**Friction:** Deadlineed with multiple sites still must enter addresses manually if `feature.customer.address_book` is not yet enabled for their account, or if they have not yet saved sites.
 
 #### Step 4b: Description
 
@@ -103,20 +102,15 @@ Fields collected:
 - Max call-out fee (optional, numeric)
 - Privacy and Terms acknowledgement (both required)
 
-**Friction:** No way to pre-fill recurring job details. The same HVAC service-call description gets typed fresh every month.
-
 #### Step 4c: Confirm
 
 - Summary card with address, title, urgency, preference
-- Privacy / Terms displayed again
-- Submit triggers `POST /api/customer/bookings` (server action)
+- Submit triggers `POST /api/customer/bookings`
 
 #### Step 4d: Submitted
 
 - Shows success message + "Track your request" CTA → `/requests/[id]`
 - Provides a shareable ticket URL (`/requests/access/[token]`) for the on-site contact
-
-**Instrumentation:** `JobRequest` row created; no client-side event emitted to analytics.
 
 ---
 
@@ -126,14 +120,15 @@ Fields collected:
 - **Auth:** Required; verifies `customer.id === jobRequest.customer.id`
 - **What they see:**
   - Request title, category, status badge
+  - **SLA callout**: When no match yet, shows estimated matching time (copy varies by time of day: "typically 5–15 min" during business hours, "30–60 min off-peak", "first thing in the morning" overnight)
   - Address, creation date, match window
   - Attached photos
   - Matched provider card (name, bio, trust signals, portfolio links) + "View provider profile" button → `/providers/[id]`
-  - Quote history timeline (`QuoteHistoryTimeline`)
+  - Quote history timeline (`QuoteHistoryTimeline`) — Approve / Decline buttons visible to customer when quote is PENDING
   - Booking card (once booking exists) → "Open booking details" → `/bookings/[id]`
   - Matching activity (lead count, per-lead status and sent date) when no booking yet
 
-**Friction:** No push notification or email when a provider is matched — Deadlineed must actively poll this page or wait for a WhatsApp message.
+**Friction:** No WhatsApp push notification to Deadlineed when a provider is matched — must actively poll this page. (`sendCustomerMatchFoundNotification()` IS wired in the matching orchestrator, so customers with a WhatsApp session do receive the template when a lead is dispatched.)
 
 ---
 
@@ -150,10 +145,10 @@ Fields collected:
   - Dispute form (requires 10+ chars reason; creates `Dispute` row; logs `AuditLog`)
   - Cancel booking form (only when `SCHEDULED` or `RESCHEDULED`; reasons: found another provider, no longer needed, cost too high, taking too long, other)
 
-**Friction for Deadlineed:**
+**Friction:**
 - Cancel reason list targets homeowners, not B2B scenarios
-- No business receipt / invoice download
-- No way to flag "this is a recurring job" for the audit trail
+- No business receipt / invoice download for completed jobs
+- No "this is a recurring job" flag on the audit trail
 
 ---
 
@@ -169,20 +164,55 @@ Fields collected:
 ### Step 8: Provider Profile (`/providers/[id]`)
 
 - **Route:** `field-service/app/(customer)/providers/[id]/page.tsx`
-- **Auth:** Required. Access gated: only visible if the customer has a `JobRequest` matched to this provider.
-- **What they see:** Provider overview, trust signals, portfolio links, completed job reviews
-
-**Gap:** No public provider browse. Deadlineed cannot find and compare providers before booking.
+- **Auth:** Required. Gated by `feature.customer.provider_browse` flag.
+- **Access:** Open to any authenticated customer (prior-match gate removed under the flag)
+- **What they see:** Provider overview, trust signals (verified badge, skills, service areas, experience, evidence note, portfolio URLs), completed job count, average rating, recent customer reviews
 
 ---
 
-### Step 9: My Bookings Dashboard (`/bookings`)
+### Step 9: Provider Catalogue (`/providers`)
+
+- **Route:** `field-service/app/(customer)/providers/page.tsx`
+- **Auth:** Required. Gated by `feature.customer.provider_browse` flag.
+- **What they see:**
+  - Horizontal-scroll category filter bar (all 15 categories + "All")
+  - Vertical list of verified, active providers ordered by `averageRating DESC`
+  - Take: 20 per page; optional `?category=` and `?area=` query params
+  - Each `ProviderCard` shows: name, avatar, skills, service area, rating, completedJobsCount, verified badge
+  - Tapping a card → `/providers/[id]`
+- **Data query:** `Provider.findMany({ active: true, verified: true, skills: { has: category }, serviceAreas: { has: area } })`
+- **Gap:** No ranking by availability, distance, or reliability score — ordered purely by rating. No pagination beyond take:20.
+
+---
+
+### Step 10: My Bookings Dashboard (`/bookings`)
 
 - **Route:** `field-service/app/(customer)/bookings/page.tsx`
 - **Sections:**
-  - Active requests (status not in `EXPIRED`/`CANCELLED`, no booking yet or booking not confirmed)
-  - Confirmed bookings (have a booking + job row)
-- **Friction:** All requests and bookings in a single flat list — no grouping by site, category, or month. Deadlineed managing 3 sites and 4 active jobs sees an undifferentiated pile.
+  - Active requests (status not in `EXPIRED`/`CANCELLED`, no booking yet)
+  - Confirmed bookings (booking row + job exists)
+  - **"Book again" CTA** on completed booking rows — links to `/book/{{category}}?template={{jobRequestId}}` to pre-fill the new request
+- **Friction:** All requests and bookings in a single flat list — no grouping by site, category, or month. Deadlineed managing 3 sites and 4 active jobs sees an undifferentiated pile. No search or filter.
+
+---
+
+### Step 11: Multi-Site Address Book (`/account/sites`) — ✅ IMPLEMENTED
+
+- **Route:** `field-service/app/(customer)/account/sites/page.tsx`
+- **Auth:** Required. Gated by `feature.customer.address_book` flag.
+- **Model:** `CustomerAddress` table (id, customerId, label, street, suburb, city, province, postalCode, lat, lng, locationNodeId, isDefault)
+- **What they see:** List of named sites; Add / Edit / Delete / Set-default actions via `<AddSiteDialog>` and `<SiteCard>` client components
+- **Usage:** Sites appear in BookingFlow address step as a picker (when flag on and addresses exist)
+
+---
+
+### Step 12: Account Activity Log (`/account/activity`) — ✅ IMPLEMENTED
+
+- **Route:** `field-service/app/(customer)/account/activity/page.tsx`
+- **Auth:** Required
+- **What they see:** Last 50 `AuditLog` rows where `actorId = customer.userId` OR `entityId` in customer's `JobRequest` IDs
+- **Displays:** action, entity type, reference, timestamp — formatted for readability
+- **Note:** Read-only; no ops-only fields exposed
 
 ---
 
@@ -217,20 +247,26 @@ All inbound messages go through `processInboundMessage()` in `lib/whatsapp-bot.t
 | `confirm_request` | Sends/skips photos | Confirmation summary card |
 | `submitted` | Confirms | "Your request is in! We'll find a provider shortly." + tracking link |
 
-**Saved address reuse:** `resolveWhatsAppIdentity()` checks for a saved `WhatsAppSavedAddress` on the customer record and offers to reuse it on the province step.
+**Saved address reuse:** `resolveWhatsAppIdentity()` checks for a saved `WhatsAppSavedAddress` and offers to reuse it. Multi-site picker (choosing from `CustomerAddress` list via WA list message) is NOT yet wired — remains single-last-used-address.
 
-**Service-area waitlist:** If the selected city is not active, customer is added to `ServiceAreaWaitlist` and receives a "not yet available" message with an opt-in confirmation.
+**Service-area waitlist:** If the selected city is not active, customer is added to `ServiceAreaWaitlist` and receives a "not yet available" message.
 
 ### Customer-Side WA Notifications (outbound templates)
 
-| Template | Trigger | Variables |
-|----------|---------|----------|
-| `slot_available` | `sendSlotAvailableNotification()` in `lib/whatsapp.ts:688` | customerName, slotLabel, bookingUrl |
-| `no_technician_available` | `sendNoProviderAvailable()` in `lib/whatsapp.ts:709` | customerName, serviceName, originalDate, bookingUrl |
+| Template | Trigger | Variables | Status |
+|----------|---------|-----------|--------|
+| `customer_match_found` | Lead dispatched in matching orchestrator | providerFirstName, serviceLabel, jobRequestId | ✅ Wired |
+| `customer_quote_ready` | Quote created by provider (`/api/technician/quotes`) | customerFirstName, providerFullName, serviceLabel, quoteAmount, estimatedHours, validUntilDate, shortDescription | ✅ Wired |
+| `customer_provider_en_route` | Provider location shared after job acceptance | providerFirstName, serviceLabel, jobSuburb | ✅ Wired |
+| `customer_provider_running_late` | Provider triggers running-late keyword | customerFirstName, providerFirstName, delayLabel, serviceLabel | ✅ Wired |
+| `slot_available` | `sendSlotAvailableNotification()` | customerName, slotLabel, bookingUrl | Existing |
+| `no_technician_available` | `sendNoProviderAvailable()` | customerName, serviceName, originalDate, bookingUrl | Existing |
 
-**Gap:** Customer has no WhatsApp-native path to approve a quote or confirm/decline extra work. The only path is the `/approve/[token]` PWA link.
+**All 5 templates** (`customer_match_found`, `customer_quote_ready`, `customer_provider_en_route`, `customer_provider_running_late`, `provider_invoice_send`) are registered in `lib/messaging-templates.ts` with example text, but **must be submitted to Meta Business Suite for approval** before live sends succeed.
 
-**Gap:** No customer WhatsApp notification when a provider accepts the lead or when the job starts. The tracking page must be polled.
+### WA Quote Accept/Decline (NOT YET WIRED)
+
+The `WhatsApp bot` has `isStatelessNotificationReply()` logic that matches `quote_accept_*` and `quote_decline_*` payload prefixes. However, the handler functions `handleQuoteAcceptReply()` / `handleQuoteDeclineReply()` have not been wired yet — the payload is recognised but no action is taken. Customers must approve/decline quotes via the PWA `QuoteHistoryTimeline` inline buttons.
 
 ### WA Status Keywords
 
@@ -245,23 +281,93 @@ All inbound messages go through `processInboundMessage()` in `lib/whatsapp-bot.t
 
 ---
 
-## Channel 3 — Provider PWA
+## Channel 3 — Provider PWA — ✅ SUBSTANTIALLY IMPLEMENTED (M4)
 
-**Current state: essentially empty.**
+The provider PWA now has a full suite of routes in the `app/(provider)/` route group, guarded by `requireProvider()`.
 
-The provider PWA surface consists of:
-- A registration deep-link confirmation page (reachable after WhatsApp registration)
-- Worker portal URL referenced in `lib/provider-credit-copy.ts` (`getWorkerPortalUrl()`)
+### Provider Dashboard (`/provider`) ✅
 
-There is no:
-- Lead inbox
-- Profile editor
-- Calendar / availability toggle
-- Earnings dashboard
-- Document re-upload
-- Job status management via PWA (all via WhatsApp commands)
+- **Route:** `field-service/app/(provider)/provider/page.tsx`
+- **What they see:**
+  - Active and upcoming jobs summary (counts by status)
+  - Wallet balance (total, paid credits, promo credits)
+  - Profile completeness meter with weighted score and hint for missing fields
+  - Alerts for low credits and unconfirmed selected jobs
+  - Quick links to leads, earnings, profile, availability
+- **Data:** Provider, active jobs, wallet, leads (pending), profile completeness calculation
 
-This is a significant gap. Providers have no PWA interface for day-to-day operations.
+### Lead Inbox (`/provider/leads`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/leads/page.tsx`
+- **What they see:** Queue of `SENT` / `VIEWED` leads with: category, suburb, urgency, expiry countdown, status badge
+- **Data:** `getProviderLeadListForProvider(providerId)` — Lead records with `jobRequest` reference
+
+### Lead Detail (`/provider/leads/[leadId]`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/leads/[leadId]/page.tsx`
+- **Preview (before accept):** Category, job type, area, preferred time window, estimated value, short notes
+- **Locked section:** Credit cost shown; full customer name, phone, address hidden until accepted
+- **Accept action:** `acceptLead()` → `matchingEngine.acceptLead()` → deducts credits → creates Match → redirect with `?accepted=1&remainingBalance=...`
+- **Decline action:** `declineLead()` → re-dispatch
+- **Dispute action:** `disputeUnlockedLead()` — refund dispute with reason (CUSTOMER_NOT_RESPONSIVE, INVALID_LEAD, CUSTOMER_DECLINED, OTHER)
+- **Error handling:** Insufficient credits, already expired, lead already taken — all return typed reason codes
+
+### Provider Profile Editor (`/provider/profile`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/profile/page.tsx`
+- **What they can edit:** Name, email, bio, experience, skills (multi-select from `SERVICE_CATEGORY_OPTIONS`), service areas (LocationNode picker), evidence note, portfolio URLs, weekly availability schedule
+- **Awards:** Promo credits via `evaluateAndAwardProviderProfileCompletionPromoCredits()` on first completion
+- **Read-only:** Verified status, average rating, completed jobs count, recent reviews (5-star + comment)
+- **Syncs:** `TechnicianServiceArea` records, `ProviderSchedule`, `AuditLog`
+
+### Availability Toggle (`/provider/availability`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/availability/page.tsx`
+- **Mode selector:** ALWAYS_AVAILABLE / SCHEDULE (weekly hours) / PAUSED (stop leads until date)
+- **Pause until:** datetime picker; sets `TechnicianAvailability.breakUntil`
+- **Flags:** emergencyAvailable, sameDayAvailable
+- **Writes:** `Provider.availableNow`, `TechnicianAvailability`, `ProviderSchedule`, `AuditLog`
+- **Note:** WA `offline`/`available` keywords and this PWA page write the same DB fields
+
+### Earnings Dashboard (`/provider/earnings`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/earnings/page.tsx`
+- **What they see:** Monthly earnings totals (gross, commission, net), job-by-job breakdown, prior months history
+- **Data:** `ProviderPayout` records with `Job → Booking → Match → JobRequest` graph
+
+### Credits & Wallet (`/provider/credits`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/credits/page.tsx`
+- **What they see:** Credit balance (total, paid, promo, estimated leads unlockable), ledger of last 50 transactions, top-up options
+- **Payment paths:** Payfast (online, instant) + Manual EFT (bank details + unique reference)
+- **Data:** `ProviderWallet`, `WalletLedgerEntry`, `ProviderTopUpIntent`
+
+### Active Job Detail (`/provider/jobs/[id]`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/jobs/[id]/page.tsx`
+- **What they see:** Customer info, full address (Google Maps link), scheduled window, job notes, status history timeline
+- **Actions:** Status update via `<JobStatusControls>` (calls `POST /api/technician/jobs/[id]/status`)
+- **Evidence:** Photo gallery + `<EvidenceUploader>` for new uploads (active jobs only)
+- **Extra work:** `<ExtraWorkForm>` for scope additions (description + amount) when STARTED
+- **Disputes:** Form to raise dispute (min 10 chars); one OPEN dispute per job
+
+### Quote Submission (`/provider/quotes/[matchId]`) ✅
+
+- **Route:** `field-service/app/(provider)/provider/quotes/[matchId]/page.tsx`
+- **Displays:** Match detail, customer photos, quote history timeline, inspection status
+- **Actions:** `<QuoteForm>` for new/revised quotes; `markInspectionComplete()` when inspection scheduled
+- **States:** Pending (awaiting customer), declined (revise), approved (no further action)
+
+### Tokenized Deep Links (WhatsApp links)
+
+| Route | Purpose |
+|-------|---------|
+| `app/provider/handoff/[token]` | Main entry; validates token → redirects to PWA lead or job page |
+| `app/provider/lead/[token]` | Alias → handoff |
+| `app/provider/job/[token]` | Alias → handoff |
+| `app/provider/jobs/[jobId]/arrival` | Check-in redirect → handover |
+| `app/provider/jobs/[jobId]/handover` | Full job detail via token (for WhatsApp link recipients) |
+| `app/provider/jobs/[jobId]/quick-update` | Quick status update redirect → handover |
 
 ---
 
@@ -284,13 +390,7 @@ This is a significant gap. Providers have no PWA interface for day-to-day operat
 10. `reg_review` — Summary with "Submit" / "Edit" buttons
 11. `reg_submitted` — "Application submitted! We'll review it soon."
 
-**Post-submission:** Creates `ProviderApplication` row with status `PENDING`. Phase 1 auto-approve cron (`/api/cron/provider-auto-approve`) runs every 25 min during business hours and approves non-high-risk complete applications.
-
-### Provider Approval Notification
-
-**Template:** `provider_application_approved` (sent by `notifyProviderApplicationApprovedOnce()` in `lib/provider-application-notifications.ts`)
-
-Triggered: immediately after auto-approve (fire-and-forget) and retried by `match-leads` cron (step 1g).
+**Post-submission:** Creates `ProviderApplication` row with status `PENDING`. Phase 1 auto-approve cron (`/api/cron/provider-auto-approve`) runs every 25 min during business hours.
 
 ### Lead Dispatch (`lib/whatsapp.ts`)
 
@@ -306,25 +406,41 @@ Triggered: immediately after auto-approve (fire-and-forget) and retried by `matc
 - `hd_area:<leadId>` — hard-decline: wrong area
 - `hd_other:<leadId>` — hard-decline: other reason
 
-Lead acceptance deducts 1 credit from the provider wallet (`LEAD_UNLOCK_COST_CREDITS`).
-
-Post-accept confirmation: either CTA URL message "View Job" or fallback text with credit balance update.
-
-### Provider Job Commands (via WhatsApp)
+### Provider Job Commands (WhatsApp)
 
 Handled in `lib/provider-whatsapp-job-commands.ts`:
 
 | Command | WhatsApp text | Job status transition |
 |---------|--------------|----------------------|
-| En route | `on my way`, `en route` | `EN_ROUTE` |
+| En route | `on my way`, `en route` | `EN_ROUTE` → triggers `sendCustomerEnRouteNotification()` |
 | Arrived | `arrived`, `on site`, `i'm here` | `ARRIVED` |
 | Start | `starting`, `started`, `starting work` | `STARTED` |
 | Complete | `done`, `completed`, `finished`, `job done` | `PENDING_COMPLETION_CONFIRMATION` |
 | Cancel | `cancel`, `cancellation` | Cancellation flow |
 
-### Provider Availability / Journey Triggers
+### Provider Running-Late Comms ✅ WIRED
 
-**PROVIDER_JOURNEY_TRIGGERS:** available, online, im available, i'm available, ek is beskikbaar, offline, not available, not working, ek is nie beskikbaar, provider menu, my dashboard, verify, verification, verify identity, complete verification
+**Trigger keywords:** `running late`, `delayed`, `late`, `stuck in traffic`
+**Handler:** `handleRunningLateFlow()` in `lib/whatsapp-flows/provider-journey.ts`
+**Action:** Sends `customer_provider_running_late` template to customer (4 body params: customerFirstName, providerFirstName, delayLabel, serviceLabel)
+**Idempotency:** Checked via `JobStatusEvent.notes = 'provider_running_late'` before sending
+
+### Post-Job Invoice ✅ WIRED
+
+**Trigger keywords:** `invoice`, `send invoice`, `receipt`
+**Handler:** `handleInvoiceFlow()` in `lib/whatsapp-flows/provider-journey.ts`
+**Action:** Sends `provider_invoice_send` template to customer (10 body params: customer, service, location, completion date, costs, totals, job ref, provider name)
+**Idempotency:** `Job.invoiceWhatsappSentAt` timestamp field added to schema (migration `20260504210000`)
+
+### Provider Dispute Trigger ✅ WIRED
+
+**Trigger keywords:** `dispute`, `issue with job`, `raise issue`
+**Handler:** `handleProviderDisputeFlow()` in `lib/whatsapp-flows/provider-journey.ts`
+**Action:** Captures dispute description → creates `Dispute` row with `raisedByRole: 'provider'` → AuditLog written
+
+### Provider Journey Keywords
+
+**PROVIDER_JOURNEY_TRIGGERS:** available, online, im available, i'm available, ek is beskikbaar, offline, not working, ek is nie beskikbaar, provider menu, my dashboard, verify, verification, running late, delayed, late, stuck in traffic, invoice, send invoice, receipt, dispute, issue with job, raise issue
 
 **PROVIDER_KEYWORDS:** myjobs, my jobs, my work, jobs — shows active job list
 
@@ -335,7 +451,8 @@ Handled in `lib/provider-whatsapp-job-commands.ts`:
 | `provider_application_approved` | On auto-approve | applicationId, phone, name |
 | `job_offer` | On lead dispatch | providerFirstName, serviceName, area, scheduledWindow, jobUrl |
 | `technician_job_reminder` | 1 h before scheduled job | providerFirstName, serviceName, address, scheduledWindow, jobUrl |
-| `technician_payment_released` | On payment release | (from `lib/whatsapp.ts:823`) |
+| `technician_payment_released` | On payment release | (from `lib/whatsapp.ts`) |
+| `provider_invoice_send` | On `invoice` keyword | 10 body vars (customer, service, location, costs, ref, provider) |
 
 ---
 
@@ -343,11 +460,14 @@ Handled in `lib/provider-whatsapp-job-commands.ts`:
 
 | Area | Current state | Note |
 |------|--------------|------|
-| Identity | Single phone = single account | No concept of principal + operators |
-| Multi-site | No address book; address typed fresh each booking | Addresses stored per `JobRequest`, not reusable |
-| Recurring jobs | Not supported | No recurring rule or template on `JobRequest` |
-| Quote approval | PWA-only (`/approve/[token]` + QuoteHistoryTimeline) | No WA-native quote approve/decline path |
-| Instrumentation | `AuditLog` used for ops events; no customer analytics | No events for page views, step abandonment, funnel |
-| Business identity | None | Deadlineed has no "company" concept on the platform |
-| Test cohort | `internal_staff_test` controlled by `isInternalTestPhone()` | B2B cohort not defined |
-| Notifications lag | Customer learns of match only by polling `/requests/[id]` | No match-found WhatsApp notification to customer |
+| Identity | Single phone = single account; `CustomerMember` model exists in schema but operator resolution not yet wired in `getSession()` | Schema done; auth integration pending |
+| Multi-site address book | `CustomerAddress` schema done; `/account/sites` page exists; BookingFlow integration partially done | Flag `feature.customer.address_book` controls rollout |
+| Recurring jobs | "Book again" CTA exists on completed bookings; no cron rule or recurrence model on `JobRequest` | Rebook shortcut only |
+| WA multi-site picker | Not yet wired in `job-request.ts` flow | Single last-used address still used |
+| Quote approval (WA) | `quote_accept_*` / `quote_decline_*` payload recognised in bot; handler not yet wired | PWA inline approval works |
+| Business onboarding prompt | `Customer.isBusinessAccount` field not yet seeded via post-OTP UI | Schema exists; UI not built |
+| Provider WhatsApp M5 | Running late, invoice, dispute all wired | Meta template submission still required |
+| Instrumentation | `AuditLog` used for ops events; no customer-facing analytics events | Customer activity log page exists (`/account/activity`) |
+| Test cohort | `internal_staff_test` controlled by `isInternalTestPhone()` | B2B cohort flag seeded but not yet applied |
+| SLA visibility | Matching-time copy exists on request detail page | Derived from hour-of-day, no DB query |
+| Environment isolation | Single WhatsApp WABA for staging + production; isolation via test-cohort gate only | Warning comment added to `lib/whatsapp.ts` |

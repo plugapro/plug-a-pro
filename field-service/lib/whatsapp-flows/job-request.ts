@@ -49,7 +49,7 @@ import {
   DuplicateActiveRequestError,
   JobRequestPhotoLinkError,
 } from '../job-requests/create-job-request'
-import type { FlowContext, FlowResult } from './types'
+import type { ConversationData, FlowContext, FlowResult } from './types'
 
 // Static category list — replaces db.service queries
 const JOB_CATEGORIES = [
@@ -71,6 +71,8 @@ const JOB_CATEGORIES = [
 
 const STREET_ADDRESS_RETRY =
   "We couldn't save that address. Please send the street address again, for example: 14 Main Street."
+const STREET_ADDRESS_SAVED_NEXT_STEP_RETRY =
+  "We saved that street address. Please reply *continue* and we'll show the province list again."
 const STREET_ADDRESS_SEND_TIMEOUT_MS = Number(process.env.WHATSAPP_STREET_ADDRESS_SEND_TIMEOUT_MS) || 8000
 
 // WhatsApp list cap is 10 rows total per message.
@@ -110,6 +112,33 @@ async function withStreetStepSendTimeout<T>(operation: Promise<T>): Promise<T> {
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+async function persistStreetAddressProgress(ctx: FlowContext, street: string): Promise<ConversationData> {
+  const nextData = { ...ctx.data, addressLine1: street, addressStreet: street, addrPage: 0 }
+
+  // Persist before sending the next WhatsApp prompt. Serverless outbound sends
+  // can fail, hang, or be retried independently; the request draft must already
+  // be advanced so the next inbound message resumes the active request instead
+  // of falling back to the generic menu.
+  await db.conversation.upsert({
+    where: { phone: ctx.phone },
+    create: {
+      phone: ctx.phone,
+      flow: 'job_request',
+      step: 'addr_select_province',
+      data: nextData as any,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    },
+    update: {
+      flow: 'job_request',
+      step: 'addr_select_province',
+      data: nextData as any,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    },
+  })
+
+  return nextData
 }
 
 function savedAddressDisplay(address: Pick<WhatsAppSavedAddress, 'addressLine1' | 'street' | 'suburb' | 'city' | 'province'>) {
@@ -644,6 +673,23 @@ async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
     return { nextStep: 'collect_address_street' }
   }
 
+  let nextData: ConversationData
+  try {
+    nextData = await persistStreetAddressProgress(ctx, validation.street)
+    console.info('[job-request-flow] street address saved', {
+      ...logContext,
+      nextStep: 'addr_select_province',
+    })
+  } catch (err) {
+    console.error('[job-request-flow] street address save failed', {
+      ...logContext,
+      errorCode: 'street_address_save_failed',
+      error: err instanceof Error ? err.message : String(err),
+    })
+    await sendText(ctx.phone, STREET_ADDRESS_RETRY)
+    return { nextStep: 'collect_address_street' }
+  }
+
   try {
     console.info('[job-request-flow] street address accepted; sending next step', {
       ...logContext,
@@ -665,20 +711,20 @@ async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
       errorCode: 'street_address_next_step_send_failed',
       error: err instanceof Error ? err.message : String(err),
     })
-    await sendText(ctx.phone, STREET_ADDRESS_RETRY)
+    await sendText(ctx.phone, STREET_ADDRESS_SAVED_NEXT_STEP_RETRY)
     console.info('[job-request-flow] street address error response sent', {
       ...logContext,
       errorCode: 'street_address_next_step_send_failed',
     })
     return {
-      nextStep: 'collect_address_street',
-      nextData: { addressLine1: validation.street, addressStreet: validation.street, addrPage: 0 },
+      nextStep: 'addr_select_province',
+      nextData,
     }
   }
 
   return {
     nextStep: 'addr_select_province',
-    nextData: { addressLine1: validation.street, addressStreet: validation.street, addrPage: 0 },
+    nextData,
   }
 }
 

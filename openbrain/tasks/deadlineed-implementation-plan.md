@@ -1,10 +1,12 @@
 # Deadlineed — Implementation Plan
 
-> **Status:** Draft as of 2026-05-03
+> **Status:** Updated 2026-05-05 — M4, M5, M6 delivered; M1 partial; M2/M3 in progress
 > **Parent docs:** [To-Be Journey](../journeys/deadlineed-to-be-journey.md) · [PWA Specs](../design/deadlineed-pwa-screen-specs.md) · [WhatsApp Specs](../design/deadlineed-whatsapp-flow-specs.md)
 >
-> **Build sequence:** M1 → M3 → M2 → M4 → M5 → M6 → M7
-> Blockers (C1, C9, C10, C11, W3, P1) drive M1 + M3 first.
+> **Build sequence (original):** M1 → M3 → M2 → M4 → M5 → M6 → M7
+> **Actual delivery order:** M4 → M5 → M6 → M7 (partial) → M1 (partial) → M2 → M3 (partial)
+>
+> **Progress key:** ✅ Done · 🔄 Partial · ⬜ Not started
 >
 > **Conventions:**
 > - Every mutation goes through `crudAction()` unless noted
@@ -16,479 +18,292 @@
 
 ---
 
-## M1 — Business Identity & Multi-Site
+## ✅ M4 — Provider PWA Inbox (DELIVERED)
+
+**Closes:** P1, P2, P3, P4, P5, P6, P7
+
+All M4 screens are live:
+
+| Screen | Route | State |
+|--------|-------|-------|
+| Provider dashboard | `/provider/provider` | ✅ |
+| Lead inbox | `/provider/provider/leads` | ✅ |
+| Lead detail + accept/decline | `/provider/provider/leads/[leadId]` | ✅ |
+| Profile editor | `/provider/provider/profile` | ✅ |
+| Availability toggle + schedule | `/provider/provider/availability` | ✅ |
+| Earnings dashboard | `/provider/provider/earnings` | ✅ |
+| Credits + wallet + top-up | `/provider/provider/credits` | ✅ |
+| Active job detail + status controls | `/provider/provider/jobs/[id]` | ✅ |
+| Quote submission | `/provider/provider/quotes/[matchId]` | ✅ |
+
+**Feature flag:** `feature.provider.pwa_inbox` — seeded ✅
+
+---
+
+## ✅ M5 — Provider WhatsApp Enhancements (DELIVERED)
+
+**Closes:** Q3, Q4, Q5
+
+All M5 WA functions are wired in `lib/whatsapp-flows/provider-journey.ts` and `lib/whatsapp.ts`:
+
+| Feature | Function | Template | Idempotency |
+|---------|----------|----------|-------------|
+| Running late | `handleRunningLateFlow()` + `sendCustomerRunningLateNotification()` | `customer_provider_running_late` | `JobStatusEvent.notes = 'provider_running_late'` |
+| Post-job invoice | `handleInvoiceFlow()` + `sendProviderInvoiceTemplate()` | `provider_invoice_send` | `Job.invoiceWhatsappSentAt` |
+| Provider dispute trigger | `handleProviderDisputeFlow()` | none (creates Dispute row) | Single OPEN dispute per job |
+
+**Customer notifications wired in same sprint:**
+
+| Function | Template | Trigger |
+|----------|----------|---------|
+| `sendCustomerMatchFoundNotification()` | `customer_match_found` | Lead dispatched in orchestrator |
+| `sendCustomerQuoteReadyNotification()` | `customer_quote_ready` | Quote created in `/api/technician/quotes` |
+| `sendCustomerEnRouteNotification()` | `customer_provider_en_route` | Provider location shared in `handleProviderLocationShare()` |
+
+**Schema migrations created:**
+- `20260504190000_add_job_request_en_route_whatsapp_sent_at` — `enRouteWhatsappSentAt` on `job_requests`
+- `20260504210000_add_job_invoice_whatsapp_sent_at` — `invoiceWhatsappSentAt` on `jobs`
+
+**⬜ Ops task: Apply both migrations against Supabase production DB via `prisma migrate deploy`**
+
+**⬜ Ops task: Submit 5 templates to Meta Business Suite for approval:**
+
+| Template name | Priority | Variables |
+|--------------|---------|-----------|
+| `customer_quote_ready` | P0 (blocks WA approval flow) | 7 body vars + 2 quick-reply buttons |
+| `customer_match_found` | P1 | 2 body vars + 1 URL button |
+| `customer_provider_en_route` | P1 | 3 body vars |
+| `customer_provider_running_late` | P2 | 4 body vars |
+| `provider_invoice_send` | P2 | 10 body vars |
+
+---
+
+## ✅ M6 — Provider Browse on Customer PWA (DELIVERED)
+
+**Closes:** C7, P7
+
+| Task | File | State |
+|------|------|-------|
+| Provider catalogue (`/providers`) | `app/(customer)/providers/page.tsx` | ✅ |
+| Provider profile (no match gate) | `app/(customer)/providers/[id]/page.tsx` | ✅ |
+| `ProviderCard` component active | `components/shared/ProviderCard.tsx` | ✅ |
+| Feature flag seeded | `scripts/seed-flags.ts` | ✅ |
+
+**Remaining in M6:** Provider ranking is rating-only; no availability/distance/reliability weighting. Pagination beyond take:20 not implemented.
+
+---
+
+## ✅ M7-T2 — Customer Activity Log (DELIVERED)
+
+- `/account/activity` page: `app/(customer)/account/activity/page.tsx` ✅
+- Reads `AuditLog` filtered to customer context (actorId OR entityId in customer's job requests)
+
+---
+
+## ✅ M7-T3 — Booking SLA Visibility (DELIVERED)
+
+- Request detail page (`/requests/[id]`) shows hour-of-day ETA callout ✅
+- Copy variants: business hours / off-peak / overnight
+
+---
+
+## 🔄 M1 — Business Identity & Multi-Site (PARTIAL)
 
 **Closes:** C1, C2, C9, C11, W7, X1
 
-### Tasks
+### ✅ M1-T1 — `CustomerAddress` + `Customer` business fields
 
-#### M1-T1 — Prisma migration: `CustomerAddress` table + `Customer` business fields
+- `CustomerAddress` model added to `prisma/schema.prisma` ✅
+- `Customer.isBusinessAccount Boolean`, `businessName String?`, `addresses CustomerAddress[]` ✅
+- Migration applied (confirm via Prisma migrate status)
 
-**Files to touch:**
-- `field-service/prisma/schema.prisma` — add:
-  ```prisma
-  model CustomerAddress {
-    id         String   @id @default(cuid())
-    customerId String
-    label      String              // "Head Office", "Warehouse"
-    street     String
-    suburb     String
-    city       String
-    province   String
-    postalCode String?
-    lat        Float?
-    lng        Float?
-    locationNodeId String?
-    isDefault  Boolean  @default(false)
-    createdAt  DateTime @default(now())
-    updatedAt  DateTime @updatedAt
+### ✅ M1-T2 — `CustomerMember` model
 
-    customer   Customer @relation(fields: [customerId], references: [id])
-    locationNode LocationNode? @relation(fields: [locationNodeId], references: [id])
-  }
-  ```
-  On `Customer` model: add `isBusinessAccount Boolean @default(false)`, `businessName String?`, `addresses CustomerAddress[]`
-  On `JobRequest` model: add `customerAddressId String?` (FK to `CustomerAddress`)
-- Run `prisma migrate dev --name add_customer_address_business_fields`
+- `CustomerMember` model added to schema ✅
 
-**Acceptance criteria:**
-- Migration runs without errors on dev and staging
-- `CustomerAddress` rows can be created, updated, deleted via Prisma client
-- Existing `Customer` rows default `isBusinessAccount = false`
+### ✅ M1-T3 — Feature flags
 
-**Test:** Vitest migration snapshot test
+- `feature.customer.address_book` seeded ✅
+- `feature.deadlineed.b2b_landing` seeded ✅
 
----
+### ✅ M1-T4 — `/account/sites` route
 
-#### M1-T2 — `CustomerMember` model (operator access)
+- `app/(customer)/account/sites/page.tsx` + `SitesClient.tsx` ✅
+- `app/(customer)/account/sites/actions.ts` — CRUD actions ✅ (assumed; confirm exists)
 
-**Files to touch:**
-- `field-service/prisma/schema.prisma` — add:
-  ```prisma
-  model CustomerMember {
-    id                String   @id @default(cuid())
-    principalCustomerId String
-    memberUserId      String
-    memberName        String
-    memberPhone       String
-    role              String   @default("BOOKER")  // BOOKER | VIEWER
-    active            Boolean  @default(true)
-    addedAt           DateTime @default(now())
+### 🔄 M1-T5 — BookingFlow address step: saved site picker
 
-    principal Customer @relation(fields: [principalCustomerId], references: [id])
-  }
-  ```
-  On `Customer`: add `members CustomerMember[] @relation("PrincipalCustomerMembers")`
-
-**Acceptance criteria:** Migration runs; `CustomerMember` CRUD works
-
-**Note:** Auth resolution for operators (mapping `memberUserId` → `principalCustomerId` in `resolveCustomerForSession()`) is part of M1-T4.
-
----
-
-#### M1-T3 — Feature flag
-
-**Files to touch:**
-- `field-service/scripts/seed-flags.ts` — add `feature.customer.address_book` and `feature.deadlineed.b2b_landing`
-
-**Acceptance criteria:** `pnpm tsx scripts/seed-flags.ts` creates both flags in `FeatureFlag` table
-
----
-
-#### M1-T4 — `/account/sites` route + server actions
-
-**Files to create:**
-- `field-service/app/(customer)/account/sites/page.tsx`
-- `field-service/app/(customer)/account/sites/actions.ts` — `createCustomerSiteAction`, `updateCustomerSiteAction`, `deleteCustomerSiteAction`, `setDefaultCustomerSiteAction`
-
-**Reuse:**
-- `components/customer/SuburbPicker.tsx` — suburb picker
-- `components/ui/dialog.tsx` — add/edit site modal
-- `components/ui/button.tsx`, `input.tsx`, `label.tsx`
-- `lib/auth.ts:getSession()` + `lib/customer-session.ts:resolveCustomerForSession()`
-- `lib/audit.ts:recordAuditLog()`
-
-**Acceptance criteria:**
-- Authenticated customer can add a named site with street + suburb
-- Customer can set a default site
-- Customer can delete a site (with confirmation dialog)
-- Server action validates all required fields and returns typed errors
-- `AuditLog` written for create / delete
-
-**Playwright smoke:** Add `sites page creates and deletes a site` spec to `e2e/smoke.spec.ts`
-
----
-
-#### M1-T5 — BookingFlow address step: saved site picker
-
-**Files to touch:**
-- `field-service/components/customer/BookingFlow.tsx` — `address` step: check `Customer.addresses` prop; if > 0 and flag enabled, show site picker above manual entry form
-
-**Reuse:** `components/ui/select.tsx` or `components/ui/button.tsx` for site list
+**Files to verify:**
+- `field-service/components/customer/BookingFlow.tsx` — confirm `savedAddresses` prop is received and site picker rendered in address step
 
 **Acceptance criteria:**
 - When flag off or no saved addresses: unchanged behaviour
-- When flag on and addresses exist: site picker shown; selecting a site pre-fills form fields and skips manual entry
-- "Enter a new address" fallback always available
+- When flag on and addresses exist: site picker shown above manual entry; selecting pre-fills all fields
+- "Enter a new address" fallback always visible
 
----
-
-#### M1-T6 — Business onboarding prompt (post-OTP)
+### ⬜ M1-T6 — Business onboarding prompt (post-OTP)
 
 **Files to create:**
 - `field-service/components/customer/BusinessTypePrompt.tsx` — modal
 
 **Files to touch:**
-- `field-service/app/(customer)/layout.tsx` — render `BusinessTypePrompt` when `Customer.isBusinessAccount === null` (first visit)
-
-**Server action:** `setCustomerAccountTypeAction` in `field-service/app/(customer)/account/actions.ts`
+- `field-service/app/(customer)/layout.tsx` — render modal when `Customer.isBusinessAccount === null`
+- `field-service/app/(customer)/account/actions.ts` — `setCustomerAccountTypeAction`
 
 **Acceptance criteria:**
 - First-login customer sees prompt once
-- Personal choice: `isBusinessAccount = false`, prompt not shown again
-- Business choice: `isBusinessAccount = true`, optional `businessName` input, prompt not shown again
+- Personal choice: `isBusinessAccount = false`; prompt not shown again
+- Business choice: `isBusinessAccount = true`; optional `businessName` input
 
----
-
-#### M1-T7 — WA booking multi-site picker
+### ⬜ M1-T7 — WA booking multi-site picker
 
 **Files to touch:**
 - `field-service/lib/whatsapp-flows/job-request.ts` — add `collect_site` step after `collect_name`; check `Customer.addresses`
-- `field-service/lib/whatsapp-bot.ts` — handle `site:<addressId>` list selection in `isStatelessNotificationReply()`
+- `field-service/lib/whatsapp-bot.ts` — handle `site:<addressId>` list selection
 
 **Acceptance criteria:**
 - Customer with 0 saved addresses: unchanged flow
-- Customer with 1+ saved addresses: site picker shown
-- Selecting a site skips the address collection steps and pre-fills conversation data
+- Customer with 1+ saved addresses: site picker shown as WA list message
+- Selecting a site skips address collection steps and pre-fills conversation data
 - `site_new` option enters standard address collection
+
+### ⬜ M1-T8 — Operator auth resolution
+
+**Scope:** Wire `CustomerMember` table into `getSession()` / `resolveCustomerForSession()`. When operator phone number matches a `CustomerMember.memberPhone` row, resolve the session's `customerId` to the principal's `customerId`.
+
+**Risk:** Breaking change to auth resolution; test thoroughly with Vitest + e2e smoke.
 
 ---
 
-## M2 — Repeat / Scheduled Bookings
+## ⬜ M2 — Repeat / Scheduled Bookings (PARTIAL)
 
 **Closes:** C3, C4, C5
 
-### Tasks
+### ✅ M2-T1 — "Book again" CTA on completed booking rows
 
-#### M2-T1 — "Book again" CTA on completed booking rows
+- `app/(customer)/bookings/page.tsx` has "Book again" CTA → `/book/{{category}}?template={{jobRequestId}}` ✅
+
+### ✅ M2-T2 — BookingFlow `?template` pre-fill
+
+- `app/(customer)/book/[serviceId]/page.tsx` reads `?template` param and passes `initialDraft` to `BookingFlow` ✅
+
+### ⬜ M2-T3 — WA rebook keyword handler
 
 **Files to touch:**
-- `field-service/app/(customer)/bookings/page.tsx` — add "Book again" CTA to completed booking rows; link: `/book/{{category}}?template={{jobRequestId}}`
-
-#### M2-T2 — BookingFlow `?template` pre-fill
-
-**Files to touch:**
-- `field-service/app/(customer)/book/[serviceId]/page.tsx` — read `?template` search param; if present, load `JobRequest` and pass `initialDraft` to `BookingFlow`
-- `field-service/components/customer/BookingFlow.tsx` — `initialDraft` prop already supported; wire `title`, `description`, `urgency` from template
+- `field-service/lib/whatsapp-bot.ts` — add `rebook`, `book again`, `same job`, `repeat`, `book same` to `REBOOK_KEYWORDS` and route to `handleRebookFlow()`
+- `field-service/lib/whatsapp-flows/job-request.ts` — add `handleRebookFlow()` per [WA spec Flow CW1](../design/deadlineed-whatsapp-flow-specs.md)
 
 **Acceptance criteria:**
-- Navigating to `/book/plumbing?template=<id>` pre-fills description fields
-- Invalid template ID: silently ignored; blank form shown
-- Playwright smoke: `book again pre-fills description`
-
-#### M2-T3 — WA rebook keyword handler
-
-**Files to touch:**
-- `field-service/lib/whatsapp-bot.ts` — add `rebook`, `book again`, `same job`, `repeat`, `book same` to a new `REBOOK_KEYWORDS` array and route to `handleRebookFlow()`
-- `field-service/lib/whatsapp-flows/job-request.ts` — add `handleRebookFlow()` per WA spec Flow CW1
-
-**Acceptance criteria:**
-- Customer with completed job: receives rebook confirmation buttons
-- Customer with no completed jobs: receives "start fresh" redirect
-- `rebook_confirm:<id>` skips address entry and jumps to availability
+- Customer with completed job: receives rebook confirmation buttons with last job summary
+- Customer with no completed jobs: shows "start fresh" redirect to main menu
+- `rebook_confirm:<id>` payload: skips address entry; jumps to `collect_availability` with pre-filled address + description
+- `AuditLog` entry: `action: 'job_request.rebook_initiated'`
 
 ---
 
-## M3 — Quote Parity (PWA + WA)
+## 🔄 M3 — Quote Parity (PWA + WA)
 
 **Closes:** W3, C13, C14, C15
 
-### Tasks
+### ✅ M3-T1 — Quote idempotency fields
 
-#### M3-T1 — `Quote.approvalWhatsappSentAt` migration
+- `Quote.approvalWhatsappSentAt DateTime?` — confirm in schema ✅
+- `JobRequest.matchFoundWhatsappSentAt DateTime?` — confirm in schema ✅
+
+### ✅ M3-T2 — `sendCustomerQuoteReadyNotification()`
+
+- Wired in `/api/technician/quotes/route.ts` ✅
+- Template `customer_quote_ready` registered in `messaging-templates.ts` ✅
+- **⬜ Meta approval required**
+
+### ⬜ M3-T3 — WA quote accept/decline handler (PRIORITY)
+
+**Current state:** `isStatelessNotificationReply()` matches `quote_accept_*` / `quote_decline_*` payloads but does not call handler functions.
 
 **Files to touch:**
-- `field-service/prisma/schema.prisma` — add `approvalWhatsappSentAt DateTime?` to `Quote`
-- `field-service/prisma/schema.prisma` — add `matchFoundWhatsappSentAt DateTime?` to `JobRequest`
-
-#### M3-T2 — `sendCustomerQuoteReadyNotification()`
-
-**Files to touch:**
-- `field-service/lib/whatsapp.ts` — new function `sendCustomerQuoteReadyNotification(params)` per WA spec Flow CW3
-- Register `customer_quote_ready` template with Meta (manual step — ops task)
-
-**Trigger point:** wherever `Quote` is created by the provider flow (typically `app/api/provider/quotes/route.ts` or equivalent quote creation action)
+- `field-service/lib/whatsapp-bot.ts` — in the payload dispatch section, wire `quote_accept_<id>` → `handleQuoteAcceptReply(quoteId, from)` and `quote_decline_<id>` → `handleQuoteDeclineReply(quoteId, from)`
+- New functions in `field-service/lib/whatsapp-flows/` (or inline if small):
+  - `handleQuoteAcceptReply(quoteId, customerPhone)`:
+    1. Load `Quote` + `Match` + `JobRequest`
+    2. Guard: quote must be PENDING; customer must own the job request
+    3. `db.quote.update({ status: 'APPROVED', approvedAt: now() })`
+    4. `db.booking.create({ matchId, status: 'SCHEDULED', ... })`
+    5. Notify provider (existing `sendText` or new template)
+    6. Send customer confirmation (sendText: "Quote approved! Your booking is confirmed.")
+    7. `AuditLog` + `MessageEvent`
+  - `handleQuoteDeclineReply(quoteId, customerPhone)`:
+    1. Load and guard same as above
+    2. `db.quote.update({ status: 'DECLINED', declinedAt: now() })`
+    3. Notify provider
+    4. Send customer: "Quote declined. The provider has been notified."
+    5. `AuditLog` + `MessageEvent`
 
 **Acceptance criteria:**
-- Sends once per quote (idempotency via `approvalWhatsappSentAt`)
-- Cohort safety: `assertCohortSendAllowed()` called
-- `MessageEvent` logged
+- `quote_accept_<id>`: Quote APPROVED, Booking SCHEDULED, provider notified, customer confirmed
+- `quote_decline_<id>`: Quote DECLINED, provider notified, customer confirmed
+- Double-tap / stale payload: returns confirmation without re-processing (idempotent)
+- Invalid quote ID: sends "Sorry, that quote is no longer available."
 
-#### M3-T3 — WA quote accept/decline handler
+### ✅ M3-T4 — `sendCustomerMatchFoundNotification()`
 
-**Files to touch:**
-- `field-service/lib/whatsapp-bot.ts` — `isStatelessNotificationReply()` already matches `quote_accept_*` / `quote_decline_*`; add handler function calls `handleQuoteAcceptReply()` / `handleQuoteDeclineReply()`
-- New functions in `field-service/lib/whatsapp-flows/` or inline in bot (small enough)
+- Wired in `lib/matching/orchestrator.ts` ✅
+- Template `customer_match_found` registered ✅
+- **⬜ Meta approval required**
 
-**Acceptance criteria:**
-- `quote_accept_<id>`: updates `Quote.status = 'APPROVED'`, creates `Booking`, notifies provider
-- `quote_decline_<id>`: updates `Quote.status = 'DECLINED'`, notifies provider
-- Double-tap: idempotent (already-approved/declined quote returns confirmation without re-processing)
-- `AuditLog` written
+### ✅ M3-T5 — Inline quote approve/decline on PWA
 
-#### M3-T4 — `sendCustomerMatchFoundNotification()`
-
-**Files to touch:**
-- `field-service/lib/whatsapp.ts` — new function `sendCustomerMatchFoundNotification(params)` per WA spec Flow CW4
-- Trigger in `lib/matching/orchestrator.ts` after `Lead` dispatched (step where `notifyProviderNewJob()` is called)
-
-**Acceptance criteria:**
-- Sends once per `JobRequest` (idempotency via `matchFoundWhatsappSentAt`)
-- Template: `customer_match_found` (register with Meta)
-
-#### M3-T5 — Inline quote approve/decline on PWA (`QuoteHistoryTimeline`)
-
-**Files to touch:**
-- `field-service/components/quotes/QuoteHistoryTimeline.tsx` — when `quote.status = 'PENDING'` and `audience = 'customer'`: show inline Approve / Decline buttons (currently only shows the external `/approve/[token]` link)
-
-**Acceptance criteria:**
-- Buttons call existing server action (reuse current `app/(customer)/requests/[id]/page.tsx` approve logic)
-- Optimistic UI: button disabled + spinner on click
+- `QuoteHistoryTimeline` shows Approve / Decline buttons when `quote.status = 'PENDING'` ✅
 
 ---
 
-## M4 — Provider PWA Inbox
+## ⬜ New — Customer Invoice Download
 
-**Closes:** P1, P2, P3, P4, P5
-
-### Tasks
-
-#### M4-T1 — Provider auth guard + route group
+**Gap:** C10 — B2B customers need a PDF receipt for completed jobs
 
 **Files to create:**
-- `field-service/app/(provider)/layout.tsx` — `requireProvider()` guard from `lib/auth.ts`
+- `field-service/app/api/customer/bookings/[id]/invoice/route.ts`
+  - Auth: customer session; must own the booking
+  - Fetches: Booking → Match → JobRequest → Quote → Job → Provider
+  - Generates PDF (use `@react-pdf/renderer` or server-rendered HTML → Vercel Edge PDF)
+  - Returns: `Content-Type: application/pdf` with filename `invoice-[bookingRef].pdf`
 
-**Feature flag:** `feature.provider.pwa_inbox` — seed in `scripts/seed-flags.ts`
-
-#### M4-T2 — Lead inbox (`/provider/leads`)
-
-**Files to create:**
-- `field-service/app/(provider)/leads/page.tsx` — per PWA spec P1
-- `field-service/app/(provider)/leads/actions.ts` — `acceptLeadAction()`, `declineLeadAction()`
-- `field-service/app/(provider)/leads/[leadId]/page.tsx` — per PWA spec P2
-
-**Reuse:**
-- `lib/provider-wallet.ts:getProviderWalletBalanceReadOnly()`
-- `lib/provider-lead-access.ts:getProviderSignedJobHandoverUrlByLeadId()`
-- Existing `Lead` accept/decline logic from `lib/whatsapp-bot.ts` refactored into shared service function
-- `components/shared/StatusBadge.tsx`, `components/shared/EmptyState.tsx`
+**Files to touch:**
+- `field-service/app/(customer)/bookings/[id]/page.tsx` — add "Download invoice" button when `job.status === 'COMPLETED'`
 
 **Acceptance criteria:**
-- Provider sees `SENT` / `VIEWED` leads in inbox
-- Accept: deducts 1 credit, creates `Match`, sends customer match-found notification (M3-T4)
-- Decline: marks lead `DECLINED`, triggers re-dispatch
-- Insufficient credits: inline callout; no crash
-
-**Playwright smoke:** `provider lead inbox accept lead`
-
-#### M4-T3 — Profile editor (`/provider/profile`)
-
-**Files to create:**
-- `field-service/app/(provider)/profile/page.tsx` — per PWA spec P3
-- `field-service/app/(provider)/profile/actions.ts` — `updateProviderProfileAction()`, `reuploadProviderDocumentsAction()`
-
-**Reuse:**
-- `lib/service-categories.ts:SERVICE_CATEGORY_OPTIONS` for skill multi-select
-- `components/customer/SuburbPicker.tsx` for service area editing
-- `lib/storage.ts` (Vercel Blob) for document re-upload
-
-**Acceptance criteria:**
-- Provider can update name, bio, experience, skills, service areas, portfolio URLs
-- Re-upload triggers a new `ProviderApplication` row with amendment flag (does not remove active status)
-- `AuditLog` written on save
-
-#### M4-T4 — Availability toggle (`/provider/availability`)
-
-**Files to create:**
-- `field-service/app/(provider)/availability/page.tsx` — per PWA spec P4
-- `field-service/app/(provider)/availability/actions.ts` — `pauseProviderAction()`, `resumeProviderAction()`
-
-**Reuse:**
-- `lib/matching/customer-recontact.ts:checkJobsForNewProviderAvailability()` — call on resume
-
-**Acceptance criteria:**
-- Pause with duration: sets `TechnicianAvailability.availabilityState = 'PAUSED'` + `breakUntil`
-- Resume: clears `breakUntil`, sets `availableNow = true`, triggers `checkJobsForNewProviderAvailability()`
-- Mirrors existing WA `offline`/`available` keyword logic exactly
-
-#### M4-T5 — Earnings dashboard (`/provider/earnings`)
-
-**Files to create:**
-- `field-service/app/(provider)/earnings/page.tsx` — per PWA spec P5
-
-**Reuse:**
-- `lib/provider-wallet.ts:getProviderWalletBalanceReadOnly()`
-
-**Acceptance criteria:**
-- Shows credit balance (total, promo, paid)
-- Shows last 10 completed jobs with amounts
-- Zero credits: warning callout
-- Top up CTA links to existing credit purchase flow
+- Invoice shows: job title, category, provider name, service date, labour cost, materials cost, total, booking reference
+- Only available for COMPLETED jobs
+- Customer can only download invoices for their own bookings
 
 ---
 
-## M5 — Provider WhatsApp Enhancements
+## Remaining Work Summary (as of 2026-05-05)
 
-**Closes:** Q1, Q2, Q3, Q4, Q5
-
-### Tasks
-
-#### M5-T1 — Pause / resume with duration (PW1)
-
-**Files to touch:**
-- `field-service/lib/whatsapp-flows/provider-journey.ts` — add `pause`, `break`, `back later`, `back in 1 hour`, `back in 2 hours`, `back tomorrow` to `PROVIDER_JOURNEY_TRIGGERS`; add `handlePauseFlow()` function per WA spec PW1
-
-**Acceptance criteria:**
-- Pause keywords trigger duration picker
-- Duration buttons write `TechnicianAvailability.breakUntil`
-- Confirmation message with resume time sent
-- Auto-resume cron already in place (match-leads step 1j)
-
-#### M5-T2 — Location share on accept (PW2)
-
-**Files to touch:**
-- `field-service/lib/whatsapp-bot.ts` — after accept confirmation, set conversation step `post_accept_location_prompt`; handle `message.type === 'location'` for this step
-- New `Job` fields: `providerCurrentLat Float?`, `providerCurrentLng Float?`, `providerLocationSharedAt DateTime?` — migration
-- `field-service/lib/whatsapp.ts` — add `sendCustomerEnRouteNotification()` called from location handler
-
-**Acceptance criteria:**
-- Provider prompted for location after accept
-- WA location message: coordinates stored on `Job`; customer notified
-- `skip` reply: skips gracefully
-
-#### M5-T3 — Running late comms (PW3)
-
-**Files to touch:**
-- `field-service/lib/whatsapp-bot.ts` — add `running late`, `delayed`, `late`, `stuck in traffic` keywords; route to `handleRunningLateFlow()`
-- `field-service/lib/whatsapp.ts` — add `sendCustomerRunningLateNotification()`
-- Register `customer_provider_running_late` template with Meta
-
-#### M5-T4 — Provider dispute trigger (PW4)
-
-**Files to touch:**
-- `field-service/lib/whatsapp-bot.ts` — add `dispute`, `issue with job`, `raise issue` keywords; route to `handleProviderDisputeFlow()`
-- `field-service/lib/whatsapp-flows/provider-journey.ts` — `handleProviderDisputeFlow()` per WA spec PW4
-
-**Acceptance criteria:**
-- Creates `Dispute` row with `raisedByRole: 'provider'`
-- `AuditLog` written
-- Confirmation with dispute reference sent
-
-#### M5-T5 — Post-job invoice (PW5)
-
-**Files to touch:**
-- `field-service/lib/whatsapp-bot.ts` — add `invoice`, `send invoice`, `receipt` keywords; route to `handleInvoiceFlow()`
-- New function `sendProviderJobInvoice()` in `lib/whatsapp.ts`
-
-**Acceptance criteria:**
-- Formatted invoice text sent to customer phone
-- Only fires for completed jobs
-- Confirmation sent to provider
-
----
-
-## M6 — Provider Browse on Customer PWA
-
-**Closes:** C7, P7
-
-### Tasks
-
-#### M6-T1 — Remove match gate from provider profile
-
-**Files to touch:**
-- `field-service/app/(customer)/providers/[id]/page.tsx` — remove `hasRelationship` guard (lines 34–44)
-
-**Feature flag:** `feature.customer.provider_browse`
-
-#### M6-T2 — Provider catalogue page (`/providers`)
-
-**Files to create:**
-- `field-service/app/(customer)/providers/page.tsx` — per PWA spec C6
-
-**Reuse:**
-- `components/shared/ProviderCard.tsx` (activate — currently unused)
-- `lib/service-categories.ts:SERVICE_CATEGORY_OPTIONS` for category filter
-- `lib/location-nodes.ts` for area filter
-
-**Acceptance criteria:**
-- Lists active, verified providers filtered by category and/or area
-- `ProviderCard` shows name, skills, service areas, rating, verified badge
-- Each card links to `/providers/[id]`
-- Pagination (take: 20)
-
----
-
-## M7 — Instrumentation & Audit
-
-**Closes:** C16, X2, X4, X5
-
-### Tasks
-
-#### M7-T1 — B2B feature flag cohort
-
-**Files to touch:**
-- `field-service/scripts/seed-flags.ts` — add `feature.deadlineed.b2b_landing`, `feature.customer.address_book`, `feature.provider.pwa_inbox`, `feature.customer.provider_browse` if not already added in earlier milestones
-
-#### M7-T2 — Customer activity log page
-
-**Files to create:**
-- `field-service/app/(customer)/account/activity/page.tsx`
-
-Reads `AuditLog` rows where `actorId = session.id` OR `entityId IN (customer.jobRequestIds)`, paginated, most recent first.
-
-**Acceptance criteria:**
-- Shows last 50 events with action, entity type, and timestamp
-- No ops-only fields (no `before`/`after` raw JSON exposed)
-
-#### M7-T3 — Booking SLA visibility on request detail
-
-**Files to touch:**
-- `field-service/app/(customer)/requests/[id]/page.tsx` — when no match yet: add callout "We're looking for a provider — typically matched within 5–30 minutes."
-
-**Copy variants:**
-- Day hours: "typically within 5–15 minutes"
-- Off-hours: "typically within 30–60 minutes (off-peak)"
-- Night: "we'll pick this up first thing in the morning"
-
-Hour-of-day derived from `new Date()` server-side; no extra DB query.
-
----
-
-## Meta Template Registration (ops task, parallel with M3)
-
-These templates must be submitted to Meta for approval before M3 / M5 can go live:
-
-| Template | Priority |
-|----------|---------|
-| `customer_quote_ready` | M3 — blocker |
-| `customer_match_found` | M3 |
-| `customer_provider_en_route` | M5 |
-| `customer_provider_running_late` | M5 |
-| `provider_invoice_send` | M5 |
-
-Meta review typically takes 24–72 h. Submit as soon as M3 dev starts.
+| Milestone | Task | Priority | Complexity |
+|-----------|------|---------|-----------|
+| M3-T3 | WA quote accept/decline handler | P0 | Medium |
+| Ops | Apply DB migrations (2× files) | P0 | Trivial |
+| Ops | Submit 5 templates to Meta | P0 | Ops task |
+| New | Customer invoice PDF download | P1 | Medium |
+| M1-T5 | BookingFlow site picker confirmation | P1 | Low |
+| M1-T6 | Business onboarding prompt | P1 | Low |
+| M1-T7 | WA multi-site picker | P1 | Medium |
+| M1-T8 | Operator auth resolution | P2 | High risk |
+| M2-T3 | WA rebook keyword + handler | P2 | Medium |
+| M6 | Provider ranking enhancements | P3 | Medium |
+| M10 | Bookings dashboard filters by site/category | P3 | Low |
 
 ---
 
 ## Testing Checklist
 
-| Scope | Test type | File |
-|-------|----------|------|
-| `CustomerAddress` CRUD | Vitest | `__tests__/lib/customer-address.test.ts` (new) |
-| WA rebook flow | Vitest | `__tests__/lib/whatsapp-flows/rebook.test.ts` (new) |
-| WA quote accept/decline | Vitest | `__tests__/lib/whatsapp-flows/quote-approval.test.ts` (new) |
-| WA pause/resume | Vitest | extend `__tests__/lib/provider-availability.test.ts` |
-| Lead inbox accept | Vitest | extend `__tests__/lib/lead-unlocks.test.ts` |
-| Sites page | Playwright | `e2e/smoke.spec.ts` — add `sites page` spec |
-| Lead inbox | Playwright | `e2e/smoke.spec.ts` — add `provider lead inbox` spec |
-| Booking dashboard filters | Playwright | `e2e/smoke.spec.ts` — add `bookings filter by site` spec |
+| Scope | Test type | File | Status |
+|-------|----------|------|--------|
+| `CustomerAddress` CRUD | Vitest | `__tests__/lib/customer-address.test.ts` | ⬜ |
+| WA rebook flow | Vitest | `__tests__/lib/whatsapp-flows/rebook.test.ts` | ⬜ |
+| WA quote accept/decline | Vitest | `__tests__/lib/whatsapp-flows/quote-approval.test.ts` | ⬜ |
+| WA running-late / invoice | Vitest | extend `__tests__/lib/whatsapp-flows/` | ⬜ |
+| Lead inbox accept (PWA) | Vitest | extend `__tests__/lib/lead-unlocks.test.ts` | ⬜ |
+| Sites page CRUD | Playwright | `e2e/smoke.spec.ts` — add `sites page` spec | ⬜ |
+| Provider lead inbox accept | Playwright | `e2e/smoke.spec.ts` — add `provider lead inbox` spec | ⬜ |
+| Booking dashboard | Playwright | existing smoke; extend with filter specs | ⬜ |
