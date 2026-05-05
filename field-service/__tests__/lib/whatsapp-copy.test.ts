@@ -33,7 +33,6 @@ describe('WHATSAPP_COPY constants', () => {
 describe('ctaLabelFor / ctaLink', () => {
   it('returns short, action-based labels for each documented purpose', () => {
     expect(ctaLabelFor('credit_history')).toBe('View credits history')
-    expect(ctaLabelFor('credit_policy')).toBe('View credits rules')
     expect(ctaLabelFor('credits_terms')).toBe('View credits rules')
     expect(ctaLabelFor('buy_credits')).toBe('Buy credits')
     expect(ctaLabelFor('top_up_credits')).toBe('Top up credits')
@@ -54,11 +53,11 @@ describe('ctaLabelFor / ctaLink', () => {
   })
 
   it('builds a structured WhatsAppCtaLink with the default label', () => {
-    const link: WhatsAppCtaLink = ctaLink('credit_policy', 'https://app.plugapro.co.za/provider/terms/credits')
+    const link: WhatsAppCtaLink = ctaLink('credits_terms', 'https://app.plugapro.co.za/provider/terms/credits')
     expect(link).toMatchObject({
       label: 'View credits rules',
       url: 'https://app.plugapro.co.za/provider/terms/credits',
-      purpose: 'credit_policy',
+      purpose: 'credits_terms',
     })
   })
 

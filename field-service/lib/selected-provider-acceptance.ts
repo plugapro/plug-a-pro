@@ -7,6 +7,7 @@ import { getProviderSignedJobHandoverUrlByLeadId } from './provider-lead-access'
 import { sendText } from './whatsapp'
 import { sendCtaUrl } from './whatsapp-interactive'
 import { ctaLabelFor } from './whatsapp-copy'
+import { PROVIDER_CREDITS_PRICE_LINE } from './provider-credit-copy'
 
 export type SelectedProviderAcceptanceResult =
   | {
@@ -439,7 +440,7 @@ async function notifySelectedAcceptanceCommitted(params: {
       to: params.providerPhone,
       text:
         `Job accepted.\n\n` +
-        `${LEAD_UNLOCK_COST_CREDITS} credit used. 1 credit = R50.\n` +
+        `${LEAD_UNLOCK_COST_CREDITS} credit used. ${PROVIDER_CREDITS_PRICE_LINE}\n` +
         `Available credits: ${params.currentCreditBalance} credits\n` +
         `Starter/onboarding: ${params.promoCreditBalance}\n` +
         `Purchased: ${params.paidCreditBalance}\n\n` +
