@@ -631,7 +631,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
       expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('welcome back'),
+        expect.stringContaining('Welcome back'),
         expect.arrayContaining([expect.objectContaining({ id: 'addr_same' })]),
       )
       expect(result.nextStep).toBe('collect_address')
@@ -676,7 +676,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
       expect(wa.sendList).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('Which address'),
+        expect.stringContaining('Which site'),
         expect.arrayContaining([
           expect.objectContaining({
             rows: expect.arrayContaining([
@@ -687,6 +687,47 @@ describe('WhatsApp job-request flow — structured address', () => {
           }),
         ]),
         expect.any(Object),
+      )
+    })
+
+    it('skips name capture for a returning multi-role customer and offers saved sites', async () => {
+      ;(db.customer.findFirst as any).mockResolvedValue({
+        id: 'cust_1',
+        phone: PHONE,
+        name: 'Sarah Sullivan',
+        addresses: [
+          {
+            id: 'addr_1',
+            street: '21 Jump Street',
+            addressLine1: '21 Jump Street',
+            suburb: 'Bromhof',
+            region: 'JHB West',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postalCode: '2188',
+            locationNodeId: 'sub_bromhof',
+            isDefault: true,
+          },
+        ],
+      })
+
+      const result = await handleJobRequestFlow(makeCtx('collect_name', 'cat_painting'))
+
+      expect(result.nextStep).toBe('collect_address')
+      expect(result.nextData).toMatchObject({
+        customerId: 'cust_1',
+        customerName: 'Sarah Sullivan',
+        isFirstBooking: false,
+        selectedCategory: 'Painting',
+      })
+      expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('first name'))
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Welcome back, Sarah'),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'addr_same' }),
+          expect.objectContaining({ id: 'addr_new' }),
+        ]),
       )
     })
 

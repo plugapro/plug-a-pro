@@ -1,5 +1,6 @@
 import { db } from './db'
 import { normalizePhone } from './utils'
+import { maskPhone } from './support-diagnostics'
 
 export type WhatsAppIdentityRole =
   | 'customer'
@@ -29,8 +30,22 @@ export type WhatsAppIdentity = {
   customerId?: string
   providerId?: string
   applicationId?: string
+  customerProfile?: {
+    id: string
+    name: string | null
+    phone: string
+  }
+  providerProfile?: {
+    id: string
+    name: string | null
+    status: string
+  }
   displayName?: string
   firstName?: string
+  customerDisplayName?: string
+  customerFirstName?: string
+  providerDisplayName?: string
+  providerFirstName?: string
   savedAddresses: WhatsAppSavedAddress[]
   providerStatus?: string
   applicationStatus?: string
@@ -219,9 +234,11 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
 
   console.info('[whatsapp-identity] resolved sender', {
     traceId,
-    rawPhone: phone,
-    normalizedPhone,
+    rawPhone: maskPhone(phone),
+    normalizedPhone: maskPhone(normalizedPhone),
     resolvedRole: role,
+    customerFound: Boolean(customer),
+    providerFound: Boolean(provider),
     customerId: customer?.id ?? null,
     providerId: provider?.id ?? null,
     applicationId: application?.id ?? null,
@@ -238,8 +255,14 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
     customerId: customer?.id,
     providerId: provider?.id,
     applicationId: application?.id,
+    customerProfile: customer ? { id: customer.id, name: customer.name, phone: customer.phone } : undefined,
+    providerProfile: provider ? { id: provider.id, name: provider.name, status: provider.status } : undefined,
     displayName: name,
     firstName: displayFirstName(name),
+    customerDisplayName: customer?.name ?? undefined,
+    customerFirstName: displayFirstName(customer?.name),
+    providerDisplayName: provider?.name ?? application?.name ?? undefined,
+    providerFirstName: displayFirstName(provider?.name ?? application?.name),
     savedAddresses: customer?.addresses ?? [],
     providerStatus: provider?.status,
     applicationStatus: application?.status,
@@ -248,6 +271,14 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
     conflict,
     traceId,
   }
+}
+
+export async function resolveWhatsAppUserContext(params: { whatsappSender: string }): Promise<WhatsAppIdentity> {
+  // Reusable WhatsApp context resolver for all journeys. It deliberately
+  // returns customer and provider candidates independently so a multi-role
+  // number can be handled with role-aware options instead of losing the known
+  // customer name/address when the provider role wins primary routing.
+  return resolveWhatsAppIdentity(params.whatsappSender)
 }
 
 export async function assertPhoneCanCreateCustomer(phone: string): Promise<void> {

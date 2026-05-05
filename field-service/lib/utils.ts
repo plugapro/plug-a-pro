@@ -15,8 +15,13 @@ export function cn(...inputs: ClassValue[]) {
  * a safety net for admin-entered or import-sourced numbers.
  */
 export function normalizePhone(raw: string): string {
-  const stripped = raw.replace(/[\s\-()]/g, '')
+  const stripped = raw.replace(/^whatsapp:/i, '').replace(/[\s\-()]/g, '')
   if (stripped.startsWith('+')) return stripped
+  // WhatsApp/SMS integrations sometimes pass SA numbers without the leading
+  // country code zero: 823035070 -> +27823035070.
+  if (/^[6-8]\d{8}$/.test(stripped)) {
+    return `+27${stripped}`
+  }
   // South African local format: 0xx → +27xx
   if (stripped.startsWith('0') && stripped.length === 10) {
     return `+27${stripped.slice(1)}`

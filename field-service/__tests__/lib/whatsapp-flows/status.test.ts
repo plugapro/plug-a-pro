@@ -246,6 +246,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     const jr = makeJobRequest({ customerId: 'other_customer' })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValueOnce([] as never)
 
     await handleStatusFlow(
       makeCtx({

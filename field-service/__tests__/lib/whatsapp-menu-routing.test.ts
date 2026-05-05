@@ -197,7 +197,7 @@ describe('role-aware WhatsApp main menu routing', () => {
 
     const body = vi.mocked(wa.sendList).mock.calls[0][1]
     const rows = listRows()
-    expect(body).toContain('Hi Sheila')
+    expect(body).toContain('Welcome back, Sheila')
     expect(rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'book' }),
       expect.objectContaining({ id: 'status' }),
@@ -252,6 +252,39 @@ describe('role-aware WhatsApp main menu routing', () => {
     expect(rows).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'book' }),
       expect.objectContaining({ id: 'find_work' }),
+    ]))
+  })
+
+  it('shows role-aware menu when the same phone has customer and provider profiles', async () => {
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'cust_1',
+      phone: PHONE,
+      name: 'Sarah Sullivan',
+      addresses: [],
+    } as any)
+    vi.mocked((db.provider as unknown as { findMany: typeof vi.fn }).findMany).mockResolvedValue([{
+      id: 'prv_1',
+      name: 'Sarah Provider',
+      phone: PHONE,
+      status: 'ACTIVE',
+      active: true,
+      verified: true,
+      availableNow: true,
+      suspendedUntil: null,
+      suspendedReason: null,
+      skills: [],
+      serviceAreas: [],
+    }] as never)
+
+    await showMainMenu(PHONE)
+
+    const body = vi.mocked(wa.sendList).mock.calls[0][1]
+    const rows = listRows()
+    expect(body).toContain('Welcome back, Sarah')
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'book' }),
+      expect.objectContaining({ id: 'status' }),
+      expect.objectContaining({ id: 'provider_my_jobs' }),
     ]))
   })
 

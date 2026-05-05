@@ -27,8 +27,10 @@ describe('WhatsApp identity resolution', () => {
 
   it.each([
     ['0821234567', '+27821234567'],
+    ['823035070', '+27823035070'],
     ['27821234567', '+27821234567'],
     ['+27821234567', '+27821234567'],
+    ['whatsapp:+27821234567', '+27821234567'],
   ])('normalizes %s to %s', (input, expected) => {
     expect(normalizePhone(input)).toBe(expected)
   })
@@ -143,6 +145,8 @@ describe('WhatsApp identity resolution', () => {
       role: 'provider',
       customerId: 'cust_conflict',
       providerId: 'prv_conflict',
+      customerDisplayName: 'Dual Role',
+      customerFirstName: 'Dual',
     })
   })
 

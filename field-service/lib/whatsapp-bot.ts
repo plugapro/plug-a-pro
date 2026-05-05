@@ -50,7 +50,7 @@ import {
 } from './provider-credit-copy'
 import { preferenceLabel } from './client-request-data'
 import { ctaLabelFor } from './whatsapp-copy'
-import { resolveJourneyRecovery, sendWhatsAppJourneyRecovery } from './journey-recovery'
+import { resolveJourneyRecovery, sendWhatsAppJourneyRecovery, type JourneyUserRole } from './journey-recovery'
 import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
 import {
   completeProviderJobFromWhatsApp,
@@ -583,11 +583,18 @@ async function processInboundMessageUnlocked(
   // Normalise to E.164 (+27…). Meta sends without the leading '+'.
   const phone = normalizePhone(message.from)
   const reply = parseInbound(message)
+  let flow: FlowName = 'idle'
+  let step: FlowStep = 'welcome'
+  let data: ConversationData = {}
+  let recoveryRole: JourneyUserRole = 'unknown'
 
   try {
     // Load or create conversation session
     const conversation = await loadConversation(phone)
     const isExpired = conversation.expiresAt < new Date()
+    flow = conversation.flow as FlowName
+    step = isExpired ? 'welcome' : (conversation.step as FlowStep)
+    data = isExpired ? {} : (conversation.data as ConversationData)
 
     // Override: reset keywords always restart
     const rawText = reply.text?.toLowerCase() ?? ''
@@ -665,9 +672,6 @@ async function processInboundMessageUnlocked(
     const isRebook = REBOOK_KEYWORDS.some((k) => rawText === k || rawText.includes(k))
     const providerCommand = resolveProviderWhatsappCommand(rawText)
 
-    let flow: FlowName = conversation.flow as FlowName
-    let step: FlowStep = isExpired ? 'welcome' : (conversation.step as FlowStep)
-    let data: ConversationData = isExpired ? {} : (conversation.data as ConversationData)
     const persistedFlow = conversation.flow as FlowName
     const persistedStep = conversation.step as FlowStep
     const isStatelessReply = isStatelessNotificationReply(reply, rawText)
@@ -699,6 +703,7 @@ async function processInboundMessageUnlocked(
     const selectedMenuPath = reply.id ?? rawText ?? 'unknown'
     const isCustomerRole = identity.role === 'customer'
     const isProviderRole = identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive'
+    recoveryRole = isCustomerRole ? 'customer' : isProviderRole ? 'provider' : 'unknown'
     const isCustomerJourneyAction = Boolean(
       ['book', 'browse_categories', 'status', 'my_booking', 'start_reschedule', 'start_cancel'].includes(reply.id ?? '') ||
       flow === 'job_request' ||
@@ -1482,12 +1487,14 @@ async function processInboundMessageUnlocked(
     // safe next actions without exposing internals.
     try {
       await sendWhatsAppJourneyRecovery(phone, {
-        userRole: 'unknown',
+        userRole: recoveryRole,
         channel: 'whatsapp',
-        flowName: 'idle',
-        currentStep: 'welcome',
+        flowName: flow,
+        currentStep: step,
         failureType: 'unexpected_error',
-        recoveryClass: 'retry_same_step',
+        // Status check errors should prioritize a refresh action, because users
+        // are already expecting a request status result there.
+        recoveryClass: flow === 'status' ? 'show_status' : 'retry_same_step',
         messageId: message.id,
         error: err,
       })

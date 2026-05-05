@@ -36,6 +36,7 @@ import {
   InvalidStructuredAddressError,
 } from '../structured-address'
 import {
+  phoneLookupVariants,
   resolveWhatsAppIdentity,
   type WhatsAppSavedAddress,
 } from '../whatsapp-identity'
@@ -406,7 +407,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     const category = categoryEntry?.label ?? ctx.reply.title ?? ''
 
     const identity = await resolveWhatsAppIdentity(ctx.phone)
-    if (identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive') {
+    if ((identity.role === 'provider' || identity.role === 'provider_pending' || identity.role === 'provider_inactive') && !identity.customerId) {
       await sendText(
         ctx.phone,
         `This number is registered as a Plug A Pro provider.\n\nFor now, provider and customer profiles must use separate WhatsApp numbers.\n\nPlease request a service using a different number.`
@@ -416,16 +417,25 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
     }
 
     const PLACEHOLDER_NAMES = new Set(['WhatsApp Customer', 'Customer'])
-    const isKnownCustomer = identity.role === 'customer' && Boolean(identity.customerId)
-    const hasUsableName = Boolean(identity.displayName && !PLACEHOLDER_NAMES.has(identity.displayName))
+    const isKnownCustomer = Boolean(identity.customerId)
+    const knownCustomerName = identity.customerDisplayName ?? identity.displayName
+    const knownCustomerFirstName = identity.customerFirstName ?? firstName(knownCustomerName)
+    const hasUsableName = Boolean(knownCustomerName && !PLACEHOLDER_NAMES.has(knownCustomerName))
     const isFirstBooking = !isKnownCustomer || !hasUsableName
 
     if (!isFirstBooking) {
+      console.info('[job-request-flow] returning customer recognized; skipping name step', {
+        traceId: identity.traceId,
+        phone: maskedPhone(ctx.phone),
+        customerId: identity.customerId,
+        savedAddressCount: identity.savedAddresses.length,
+        roleConflict: identity.conflict,
+      })
       const baseData = {
         selectedCategory: category,
         category,
         customerId: identity.customerId,
-        customerName: identity.displayName,
+        customerName: knownCustomerName,
         isFirstBooking: false,
       }
 
@@ -433,7 +443,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
       if (savedAddresses.length > 1) {
         await sendList(
           ctx.phone,
-          `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nWhich address is this ${category} service for?`,
+          `Welcome back, ${knownCustomerFirstName}.\n\nWhich site is this ${category} service for?`,
           [{
             title: 'Saved addresses',
             rows: [
@@ -456,7 +466,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
         if (addressData) {
           await sendButtons(
             ctx.phone,
-            `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nIs this service for your saved address?\n\n_${savedAddressDisplay(savedAddress)}_`,
+            `Welcome back, ${knownCustomerFirstName}.\n\nIs this service for your saved address?\n\n_${savedAddressDisplay(savedAddress)}_`,
             [
               { id: 'addr_same', title: 'Yes, use this' },
               { id: 'addr_new', title: 'Add new address' },
@@ -469,7 +479,7 @@ async function handleCollectNameStep(ctx: FlowContext): Promise<FlowResult> {
       // Legacy address (no locationNodeId) or unresolvable node — force new entry
       await sendText(
         ctx.phone,
-        `Hi ${identity.firstName ?? firstName(identity.displayName)}, welcome back to Plug A Pro.\n\nNo saved structured address is ready for this request yet.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
+        `Welcome back, ${knownCustomerFirstName}.\n\nNo saved structured address is ready for this request yet.\n\n📍 *Where do you need the ${category} work done?*\n\n*Street address:* Type your street address:\n\n_Example: 14 Main Street_`,
       )
       return { nextStep: 'collect_address_street', nextData: baseData }
     }
@@ -527,7 +537,7 @@ async function handleCollectSite(ctx: FlowContext): Promise<FlowResult> {
     // Look up addresses for this customer.  customerId may not be in ctx.data
     // yet for a first-booking user, so resolve via phone.
     const customer = await db.customer.findFirst({
-      where: { phone: ctx.phone },
+      where: { phone: { in: phoneLookupVariants(ctx.phone) } },
       select: {
         id: true,
         addresses: {
@@ -1669,12 +1679,38 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
 export async function showMainMenu(phone: string): Promise<void> {
   const menu = await resolveWhatsAppIdentity(phone)
 
-  if (menu.role === 'customer') {
-    const name = menu.firstName ?? firstName(menu.displayName)
+  if (menu.conflict && menu.customerId) {
+    const name = menu.customerFirstName ?? firstName(menu.customerDisplayName ?? menu.displayName)
+    await sendList(
+      phone,
+      `Welcome back, ${name}. What would you like to do?`,
+      [
+        {
+          title: 'Customer',
+          rows: [
+            { id: 'book', title: 'Request a Service', description: 'Start a new customer request' },
+            { id: 'status', title: 'Track Request', description: 'Check your customer request' },
+          ],
+        },
+        {
+          title: 'Provider',
+          rows: [
+            { id: 'provider_my_jobs', title: 'Provider Menu', description: 'Manage your provider work' },
+            { id: 'provider_worker_portal', title: 'Worker Portal', description: 'Open provider tools' },
+          ],
+        },
+      ],
+      { buttonLabel: 'Choose Option' },
+    )
+    return
+  }
+
+  if (menu.customerId) {
+    const name = menu.customerFirstName ?? menu.firstName ?? firstName(menu.customerDisplayName ?? menu.displayName)
 
     await sendList(
       phone,
-      `Hi ${name}, welcome back to Plug A Pro.\n\nWhat would you like to do?`,
+      `Welcome back, ${name}. How can we help today?`,
       [
         {
           title: 'Services',

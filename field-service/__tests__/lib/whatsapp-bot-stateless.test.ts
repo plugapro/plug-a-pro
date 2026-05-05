@@ -5,6 +5,7 @@ const {
   mockAcceptLead,
   mockProcessQuoteDecision,
   mockOrchestrateMatch,
+  mockSendJourneyRecovery,
   mockSendText,
   mockSendButtons,
   mockSendCtaUrl,
@@ -23,6 +24,7 @@ const {
   mockAcceptLead: vi.fn(),
   mockProcessQuoteDecision: vi.fn(),
   mockOrchestrateMatch: vi.fn(),
+  mockSendJourneyRecovery: vi.fn(),
   mockSendText: vi.fn(),
   mockSendButtons: vi.fn(),
   mockSendCtaUrl: vi.fn(),
@@ -59,6 +61,13 @@ vi.mock('@/lib/matching-engine', () => ({ acceptLead: mockAcceptLead, declineLea
 vi.mock('@/lib/quotes', () => ({ processQuoteDecision: mockProcessQuoteDecision }))
 vi.mock('@/lib/matching/orchestrator', () => ({ orchestrateMatch: mockOrchestrateMatch }))
 vi.mock('@/lib/whatsapp', () => ({ sendProviderAssigned: vi.fn() }))
+vi.mock('@/lib/journey-recovery', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/journey-recovery')>('@/lib/journey-recovery')
+  return {
+    ...actual,
+    sendWhatsAppJourneyRecovery: mockSendJourneyRecovery,
+  }
+})
 vi.mock('@/lib/post-match-communications', () => ({
   buildAcceptedLeadContactUrlForProvider: mockBuildAcceptedLeadContactUrlForProvider,
 }))
@@ -86,6 +95,7 @@ vi.mock('@/lib/whatsapp-identity', () => ({
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { handleJobRequestFlow, showMainMenu } from '@/lib/whatsapp-flows/job-request'
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
+import { handleStatusFlow } from '@/lib/whatsapp-flows/status'
 
 const PHONE = '+27821234567'
 
@@ -152,6 +162,7 @@ describe('processInboundMessage stateless notification replies', () => {
     mockSendText.mockResolvedValue('msg-text')
     mockSendButtons.mockResolvedValue('msg-buttons')
     mockSendCtaUrl.mockResolvedValue('msg-cta')
+    mockSendJourneyRecovery.mockResolvedValue(undefined)
     mockBuildAcceptedLeadContactUrlForProvider.mockResolvedValue('https://wa.me/27820000001?text=hello')
     expiredMidFlowConversation()
   })
@@ -214,6 +225,31 @@ describe('processInboundMessage stateless notification replies', () => {
       PHONE,
       expect.stringContaining('_Ref:'),
     )
+  })
+
+  it('uses status-aware recovery when status flow throws before rendering', async () => {
+    mockDb.conversation.upsert.mockResolvedValue({
+      phone: PHONE,
+      flow: 'status',
+      step: 'status_show',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+    ;(handleStatusFlow as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('dependency timeout'))
+
+    await processInboundMessage(buttonMessage('status'))
+
+    expect(mockSendJourneyRecovery).toHaveBeenCalledWith(
+      PHONE,
+      expect.objectContaining({
+        userRole: 'unknown',
+        flowName: 'status',
+        currentStep: 'status_show',
+        failureType: 'unexpected_error',
+        recoveryClass: 'show_status',
+      }),
+    )
+    expect(mockSendJourneyRecovery).toHaveBeenCalledTimes(1)
   })
 
   it('handles malformed WhatsApp accept payloads without falling through to the generic bot error', async () => {

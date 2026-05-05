@@ -399,25 +399,23 @@ async function showRequestStatus(
       log(`request ownership mismatch id=${jobRequestId} expectedCustomerId=${expectedCustomerId}`)
 
       const latestForCustomer = await loadLatestRequestForCustomer()
-      if (latestForCustomer) {
-        if (latestForCustomer.id !== jobRequestId) {
-          log(`ownership mismatch fallback to latest request id=${latestForCustomer.id}`)
-          return showRequestStatus(phone, latestForCustomer.id, reqId, expectedCustomerId)
-        }
-
-        // Defensive: if same id returns again with mismatch (shouldn't happen), continue with this row.
-        log('ownership check appears inconsistent; rendering fallback-matched request id as-is')
-      } else {
-        await sendButtons(
-          phone,
-          '⚠️ That request could not be loaded for this account.',
-          [
-            { id: 'book', title: '🔧 Request a Service' },
-            { id: 'back_home', title: '🏠 Main Menu' },
-          ],
-        )
-        return { nextStep: 'done' }
+      if (latestForCustomer && latestForCustomer.id !== jobRequestId) {
+        log(`ownership mismatch fallback to latest request id=${latestForCustomer.id}`)
+        return showRequestStatus(phone, latestForCustomer.id, reqId, expectedCustomerId)
       }
+
+      // No valid fallback available (customer has no requests, or the fallback
+      // query returned the same stale/foreign ID — both are safe-exit paths).
+      log(`request ownership unresolvable for id=${jobRequestId} — sending safe error`)
+      await sendButtons(
+        phone,
+        '⚠️ That request could not be loaded for this account.',
+        [
+          { id: 'book', title: '🔧 Request a Service' },
+          { id: 'back_home', title: '🏠 Main Menu' },
+        ],
+      )
+      return { nextStep: 'done' }
     }
 
     const job = jr.match?.booking?.job ?? null
