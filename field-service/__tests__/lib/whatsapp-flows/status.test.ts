@@ -5,6 +5,9 @@ vi.mock('@/lib/db', () => ({
     customer:   { findUnique: vi.fn() },
     jobRequest: { findMany: vi.fn(), findUnique: vi.fn() },
     extraWork:  { findFirst: vi.fn() },
+    lead:       { findMany: vi.fn() },
+    providerShortlist: { findFirst: vi.fn() },
+    dispatchDecision: { findFirst: vi.fn() },
   },
 }))
 
@@ -64,6 +67,9 @@ function makeJobRequestWithJob(jobStatus: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.NEXT_PUBLIC_APP_URL = APP_URL
+  vi.mocked(db.lead.findMany).mockResolvedValue([])
+  vi.mocked(db.providerShortlist.findFirst).mockResolvedValue(null)
+  vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue(null)
 })
 
 // ─── Customer not found ───────────────────────────────────────────────────────
@@ -116,8 +122,8 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Plumbing'),
-      'View Ticket',
+      expect.stringContaining('Ticket #ABC123'),
+      'Refresh status',
       `${APP_URL}/requests/access/jr_abc123`
     )
     expect(result.nextStep).toBe('done')
@@ -135,6 +141,60 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(call[1]).toContain('Provider scheduled')
     expect(call[1]).not.toContain('Worker scheduled')
     expect(call[1]).not.toContain('technician')
+  })
+
+  it('shows explicit pending matching copy when lead summary is empty', async () => {
+    const jr = makeJobRequest()
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.lead.findMany).mockResolvedValue([])
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('still checking suitable providers'),
+      'Refresh status',
+      `${APP_URL}/requests/access/jr_abc123`
+    )
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('shows explicit no providers copy when latest dispatch decision is NO_MATCH', async () => {
+    const jr = makeJobRequest()
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue({ status: 'NO_MATCH' } as never)
+
+    await handleStatusFlow(makeCtx())
+
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("haven't found suitable available providers"),
+      'Refresh status',
+      `${APP_URL}/requests/access/jr_abc123`
+    )
+  })
+
+  it('rejects a stale pinned request that belongs to another customer', async () => {
+    const jr = makeJobRequest({ customerId: 'other_customer' })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+
+    await handleStatusFlow(
+      makeCtx({
+        step: 'status_show',
+        data: { jobRequestId: 'jr_other', customerId: 'cust_1' },
+      })
+    )
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('That request could not be loaded for this account.'),
+      expect.any(Array)
+    )
   })
 })
 
@@ -213,8 +273,8 @@ describe('handleStatusFlow — multiple active requests', () => {
 
     expect(rows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'status_req_jr_1', title: expect.stringContaining('Painting') }),
-        expect.objectContaining({ id: 'status_req_jr_2', title: expect.stringContaining('Painting') }),
+        expect.objectContaining({ id: 'status_req_jr_1', title: expect.stringContaining('12 Apr') }),
+        expect.objectContaining({ id: 'status_req_jr_2', title: expect.stringContaining('02 Apr') }),
       ])
     )
     expect(rows[0].title).not.toBe(rows[1].title)
@@ -279,8 +339,8 @@ describe('handleStatusFlow — multiple active requests', () => {
     )
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Painting'),
-      'View Ticket',
+      expect.stringContaining('Ticket #JR_1'),
+      'Refresh status',
       `${APP_URL}/requests/access/jr_1`
     )
     expect(result.nextStep).toBe('done')
@@ -307,8 +367,8 @@ describe('handleStatusFlow — status_pick step', () => {
     )
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Electrical'),
-      'View Ticket',
+      expect.stringContaining('Ticket #JR_2'),
+      'Refresh status',
       `${APP_URL}/requests/access/jr_2`
     )
     expect(result.nextStep).toBe('done')
@@ -364,7 +424,7 @@ describe('handleStatusFlow — missing NEXT_PUBLIC_APP_URL', () => {
     // Must send buttons with status info but no tracking URL
     expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Plumbing'),
+      expect.stringContaining('Ticket #ABC123'),
       expect.any(Array),
       expect.any(Object)
     )
@@ -387,7 +447,31 @@ describe('handleStatusFlow — send fallback resilience', () => {
     // Fallback no longer includes raw URL (UAT-006: security improvement)
     expect(wa.sendText).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Open the Plug A Pro app and look up ticket')
+      expect.stringContaining('Tap Track My Request to refresh')
+    )
+    expect(result.nextStep).toBe('done')
+  })
+})
+
+describe('handleStatusFlow — resilience for invalid disambiguation id', () => {
+  it('handles a stale status_pick id by showing latest active request status', async () => {
+    const latest = makeJobRequest({ id: 'jr_latest', category: 'Electrical', status: 'OPEN', createdAt: new Date('2026-04-12') })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([latest] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(latest as never)
+
+    const result = await handleStatusFlow(
+      makeCtx({
+        step:  'status_pick',
+        reply: { type: 'list_reply', id: 'status_req_missing', text: 'Electrical' },
+      })
+    )
+
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Ticket #LATEST'),
+      'Refresh status',
+      `${APP_URL}/requests/access/jr_latest`
     )
     expect(result.nextStep).toBe('done')
   })

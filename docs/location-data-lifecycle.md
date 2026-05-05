@@ -81,3 +81,25 @@ Do not expose internal aliases as selectable suburbs unless they are useful cust
 - Prefer soft deactivation for retired locations.
 - Before destructive maintenance, export current `location_nodes` and dependent IDs from `addresses`, `customer_addresses`, `technician_service_areas`, and `candidate_pool`.
 - If a WhatsApp/PWA selector has no structured data, allow a free-text/manual-review fallback and log the missing location. Do not hang the flow.
+
+## Automated hardening
+
+The repo includes these additional safeguards:
+
+- `npm run export:locations` writes a timestamped JSON export of `location_nodes` before manual maintenance.
+- `npm run audit:locations` fails if active province/city/region/suburb counts drop below protected thresholds or if required JHB West / Roodepoort suburbs are missing.
+- `/api/cron/location-audit` runs the same audit behind `CRON_SECRET` and returns HTTP 500 on failure so monitoring can alert.
+- `field-service/vercel.json` schedules the audit daily.
+
+Recommended deployment gate:
+
+```bash
+npm run seed:locations
+npm run audit:locations
+```
+
+Run `export:locations` before any planned master-data change:
+
+```bash
+npm run export:locations
+```
