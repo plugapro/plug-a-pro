@@ -32,17 +32,20 @@ describe('WHATSAPP_COPY constants', () => {
 
 describe('ctaLabelFor / ctaLink', () => {
   it('returns short, action-based labels for each documented purpose', () => {
+    expect(ctaLabelFor('credit_history')).toBe('View credit history')
     expect(ctaLabelFor('credit_policy')).toBe('View credit policy')
     expect(ctaLabelFor('provider_terms')).toBe('View terms')
     expect(ctaLabelFor('application_status')).toBe('Check status')
-    expect(ctaLabelFor('worker_portal')).toBe('Open dashboard')
+    expect(ctaLabelFor('worker_portal')).toBe('Open Worker Portal')
+    expect(ctaLabelFor('provider_profile')).toBe('Complete profile')
+    expect(ctaLabelFor('identity_verification')).toBe('Complete verification')
+    expect(ctaLabelFor('job_detail')).toBe('View job')
     expect(ctaLabelFor('booking_view')).toBe('View booking')
     expect(ctaLabelFor('quote_view')).toBe('View quote')
     expect(ctaLabelFor('quote_approval')).toBe('Approve quote')
     expect(ctaLabelFor('payment')).toBe('Make payment')
     expect(ctaLabelFor('invoice_view')).toBe('View invoice')
     expect(ctaLabelFor('receipt_view')).toBe('View receipt')
-    expect(ctaLabelFor('job_card')).toBe('View job card')
     expect(ctaLabelFor('support')).toBe('Contact support')
     expect(ctaLabelFor('generic_details')).toBe('View details')
   })
@@ -102,6 +105,17 @@ describe('bodyContainsAppCentredPhrase', () => {
 // ─── Regression: known producers must stay clean ─────────────────────────────
 
 describe('regression: provider-credit-copy producers must not embed raw URLs', () => {
+  it('buildProviderCreditSummaryMessage body has no URL and points to CTA', async () => {
+    const { buildProviderCreditSummaryMessage } = await import('@/lib/provider-credit-copy')
+    const body = buildProviderCreditSummaryMessage({
+      totalCreditBalance: 5,
+      promoCreditBalance: 3,
+      paidCreditBalance: 2,
+    })
+    expect(bodyContainsRawUrl(body)).toBe(false)
+    expect(body).toContain('Credit history is available below.')
+  })
+
   it('buildProviderApplicationSubmittedMessage body has no URL and no "Shall I"', async () => {
     const { buildProviderApplicationSubmittedMessage } = await import('@/lib/provider-credit-copy')
     const body = buildProviderApplicationSubmittedMessage({

@@ -143,6 +143,8 @@ async function triggerSideEffects(params: {
 
   try {
     const { sendProviderOnTheWay, sendJobCompleted, sendText } = await import('./whatsapp')
+    const { sendCtaUrl } = await import('./whatsapp-interactive')
+    const { ctaLabelFor } = await import('./whatsapp-copy')
 
     if (toStatus === 'EN_ROUTE') {
       await sendProviderOnTheWay({
@@ -165,12 +167,23 @@ async function triggerSideEffects(params: {
     }
 
     if (toStatus === 'STARTED') {
+      const trackerUrl = ticketUrl ?? bookingUrl
       await sendText({
         to: customer.phone,
-        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\nTrack it here: ${ticketUrl ?? bookingUrl ?? 'your booking in the Plug A Pro app.'}`,
+        text: `🔧 Work has started on your ${job.booking.match.jobRequest.category} job.\n\n${trackerUrl ? 'Your job tracker is available below.' : 'Check your booking in the Plug A Pro app for details.'}`,
         bookingId: job.bookingId,
         templateName: 'freeform:job_started',
       })
+      if (trackerUrl) {
+        await sendCtaUrl(
+          customer.phone,
+          'Your job tracker is available below.',
+          ctaLabelFor('generic_details'),
+          trackerUrl,
+          undefined,
+          { bookingId: job.bookingId, templateName: 'interactive:job_started_tracker_cta' },
+        )
+      }
     }
 
     if (toStatus === 'PENDING_COMPLETION_CONFIRMATION') {
@@ -179,12 +192,23 @@ async function triggerSideEffects(params: {
         jobId: job.id,
         customerId: job.booking.match.jobRequest.customer.id,
       })
+      const signoffUrl = completionUrl ?? ticketUrl ?? bookingUrl
       await sendText({
         to: customer.phone,
-        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\nTap to confirm completion — no login needed:\n${completionUrl ?? ticketUrl ?? bookingUrl ?? 'Check your app for the booking details.'}`,
+        text: `✅ Your ${job.booking.match.jobRequest.category} job has been marked ready for sign-off.\n\n${signoffUrl ? 'Sign-off is available below.' : 'Check your app for the booking details.'}`,
         bookingId: job.bookingId,
         templateName: 'freeform:completion_confirmation_request',
       })
+      if (signoffUrl) {
+        await sendCtaUrl(
+          customer.phone,
+          'Sign-off is available below.',
+          ctaLabelFor('generic_details'),
+          signoffUrl,
+          undefined,
+          { bookingId: job.bookingId, templateName: 'interactive:completion_signoff_cta' },
+        )
+      }
     }
 
     if (toStatus === 'COMPLETED') {

@@ -49,6 +49,7 @@ import {
   providerCreditBreakdownLabel,
 } from './provider-credit-copy'
 import { preferenceLabel } from './client-request-data'
+import { ctaLabelFor } from './whatsapp-copy'
 import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
 import {
   completeProviderJobFromWhatsApp,
@@ -878,7 +879,7 @@ async function processInboundMessageUnlocked(
       await sendCtaUrl(
         phone,
         'Top up your Plug-A-Pro Credits before accepting more matched leads.',
-        'Top Up Credits',
+        ctaLabelFor('credit_history'),
         getWorkerPortalUrl('/provider/credits'),
       )
       return
@@ -2679,6 +2680,15 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     undefined,
     { templateName: 'provider_location_prompt' }
   )
+  const creditUrl = getWorkerPortalUrl('/provider/credits')
+  if (creditUrl) {
+    await sendCtaUrl(
+      phone,
+      'Credit top-up and history are available below.',
+      ctaLabelFor('credit_history'),
+      creditUrl,
+    )
+  }
 }
 
 async function handleProviderLocationShare(
@@ -2788,6 +2798,15 @@ async function sendLeadInsufficientCreditsMessage(
       { id: 'back_home', title: 'Main Menu' },
     ],
   )
+  const creditUrl = getWorkerPortalUrl('/provider/credits')
+  if (creditUrl) {
+    await sendCtaUrl(
+      phone,
+      'Credit top-up and history are available below.',
+      ctaLabelFor('credit_history'),
+      creditUrl,
+    )
+  }
 }
 
 async function handlePostMatchContactCustomer(phone: string, buttonId: string): Promise<void> {
@@ -2898,10 +2917,13 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
     })
     if (!result.ok) {
       if (result.reason === 'INSUFFICIENT_CREDITS') {
-        await sendText(
-          phone,
-          buildInsufficientCreditsMessage({ availableCredits: result.currentCreditBalance ?? 0 }),
-        )
+        const creditUrl = getWorkerPortalUrl('/provider/credits')
+        const body = buildInsufficientCreditsMessage({ availableCredits: result.currentCreditBalance ?? 0 })
+        if (creditUrl) {
+          await sendCtaUrl(phone, body, ctaLabelFor('credit_history'), creditUrl)
+        } else {
+          await sendText(phone, body)
+        }
         return
       }
       if (result.reason === 'PROVIDER_NOT_SELECTED') {

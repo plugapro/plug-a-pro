@@ -9,6 +9,7 @@
 
 import { logOutboundMessage } from './message-events'
 import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
+import { assertNoRawUrlsInWhatsAppBody } from './whatsapp-copy'
 
 const API_VERSION = 'v21.0'
 
@@ -88,6 +89,7 @@ export async function sendText(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
+  assertNoRawUrlsInWhatsAppBody(text, context?.templateName ?? 'interactive:text')
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -129,6 +131,7 @@ export async function sendButtons(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
+  assertNoRawUrlsInWhatsAppBody(body, context?.templateName ?? 'interactive:buttons')
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -181,6 +184,7 @@ export async function sendList(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
+  assertNoRawUrlsInWhatsAppBody(body, context?.templateName ?? 'interactive:list')
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -221,6 +225,7 @@ export async function sendCtaUrl(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
+  assertNoRawUrlsInWhatsAppBody(body, context?.templateName ?? 'interactive:cta_url')
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',

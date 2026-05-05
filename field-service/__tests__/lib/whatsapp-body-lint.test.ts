@@ -12,6 +12,28 @@ import { bodyContainsRawUrl } from '@/lib/whatsapp-copy'
 describe('repo-wide WhatsApp body-text lint — no raw URLs in customer-facing copy', () => {
   it.each([
     [
+      'buildProviderCreditSummaryMessage',
+      async () => {
+        const m = await import('@/lib/provider-credit-copy')
+        return m.buildProviderCreditSummaryMessage({
+          totalCreditBalance: 5,
+          promoCreditBalance: 3,
+          paidCreditBalance: 2,
+        })
+      },
+    ],
+    [
+      'buildInsufficientCreditsMessage',
+      async () => {
+        const m = await import('@/lib/provider-credit-copy')
+        return m.buildInsufficientCreditsMessage({
+          availableCredits: 0,
+          creditsRequired: 1,
+          topupUrl: 'https://app.plugapro.co.za/provider/credits',
+        })
+      },
+    ],
+    [
       'buildProviderApplicationSubmittedMessage',
       async () => {
         const m = await import('@/lib/provider-credit-copy')

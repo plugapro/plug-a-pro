@@ -5,6 +5,8 @@ import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTrans
 import { getJobRequestAccessUrl } from './job-request-access'
 import { getProviderSignedJobHandoverUrlByLeadId } from './provider-lead-access'
 import { sendText } from './whatsapp'
+import { sendCtaUrl } from './whatsapp-interactive'
+import { ctaLabelFor } from './whatsapp-copy'
 
 export type SelectedProviderAcceptanceResult =
   | {
@@ -450,10 +452,20 @@ async function notifySelectedAcceptanceCommitted(params: {
         `Preferred time: ${formatPreferredTime(params.preferredWindowStart, params.preferredWindowEnd)}\n` +
         descriptionLine +
         photosLine +
-        `\nNext step:\nReply with your arrival time.\nExample: 14:00${jobUrl ? `\n\nView job and photos:\n${jobUrl}` : ''}`,
+        `\nNext step:\nReply with your arrival time.\nExample: 14:00${jobUrl ? `\n\nJob details and photos are available below.` : ''}`,
       templateName: 'interactive:selected_job_accepted_provider',
       metadata: { leadId: params.leadId, providerId: params.providerId },
     })
+    if (jobUrl) {
+      await sendCtaUrl(
+        params.providerPhone,
+        'Job details and photos are available below.',
+        ctaLabelFor('job_detail'),
+        jobUrl,
+        undefined,
+        { templateName: 'interactive:selected_job_accepted_provider_cta', metadata: { leadId: params.leadId, providerId: params.providerId } },
+      )
+    }
 
     await sendText({
       to: params.customerPhone,
@@ -461,10 +473,20 @@ async function notifySelectedAcceptanceCommitted(params: {
         `Your provider accepted the job\n\n` +
         `Provider: ${params.providerName}\n` +
         `Expected arrival: ${params.estimatedArrivalAt?.toLocaleString('en-ZA') ?? 'To be confirmed'}\n` +
-        `Call-out fee: ${formatRand(params.callOutFee)}${ticketUrl ? `\n\nView your request:\n${ticketUrl}` : ''}`,
+        `Call-out fee: ${formatRand(params.callOutFee)}${ticketUrl ? `\n\nYour request is available below.` : ''}`,
       templateName: 'interactive:selected_job_accepted_customer',
       metadata: { leadId: params.leadId, providerId: params.providerId },
     })
+    if (ticketUrl) {
+      await sendCtaUrl(
+        params.customerPhone,
+        'Your request is available below.',
+        ctaLabelFor('generic_details'),
+        ticketUrl,
+        undefined,
+        { templateName: 'interactive:selected_job_accepted_customer_cta', metadata: { leadId: params.leadId, providerId: params.providerId } },
+      )
+    }
 
     return true
   } catch (error) {

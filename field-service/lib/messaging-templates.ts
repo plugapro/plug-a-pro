@@ -22,9 +22,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent immediately when a booking is confirmed and paid',
-    // {{1}} customer name, {{2}} service, {{3}} date/window, {{4}} tracking URL
+    // {{1}} customer name, {{2}} service, {{3}} date/window; tracking URL is a button
     example:
-      'Hi {{1}}, your booking for {{2}} has been confirmed for {{3}}. Track your job: {{4}}',
+      'Hi {{1}}, your booking for {{2}} has been confirmed for {{3}}. Track your job using the button below.',
   },
 
   booking_reminder: {
@@ -42,9 +42,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent when a booking is moved to a new date/time',
-    // {{1}} customer name, {{2}} service, {{3}} old slot, {{4}} new slot, {{5}} tracking URL
+    // {{1}} customer name, {{2}} service, {{3}} old slot, {{4}} new slot; tracking URL is a button
     example:
-      'Hi {{1}}, your {{2}} booking has been moved from {{3}} to {{4}}. See updated booking: {{5}} — see you then!',
+      'Hi {{1}}, your {{2}} booking has been moved from {{3}} to {{4}}. See the updated booking using the button below.',
   },
 
   booking_cancelled: {
@@ -64,9 +64,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent 2h after PENDING_PAYMENT status — resends payment link',
-    // {{1}} customer name, {{2}} service, {{3}} amount, {{4}} payment URL
+    // {{1}} customer name, {{2}} service, {{3}} amount; payment URL is a button
     example:
-      'Hi {{1}}, your {{2}} booking is waiting for payment of {{3}}. Pay here — {{4}} — and your slot is confirmed.',
+      'Hi {{1}}, your {{2}} booking is waiting for payment of {{3}}. Pay using the button below and your slot is confirmed.',
   },
 
   payment_received: {
@@ -116,9 +116,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent when technician raises an extra work request',
-    // {{1}} customer name, {{2}} description, {{3}} amount, {{4}} approval URL
+    // {{1}} customer name, {{2}} description, {{3}} amount; approval URL is a button
     example:
-      'Hi {{1}}, your technician has found additional work needed: {{2}} ({{3}}). Approve or decline here: {{4}}',
+      'Hi {{1}}, your technician has found additional work needed: {{2}} ({{3}}). Approve or decline using the button below.',
   },
 
   job_completed: {
@@ -126,9 +126,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent when job status changes to COMPLETED',
-    // {{1}} customer name, {{2}} invoice URL
+    // {{1}} customer name; invoice URL is a button
     example:
-      'Hi {{1}}, your job has been completed. View your invoice here: {{2}}. Thank you for using our service!',
+      'Hi {{1}}, your job has been completed. View your invoice using the button below. Thank you for using our service!',
   },
 
   follow_up: {
@@ -136,9 +136,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent 24h after job completion to collect rating',
-    // {{1}} customer name, {{2}} rating URL
+    // {{1}} customer name; rating URL is a button
     example:
-      'Hi {{1}}, how did we do? Share your feedback here: {{2}}. We appreciate your support!',
+      'Hi {{1}}, how did we do? Share your feedback using the button below. We appreciate your support!',
   },
 
   // ─── Customer journey — quote flow ────────────────────────────────────────
@@ -151,9 +151,9 @@ export const TEMPLATES = {
     // If this blocks too many users, re-submit with a more transactional body to get UTILITY approval.
     category: 'MARKETING',
     description: 'Sent when admin completes a quote review',
-    // {{1}} customer name, {{2}} service, {{3}} quoted price, {{4}} quote URL
+    // {{1}} customer name, {{2}} service, {{3}} quoted price; quote URL is a button
     example:
-      'Hi {{1}}, your quote for {{2}} is ready: {{3}}. View and accept here: {{4}}',
+      'Hi {{1}}, your quote for {{2}} is ready: {{3}}. View and accept using the button below.',
   },
 
   // ─── Customer re-engagement ───────────────────────────────────────────────
@@ -163,9 +163,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'MARKETING',
     description: 'Sent when a slot opens in the area a customer requested (Notify Me)',
-    // {{1}} customer name, {{2}} service, {{3}} available slot (date/time), {{4}} booking URL
+    // {{1}} customer name, {{2}} service, {{3}} available slot; booking URL is a button
     example:
-      'Good news {{1}}! A slot for {{2}} has opened for {{3}} in your area. Tap to book — {{4}} — slots go fast!',
+      'Good news {{1}}! A slot for {{2}} has opened for {{3}} in your area. Tap the button below to book — slots go fast!',
   },
 
   no_technician_available: {
@@ -173,9 +173,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent when no technician can be matched — ask to reschedule or wait',
-    // {{1}} customer name, {{2}} service, {{3}} original date, {{4}} reschedule URL
+    // {{1}} customer name, {{2}} service, {{3}} original date; reschedule URL is a button
     example:
-      'Hi {{1}}, we could not find a technician for your {{2}} on {{3}}. Please reschedule here — {{4}} — or we will contact you when one is available.',
+      'Hi {{1}}, we could not find a technician for your {{2}} on {{3}}. Please reschedule using the button below, or we will contact you when one is available.',
   },
 
   // ─── Technician — job matching & dispatch ────────────────────────────────
@@ -185,9 +185,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'MARKETING',
     description: 'Sent to a provider when a new matched lead is available to preview and accept',
-    // {{1}} tech first name, {{2}} service, {{3}} area (suburb/city), {{4}} date/window, {{5}} job URL
+    // {{1}} tech first name, {{2}} service, {{3}} area, {{4}} date/window; job URL is a button
     example:
-      'Hi {{1}}, new lead: {{2}} in {{3}} on {{4}}. Preview here: {{5}}. Accepting uses 1 credit and unlocks full customer details.',
+      'Hi {{1}}, new lead: {{2}} in {{3}} on {{4}}. Preview using the button below. Accepting uses 1 credit and unlocks full customer details.',
   },
 
   technician_job_reminder: {
@@ -195,9 +195,9 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent to technician the evening before a confirmed job',
-    // {{1}} tech first name, {{2}} service, {{3}} address, {{4}} time window, {{5}} job URL
+    // {{1}} tech first name, {{2}} service, {{3}} address, {{4}} time window; job URL is a button
     example:
-      'Hi {{1}}, tomorrow: {{2}} job at {{3}} ({{4}}). View job details — {{5}} — see you on site!',
+      'Hi {{1}}, tomorrow: {{2}} job at {{3}} ({{4}}). View job details using the button below. See you on site!',
   },
 
   technician_payment_released: {

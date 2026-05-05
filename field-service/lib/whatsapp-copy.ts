@@ -12,39 +12,45 @@
 // ─── CTA link types ──────────────────────────────────────────────────────────
 
 export type WhatsAppCtaPurpose =
+  | 'credit_history'
   | 'credit_policy'
   | 'provider_terms'
   | 'application_status'
   | 'worker_portal'
+  | 'provider_profile'
+  | 'identity_verification'
+  | 'job_detail'
   | 'booking_view'
   | 'quote_view'
   | 'quote_approval'
   | 'payment'
   | 'invoice_view'
   | 'receipt_view'
-  | 'job_card'
   | 'support'
   | 'generic_details'
 
 export type WhatsAppCtaLink = {
-  id?: string
+  id: string
   label: string
   url: string
   purpose: WhatsAppCtaPurpose
 }
 
 const CTA_LABELS: Record<WhatsAppCtaPurpose, string> = {
+  credit_history: 'View credit history',
   credit_policy: 'View credit policy',
   provider_terms: 'View terms',
   application_status: 'Check status',
-  worker_portal: 'Open dashboard',
+  worker_portal: 'Open Worker Portal',
+  provider_profile: 'Complete profile',
+  identity_verification: 'Complete verification',
+  job_detail: 'View job',
   booking_view: 'View booking',
   quote_view: 'View quote',
   quote_approval: 'Approve quote',
   payment: 'Make payment',
   invoice_view: 'View invoice',
   receipt_view: 'View receipt',
-  job_card: 'View job card',
   support: 'Contact support',
   generic_details: 'View details',
 }
@@ -55,7 +61,7 @@ export function ctaLabelFor(purpose: WhatsAppCtaPurpose): string {
 
 export function ctaLink(purpose: WhatsAppCtaPurpose, url: string, override?: { label?: string; id?: string }): WhatsAppCtaLink {
   return {
-    id: override?.id,
+    id: override?.id ?? purpose,
     label: override?.label ?? CTA_LABELS[purpose],
     url,
     purpose,
@@ -107,6 +113,18 @@ export function bodyContainsRawUrl(body: string): false | { match: string; patte
     const match = body.match(pattern)
     if (match) {
       return { match: match[0], pattern: pattern.source }
+    }
+  }
+  const configuredPublicUrl = process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+  if (configuredPublicUrl) {
+    try {
+      const host = new URL(configuredPublicUrl).hostname
+      if (host && body.toLowerCase().includes(host.toLowerCase())) {
+        return { match: host, pattern: 'configured_public_app_url_host' }
+      }
+    } catch {
+      // Invalid app URL configuration is handled by provider-credit-copy. This
+      // guard only inspects bodies that are about to be sent.
     }
   }
   return false

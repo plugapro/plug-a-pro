@@ -223,13 +223,9 @@ export function providerCreditBreakdownLabel(balance: CreditBalanceBreakdown) {
 
 export function buildProviderCreditSummaryMessage(
   balance: CreditBalanceBreakdown,
-  historyUrl = getWorkerPortalUrl('/provider/credits'),
 ) {
   const starterCredits = balance.promoCreditBalance ?? 0
   const purchasedCredits = balance.paidCreditBalance ?? 0
-  const historyLine = historyUrl
-    ? `\n\nCredit history: ${historyUrl}`
-    : ''
 
   return [
     '*Your credits*',
@@ -240,7 +236,7 @@ export function buildProviderCreditSummaryMessage(
     '',
     'Credits are used only when you accept a customer-selected job.',
     'Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits.',
-    historyLine.trimStart(),
+    'Credit history is available below.',
   ].filter(Boolean).join('\n')
 }
 
@@ -402,7 +398,7 @@ export function buildInsufficientCreditsMessage(params: {
   topupUrl?: string
 }) {
   const required = params.creditsRequired ?? PROVIDER_ACCEPTED_LEAD_CREDIT_COST
-  const topupUrl = params.topupUrl ?? getWorkerPortalUrl('/provider/credits')
+  void params.topupUrl
 
   return [
     '⚠️ *Not enough credits*',
@@ -410,7 +406,6 @@ export function buildInsufficientCreditsMessage(params: {
     `You need ${creditCountLabel(required)} to accept this selected job.`,
     `Your current balance is ${creditCountLabel(params.availableCredits)}.`,
     '',
-    'Please top up in the Worker Portal:',
-    topupUrl,
+    'Please top up in the Worker Portal. The top-up link is available below.',
   ].join('\n')
 }

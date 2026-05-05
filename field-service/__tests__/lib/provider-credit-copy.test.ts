@@ -243,7 +243,8 @@ describe('provider credit copy', () => {
     expect(message).toContain('Not enough credits')
     expect(message).toContain('You need 1 credit to accept this selected job')
     expect(message).toContain('Your current balance is 0 credits')
-    expect(message).toContain('https://example.com/provider/credits')
+    expect(message).toContain('top-up link is available below')
+    expect(message).not.toContain('https://')
   })
 
   it('builds lead accepted credit line with correct deduction and remaining balance', () => {
@@ -272,10 +273,9 @@ describe('provider credit copy', () => {
     expect(line).not.toContain('Purchased')
   })
 
-  it('builds WhatsApp credit summary with starter, purchased, history, and selected-job rule', () => {
+  it('builds WhatsApp credit summary with starter, purchased, CTA prompt, and selected-job rule', () => {
     const message = buildProviderCreditSummaryMessage(
       { totalCreditBalance: 5, promoCreditBalance: 3, paidCreditBalance: 2 },
-      'https://app.plugapro.co.za/provider/credits',
     )
 
     expect(message).toContain('Your credits')
@@ -284,7 +284,8 @@ describe('provider credit copy', () => {
     expect(message).toContain('Purchased: 2')
     expect(message).toContain('Credits are used only when you accept a customer-selected job')
     expect(message).toContain('Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits')
-    expect(message).toContain('https://app.plugapro.co.za/provider/credits')
+    expect(message).toContain('Credit history is available below')
+    expect(message).not.toContain('https://')
   })
 
   it('buildProviderLeadActionsMessage includes credit cost and unlock rules', () => {

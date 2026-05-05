@@ -39,6 +39,9 @@ vi.mock('../../lib/job-request-access', () => ({
 vi.mock('../../lib/whatsapp', () => ({
   sendText: vi.fn().mockResolvedValue('wamid-1'),
 }))
+vi.mock('../../lib/whatsapp-interactive', () => ({
+  sendCtaUrl: vi.fn().mockResolvedValue('wamid-cta'),
+}))
 
 function makeLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -137,6 +140,7 @@ describe('selected provider final acceptance', () => {
   it('accepts selected provider, debits once through unlock, assigns job, and notifies both parties', async () => {
     const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
     const { sendText } = await import('../../lib/whatsapp')
+    const { sendCtaUrl } = await import('../../lib/whatsapp-interactive')
 
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-1',
@@ -184,6 +188,23 @@ describe('selected provider final acceptance', () => {
     expect(providerSend.text).toContain('Replace burst geyser valve')
     expect(providerSend.text).toContain('Photos: 2 available')
     expect(providerSend.text).toContain('Example: 14:00')
+    expect(providerSend.text).not.toContain('https://')
+    expect(sendCtaUrl).toHaveBeenCalledWith(
+      '+27111111111',
+      expect.stringContaining('Job details and photos'),
+      'View job',
+      'https://app.plugapro.test/jobs/token',
+      undefined,
+      expect.any(Object),
+    )
+    expect(sendCtaUrl).toHaveBeenCalledWith(
+      '+27222222222',
+      expect.stringContaining('Your request'),
+      'View details',
+      'https://app.plugapro.test/requests/access/token',
+      undefined,
+      expect.any(Object),
+    )
   })
 
   it('blocks non-selected provider before credit deduction', async () => {

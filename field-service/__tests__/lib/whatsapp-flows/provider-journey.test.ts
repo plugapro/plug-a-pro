@@ -681,7 +681,7 @@ describe('handleProviderJourneyFlow', () => {
       )
     })
 
-    it('shows WhatsApp credit summary and PWA credit history link', async () => {
+    it('shows WhatsApp credit summary and credit history CTA without raw URL in body', async () => {
       vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(baseProvider)
       await handleProviderJourneyFlow(mockCtx('pj_provider_status', 'provider_check_status'))
@@ -692,7 +692,17 @@ describe('handleProviderJourneyFlow', () => {
       expect(message).toContain('Starter/onboarding: 3')
       expect(message).toContain('Purchased: 2')
       expect(message).toContain('Credits are used only when you accept a customer-selected job')
-      expect(message).toContain('/provider/credits')
+      expect(message).toContain('Credit history is available below')
+      expect(message).not.toContain('https://')
+      expect(message).not.toContain('/provider/credits')
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Credit history is available below'),
+        'View credit history',
+        'https://app.plugapro.co.za/provider/credits',
+        undefined,
+        expect.any(Object),
+      )
       vi.unstubAllEnvs()
     })
 

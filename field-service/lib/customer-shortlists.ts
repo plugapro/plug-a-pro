@@ -4,7 +4,8 @@ import { getJobRequestAccessUrl } from './job-request-access'
 import { getProviderLeadAccessUrlByLeadId } from './provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { sendText } from './whatsapp'
-import { sendButtons } from './whatsapp-interactive'
+import { sendButtons, sendCtaUrl } from './whatsapp-interactive'
+import { ctaLabelFor } from './whatsapp-copy'
 
 export class CustomerShortlistError extends Error {
   constructor(
@@ -138,17 +139,27 @@ async function notifyCustomerShortlistReady(params: {
   if (!params.customerPhone) return { sent: false as const, reason: 'no_customer_phone' }
   const ticketUrl = await getJobRequestAccessUrl(params.requestId, 'shortlist').catch(() => null)
   const area = [params.suburb, params.city].filter(Boolean).join(', ')
-  const linkLine = ticketUrl ? `\n\nCompare and select your provider:\n${ticketUrl}` : ''
   await sendText({
     to: params.customerPhone,
     text:
       `Your ${params.category} shortlist is ready\n\n` +
       `${params.optionCount} suitable provider${params.optionCount === 1 ? '' : 's'} in ${area || 'your area'} responded with their call-out fee and earliest arrival.\n\n` +
       `You can compare providers before choosing.\n\n` +
-      `Choose the provider you'd like for this job. Your phone number and exact address will only be shared after you select a provider and they accept.${linkLine}`,
+      `Choose the provider you'd like for this job. Your phone number and exact address will only be shared after you select a provider and they accept.` +
+      (ticketUrl ? `\n\nProvider selection is available below.` : ''),
     templateName: 'interactive:client_shortlist_ready',
     metadata: { requestId: params.requestId },
   })
+  if (ticketUrl) {
+    await sendCtaUrl(
+      params.customerPhone,
+      'Provider selection is available below.',
+      ctaLabelFor('generic_details'),
+      ticketUrl,
+      undefined,
+      { templateName: 'interactive:client_shortlist_ready_cta', metadata: { requestId: params.requestId } },
+    )
+  }
   return { sent: true as const }
 }
 
