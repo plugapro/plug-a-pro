@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { OPS_QUEUE_TYPES } from './ops-queue'
-import { hasHighRiskServiceSelection } from './service-category-policy'
+import { hasAutoApprovalBlockingServiceSelection } from './service-category-policy'
 
 type ProviderApplicationForReview = {
   id: string
@@ -40,7 +40,7 @@ export function assessProviderApplicationForOpsReview(
   if (application.skills.length === 0) reasonCodes.push('MISSING_SKILLS')
   if (application.serviceAreas.length === 0) reasonCodes.push('MISSING_SERVICE_AREAS')
   if (!application.experience?.trim()) reasonCodes.push('MISSING_EXPERIENCE')
-  if (hasHighRiskServiceSelection(application.skills)) {
+  if (hasAutoApprovalBlockingServiceSelection(application.skills)) {
     reasonCodes.push('HIGH_RISK_CATEGORY')
   }
 

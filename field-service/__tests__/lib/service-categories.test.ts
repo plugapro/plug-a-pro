@@ -4,6 +4,7 @@ import {
   getCategoryPolicy,
   getHighRiskServiceRequirements,
   getServiceComplianceRequirement,
+  hasAutoApprovalBlockingServiceSelection,
   hasHighRiskServiceSelection,
 } from '../../lib/service-category-policy'
 
@@ -131,6 +132,35 @@ describe('getCategoryPolicy — tag alias resolution', () => {
 })
 
 describe('service compliance requirements', () => {
+  it('matches the approved provider-risk classification table', () => {
+    const expected = [
+      ['Plumbing', 'plumbing', 'standard', false, false],
+      ['Painting', 'painting', 'standard', false, false],
+      ['Garden & Landscaping', 'garden', 'standard', false, false],
+      ['Handyman', 'handyman', 'standard', false, false],
+      ['Appliances', 'appliances', 'standard', false, false],
+      ['Electrical', 'electrical', 'regulated', true, true],
+      ['DIY & Assembly', 'diy', 'standard', false, false],
+      ['Roofing', 'roofing', 'high_risk', true, true],
+      ['Cleaning', 'cleaning', 'standard', false, false],
+      ['Tiling', 'tiling', 'standard', false, false],
+      ['Pest Control', 'pest_control', 'regulated', true, true],
+      ['Carpentry', 'carpentry', 'standard', false, false],
+      ['Waterproofing', 'waterproofing', 'standard', false, false],
+      ['Air Conditioning', 'air_conditioning', 'high_risk', true, true],
+      ['Other', 'other', 'standard', false, false],
+    ] as const
+
+    for (const [label, key, riskLevel, certificationPrompted, blocksAutoApproval] of expected) {
+      const requirement = getServiceComplianceRequirement(key)
+      expect(requirement.serviceKey).toBe(key)
+      expect(requirement.label).toBe(riskLevel === 'standard' ? key : label)
+      expect(requirement.riskLevel).toBe(riskLevel)
+      expect(requirement.certificationRecommended).toBe(certificationPrompted)
+      expect(hasAutoApprovalBlockingServiceSelection([label])).toBe(blocksAutoApproval)
+    }
+  })
+
   it('marks Electrical as regulated and certification-required for review', () => {
     const requirement = getServiceComplianceRequirement('Electrical')
     expect(requirement.riskLevel).toBe('regulated')
@@ -144,6 +174,14 @@ describe('service compliance requirements', () => {
     expect(requirement.riskLevel).toBe('standard')
     expect(requirement.certificationRecommended).toBe(false)
     expect(hasHighRiskServiceSelection(['Painting'])).toBe(false)
+  })
+
+  it('leaves Plumbing standard so Lovemore-style applications can auto-approve', () => {
+    const requirement = getServiceComplianceRequirement('Plumbing')
+    expect(requirement.riskLevel).toBe('standard')
+    expect(requirement.certificationRecommended).toBe(false)
+    expect(hasHighRiskServiceSelection(['Plumbing'])).toBe(false)
+    expect(hasAutoApprovalBlockingServiceSelection(['Plumbing'])).toBe(false)
   })
 
   it('deduplicates multiple high-risk service selections', () => {

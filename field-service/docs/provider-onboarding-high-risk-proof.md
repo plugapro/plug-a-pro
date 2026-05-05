@@ -10,7 +10,7 @@ Service compliance metadata lives in `lib/service-category-policy.ts`.
 - `high_risk`: proof recommended for review.
 - `regulated`: certification/licence/trade proof should be reviewed before approval.
 
-Current high-risk or regulated examples include Electrical, Plumbing, Pest Control, Air Conditioning, and Roofing where applicable to the catalogue.
+Current high-risk or regulated categories are Electrical, Pest Control, Air Conditioning, and Roofing. Plumbing is currently classified as standard and must not prompt for certification or block auto-approval.
 
 ## WhatsApp behaviour
 

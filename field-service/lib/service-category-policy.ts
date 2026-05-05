@@ -24,6 +24,7 @@ export type ServiceComplianceRequirement = {
   riskLevel: ServiceRiskLevel
   certificationRecommended: boolean
   certificationRequiredForApproval?: boolean
+  blocksAutoApproval?: boolean
   evidencePrompt: string
 }
 
@@ -34,17 +35,9 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     riskLevel: 'regulated',
     certificationRecommended: true,
     certificationRequiredForApproval: true,
+    blocksAutoApproval: true,
     evidencePrompt:
       'Because you selected Electrical, please upload proof of your electrical certification, licence, or trade qualification if you have it. This helps our review team assess your application.',
-  },
-  plumbing: {
-    serviceKey: 'plumbing',
-    label: 'Plumbing',
-    riskLevel: 'high_risk',
-    certificationRecommended: true,
-    certificationRequiredForApproval: false,
-    evidencePrompt:
-      'For regulated plumbing work, certification or trade proof helps our review team assess what work you should be considered for.',
   },
   pest_control: {
     serviceKey: 'pest_control',
@@ -52,6 +45,7 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     riskLevel: 'regulated',
     certificationRecommended: true,
     certificationRequiredForApproval: true,
+    blocksAutoApproval: true,
     evidencePrompt:
       'Pest Control work may require certification. Please add any certificate, licence, qualification, or reference proof you have.',
   },
@@ -60,7 +54,8 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     label: 'Air Conditioning',
     riskLevel: 'high_risk',
     certificationRecommended: true,
-    certificationRequiredForApproval: false,
+    certificationRequiredForApproval: true,
+    blocksAutoApproval: true,
     evidencePrompt:
       'Air Conditioning and refrigeration work can require specialist proof. Please add any relevant certificate, licence, or qualification you have.',
   },
@@ -69,7 +64,8 @@ export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRe
     label: 'Roofing',
     riskLevel: 'high_risk',
     certificationRecommended: true,
-    certificationRequiredForApproval: false,
+    certificationRequiredForApproval: true,
+    blocksAutoApproval: true,
     evidencePrompt:
       'Roofing and working-at-heights jobs are higher risk. Please add proof of relevant experience, references, or safety training if you have it.',
   },
@@ -213,13 +209,22 @@ const TAG_ALIAS_TO_POLICY_KEY: Record<string, string> = {
   'diy': 'diy & assembly',
 }
 
+const COMPLIANCE_LABEL_TO_KEY: Record<string, string> = {
+  'garden & landscaping': 'garden',
+  'garden and landscaping': 'garden',
+  'diy & assembly': 'diy',
+  'diy and assembly': 'diy',
+  'pest control': 'pest_control',
+  'air conditioning': 'air_conditioning',
+}
+
 function normalizeCategory(input: string) {
   return input.trim().toLowerCase()
 }
 
 function normalizeComplianceKey(input: string) {
   const normalized = normalizeCategory(input)
-  return TAG_ALIAS_TO_POLICY_KEY[normalized] ?? normalized.replace(/[\s-]+/g, '_')
+  return COMPLIANCE_LABEL_TO_KEY[normalized] ?? normalized.replace(/[\s-]+/g, '_')
 }
 
 export function getCategoryPolicy(category: string): CategoryPolicy {
@@ -284,6 +289,7 @@ export function getServiceComplianceRequirement(category: string): ServiceCompli
       riskLevel: 'standard',
       certificationRecommended: false,
       certificationRequiredForApproval: false,
+      blocksAutoApproval: false,
       evidencePrompt: '',
     }
   )
@@ -303,6 +309,10 @@ export function getHighRiskServiceRequirements(categories: string[]): ServiceCom
 
 export function hasHighRiskServiceSelection(categories: string[]) {
   return getHighRiskServiceRequirements(categories).length > 0
+}
+
+export function hasAutoApprovalBlockingServiceSelection(categories: string[]) {
+  return getHighRiskServiceRequirements(categories).some((requirement) => requirement.blocksAutoApproval)
 }
 
 export type { CategoryPolicy }

@@ -135,6 +135,64 @@ describe('provider auto-approval', () => {
     })
   })
 
+  it('auto-approves complete standard multi-service applications including Plumbing', async () => {
+    const tx = {
+      providerApplication: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerCategory: {
+        createMany: vi.fn().mockResolvedValue({ count: 9 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 9 }),
+      },
+    }
+
+    const client: any = {
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'app-lovemore-standard',
+            phone: '+27820000002',
+            name: 'Lovemore Sibanda',
+            skills: [
+              'Plumbing',
+              'Painting',
+              'Garden & Landscaping',
+              'Handyman',
+              'Appliances',
+              'DIY & Assembly',
+              'Cleaning',
+              'Tiling',
+              'Carpentry',
+            ],
+            serviceAreas: ['Roodepoort'],
+            experience: '10 years',
+            notes: null,
+            providerId: null,
+            isTestUser: false,
+            cohortName: 'default',
+          },
+        ]),
+      },
+      $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
+    }
+
+    const result = await autoApproveProviderApplications(client)
+
+    expect(result).toEqual({ approved: 1, skipped: 0, errors: 0 })
+    expect(mockSyncProviderRecord).toHaveBeenCalledWith(tx, expect.objectContaining({
+      phone: '+27820000002',
+      name: 'Lovemore Sibanda',
+      skills: expect.arrayContaining(['Plumbing', 'Carpentry']),
+      active: true,
+      availableNow: true,
+      verified: true,
+    }))
+    expect(mockReleaseOpsQueueItem).toHaveBeenCalledWith(tx, {
+      queueType: 'PROVIDER_ONBOARDING',
+      entityId: 'app-lovemore-standard',
+    })
+  })
+
   it('skips auto-approval when required profile fields are missing', async () => {
     const client: any = {
       providerApplication: {
