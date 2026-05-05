@@ -84,7 +84,7 @@ vi.mock('@/lib/whatsapp-identity', () => ({
 }))
 
 import { processInboundMessage } from '@/lib/whatsapp-bot'
-import { handleJobRequestFlow } from '@/lib/whatsapp-flows/job-request'
+import { handleJobRequestFlow, showMainMenu } from '@/lib/whatsapp-flows/job-request'
 import { handleRegistrationFlow } from '@/lib/whatsapp-flows/registration'
 
 const PHONE = '+27821234567'
@@ -223,6 +223,30 @@ describe('processInboundMessage stateless notification replies', () => {
     expect(mockSendText).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining("couldn't read that lead response"),
+    )
+  })
+
+  it('blocks generic Hi from resetting an active customer request flow to the main menu', async () => {
+    mockDb.conversation.upsert.mockResolvedValue({
+      phone: PHONE,
+      flow: 'job_request',
+      step: 'collect_address_street',
+      data: { selectedCategory: 'Plumbing', category: 'Plumbing' },
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.active-hi', 'Hi'))
+
+    expect(showMainMenu).not.toHaveBeenCalled()
+    expect(handleJobRequestFlow).not.toHaveBeenCalled()
+    expect(mockSendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('street address step'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'flow_continue', title: 'Continue' }),
+        expect.objectContaining({ id: 'start_cancel', title: 'Cancel request' }),
+        expect.objectContaining({ id: 'session_restart', title: 'Main menu' }),
+      ]),
     )
   })
 

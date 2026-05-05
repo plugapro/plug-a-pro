@@ -411,6 +411,7 @@ model JobRequest {
   altSlotNegotiationSentAt    DateTime?
   altSlotNegotiationOutcome   String?   // 'CUSTOMER_SELECTED' | 'CUSTOMER_DECLINED' | 'PROVIDER_DECLINED' | 'EXPIRED'
   matchFoundWhatsappSentAt    DateTime? // idempotency guard — set when WA match-found notification is sent
+  enRouteWhatsappSentAt       DateTime? // idempotency guard — set when WA en-route notification is sent
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -661,6 +662,7 @@ model Job {
   providerCurrentLat       Float?
   providerCurrentLng       Float?
   providerLocationSharedAt DateTime?
+  invoiceWhatsappSentAt    DateTime? // idempotency guard — set when invoice WA template is sent to customer
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

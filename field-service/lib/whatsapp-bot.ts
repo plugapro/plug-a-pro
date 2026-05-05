@@ -59,7 +59,9 @@ import {
 import { parseProviderInterestRateText } from './provider-whatsapp-interest-capture'
 
 // Conversation TTL: configurable via WHATSAPP_SESSION_TIMEOUT_MS (default 30 min)
-const CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || 30 * 60 * 1000
+const DEFAULT_CONVERSATION_TTL_MS = 30 * 60 * 1000
+const CONFIGURED_CONVERSATION_TTL_MS = Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS) || DEFAULT_CONVERSATION_TTL_MS
+const CONVERSATION_TTL_MS = Math.max(CONFIGURED_CONVERSATION_TTL_MS, DEFAULT_CONVERSATION_TTL_MS)
 // 3 s default: WhatsApp delivers batch-selected images as separate events that
 // can arrive over 1–3 s. 800 ms caused premature batch flush when the first 3
 // of 5 images arrived before the remaining 2, producing a "3 files received"
@@ -210,9 +212,43 @@ const START_PHRASES = ['start offers', 'subscribe', 'start marketing', 'opt in',
 
 // Keywords that trigger re-booking from the last completed job
 const REBOOK_KEYWORDS = ['rebook', 'book again', 'same job', 'repeat', 'book same']
+const ACTIVE_FLOW_NAMES: FlowName[] = [
+  'job_request',
+  'registration',
+  'status',
+  'reschedule',
+  'cancel',
+  'help',
+  'provider_job',
+  'provider_journey',
+  'alt_slot',
+]
 
 function firstName(name: string | null | undefined) {
   return (name?.trim() || 'there').split(/\s+/)[0]
+}
+
+function maskedPhone(phone: string) {
+  return phone.length <= 4 ? '***' : `***${phone.slice(-4)}`
+}
+
+function hasActiveFlow(flow: FlowName, step: FlowStep) {
+  return ACTIVE_FLOW_NAMES.includes(flow) && step !== 'welcome' && step !== 'done' && step !== 'cancelled'
+}
+
+function activeFlowResumeCopy(flow: FlowName, step: FlowStep) {
+  if (flow === 'job_request') {
+    if (step === 'collect_address_street') {
+      return "You're still completing your service request. Let's continue from the street address step."
+    }
+    return "You're still completing your service request. Let's continue with the next step."
+  }
+
+  if (flow === 'registration') {
+    return "You're still completing your provider application. Continue from where you left off?"
+  }
+
+  return "You're still in the middle of a WhatsApp flow. Continue from where you left off?"
 }
 
 async function findProviderByWhatsAppPhone(phone: string, select?: Prisma.ProviderSelect) {
@@ -625,6 +661,8 @@ async function processInboundMessageUnlocked(
     let flow: FlowName = conversation.flow as FlowName
     let step: FlowStep = isExpired ? 'welcome' : (conversation.step as FlowStep)
     let data: ConversationData = isExpired ? {} : (conversation.data as ConversationData)
+    const persistedFlow = conversation.flow as FlowName
+    const persistedStep = conversation.step as FlowStep
     const isStatelessReply = isStatelessNotificationReply(reply, rawText)
     const isProviderMenuReply = Boolean(reply.id && [
       'provider_available_jobs',
@@ -820,6 +858,20 @@ async function processInboundMessageUnlocked(
       await showMainMenu(phone)
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return
+    }
+
+    if (reply.id === 'flow_continue' && hasActiveFlow(flow, step)) {
+      console.info('[whatsapp-bot] active flow continued from resume prompt', {
+        traceId: identity.traceId,
+        messageId: message.id,
+        phone: maskedPhone(phone),
+        flow,
+        step,
+      })
+      // Let the current flow re-render its current prompt/list. This preserves
+      // accumulated data and avoids treating a casual greeting as new field data.
+      reply.id = undefined
+      reply.text = undefined
     }
 
     if (reply.id === 'provider_top_up_credits') {
@@ -1317,6 +1369,33 @@ async function processInboundMessageUnlocked(
       evidenceFileBatchSize: options?.evidenceFileBatchSize,
     }
     let result: { nextStep: FlowStep; nextData?: Partial<ConversationData> } = { nextStep: step, nextData: data }
+
+    if (
+      isReset &&
+      reply.id !== 'flow_continue' &&
+      hasActiveFlow(persistedFlow, persistedStep) &&
+      !isStatelessReply &&
+      !isProviderMenuReply
+    ) {
+      console.info('[whatsapp-bot] main menu blocked because active flow exists', {
+        traceId: identity.traceId,
+        messageId: message.id,
+        phone: maskedPhone(phone),
+        flow: persistedFlow,
+        step: persistedStep,
+        expired: isExpired,
+      })
+      await sendButtons(
+        phone,
+        activeFlowResumeCopy(persistedFlow, persistedStep),
+        [
+          { id: 'flow_continue', title: 'Continue' },
+          { id: persistedFlow === 'job_request' ? 'start_cancel' : 'session_restart', title: persistedFlow === 'job_request' ? 'Cancel request' : 'Main menu' },
+          { id: 'session_restart', title: 'Main menu' },
+        ],
+      )
+      return
+    }
 
     if (flow === 'job_request' || step === 'browse_categories') {
       result = await handleJobRequestFlow({ ...ctx, step: step === 'welcome' && flow === 'job_request' ? 'browse_categories' : step })
@@ -2633,6 +2712,9 @@ async function handleProviderLocationShare(
                   customer: {
                     select: { phone: true, name: true },
                   },
+                  address: {
+                    select: { suburb: true },
+                  },
                 },
               },
             },
@@ -2661,16 +2743,19 @@ async function handleProviderLocationShare(
     },
   })
 
-  const customer = job.booking?.match?.jobRequest?.customer
-  const jobCategory = job.booking?.match?.jobRequest?.category ?? 'service'
+  const jobRequest = job.booking?.match?.jobRequest
+  const customer = jobRequest?.customer
+  const jobCategory = jobRequest?.category ?? 'service'
+  const jobSuburb = jobRequest?.address?.suburb ?? ''
 
-  if (customer?.phone) {
+  if (customer?.phone && jobRequest?.id) {
     const { sendCustomerEnRouteNotification } = await import('./whatsapp')
     await sendCustomerEnRouteNotification({
       customerPhone: customer.phone,
-      customerName: customer.name ?? 'there',
       providerName: provider.name ?? 'Your provider',
       jobCategory,
+      jobSuburb,
+      jobRequestId: jobRequest.id,
     }).catch((err) => {
       console.error('[whatsapp-bot] location-share: failed to notify customer', {
         traceId,

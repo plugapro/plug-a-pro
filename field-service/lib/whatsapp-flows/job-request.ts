@@ -69,6 +69,10 @@ const JOB_CATEGORIES = [
   { id: 'cat_air_conditioning', label: 'Air Conditioning' },
 ]
 
+const STREET_ADDRESS_RETRY =
+  "We couldn't save that address. Please send the street address again, for example: 14 Main Street."
+const STREET_ADDRESS_SEND_TIMEOUT_MS = Number(process.env.WHATSAPP_STREET_ADDRESS_SEND_TIMEOUT_MS) || 8000
+
 // WhatsApp list cap is 10 rows total per message.
 // When paging is needed we use 8 item rows + up to 2 nav rows.
 const PAGE_SIZE = 8
@@ -78,6 +82,34 @@ function firstName(name?: string | null) {
 
 function applicationRef(id: string) {
   return id.slice(-8).toUpperCase()
+}
+
+function maskedPhone(phone: string) {
+  return phone.length <= 4 ? '***' : `***${phone.slice(-4)}`
+}
+
+function validateStreetAddress(input: string | undefined) {
+  const street = input?.trim().replace(/\s+/g, ' ')
+  if (!street) return { ok: false as const, street: '', reason: 'empty' }
+  if (street.length < 3) return { ok: false as const, street, reason: 'too_short' }
+  return { ok: true as const, street, reason: 'valid' }
+}
+
+async function withStreetStepSendTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('street_address_next_step_send_timeout')),
+          STREET_ADDRESS_SEND_TIMEOUT_MS,
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function savedAddressDisplay(address: Pick<WhatsAppSavedAddress, 'addressLine1' | 'street' | 'suburb' | 'city' | 'province'>) {
@@ -588,16 +620,65 @@ async function handleCollectAddress(ctx: FlowContext): Promise<FlowResult> {
 }
 
 async function handleCollectStreet(ctx: FlowContext): Promise<FlowResult> {
-  const street = ctx.reply.text?.trim()
-  if (!street || street.length < 3) {
-    await sendText(ctx.phone, '❗ Please type your *street address*.\n\n_Example: 14 Main Street_')
+  const validation = validateStreetAddress(ctx.reply.text)
+  const logContext = {
+    traceId: createTraceId('street'),
+    phone: maskedPhone(ctx.phone),
+    flow: ctx.flow,
+    step: ctx.step,
+    requestId: ctx.data.jobRequestId ?? null,
+    draftId: ctx.data.savedAddressId ?? null,
+  }
+
+  console.info('[job-request-flow] street address response received', {
+    ...logContext,
+    validation: validation.reason,
+  })
+
+  if (!validation.ok) {
+    console.info('[job-request-flow] street address validation failed', {
+      ...logContext,
+      errorCode: `street_address_${validation.reason}`,
+    })
+    await sendText(ctx.phone, 'Please send your street address, for example: 14 Main Street.')
     return { nextStep: 'collect_address_street' }
   }
 
-  await renderProvinceList(ctx.phone)
+  try {
+    console.info('[job-request-flow] street address accepted; sending next step', {
+      ...logContext,
+      nextStep: 'addr_select_province',
+    })
+    await withStreetStepSendTimeout(renderProvinceList(ctx.phone))
+    console.info('[job-request-flow] street address next step sent', {
+      ...logContext,
+      nextStep: 'addr_select_province',
+    })
+  } catch (err) {
+    // Root cause guard: this step used to wait for the province-list send before
+    // the conversation save happened. If Meta/list delivery hung or failed, the
+    // customer's valid street text was never persisted and a later "Hi" could
+    // fall through to the generic menu. Keep the user on the same step and send
+    // a plain-text retry instead of failing silently.
+    console.error('[job-request-flow] street address next step failed', {
+      ...logContext,
+      errorCode: 'street_address_next_step_send_failed',
+      error: err instanceof Error ? err.message : String(err),
+    })
+    await sendText(ctx.phone, STREET_ADDRESS_RETRY)
+    console.info('[job-request-flow] street address error response sent', {
+      ...logContext,
+      errorCode: 'street_address_next_step_send_failed',
+    })
+    return {
+      nextStep: 'collect_address_street',
+      nextData: { addressLine1: validation.street, addressStreet: validation.street, addrPage: 0 },
+    }
+  }
+
   return {
     nextStep: 'addr_select_province',
-    nextData: { addressLine1: street, addressStreet: street, addrPage: 0 },
+    nextData: { addressLine1: validation.street, addressStreet: validation.street, addrPage: 0 },
   }
 }
 

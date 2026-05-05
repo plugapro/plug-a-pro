@@ -201,6 +201,59 @@ describe('WhatsApp job-request flow — structured address', () => {
         expect.any(Object),
       )
     })
+
+    it.each([
+      '21 Jump Street',
+      '10 Church Road',
+      'Unit 4, 8 Oak Avenue',
+      '22B Nelson Mandela Drive',
+    ])('accepts ordinary free-text street address "%s"', async (street) => {
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, street))
+
+      expect(result.nextStep).toBe('addr_select_province')
+      expect(result.nextData).toMatchObject({ addressLine1: street, addressStreet: street })
+      expect(wa.sendList).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('province'),
+        expect.any(Array),
+        expect.any(Object),
+      )
+    })
+
+    it('rejects empty street address input with a retry message', async () => {
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '   '))
+
+      expect(result.nextStep).toBe('collect_address_street')
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Please send your street address'),
+      )
+      expect(wa.sendList).not.toHaveBeenCalled()
+    })
+
+    it('rejects too-short street address input with a retry message', async () => {
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '2'))
+
+      expect(result.nextStep).toBe('collect_address_street')
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Please send your street address'),
+      )
+      expect(wa.sendList).not.toHaveBeenCalled()
+    })
+
+    it('keeps customer on street address step and responds when next-step send fails', async () => {
+      ;(wa.sendList as any).mockRejectedValueOnce(new Error('Meta list send failed'))
+
+      const result = await handleJobRequestFlow(makeCtx('collect_address_street', undefined, '21 Jump Street'))
+
+      expect(result.nextStep).toBe('collect_address_street')
+      expect(result.nextData).toMatchObject({ addressLine1: '21 Jump Street', addressStreet: '21 Jump Street' })
+      expect(wa.sendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining("We couldn't save that address"),
+      )
+    })
   })
 
   describe('addr_select_province', () => {

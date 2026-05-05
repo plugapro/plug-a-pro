@@ -60,6 +60,18 @@ function assertCohortSendAllowed(
   throw new Error('NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH')
 }
 
+// ENVIRONMENT ISOLATION WARNING
+// There is no separate staging WhatsApp phone number or WABA. Both staging and
+// production read the same WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID
+// env vars and hit the same Meta-registered sender.
+//
+// The only guard against staging sends reaching real users is the test-cohort
+// gate in assertSendAllowed() above. It blocks sends to numbers not in the
+// internal test cohort when NODE_ENV !== 'production', and vice versa.
+//
+// Before adding a new environment: register a dedicated staging phone number in
+// Meta Business Suite and point WHATSAPP_PHONE_NUMBER_ID at it. Do NOT rely
+// solely on the cohort gate as the isolation boundary.
 function getConfig() {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
@@ -854,12 +866,26 @@ export async function sendCustomerMatchFoundNotification(
     return
   }
 
-  const body = `Good news ${params.customerName}! We've found a provider for your ${params.serviceName} job. ${params.providerName} is reviewing your request and will send a quote shortly.`
+  const providerFirstName = params.providerName.split(' ')[0]
 
-  const externalId = await sendText({
+  const externalId = await sendTemplate({
     to: params.customerPhone,
-    text: body,
-    templateName: 'customer_match_found',
+    template: 'customer_match_found',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: providerFirstName },
+          { type: 'text', text: params.serviceName },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: 0,
+        parameters: [{ type: 'text', text: params.jobRequestId }],
+      },
+    ],
   })
 
   await db.jobRequest.update({
@@ -870,7 +896,6 @@ export async function sendCustomerMatchFoundNotification(
   await logOutboundMessage({
     to: params.customerPhone,
     templateName: 'customer_match_found',
-    body,
     externalId,
     metadata: { jobRequestId: params.jobRequestId },
   }).catch(() => {})
@@ -883,7 +908,9 @@ export interface SendCustomerQuoteReadyParams {
   customerName: string
   providerName: string
   serviceName: string
-  amount: number        // in ZAR rands (e.g. 350 == R 350.00)
+  amount: number           // in ZAR rands (e.g. 350 == R 350.00)
+  estimatedHours?: number
+  shortDescription: string
   validUntil: Date
   quoteId: string
   jobRequestId: string
@@ -891,10 +918,6 @@ export interface SendCustomerQuoteReadyParams {
 
 /**
  * Notify a customer that a provider has submitted a quote (CW3).
- *
- * Uses `sendButtons()` (interactive message) as a stand-in while the
- * `customer_quote_ready` Meta template is pending approval. Once approved,
- * swap this for a `sendTemplate('customer_quote_ready', ...)` call.
  *
  * Idempotency: checks `Quote.approvalWhatsappSentAt` before sending.
  * If already set the function returns early without sending a duplicate.
@@ -911,26 +934,45 @@ export async function sendCustomerQuoteReadyNotification(
     return
   }
 
+  const customerFirstName = params.customerName.split(' ')[0]
+  const amountStr = `R ${params.amount.toFixed(2)}`
+  const estimatedHoursStr = params.estimatedHours != null ? String(params.estimatedHours) : 'TBD'
   const validUntilStr = params.validUntil.toLocaleDateString('en-ZA', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   })
-  const amountStr = `R ${params.amount.toFixed(2)}`
-  const body = `${params.providerName} has quoted ${amountStr} for your ${params.serviceName} job. Valid until ${validUntilStr}.`
 
-  const { sendButtons } = await import('./whatsapp-interactive')
-
-  const externalId = await sendButtons(
-    params.customerPhone,
-    body,
-    [
-      { id: `quote_accept_${params.quoteId}`, title: 'Accept quote' },
-      { id: `quote_decline_${params.quoteId}`, title: 'Decline' },
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'customer_quote_ready',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: customerFirstName },
+          { type: 'text', text: params.providerName },
+          { type: 'text', text: params.serviceName },
+          { type: 'text', text: amountStr },
+          { type: 'text', text: estimatedHoursStr },
+          { type: 'text', text: validUntilStr },
+          { type: 'text', text: params.shortDescription },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'quick_reply',
+        index: 0,
+        parameters: [{ type: 'payload', payload: `quote_accept_${params.quoteId}` }],
+      },
+      {
+        type: 'button',
+        sub_type: 'quick_reply',
+        index: 1,
+        parameters: [{ type: 'payload', payload: `quote_decline_${params.quoteId}` }],
+      },
     ],
-    undefined,
-    { templateName: 'customer_quote_ready' }
-  )
+  })
 
   await db.quote.update({
     where: { id: params.quoteId },
@@ -940,7 +982,6 @@ export async function sendCustomerQuoteReadyNotification(
   await logOutboundMessage({
     to: params.customerPhone,
     templateName: 'customer_quote_ready',
-    body,
     externalId,
     metadata: { quoteId: params.quoteId, jobRequestId: params.jobRequestId },
   }).catch(() => {})
@@ -952,26 +993,51 @@ export async function sendCustomerQuoteReadyNotification(
  * Notify a customer that their provider is on the way (PW2).
  *
  * Sent after the provider shares their current location via WhatsApp.
+ * Idempotency: checks `JobRequest.enRouteWhatsappSentAt` before sending.
  */
 export async function sendCustomerEnRouteNotification(params: {
   customerPhone: string
-  customerName: string
   providerName: string
   jobCategory: string
+  jobSuburb: string
+  jobRequestId: string
 }): Promise<void> {
-  const body = `${params.providerName} is on their way for your ${params.jobCategory} job! They'll arrive shortly.`
+  // Idempotency guard
+  const jobRequest = await db.jobRequest.findUnique({
+    where: { id: params.jobRequestId },
+    select: { enRouteWhatsappSentAt: true },
+  })
+  if (jobRequest?.enRouteWhatsappSentAt) {
+    return
+  }
 
-  const externalId = await sendText({
+  const providerFirstName = params.providerName.split(' ')[0]
+
+  const externalId = await sendTemplate({
     to: params.customerPhone,
-    text: body,
-    templateName: 'customer_provider_en_route',
+    template: 'customer_provider_en_route',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: providerFirstName },
+          { type: 'text', text: params.jobCategory },
+          { type: 'text', text: params.jobSuburb },
+        ],
+      },
+    ],
+  })
+
+  await db.jobRequest.update({
+    where: { id: params.jobRequestId },
+    data: { enRouteWhatsappSentAt: new Date() },
   })
 
   await logOutboundMessage({
     to: params.customerPhone,
     templateName: 'customer_provider_en_route',
-    body,
     externalId,
+    metadata: { jobRequestId: params.jobRequestId },
   }).catch(() => {})
 }
 
@@ -1146,7 +1212,11 @@ async function logMessage(params: {
 
 export interface WhatsAppComponent {
   type: 'header' | 'body' | 'button'
-  parameters: Array<{ type: 'text'; text: string } | { type: 'image'; image: { link: string } }>
+  parameters: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image'; image: { link: string } }
+    | { type: 'payload'; payload: string }
+  >
   sub_type?: string
   index?: number
 }
@@ -1234,17 +1304,111 @@ export async function sendAdminEscalation(params: {
 /**
  * Notify a customer that their provider is running late.
  * Called from handleRunningLateFlow in provider-journey.ts.
+ *
+ * Idempotency: checks for an existing JobStatusEvent(notes='provider_running_late')
+ * for this job before sending. The write side lives in handleRunningLateFlow.
  */
 export async function sendCustomerRunningLateNotification(params: {
   customerPhone: string
+  customerFirstName: string
   providerName: string
+  delayLabel: string
   jobCategory: string
+  jobId: string
 }): Promise<void> {
-  const body = `${params.providerName} is running a little late for your ${params.jobCategory} job. They're on their way — apologies for any inconvenience.`
-
-  await sendText({
-    to: params.customerPhone,
-    text: body,
-    templateName: 'customer_provider_running_late',
+  // Idempotency guard — skip if the audit event was already written for this job
+  const existing = await db.jobStatusEvent.findFirst({
+    where: { jobId: params.jobId, notes: 'provider_running_late' },
+    select: { id: true },
   })
+  if (existing) return
+
+  const providerFirstName = params.providerName.split(' ')[0]
+
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'customer_provider_running_late',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerFirstName },
+          { type: 'text', text: providerFirstName },
+          { type: 'text', text: params.delayLabel },
+          { type: 'text', text: params.jobCategory },
+        ],
+      },
+    ],
+  })
+
+  await logOutboundMessage({
+    to: params.customerPhone,
+    templateName: 'customer_provider_running_late',
+    externalId,
+    metadata: { jobId: params.jobId },
+  }).catch(() => {})
+}
+
+// ─── M5-T5: Provider invoice send (PW5) ──────────────────────────────────────
+
+/**
+ * Send a post-job invoice to the customer using the provider_invoice_send template.
+ * Called from handleInvoiceFlow in provider-journey.ts.
+ *
+ * Idempotency: checks `Job.invoiceWhatsappSentAt` before sending.
+ */
+export async function sendProviderInvoiceTemplate(params: {
+  customerPhone: string
+  customerFullName: string
+  serviceLabel: string
+  suburb: string
+  city: string
+  completionDate: string  // pre-formatted, e.g. "4 May 2026"
+  labourCost: string      // pre-formatted, e.g. "R 350.00"
+  materialsCost: string   // pre-formatted, e.g. "R 50.00"
+  totalAmount: string     // pre-formatted, e.g. "R 400.00"
+  jobRef: string          // last 8 chars of booking ID, uppercase
+  providerFullName: string
+  jobId: string
+}): Promise<void> {
+  // Idempotency guard
+  const job = await db.job.findUnique({
+    where: { id: params.jobId },
+    select: { invoiceWhatsappSentAt: true },
+  })
+  if (job?.invoiceWhatsappSentAt) return
+
+  const externalId = await sendTemplate({
+    to: params.customerPhone,
+    template: 'provider_invoice_send',
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: params.customerFullName },
+          { type: 'text', text: params.serviceLabel },
+          { type: 'text', text: params.suburb },
+          { type: 'text', text: params.city },
+          { type: 'text', text: params.completionDate },
+          { type: 'text', text: params.labourCost },
+          { type: 'text', text: params.materialsCost },
+          { type: 'text', text: params.totalAmount },
+          { type: 'text', text: params.jobRef },
+          { type: 'text', text: params.providerFullName },
+        ],
+      },
+    ],
+  })
+
+  await db.job.update({
+    where: { id: params.jobId },
+    data: { invoiceWhatsappSentAt: new Date() },
+  })
+
+  await logOutboundMessage({
+    to: params.customerPhone,
+    templateName: 'provider_invoice_send',
+    externalId,
+    metadata: { jobId: params.jobId },
+  }).catch(() => {})
 }

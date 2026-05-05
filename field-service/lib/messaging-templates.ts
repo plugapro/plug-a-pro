@@ -317,6 +317,65 @@ export const TEMPLATES = {
       'Good news — we matched you with {{1}}. They may contact you shortly.',
   },
 
+  customer_match_found: {
+    name: 'customer_match_found',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer when a provider has been matched to their job request',
+    // body: {{1}} provider first name, {{2}} service label
+    // button (url, index 0): {{1}} job request ID (appended to https://app.plugapro.co.za/requests/)
+    example:
+      'Good news! {{1}} is reviewing your {{2}} request and will send a quote shortly. Tap below to view your request.',
+  },
+
+  provider_invoice_send: {
+    name: 'provider_invoice_send',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sends a post-job invoice to the customer on behalf of the provider',
+    // body: {{1}} customer full name, {{2}} service label, {{3}} suburb, {{4}} city,
+    //       {{5}} completion date (e.g. "4 May 2026"), {{6}} labour cost (e.g. "R 350.00"),
+    //       {{7}} materials cost (e.g. "R 50.00"), {{8}} total amount (e.g. "R 400.00"),
+    //       {{9}} job ref (last 8 chars of booking ID, uppercase), {{10}} provider full name
+    example:
+      'Hi {{1}}, here is your invoice for the {{2}} job at {{3}}, {{4}} completed on {{5}}.\n\nLabour: {{6}}\nMaterials: {{7}}\nTotal: {{8}}\n\nRef: {{9}}\nProvider: {{10}}\n\nThank you for choosing Plug A Pro!',
+  },
+
+  customer_provider_running_late: {
+    name: 'customer_provider_running_late',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer when their provider reports they are running late',
+    // body: {{1}} customer first name, {{2}} provider first name,
+    //       {{3}} delay label (e.g. "a little late"), {{4}} service label
+    example:
+      'Hi {{1}}, {{2}} is running {{3}} for your {{4}} job. They\'re on their way — apologies for any inconvenience.',
+  },
+
+  customer_provider_en_route: {
+    name: 'customer_provider_en_route',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer when their provider has shared location and is on the way',
+    // body: {{1}} provider first name, {{2}} service label, {{3}} job suburb
+    example:
+      '{{1}} is on the way for your {{2}} job in {{3}}! They\'ll arrive shortly.',
+  },
+
+  customer_quote_ready: {
+    name: 'customer_quote_ready',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer when a provider has submitted a quote for their job request',
+    // body: {{1}} customer first name, {{2}} provider full name, {{3}} service label,
+    //       {{4}} quote amount (e.g. "R 350.00"), {{5}} estimated hours (e.g. "2" or "TBD"),
+    //       {{6}} valid until date (e.g. "5 May 2026"), {{7}} short description
+    // button (quick_reply, index 0): payload quote_accept_<quoteId>
+    // button (quick_reply, index 1): payload quote_decline_<quoteId>
+    example:
+      'Hi {{1}}, {{2}} has submitted a quote for your {{3}} job. Amount: {{4}}. Estimated time: {{5}} hours. Valid until: {{6}}. Details: {{7}}. Please accept or decline below.',
+  },
+
 } as const
 
 export type TemplateName = keyof typeof TEMPLATES

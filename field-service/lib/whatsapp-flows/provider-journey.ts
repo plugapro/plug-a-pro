@@ -3,7 +3,7 @@
 // Entry: keywords "available", "offline", "my jobs", or "provider menu"
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
-import { sendCustomerRunningLateNotification } from '../whatsapp'
+import { sendCustomerRunningLateNotification, sendProviderInvoiceTemplate } from '../whatsapp'
 import { logOutboundMessage } from '../message-events'
 import { db } from '../db'
 import { transitionJob } from '../jobs'
@@ -1297,7 +1297,7 @@ export async function handleRunningLateFlow(phone: string): Promise<FlowResult> 
           match: {
             include: {
               jobRequest: {
-                include: { customer: { select: { phone: true } } },
+                include: { customer: { select: { phone: true, name: true } } },
               },
             },
           },
@@ -1315,12 +1315,17 @@ export async function handleRunningLateFlow(phone: string): Promise<FlowResult> 
   const jobAny = activeJob as any
   const category = jobAny.booking?.match?.jobRequest?.category ?? 'service'
   const customerPhone = jobAny.booking?.match?.jobRequest?.customer?.phone
+  const customerName: string = jobAny.booking?.match?.jobRequest?.customer?.name ?? ''
+  const customerFirstName = customerName.split(' ')[0] || 'there'
 
   if (customerPhone) {
     await sendCustomerRunningLateNotification({
       customerPhone,
+      customerFirstName,
       providerName: provider.name,
+      delayLabel: 'a little late',
       jobCategory: category,
+      jobId: activeJob.id,
     })
   }
 
@@ -1428,11 +1433,14 @@ export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
     include: {
       booking: {
         include: {
-          quote: { select: { amount: true } },
+          quote: { select: { amount: true, labourCost: true, materialsCost: true } },
           match: {
             include: {
               jobRequest: {
-                include: { customer: { select: { name: true, phone: true } } },
+                include: {
+                  customer: { select: { name: true, phone: true } },
+                  address: { select: { suburb: true, city: true } },
+                },
               },
             },
           },
@@ -1448,28 +1456,35 @@ export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
   }
 
   const jobAny = job as any
-  const category = jobAny.booking?.match?.jobRequest?.category ?? 'Service'
-  const customerName = jobAny.booking?.match?.jobRequest?.customer?.name ?? 'Customer'
-  const customerPhone = jobAny.booking?.match?.jobRequest?.customer?.phone
-  const quoteAmount = jobAny.booking?.quote?.amount ?? 0
+  const category: string = jobAny.booking?.match?.jobRequest?.category ?? 'Service'
+  const customerName: string = jobAny.booking?.match?.jobRequest?.customer?.name ?? 'Customer'
+  const customerPhone: string | undefined = jobAny.booking?.match?.jobRequest?.customer?.phone
+  const suburb: string = jobAny.booking?.match?.jobRequest?.address?.suburb ?? ''
+  const city: string = jobAny.booking?.match?.jobRequest?.address?.city ?? ''
+  const labourCost: number = Number(jobAny.booking?.quote?.labourCost ?? 0)
+  const materialsCost: number = Number(jobAny.booking?.quote?.materialsCost ?? 0)
+  const totalAmount: number = Number(jobAny.booking?.quote?.amount ?? 0)
   const bookingId: string = jobAny.booking?.id ?? job.id
-  const dateStr = jobAny.completedAt
-    ? new Date(jobAny.completedAt).toLocaleDateString('en-ZA')
-    : jobAny.booking?.scheduledDate
-      ? new Date(jobAny.booking.scheduledDate).toLocaleDateString('en-ZA')
-      : new Date().toLocaleDateString('en-ZA')
-
-  const invoiceText =
-    `Invoice — ${category} job\n` +
-    `Date: ${dateStr}\n` +
-    `Customer: ${customerName}\n` +
-    `Amount: R${quoteAmount}\n` +
-    `Reference: ${bookingId.slice(-8).toUpperCase()}\n` +
-    `Thank you for your service!`
+  const jobRef = bookingId.slice(-8).toUpperCase()
+  const completionDate = job.completedAt
+    ? job.completedAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+    : job.createdAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
 
   if (customerPhone) {
-    // Send invoice to customer — use sendText from whatsapp-interactive (positional form)
-    await sendText(customerPhone, invoiceText)
+    await sendProviderInvoiceTemplate({
+      customerPhone,
+      customerFullName: customerName,
+      serviceLabel: category,
+      suburb,
+      city,
+      completionDate,
+      labourCost: `R ${labourCost.toFixed(2)}`,
+      materialsCost: `R ${materialsCost.toFixed(2)}`,
+      totalAmount: `R ${totalAmount.toFixed(2)}`,
+      jobRef,
+      providerFullName: provider.name,
+      jobId: job.id,
+    })
   }
 
   await sendText(phone, "Invoice sent to your customer.")

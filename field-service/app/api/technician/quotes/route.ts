@@ -184,13 +184,15 @@ export async function POST(request: NextRequest) {
       console.error('[quotes] Failed to send WhatsApp quote_ready template:', err)
     })
 
-    // CW3 — idempotent quote-ready notification (interactive buttons, pending Meta template approval)
+    // CW3 — idempotent quote-ready notification (customer_quote_ready template)
     sendCustomerQuoteReadyNotification({
       customerPhone,
       customerName,
       providerName: provider.name,
       serviceName: match.jobRequest.category,
       amount: totalAmount,
+      estimatedHours: estimatedHours ?? undefined,
+      shortDescription: description,
       validUntil,
       quoteId: quote.id,
       jobRequestId: match.jobRequestId,
