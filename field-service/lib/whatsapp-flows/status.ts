@@ -62,6 +62,38 @@ function formatRequestDate(date: Date) {
   return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
 }
 
+type JobRequestWithRuntime = {
+  id: string
+  customerId: string
+  status: string
+  match: {
+    booking: {
+      job: {
+        status: string
+        id: string
+      } | null
+    } | null
+  } | null
+  category: string
+}
+
+type LeadSummaryErrorSafe = {
+  total: number
+  activeOutreach: number
+  interested: number
+}
+
+function isRequestTerminalForTracking(request: Pick<JobRequestWithRuntime, 'status' | 'match'>) {
+  if (TERMINAL_REQUEST_STATUSES.includes(request.status)) return true
+
+  const job = request.match?.booking?.job ?? null
+  return !!job && TERMINAL_JOB_STATUSES.includes(job.status)
+}
+
+function createDefaultLeadSummary(): LeadSummaryErrorSafe {
+  return { total: 0, activeOutreach: 0, interested: 0 }
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
@@ -252,6 +284,71 @@ async function showRequestStatus(
   const expectedCustomerId = ownership[0]
   const log = (msg: string) => console.log(`[status-flow:${reqId}] phone=${phone} ${msg}`)
 
+  async function loadLatestRequestForCustomer() {
+    if (!expectedCustomerId) return null
+
+    // Prefer the latest non-terminal request so Track My Request continues with
+    // the current active flow if the pinned ID is stale. If none is active,
+    // fall back to the most recent request for transparent status visibility.
+    const recentRequests = await db.jobRequest.findMany({
+      where: { customerId: expectedCustomerId },
+      include: {
+        selectedProvider: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        match: {
+          include: {
+            provider: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            booking: {
+              include: { job: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+    }) as (JobRequestWithRuntime & { createdAt: Date })[] | undefined
+
+    const latest = (recentRequests ?? []).find((request) => !isRequestTerminalForTracking(request))
+      ?? recentRequests?.[0]
+    return latest ?? null
+  }
+
+  async function loadLeadSummarySafe(id: string) {
+    try {
+      return await loadLeadSummary(id)
+    } catch (error) {
+      log(`WARN: lead summary lookup failed for id=${id}; defaulting to safe baseline. error=${error instanceof Error ? error.message : String(error)}`)
+      return createDefaultLeadSummary()
+    }
+  }
+
+  async function loadDispatchDecisionSafe(id: string) {
+    try {
+      return await loadLatestDispatchDecisionStatus(id)
+    } catch (error) {
+      log(`WARN: dispatch decision lookup failed for id=${id}; defaulting to null. error=${error instanceof Error ? error.message : String(error)}`)
+      return null
+    }
+  }
+
+  async function loadShortlistSafe(id: string) {
+    try {
+      return await loadPublishedShortlist(id)
+    } catch (error) {
+      log(`WARN: shortlist lookup failed for id=${id}; defaulting to null. error=${error instanceof Error ? error.message : String(error)}`)
+      return null
+    }
+  }
+
   try {
     const jr = await db.jobRequest.findUnique({
       where: { id: jobRequestId },
@@ -280,6 +377,13 @@ async function showRequestStatus(
 
     if (!jr) {
       log(`jobRequest not found id=${jobRequestId}`)
+      const latestForCustomer = await loadLatestRequestForCustomer()
+
+      if (latestForCustomer) {
+        log(`fallback to latest request id=${latestForCustomer.id} for stale/missing id=${jobRequestId}`)
+        return showRequestStatus(phone, latestForCustomer.id, reqId, expectedCustomerId)
+      }
+
       await sendButtons(
         phone,
         "⚠️ We couldn't find that request. Open your latest request message and tap Track My Request again, or go back to the main menu.",
@@ -293,15 +397,27 @@ async function showRequestStatus(
 
     if (expectedCustomerId && jr.customerId !== expectedCustomerId) {
       log(`request ownership mismatch id=${jobRequestId} expectedCustomerId=${expectedCustomerId}`)
-      await sendButtons(
-        phone,
-        '⚠️ That request could not be loaded for this account.',
-        [
-          { id: 'book', title: '🔧 Request a Service' },
-          { id: 'back_home', title: '🏠 Main Menu' },
-        ],
-      )
-      return { nextStep: 'done' }
+
+      const latestForCustomer = await loadLatestRequestForCustomer()
+      if (latestForCustomer) {
+        if (latestForCustomer.id !== jobRequestId) {
+          log(`ownership mismatch fallback to latest request id=${latestForCustomer.id}`)
+          return showRequestStatus(phone, latestForCustomer.id, reqId, expectedCustomerId)
+        }
+
+        // Defensive: if same id returns again with mismatch (shouldn't happen), continue with this row.
+        log('ownership check appears inconsistent; rendering fallback-matched request id as-is')
+      } else {
+        await sendButtons(
+          phone,
+          '⚠️ That request could not be loaded for this account.',
+          [
+            { id: 'book', title: '🔧 Request a Service' },
+            { id: 'back_home', title: '🏠 Main Menu' },
+          ],
+        )
+        return { nextStep: 'done' }
+      }
     }
 
     const job = jr.match?.booking?.job ?? null
@@ -310,9 +426,11 @@ async function showRequestStatus(
     const jobStatus = activeJob?.status
     const requestStatus = jr.status
 
-    const leadSummary = await loadLeadSummary(jr.id)
-    const latestDispatchStatus = await loadLatestDispatchDecisionStatus(jr.id)
-    const shortlist = await loadPublishedShortlist(jr.id)
+    const [leadSummary, latestDispatchStatus, shortlist] = await Promise.all([
+      loadLeadSummarySafe(jr.id),
+      loadDispatchDecisionSafe(jr.id),
+      loadShortlistSafe(jr.id),
+    ])
 
     let statusLabel = jobStatus
       ? JOB_STATUS_LABELS[jobStatus] ?? jobStatus

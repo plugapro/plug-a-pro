@@ -178,6 +178,24 @@ describe('handleStatusFlow — single active request (no job)', () => {
     )
   })
 
+  it('falls back to request-level waiting state if lead summary lookup fails', async () => {
+    const jr = makeJobRequest({ status: 'OPEN' })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.lead.findMany).mockRejectedValue(new Error('temporary lead index outage'))
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('still checking suitable providers'),
+      'Refresh status',
+      `${APP_URL}/requests/access/jr_abc123`
+    )
+    expect(result.nextStep).toBe('done')
+  })
+
   it('shows validation-pending copy for PENDING_VALIDATION status', async () => {
     const jr = makeJobRequest({ status: 'PENDING_VALIDATION' })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
@@ -192,6 +210,36 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(body).toContain('Ticket #ABC123')
     expect(body).toContain('Checking your request')
     expect(result.nextStep).toBe('done')
+  })
+
+  it('falls back to the customer latest request when the pinned request is from another customer', async () => {
+    const stale = makeJobRequest({ id: 'jr_other', customerId: 'other_customer' })
+    const latest = makeJobRequest({
+      id: 'jr_latest',
+      status: 'OPEN',
+      category: 'Plumbing',
+      createdAt: new Date('2026-04-11T10:00:00Z'),
+    })
+
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([latest] as never)
+    vi.mocked(db.jobRequest.findUnique)
+      .mockResolvedValueOnce(stale as never)
+      .mockResolvedValueOnce(latest as never)
+
+    await handleStatusFlow(
+      makeCtx({
+        step: 'status_show',
+        data: { jobRequestId: 'jr_other', customerId: 'cust_1' },
+      })
+    )
+
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Ticket #LATEST'),
+      'Refresh status',
+      `${APP_URL}/requests/access/jr_latest`
+    )
   })
 
   it('rejects a stale pinned request that belongs to another customer', async () => {
