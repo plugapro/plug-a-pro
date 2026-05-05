@@ -1,6 +1,7 @@
 // Phase 1 auto-approval — approves PENDING provider applications that have all
-// required fields AND no high-risk skills (electrical / gas / security).
-// HIGH_RISK_CATEGORY applications remain in the ops queue for manual review.
+// required fields (name, skills, service areas, and experience).
+// HIGH_RISK_CATEGORY applications (electrical / gas / security) are not hard-blocked
+// from approval, but remain in the ops queue for ops visibility after approval.
 // MISSING_* reason codes block approval until the provider supplies the missing
 // information.
 //
