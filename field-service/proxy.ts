@@ -247,7 +247,7 @@ function redirectToSignIn(
     destination = isAdminDomain ? '/sign-in' : '/admin-sign-in'
   }
 
-  const callbackCandidate = request.nextUrl.pathname
+  const callbackCandidate = request.nextUrl.pathname + request.nextUrl.search
   // Sanitize candidate paths to avoid open-redirects and role-mixed callbacks.
   let callbackPath = callbackCandidate
   if (destination === '/provider-sign-in') callbackPath = getSafeProviderNextPath(callbackCandidate, '/provider/jobs')

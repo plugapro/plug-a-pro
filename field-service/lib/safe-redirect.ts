@@ -39,18 +39,11 @@ const CUSTOMER_ROUTE_PREFIXES = [
 ]
 
 const PROVIDER_ROUTE_PREFIXES = [
-  '/provider/jobs',
-  '/provider/profile',
+  '/provider',
 ]
 
 const ADMIN_ROUTE_PREFIXES = [
   '/admin',
-  '/admin/dashboard',
-  '/admin/bookings',
-  '/admin/jobs',
-  '/admin/providers',
-  '/admin/customers',
-  '/admin/payments',
 ]
 
 function pathIsInPrefixes(path: string, prefixes: string[]): boolean {

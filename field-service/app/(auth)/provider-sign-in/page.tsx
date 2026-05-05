@@ -287,63 +287,65 @@ export default function ProviderSignInPage() {
         </div>
       )}
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
-          <SaMobileNumberInput
-            id="phone"
-            value={phone}
-            onChange={setPhone}
-            disabled={loading}
-            onEdit={() => {
-              if (error?.code === 'INVALID_PHONE_NUMBER' || error?.code === 'INVALID_MOBILE_NUMBER') setError(null)
-            }}
-          />
-          <p className="text-xs text-muted-foreground">
-            {SA_OTP_SIGN_IN_HELPER_TEXT}
-          </p>
-        </div>
-
-        {error && (
-          <div className={`rounded-md border p-3 text-sm space-y-2 ${
-            error.tone === 'info'
-              ? 'tone-warning'
-              : 'border-destructive/30 bg-destructive/5 text-destructive'
-          }`}>
-            <p className="font-medium">{error.title}</p>
-            <p>{error.reason}</p>
-            {(showProviderNotFoundRecovery || roleMismatchRecovery) && (
-              <div className="grid gap-2 pt-1">
-                <Button asChild size="sm" className="w-full">
-                  <Link href={customerSignInHref}>Sign in as customer</Link>
-                </Button>
-                <Button asChild size="sm" variant="outline" className="w-full">
-                  <a href={applyProviderHref}>Apply as provider on WhatsApp</a>
-                </Button>
-                <Button asChild size="sm" variant="ghost" className="w-full">
-                  <a href={supportHref}>Contact support</a>
-                </Button>
-              </div>
-            )}
-            <details className="pt-1 text-xs text-muted-foreground">
-              <summary className="cursor-pointer font-medium">Show technical details</summary>
-              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                {error.code ? <><dt>Code</dt><dd className="text-right font-medium">{error.code}</dd></> : null}
-                {error.step ? <><dt>Step</dt><dd className="text-right font-medium">{error.step}</dd></> : null}
-                {error.mobileChecked ? <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.mobileChecked}</dd></> : null}
-                {error.countryCode ? <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></> : null}
-                <dt>Trace ID</dt><dd className="text-right font-medium">{error.traceId}</dd>
-                {error.time ? <><dt>Time</dt><dd className="text-right font-medium">{error.time}</dd></> : null}
-              </dl>
-            </details>
+      {/* Form — hidden when user was redirected here due to a role mismatch */}
+      {!roleMismatchRecovery && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
+            <SaMobileNumberInput
+              id="phone"
+              value={phone}
+              onChange={setPhone}
+              disabled={loading}
+              onEdit={() => {
+                if (error?.code === 'INVALID_PHONE_NUMBER' || error?.code === 'INVALID_MOBILE_NUMBER') setError(null)
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              {SA_OTP_SIGN_IN_HELPER_TEXT}
+            </p>
           </div>
-        )}
 
-        <Button type="submit" size="lg" disabled={loading || !phone} className="w-full">
-          {loading ? 'Sending code…' : 'Send code'}
-        </Button>
-      </form>
+          {error && (
+            <div className={`rounded-md border p-3 text-sm space-y-2 ${
+              error.tone === 'info'
+                ? 'tone-warning'
+                : 'border-destructive/30 bg-destructive/5 text-destructive'
+            }`}>
+              <p className="font-medium">{error.title}</p>
+              <p>{error.reason}</p>
+              {showProviderNotFoundRecovery && (
+                <div className="grid gap-2 pt-1">
+                  <Button asChild size="sm" className="w-full">
+                    <Link href={customerSignInHref}>Sign in as customer</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline" className="w-full">
+                    <a href={applyProviderHref}>Apply as provider on WhatsApp</a>
+                  </Button>
+                  <Button asChild size="sm" variant="ghost" className="w-full">
+                    <a href={supportHref}>Contact support</a>
+                  </Button>
+                </div>
+              )}
+              <details className="pt-1 text-xs text-muted-foreground">
+                <summary className="cursor-pointer font-medium">Show technical details</summary>
+                <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                  {error.code ? <><dt>Code</dt><dd className="text-right font-medium">{error.code}</dd></> : null}
+                  {error.step ? <><dt>Step</dt><dd className="text-right font-medium">{error.step}</dd></> : null}
+                  {error.mobileChecked ? <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.mobileChecked}</dd></> : null}
+                  {error.countryCode ? <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></> : null}
+                  <dt>Trace ID</dt><dd className="text-right font-medium">{error.traceId}</dd>
+                  {error.time ? <><dt>Time</dt><dd className="text-right font-medium">{error.time}</dd></> : null}
+                </dl>
+              </details>
+            </div>
+          )}
+
+          <Button type="submit" size="lg" disabled={loading || !phone} className="w-full">
+            {loading ? 'Sending code…' : 'Send code'}
+          </Button>
+        </form>
+      )}
 
       <p className="text-center text-xs text-muted-foreground">
         Not approved yet? Apply via WhatsApp:

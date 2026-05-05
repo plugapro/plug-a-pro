@@ -79,9 +79,7 @@ export default async function CustomerProviderProfilePage({
           match: {
             include: {
               jobRequest: {
-                include: {
-                  customer: { select: { name: true } },
-                },
+                select: { category: true },
               },
             },
           },
@@ -222,7 +220,7 @@ export default async function CustomerProviderProfilePage({
                   {review.comment && <p className="mt-2 text-muted-foreground">{review.comment}</p>}
                   {job && (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {job.booking.match.jobRequest.category} job for {job.booking.match.jobRequest.customer.name}
+                      {job.booking.match.jobRequest.category} — Verified customer
                     </p>
                   )}
                 </div>
