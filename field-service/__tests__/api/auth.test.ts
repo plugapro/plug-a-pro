@@ -447,7 +447,7 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(body).toMatchObject({
       ok: false,
       code: 'WORKER_NOT_FOUND',
-      message: "We couldn't find a provider account for this number. Please register first or contact support.",
+      message: "We couldn't find a provider account for this number. If you're trying to view your customer bookings, sign in as a customer instead.",
     })
     expect(body.error).toMatchObject({
       code: 'WORKER_NOT_FOUND',

@@ -141,6 +141,28 @@ describe('proxy admin access', () => {
     )
   })
 
+  it('redirects unauthenticated customer booking routes to customer sign-in', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/bookings'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/sign-in?callbackUrl=%2Fbookings&next=%2Fbookings',
+    )
+  })
+
+  it('redirects unauthenticated customer profile routes to customer sign-in', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/profile'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/sign-in?callbackUrl=%2Fprofile&next=%2Fprofile',
+    )
+  })
+
   it('allows provider credit terms without an OTP session', async () => {
     const { proxy } = await import('../proxy')
 

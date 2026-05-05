@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
-import { getSafeNextPath } from '@/lib/safe-redirect'
+import { getSafeCustomerNextPath, getSafeProviderNextPath } from '@/lib/safe-redirect'
 import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
 
 type SendCodeError = {
@@ -49,6 +50,13 @@ function formatPhoneForDisplay(e164: string | undefined) {
   return `+27 ${digits.slice(2, 4)} *** ${digits.slice(-4)}`
 }
 
+function whatsappHref(message: string) {
+  const configured = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER || process.env.NEXT_PUBLIC_WHATSAPP_BUSINESS_NUMBER
+  const digits = configured?.replace(/\D/g, '')
+  if (!digits) return `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Plug-A-Pro sign-in help')}`
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`
+}
+
 function fallbackCodeForStatus(status: number) {
   switch (status) {
     case 400:
@@ -80,7 +88,7 @@ function fallbackReasonForCode(code: string) {
   switch (code) {
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
-      return "We couldn't find a provider account for this number. Please register first or contact support."
+      return "We couldn't find a provider account for this number. If you're trying to view your customer bookings, sign in as a customer instead."
     case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return 'Your provider application must be approved before you can sign in to the Worker Portal.'
@@ -158,10 +166,13 @@ export default function ProviderSignInPage() {
   const [countryCode] = useState<OtpCountryCode>('ZA')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<SendCodeError | null>(null)
-  const next = getSafeNextPath(
-    searchParams.get('next') ?? searchParams.get('callbackUrl'),
-    '/provider',
-  )
+  const requestedNext = searchParams.get('next') ?? searchParams.get('callbackUrl')
+  const next = getSafeProviderNextPath(requestedNext, '/provider/jobs')
+  const customerNext = getSafeCustomerNextPath(requestedNext, '/bookings')
+  const customerSignInHref = `/sign-in?next=${encodeURIComponent(customerNext)}`
+  const applyProviderHref = whatsappHref('Hi Plug A Pro, I would like to apply as a provider.')
+  const supportHref = whatsappHref('Hi Plug A Pro, I need help signing in.')
+  const showProviderNotFoundRecovery = error?.code === 'WORKER_NOT_FOUND' || error?.code === 'PROVIDER_NOT_FOUND'
 
   function localError(params: {
     reason: string
@@ -256,9 +267,12 @@ export default function ProviderSignInPage() {
         <p className="app-kicker">
           Worker Portal
         </p>
-        <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
+        <h1 className="text-2xl font-semibold text-foreground">Provider sign in</h1>
         <p className="text-sm text-muted-foreground">
-          Enter the mobile number linked to your provider account
+          Use the mobile number linked to your approved Plug-A-Pro provider profile.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Customers should use customer sign in to view bookings or quotes.
         </p>
       </div>
 
@@ -288,15 +302,25 @@ export default function ProviderSignInPage() {
           }`}>
             <p className="font-medium">{error.title}</p>
             <p>{error.reason}</p>
-            <dl className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs opacity-80`}>
-              <dt>Error code</dt><dd className="text-right font-medium">{error.code}</dd>
-              {(error.phoneMasked || error.mobileChecked) && <><dt>Mobile checked</dt><dd className="text-right font-medium">{error.phoneMasked ?? error.mobileChecked}</dd></>}
-              {error.countryCode && <><dt>Country</dt><dd className="text-right font-medium">{error.countryCode}</dd></>}
-              {error.providerId && <><dt>Provider ID</dt><dd className="text-right font-medium">{error.providerId}</dd></>}
-              <dt>Step</dt><dd className="text-right font-medium">{error.step}</dd>
-              <dt>Trace ID</dt><dd className="text-right font-medium">{error.traceId}</dd>
-              <dt>Time</dt><dd className="text-right font-medium">{error.time}</dd>
-            </dl>
+            {showProviderNotFoundRecovery && (
+              <div className="grid gap-2 pt-1">
+                <Button asChild size="sm" className="w-full">
+                  <Link href={customerSignInHref}>Sign in as customer</Link>
+                </Button>
+                <Button asChild size="sm" variant="outline" className="w-full">
+                  <a href={applyProviderHref}>Apply as provider on WhatsApp</a>
+                </Button>
+                <Button asChild size="sm" variant="ghost" className="w-full">
+                  <a href={supportHref}>Contact support</a>
+                </Button>
+              </div>
+            )}
+            <details className="pt-1 text-xs text-muted-foreground">
+              <summary className="cursor-pointer font-medium">Show support details</summary>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                <dt>Trace ID</dt><dd className="text-right font-medium">{error.traceId}</dd>
+              </dl>
+            </details>
           </div>
         )}
 
@@ -307,6 +331,14 @@ export default function ProviderSignInPage() {
 
       <p className="text-center text-xs text-muted-foreground">
         Not registered yet? Apply via WhatsApp — send &quot;Register&quot; to our business number.
+      </p>
+
+      <p className="text-center text-xs text-muted-foreground">
+        Trying to view customer bookings?{' '}
+        <Link href={customerSignInHref} className="font-medium text-primary underline-offset-4 hover:underline">
+          Sign in as customer
+        </Link>
+        .
       </p>
     </div>
   )

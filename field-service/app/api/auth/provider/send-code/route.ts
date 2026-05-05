@@ -23,7 +23,7 @@ function reasonFor(code: DiagnosticCode) {
       return 'Only South African mobile numbers are enabled for worker portal OTP sign-in.'
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
-      return "We couldn't find a provider account for this number. Please register first or contact support."
+      return "We couldn't find a provider account for this number. If you're trying to view your customer bookings, sign in as a customer instead."
     case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return 'Your provider application must be approved before you can sign in to the Worker Portal.'

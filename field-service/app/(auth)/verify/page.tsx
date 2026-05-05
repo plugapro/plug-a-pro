@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { OtpInput } from '@/components/ui/otp-input'
 import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
-import { getSafeNextPath } from '@/lib/safe-redirect'
+import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -18,7 +18,7 @@ function VerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const phone = searchParams.get('phone') ?? ''
-  const next = getSafeNextPath(
+  const next = getSafeCustomerNextPath(
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
     '/bookings',
   )

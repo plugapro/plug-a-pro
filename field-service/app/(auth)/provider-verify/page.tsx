@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { OtpInput } from '@/components/ui/otp-input'
-import { getSafeNextPath } from '@/lib/safe-redirect'
+import { getSafeProviderNextPath } from '@/lib/safe-redirect'
 
 function formatPhoneForDisplay(e164: string) {
   const digits = e164.replace(/\D/g, '')
@@ -60,9 +60,9 @@ function ProviderVerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const phone = searchParams.get('phone') ?? ''
-  const next = getSafeNextPath(
+  const next = getSafeProviderNextPath(
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
-    '/provider',
+    '/provider/jobs',
   )
 
   const [otp, setOtp] = useState('')

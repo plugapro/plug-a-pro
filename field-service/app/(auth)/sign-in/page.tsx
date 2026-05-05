@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
-import { getSafeNextPath } from '@/lib/safe-redirect'
+import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
 import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 
@@ -24,7 +25,7 @@ export default function SignInPage() {
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const next = getSafeNextPath(
+  const next = getSafeCustomerNextPath(
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
     '/bookings',
   )
@@ -111,6 +112,14 @@ export default function SignInPage() {
 
       <p className="text-center text-xs text-muted-foreground">
         Your number is never shared. By continuing you agree to our terms.
+      </p>
+
+      <p className="text-center text-xs text-muted-foreground">
+        Are you a provider?{' '}
+        <Link href="/provider-sign-in" className="font-medium text-primary underline-offset-4 hover:underline">
+          Use provider sign in
+        </Link>
+        .
       </p>
     </div>
   )

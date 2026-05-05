@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { getSafeNextPath } from '@/lib/safe-redirect'
+import { getSafeAdminNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -21,7 +21,7 @@ export default function AdminSignInPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const next = getSafeNextPath(
+  const next = getSafeAdminNextPath(
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
     '/admin',
   )
