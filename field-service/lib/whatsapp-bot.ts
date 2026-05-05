@@ -2701,15 +2701,6 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     undefined,
     { templateName: 'provider_location_prompt' }
   )
-  const creditUrl = getWorkerPortalUrl('/provider/credits')
-  if (creditUrl) {
-    await sendCtaUrl(
-      phone,
-      'Credit top-up and history are available below.',
-      ctaLabelFor('credit_history'),
-      creditUrl,
-    )
-  }
 }
 
 async function handleProviderLocationShare(
