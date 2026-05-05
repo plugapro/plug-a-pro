@@ -2141,6 +2141,17 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
       result = await acceptLead({ leadId, providerId: provider.id, inspectionNeeded: false, source: 'whatsapp' })
     } catch (error) {
       const traceId = createTraceId('wbot')
+      await sendWhatsAppJourneyRecovery(phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: 'provider_matching',
+        currentStep: 'match_accept',
+        failureType: 'dependency_failure',
+        actionId: buttonId,
+        requestId: lead.id,
+        error,
+        traceId,
+      })
       console.error('[whatsapp-bot] match accept: unhandled acceptLead exception', {
         traceId,
         leadId,
@@ -2148,7 +2159,6 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
         error_code: 'UNKNOWN_LEAD_ACCEPT_ERROR',
         error: error instanceof Error ? error.message : String(error),
       })
-      await sendText(phone, `😔 Something went wrong processing your acceptance. Please try again or contact support.\n\n_Ref: ${traceId}_`)
       return
     }
 
@@ -2162,7 +2172,16 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
         return
       }
       if (result.reason === 'LEAD_ACCEPTANCE_FAILED') {
-        await sendText(phone, `😔 We couldn't accept this customer-selected job because of a technical issue. Please try again or contact support.\n\n_Ref: ${result.traceId ?? createTraceId('wbot')}_`)
+        await sendWhatsAppJourneyRecovery(phone, {
+          userRole: 'provider',
+          channel: 'whatsapp',
+          flowName: 'provider_matching',
+          currentStep: 'match_accept',
+          failureType: 'matching_failure',
+          actionId: buttonId,
+          requestId: lead.id,
+          traceId: result.traceId ?? createTraceId('wbot'),
+        })
         return
       }
       const message =
@@ -2193,7 +2212,15 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
     const { getProviderLeadAccessUrl } = await import('./provider-lead-access')
     const leadUrl = await getProviderLeadAccessUrl({ leadId, providerId: provider.id })
     if (!leadUrl) {
-      await sendText(phone, '😔 We could not generate a secure lead link. Please try again or contact support.')
+      await sendWhatsAppJourneyRecovery(phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: 'provider_matching',
+        currentStep: 'match_preview',
+        failureType: 'external_service_failure',
+        actionId: buttonId,
+        requestId: lead.id,
+      })
       return
     }
     await sendCtaUrl(
@@ -2583,6 +2610,17 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
   try {
     result = await acceptLead({ leadId: lead.id, providerId: provider.id, source: 'whatsapp' })
   } catch (error) {
+    await sendWhatsAppJourneyRecovery(phone, {
+      userRole: 'provider',
+      channel: 'whatsapp',
+      flowName: 'provider_matching',
+      currentStep: 'assignment_accept',
+      failureType: 'dependency_failure',
+      actionId: buttonId,
+      requestId: lead.id,
+      error,
+      traceId,
+    })
     console.error('[whatsapp-bot] accept: unhandled acceptLead exception', {
       traceId,
       holdId,
@@ -2592,7 +2630,6 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       error_code: 'UNKNOWN_LEAD_ACCEPT_ERROR',
       error: error instanceof Error ? error.message : String(error),
     })
-    await sendText(phone, `😔 Something went wrong processing your acceptance. Please try again or contact support.\n\n_Ref: ${traceId}_`)
     return
   }
 
@@ -2641,6 +2678,16 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     }
     if (result.reason === 'LEAD_ACCEPTANCE_FAILED') {
       const supportRef = result.traceId ?? traceId
+      await sendWhatsAppJourneyRecovery(phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: 'provider_matching',
+        currentStep: 'assignment_accept',
+        failureType: 'matching_failure',
+        actionId: `accept:${holdId}`,
+        requestId: lead.id,
+        traceId: supportRef,
+      })
       console.error('[whatsapp-bot] accept: lead acceptance failed', {
         traceId: supportRef,
         holdId,
@@ -2649,7 +2696,6 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
         providerId: provider.id,
         error_code: 'LEAD_ACCEPTANCE_FAILED',
       })
-      await sendText(phone, `😔 We couldn't accept this customer-selected job because of a technical issue. Please try again or contact support.\n\n_Ref: ${supportRef}_`)
       return
     }
     if (result.reason === 'EXPIRED') {
@@ -2663,7 +2709,16 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
         traceId, holdId, leadId: lead.id, providerId: provider.id, reason: result.reason,
         error_code: 'UNKNOWN_CREDIT_ERROR',
       })
-      await sendText(phone, `😔 Something went wrong processing your acceptance. Please try again or contact support.\n\n_Ref: ${traceId}_`)
+      await sendWhatsAppJourneyRecovery(phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: 'provider_matching',
+        currentStep: 'assignment_accept',
+        failureType: 'unexpected_error',
+        actionId: `accept:${holdId}`,
+        requestId: lead.id,
+        traceId,
+      })
     }
     return
   }
@@ -2895,9 +2950,20 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
     console.error('[whatsapp-bot] decline: unexpected failure', {
       traceId, phone, holdId, reason, leadId: lead.id, providerId: provider.id, error,
     })
-    await sendText(
+    await sendWhatsAppJourneyRecovery(
       phone,
-      `😔 Something went wrong recording your decline. Please try again or contact support.\n\n_Ref: ${traceId}_`
+      {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: 'provider_matching',
+        currentStep: 'assignment_decline',
+        failureType: 'dependency_failure',
+        actionId: `hd_${reason}`,
+        requestId: leadId,
+        traceId,
+        error,
+        recoveryClass: 'retry_same_step',
+      },
     ).catch(() => {})
   }
 }
@@ -2955,7 +3021,17 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         return
       }
       console.error('[whatsapp-bot] confirm_accept failed', { traceId, leadId, reason: result.reason })
-      await sendText(phone, `😔 We couldn't process that confirmation. Please try again or contact support.\n\n_Ref: ${traceId}_`)
+      await sendWhatsAppJourneyRecovery(phone, {
+        userRole: 'provider',
+        channel: 'whatsapp',
+        flowName: 'provider_shortlist',
+        currentStep: 'confirm_accept',
+        failureType: 'dependency_failure',
+        actionId: buttonId,
+        requestId: leadId,
+        traceId,
+        error: new Error(`provider shortlist confirmation failed: ${String(result.reason)}`),
+      })
       return
     }
     if (result.alreadyUnlocked) {

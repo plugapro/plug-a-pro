@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockDb,
   mockAcceptLead,
+  mockAcceptSelectedProviderJob,
+  mockDeclineSelectedProviderJob,
   mockProcessQuoteDecision,
   mockOrchestrateMatch,
   mockSendJourneyRecovery,
@@ -22,6 +24,8 @@ const {
     booking: { findFirst: vi.fn() },
   },
   mockAcceptLead: vi.fn(),
+  mockAcceptSelectedProviderJob: vi.fn(),
+  mockDeclineSelectedProviderJob: vi.fn(),
   mockProcessQuoteDecision: vi.fn(),
   mockOrchestrateMatch: vi.fn(),
   mockSendJourneyRecovery: vi.fn(),
@@ -58,6 +62,12 @@ vi.mock('@/lib/whatsapp-flows/provider-journey', () => ({
   PROVIDER_JOURNEY_TRIGGERS: ['provider'],
 }))
 vi.mock('@/lib/matching-engine', () => ({ acceptLead: mockAcceptLead, declineLead: vi.fn() }))
+vi.mock('@/lib/selected-provider-acceptance', () => ({
+  acceptSelectedProviderJob: mockAcceptSelectedProviderJob,
+}))
+vi.mock('@/lib/customer-shortlists', () => ({
+  declineSelectedProviderJob: mockDeclineSelectedProviderJob,
+}))
 vi.mock('@/lib/quotes', () => ({ processQuoteDecision: mockProcessQuoteDecision }))
 vi.mock('@/lib/matching/orchestrator', () => ({ orchestrateMatch: mockOrchestrateMatch }))
 vi.mock('@/lib/whatsapp', () => ({ sendProviderAssigned: vi.fn() }))
@@ -165,6 +175,8 @@ describe('processInboundMessage stateless notification replies', () => {
     mockSendButtons.mockResolvedValue('msg-buttons')
     mockSendCtaUrl.mockResolvedValue('msg-cta')
     mockSendJourneyRecovery.mockResolvedValue(undefined)
+    mockAcceptSelectedProviderJob.mockResolvedValue({ ok: true, alreadyUnlocked: false })
+    mockDeclineSelectedProviderJob.mockResolvedValue({ ok: true })
     mockBuildAcceptedLeadContactUrlForProvider.mockResolvedValue('https://wa.me/27820000001?text=hello')
     expiredMidFlowConversation()
   })
@@ -219,13 +231,76 @@ describe('processInboundMessage stateless notification replies', () => {
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
-    expect(mockSendText).toHaveBeenCalledWith(
+    expect(mockSendJourneyRecovery).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining("Something went wrong processing your acceptance"),
+      expect.objectContaining({
+        userRole: 'provider',
+        flowName: 'provider_matching',
+        currentStep: 'assignment_accept',
+        failureType: 'dependency_failure',
+        requestId: 'lead-1',
+      }),
     )
-    expect(mockSendText).toHaveBeenCalledWith(
+  })
+
+  it('uses journey recovery when match-level accept throws unexpectedly', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-101',
+      providerId: 'provider-1',
+      provider: { id: 'provider-1' },
+      jobRequest: {
+        address: { suburb: 'Rosebank' },
+        category: 'Plumbing',
+      },
+    })
+    mockAcceptLead.mockRejectedValue(new Error('matching timeout'))
+
+    await processInboundMessage(buttonMessage('match_accept_lead-101'))
+
+    expect(mockAcceptLead).toHaveBeenCalledWith({
+      leadId: 'lead-101',
+      providerId: 'provider-1',
+      inspectionNeeded: false,
+      source: 'whatsapp',
+    })
+    expect(mockSendJourneyRecovery).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('_Ref:'),
+      expect.objectContaining({
+        userRole: 'provider',
+        flowName: 'provider_matching',
+        currentStep: 'match_accept',
+        failureType: 'dependency_failure',
+        requestId: 'lead-101',
+      }),
+    )
+  })
+
+  it('uses journey recovery when selected-provider confirmation fails unexpectedly', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'UNSUPPORTED_STATE',
+      currentCreditBalance: 4,
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-short-1'))
+
+    expect(mockAcceptSelectedProviderJob).toHaveBeenCalledWith({
+      leadId: 'lead-short-1',
+      providerId: 'provider-1',
+      source: 'whatsapp',
+      traceId: expect.any(String),
+    })
+    expect(mockSendJourneyRecovery).toHaveBeenCalledWith(
+      PHONE,
+      expect.objectContaining({
+        userRole: 'provider',
+        flowName: 'provider_shortlist',
+        currentStep: 'confirm_accept',
+        failureType: 'dependency_failure',
+        requestId: 'lead-short-1',
+      }),
     )
   })
 
