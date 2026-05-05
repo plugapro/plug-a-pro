@@ -13,7 +13,6 @@ describe('provider application review support', () => {
       skills: ['Electrical'],
       serviceAreas: [],
       experience: null,
-      idNumber: null,
       notes: null,
     })
 
@@ -21,9 +20,25 @@ describe('provider application review support', () => {
     expect(assessment.reasonCodes).toEqual(expect.arrayContaining([
       'MISSING_SERVICE_AREAS',
       'MISSING_EXPERIENCE',
-      'MISSING_ID_OR_PASSPORT',
       'HIGH_RISK_CATEGORY',
     ]))
+    expect(assessment.reasonCodes).not.toContain('MISSING_ID_OR_PASSPORT')
+  })
+
+  it('approves a high-risk application with complete profile (no id required)', () => {
+    const assessment = assessProviderApplicationForOpsReview({
+      id: 'app-2',
+      phone: '+27821234568',
+      name: 'Lovemore Sibanda',
+      skills: ['Electrical', 'Handyman'],
+      serviceAreas: ['Bromhof'],
+      experience: '5 years',
+      notes: null,
+    })
+
+    expect(assessment.recommendation).toBe('HIGH_RISK_REVIEW')
+    expect(assessment.reasonCodes).toEqual(['HIGH_RISK_CATEGORY'])
+    // HIGH_RISK_CATEGORY alone does NOT have MISSING_* — auto-approve will proceed
   })
 
   it('routes pending applications to the ops onboarding queue and does not update approval status', async () => {
@@ -37,7 +52,6 @@ describe('provider application review support', () => {
             skills: ['Plumbing'],
             serviceAreas: ['Roodepoort'],
             experience: '3 years',
-            idNumber: '8001015009087',
             notes: null,
           },
         ]),

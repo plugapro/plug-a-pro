@@ -34,7 +34,6 @@ export async function autoApproveProviderApplications(
       skills: true,
       serviceAreas: true,
       experience: true,
-      idNumber: true,
       notes: true,
       providerId: true,
       isTestUser: true,
@@ -49,10 +48,12 @@ export async function autoApproveProviderApplications(
   let errors = 0
 
   for (const app of applications) {
-    // Any reason code blocks auto-approval — including HIGH_RISK_CATEGORY.
-    // High-risk applications (electrical / gas / security) require manual ops review.
+    // Only MISSING_* codes block auto-approval (incomplete profile).
+    // HIGH_RISK_CATEGORY (electrical/gas/security) is auto-approved but remains in
+    // the ops queue for post-approval visibility — it is no longer a hard gate.
     const assessment = assessProviderApplicationForOpsReview(app)
-    if (assessment.reasonCodes.length > 0) {
+    const hasMissingFields = assessment.reasonCodes.some((code) => code.startsWith('MISSING_'))
+    if (hasMissingFields) {
       skipped++
       continue
     }

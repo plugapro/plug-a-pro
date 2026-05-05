@@ -8,7 +8,6 @@ type ProviderApplicationForReview = {
   skills: string[]
   serviceAreas: string[]
   experience: string | null
-  idNumber: string | null
   notes: string | null
 }
 
@@ -42,7 +41,6 @@ export function assessProviderApplicationForOpsReview(
   if (application.skills.length === 0) reasonCodes.push('MISSING_SKILLS')
   if (application.serviceAreas.length === 0) reasonCodes.push('MISSING_SERVICE_AREAS')
   if (!application.experience?.trim()) reasonCodes.push('MISSING_EXPERIENCE')
-  if (!application.idNumber?.trim()) reasonCodes.push('MISSING_ID_OR_PASSPORT')
   if (application.skills.some((skill) => HIGH_RISK_CATEGORY_PATTERNS.some((pattern) => pattern.test(skill)))) {
     reasonCodes.push('HIGH_RISK_CATEGORY')
   }
@@ -80,7 +78,6 @@ export async function routeProviderApplicationsForOpsReview(
       skills: true,
       serviceAreas: true,
       experience: true,
-      idNumber: true,
       notes: true,
     },
     orderBy: { submittedAt: 'asc' },
