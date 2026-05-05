@@ -16,6 +16,65 @@ type CategoryPolicy = {
   regulated: boolean
 }
 
+export type ServiceRiskLevel = 'standard' | 'high_risk' | 'regulated'
+
+export type ServiceComplianceRequirement = {
+  serviceKey: string
+  label: string
+  riskLevel: ServiceRiskLevel
+  certificationRecommended: boolean
+  certificationRequiredForApproval?: boolean
+  evidencePrompt: string
+}
+
+export const SERVICE_COMPLIANCE_REQUIREMENTS: Record<string, ServiceComplianceRequirement> = {
+  electrical: {
+    serviceKey: 'electrical',
+    label: 'Electrical',
+    riskLevel: 'regulated',
+    certificationRecommended: true,
+    certificationRequiredForApproval: true,
+    evidencePrompt:
+      'Because you selected Electrical, please upload proof of your electrical certification, licence, or trade qualification if you have it. This helps our review team assess your application.',
+  },
+  plumbing: {
+    serviceKey: 'plumbing',
+    label: 'Plumbing',
+    riskLevel: 'high_risk',
+    certificationRecommended: true,
+    certificationRequiredForApproval: false,
+    evidencePrompt:
+      'For regulated plumbing work, certification or trade proof helps our review team assess what work you should be considered for.',
+  },
+  pest_control: {
+    serviceKey: 'pest_control',
+    label: 'Pest Control',
+    riskLevel: 'regulated',
+    certificationRecommended: true,
+    certificationRequiredForApproval: true,
+    evidencePrompt:
+      'Pest Control work may require certification. Please add any certificate, licence, qualification, or reference proof you have.',
+  },
+  air_conditioning: {
+    serviceKey: 'air_conditioning',
+    label: 'Air Conditioning',
+    riskLevel: 'high_risk',
+    certificationRecommended: true,
+    certificationRequiredForApproval: false,
+    evidencePrompt:
+      'Air Conditioning and refrigeration work can require specialist proof. Please add any relevant certificate, licence, or qualification you have.',
+  },
+  roofing: {
+    serviceKey: 'roofing',
+    label: 'Roofing',
+    riskLevel: 'high_risk',
+    certificationRecommended: true,
+    certificationRequiredForApproval: false,
+    evidencePrompt:
+      'Roofing and working-at-heights jobs are higher risk. Please add proof of relevant experience, references, or safety training if you have it.',
+  },
+}
+
 export const CATEGORY_POLICIES: Record<string, CategoryPolicy> = {
   plumbing: {
     normalizedCategory: 'plumbing',
@@ -158,6 +217,11 @@ function normalizeCategory(input: string) {
   return input.trim().toLowerCase()
 }
 
+function normalizeComplianceKey(input: string) {
+  const normalized = normalizeCategory(input)
+  return TAG_ALIAS_TO_POLICY_KEY[normalized] ?? normalized.replace(/[\s-]+/g, '_')
+}
+
 export function getCategoryPolicy(category: string): CategoryPolicy {
   const normalized = normalizeCategory(category)
   // Resolve tag alias (e.g. 'garden' → 'garden & landscaping') before lookup.
@@ -209,6 +273,36 @@ export function mergeCategoryRequirements(params: {
       ...(params.requiredVehicleTypes ?? []),
     ]),
   }
+}
+
+export function getServiceComplianceRequirement(category: string): ServiceComplianceRequirement {
+  const key = normalizeComplianceKey(category)
+  return (
+    SERVICE_COMPLIANCE_REQUIREMENTS[key] ?? {
+      serviceKey: key,
+      label: category.trim() || key,
+      riskLevel: 'standard',
+      certificationRecommended: false,
+      certificationRequiredForApproval: false,
+      evidencePrompt: '',
+    }
+  )
+}
+
+export function getHighRiskServiceRequirements(categories: string[]): ServiceComplianceRequirement[] {
+  const seen = new Set<string>()
+  const requirements: ServiceComplianceRequirement[] = []
+  for (const category of categories) {
+    const requirement = getServiceComplianceRequirement(category)
+    if (requirement.riskLevel === 'standard' || seen.has(requirement.serviceKey)) continue
+    seen.add(requirement.serviceKey)
+    requirements.push(requirement)
+  }
+  return requirements
+}
+
+export function hasHighRiskServiceSelection(categories: string[]) {
+  return getHighRiskServiceRequirements(categories).length > 0
 }
 
 export type { CategoryPolicy }

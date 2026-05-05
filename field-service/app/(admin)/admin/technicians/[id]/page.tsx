@@ -11,6 +11,7 @@ import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { getHighRiskServiceRequirements } from '@/lib/service-category-policy'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -201,6 +202,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     select: {
       evidenceFileUrls: true,
       evidenceNote: true,
+      skills: true,
       callOutFee: true,
       hourlyRate: true,
       rateNegotiable: true,
@@ -208,7 +210,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
       availability: true,
       idNumber: true,
       attachments: {
-        where: { label: { in: ['evidence', 'provider_id_document', 'provider_id_selfie'] } },
+        where: { label: { in: ['evidence', 'provider_certification', 'provider_id_document', 'provider_id_selfie'] } },
         select: { id: true, label: true, mimeType: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
       },
@@ -216,9 +218,11 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
   })
   const allApplicationAttachments = latestApplication?.attachments ?? []
   const evidenceAttachments = allApplicationAttachments.filter((a) => a.label === 'evidence')
+  const certificationAttachments = allApplicationAttachments.filter((a) => a.label === 'provider_certification')
   const idDocAttachments = allApplicationAttachments.filter((a) =>
     a.label === 'provider_id_document' || a.label === 'provider_id_selfie'
   )
+  const highRiskRequirements = getHighRiskServiceRequirements(latestApplication?.skills ?? provider.skills)
 
   // Build a ProviderProfileLike for the completeness validator. Provider holds
   // identity / availability / KYC; the latest application holds rates +
@@ -564,6 +568,30 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
               </>
             )}
 
+            {highRiskRequirements.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">High-risk service review</p>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {highRiskRequirements.map((requirement) => (
+                        <Badge key={requirement.serviceKey} variant="destructive" className="rounded-full text-xs">
+                          {requirement.label} — {requirement.riskLevel === 'regulated' ? 'Regulated' : 'High risk'}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Certification proof is provider-supplied until an admin records a verified certification decision. Do not show certification claims to customers unless reviewed.
+                    </p>
+                    <p className="text-sm">
+                      Certification proof: <span className="font-medium">{certificationAttachments.length > 0 ? 'Submitted' : 'Not added yet'}</span>
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+
             {provider.serviceAreas.length > 0 && (
               <>
                 <Separator />
@@ -628,6 +656,28 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                         className="block text-sm text-primary hover:underline"
                       >
                         {att.mimeType.startsWith('image/') ? '🖼' : '📄'} File {i + 1} — {att.mimeType}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {certificationAttachments.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Certification proof files (private review only)</p>
+                  <div className="space-y-2">
+                    {certificationAttachments.map((att, i) => (
+                      <a
+                        key={att.id}
+                        href={`/api/attachments/${att.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-sm text-primary hover:underline"
+                      >
+                        {att.mimeType.startsWith('image/') ? '🖼' : '📄'} Certification proof {i + 1} — {att.mimeType}
                       </a>
                     ))}
                   </div>

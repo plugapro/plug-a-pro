@@ -373,6 +373,30 @@ describe('registration flow — duplicate prevention', () => {
       )
     })
 
+    it('marks high-risk provider categories as certification requested on submit', async () => {
+      await handleRegistrationFlow(
+        makeCtx('reg_pending', 'submit_yes', undefined, {
+          ...dataWithFullProfile,
+          skills: ['Electrical', 'Painting'],
+          evidenceNote: 'Worked under a qualified electrician and can provide references.',
+        })
+      )
+
+      const providerCategoryRows = ((db as any).providerCategory.createMany as ReturnType<typeof vi.fn>).mock.calls[0][0].data
+      expect(providerCategoryRows).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          categorySlug: 'electrical',
+          certificationRequired: true,
+          certificationStatus: 'REQUESTED',
+        }),
+        expect.objectContaining({
+          categorySlug: 'painting',
+          certificationRequired: false,
+          certificationStatus: 'NOT_REQUIRED',
+        }),
+      ]))
+    })
+
     it('keeps progress and returns a structured error when uploaded files are not ready', async () => {
       ;(db.attachment.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
         { id: 'att_1', providerApplicationId: null },
@@ -1061,6 +1085,24 @@ describe('registration flow — evidence file uploads', () => {
     expect(result.nextData?.evidenceMediaIds).toEqual(['media_abc123'])
   })
 
+  it('stores high-risk certification proof media with private certification label', async () => {
+    const ctx = makeMediaCtx('document', 'media_cert_001')
+    ctx.data = { skills: ['Electrical'], certificationProofIntent: true } as any
+
+    const result = await handleRegistrationFlow(ctx)
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaId: 'media_cert_001',
+        prefix: 'certification_proof',
+        label: 'provider_certification',
+      })
+    )
+    expect(result.nextData?.evidenceFileUrls).toEqual(['att_mock_001'])
+    expect(result.nextData?.certificationProofAttachmentIds).toEqual(['att_mock_001'])
+    expect(result.nextData?.certificationProofMediaIds).toEqual(['media_cert_001'])
+  })
+
   it('second image upload accumulates IDs without losing the first', async () => {
     const ctx = {
       phone,
@@ -1216,6 +1258,26 @@ describe('registration flow — evidence file uploads', () => {
     const buttons: Array<{ id: string; title: string }> = (wa.sendButtons as any).mock.calls[0][2]
     const addMoreButton = buttons.find((b) => b.id === 'evidence_add_more')
     expect(addMoreButton?.title).toBe('📎 Add another file')
+  })
+
+  it('shows certification proof status in the summary for high-risk services', async () => {
+    const result = await handleRegistrationFlow(
+      makeCtx('reg_collect_evidence', 'evidence_skip', undefined, {
+        name: 'Thabo Nkosi',
+        skills: ['Electrical', 'Painting'],
+        serviceAreas: ['Gauteng'],
+        experience: '3–5 years',
+        availability: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        callOutFee: 250,
+        certificationProofAttachmentIds: ['att_cert_001'],
+      })
+    )
+
+    expect(result.nextStep).toBe('reg_pending')
+    const summary = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as string
+    expect(summary).toContain('High-risk review: *Electrical*')
+    expect(summary).toContain('Certification proof: *Received*')
+    expect(summary).not.toContain('https://')
   })
 
   it('handlePending without evidence files does not call attachment.updateMany', async () => {

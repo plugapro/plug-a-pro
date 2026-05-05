@@ -32,6 +32,12 @@ import {
   resolveServiceCategoryTag,
 } from '../service-categories'
 import {
+  getHighRiskServiceRequirements,
+  getServiceComplianceRequirement,
+  hasHighRiskServiceSelection,
+} from '../service-category-policy'
+import { PROVIDER_CERT_DOCUMENT_LABEL } from '../provider-attachment-labels'
+import {
   ACTIVE_PILOT_CITY_LABEL,
   ACTIVE_PILOT_REGION_LABEL,
   describeCityServiceStatus,
@@ -86,6 +92,23 @@ type ProviderApplicationSubmitResult =
 
 function uniqueStrings(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))))
+}
+
+function selectedHighRiskServices(skills: string[] | undefined) {
+  return getHighRiskServiceRequirements(uniqueStrings(skills ?? []))
+}
+
+function selectedHighRiskLabels(skills: string[] | undefined) {
+  return selectedHighRiskServices(skills).map((requirement) => requirement.label)
+}
+
+function certificationProofStatusLabel(data: FlowContext['data']) {
+  const highRiskLabels = selectedHighRiskLabels(data.skills)
+  if (highRiskLabels.length === 0) return null
+  const proofCount = uniqueStrings(data.certificationProofAttachmentIds ?? []).length
+  if (proofCount > 0) return 'Received'
+  if (data.evidenceNote?.trim()) return 'Provider note added'
+  return 'Not added yet'
 }
 
 function createSubmitTraceId() {
@@ -1442,11 +1465,25 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'evidence_add') {
+    const highRiskLabels = selectedHighRiskLabels(ctx.data.skills)
     await sendText(
       ctx.phone,
-      '🧾 Share optional work examples — you can send:\n• A text note about past jobs or references\n• One photo or PDF at a time (up to 5 files)\n\nOr type *skip* to continue without one.'
+      highRiskLabels.length > 0
+        ? `🧾 Share proof for: ${highRiskLabels.join(', ')}.\n\nYou can send a text note about certification, licence, trade qualification, references, or relevant past work. You can also upload one certificate/photo/PDF at a time.\n\nSubmitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.\n\nOr type *skip* to continue without one.`
+        : '🧾 Share optional work examples — you can send:\n• A text note about past jobs or references\n• One photo or PDF at a time (up to 5 files)\n\nOr type *skip* to continue without one.'
     )
-    return { nextStep: 'reg_collect_evidence' }
+    return { nextStep: 'reg_collect_evidence', nextData: { highRiskServiceLabels: highRiskLabels } }
+  }
+
+  if (ctx.reply.id === 'evidence_upload') {
+    const highRiskLabels = selectedHighRiskLabels(ctx.data.skills)
+    await sendText(
+      ctx.phone,
+      highRiskLabels.length > 0
+        ? `Please upload a certificate, licence, trade qualification, or reference document/photo for: ${highRiskLabels.join(', ')}.\n\nSubmitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.`
+        : 'Please upload a proof document or photo. You can also type *skip* to continue without uploading one.',
+    )
+    return { nextStep: 'reg_collect_evidence', nextData: { certificationProofIntent: true, highRiskServiceLabels: highRiskLabels } }
   }
 
   if (ctx.reply.id === 'evidence_skip' || ctx.reply.text?.trim().toLowerCase() === 'skip') {
@@ -1461,8 +1498,11 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
     }
     const existing = uniqueStrings(ctx.data.evidenceFileUrls ?? [])
     const existingMediaIds = uniqueStrings(ctx.data.evidenceMediaIds ?? [])
+    const existingCertificationProofIds = uniqueStrings(ctx.data.certificationProofAttachmentIds ?? [])
+    const existingCertificationMediaIds = uniqueStrings(ctx.data.certificationProofMediaIds ?? [])
+    const proofUpload = Boolean(ctx.data.certificationProofIntent || hasHighRiskServiceSelection(ctx.data.skills ?? []))
 
-    if (existingMediaIds.includes(ctx.reply.mediaId)) {
+    if (existingMediaIds.includes(ctx.reply.mediaId) || existingCertificationMediaIds.includes(ctx.reply.mediaId)) {
       console.info('[registration:handleCollectEvidence] duplicate media skipped', {
         phone: ctx.phone, mediaId: ctx.reply.mediaId, currentCount: existing.length,
       })
@@ -1471,7 +1511,12 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       }
       return {
         nextStep: 'reg_collect_evidence',
-        nextData: { evidenceFileUrls: existing, evidenceMediaIds: existingMediaIds },
+        nextData: {
+          evidenceFileUrls: existing,
+          evidenceMediaIds: existingMediaIds,
+          certificationProofAttachmentIds: existingCertificationProofIds,
+          certificationProofMediaIds: existingCertificationMediaIds,
+        },
       }
     }
 
@@ -1481,7 +1526,12 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       }
       return {
         nextStep: 'reg_collect_evidence',
-        nextData: { evidenceFileUrls: existing, evidenceMediaIds: existingMediaIds },
+        nextData: {
+          evidenceFileUrls: existing,
+          evidenceMediaIds: existingMediaIds,
+          certificationProofAttachmentIds: existingCertificationProofIds,
+          certificationProofMediaIds: existingCertificationMediaIds,
+        },
       }
     }
 
@@ -1491,9 +1541,17 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       const { attachmentId } = await downloadAndStoreWhatsAppMedia({
         mediaId: ctx.reply.mediaId,
         // no providerApplicationId yet — backfilled at submission
+        prefix: proofUpload ? 'certification_proof' : 'evidence',
+        label: proofUpload ? PROVIDER_CERT_DOCUMENT_LABEL : 'evidence',
       })
       const updated = uniqueStrings([...existing, attachmentId]).slice(0, MAX_EVIDENCE_FILES)
       const updatedMediaIds = uniqueStrings([...existingMediaIds, ctx.reply.mediaId])
+      const updatedCertificationProofIds = proofUpload
+        ? uniqueStrings([...existingCertificationProofIds, attachmentId])
+        : existingCertificationProofIds
+      const updatedCertificationMediaIds = proofUpload
+        ? uniqueStrings([...existingCertificationMediaIds, ctx.reply.mediaId])
+        : existingCertificationMediaIds
 
       console.info('[registration:handleCollectEvidence] evidence file saved', {
         phone: ctx.phone,
@@ -1503,6 +1561,7 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
         newCount: updated.length,
         batchSize: ctx.evidenceFileBatchSize ?? 1,
         suppressed: ctx.suppressEvidenceFileProgress ?? false,
+        proofPurpose: proofUpload ? 'certification_proof' : 'general_evidence',
       })
 
       if (!ctx.suppressEvidenceFileProgress) {
@@ -1510,7 +1569,13 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       }
       return {
         nextStep: 'reg_collect_evidence',
-        nextData: { evidenceFileUrls: updated, evidenceMediaIds: updatedMediaIds },
+        nextData: {
+          evidenceFileUrls: updated,
+          evidenceMediaIds: updatedMediaIds,
+          certificationProofAttachmentIds: updatedCertificationProofIds,
+          certificationProofMediaIds: updatedCertificationMediaIds,
+          certificationProofIntent: proofUpload,
+        },
       }
     } catch (err) {
       console.error(
@@ -1620,10 +1685,12 @@ async function showRegistrationSummary(
   const regionLabels = merged.selectedRegionLabels as string[] | undefined
   const areaList = (suburbLabels?.length ? suburbLabels : regionLabels?.length ? regionLabels : serviceAreas ?? []).join(', ')
   const fileCount = evidenceFileUrls?.length ?? 0
+  const highRiskLabels = selectedHighRiskLabels(skills)
+  const certificationProofStatus = certificationProofStatusLabel(merged)
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 Identity: *${verificationStatusLabel(merged)}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 Identity: *${verificationStatusLabel(merged)}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n${highRiskLabels.length ? `⚠️ High-risk review: *${highRiskLabels.join(', ')}*\n🧾 Certification proof: *${certificationProofStatus}*\n` : ''}📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1834,6 +1901,29 @@ async function promptEvidenceAfterBio(
   ctx: FlowContext,
   nextData: Partial<typeof ctx.data>,
 ): Promise<FlowResult> {
+  const highRiskRequirements = selectedHighRiskServices(ctx.data.skills)
+  if (highRiskRequirements.length > 0) {
+    const labels = highRiskRequirements.map((requirement) => requirement.label)
+    await sendButtons(
+      ctx.phone,
+      [
+        '🧾 Some of your selected services may need certification for review.',
+        '',
+        `Selected high-risk services: *${labels.join(', ')}*`,
+        '',
+        'Please add a note or upload proof such as a certificate, licence, trade qualification, or reference work. This helps the Plug A Pro review team assess your application.',
+        '',
+        'Submitting proof does not automatically mean Plug A Pro has verified it. Our review team will check it during application review.',
+      ].join('\n'),
+      [
+        { id: 'evidence_add', title: '✍️ Add proof note' },
+        { id: 'evidence_upload', title: '📎 Upload proof' },
+        { id: 'evidence_skip', title: '⏭️ Skip for now' },
+      ],
+    )
+    return { nextStep: 'reg_collect_evidence', nextData: { ...nextData, highRiskServiceLabels: labels } }
+  }
+
   await sendButtons(
     ctx.phone,
     [
@@ -2078,6 +2168,10 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       })
 
       const providerCategoryRows = submitData.skills.map((skill) => ({
+        certificationRequired: Boolean(getServiceComplianceRequirement(skill).certificationRequiredForApproval),
+        certificationStatus: getServiceComplianceRequirement(skill).certificationRecommended
+          ? (uniqueStrings(ctx.data.certificationProofAttachmentIds ?? []).length > 0 ? 'SUBMITTED' : 'REQUESTED')
+          : 'NOT_REQUIRED',
         providerId,
         categorySlug: resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
         yearsExperience: yearsExperienceFromLabel(ctx.data.experience),

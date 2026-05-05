@@ -43,7 +43,7 @@ describe('provider auto-approval', () => {
     mockRecordAuditLog.mockReset().mockResolvedValue(undefined)
   })
 
-  it('auto-approves complete high-risk applications and keeps ops queue visibility', async () => {
+  it('does not auto-approve high-risk applications before manual certification review', async () => {
     const tx = {
       providerApplication: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -78,33 +78,13 @@ describe('provider auto-approval', () => {
 
     const result = await autoApproveProviderApplications(client)
 
-    expect(result).toEqual({ approved: 1, skipped: 0, errors: 0 })
-    expect(mockSyncProviderRecord).toHaveBeenCalledWith(tx, {
-      phone: '+27821234567',
-      name: 'Lovemore',
-      skills: ['Electrical', 'Handyman'],
-      serviceAreas: ['Bromhof'],
-      active: true,
-      availableNow: true,
-      verified: true,
-      isTestUser: false,
-      cohortName: 'default',
-    })
-    expect(mockFindConflictingActiveProviderApplications).toHaveBeenCalledWith(client, '+27821234567', { excludeId: 'app-hirisk' })
-    expect(mockReleaseOpsQueueItem).toHaveBeenCalledWith(tx, {
-      queueType: 'PROVIDER_ONBOARDING',
-      entityId: 'app-hirisk',
-    })
-    expect(mockNotifyProviderApplicationApprovedOnce).toHaveBeenCalledWith({
-      applicationId: 'app-hirisk',
-      phone: '+27821234567',
-      name: 'Lovemore',
-    })
-    expect(mockCheckJobsForNewProviderAvailability).toHaveBeenCalledWith('provider-1')
-    expect(mockRecordAuditLog).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'provider_application.auto_approve',
-      entityId: 'app-hirisk',
-    }))
+    expect(result).toEqual({ approved: 0, skipped: 1, errors: 0 })
+    expect(mockFindConflictingActiveProviderApplications).not.toHaveBeenCalled()
+    expect(mockSyncProviderRecord).not.toHaveBeenCalled()
+    expect(mockReleaseOpsQueueItem).not.toHaveBeenCalled()
+    expect(mockNotifyProviderApplicationApprovedOnce).not.toHaveBeenCalled()
+    expect(mockCheckJobsForNewProviderAvailability).not.toHaveBeenCalled()
+    expect(mockRecordAuditLog).not.toHaveBeenCalled()
   })
 
   it('still approves when promo-credit awarding fails', async () => {
@@ -126,7 +106,7 @@ describe('provider auto-approval', () => {
               id: 'app-award-fail',
               phone: '+27820000001',
               name: 'Noah',
-              skills: ['Plumbing'],
+              skills: ['Painting'],
               serviceAreas: ['Roodepoort'],
               experience: '4 years',
               notes: null,

@@ -191,6 +191,10 @@ export interface ConversationData {
   evidenceNote?: string
   evidenceFileUrls?: string[]       // Attachment IDs for uploaded proof images/documents
   evidenceMediaIds?: string[]       // WhatsApp media IDs already processed for evidence dedupe
+  certificationProofAttachmentIds?: string[] // Attachment IDs for private high-risk certification/licence proof
+  certificationProofMediaIds?: string[]      // WhatsApp media IDs already processed for certification proof dedupe
+  certificationProofIntent?: boolean         // true after provider chooses Upload proof document/photo
+  highRiskServiceLabels?: string[]           // Selected high-risk/regulated service labels shown in proof copy/summary
   profilePhotoAttachmentId?: string // Attachment ID for the optional profile photo
   profilePhotoMediaId?: string      // WhatsApp media ID for profile photo dedupe
   profilePhotoSkipped?: boolean     // true if provider explicitly skipped the photo step

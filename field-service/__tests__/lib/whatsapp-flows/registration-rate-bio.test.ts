@@ -140,6 +140,41 @@ describe('reg_collect_bio step (Phase 4 follow-up Task 2)', () => {
     expect(result.nextData?.providerBio).toBeUndefined()
   })
 
+  it('uses certification-specific proof prompt when high-risk services were selected', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_bio',
+      data: { skills: ['Electrical', 'Painting'] },
+      reply: { type: 'button_reply', id: 'provider_bio_skip', title: '⏭️ Skip' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextData?.highRiskServiceLabels).toEqual(['Electrical'])
+    expect(sendButtonsMock).toHaveBeenCalledWith(
+      ctx.phone,
+      expect.stringContaining('Selected high-risk services: *Electrical*'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'evidence_upload', title: '📎 Upload proof' }),
+      ]),
+    )
+    const prompt = sendButtonsMock.mock.calls.at(-1)?.[1] as string
+    expect(prompt).toContain('certificate, licence, trade qualification')
+    expect(prompt).toContain('does not automatically mean Plug A Pro has verified it')
+  })
+
+  it('keeps generic proof prompt when only standard services were selected', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_bio',
+      data: { skills: ['Painting'] },
+      reply: { type: 'button_reply', id: 'provider_bio_skip', title: '⏭️ Skip' },
+    })
+    await handleRegistrationFlow(ctx)
+    const prompt = sendButtonsMock.mock.calls.at(-1)?.[1] as string
+    expect(prompt).toContain('optional work note')
+    expect(prompt).not.toContain('Selected high-risk services')
+  })
+
   it('skip via free-text "skip" transitions to reg_collect_evidence', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({ step: 'reg_collect_bio', reply: { type: 'text', text: 'skip' } })

@@ -1,7 +1,8 @@
 // Phase 1 auto-approval — approves PENDING provider applications that have all
 // required fields (name, skills, service areas, and experience).
-// HIGH_RISK_CATEGORY applications (electrical / gas / security) are not hard-blocked
-// from approval, but remain in the ops queue for ops visibility after approval.
+// HIGH_RISK_CATEGORY applications (e.g. electrical or pest control) are routed
+// to manual review and are not auto-approved until review tooling records an
+// explicit certification decision.
 // MISSING_* reason codes block approval until the provider supplies the missing
 // information.
 //
@@ -19,6 +20,7 @@ import { checkJobsForNewProviderAvailability } from './matching/customer-reconta
 import { findConflictingActiveProviderApplications } from './provider-applications'
 import { resolveServiceCategoryTag } from './service-categories'
 import { recordAuditLog } from './audit'
+import { hasHighRiskServiceSelection } from './service-category-policy'
 
 const ACTOR_ID = 'system:auto-approve'
 
@@ -49,12 +51,13 @@ export async function autoApproveProviderApplications(
   let errors = 0
 
   for (const app of applications) {
-    // Only MISSING_* codes block auto-approval (incomplete profile).
-    // HIGH_RISK_CATEGORY (electrical/gas/security) is auto-approved but remains in
-    // the ops queue for post-approval visibility — it is no longer a hard gate.
+    // Incomplete profiles and high-risk/regulated categories require manual
+    // review. Uploading proof is provider-supplied only; it does not become a
+    // verified certification until an ops reviewer records that decision.
     const assessment = assessProviderApplicationForOpsReview(app)
     const hasMissingFields = assessment.reasonCodes.some((code) => code.startsWith('MISSING_'))
-    if (hasMissingFields) {
+    const hasHighRiskCategory = hasHighRiskServiceSelection(app.skills)
+    if (hasMissingFields || hasHighRiskCategory) {
       skipped++
       continue
     }
