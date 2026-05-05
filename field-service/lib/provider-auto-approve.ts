@@ -117,11 +117,21 @@ export async function autoApproveProviderApplications(
           })
         }
 
-        await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
-          referenceType: 'provider_application',
-          referenceId: app.id,
-          createdBy: ACTOR_ID,
-        })
+        try {
+          await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
+            referenceType: 'provider_application',
+            referenceId: app.id,
+            createdBy: ACTOR_ID,
+          })
+        } catch (err) {
+          // Keep onboarding flowing even when legacy/legacy-schema wallets do not
+          // yet support this award metadata. Credits can be reconciled out-of-band.
+          console.error('[auto-approve] promo award step failed', {
+            applicationId: app.id,
+            providerId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
 
         await releaseOpsQueueItem(tx as typeof db, {
           queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
