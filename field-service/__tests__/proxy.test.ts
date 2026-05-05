@@ -307,4 +307,14 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
   })
+
+  it('allows public access to the status dashboard', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/status'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
 })
