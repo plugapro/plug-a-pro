@@ -94,7 +94,7 @@ function firstName(name?: string | null) {
 
 async function providerCreditBalanceLine(providerId: string) {
   const balance = await getProviderWalletBalanceReadOnly(providerId)
-  return `Credit balance: *${creditCountLabel(balance.totalCreditBalance)}* (${providerCreditBreakdownLabel(balance)})`
+  return `Credits balance: *${creditCountLabel(balance.totalCreditBalance)}* (${providerCreditBreakdownLabel(balance)})`
 }
 
 async function providerCreditSummary(providerId: string) {
@@ -720,7 +720,7 @@ async function handleProviderStatus(ctx: FlowContext): Promise<FlowResult> {
   if (creditHistoryUrl) {
     await sendCtaUrl(
       ctx.phone,
-      'Credit history is available below.',
+      'Credits history is available below.',
       ctaLabelFor('credit_history'),
       creditHistoryUrl,
       undefined,

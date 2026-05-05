@@ -12,7 +12,7 @@ export const MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000
 export const MANUAL_EFT_REFERENCE_ATTEMPTS = 10
 
 // ─── Payfast-allowed top-up package amounts ───────────────────────────────────
-// R50 (5000 cents) is intentionally excluded from the default pilot UI.
+// The single-credit R50 package is intentionally excluded from the default pilot UI.
 // Do not add R50 to this set without explicit product approval.
 export const PAYFAST_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
 
@@ -76,14 +76,14 @@ function assertValidTopUpAmount(amountCents: number) {
   if (amountCents < MIN_PROVIDER_CREDIT_TOPUP_CENTS) {
     throw new ProviderCreditPaymentIntentError(
       'INVALID_AMOUNT',
-      'Minimum provider credit top-up is R100.',
+      'Minimum provider credits top-up is R100.',
     )
   }
 
   if (amountCents % PLUG_A_PRO_CREDIT_VALUE_CENTS !== 0) {
     throw new ProviderCreditPaymentIntentError(
       'INVALID_AMOUNT',
-      'Top-up amount must convert cleanly into whole Plug-A-Pro Credits.',
+      'Top-up amount must convert cleanly into whole Plug A Pro provider credits.',
     )
   }
 }
@@ -268,7 +268,7 @@ export async function createPayfastTopUpIntent(
   if (!PAYFAST_ALLOWED_AMOUNTS_CENTS.has(input.amountCents)) {
     throw new ProviderCreditPaymentIntentError(
       'INVALID_AMOUNT',
-      'Top-up amount must be one of the approved packages: R100, R200, or R500.',
+      'Top-up amount must be one of the approved credits packages: R100, R200, or R500.',
     )
   }
 

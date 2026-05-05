@@ -4,14 +4,16 @@ import { useState, useTransition } from 'react'
 import { CreditCard, Landmark, QrCode, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PayfastTopUpMethod } from '@/lib/provider-credit-payment-intents'
+import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-wallet'
 import { PayfastCheckoutForwarder } from '@/components/provider/PayfastCheckoutForwarder'
 import { createProviderPayfastTopUpIntent, type ProviderPayfastCheckoutResult } from './actions'
 
-const TOP_UP_OPTIONS = [
-  { amountCents: 10_000, label: 'R100', credits: 5 },
-  { amountCents: 20_000, label: 'R200', credits: 10 },
-  { amountCents: 50_000, label: 'R500', credits: 25 },
-] as const
+const TOP_UP_AMOUNTS_CENTS = [10_000, 20_000, 50_000] as const
+const TOP_UP_OPTIONS = TOP_UP_AMOUNTS_CENTS.map((amountCents) => ({
+  amountCents,
+  label: `R${amountCents / 100}`,
+  credits: amountCents / PROVIDER_CREDIT_PRICE_CENTS,
+}))
 
 const METHOD_OPTIONS: {
   value: PayfastTopUpMethod
@@ -19,7 +21,7 @@ const METHOD_OPTIONS: {
   description: string
   Icon: React.ElementType
 }[] = [
-  { value: 'PAYFAST_CARD', label: 'Card', description: 'Credit or debit card', Icon: CreditCard },
+  { value: 'PAYFAST_CARD', label: 'Card', description: 'Card payment', Icon: CreditCard },
   { value: 'PAYFAST_EFT', label: 'Instant EFT', description: 'Pay via banking app', Icon: Landmark },
   { value: 'PAYFAST_SCODE', label: 'Scan to Pay', description: 'QR code / SnapScan', Icon: QrCode },
 ]
@@ -88,7 +90,7 @@ export function PayfastPackageSelector() {
               <span>
                 <span className="block font-semibold">{option.label}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {option.credits} Plug-A-Pro Credits
+                  {option.credits} Plug A Pro provider credits
                 </span>
               </span>
               <span className="flex items-center gap-2 text-sm font-medium">

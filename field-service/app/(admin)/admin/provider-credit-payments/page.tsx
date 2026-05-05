@@ -111,7 +111,7 @@ export default async function ProviderCreditPaymentsPage({
         <div>
           <h1 className="text-xl font-semibold">Credit top-ups</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Reconcile manual EFT deposits before issuing Plug-A-Pro Credits.
+            Reconcile manual EFT deposits before issuing Plug A Pro provider credits.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">

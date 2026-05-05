@@ -134,7 +134,7 @@ async function sendAcceptedLeadFallbackConfirmation(params: {
 
   const body =
     `✅ *Lead accepted*\n\n` +
-    `You used 1 credit to accept this lead.\n\n` +
+    `You used 1 credit to accept this customer-selected job.\n\n` +
     `💳 ${buildLeadAcceptedCreditLine({
       creditsUsed: LEAD_UNLOCK_COST_CREDITS,
       remainingCredits: balance.totalCreditBalance,
@@ -889,7 +889,7 @@ async function processInboundMessageUnlocked(
     if (reply.id === 'provider_top_up_credits') {
       await sendCtaUrl(
         phone,
-        'Top up your Plug-A-Pro Credits before accepting more matched leads.',
+        'Top up your Plug A Pro provider credits before accepting customer-selected jobs.',
         ctaLabelFor('credit_history'),
         getWorkerPortalUrl('/provider/credits'),
       )
@@ -1818,12 +1818,12 @@ export async function notifyProviderNewJob(params: {
       providerIdForPreview = lead.providerId
       const { getProviderWalletBalanceReadOnly } = await import('./provider-wallet')
       const balance = await getProviderWalletBalanceReadOnly(lead.providerId)
-      creditLine = `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.\nAvailable balance: ${creditCountLabel(balance.totalCreditBalance)} (${providerCreditBreakdownLabel(balance)}).`
+      creditLine = `Showing interest is free. You spend ${creditCountLabel(LEAD_UNLOCK_COST_CREDITS)} only if the customer selects you and you accept the selected job.\nAvailable credits: ${creditCountLabel(balance.totalCreditBalance)} (${providerCreditBreakdownLabel(balance)}).`
       const { getSafeProviderOpportunityPreview } = await import('./provider-opportunity-responses')
       safePreview = await getSafeProviderOpportunityPreview(params.leadId, lead.providerId)
     }
   } catch (error) {
-    console.warn('[whatsapp-bot] unable to include provider credit balance in lead notification', {
+    console.warn('[whatsapp-bot] unable to include provider credits balance in lead notification', {
       leadId: params.leadId,
       providerId: providerIdForPreview,
       error: error instanceof Error ? error.message : String(error),
@@ -2162,7 +2162,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
         return
       }
       if (result.reason === 'LEAD_ACCEPTANCE_FAILED') {
-        await sendText(phone, `😔 We couldn't accept this lead because of a technical issue. Please try again or contact support.\n\n_Ref: ${result.traceId ?? createTraceId('wbot')}_`)
+        await sendText(phone, `😔 We couldn't accept this customer-selected job because of a technical issue. Please try again or contact support.\n\n_Ref: ${result.traceId ?? createTraceId('wbot')}_`)
         return
       }
       const message =
@@ -2649,7 +2649,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
         providerId: provider.id,
         error_code: 'LEAD_ACCEPTANCE_FAILED',
       })
-      await sendText(phone, `😔 We couldn't accept this lead because of a technical issue. Please try again or contact support.\n\n_Ref: ${supportRef}_`)
+      await sendText(phone, `😔 We couldn't accept this customer-selected job because of a technical issue. Please try again or contact support.\n\n_Ref: ${supportRef}_`)
       return
     }
     if (result.reason === 'EXPIRED') {
@@ -2805,7 +2805,7 @@ async function sendLeadInsufficientCreditsMessage(
       creditsRequired: LEAD_UNLOCK_COST_CREDITS,
     }),
     [
-      { id: 'provider_top_up_credits', title: 'Top Up Credits' },
+      { id: 'provider_top_up_credits', title: 'Top up credits' },
       { id: `match_inspect_${leadId}`, title: 'View Lead' },
       { id: 'back_home', title: 'Main Menu' },
     ],

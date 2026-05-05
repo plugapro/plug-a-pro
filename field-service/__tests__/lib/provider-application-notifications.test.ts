@@ -79,7 +79,7 @@ describe('provider application approval notifications', () => {
       { templateName: 'provider_application_approved', metadata: { providerApplicationId: 'app_123' } },
     )
 
-    // Second CTA: Credit Rules button
+    // Second CTA: Credits Rules button
     expect(sendCtaUrl).toHaveBeenNthCalledWith(
       2,
       '+27821234567',
@@ -98,7 +98,7 @@ describe('provider application approval notifications', () => {
     })
   })
 
-  it('builds approval copy that explains starter credits, balance, and credit rules', () => {
+  it('builds approval copy that explains starter credits, balance, and credits rules', () => {
     const { mainBody, termsBody } = buildProviderApplicationApprovedMessage('Jacob Hesser', {
       starterPromoCreditsAwarded: 3,
       paidCredits: 2,
@@ -106,13 +106,13 @@ describe('provider application approval notifications', () => {
     })
 
     expect(mainBody).toContain('Starter credits awarded: *3 credits*')
-    expect(mainBody).toContain('Available balance: *5 credits*')
+    expect(mainBody).toContain('Available credits: *5 credits*')
     expect(mainBody).toContain('Starter/onboarding: *3* · Purchased: *2*')
     expect(mainBody).toContain('No credits are used for previewing or saying you are interested')
     expect(mainBody).toContain('1 credit is used only when a customer selects you')
     expect(mainBody).toContain('You can continue here on WhatsApp')
     expect(mainBody).toContain('Worker Portal')
-    expect(termsBody).toContain('Provider terms and credit rules')
+    expect(termsBody).toContain('Provider credits terms and rules')
     expect(mainBody.toLowerCase()).not.toContain('promo pilot')
   })
 
@@ -123,7 +123,7 @@ describe('provider application approval notifications', () => {
       promoCredits: 0,
     })
 
-    expect(mainBody).toContain("Available balance: *0 credits*. You'll need credits")
+    expect(mainBody).toContain("Available credits: *0 credits*. You'll need credits")
     expect(mainBody).not.toContain('Starter credits awarded')
   })
 

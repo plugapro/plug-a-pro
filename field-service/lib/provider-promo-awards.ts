@@ -264,7 +264,7 @@ function promoAwardDescription(awardType: ProviderPromoAwardType, creditsAwarded
     FIRST_COMPLETED_JOB: 'First completed job with rating',
   }
 
-  return `${labels[awardType]} promo award: ${creditsAwarded} Plug-A-Pro Credits`
+  return `${labels[awardType]} promo award: ${creditsAwarded} Plug A Pro provider credits`
 }
 
 export async function awardMobileVerifiedPromoCreditsInTransaction(

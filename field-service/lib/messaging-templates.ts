@@ -229,7 +229,7 @@ export const TEMPLATES = {
     description: 'Sent on approval — includes app link. Used as template for >24h outreach',
     // {{1}} tech name, {{2}} app URL
     example:
-      'Welcome to Plug A Pro, {{1}}! Your application is approved. Starter credits were awarded. Each accepted lead uses 1 credit. Worker Portal: {{2}}',
+      'Welcome to Plug A Pro, {{1}}! Your application is approved. Starter credits were awarded. Each customer-selected job you accept uses 1 credit. Worker Portal: {{2}}',
   },
 
   technician_application_declined: {
@@ -251,7 +251,7 @@ export const TEMPLATES = {
     description: 'Sent when a provider wallet reaches one remaining credit',
     // {{1}} remaining credits, {{2}} top-up amount, {{3}} credits issued
     example:
-      'You have {{1}} Plug-A-Pro Credit left. Each accepted lead uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
+      'You have {{1}} Plug A Pro provider credit left. 1 credit = R50. Each customer-selected job you accept uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
   },
 
   wallet_zero_balance_lead: {
@@ -261,7 +261,7 @@ export const TEMPLATES = {
     description: 'Sent when a matched lead is available but the provider wallet has no credits',
     // {{1}} current credits, {{2}} minimum top-up amount
     example:
-      'New matched lead available, but your wallet has {{1}} credits. You need 1 credit to accept and unlock full customer details. Top up {{2}}.',
+      'New matched lead available, but your wallet has {{1}} credits. 1 credit = R50. You need 1 credit only if the customer selects you and you accept that selected job. Top up {{2}}.',
   },
 
   wallet_payment_intent_created: {
@@ -272,7 +272,7 @@ export const TEMPLATES = {
     // {{1}} amount, {{2}} credits, {{3}} account name, {{4}} bank, {{5}} account number,
     // {{6}} branch code, {{7}} account type, {{8}} payment reference
     example:
-      'Plug-A-Pro Credits top-up created: {{1}} = {{2}} credits. EFT to {{3}}, {{4}}, account {{5}}, branch {{6}}, {{7}}. Use exact reference: {{8}}. Credits are issued after Plug-A-Pro confirms the payment.',
+      'Plug A Pro provider credits top-up created: {{1}} = {{2}} credits. EFT to {{3}}, {{4}}, account {{5}}, branch {{6}}, {{7}}. Use exact reference: {{8}}. Credits are issued after Plug-A-Pro confirms the payment.',
   },
 
   wallet_payment_credited: {
@@ -282,7 +282,7 @@ export const TEMPLATES = {
     description: 'Sent after admin reconciliation credits a provider wallet top-up',
     // {{1}} credits issued
     example:
-      'Payment received. Your wallet has been credited with {{1}} Plug-A-Pro Credits. Each accepted lead uses 1 credit.',
+      'Payment received. Your wallet has been credited with {{1}} Plug A Pro provider credits. 1 credit = R50. Each customer-selected job you accept uses 1 credit.',
   },
 
   wallet_payfast_topup_initiated: {

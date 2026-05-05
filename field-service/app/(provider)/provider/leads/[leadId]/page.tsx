@@ -273,8 +273,8 @@ export default async function LeadDetailPage({
             </Button>
           }
         >
-          You need {lead.unlockCostCredits} Plug-A-Pro Credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
-          Your current balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
+          You need {lead.unlockCostCredits} Plug A Pro provider credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
+          Your current credits balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
         </AlertCallout>
       )}
 
@@ -312,7 +312,7 @@ export default async function LeadDetailPage({
         <div className="app-shell-panel space-y-2 px-4 py-3 text-sm">
           <p className="font-semibold">Lead preview</p>
           <p className="text-muted-foreground">
-            Customer contact, exact street address, unit, complex and access details are hidden until you accept this lead.
+            Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
           </p>
           <p>
             Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
@@ -334,7 +334,7 @@ export default async function LeadDetailPage({
           ) : (
             <>
               <p>
-                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
+                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
                 Your current balance is {totalCreditBalance}.
               </p>
               <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
@@ -409,10 +409,10 @@ export default async function LeadDetailPage({
         </div>
         {!isUnlocked && (
           <div className="px-4 py-3 space-y-1 text-sm">
-            <p className="font-medium">Accept cost: {lead.unlockCostCredits} Plug-A-Pro Credit</p>
+            <p className="font-medium">Accept cost: {lead.unlockCostCredits} Plug A Pro provider credit</p>
             <p className="text-muted-foreground">
-              Each accepted lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}. Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
-              Credit use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider terms and credit rules</Link>.
+              Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R50). Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
+              Credits use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider credits terms and rules</Link>.
             </p>
           </div>
         )}
@@ -522,11 +522,11 @@ export default async function LeadDetailPage({
             <>
               <Button asChild size="lg" className="w-full">
                 <Link href={`/provider/leads/${leadId}?confirmAccept=1`}>
-                  Accept lead — uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}
+                  Accept job — uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}
                 </Link>
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Balance: {totalCreditBalance} Plug-A-Pro Credits · Cost: {lead.unlockCostCredits}
+                Credits balance: {totalCreditBalance} Plug A Pro provider credits · Cost: {lead.unlockCostCredits}
               </p>
             </>
           ) : hasEnoughCredits ? (
@@ -540,10 +540,10 @@ export default async function LeadDetailPage({
           ) : (
             <>
               <Button asChild size="lg" className="w-full">
-                <Link href="/provider/credits">Top Up Credits</Link>
+                <Link href="/provider/credits">Top up credits</Link>
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this lead.
+                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
               </p>
             </>
           )}

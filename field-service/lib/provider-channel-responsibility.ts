@@ -50,7 +50,7 @@ export const PROVIDER_CHANNEL_RESPONSIBILITIES: ProviderChannelResponsibility[] 
   },
   {
     id: 'credit_balance',
-    label: 'Check credit balance',
+    label: 'Check credits balance',
     core: true,
     primaryChannel: 'whatsapp',
     whatsapp: 'existing',

@@ -1,9 +1,11 @@
 import { preferenceLabel } from './client-request-data'
+import { PROVIDER_CREDIT_PRICE_ZAR } from './provider-wallet'
 
 export const PROVIDER_TERMS_PATH = '/provider/terms/credits'
 export const PROVIDER_APPLY_BUTTON_TITLE = 'Yes, Apply Now'
 export const PROVIDER_NOT_NOW_BUTTON_TITLE = 'Not Now'
 export const PROVIDER_ACCEPTED_LEAD_CREDIT_COST = 1
+export const PROVIDER_CREDITS_PRICE_LINE = `1 credit = R${PROVIDER_CREDIT_PRICE_ZAR}.`
 
 const DEFAULT_PUBLIC_URL_ENV_VARS = ['APP_PUBLIC_URL', 'NEXT_PUBLIC_APP_URL']
 const PROVIDER_LEAD_PUBLIC_URL_ENV_VARS = [
@@ -234,15 +236,17 @@ export function buildProviderCreditSummaryMessage(
     `Starter/onboarding: ${starterCredits}`,
     `Purchased: ${purchasedCredits}`,
     '',
+    'Credits are prepaid platform units, not cash, loans, or financial credit.',
+    PROVIDER_CREDITS_PRICE_LINE,
     'Credits are used only when you accept a customer-selected job.',
     'Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits.',
-    'Credit history is available below.',
+    'Credits history is available below.',
   ].filter(Boolean).join('\n')
 }
 
 // Body intentionally contains no raw URL. Caller must pair this with a
 // sendCtaUrl follow-up that exposes `getProviderTermsUrl()` behind the
-// "View credit policy" CTA — see callers in lib/whatsapp-flows/registration.ts.
+// "View credits rules" CTA — see callers in lib/whatsapp-flows/registration.ts.
 export function buildProviderOnboardingIntroMessage() {
   return [
     '👷 *Join Plug A Pro as a Service Provider*',
@@ -253,13 +257,15 @@ export function buildProviderOnboardingIntroMessage() {
     '• You apply with your name, skills, work areas, and availability.',
     '• We review your application using the information you provide.',
     '• If approved, your provider profile is activated.',
+    '• Credits are prepaid platform units, not cash, loans, or financial credit.',
+    `• ${PROVIDER_CREDITS_PRICE_LINE}`,
     '• You receive starter credits when onboarded.',
     `• Previewing and showing interest in jobs is free.`,
     `• You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only when a customer selects you and you accept that selected job.`,
     '• Full customer and job details unlock after selected-job acceptance.',
     '• You can top up credits when your balance runs low.',
     '',
-    'Before applying, please review our provider terms and credit rules. Tap *View credit policy* below to read them.',
+    'Before applying, please review our provider credits terms and rules. Tap *View credits rules* below to read them.',
     '',
     'Ready to apply?',
   ].join('\n')
@@ -268,7 +274,7 @@ export function buildProviderOnboardingIntroMessage() {
 // Body intentionally contains no raw URL. The `termsUrl` field (param kept for
 // backward compatibility with existing call sites) is now ignored in the body.
 // Callers must follow up with a sendCtaUrl that exposes the terms URL behind
-// the "View credit policy" CTA — see lib/whatsapp-flows/registration.ts.
+// the "View credits rules" CTA — see lib/whatsapp-flows/registration.ts.
 export function buildProviderApplicationSubmittedMessage(params: {
   providerName?: string | null
   applicationRef: string
@@ -295,7 +301,7 @@ export function buildProviderApplicationSubmittedMessage(params: {
     '',
     'Once approved, you can add more profile details — including your email address, portfolio photos, and identity verification — in the Worker Portal.',
     '',
-    'Provider terms and credit rules are available below — tap *View credit policy* to read them.',
+    'Provider credits terms and rules are available below — tap *View credits rules* to read them.',
   ].filter(Boolean).join('\n')
 }
 
@@ -349,8 +355,8 @@ export function buildProviderLeadPreviewMessage(params: {
     '',
     'The customer is comparing suitable providers. Previewing and responding is free.',
     '',
-    `You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only if the customer selects you and you accept the selected job. Full customer contact and exact address stay locked until then.`,
-    `Available balance: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
+    `${PROVIDER_CREDITS_PRICE_LINE} You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only if the customer selects you and you accept the selected job. Full customer contact and exact address stay locked until then.`,
+    `Available credits: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
     '',
     `Respond by *${params.deadlineTime}*.`,
   ].join('\n')
@@ -365,9 +371,9 @@ export function buildProviderLeadActionsMessage(params: {
     `Quick response for *${params.category}* in *${params.area}*.`,
     '',
     'Showing interest is free while the customer compares providers.',
-    `You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only after customer selection and your final acceptance.`,
+    `${PROVIDER_CREDITS_PRICE_LINE} You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only after customer selection and your final acceptance.`,
     'Full customer details unlock only after selected-job acceptance succeeds.',
-    `Available balance: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
+    `Available credits: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
   ].join('\n')
 }
 
@@ -388,7 +394,7 @@ export function buildLeadAcceptedCreditLine(params: {
 
   return [
     `${creditCountLabel(creditsUsed)} used.`,
-    `Remaining balance: ${creditCountLabel(params.remainingCredits)}${breakdown}.`,
+    `Remaining credits: ${creditCountLabel(params.remainingCredits)}${breakdown}.`,
   ].join('\n')
 }
 
@@ -404,7 +410,7 @@ export function buildInsufficientCreditsMessage(params: {
     '⚠️ *Not enough credits*',
     '',
     `You need ${creditCountLabel(required)} to accept this selected job.`,
-    `Your current balance is ${creditCountLabel(params.availableCredits)}.`,
+    `Your current credits balance is ${creditCountLabel(params.availableCredits)}.`,
     '',
     'Please top up in the Worker Portal. The top-up link is available below.',
   ].join('\n')

@@ -24,7 +24,7 @@ describe('central WhatsApp send raw URL guard', () => {
 
   it('blocks raw URLs in visible text bodies before sending', async () => {
     await expect(
-      sendText('+27711111111', 'Credit history: https://app.plugapro.co.za/provider/credits'),
+      sendText('+27711111111', 'Credits history: https://app.plugapro.co.za/provider/credits'),
     ).rejects.toThrow(/raw URL/)
 
     expect(global.fetch).not.toHaveBeenCalled()
@@ -34,8 +34,8 @@ describe('central WhatsApp send raw URL guard', () => {
     await expect(
       sendCtaUrl(
         '+27711111111',
-        'Credit history is available below.',
-        'View credit history',
+        'Credits history is available below.',
+        'View credits history',
         'https://app.plugapro.co.za/provider/credits',
       ),
     ).resolves.toBe('wamid.test')

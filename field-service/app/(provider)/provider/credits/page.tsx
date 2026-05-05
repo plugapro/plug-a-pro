@@ -8,6 +8,7 @@ import { AlertCallout } from '@/components/shared/AlertCallout'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { buildMetadata } from '@/lib/metadata'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
+import { PROVIDER_CREDIT_PRICE_CENTS, PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
 import {
   createProviderTopUpIntentFormAction,
   getProviderTopUpIntentInstructions,
@@ -18,13 +19,14 @@ import {
 } from './actions'
 import { PayfastPackageSelector } from './PayfastPackageSelector'
 
-export const metadata = buildMetadata({ title: 'Plug-A-Pro Credits', noIndex: true })
+export const metadata = buildMetadata({ title: 'Provider Credits', noIndex: true })
 
-const TOP_UP_OPTIONS = [
-  { amountCents: 10_000, label: 'R100', credits: 5 },
-  { amountCents: 20_000, label: 'R200', credits: 10 },
-  { amountCents: 50_000, label: 'R500', credits: 25 },
-] as const
+const TOP_UP_AMOUNTS_CENTS = [10_000, 20_000, 50_000] as const
+const TOP_UP_OPTIONS = TOP_UP_AMOUNTS_CENTS.map((amountCents) => ({
+  amountCents,
+  label: `R${amountCents / 100}`,
+  credits: amountCents / PROVIDER_CREDIT_PRICE_CENTS,
+}))
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('en-ZA', {
@@ -150,9 +152,9 @@ export default async function ProviderCreditsPage({
   return (
     <div className="mx-auto max-w-lg space-y-5 px-4 py-6 pb-24">
       <PageHeader
-        eyebrow="Wallet"
-        title="Plug-A-Pro Credits"
-        description="Previewing and saying you’re interested are free. 1 credit is used only when a customer selects you and you accept that selected job."
+        eyebrow="Provider credits"
+        title="Provider Credits"
+        description={`Credits are prepaid platform units, not loans or financial credit. 1 credit = R${PROVIDER_CREDIT_PRICE_ZAR}. Credits are used only when you accept a customer-selected job.`}
         action={
           <Button asChild variant="outline" size="sm">
             <Link href="/provider">Jobs</Link>
@@ -162,7 +164,7 @@ export default async function ProviderCreditsPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Wallet summary</CardTitle>
+          <CardTitle>Credits balance</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -179,7 +181,7 @@ export default async function ProviderCreditsPage({
               <p className="text-lg font-semibold">{summary.promoCredits}</p>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Leads</p>
+              <p className="text-xs text-muted-foreground">Accepts</p>
               <p className="text-lg font-semibold">{summary.estimatedLeadsUnlockable}</p>
             </div>
           </div>
@@ -209,7 +211,7 @@ export default async function ProviderCreditsPage({
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Pay instantly by card, EFT, or scan to pay. Credits are issued automatically once your payment is confirmed.
+            Pay instantly by card, EFT, or scan to pay. 1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}. Credits are issued automatically once your payment is confirmed.
           </p>
           <PayfastPackageSelector />
         </CardContent>
@@ -232,7 +234,7 @@ export default async function ProviderCreditsPage({
                   <span className="text-left">
                     <span className="block font-semibold">{option.label}</span>
                     <span className="block text-xs font-normal text-muted-foreground">
-                      {option.credits} Plug-A-Pro Credits
+                      {option.credits} Plug A Pro provider credits
                     </span>
                   </span>
                   <span>Get instructions</span>
@@ -263,9 +265,9 @@ export default async function ProviderCreditsPage({
       </Card>
 
       <p className="text-center text-xs text-muted-foreground">
-        Credit use is governed by the{' '}
+        Credits use is governed by the{' '}
         <Link href={termsUrl} className="font-medium underline underline-offset-4">
-          provider terms and credit rules
+          provider credits terms and rules
         </Link>
         .
       </p>

@@ -40,6 +40,9 @@ vi.mock('@/lib/provider-lead-access', () => ({
 }))
 
 vi.mock('@/lib/provider-wallet', () => ({
+  PROVIDER_CREDIT_PRICE_ZAR: 50,
+  PROVIDER_CREDIT_PRICE_CENTS: 5_000,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS: 5_000,
   getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({
     providerId: 'prov_1',
     paidCreditBalance: 2,
@@ -84,7 +87,7 @@ describe('handleProviderJourneyFlow', () => {
       const result = await handleProviderJourneyFlow(mockCtx('pj_menu'))
       expect(wa.sendList).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Credit balance: *5 credits*'),
+        expect.stringContaining('Credits balance: *5 credits*'),
         [expect.objectContaining({
           rows: [
             expect.objectContaining({ id: 'provider_check_status', title: 'View Credits' }),
@@ -233,7 +236,7 @@ describe('handleProviderJourneyFlow', () => {
       }))
       expect(wa.sendButtons).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Credit balance: *5 credits*'),
+        expect.stringContaining('Credits balance: *5 credits*'),
         expect.any(Array),
       )
     })
@@ -681,7 +684,7 @@ describe('handleProviderJourneyFlow', () => {
       )
     })
 
-    it('shows WhatsApp credit summary and credit history CTA without raw URL in body', async () => {
+    it('shows WhatsApp credit summary and credits history CTA without raw URL in body', async () => {
       vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za')
       ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(baseProvider)
       await handleProviderJourneyFlow(mockCtx('pj_provider_status', 'provider_check_status'))
@@ -692,13 +695,13 @@ describe('handleProviderJourneyFlow', () => {
       expect(message).toContain('Starter/onboarding: 3')
       expect(message).toContain('Purchased: 2')
       expect(message).toContain('Credits are used only when you accept a customer-selected job')
-      expect(message).toContain('Credit history is available below')
+      expect(message).toContain('Credits history is available below')
       expect(message).not.toContain('https://')
       expect(message).not.toContain('/provider/credits')
       expect(wa.sendCtaUrl).toHaveBeenCalledWith(
         '+27711111111',
-        expect.stringContaining('Credit history is available below'),
-        'View credit history',
+        expect.stringContaining('Credits history is available below'),
+        'View credits history',
         'https://app.plugapro.co.za/provider/credits',
         undefined,
         expect.any(Object),

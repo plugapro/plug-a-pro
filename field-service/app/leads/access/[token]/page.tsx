@@ -158,7 +158,7 @@ async function acceptLeadWithToken(formData: FormData) {
         errorCode: 'INSUFFICIENT_CREDITS',
         action: 'accept',
         traceId,
-        message: 'This lead requires 1 Plug-A-Pro Credit to accept.',
+        message: 'This lead requires 1 Plug A Pro provider credit to accept.',
         creditDeducted: false,
       })
     }
@@ -771,9 +771,9 @@ export default async function ProviderLeadAccessPage({
 
         {resolvedSearchParams.error === 'credits' && (
           <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
-            <p className="font-medium">You need 1 Plug-A-Pro Credit to accept this lead.</p>
+            <p className="font-medium">You need 1 Plug A Pro provider credit to accept this customer-selected job.</p>
             <p className="mt-1">
-              Your current balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
+              Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
             <p className="mt-1">Please top up in the Worker Portal to continue. Customer contact and exact address details remain hidden.</p>
             {resolvedSearchParams.actionTraceId ? (
@@ -831,11 +831,11 @@ export default async function ProviderLeadAccessPage({
           <div className="rounded-lg border bg-card px-4 py-3 text-sm">
             <p className="font-medium">Lead preview</p>
             <p className="mt-1 text-muted-foreground">
-              Customer contact, exact street address, unit, complex and access details are hidden until you accept this lead.
+              Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
             </p>
             <p className="mt-2">
-              Accepting this lead uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
-              Your current balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
+              Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
+              Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
           </div>
         )}
@@ -846,13 +846,13 @@ export default async function ProviderLeadAccessPage({
             {hasEnoughCredits ? (
               <>
                 <p className="mt-1">
-                  Accepting this lead uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
-                  Your current balance is {providerCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
+                  Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
+                  Your current credits balance is {providerCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
                 </p>
                 <p className="mt-1">
-                  Full customer details will be released only after acceptance succeeds. Credit use follows the{' '}
+                  Full customer details will be released only after acceptance succeeds. Credits use follows the{' '}
                   <Link href={termsUrl} className="font-medium underline underline-offset-4">
-                    provider terms and credit rules
+                    provider credits terms and rules
                   </Link>
                   .
                 </p>
@@ -860,8 +860,8 @@ export default async function ProviderLeadAccessPage({
             ) : (
               <>
                 <p className="mt-1">
-                  You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this lead.
-                  Your current balance is {providerCreditBalance}.
+                  You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this customer-selected job.
+                  Your current credits balance is {providerCreditBalance}.
                 </p>
                 <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
               </>
@@ -968,7 +968,7 @@ export default async function ProviderLeadAccessPage({
           )}
           {!hasAcceptedDetails && (
             <div className="px-4 py-3 text-sm text-muted-foreground">
-              Accept this lead for {LEAD_UNLOCK_COST_CREDITS} Plug-A-Pro Credit to view customer contact details, exact address, and access instructions.
+              Accept this customer-selected job for {LEAD_UNLOCK_COST_CREDITS} Plug A Pro provider credit (1 credit = R50) to view customer contact details, exact address, and access instructions.
             </div>
           )}
           <div className="px-4 py-3 space-y-0.5">
@@ -1171,7 +1171,7 @@ export default async function ProviderLeadAccessPage({
             <>
               <Button asChild size="lg" className="w-full">
                 <Link href={`/leads/access/${encodeURIComponent(token)}?confirmAccept=1`}>
-                  Accept lead — uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}
+                  Accept job — uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}
                 </Link>
               </Button>
             </>
@@ -1186,10 +1186,10 @@ export default async function ProviderLeadAccessPage({
           ) : canRespondToLead && confirmingAccept ? (
             <>
               <Button asChild size="lg" className="w-full">
-                <Link href="/provider/credits">Top Up Credits</Link>
+                <Link href="/provider/credits">Top up credits</Link>
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this lead.
+                You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this customer-selected job.
               </p>
             </>
           ) : null}

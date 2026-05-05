@@ -28,7 +28,7 @@ function makeIntent() {
   return {
     id: 'clxintent0001',
     amountCents: 10_000,
-    creditsToIssue: 5,
+    creditsToIssue: 2,
     paymentMethod: 'PAYFAST_CARD',
   }
 }
@@ -131,7 +131,7 @@ describe('buildCheckoutPayload', () => {
   it('formats R200 correctly', () => {
     const config = makeConfig()
     const payload = buildCheckoutPayload(
-      { ...makeIntent(), amountCents: 20_000, creditsToIssue: 10 },
+      { ...makeIntent(), amountCents: 20_000, creditsToIssue: 4 },
       makeProvider(),
       config,
     )
@@ -141,7 +141,7 @@ describe('buildCheckoutPayload', () => {
   it('formats R500 correctly', () => {
     const config = makeConfig()
     const payload = buildCheckoutPayload(
-      { ...makeIntent(), amountCents: 50_000, creditsToIssue: 25 },
+      { ...makeIntent(), amountCents: 50_000, creditsToIssue: 10 },
       makeProvider(),
       config,
     )
@@ -216,7 +216,7 @@ describe('verifyItn', () => {
       m_payment_id: 'clxintent0001',
       pf_payment_id: 'pf-12345',
       payment_status: 'COMPLETE',
-      item_name: 'Plug-A-Pro Credits',
+      item_name: 'Plug A Pro provider credits',
       amount_gross: '100.00',
       amount_fee: '5.00',
       amount_net: '95.00',

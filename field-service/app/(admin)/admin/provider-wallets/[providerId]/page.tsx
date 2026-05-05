@@ -413,7 +413,7 @@ export default async function ProviderWalletDetailPage({
             <input type="hidden" name="providerId" value={provider.id} />
             <h2 className="font-semibold">Reactivate wallet</h2>
             <p className="text-sm text-muted-foreground">
-              Reactivated wallets can unlock leads again if KYC and credit balance checks pass.
+              Reactivated wallets can unlock leads again if KYC and credits balance checks pass.
             </p>
             <textarea
               name="reason"

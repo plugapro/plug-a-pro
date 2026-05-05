@@ -195,7 +195,7 @@ describe('registration flow — duplicate prevention', () => {
       )
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining('provider terms and credit rules'),
+        expect.stringContaining('provider credits terms and rules'),
         expect.any(Array),
       )
       expect(result.nextStep).toBe('reg_collect_name')

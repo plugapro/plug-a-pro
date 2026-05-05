@@ -27,16 +27,16 @@ export function buildProviderApplicationApprovedMessage(
 ): { mainBody: string; termsBody: string } {
   const totalCredits = credits.paidCredits + credits.promoCredits
   const creditLine = credits.starterPromoCreditsAwarded > 0
-    ? `🎁 Starter credits awarded: *${creditCountLabel(credits.starterPromoCreditsAwarded)}*\n💳 Available balance: *${creditCountLabel(totalCredits)}*`
-    : `💳 Available balance: *${creditCountLabel(totalCredits)}*. You'll need credits to accept matched job leads.`
+    ? `🎁 Starter credits awarded: *${creditCountLabel(credits.starterPromoCreditsAwarded)}*\n💳 Available credits: *${creditCountLabel(totalCredits)}*`
+    : `💳 Available credits: *${creditCountLabel(totalCredits)}*. You'll need credits to accept customer-selected jobs.`
 
   const breakdownLine = totalCredits > 0
     ? `\nStarter/onboarding: *${credits.promoCredits}* · Purchased: *${credits.paidCredits}*`
     : ''
 
   return {
-    mainBody: `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nNo credits are used for previewing or saying you are interested.\n1 credit is used only when a customer selects you and you accept that selected job.\nFull customer details unlock after acceptance.\n\nYou can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours, and jobs:`,
-    termsBody: `Provider terms and credit rules:\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`,
+    mainBody: `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nCredits are prepaid platform units, not cash, loans, or financial credit.\n1 credit = R50.\nNo credits are used for previewing or saying you are interested.\n1 credit is used only when a customer selects you and you accept that selected job.\nFull customer details unlock after acceptance.\n\nYou can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours, and jobs:`,
+    termsBody: `Provider credits terms and rules:\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`,
   }
 }
 

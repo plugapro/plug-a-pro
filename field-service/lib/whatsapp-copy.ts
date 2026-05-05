@@ -14,6 +14,9 @@
 export type WhatsAppCtaPurpose =
   | 'credit_history'
   | 'credit_policy'
+  | 'credits_terms'
+  | 'buy_credits'
+  | 'top_up_credits'
   | 'provider_terms'
   | 'application_status'
   | 'worker_portal'
@@ -37,8 +40,11 @@ export type WhatsAppCtaLink = {
 }
 
 const CTA_LABELS: Record<WhatsAppCtaPurpose, string> = {
-  credit_history: 'View credit history',
-  credit_policy: 'View credit policy',
+  credit_history: 'View credits history',
+  credit_policy: 'View credits rules',
+  credits_terms: 'View credits rules',
+  buy_credits: 'Buy credits',
+  top_up_credits: 'Top up credits',
   provider_terms: 'View terms',
   application_status: 'Check status',
   worker_portal: 'Open Worker Portal',
@@ -91,8 +97,8 @@ export const WHATSAPP_COPY = {
   mainMenuButton: 'Main Menu',
 
   // Terms / credits
-  termsCtaPrompt: 'Provider terms and credit rules are available below.',
-  termsCtaShortBody: 'Provider terms and credit rules.',
+  termsCtaPrompt: 'Provider credits terms and rules are available below.',
+  termsCtaShortBody: 'Provider credits terms and rules.',
 } as const
 
 // ─── Raw-URL guard ───────────────────────────────────────────────────────────

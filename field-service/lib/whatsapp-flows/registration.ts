@@ -472,7 +472,7 @@ async function startRegistration(ctx: FlowContext): Promise<FlowResult> {
   try {
     await sendCtaUrl(
       ctx.phone,
-      'Provider terms and credit rules.',
+      'Provider credits terms and rules.',
       ctaLabelFor('credit_policy'),
       getProviderTermsUrl(),
       undefined,
@@ -2298,7 +2298,7 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
       try {
         await sendCtaUrl(
           ctx.phone,
-          'Provider terms and credit rules.',
+          'Provider credits terms and rules.',
           ctaLabelFor('credit_policy'),
           getProviderTermsUrl(),
           undefined,

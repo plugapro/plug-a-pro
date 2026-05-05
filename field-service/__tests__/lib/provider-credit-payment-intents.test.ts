@@ -50,7 +50,7 @@ vi.mock('../../lib/provider-wallet-notifications', () => ({
 describe('provider credit payment intents', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug-A-Pro Credits')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug A Pro provider credits')
     vi.stubEnv('PROVIDER_CREDIT_EFT_BANK_NAME', 'Test Bank')
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER', '123456789')
     vi.stubEnv('PROVIDER_CREDIT_EFT_BRANCH_CODE', '250655')
@@ -105,9 +105,9 @@ describe('provider credit payment intents', () => {
   })
 
   it.each([
-    [10_000, 5],
-    [20_000, 10],
-    [50_000, 25],
+    [10_000, 2],
+    [20_000, 4],
+    [50_000, 10],
   ])('creates %i cents as %i credits', async (amountCents, creditsToIssue) => {
     const result = await createManualEftTopUpIntent({
       providerId: 'provider-1',

@@ -149,7 +149,7 @@ describe('provider credits server actions', () => {
         amountCents: 10_000,
         amountFormatted: 'R 100,00',
         currency: 'ZAR',
-        creditsToIssue: 5,
+        creditsToIssue: 2,
         paymentReference: 'PAP-7842-9F3K',
         expiresAt: new Date('2026-05-06T12:00:00.000Z'),
         bankAccount: {
@@ -172,7 +172,7 @@ describe('provider credits server actions', () => {
     })
     expect(result).toMatchObject({
       intentId: 'intent-1',
-      creditsToIssue: 5,
+      creditsToIssue: 2,
       paymentReference: 'PAP-7842-9F3K',
     })
   })
@@ -189,7 +189,7 @@ describe('provider credits server actions', () => {
         amountCents: 10_000,
         amountFormatted: 'R 100,00',
         currency: 'ZAR',
-        creditsToIssue: 5,
+        creditsToIssue: 2,
         paymentReference: 'PAP-7842-9F3K',
         expiresAt: null,
         bankAccount: {

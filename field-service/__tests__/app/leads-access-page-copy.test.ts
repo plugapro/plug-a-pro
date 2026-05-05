@@ -11,13 +11,13 @@ describe('signed provider lead page copy', () => {
     expect(source).not.toContain('Use 1 Credit & Inspect First')
     expect(source).not.toContain('unlockLeadWithToken')
     expect(source).not.toContain('request an inspection')
-    expect(authenticatedSource).not.toContain('Unlock lead for 1 Plug-A-Pro Credit')
+    expect(authenticatedSource).not.toContain('Unlock lead for 1 Plug A Pro provider credit')
     expect(authenticatedSource).not.toContain('Top Up to Unlock')
     expect(authenticatedSource).not.toContain('Inspection first')
   })
 
   it('uses the accept-or-decline journey with confirmation and protected details', () => {
-    expect(source).toContain('Accept lead — uses')
+    expect(source).toContain('Accept job — uses')
     expect(source).toContain('Confirm lead acceptance')
     expect(source).toContain('Full customer details will be released only after acceptance succeeds.')
     expect(source).toContain('hasAcceptedDetails && customer')

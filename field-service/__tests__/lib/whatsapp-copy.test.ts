@@ -32,8 +32,11 @@ describe('WHATSAPP_COPY constants', () => {
 
 describe('ctaLabelFor / ctaLink', () => {
   it('returns short, action-based labels for each documented purpose', () => {
-    expect(ctaLabelFor('credit_history')).toBe('View credit history')
-    expect(ctaLabelFor('credit_policy')).toBe('View credit policy')
+    expect(ctaLabelFor('credit_history')).toBe('View credits history')
+    expect(ctaLabelFor('credit_policy')).toBe('View credits rules')
+    expect(ctaLabelFor('credits_terms')).toBe('View credits rules')
+    expect(ctaLabelFor('buy_credits')).toBe('Buy credits')
+    expect(ctaLabelFor('top_up_credits')).toBe('Top up credits')
     expect(ctaLabelFor('provider_terms')).toBe('View terms')
     expect(ctaLabelFor('application_status')).toBe('Check status')
     expect(ctaLabelFor('worker_portal')).toBe('Open Worker Portal')
@@ -53,7 +56,7 @@ describe('ctaLabelFor / ctaLink', () => {
   it('builds a structured WhatsAppCtaLink with the default label', () => {
     const link: WhatsAppCtaLink = ctaLink('credit_policy', 'https://app.plugapro.co.za/provider/terms/credits')
     expect(link).toMatchObject({
-      label: 'View credit policy',
+      label: 'View credits rules',
       url: 'https://app.plugapro.co.za/provider/terms/credits',
       purpose: 'credit_policy',
     })
@@ -75,7 +78,7 @@ describe('bodyContainsRawUrl / assertNoRawUrlsInWhatsAppBody', () => {
   })
 
   it('does not flag clean copy', () => {
-    expect(bodyContainsRawUrl('Tap View credit policy below to read the rules.')).toBe(false)
+    expect(bodyContainsRawUrl('Tap View credits rules below to read the rules.')).toBe(false)
     expect(bodyContainsRawUrl('Should we continue?')).toBe(false)
   })
 
@@ -113,7 +116,7 @@ describe('regression: provider-credit-copy producers must not embed raw URLs', (
       paidCreditBalance: 2,
     })
     expect(bodyContainsRawUrl(body)).toBe(false)
-    expect(body).toContain('Credit history is available below.')
+    expect(body).toContain('Credits history is available below.')
   })
 
   it('buildProviderApplicationSubmittedMessage body has no URL and no "Shall I"', async () => {
@@ -127,7 +130,7 @@ describe('regression: provider-credit-copy producers must not embed raw URLs', (
     })
     expect(bodyContainsRawUrl(body)).toBe(false)
     expect(body).not.toMatch(/\bShall I\b/)
-    expect(body).toContain('View credit policy')
+    expect(body).toContain('View credits rules')
   })
 
   it('buildProviderOnboardingIntroMessage body has no URL and no "Shall I"', async () => {
@@ -135,7 +138,7 @@ describe('regression: provider-credit-copy producers must not embed raw URLs', (
     const body = buildProviderOnboardingIntroMessage()
     expect(bodyContainsRawUrl(body)).toBe(false)
     expect(body).not.toMatch(/\bShall I\b/)
-    expect(body).toContain('View credit policy')
+    expect(body).toContain('View credits rules')
   })
 })
 

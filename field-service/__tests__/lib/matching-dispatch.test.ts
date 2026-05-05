@@ -24,6 +24,9 @@ vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderZeroBalanceLeadAvailable: mockNotifyZeroBalance,
 }))
 vi.mock('@/lib/provider-wallet', () => ({
+  PROVIDER_CREDIT_PRICE_ZAR: 50,
+  PROVIDER_CREDIT_PRICE_CENTS: 5_000,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS: 5_000,
   getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({
     providerId: 'provider-1',
     paidCreditBalance: 2,

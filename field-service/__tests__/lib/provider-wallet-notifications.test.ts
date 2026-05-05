@@ -18,7 +18,8 @@ describe('provider wallet notification message builders', () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
     const message = buildLowBalanceWarningMessage()
 
-    expect(message).toContain('You have 1 Plug-A-Pro Credit left')
+    expect(message).toContain('You have 1 Plug A Pro provider credit left')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('No credits are used for previewing or saying you are interested')
     expect(message).toContain('1 credit is used only when a customer selects you')
     expect(message).toContain('You can continue here on WhatsApp')
@@ -47,10 +48,10 @@ describe('provider wallet notification message builders', () => {
   it('builds manual EFT top-up instructions with bank details and reference', () => {
     const message = buildPaymentIntentCreatedMessage({
       amountFormatted: 'R 100,00',
-      creditsToIssue: 5,
+      creditsToIssue: 2,
       paymentReference: 'PAP-7842-9F3K',
       bankAccount: {
-        accountName: 'Plug-A-Pro Credits',
+        accountName: 'Plug A Pro provider credits',
         bankName: 'Test Bank',
         accountNumber: '123456789',
         branchCode: '250655',
@@ -58,7 +59,8 @@ describe('provider wallet notification message builders', () => {
       },
     })
 
-    expect(message).toContain('R 100,00 = 5 credits')
+    expect(message).toContain('R 100,00 = 2 credits')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('No credits are used for previewing or saying you are interested')
     expect(message).toContain('1 credit is used only when a customer selects you')
     expect(message).toContain('Test Bank')
@@ -67,10 +69,10 @@ describe('provider wallet notification message builders', () => {
   })
 
   it('builds the payment credited receipt copy', () => {
-    expect(buildPaymentCreditedMessage(10)).toContain(
-      'Payment received. Your wallet has been credited with 10 Plug-A-Pro Credits.',
+    expect(buildPaymentCreditedMessage(4)).toContain(
+      'Payment received. Your wallet has been credited with 4 Plug A Pro provider credits.',
     )
-    expect(buildPaymentCreditedMessage(10)).toContain('1 credit is used only when a customer selects you')
+    expect(buildPaymentCreditedMessage(4)).toContain('1 credit is used only when a customer selects you')
   })
 
   it('builds provider lead unlock copy with post-unlock customer details', () => {
@@ -107,16 +109,16 @@ describe('provider wallet notification message builders', () => {
     it('includes the formatted amount and credit count', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 100,00',
-        creditsToIssue: 5,
+        creditsToIssue: 2,
       })
       expect(message).toContain('R 100,00')
-      expect(message).toContain('5 credits')
+      expect(message).toContain('2 credits')
     })
 
     it('includes the checkout instruction', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 200,00',
-        creditsToIssue: 10,
+        creditsToIssue: 4,
       })
       expect(message).toContain('Complete your payment on the checkout page')
     })
@@ -124,7 +126,7 @@ describe('provider wallet notification message builders', () => {
     it('includes the pending confirmation note', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 500,00',
-        creditsToIssue: 25,
+        creditsToIssue: 10,
       })
       expect(message).toContain('Credits will appear in your wallet once Payfast confirms payment')
       expect(message).toContain('1 credit is used only when a customer selects you')
@@ -149,7 +151,7 @@ describe('provider wallet notification message builders', () => {
     it('does not contain bank account details', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 100,00',
-        creditsToIssue: 5,
+        creditsToIssue: 2,
       })
       expect(message).not.toContain('Account name')
       expect(message).not.toContain('Branch code')

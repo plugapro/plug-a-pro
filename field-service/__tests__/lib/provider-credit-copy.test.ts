@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   PROVIDER_APPLY_BUTTON_TITLE,
+  PROVIDER_CREDITS_PRICE_LINE,
   PROVIDER_NOT_NOW_BUTTON_TITLE,
   buildInsufficientCreditsMessage,
   buildLeadAcceptedCreditLine,
@@ -105,6 +106,10 @@ describe('provider credit copy', () => {
     vi.unstubAllEnvs()
   })
 
+  it('documents the provider credits business price without financial-credit wording', () => {
+    expect(PROVIDER_CREDITS_PRICE_LINE).toBe('1 credit = R50.')
+  })
+
   it('builds a configurable provider terms URL', () => {
     vi.stubEnv('PROVIDER_TERMS_URL', 'https://terms.example.com/provider')
 
@@ -151,16 +156,18 @@ describe('provider credit copy', () => {
     expect(getProviderTermsUrl()).toBe('https://app.example.com/provider/terms/credits')
   })
 
-  it('builds onboarding intro copy with terms and lead credit rules — body has no raw URL', () => {
+  it('builds onboarding intro copy with terms and lead credits rules — body has no raw URL', () => {
     const message = buildProviderOnboardingIntroMessage()
 
     expect(message).toContain('We review your application using the information you provide')
     expect(message).toContain('starter credits')
+    expect(message).toContain('Credits are prepaid platform units, not cash, loans, or financial credit')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('Previewing and showing interest in jobs is free')
     expect(message).toContain('You spend 1 credit only when a customer selects you')
     expect(message).toContain('Full customer and job details unlock after selected-job acceptance')
     // The terms URL is exposed via a sendCtaUrl follow-up, never inline.
-    expect(message).toContain('View credit policy')
+    expect(message).toContain('View credits rules')
     expect(message).not.toMatch(/https?:\/\//)
     expect(message).not.toContain('app.plugapro.co.za')
     expect(message.toLowerCase()).not.toContain('promo pilot')
@@ -184,8 +191,9 @@ describe('provider credit copy', () => {
     expect(message).toContain('Approval is not automatic')
     expect(message).toContain('If approved, your provider profile will be activated')
     expect(message).toContain('starter credits for customer-selected jobs')
+    expect(message).toContain('Provider credits terms and rules')
     // The terms URL is exposed via a sendCtaUrl follow-up, never inline.
-    expect(message).toContain('View credit policy')
+    expect(message).toContain('View credits rules')
     expect(message).not.toMatch(/https?:\/\//)
     expect(message).not.toContain('example.com')
   })
@@ -222,9 +230,10 @@ describe('provider credit copy', () => {
     expect(message).toContain('Photos: *2 available*')
     expect(message).toContain('Shower drain is blocked.')
     expect(message).toContain('Previewing and responding is free')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('You spend 1 credit only if the customer selects you')
     expect(message).toContain('Full customer contact and exact address stay locked')
-    expect(message).toContain('Available balance: 2 credits')
+    expect(message).toContain('Available credits: 2 credits')
     expect(message).not.toMatch(/https?:\/\//)
     expect(message).not.toContain('app.plugapro.co.za')
     expect(message).not.toContain('customer@example.com')
@@ -242,7 +251,7 @@ describe('provider credit copy', () => {
 
     expect(message).toContain('Not enough credits')
     expect(message).toContain('You need 1 credit to accept this selected job')
-    expect(message).toContain('Your current balance is 0 credits')
+    expect(message).toContain('Your current credits balance is 0 credits')
     expect(message).toContain('top-up link is available below')
     expect(message).not.toContain('https://')
   })
@@ -251,7 +260,7 @@ describe('provider credit copy', () => {
     const line = buildLeadAcceptedCreditLine({ creditsUsed: 1, remainingCredits: 4 })
 
     expect(line).toContain('1 credit used')
-    expect(line).toContain('Remaining balance: 4 credits')
+    expect(line).toContain('Remaining credits: 4 credits')
   })
 
   it('buildLeadAcceptedCreditLine includes breakdown when paid/starter credits are provided', () => {
@@ -279,12 +288,14 @@ describe('provider credit copy', () => {
     )
 
     expect(message).toContain('Your credits')
+    expect(message).toContain('Credits are prepaid platform units, not cash, loans, or financial credit')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('Available: 5')
     expect(message).toContain('Starter/onboarding: 3')
     expect(message).toContain('Purchased: 2')
     expect(message).toContain('Credits are used only when you accept a customer-selected job')
     expect(message).toContain('Previewing, showing interest, shortlisting, customer selection, declining, and expiry do not use credits')
-    expect(message).toContain('Credit history is available below')
+    expect(message).toContain('Credits history is available below')
     expect(message).not.toContain('https://')
   })
 
@@ -300,6 +311,6 @@ describe('provider credit copy', () => {
     expect(message).toContain('Showing interest is free')
     expect(message).toContain('after customer selection and your final acceptance')
     expect(message).toContain('Full customer details unlock only after selected-job acceptance succeeds')
-    expect(message).toContain('Available balance: 5 credits')
+    expect(message).toContain('Available credits: 5 credits')
   })
 })

@@ -31,6 +31,9 @@ vi.mock('@/lib/customer-provider-handover-access', () => ({
 }))
 
 vi.mock('@/lib/provider-wallet', () => ({
+  PROVIDER_CREDIT_PRICE_ZAR: 50,
+  PROVIDER_CREDIT_PRICE_CENTS: 5_000,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS: 5_000,
   getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({
     providerId: 'provider-1',
     paidCreditBalance: 2,
@@ -112,7 +115,7 @@ describe('post-match communications', () => {
     )
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
-      expect.stringContaining('Remaining balance: 3 credits (Starter/onboarding: 1 · Purchased: 2).'),
+      expect.stringContaining('Remaining credits: 3 credits (Starter/onboarding: 1 · Purchased: 2).'),
       'View Job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),

@@ -55,7 +55,7 @@ function buildItnBody(overrides: Partial<PayfastItnPayload> = {}): string {
     m_payment_id: INTENT_ID,
     pf_payment_id: 'pf-123',
     payment_status: 'COMPLETE',
-    item_name: 'Plug-A-Pro Credits',
+    item_name: 'Plug A Pro provider credits',
     amount_gross: '100.00',
     amount_fee: '5.00',
     amount_net: '95.00',

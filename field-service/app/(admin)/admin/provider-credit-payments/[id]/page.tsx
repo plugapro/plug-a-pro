@@ -141,7 +141,7 @@ export default async function ProviderCreditPaymentDetailPage({
           </Link>
           <h1 className="mt-1 text-xl font-semibold">{intent.paymentReference}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Confirm the bank deposit before issuing Plug-A-Pro Credits.
+            Confirm the bank deposit before issuing Plug A Pro provider credits.
           </p>
         </div>
         <Badge variant={STATUS_STYLES[intent.status]}>{cleanStatus(intent.status)}</Badge>
@@ -350,8 +350,8 @@ export default async function ProviderCreditPaymentDetailPage({
             <h2 className="font-semibold">Credit wallet</h2>
             <p className="text-sm">
               {isPayfastIntent
-                ? `Manually credit ${intent.creditsToIssue} paid Plug-A-Pro Credits to ${intent.provider.name}. Use only when the ITN was verified but automatic crediting failed.`
-                : `Confirm this will add ${intent.creditsToIssue} paid Plug-A-Pro Credits to ${intent.provider.name}. This action cannot be repeated.`}
+                ? `Manually credit ${intent.creditsToIssue} paid Plug A Pro provider credits to ${intent.provider.name}. Use only when the ITN was verified but automatic crediting failed.`
+                : `Confirm this will add ${intent.creditsToIssue} paid Plug A Pro provider credits to ${intent.provider.name}. This action cannot be repeated.`}
             </p>
             <textarea
               name="adminNote"

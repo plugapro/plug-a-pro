@@ -532,7 +532,7 @@ async function notifySelectedProvider(params: {
       `Customer selected you\n\n` +
       `The customer selected you for this ${params.category} job${area}.\n\n` +
       `Accepting this job uses 1 credit.\n\n` +
-      `Available balance: ${formatCredits(balance.totalCreditBalance)}\n` +
+      `Available credits: ${formatCredits(balance.totalCreditBalance)}\n` +
       `After acceptance: ${formatCredits(remainingCredits)}${linkLine}`
 
     await sendButtons(

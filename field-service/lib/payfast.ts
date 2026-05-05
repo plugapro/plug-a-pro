@@ -203,8 +203,8 @@ export function buildCheckoutPayload(
   config: PayfastConfig,
 ): PayfastCheckoutPayload {
   const amountStr = (intent.amountCents / 100).toFixed(2)
-  const itemName = `Plug-A-Pro Credits — ${intent.creditsToIssue} credits`
-  const itemDescription = `R${Math.round(intent.amountCents / 100)} top-up · ${intent.creditsToIssue} Plug-A-Pro Credits`
+  const itemName = `Plug A Pro provider credits — ${intent.creditsToIssue} credits`
+  const itemDescription = `R${Math.round(intent.amountCents / 100)} top-up · ${intent.creditsToIssue} Plug A Pro provider credits`
   const payfastMethod = PAYMENT_METHOD_MAP[intent.paymentMethod] ?? 'cc'
 
   const [nameFirst = '', ...nameParts] = (provider.name ?? '').split(' ')

@@ -193,7 +193,7 @@ export default async function ProviderHomePage() {
             </Button>
           }
         >
-          Top up to keep accepting new leads — each accepted lead uses 1 credit.
+          Top up to keep accepting customer-selected jobs — each accepted customer-selected job uses 1 credit.
         </AlertCallout>
       ) : null}
 
@@ -209,7 +209,7 @@ export default async function ProviderHomePage() {
                 {walletBalance.totalCreditBalance}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Each accepted lead uses 1 credit
+                Each accepted customer-selected job uses 1 credit
               </p>
             </div>
             <Button asChild variant="outline" size="sm">
@@ -298,7 +298,7 @@ export default async function ProviderHomePage() {
           </Link>
         </Button>
         <Button asChild variant="ghost" className="w-full justify-start">
-          <Link href={termsUrl}>Provider terms &amp; credit rules</Link>
+          <Link href={termsUrl}>Provider credits terms &amp; rules</Link>
         </Button>
       </section>
 

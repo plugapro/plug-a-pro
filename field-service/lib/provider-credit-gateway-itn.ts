@@ -98,7 +98,7 @@ export async function creditProviderWalletFromGatewayItn(
         {
           referenceType: 'payment_intent',
           referenceId: intent.id,
-          description: `Top-up via Payfast — ${intent.creditsToIssue} Plug-A-Pro Credits (${amountFormatted})`,
+          description: `Top-up via Payfast — ${intent.creditsToIssue} Plug A Pro provider credits (${amountFormatted})`,
           metadata: {
             paymentReference: intent.paymentReference,
             amountCents: intent.amountCents,

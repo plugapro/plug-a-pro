@@ -63,7 +63,7 @@ function makeIntent(overrides: Record<string, unknown> = {}) {
     providerId: 'provider-1',
     amountCents: 10_000,
     currency: 'ZAR',
-    creditsToIssue: 5,
+    creditsToIssue: 2,
     paymentMethod: 'MANUAL_EFT',
     paymentReference: 'PAP-7842-9F3K',
     status: 'MATCHED_ON_STATEMENT',
@@ -190,13 +190,13 @@ describe('provider credit reconciliation service', () => {
     expect(result.intent.status).toBe('CREDITED')
     expect(result.intent.creditedAt).toBeInstanceOf(Date)
     expect(result.wallet).toMatchObject({
-      paidCreditBalance: 7,
+      paidCreditBalance: 4,
       promoCreditBalance: 3,
     })
     expect(result.ledgerEntries[0]).toMatchObject({
       entryType: 'TOPUP_CREDIT',
       creditType: 'PAID',
-      amountCredits: 5,
+      amountCredits: 2,
       referenceType: 'payment_intent',
       referenceId: 'intent-1',
       createdBy: 'admin-user-1',
@@ -222,13 +222,13 @@ describe('provider credit reconciliation service', () => {
 
     expect(result.intent.status).toBe('CREDITED')
     expect(result.wallet).toMatchObject({
-      paidCreditBalance: 7,
+      paidCreditBalance: 4,
       promoCreditBalance: 3,
     })
     expect(result.ledgerEntries[0]).toMatchObject({
       entryType: 'TOPUP_CREDIT',
       creditType: 'PAID',
-      amountCredits: 5,
+      amountCredits: 2,
     })
     expect(mockNotifyPaymentCredited).not.toHaveBeenCalled()
   })

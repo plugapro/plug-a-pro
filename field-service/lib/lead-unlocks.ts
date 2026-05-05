@@ -97,14 +97,14 @@ function mapWalletError(error: unknown): never {
   if (error instanceof ProviderWalletError && error.code === 'INSUFFICIENT_FUNDS') {
     throw new LeadUnlockError(
       'INSUFFICIENT_CREDITS',
-      'You need at least 1 Plug-A-Pro Credit to unlock this lead.',
+      'You need at least 1 Plug A Pro provider credit to accept this customer-selected job.',
     )
   }
 
   if (error instanceof ProviderWalletError && error.code === 'CONCURRENT_MUTATION') {
     throw new LeadUnlockError(
       'CONCURRENT_UNLOCK',
-      'Your credit balance changed while unlocking this lead. Please try again.',
+      'Your credits balance changed while accepting this customer-selected job. Please try again.',
     )
   }
 
@@ -201,7 +201,7 @@ export async function unlockLeadForProvider(
       if (currentCreditBalance < LEAD_UNLOCK_COST_CREDITS) {
         throw new LeadUnlockError(
           'INSUFFICIENT_CREDITS',
-          'You need at least 1 Plug-A-Pro Credit to unlock this lead.',
+          'You need at least 1 Plug A Pro provider credit to accept this customer-selected job.',
           currentCreditBalance,
         )
       }
@@ -399,7 +399,7 @@ export async function unlockLeadForProviderInTransaction(
   if (currentCreditBalance < LEAD_UNLOCK_COST_CREDITS) {
     throw new LeadUnlockError(
       'INSUFFICIENT_CREDITS',
-      'You need at least 1 Plug-A-Pro Credit to unlock this lead.',
+      'You need at least 1 Plug A Pro provider credit to accept this customer-selected job.',
       currentCreditBalance,
     )
   }

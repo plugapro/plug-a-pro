@@ -7,7 +7,9 @@ import {
 import { randomUUID } from 'crypto'
 import { db } from './db'
 
-export const PLUG_A_PRO_CREDIT_VALUE_CENTS = 2_000
+export const PROVIDER_CREDIT_PRICE_ZAR = 50
+export const PROVIDER_CREDIT_PRICE_CENTS = PROVIDER_CREDIT_PRICE_ZAR * 100
+export const PLUG_A_PRO_CREDIT_VALUE_CENTS = PROVIDER_CREDIT_PRICE_CENTS
 
 type WalletErrorCode =
   | 'INVALID_AMOUNT'

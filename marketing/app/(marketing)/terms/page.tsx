@@ -22,7 +22,7 @@ export default function TermsPage() {
           <em>
             These Terms are intended to be read alongside our{" "}
             <a href="/privacy">Privacy Policy</a>,{" "}
-            <a href="/credits-policy">Credits and Wallet Policy</a>,{" "}
+            <a href="/credits-policy">Provider Credits Terms and Rules</a>,{" "}
             <a href="/refund-policy">Refund and Cancellation Policy</a>, and, for service providers,
             our <a href="/provider-terms">Service Provider Terms</a>.
           </em>
@@ -35,7 +35,7 @@ export default function TermsPage() {
           <li><strong>&ldquo;Customer&rdquo;</strong> means a person who uses the Platform to request or book a service.</li>
           <li><strong>&ldquo;Provider&rdquo; or &ldquo;Service Provider&rdquo;</strong> means an independent person or business that uses the Platform to find and complete service jobs.</li>
           <li><strong>&ldquo;Booking&rdquo;</strong> means a confirmed service appointment between a Customer and a Provider, facilitated through the Platform.</li>
-          <li><strong>&ldquo;Credits&rdquo;</strong> means platform-issued accounting units that can be applied toward eligible fees or services on the Platform. Credits are not legal tender, not interest-bearing, and cannot be withdrawn as cash unless Plug A Pro expressly agrees or law requires it. See our <a href="/credits-policy">Credits and Wallet Policy</a> for full details.</li>
+          <li><strong>&ldquo;Credits&rdquo;</strong> means platform-issued accounting units that can be applied toward eligible fees or services on the Platform. Credits are not legal tender, not interest-bearing, and cannot be withdrawn as cash unless Plug A Pro expressly agrees or law requires it. See our <a href="/credits-policy">Provider Credits Terms and Rules</a> for full details.</li>
           <li><strong>&ldquo;Quote&rdquo;</strong> means a written estimate provided by a Provider through the Platform for a specific job.</li>
         </ul>
 
@@ -161,7 +161,7 @@ export default function TermsPage() {
           Credits are a Platform accounting mechanism. They are not cash, bank deposits, or legal tender.
           The full rules for Credits — including types, expiry, top-up, use at checkout, refund behaviour,
           and what happens on cancellation or dispute — are set out in our{" "}
-          <a href="/credits-policy">Credits and Wallet Policy</a>. That policy is incorporated into these
+          <a href="/credits-policy">Provider Credits Terms and Rules</a>. That policy is incorporated into these
           Terms by reference.
         </p>
 
@@ -211,7 +211,7 @@ export default function TermsPage() {
           <li>Create duplicate accounts to circumvent a suspension or ban.</li>
           <li>Abuse the refund, credit, or dispute process (including fraudulent chargebacks or fabricated complaints).</li>
           <li>Solicit Providers or Customers to transact outside the Platform for Platform-introduced services.</li>
-          <li>Use credits in a manner inconsistent with the Credits Policy.</li>
+          <li>Use credits in a manner inconsistent with the Provider Credits Rules.</li>
         </ul>
         <p>Violations may result in account suspension, credit forfeiture, and/or referral to law enforcement.</p>
 

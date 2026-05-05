@@ -18,6 +18,9 @@ const mockDb = vi.hoisted(() => ({
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/provider-wallet', () => ({
+  PROVIDER_CREDIT_PRICE_ZAR: 50,
+  PROVIDER_CREDIT_PRICE_CENTS: 5_000,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS: 5_000,
   creditPromoCreditsInTransaction: vi.fn().mockResolvedValue({ wallet: {}, ledgerEntries: [] }),
 }))
 vi.mock('@vercel/blob', () => ({

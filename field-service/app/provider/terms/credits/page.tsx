@@ -1,24 +1,27 @@
 import Link from 'next/link'
 import { buildMetadata } from '@/lib/metadata'
+import { PROVIDER_CREDIT_PRICE_ZAR } from '@/lib/provider-wallet'
 
-export const metadata = buildMetadata({ title: 'Provider Terms and Credit Rules', noIndex: true })
+export const metadata = buildMetadata({ title: 'Provider Credits Terms and Rules', noIndex: true })
+
+const creditPriceLine = `1 credit = R${PROVIDER_CREDIT_PRICE_ZAR}.`
 
 const sections = [
   {
-    title: 'What credits are',
-    body: 'Credits are used by approved Plug A Pro service providers to accept matched customer job leads. Credits are not cash, cannot be transferred, and are used only inside the Plug A Pro provider journey.',
+    title: 'What provider credits are',
+    body: `Plug A Pro credits are prepaid platform units used by approved service providers to accept customer-selected jobs. ${creditPriceLine} Credits are not cash, loans, or financial credit.`,
   },
   {
     title: 'Starter and onboarding credits',
-    body: 'If your provider application is approved, Plug A Pro may award starter or onboarding credits to help you begin accepting matched leads. These credits appear in your credit balance and may be shown separately from purchased credits.',
+    body: 'If your provider application is approved, Plug A Pro may award starter or onboarding credits to help you begin accepting customer-selected jobs. These credits appear in your credits balance and may be shown separately from purchased credits.',
   },
   {
-    title: 'Accepting a lead',
-    body: 'Each lead you accept uses 1 credit. The credit is deducted when the acceptance succeeds. Full customer contact details, exact address, and job access notes unlock only after acceptance succeeds.',
+    title: 'Accepting a customer-selected job',
+    body: `Each customer-selected job you accept uses 1 credit. ${creditPriceLine} The credit is deducted only when final provider acceptance succeeds. Full customer contact details, exact address, and job access notes unlock only after acceptance succeeds.`,
   },
   {
-    title: 'Declined, expired, or unavailable leads',
-    body: 'Declining a lead does not use a credit. If a lead expires before you accept it, no credit is used. If another provider accepts the lead first, no credit is used on your account.',
+    title: 'Preview, interest, decline, and expiry',
+    body: 'Previewing a job, showing interest, being shortlisted, customer selection before your final acceptance, declining, and expiry do not use credits.',
   },
   {
     title: 'Insufficient credits',
@@ -30,10 +33,10 @@ const sections = [
   },
   {
     title: 'Refunds and reversals',
-    body: 'Plug A Pro may reverse or refund a credit where a lead is invalid, duplicated, technically failed, or qualifies under an approved support review. Refunds or reversals are recorded in the credit ledger.',
+    body: 'Plug A Pro may reverse or refund credits where a job is invalid, duplicated, technically failed, or qualifies under an approved support review. Refunds or reversals are recorded in the credits ledger.',
   },
   {
-    title: 'Credit expiry',
+    title: 'Credits expiry',
     body: 'Some starter, onboarding, or promotional credits may have expiry rules if stated when awarded. Purchased-credit expiry rules, if introduced, will be communicated before they apply.',
   },
   {
@@ -41,12 +44,12 @@ const sections = [
     body: 'Plug A Pro may pause, suspend, reverse credits, or block lead access where there is fraud, abuse, false information, repeated misuse, or behaviour that harms customers, providers, or the marketplace.',
   },
   {
-    title: 'Updates to credit rules',
-    body: 'Plug A Pro may update provider credit rules with notice. Continued use of the Worker Portal, WhatsApp lead actions, or provider tools after notice means the updated rules apply.',
+    title: 'Updates to credits rules',
+    body: 'Plug A Pro may update provider credits rules with notice. Continued use of the Worker Portal, WhatsApp lead actions, or provider tools after notice means the updated rules apply.',
   },
   {
     title: 'Support and escalation',
-    body: 'If you believe a credit was used incorrectly, contact Plug A Pro support from WhatsApp or the Worker Portal with the lead reference and a short explanation.',
+    body: 'If you believe credits were used incorrectly, contact Plug A Pro support from WhatsApp or the Worker Portal with the job reference and a short explanation.',
   },
 ]
 
@@ -55,16 +58,16 @@ export default function ProviderCreditTermsPage() {
     <main className="mx-auto max-w-2xl space-y-6 px-4 py-8">
       <div className="space-y-2">
         <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Plug A Pro</p>
-        <h1 className="text-2xl font-semibold tracking-normal">Provider Terms and Credit Rules</h1>
+        <h1 className="text-2xl font-semibold tracking-normal">Provider Credits Terms and Rules</h1>
         <p className="text-sm text-muted-foreground">
-          Plain-language rules for provider onboarding credits, top-ups, lead acceptance, and credit use.
+          Plain-language rules for provider prepaid credits, top-ups, lead acceptance, and credits use.
         </p>
       </div>
 
       <div className="rounded-lg border bg-card p-4 text-sm">
         <p>
-          These rules explain how Plug A Pro credits work for service providers. Your provider application must be reviewed
-          and approved before your profile is activated for matched leads.
+          These rules explain how Plug A Pro provider credits work. Credits are prepaid platform units, not cash, loans,
+          or financial credit. Your provider application must be reviewed and approved before your profile is activated.
         </p>
       </div>
 
@@ -79,7 +82,7 @@ export default function ProviderCreditTermsPage() {
 
       <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
         <p>
-          This page is part of the provider onboarding and credit process. For account-specific questions, use WhatsApp
+          This page is part of the provider onboarding and credits process. For account-specific questions, use WhatsApp
           support or the Worker Portal.
         </p>
       </div>

@@ -14,7 +14,7 @@ export default function ProviderTermsPage() {
           These Service Provider Terms and Conditions (&ldquo;Provider Terms&rdquo;) govern your use of
           the Plug A Pro platform as a service provider (&ldquo;Provider&rdquo;). They are part of our{" "}
           <a href="/terms">Terms of Service</a> and must be read alongside the{" "}
-          <a href="/credits-policy">Credits and Wallet Policy</a> and{" "}
+          <a href="/credits-policy">Provider Credits Terms and Rules</a> and{" "}
           <a href="/refund-policy">Refund and Cancellation Policy</a>.
         </p>
         <p>
@@ -184,7 +184,7 @@ export default function ProviderTermsPage() {
           Bookings may be funded in whole or in part by Customer Credits. You accept such bookings as
           fully valid Platform bookings. Your payment entitlement for completed work is governed by the
           Provider settlement terms communicated during onboarding — your pay is not dependent on the
-          Customer&apos;s credit balance or credit type.
+          Customer&apos;s credits balance or credit type.
         </p>
         <p>
           You must not refuse a confirmed Booking solely because Credits were used as the payment method.

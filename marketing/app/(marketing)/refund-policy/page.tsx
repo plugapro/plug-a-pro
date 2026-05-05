@@ -139,8 +139,8 @@ export default function RefundPolicyPage() {
 
         <h3>Paid with Credits</h3>
         <p>
-          Refunds for Credit-funded bookings are returned to your Credit balance as Refund Credits. See
-          the <a href="/credits-policy">Credits and Wallet Policy</a> for full details.
+          Refunds for Credits-funded bookings are returned to your Credits balance as Refund Credits. See
+          the <a href="/credits-policy">Provider Credits Terms and Rules</a> for full details.
         </p>
 
         <h3>Mixed payment (Credits + card/EFT)</h3>
