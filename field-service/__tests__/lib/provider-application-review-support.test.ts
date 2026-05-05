@@ -25,7 +25,7 @@ describe('provider application review support', () => {
     expect(assessment.reasonCodes).not.toContain('MISSING_ID_OR_PASSPORT')
   })
 
-  it('approves a high-risk application with complete profile (no id required)', () => {
+  it('flags a complete high-risk application for manual review', () => {
     const assessment = assessProviderApplicationForOpsReview({
       id: 'app-2',
       phone: '+27821234568',
@@ -38,7 +38,6 @@ describe('provider application review support', () => {
 
     expect(assessment.recommendation).toBe('HIGH_RISK_REVIEW')
     expect(assessment.reasonCodes).toEqual(['HIGH_RISK_CATEGORY'])
-    // HIGH_RISK_CATEGORY alone does NOT have MISSING_* — auto-approve will proceed
   })
 
   it('routes pending applications to the ops onboarding queue and does not update approval status', async () => {
@@ -48,8 +47,8 @@ describe('provider application review support', () => {
           {
             id: 'app-1',
             phone: '+27821234567',
-            name: 'Nomsa Plumbing',
-            skills: ['Plumbing'],
+            name: 'Nomsa Painting',
+            skills: ['Painting'],
             serviceAreas: ['Roodepoort'],
             experience: '3 years',
             notes: null,

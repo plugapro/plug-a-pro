@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { OPS_QUEUE_TYPES } from './ops-queue'
+import { hasHighRiskServiceSelection } from './service-category-policy'
 
 type ProviderApplicationForReview = {
   id: string
@@ -24,8 +25,6 @@ type ProviderApplicationReviewClient = {
   }
 }
 
-const HIGH_RISK_CATEGORY_PATTERNS = [/electrical/i, /gas/i, /security/i]
-
 export type ProviderApplicationReviewAssessment = {
   applicationId: string
   recommendation: 'READY_FOR_OPS_REVIEW' | 'NEEDS_MORE_INFO_REVIEW' | 'HIGH_RISK_REVIEW'
@@ -41,7 +40,7 @@ export function assessProviderApplicationForOpsReview(
   if (application.skills.length === 0) reasonCodes.push('MISSING_SKILLS')
   if (application.serviceAreas.length === 0) reasonCodes.push('MISSING_SERVICE_AREAS')
   if (!application.experience?.trim()) reasonCodes.push('MISSING_EXPERIENCE')
-  if (application.skills.some((skill) => HIGH_RISK_CATEGORY_PATTERNS.some((pattern) => pattern.test(skill)))) {
+  if (hasHighRiskServiceSelection(application.skills)) {
     reasonCodes.push('HIGH_RISK_CATEGORY')
   }
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { SERVICE_CATEGORY_OPTIONS, resolveServiceCategoryTag } from '../../lib/service-categories'
-import { getCategoryPolicy } from '../../lib/service-category-policy'
+import {
+  getCategoryPolicy,
+  getHighRiskServiceRequirements,
+  getServiceComplianceRequirement,
+  hasHighRiskServiceSelection,
+} from '../../lib/service-category-policy'
 
 describe('SERVICE_CATEGORY_OPTIONS', () => {
   it('contains exactly 15 entries (14 real categories + Other)', () => {
@@ -122,5 +127,27 @@ describe('getCategoryPolicy — tag alias resolution', () => {
     expect(policy.requiredCertificationCodes).toEqual([])
     expect(policy.requiredEquipmentTags).toEqual([])
     expect(policy.requiredVehicleTypes).toEqual([])
+  })
+})
+
+describe('service compliance requirements', () => {
+  it('marks Electrical as regulated and certification-required for review', () => {
+    const requirement = getServiceComplianceRequirement('Electrical')
+    expect(requirement.riskLevel).toBe('regulated')
+    expect(requirement.certificationRecommended).toBe(true)
+    expect(requirement.certificationRequiredForApproval).toBe(true)
+    expect(requirement.evidencePrompt).toContain('electrical certification')
+  })
+
+  it('does not flag standard services like Painting', () => {
+    const requirement = getServiceComplianceRequirement('Painting')
+    expect(requirement.riskLevel).toBe('standard')
+    expect(requirement.certificationRecommended).toBe(false)
+    expect(hasHighRiskServiceSelection(['Painting'])).toBe(false)
+  })
+
+  it('deduplicates multiple high-risk service selections', () => {
+    const requirements = getHighRiskServiceRequirements(['Electrical', 'Painting', 'electrical', 'Pest Control'])
+    expect(requirements.map((requirement) => requirement.label)).toEqual(['Electrical', 'Pest Control'])
   })
 })
