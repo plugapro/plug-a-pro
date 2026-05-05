@@ -1,391 +1,340 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
-import { Activity, BotMessageSquare, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Bot, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ErrorState } from '@/components/shared/ErrorState'
-import { CardSkeleton, StatGridSkeleton } from '@/components/shared/LoadingSkeleton'
 import {
-  HEALTH_STATUS_LABELS,
+  buildFallbackHealthModel,
+  normalizeHealthPayload,
+  serviceStatusSummary,
+  summarizeGroup,
+  STATUS_LABELS,
+  statusSourceLabel,
+  statusToneFromCheck,
+  type HealthDashboardModel,
   type HealthServiceGroup,
   type HealthStatus,
-  type PublicHealthModel,
-  healthForUnavailableEndpoint,
-  normalizeHealthResponse,
-} from '@/lib/status/health-model'
+} from '@/lib/status/health'
 
-const REFRESH_LABEL = 'Refresh status'
-const UNSAFE_HEALTH_MESSAGE = 'I could not reach the health endpoint right now.'
-
-function statusTone(status: HealthStatus) {
-  if (status === 'operational') return 'success'
-  if (status === 'degraded') return 'warning'
-  if (status === 'down') return 'danger'
-  if (status === 'not_monitored') return 'neutral'
-  return 'neutral'
+function statusTone(status: HealthStatus): 'success' | 'warning' | 'danger' | 'neutral' {
+  return statusToneFromCheck[status]
 }
 
-function formatLastChecked(timestamp: string | null) {
-  if (!timestamp) return 'Not available'
-  const value = new Date(timestamp)
-  if (Number.isNaN(value.getTime())) return 'Not available'
-  return value.toLocaleString('en-ZA', {
-    day: '2-digit',
-    month: 'short',
+function statusLabel(status: HealthStatus): string {
+  return STATUS_LABELS[status]
+}
+
+function formatDate(value: string) {
+  const valueAsDate = new Date(value)
+  return valueAsDate.toLocaleString('en-ZA', {
+    weekday: 'short',
     year: 'numeric',
+    month: 'short',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
 }
 
-function shortSummary(group: HealthServiceGroup) {
-  if (group.status === 'not_monitored') {
-    return `${group.counts.notMonitored} checks not separately monitored`
+interface OverviewCard {
+  id: string
+  title: string
+  summary: string
+  details: string
+  status: HealthStatus
+}
+
+function resolveOverviewCards(model: HealthDashboardModel): OverviewCard[] {
+  const groups = model.groups.reduce<Record<string, HealthServiceGroup>>(
+    (acc, group) => {
+      acc[group.id] = group
+      return acc
+    },
+    {},
+  )
+
+  const summarize = (group: HealthServiceGroup) => {
+    const summary = summarizeGroup(group.services)
+    const status = summary.overall
+    return {
+      status,
+      summary: `${summary.operational}/${summary.operational + summary.degraded + summary.down + summary.unknown + summary.notMonitored}`,
+    }
   }
 
-  if (group.counts.operational > 0 && group.counts.operational === group.checks.length) {
-    return `All ${group.counts.operational} checks running`
+  const client = summarize(groups['client-journey'])
+  const provider = summarize(groups['provider-journey'])
+  const merchant = summarize(groups['merchant-journey'])
+
+  return [
+    {
+      id: 'core',
+      title: 'Platform Operations',
+      summary: model.platform,
+      details: `${statusLabel(model.platform)} across core services and health checks.`,
+      status: model.platform,
+    },
+    {
+      id: 'client',
+      title: 'Client Journey',
+      summary: client.summary,
+      details: `Core health shows ${client.status}. ${groups['client-journey']?.name ?? 'Customer requests'}.`,
+      status: client.status,
+    },
+    {
+      id: 'provider',
+      title: 'Provider Journey',
+      summary: provider.summary,
+      details: `Core health shows ${provider.status}. ${groups['provider-journey']?.name ?? 'Provider flows'}.`,
+      status: provider.status,
+    },
+    {
+      id: 'merchant',
+      title: 'Merchant Journey',
+      summary: merchant.summary,
+      details: `Core health shows ${merchant.status}. ${groups['merchant-journey']?.name ?? 'Commercial controls'}.`,
+      status: merchant.status,
+    },
+  ]
+}
+
+function OverallStatusPill({ status }: { status: HealthStatus }) {
+  return (
+    <Badge variant={statusTone(status)} className="px-3 py-1.5 text-sm">
+      {statusLabel(status)}
+    </Badge>
+  )
+}
+
+function ServiceRow({
+  service,
+}: {
+  service: {
+    id: string
+    name: string
+    summary: string
+    impact: string
+    details: string
+    status: HealthStatus
+    source: 'live check' | 'derived' | 'not monitored'
   }
-
-  const parts: string[] = []
-  if (group.counts.operational) parts.push(`${group.counts.operational} running`)
-  if (group.counts.degraded) parts.push(`${group.counts.degraded} degraded`)
-  if (group.counts.down) parts.push(`${group.counts.down} not running`)
-  if (group.counts.unknown) parts.push(`${group.counts.unknown} unknown`)
-  if (group.counts.notMonitored) parts.push(`${group.counts.notMonitored} inferred only`)
-  return parts.join(' · ')
+}) {
+  return (
+    <li className="rounded-xl border border-border/80 bg-card/60 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-medium text-foreground">{service.name}</p>
+          <p className="text-xs text-muted-foreground">{service.impact}</p>
+          <p className="text-xs text-muted-foreground">
+            Source: {statusSourceLabel[service.source]}
+          </p>
+          <p className="text-xs text-muted-foreground">{service.details}</p>
+        </div>
+        <Badge variant={statusTone(service.status)}>{service.summary}</Badge>
+      </div>
+    </li>
+  )
 }
 
-function summarizeStatusFromGroups(groups: Array<HealthServiceGroup | undefined>): HealthStatus {
-  const observed = groups
-    .flatMap((group) => (group ? group.checks : []))
-    .filter((check) => check.source !== 'not_monitored')
-    .map((check) => check.status)
-
-  if (observed.length === 0) return 'not_monitored'
-  if (observed.includes('down')) return 'down'
-  if (observed.includes('degraded')) return 'degraded'
-  if (observed.includes('unknown')) return 'unknown'
-  return 'operational'
+function JourneyCard({ card }: { card: OverviewCard }) {
+  return (
+    <Card className="min-h-full">
+      <CardHeader className="gap-2">
+        <CardTitle className="text-base">{card.title}</CardTitle>
+        <CardDescription>{card.summary}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">{card.details}</p>
+        <Badge variant={statusTone(card.status)}>{statusLabel(card.status)}</Badge>
+      </CardContent>
+    </Card>
+  )
 }
 
-function buildServiceLookup(groups: HealthServiceGroup[]) {
-  return Object.fromEntries(groups.map((group) => [group.id, group])) as Record<string, HealthServiceGroup>
+function BuildPanel({
+  model,
+}: {
+  model: HealthDashboardModel
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Build & Diagnostics</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm text-muted-foreground">
+        <p>
+          API health:
+          {' '}
+          {statusLabel(model.healthEndpoint)}
+        </p>
+        <p>
+          Database:
+          {' '}
+          {statusLabel(model.database)}
+        </p>
+        <p>
+          Build:
+          {' '}
+          {model.build.commitShaShort ?? 'N/A'}
+          {model.build.commitRef ? ` (${model.build.commitRef})` : ''}
+        </p>
+        <p>Built at: {model.build.builtAt ?? 'Unavailable'}</p>
+        <p>Last checked: {formatDate(model.asOf)}</p>
+      </CardContent>
+    </Card>
+  )
 }
-
-type DashboardState =
-  | { status: 'loading' }
-  | { status: 'ready'; payload: PublicHealthModel }
-  | { status: 'error'; payload: PublicHealthModel; message: string }
 
 export function StatusDashboard() {
-  const [state, setState] = useState<DashboardState>({ status: 'loading' })
+  const [model, setModel] = useState<HealthDashboardModel | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Keep one network call per mount/refresh and always use a deterministic fallback
-  // model so the page never crashes on malformed backend data.
-  const loadHealth = useCallback(async () => {
-    setState({ status: 'loading' })
+  const loadHealth = async () => {
+    setLoading(true)
+    setLoadError(null)
     try {
-      const response = await fetch('/api/health', { cache: 'no-store' })
-
-      let rawPayload: unknown = null
-      try {
-        rawPayload = await response.json()
-      } catch {
-        rawPayload = null
+      const res = await fetch('/api/health', { cache: 'no-store' })
+      if (!res.ok) {
+        throw new Error(`Health endpoint returned ${res.status}`)
       }
-
-      if (typeof rawPayload === 'object' && rawPayload !== null) {
-        // Keep the endpoint response as a source of truth for known checks.
-        setState({
-          status: 'ready',
-          payload: normalizeHealthResponse(rawPayload),
-        })
-        return
-      }
-
-      const reason = `invalid response (HTTP ${response.status})`
-      setState({
-        status: 'error',
-        message: UNSAFE_HEALTH_MESSAGE,
-        payload: healthForUnavailableEndpoint(reason),
-      })
-    } catch {
-      // Network / platform issue: fallback model keeps the UI safe and public.
-      setState({
-        status: 'error',
-        message: UNSAFE_HEALTH_MESSAGE,
-        payload: healthForUnavailableEndpoint('network error'),
-      })
+      const payload = await res.json()
+      setModel(normalizeHealthPayload(payload))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Unknown error'
+      setModel(buildFallbackHealthModel(reason))
+      setLoadError(reason)
+    } finally {
+      setLoading(false)
     }
-  }, [])
+  }
 
   useEffect(() => {
-    void loadHealth()
-  }, [loadHealth])
+    loadHealth().catch(() => {
+      setModel(buildFallbackHealthModel('Health load failed'))
+      setLoadError('Health load failed')
+      setLoading(false)
+    })
+  }, [])
 
-  if (state.status === 'loading') {
+  const cards = useMemo(
+    () => model ? resolveOverviewCards(model) : [],
+    [model],
+  )
+
+  const robotMessage = model?.botMessage ?? 'Loading service status...'
+
+  if (loading && !model) {
     return (
-      <main className="min-h-screen">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:py-10">
-          <section className="app-hero-surface rounded-3xl px-5 py-6 sm:px-7 sm:py-8">
-            <div className="mb-6 space-y-2">
-              <p className="inline-flex items-center gap-2 rounded-full border border-border/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                <Activity className="size-3.5" />
-                Public Service Status
-              </p>
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-4xl">
-                Plug-A-Pro Service Status
-              </h1>
-              <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Live visibility into the health of core Plug-A-Pro user journeys.
-              </p>
-            </div>
-            <StatGridSkeleton count={4} />
-          </section>
-          <CardSkeleton className="h-72" />
+      <div className="mx-auto flex min-h-[60vh] max-w-6xl items-center justify-center px-4 py-10 sm:px-6">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <RefreshCw className="size-5 animate-spin" />
+          <span>Loading health checks...</span>
         </div>
-      </main>
+      </div>
     )
   }
 
-  const payload = state.status === 'loading' ? null : state.payload
-  if (!payload) {
-    return (
-      <main className="mx-auto max-w-4xl px-4 py-10">
-        <ErrorState
-          title="Health data unavailable"
-          description={UNSAFE_HEALTH_MESSAGE}
-          retry={
-            <Button onClick={() => void loadHealth()} type="button">
-              <RefreshCw className="mr-1.5 size-4" />
-              {REFRESH_LABEL}
-            </Button>
-          }
-        />
-      </main>
-    )
+  if (!model) {
+    return null
   }
-
-  const groups = buildServiceLookup(payload.serviceGroups)
-
-  const clientGroup = groups['client-journey']
-  const providerGroup = groups['provider-journey']
-  const merchantGroup = groups['merchant-journey']
-  const corePlatformGroup = groups['core-platform']
-  const platformOperationsStatus = summarizeStatusFromGroups([
-    corePlatformGroup,
-    groups.auth,
-    groups.notifications,
-    groups['admin-operations'],
-  ])
 
   return (
-    <main className="min-h-screen">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:py-10">
-        <section className="app-hero-surface rounded-3xl px-5 py-6 sm:px-7 sm:py-8">
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="inline-flex items-center gap-2 rounded-full border border-border/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                <Activity className="size-3.5" />
-                Public Service Status
-              </p>
-              <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-4xl">
-                Plug-A-Pro Service Status
-              </h1>
-              <p className="mt-2 text-sm text-muted-foreground sm:text-base">
-                Live visibility into the health of core Plug-A-Pro user journeys.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button onClick={() => void loadHealth()} variant="outline" type="button">
-                <RefreshCw className="mr-1.5 size-4" />
-                {REFRESH_LABEL}
-              </Button>
-              <Button asChild>
-                <Link href="/">Home</Link>
-              </Button>
-            </div>
+    <main className="mx-auto min-h-[100vh] max-w-6xl space-y-5 px-4 py-6 sm:px-6 lg:py-8">
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="app-kicker">Plug-A-Pro</p>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              Public Service Status
+            </h1>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Live visibility into the health of core Plug-A-Pro journeys.
+            </p>
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="rounded-2xl border border-success/30 bg-success/10">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-success-foreground">
-                  Overall platform status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold">
-                  {HEALTH_STATUS_LABELS[payload.overallStatus]}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Last checked {formatLastChecked(payload.lastCheckedAt)}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border border-info/30 bg-info/10">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-info-foreground">
-                  Client journey
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold">
-                  {HEALTH_STATUS_LABELS[clientGroup?.status ?? 'not_monitored']}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {clientGroup ? shortSummary(clientGroup) : 'Not available'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border border-warning/30 bg-warning/10">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-warning-foreground">
-                  Provider journey
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold">
-                  {HEALTH_STATUS_LABELS[providerGroup?.status ?? 'not_monitored']}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {providerGroup ? shortSummary(providerGroup) : 'Not available'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border border-brand/30 bg-brand/10">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-brand-foreground">
-                  Merchant journey
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold">
-                  {HEALTH_STATUS_LABELS[merchantGroup?.status ?? 'not_monitored']}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {merchantGroup ? shortSummary(merchantGroup) : 'Not available'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border border-primary/30 bg-primary/10 sm:col-span-2 xl:col-span-4">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold">Platform operations</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold">{HEALTH_STATUS_LABELS[platformOperationsStatus]}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Includes core platform, auth, notifications, and admin services.
-                </p>
-              </CardContent>
-            </Card>
+          <OverallStatusPill status={model.overall} />
+        </div>
+        <div className="rounded-2xl border border-border/80 bg-card/90 p-4 shadow-[var(--shadow-soft)]">
+          <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Bot className="size-5 text-brand-strong" />
+              Plug-A-Pro Bot
+            </div>
+            <p className="text-sm text-muted-foreground sm:text-base">
+              {robotMessage}
+            </p>
           </div>
-        </section>
-
-        {state.status === 'error' && (
-          <ErrorState
-            title="Health endpoint issue"
-            description={state.message}
-            retry={
-              <Button onClick={() => void loadHealth()} variant="outline" type="button">
-                <RefreshCw className="mr-1.5 size-4" />
-                Retry
-              </Button>
-            }
-          />
-        )}
-
-        <section className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
-          <Card className="rounded-3xl">
-            <CardHeader>
-              <CardTitle>Plug-A-Pro Bot</CardTitle>
-              <CardDescription>Plain-language platform summary</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-start gap-3 rounded-2xl border border-primary/20 bg-primary/8 p-4">
-                <BotMessageSquare className="mt-0.5 size-5 text-primary" />
-                <p className="text-sm leading-6 text-foreground">{payload.robotMessage}</p>
+        </div>
+        {loadError ? (
+          <Card className="border-warning/40 bg-[var(--tone-warning-bg)]">
+            <CardContent className="flex items-start gap-2 text-sm text-warning-foreground">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p>
+                  Last refresh was not clean.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {loadError}
+                </p>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                Last checked: {formatLastChecked(payload.lastCheckedAt)}
-              </p>
             </CardContent>
           </Card>
+        ) : null}
+        <div className="text-xs text-muted-foreground">
+          Last checked:
+          {' '}
+          {formatDate(model.asOf)}
+          {' '}
+          ·
+          {' '}
+          Environment checks are public-only
+          ·
+          {' '}
+          no raw commit SHA shown
+        </div>
+      </section>
 
-          <Card className="rounded-3xl">
-            <CardHeader>
-              <CardTitle>Build &amp; Diagnostics</CardTitle>
-              <CardDescription>Derived from `/api/health` metadata</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground">Commit SHA (short)</p>
-                <p className="font-mono text-sm">{payload.build.commitShaShort ?? 'Unavailable'}</p>
-              </div>
-              <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground">Branch / ref</p>
-                <p className="font-mono text-sm">{payload.build.commitRef ?? 'Unavailable'}</p>
-              </div>
-              <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground">Build timestamp</p>
-                <p className="font-mono text-sm">{payload.build.builtAt ?? 'Unavailable'}</p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                No customer or provider personal data is exposed on this page.
-              </p>
-            </CardContent>
-          </Card>
-        </section>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {cards.map((card) => (
+          <JourneyCard key={card.id} card={card} />
+        ))}
+      </section>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          {payload.serviceGroups.map((group) => (
-            <Card key={group.id} className="rounded-3xl">
-              <CardHeader>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <CardTitle className="text-base">{group.title}</CardTitle>
-                    <CardDescription className="mt-1">{group.description}</CardDescription>
-                  </div>
-                  <Badge variant={statusTone(group.status)}>{HEALTH_STATUS_LABELS[group.status]}</Badge>
-                </div>
+      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        {model.groups.map((group) => {
+          return (
+            <Card key={group.id} className="space-y-3">
+              <CardHeader className="gap-2">
+                <CardTitle className="text-base">{group.name}</CardTitle>
+                <CardDescription>
+                  {serviceStatusSummary(group.services)}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {group.checks.map((check) => (
-                  <div key={check.id} className="rounded-2xl border bg-card/60 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold">{check.name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{check.impact}</p>
-                      </div>
-                      <div className="text-right">
-                        <Badge variant={statusTone(check.status)}>{HEALTH_STATUS_LABELS[check.status]}</Badge>
-                        <p className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-                          {check.source}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <ul className="space-y-2">
+                  {group.services.map((service) => (
+                    <ServiceRow key={service.id} service={service} />
+                  ))}
+                </ul>
               </CardContent>
             </Card>
-          ))}
-        </section>
+          )
+        })}
+      </section>
 
-        <Card className="rounded-3xl border border-warning/30 bg-warning/10">
-          <CardContent className="pt-6 text-xs text-muted-foreground">
-            This page is for public service visibility. No customer or provider data is exposed.
-          </CardContent>
-        </Card>
+      <BuildPanel model={model} />
+      <footer className="rounded-2xl border border-border/80 bg-surface-subtle/70 p-4 text-center text-xs text-muted-foreground">
+        <p>
+          This page is for public service visibility. No customer or provider data is exposed.
+        </p>
+      </footer>
+      <div className="flex justify-end">
+        <Button onClick={loadHealth} disabled={loading} size="sm" variant="outline">
+          <RefreshCw className="size-4" />
+          {loading ? 'Refreshing...' : 'Refresh status'}
+        </Button>
       </div>
     </main>
   )

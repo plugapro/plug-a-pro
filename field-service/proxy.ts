@@ -47,7 +47,7 @@ const PUBLIC_PATHS = [
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
   '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
   '/api/health',                    // monitoring probe — must be reachable without a session cookie
-  '/status',                        // public service-status dashboard
+  '/status',                        // public service status dashboard
 ]
 
 const PUBLIC_SIGNED_JOB_ROUTE = /^\/provider\/jobs\/[^/]+\/(?:handover|arrival|quick-update)$/

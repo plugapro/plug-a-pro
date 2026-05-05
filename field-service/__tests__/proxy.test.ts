@@ -227,6 +227,15 @@ describe('proxy admin access', () => {
     expect(res.headers.get('x-user-role')).toBe('provider')
   })
 
+  it('allows unauthenticated users to open the public status dashboard', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/status'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+  })
+
   it('marks authenticated non-provider sessions as role-mismatch at provider routes', async () => {
     const { proxy } = await import('../proxy')
 
