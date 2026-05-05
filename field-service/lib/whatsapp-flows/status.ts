@@ -517,7 +517,7 @@ function requestStatusBody(
     return `${statusLabel}\n\nWe're still checking for suitable providers.`
   }
 
-  return `${categoryLine}\n${statusLabel}\n\nReply *Track My Request* for the latest update.`
+  return `${categoryLine}\n${statusLabel}\n\nTap Refresh status to check for the latest update.`
 }
 
 function formatShortlistBody(

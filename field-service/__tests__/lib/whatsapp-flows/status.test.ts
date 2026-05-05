@@ -178,6 +178,22 @@ describe('handleStatusFlow — single active request (no job)', () => {
     )
   })
 
+  it('shows validation-pending copy for PENDING_VALIDATION status', async () => {
+    const jr = makeJobRequest({ status: 'PENDING_VALIDATION' })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+
+    const result = await handleStatusFlow(makeCtx())
+
+    const body: string =
+      vi.mocked(wa.sendCtaUrl).mock.calls[0]?.[1] ??
+      vi.mocked(wa.sendButtons).mock.calls[0]?.[1] ?? ''
+    expect(body).toContain('Ticket #ABC123')
+    expect(body).toContain('Checking your request')
+    expect(result.nextStep).toBe('done')
+  })
+
   it('rejects a stale pinned request that belongs to another customer', async () => {
     const jr = makeJobRequest({ customerId: 'other_customer' })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
