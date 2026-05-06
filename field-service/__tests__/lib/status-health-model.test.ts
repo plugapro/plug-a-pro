@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildFallbackHealthModel,
+  getActiveIssues,
   normalizeHealthPayload,
   statusSourceLabel,
   summarizeGroup,
@@ -106,5 +107,52 @@ describe('status health model', () => {
       },
     ])
     expect(result).toHaveLength(2)
+  })
+
+  it('handles a partial payload with missing db field gracefully', () => {
+    const model = normalizeHealthPayload({ status: 'ok', timestamp: '2026-01-01T10:00:00.000Z' })
+    expect(model.overall).toBe('unknown')
+    expect(model.database).toBe('unknown')
+    expect(model.healthEndpoint).toBe('operational')
+    expect(model.botMessage).toBeTruthy()
+  })
+
+  it('produces overall unknown when status field is missing', () => {
+    const model = normalizeHealthPayload({ db: 'ok', timestamp: '2026-01-01T10:00:00.000Z' })
+    expect(model.overall).toBe('unknown')
+    expect(model.healthEndpoint).toBe('unknown')
+    expect(model.database).toBe('operational')
+  })
+
+  it('returns no active issues for a fully operational model', () => {
+    const model = normalizeHealthPayload({ status: 'ok', db: 'ok', timestamp: '2026-01-01T10:00:00.000Z' })
+    const issues = getActiveIssues(model.groups)
+    expect(issues.every((s) => s.status === 'down' || s.status === 'degraded')).toBe(true)
+    const coreGroup = model.groups.find((g) => g.id === 'core-platform')!
+    const coreIssues = getActiveIssues([coreGroup])
+    expect(coreIssues).toHaveLength(0)
+  })
+
+  it('returns active issues when core services are degraded or down', () => {
+    const model = normalizeHealthPayload({
+      status: 'degraded',
+      db: 'error',
+      timestamp: '2026-01-01T10:00:00.000Z',
+    })
+    const issues = getActiveIssues(model.groups)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues.every((s) => s.status === 'down' || s.status === 'degraded')).toBe(true)
+  })
+
+  it('issue ribbon source: getActiveIssues excludes not_monitored and unknown services', () => {
+    const model = normalizeHealthPayload({ status: 'ok', db: 'ok', timestamp: '2026-01-01T10:00:00.000Z' })
+    const issues = getActiveIssues(model.groups)
+    expect(issues.some((s) => s.status === 'not_monitored' || s.status === 'unknown')).toBe(false)
+  })
+
+  it('falls back gracefully when payload is null', () => {
+    const model = normalizeHealthPayload(null)
+    expect(model.overall).toBe('unknown')
+    expect(model.groups.length).toBeGreaterThan(0)
   })
 })
