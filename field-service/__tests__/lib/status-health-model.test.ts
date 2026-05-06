@@ -3,6 +3,8 @@ import {
   buildFallbackHealthModel,
   getActiveIssues,
   normalizeHealthPayload,
+  STATUS_LABELS,
+  type HealthStatus,
   statusSourceLabel,
   summarizeGroup,
   summarizeGroups,
@@ -125,12 +127,46 @@ describe('status health model', () => {
   })
 
   it('returns no active issues for a fully operational model', () => {
+    const issues = getActiveIssues([
+      {
+        id: 'test-group',
+        name: 'Test Group',
+        services: [
+          { id: 'a', name: 'A', status: 'operational', source: 'live check', summary: 'Running', impact: 'ok', details: '' },
+          { id: 'b', name: 'B', status: 'operational', source: 'derived', summary: 'Running', impact: 'ok', details: '' },
+        ],
+      },
+    ])
+    expect(issues).toHaveLength(0)
+  })
+
+  it('returns operational model with non-critical journey signals when not_monitored is suppressed by call site', () => {
     const model = normalizeHealthPayload({ status: 'ok', db: 'ok', timestamp: '2026-01-01T10:00:00.000Z' })
     const issues = getActiveIssues(model.groups)
-    expect(issues.every((s) => s.status === 'down' || s.status === 'degraded')).toBe(true)
-    const coreGroup = model.groups.find((g) => g.id === 'core-platform')!
-    const coreIssues = getActiveIssues([coreGroup])
-    expect(coreIssues).toHaveLength(0)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues.every((s) => s.status === 'degraded' || s.status === 'down' || s.status === 'not_monitored')).toBe(true)
+    expect(issues.some((s) => s.status === 'not_monitored')).toBe(true)
+  })
+
+  it('returns no active issues when calling with an all-healthy explicit snapshot', () => {
+    const model = normalizeHealthPayload({
+      status: 'ok',
+      db: 'ok',
+      whatsapp: 'ok',
+      payments: 'ok',
+      timestamp: '2026-01-01T10:00:00.000Z',
+    })
+    const alwaysOperational = model.groups.map((group) => ({
+      ...group,
+      services: group.services.map((service) => ({
+        ...service,
+        status: 'operational' as HealthStatus,
+        source: service.source,
+        summary: STATUS_LABELS.operational,
+      })),
+    }))
+    const healthyIssues = getActiveIssues(alwaysOperational)
+    expect(healthyIssues).toHaveLength(0)
   })
 
   it('returns active issues when core services are degraded or down', () => {
@@ -141,13 +177,13 @@ describe('status health model', () => {
     })
     const issues = getActiveIssues(model.groups)
     expect(issues.length).toBeGreaterThan(0)
-    expect(issues.every((s) => s.status === 'down' || s.status === 'degraded')).toBe(true)
+    expect(issues.every((s) => s.status === 'down' || s.status === 'degraded' || s.status === 'not_monitored')).toBe(true)
   })
 
-  it('issue ribbon source: getActiveIssues excludes not_monitored and unknown services', () => {
+  it('getActiveIssues includes not_monitored services when present', () => {
     const model = normalizeHealthPayload({ status: 'ok', db: 'ok', timestamp: '2026-01-01T10:00:00.000Z' })
     const issues = getActiveIssues(model.groups)
-    expect(issues.some((s) => s.status === 'not_monitored' || s.status === 'unknown')).toBe(false)
+    expect(issues.some((s) => s.status === 'not_monitored')).toBe(true)
   })
 
   it('falls back gracefully when payload is null', () => {

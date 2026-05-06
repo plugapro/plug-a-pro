@@ -52,61 +52,61 @@ const JOURNEY_DEFS: {
   {
     id: 'client',
     groupId: 'client-journey',
-    label: 'Customers',
-    sub: 'Booking & requests',
+    label: 'Customer Journey',
+    sub: 'Track booking, request creation, provider browsing',
     icon: Users,
     impact: {
-      operational: 'Booking, search, and requests are available.',
-      degraded: 'Some booking features may be slower than usual.',
-      down: 'Customers may be unable to book or browse.',
+      operational: 'Track booking, request creation, and provider browsing are working.',
+      degraded: 'Some booking and browsing actions may be slower than usual.',
+      down: 'Customers may be unable to book, track requests, or browse providers.',
       unknown: 'Booking status cannot be confirmed right now.',
-      not_monitored: 'Booking status is not directly monitored.',
-      default: 'Booking status is not directly monitored.',
+      not_monitored: 'This journey is not directly monitored yet.',
+      default: 'This journey is not directly monitored yet.',
     },
   },
   {
     id: 'provider',
     groupId: 'provider-journey',
-    label: 'Providers',
-    sub: 'Leads & jobs',
+    label: 'Provider Journey',
+    sub: 'Leads, jobs, portal and availability',
     icon: Wrench,
     impact: {
-      operational: 'Leads, jobs, and availability are visible.',
-      degraded: 'Job visibility or updates may be delayed.',
-      down: 'Providers may not receive new leads or jobs.',
-      unknown: 'Provider portal status cannot be confirmed.',
-      not_monitored: 'Provider portal is not directly monitored.',
-      default: 'Provider portal is not directly monitored.',
+      operational: 'Provider leads, jobs, and portal availability are healthy.',
+      degraded: 'Provider leads, jobs, or portal access may be delayed.',
+      down: 'Providers may not receive new leads or manage jobs.',
+      unknown: 'Provider journey status cannot be confirmed right now.',
+      not_monitored: 'This journey is not directly monitored yet.',
+      default: 'This journey is not directly monitored yet.',
     },
   },
   {
     id: 'merchant',
     groupId: 'merchant-journey',
-    label: 'Payments',
-    sub: 'Quotes & invoices',
+    label: 'Merchant / Commercial Journey',
+    sub: 'Quoting, payments, invoicing',
     icon: Building2,
     impact: {
-      operational: 'Quotes, payments, and invoices are processing.',
-      degraded: 'Some payment actions may be slower than usual.',
-      down: 'Payments and invoicing may be unavailable.',
-      unknown: 'Payment status cannot be confirmed right now.',
-      not_monitored: 'Payment status is not directly monitored.',
-      default: 'Payment status is not directly monitored.',
+      operational: 'Quoting, payment, and invoicing journeys are processing normally.',
+      degraded: 'Some quote or payment actions may be slower than usual.',
+      down: 'Commercial actions like quoting and payment may be unavailable.',
+      unknown: 'Commercial journey status cannot be confirmed right now.',
+      not_monitored: 'This journey is not directly monitored yet.',
+      default: 'This journey is not directly monitored yet.',
     },
   },
   {
     id: 'ops',
     groupId: 'core-platform',
-    label: 'Platform',
-    sub: 'Core infrastructure',
+    label: 'Platform Operations',
+    sub: 'Core services and monitoring',
     icon: Activity,
     impact: {
-      operational: 'Core services and database are healthy.',
-      degraded: 'Core services are partially degraded.',
-      down: 'Platform infrastructure is experiencing issues.',
+      operational: 'Core platform services are healthy and bookings remain available.',
+      degraded: 'Some platform surfaces are experiencing disruption.',
+      down: 'Core service routing and data access are affected.',
       unknown: 'Platform status cannot be confirmed right now.',
-      not_monitored: 'Platform monitoring is active.',
-      default: 'Platform monitoring is active.',
+      not_monitored: 'Platform monitoring is available from health signals.',
+      default: 'Platform monitoring is available from health signals.',
     },
   },
 ]
@@ -338,7 +338,12 @@ function JourneyCard({
         </div>
         <StatusDot status={status} size="sm" />
       </div>
-      <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{impactText}</p>
+      <div className="space-y-1">
+        <p className="line-clamp-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
+          What this means
+        </p>
+        <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{impactText}</p>
+      </div>
       <div className="mt-auto">
         <StatusPill status={status} />
       </div>

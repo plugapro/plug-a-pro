@@ -677,7 +677,7 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
 export function getActiveIssues(groups: HealthServiceGroup[]): HealthService[] {
   return groups
     .flatMap((g) => g.services)
-    .filter((s) => s.status === 'down' || s.status === 'degraded')
+    .filter((s) => s.status === 'down' || s.status === 'degraded' || s.status === 'not_monitored')
 }
 
 export function serviceStatusSummary(services: HealthService[]): string {
