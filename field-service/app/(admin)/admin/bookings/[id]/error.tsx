@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import * as Sentry from '@sentry/nextjs'
 
 export default function BookingDetailError({
   error,
@@ -12,6 +13,7 @@ export default function BookingDetailError({
 }) {
   React.useEffect(() => {
     console.error('[admin error boundary] booking detail', error)
+    Sentry.captureException(error)
   }, [error])
 
   return (

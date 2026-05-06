@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import * as Sentry from '@sentry/nextjs'
 
 export default function TechnicianDetailError({
   error,
@@ -12,6 +13,7 @@ export default function TechnicianDetailError({
 }) {
   React.useEffect(() => {
     console.error('[admin error boundary] technician detail', error)
+    Sentry.captureException(error)
   }, [error])
 
   return (

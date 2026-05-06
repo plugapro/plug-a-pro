@@ -1,3 +1,4 @@
+import { withSentryConfig } from '@sentry/nextjs'
 import type { NextConfig } from 'next'
 
 // ─── App timezone — South Africa Standard Time ────────────────────────────────
@@ -52,4 +53,8 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default nextConfig
+const sentryOptions = {
+  silent: true,
+}
+
+export default withSentryConfig(nextConfig, sentryOptions)

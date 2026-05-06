@@ -7,6 +7,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import * as Sentry from '@sentry/nextjs'
 
 interface Props {
   error: Error & { digest?: string }
@@ -15,8 +16,8 @@ interface Props {
 
 export default function AdminError({ error, reset }: Props) {
   React.useEffect(() => {
-    // Forward to your observability pipeline here (e.g. Sentry.captureException(error))
     console.error('[admin error boundary]', error)
+    Sentry.captureException(error)
   }, [error])
 
   return (
