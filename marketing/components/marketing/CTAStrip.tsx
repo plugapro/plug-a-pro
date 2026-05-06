@@ -60,7 +60,9 @@ export function CTAStrip() {
           </Button>
         </div>
         <div className="flex flex-wrap justify-center gap-3">
-          {whatsappAudienceOptions.map((option) => (
+          {whatsappAudienceOptions
+            .filter((o) => o.audience === "customer" || o.audience === "worker")
+            .map((option) => (
             <Link
               key={option.audience}
               href={buildWhatsAppLink(option.message)}

@@ -174,7 +174,7 @@ export default function ForWorkersPage() {
       {/* Who we're looking for */}
       <section className="py-16 px-4 border-t border-border/40">
         <div className="max-w-3xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30">
-          <h2 className="text-xl font-bold mb-4">Who we&apos;re looking for</h2>
+          <h2 className="text-xl font-bold mb-4">Who can join</h2>
           <p className="text-sm text-muted-foreground mb-4">
             You don&apos;t need a formal business or company registration to apply. If you have practical skills and a track record of doing good work, we want to hear from you.
           </p>
@@ -185,12 +185,12 @@ export default function ForWorkersPage() {
             {[
               "Gardeners and landscapers",
               "Painters",
-              "Handymen and practical service providers",
+              "Handymen and general repairs",
               "Plumbers (small jobs)",
               "Appliance repairers",
               "Electricians (minor work)",
-              "General home-service providers",
-              "Installers",
+              "DIY and handyman specialists",
+              "Furniture and fixture installers",
             ].map((type) => (
               <li
                 key={type}
