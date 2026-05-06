@@ -7,7 +7,6 @@ import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { AppLogo } from '@/components/shared/app-logo'
 import { AppNavLink } from '@/components/shared/app-nav-link'
-import { MobileGate } from '@/components/shared/mobile-gate'
 import { siteConfig } from '@/lib/metadata'
 import { BusinessTypePrompt } from '@/components/customer/BusinessTypePrompt'
 
@@ -66,7 +65,6 @@ export default async function CustomerLayout({
     'My Account'
 
   return (
-    <MobileGate>
     <div className="app-shell flex min-h-screen flex-col">
       <header className="app-shell-header sticky top-0 z-50 safe-top">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
@@ -96,6 +94,5 @@ export default async function CustomerLayout({
 
       {showBusinessPrompt && <BusinessTypePrompt />}
     </div>
-    </MobileGate>
   )
 }

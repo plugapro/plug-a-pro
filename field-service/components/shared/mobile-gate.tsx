@@ -1,56 +1,59 @@
 'use client'
 
-// Shows a dismissible banner on desktop viewports instead of blocking access.
-// The banner reminds users the app is optimised for mobile without preventing use.
+// Enforces a mobile-first experience for engagement routes.
+// Desktop users are shown a focused landing screen telling them to use
+// a phone or tablet, because the product flows are designed for touch-first use.
 
-import { useSyncExternalStore, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 
-const MOBILE_BREAKPOINT = 768
-const SESSION_KEY = 'pap:mobile-banner-dismissed'
+const DESKTOP_BLOCK_QUERY = '(min-width: 1024px) and (hover: hover) and (pointer: fine)'
 
 function subscribe(onStoreChange: () => void) {
-  const mq = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`)
+  const mq = window.matchMedia(DESKTOP_BLOCK_QUERY)
   mq.addEventListener('change', onStoreChange)
   return () => mq.removeEventListener('change', onStoreChange)
 }
 
 function getSnapshot() {
-  return window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`).matches
+  return window.matchMedia(DESKTOP_BLOCK_QUERY).matches
 }
 
-// Read sessionStorage in the lazy initializer so no setState-in-useEffect is needed.
-// Returns true (hidden) during SSR where window is undefined, preventing hydration mismatches.
-function getInitialDismissed(): boolean {
-  if (typeof window === 'undefined') return true
-  return sessionStorage.getItem(SESSION_KEY) === '1'
+function getIsIpadUserAgent() {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+  return /iPad/i.test(navigator.userAgent)
 }
 
 export function MobileGate({ children }: { children: React.ReactNode }) {
   const isDesktop = useSyncExternalStore(subscribe, getSnapshot, () => false)
-  const [dismissed, setDismissed] = useState(getInitialDismissed)
+  const isIpad = getIsIpadUserAgent()
 
-  function dismiss() {
-    sessionStorage.setItem(SESSION_KEY, '1')
-    setDismissed(true)
+  if (isDesktop && !isIpad) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-10">
+          <div className="rounded-2xl border border-border bg-card/80 p-8 text-center shadow-sm">
+            <p className="mb-3 rounded-full bg-accent/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-accent-foreground">
+              Mobile-only platform
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Please use mobile for Plug-A-Pro
+            </h1>
+            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+              Plug-A-Pro is designed for phones and tablets. For the best, safer
+              experience, open this link on a mobile device.
+            </p>
+            <p className="mt-6 rounded border border-dashed border-border/70 px-4 py-3 text-xs text-muted-foreground">
+              Customer, provider, admin, and service workflows are mobile-only.
+              Your desktop session is currently blocked to protect the PWA-first
+              journey.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
-  return (
-    <>
-      {isDesktop && !dismissed && (
-        <div className="flex items-center justify-between gap-4 bg-muted border-b border-border px-4 py-2 text-sm text-muted-foreground">
-          <span>
-            Plug A Pro works best on mobile. Scan the QR code or open this link on your phone for the full experience.
-          </span>
-          <button
-            onClick={dismiss}
-            aria-label="Dismiss"
-            className="shrink-0 rounded px-2 py-0.5 text-xs hover:bg-muted-foreground/10 transition-colors"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-      {children}
-    </>
-  )
+  return children
 }

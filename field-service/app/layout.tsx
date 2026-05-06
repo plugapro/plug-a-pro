@@ -5,6 +5,7 @@ import { ThemeProvider } from 'next-themes'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { siteConfig } from '@/lib/metadata'
+import { MobileGate } from '@/components/shared/mobile-gate'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -72,7 +73,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <TooltipProvider>
-            {children}
+            <MobileGate>{children}</MobileGate>
           </TooltipProvider>
           <Toaster richColors position="top-center" />
         </ThemeProvider>
