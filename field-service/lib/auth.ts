@@ -155,17 +155,6 @@ const getAdminActor = cache(async (): Promise<AdminAuthUser | null> => {
     }
   }
 
-  // Legacy fallback: honour Supabase user_metadata.role for accounts predating
-  // the AdminUser table. Run backfill-admin-users.ts to migrate permanently.
-  const metaRole = session.role
-  if (metaRole === 'admin' || metaRole === 'owner') {
-    return {
-      ...session,
-      adminRole: (metaRole.toUpperCase() as Role),
-      adminUserId: null,
-    }
-  }
-
   return null
 })
 

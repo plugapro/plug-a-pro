@@ -86,14 +86,6 @@ export async function POST(request: NextRequest) {
 
         adminAccess = existingAdmin.active
         adminRole = existingAdmin.active ? existingAdmin.role.toLowerCase() : null
-      } else {
-        // Legacy fallback: honour Supabase user_metadata.role for accounts that
-        // predate the AdminUser table. Backfill with seed-admin script to migrate.
-        const metaRole = user.user_metadata?.role as string | undefined
-        if (metaRole === 'admin' || metaRole === 'owner') {
-          adminAccess = true
-          adminRole = metaRole
-        }
       }
     }
 

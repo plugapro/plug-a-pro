@@ -93,9 +93,7 @@ describe('proxy admin access', () => {
     )
   })
 
-  it('allows legacy metadata admins without an AdminUser row via metadata fallback', async () => {
-    // No AdminUser row → proxy falls back to Supabase user_metadata.role
-    // (transitional: run backfill-admin-users.ts to migrate these accounts to DB rows)
+  it('denies admin routes when no AdminUser row exists', async () => {
     const { proxy } = await import('../proxy')
 
     mockGetUser.mockResolvedValue({
@@ -115,9 +113,10 @@ describe('proxy admin access', () => {
 
     const res = await proxy(req)
 
-    expect(res.status).toBe(200)
-    expect(res.headers.get('location')).toBeNull()
-    expect(res.headers.get('x-user-role')).toBe('owner')
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'http://localhost/admin-sign-in?callbackUrl=%2Fadmin%2Fproviders&next=%2Fadmin%2Fproviders',
+    )
   })
 
   it('allows signed one-job WhatsApp routes without an OTP session', async () => {

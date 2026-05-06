@@ -133,8 +133,8 @@ export async function proxy(request: NextRequest) {
 
     if (error || !user) return redirectToSignIn(request, pathname, isAdminDomain)
 
-    const legacyRole = user.user_metadata?.role ?? 'customer'
-    let effectiveRole = legacyRole
+    const metadataRole = user.user_metadata?.role ?? 'customer'
+    let effectiveRole = metadataRole
     const rawPhone = user.phone as string | undefined
     const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`) : null
 
@@ -165,7 +165,8 @@ export async function proxy(request: NextRequest) {
         normalizedPhone: phone,
         authUserId: user.id,
         provider,
-        roleCheckResult: legacyRole === 'provider' ? 'metadata_provider' : 'resolved_from_provider_record',
+        roleCheckResult:
+          metadataRole === 'provider' ? 'metadata_provider' : 'resolved_from_provider_record',
         code: access.ok ? 'OK' : access.code,
       })
 
@@ -197,25 +198,20 @@ export async function proxy(request: NextRequest) {
         .catch(() => null)
 
       if (adminUser) {
-        // AdminUser row found — honour DB state regardless of legacy metadata
+        // AdminUser row found — honour DB state regardless of metadata.
         if (!adminUser.active) {
           // Deactivated accounts are blocked even if Supabase metadata still says admin/owner
           return redirectToSignIn(request, pathname, isAdminDomain)
         }
         effectiveRole = adminUser.role.toLowerCase()
       } else {
-        // No AdminUser row — legacy fallback for accounts that predate the AdminUser table.
-        // Run scripts/backfill-admin-users.ts to migrate these to DB rows.
-        const metaRole = user.user_metadata?.role as string | undefined
-        if (metaRole !== 'admin' && metaRole !== 'owner') {
-          return redirectToSignIn(request, pathname, isAdminDomain)
-        }
-        console.warn('[proxy] legacy admin access via user_metadata.role — run backfill-admin-users.ts', {
+        // No AdminUser row, deny admin access and force recovery via sign-in.
+        console.warn('[proxy] admin route denied because AdminUser row is missing', {
           userId: user.id,
-          metaRole,
+          email: user.email,
           pathname,
         })
-        effectiveRole = metaRole
+        return redirectToSignIn(request, pathname, isAdminDomain)
       }
     }
 
