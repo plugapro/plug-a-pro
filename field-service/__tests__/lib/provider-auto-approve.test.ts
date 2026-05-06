@@ -186,6 +186,12 @@ describe('provider auto-approval', () => {
       active: true,
       availableNow: true,
       verified: true,
+      skipEnrichment: true,
+    }))
+    expect(mockSyncProviderRecord).toHaveBeenNthCalledWith(2, expect.any(Object), expect.objectContaining({
+      phone: '+27820000002',
+      name: 'Lovemore Sibanda',
+      verified: true,
     }))
     expect(mockReleaseOpsQueueItem).toHaveBeenCalledWith(tx, {
       queueType: 'PROVIDER_ONBOARDING',

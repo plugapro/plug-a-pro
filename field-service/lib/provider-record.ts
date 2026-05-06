@@ -67,6 +67,11 @@ type SyncProviderRecordInput = {
   cohortName?: string | null
   locationNodeIds?: string[]
   /**
+   * When true, enrichment DB errors are surfaced to the caller instead of
+   * being absorbed. Keep this false for normal background sync.
+   */
+  strictEnrichment?: boolean
+  /**
    * When true, skip syncProviderSkills and upsertStructuredServiceAreas.
    * Use this when calling inside a db.$transaction — a caught DB error inside those
    * helpers puts the PostgreSQL connection in ABORTED state even if swallowed in JS,
@@ -174,6 +179,13 @@ export async function syncProviderRecord(
   client: ProviderRecordSyncClient,
   input: SyncProviderRecordInput,
 ) {
+  const throwOnEnrichmentFailure = (step: string, err: unknown, providerId: string) => {
+    console.error(`[provider-record] ${step} failed for provider`, providerId, err)
+    if (input.strictEnrichment) {
+      throw err
+    }
+  }
+
   const phone = normalizePhone(input.phone)
   const phoneCohort = createTestCohortContext(phone)
   const isTestUser = input.isTestUser ?? phoneCohort.isTestUser
@@ -212,14 +224,14 @@ export async function syncProviderRecord(
       try {
         await syncProviderSkills(client, existing.id, input.skills)
       } catch (err) {
-        console.error('[provider-record] syncProviderSkills failed for provider', existing.id, err)
+        throwOnEnrichmentFailure('syncProviderSkills', err, existing.id)
       }
 
       if (input.locationNodeIds && input.locationNodeIds.length > 0) {
         try {
           await upsertStructuredServiceAreas(client, existing.id, input.locationNodeIds)
         } catch (err) {
-          console.error('[provider-record] upsertStructuredServiceAreas failed for provider', existing.id, err)
+          throwOnEnrichmentFailure('upsertStructuredServiceAreas', err, existing.id)
         }
       }
     }
@@ -254,14 +266,14 @@ export async function syncProviderRecord(
     try {
       await syncProviderSkills(client, id, input.skills)
     } catch (err) {
-      console.error('[provider-record] syncProviderSkills failed for provider', id, err)
+      throwOnEnrichmentFailure('syncProviderSkills', err, id)
     }
 
     if (input.locationNodeIds && input.locationNodeIds.length > 0) {
       try {
         await upsertStructuredServiceAreas(client, id, input.locationNodeIds)
       } catch (err) {
-        console.error('[provider-record] upsertStructuredServiceAreas failed for provider', id, err)
+        throwOnEnrichmentFailure('upsertStructuredServiceAreas', err, id)
       }
     }
   }

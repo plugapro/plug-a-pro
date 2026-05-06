@@ -81,4 +81,38 @@ describe('provider application review support', () => {
       data: expect.objectContaining({ status: 'APPROVED' }),
     }))
   })
+
+  it('replaces existing ops-review support notes instead of appending duplicate entries', async () => {
+    const client = {
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'app-risk',
+            phone: '+27820000090',
+            name: 'Lovemore Sibanda',
+            skills: ['Electrical'],
+            serviceAreas: ['Bromhof'],
+            experience: '8 years',
+            notes: '[ops-review-support] READY_FOR_OPS_REVIEW: MISSING_SERVICE_AREAS',
+          },
+        ]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      opsQueueAssignment: {
+        upsert: vi.fn().mockResolvedValue({ id: 'queue-2' }),
+      },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({ id: 'audit-2' }),
+      },
+    }
+
+    await routeProviderApplicationsForOpsReview(client)
+
+    expect(client.providerApplication.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'app-risk', status: 'PENDING' },
+      data: {
+        notes: '[ops-review-support] HIGH_RISK_REVIEW: HIGH_RISK_CATEGORY',
+      },
+    }))
+  })
 })

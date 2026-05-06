@@ -60,8 +60,14 @@ export function assessProviderApplicationForOpsReview(
 function appendReviewNote(existing: string | null, assessment: ProviderApplicationReviewAssessment) {
   const marker = '[ops-review-support]'
   const line = `${marker} ${assessment.recommendation}: ${assessment.reasonCodes.length ? assessment.reasonCodes.join(', ') : 'NO_FLAGS'}`
-  if (existing?.includes(marker)) return existing
-  return existing ? `${existing}\n${line}` : line
+  if (!existing) return line
+
+  const preservedLines = existing
+    .split('\n')
+    .filter((current) => !current.startsWith(`${marker} `))
+
+  const cleanedNote = preservedLines.join('\n').trimEnd()
+  return cleanedNote ? `${cleanedNote}\n${line}` : line
 }
 
 export async function routeProviderApplicationsForOpsReview(
@@ -111,9 +117,9 @@ export async function routeProviderApplicationsForOpsReview(
         data: { notes: nextNotes },
       })
 
-      // Only log the first time an application is routed (when notes change).
-      // Subsequent cron runs re-upsert the queue assignment (idempotent) but
-      // must not create duplicate audit entries.
+      // Log when routing assessment output changes. The upsert for queue assignment
+      // is already idempotent; replacing an existing [ops-review-support] marker is
+      // the durable way to record meaningful routing transitions.
       await client.auditLog?.create({
         data: {
           actorId: params.actorId ?? 'system',
