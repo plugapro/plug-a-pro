@@ -25,11 +25,32 @@ function getIsIpadUserAgent() {
   return /iPad/i.test(navigator.userAgent)
 }
 
+function getIsTabletUserAgent() {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  const ua = navigator.userAgent.toLowerCase()
+
+  // Covers common Android and iOS tablet UAs.
+  if (/ipad|tablet|silk|playbook|kf[a-z]{2}|sm-t|gt-p|nexus 7|nexus 10|xoom|sm-t/.test(ua)) {
+    return true
+  }
+
+  // Android tablets often omit "mobile", while phones keep it.
+  if (/android/.test(ua) && !/mobile/.test(ua)) {
+    return true
+  }
+
+  return false
+}
+
 export function MobileGate({ children }: { children: React.ReactNode }) {
   const isDesktop = useSyncExternalStore(subscribe, getSnapshot, () => false)
   const isIpad = getIsIpadUserAgent()
+  const isTablet = getIsTabletUserAgent()
 
-  if (isDesktop && !isIpad) {
+  if (isDesktop && !isIpad && !isTablet) {
     return (
       <div className="min-h-screen bg-background">
         <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-10">
