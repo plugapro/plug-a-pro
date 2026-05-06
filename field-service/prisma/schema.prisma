@@ -560,6 +560,9 @@ model Match {
   booking           Booking?
   leadUnlocks       LeadUnlock[]
 
+  @@index([jobRequestId])
+  @@index([providerId, status])
+  @@index([status, createdAt])
   @@map("matches")
 }
 
@@ -607,6 +610,8 @@ model Quote {
   match   Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
   booking Booking?
 
+  @@index([matchId])
+  @@index([status, createdAt])
   @@map("quotes")
 }
 
@@ -636,6 +641,8 @@ model Booking {
   messages MessageEvent[]
   scheduleItems TechnicianScheduleItem[]
 
+  @@index([status, createdAt])
+  @@index([matchId])
   @@map("bookings")
 }
 
@@ -675,6 +682,9 @@ model Job {
   statusHistory JobStatusEvent[]
   payout        ProviderPayout?
 
+  @@index([status, createdAt])
+  @@index([providerId, status])
+  @@index([bookingId])
   @@map("jobs")
 }
 
@@ -867,6 +877,8 @@ model Payment {
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
+  @@index([status, createdAt])
+  @@index([bookingId])
   @@map("payments")
 }
 
@@ -885,6 +897,8 @@ model ProviderPayout {
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
+  @@index([status, createdAt])
+  @@index([providerId, createdAt])
   @@map("provider_payouts")
 }
 
@@ -991,6 +1005,34 @@ model ProviderPromoAward {
   @@index([providerId, awardedAt])
   @@index([referenceType, referenceId])
   @@map("provider_promo_awards")
+}
+
+model ProviderAutoApproveSideEffectMarker {
+  id            String                                @id @default(cuid())
+  kind          ProviderAutoApproveSideEffectKind
+  applicationId String
+  providerId    String
+  sourceRefType String
+  sourceRefId   String
+  status        ProviderAutoApproveSideEffectStatus
+  reason        String?
+  retryCount    Int                                   @default(0)
+  lastError     String?
+  runId         String?
+  attemptedAt   DateTime?
+  nextRetryAt   DateTime?
+  createdAt     DateTime                              @default(now())
+  updatedAt     DateTime                              @updatedAt
+
+  provider      Provider                              @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([kind, applicationId], map: "provider_auto_approve_side_effect_markers_kind_applicationId_key")
+  @@index([status, nextRetryAt], map: "provider_auto_approve_side_effect_markers_status_next_retryAt_idx")
+  @@index([providerId, kind], map: "provider_auto_approve_side_effect_markers_providerId_kind_idx")
+  @@index([applicationId], map: "provider_auto_approve_side_effect_markers_applicationId_idx")
+  @@index([sourceRefType, sourceRefId], map: "provider_auto_approve_side_effect_markers_sourceRefType_sourceRefId_idx")
+  @@index([attemptedAt], map: "provider_auto_approve_side_effect_markers_attemptedAt_idx")
+  @@map("provider_auto_approve_side_effect_markers")
 }
 
 model TechnicianSkill {
@@ -1217,6 +1259,8 @@ model Invoice {
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
+  @@index([bookingId])
+  @@index([createdAt])
   @@map("invoices")
 }
 
@@ -1254,6 +1298,8 @@ model Dispute {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
+  @@index([status, createdAt])
+  @@index([jobId])
   @@map("disputes")
 }
 
@@ -1668,6 +1714,18 @@ enum ProviderPromoAwardType {
 enum ProviderPromoAwardStatus {
   AWARDED
   REVOKED
+}
+
+enum ProviderAutoApproveSideEffectKind {
+  PROMO_AWARD
+  NOTIFICATION
+  MATCH_RECHECK
+}
+
+enum ProviderAutoApproveSideEffectStatus {
+  PENDING
+  DONE
+  FAILED
 }
 
 enum ApprovalStatus {

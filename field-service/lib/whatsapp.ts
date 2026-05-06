@@ -200,7 +200,7 @@ export async function sendText(params: {
     body: params.text,
     externalId,
     metadata: params.metadata,
-  }).catch(() => {})
+  }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
 
   return externalId
 }
@@ -928,7 +928,7 @@ export async function sendCustomerMatchFoundNotification(
     templateName: 'customer_match_found',
     externalId,
     metadata: { jobRequestId: params.jobRequestId },
-  }).catch(() => {})
+  }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
 }
 
 // ─── Customer quote-ready notification (WA flow CW3) ─────────────────────────
@@ -1014,7 +1014,7 @@ export async function sendCustomerQuoteReadyNotification(
     templateName: 'customer_quote_ready',
     externalId,
     metadata: { quoteId: params.quoteId, jobRequestId: params.jobRequestId },
-  }).catch(() => {})
+  }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
 }
 
 // ─── Customer en-route notification (WA flow PW2) ────────────────────────────
@@ -1068,7 +1068,7 @@ export async function sendCustomerEnRouteNotification(params: {
     templateName: 'customer_provider_en_route',
     externalId,
     metadata: { jobRequestId: params.jobRequestId },
-  }).catch(() => {})
+  }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
 }
 
 export async function sendAdminNewApplication(params: {
@@ -1383,7 +1383,7 @@ export async function sendCustomerRunningLateNotification(params: {
     templateName: 'customer_provider_running_late',
     externalId,
     metadata: { jobId: params.jobId },
-  }).catch(() => {})
+  }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
 }
 
 // ─── M5-T5: Provider invoice send (PW5) ──────────────────────────────────────
@@ -1447,5 +1447,5 @@ export async function sendProviderInvoiceTemplate(params: {
     templateName: 'provider_invoice_send',
     externalId,
     metadata: { jobId: params.jobId },
-  }).catch(() => {})
+  }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
 }

@@ -30,7 +30,6 @@ const NAV_ITEMS = [
   { href: '/admin/reports',      label: 'Reports',     icon: 'reports' as const },
   { href: '/admin/messages',     label: 'Messages',    icon: 'messages' as const },
   { href: '/admin/scheduler',    label: 'Scheduler',   icon: 'workflow' as const },
-  { href: '/admin/audit-log',    label: 'Audit Log',   icon: 'workflow' as const },
   { href: '/admin/team',         label: 'Team',        icon: 'users' as const },
   { href: '/admin/settings',     label: 'Settings',    icon: 'settings' as const },
   { href: '/admin/flows',        label: 'Journey Flows', icon: 'workflow' as const },

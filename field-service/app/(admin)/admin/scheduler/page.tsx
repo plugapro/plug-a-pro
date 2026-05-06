@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic'
+export const revalidate = 60
 
 import { Badge } from '@/components/ui/badge'
 import { requireRole } from '@/lib/auth'

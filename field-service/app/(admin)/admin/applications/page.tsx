@@ -198,11 +198,11 @@ async function approveApplication(formData: FormData) {
       }))
 
       if (providerCategoryRows.length > 0) {
-        await (tx as any).providerCategory?.createMany?.({
+        await tx.providerCategory.createMany({
           data: providerCategoryRows,
           skipDuplicates: true,
         })
-        await (tx as any).providerCategory?.updateMany?.({
+        await tx.providerCategory.updateMany({
           where: {
             providerId,
             categorySlug: { in: providerCategoryRows.map((row) => row.categorySlug) },

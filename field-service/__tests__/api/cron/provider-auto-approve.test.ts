@@ -16,7 +16,22 @@ describe('GET /api/cron/provider-auto-approve', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.CRON_SECRET = CRON_SECRET
-    mockAutoApprove.mockResolvedValue({ approved: 2, skipped: 1, errors: 0 })
+    mockAutoApprove.mockResolvedValue({
+      attempted: 2,
+      approved: 2,
+      skipped: 0,
+      errors: 0,
+      txAborts: 0,
+      sideEffectSummary: {
+        promoAwarded: 2,
+        promoFailed: 0,
+        notifyQueued: 2,
+        queueReleased: 2,
+        enrichmentQueued: 2,
+      },
+      reconciliation: { scanned: 0, replayed: 0, skipped: 0, hardFailed: 0 },
+      skippedReasons: [],
+    })
   })
 
   it('rejects requests without the correct CRON_SECRET', async () => {
@@ -44,8 +59,18 @@ describe('GET /api/cron/provider-auto-approve', () => {
       headers: { authorization: `Bearer ${CRON_SECRET}` },
     }))
 
+    const body = await res.json()
+
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, approved: 2, skipped: 1, errors: 0 })
+    expect(body).toMatchObject({
+      ok: true,
+      attempted: 2,
+      approved: 2,
+      errors: 0,
+    })
     expect(mockAutoApprove).toHaveBeenCalledTimes(1)
+    expect(mockAutoApprove).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      runId: expect.any(String),
+    }))
   })
 })

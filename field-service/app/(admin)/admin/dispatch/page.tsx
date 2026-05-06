@@ -308,10 +308,12 @@ export default async function AdminDispatchPage({
     }
   }
 
-  const showCloseOut = await isEnabled('ops.v2.closeOut')
-  const dispatchCase = selectedRequest
-    ? await getCaseByEntity('DISPATCH', 'JOB_REQUEST', selectedRequest.id).catch(() => null)
-    : null
+  const [showCloseOut, dispatchCase] = await Promise.all([
+    isEnabled('ops.v2.closeOut'),
+    selectedRequest
+      ? getCaseByEntity('DISPATCH', 'JOB_REQUEST', selectedRequest.id).catch(() => null)
+      : Promise.resolve(null),
+  ])
   const dispatchCaseFull = dispatchCase
     ? await getCase(dispatchCase.id).catch(() => null)
     : null
@@ -362,25 +364,55 @@ export default async function AdminDispatchPage({
     revalidatePath('/admin/dispatch')
   }
 
-  const ranking = selectedRequest
-    ? await rankCandidatesForJobRequest(selectedRequest.id).catch((error) => {
+  // ─── Unified activity feed ────────────────────────────────────────────────
+  const activityEvents: ActivityEvent[] = []
+  let ranking: Awaited<ReturnType<typeof rankCandidatesForJobRequest>> | null = null
+
+  if (selectedRequest) {
+    // Parallelise all independent fetches for this selected request.
+    const [rankingResult, history, leads, customerMessagesRaw, auditTrailRaw] = await Promise.all([
+      rankCandidatesForJobRequest(selectedRequest.id).catch((error: unknown) => {
         console.error('[admin/dispatch] Failed to load ranked candidates', error)
         pageWarnings.push('Ranked candidates failed to load.')
         return null
-      })
-    : null
+      }),
+      getDispatchHistory(selectedRequest.id).catch((error: unknown) => {
+        console.error('[admin/dispatch] Failed to load dispatch history', error)
+        pageWarnings.push('Dispatch history failed to load.')
+        return []
+      }),
+      db.lead.findMany({
+        where: { jobRequestId: selectedRequest.id },
+        include: {
+          provider: { select: { id: true, name: true, phone: true } },
+          unlock: { select: { creditsCharged: true, creditTypeBreakdown: true, unlockedAt: true } },
+        },
+        orderBy: { sentAt: 'asc' },
+      }).catch(() => []),
+      db.messageEvent.findMany({
+        where: {
+          customerId: selectedRequest.customer.id,
+          createdAt: { gte: new Date(selectedRequest.createdAt.getTime() - 5 * 60 * 1000) },
+        },
+        select: { id: true, to: true, templateName: true, body: true, status: true, createdAt: true, sentAt: true },
+        orderBy: { createdAt: 'asc' },
+        take: 50,
+      }).catch(() => []),
+      db.auditLog.findMany({
+        where: { entityId: selectedRequest.id, entityType: AUDIT_ENTITY.JOB_REQUEST },
+        select: { id: true, action: true, actorRole: true, timestamp: true },
+        orderBy: { timestamp: 'asc' },
+        take: 30,
+      }).catch((error: unknown) => {
+        console.error('[admin/dispatch] Failed to load audit trail', error)
+        pageWarnings.push('Recent dispatch activity failed to load.')
+        return []
+      }),
+    ])
 
-  // ─── Unified activity feed ────────────────────────────────────────────────
-  const activityEvents: ActivityEvent[] = []
+    ranking = rankingResult
 
-  if (selectedRequest) {
     // 1. Dispatch decisions → dispatch_no_match / dispatch_offered / dispatch_matched
-    const history = await getDispatchHistory(selectedRequest.id).catch((error) => {
-      console.error('[admin/dispatch] Failed to load dispatch history', error)
-      pageWarnings.push('Dispatch history failed to load.')
-      return []
-    })
-
     for (const { dispatchDecision: dd } of history) {
       if (dd.status === 'NO_MATCH') {
         const reasons = (dd.filterSummary as Array<{ providerId: string; providerName: string; filteredReasonCodes: string[] }>)
@@ -408,15 +440,6 @@ export default async function AdminDispatchPage({
     }
 
     // 2. Leads → lead_sent, lead_accepted/declined/expired, credit_debit
-    const leads = await db.lead.findMany({
-      where: { jobRequestId: selectedRequest.id },
-      include: {
-        provider: { select: { id: true, name: true, phone: true } },
-        unlock: { select: { creditsCharged: true, creditTypeBreakdown: true, unlockedAt: true } },
-      },
-      orderBy: { sentAt: 'asc' },
-    }).catch(() => [])
-
     const providerPhones: string[] = []
     const phoneToName: Record<string, string> = {}
     for (const lead of leads) {
@@ -445,17 +468,7 @@ export default async function AdminDispatchPage({
     }
 
     // 3. Outbound messages to customer
-    const customerMessages = await db.messageEvent.findMany({
-      where: {
-        customerId: selectedRequest.customer.id,
-        createdAt: { gte: new Date(selectedRequest.createdAt.getTime() - 5 * 60 * 1000) },
-      },
-      select: { id: true, to: true, templateName: true, body: true, status: true, createdAt: true, sentAt: true },
-      orderBy: { createdAt: 'asc' },
-      take: 50,
-    }).catch(() => [])
-
-    for (const msg of customerMessages) {
+    for (const msg of customerMessagesRaw) {
       activityEvents.push({
         kind: 'msg_out',
         at: msg.sentAt ?? msg.createdAt,
@@ -512,19 +525,8 @@ export default async function AdminDispatchPage({
       }
     }
 
-    // 6. Audit trail
-    const auditTrail = await db.auditLog.findMany({
-      where: { entityId: selectedRequest.id, entityType: AUDIT_ENTITY.JOB_REQUEST },
-      select: { id: true, action: true, actorRole: true, timestamp: true },
-      orderBy: { timestamp: 'asc' },
-      take: 30,
-    }).catch((error) => {
-      console.error('[admin/dispatch] Failed to load audit trail', error)
-      pageWarnings.push('Recent dispatch activity failed to load.')
-      return []
-    })
-
-    for (const entry of auditTrail) {
+    // 6. Audit trail (fetched in parallel above)
+    for (const entry of auditTrailRaw) {
       activityEvents.push({ kind: 'audit', at: entry.timestamp, action: entry.action, actorRole: entry.actorRole })
     }
   }

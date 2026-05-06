@@ -210,6 +210,11 @@ export async function proxy(request: NextRequest) {
         if (metaRole !== 'admin' && metaRole !== 'owner') {
           return redirectToSignIn(request, pathname, isAdminDomain)
         }
+        console.warn('[proxy] legacy admin access via user_metadata.role — run backfill-admin-users.ts', {
+          userId: user.id,
+          metaRole,
+          pathname,
+        })
         effectiveRole = metaRole
       }
     }

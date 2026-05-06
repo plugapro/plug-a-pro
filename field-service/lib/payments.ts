@@ -9,6 +9,7 @@
 // 3. Set PSP_PROVIDER env var
 
 import { db } from './db'
+import { OPS_QUEUE_TYPES, claimOpsQueueItem } from './ops-queue'
 
 export type PaymentCollectionMode = 'bypass' | 'checkout'
 
@@ -495,6 +496,22 @@ export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
       pspReference: event.pspReference,
       failureReason: 'Payment declined',
     },
+  })
+  console.error('[payments] payment failed — ops follow-up required', {
+    bookingId: event.bookingId,
+    pspReference: event.pspReference,
+  })
+  await claimOpsQueueItem(db, {
+    queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
+    entityId: event.bookingId,
+    claimedById: 'system:payment-failed',
+    claimedByRole: 'system',
+    claimedByLabel: 'System (payment failure)',
+  }).catch((err: unknown) => {
+    console.error('[payments] failed to enqueue PAYMENT_FOLLOW_UP ops item', {
+      bookingId: event.bookingId,
+      error: err,
+    })
   })
 }
 

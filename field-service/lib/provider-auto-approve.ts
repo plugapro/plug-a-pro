@@ -1,34 +1,651 @@
 // Phase 1 auto-approval — approves PENDING provider applications that have all
 // required fields (name, skills, service areas, and experience).
 // HIGH_RISK_CATEGORY applications (Electrical, Roofing, Pest Control, and Air
-// Conditioning) are routed to manual review and are not auto-approved until
-// review tooling records an explicit certification decision. Plumbing is
+// Conditioning) are routed to manual review and are not auto-approved. Plumbing is
 // standard and must not block auto-approval.
-// MISSING_* reason codes block approval until the provider supplies the missing
-// information.
 //
-// Called exclusively from the dedicated /api/cron/provider-auto-approve endpoint
-// (every 25 min during SAST day hours, every 55 min during off-hours).
+// This rewrite makes auto-approval itself a bounded transactional operation and
+// moves optional side-effects into replayable markers.
 
-import type { Prisma } from '@prisma/client'
+import { Prisma, type Prisma as PrismaTypes } from '@prisma/client'
 import { db } from './db'
 import { assessProviderApplicationForOpsReview } from './provider-application-review-support'
 import { syncProviderRecord } from './provider-record'
-import { awardMobileVerifiedPromoCreditsInTransaction } from './provider-promo-awards'
+import { awardPromoCreditsForMilestone } from './provider-promo-awards'
 import { OPS_QUEUE_TYPES, releaseOpsQueueItem } from './ops-queue'
 import { notifyProviderApplicationApprovedOnce } from './provider-application-notifications'
 import { checkJobsForNewProviderAvailability } from './matching/customer-recontact'
 import { findConflictingActiveProviderApplications } from './provider-applications'
 import { resolveServiceCategoryTag } from './service-categories'
 import { recordAuditLog } from './audit'
-import { hasAutoApprovalBlockingServiceSelection } from './service-category-policy'
+
+// Kind-level side-effects that can be retried after the core approval commit.
+type SideEffectKind = 'PROMO_AWARD' | 'NOTIFICATION' | 'MATCH_RECHECK'
+type SideEffectStatus = 'PENDING' | 'DONE' | 'FAILED'
+
+// Minimal marker shape used by replay logic. Keep this separate from Prisma input
+// types because some environments may still run with older generated clients.
+type SideEffectMarkerRecord = {
+  id: string
+  kind: SideEffectKind
+  applicationId: string
+  providerId: string
+  status: SideEffectStatus
+  reason: string | null
+  retryCount: number
+  lastError: string | null
+  runId: string | null
+  nextRetryAt: Date | null
+  attemptedAt: Date | null
+  sourceRefType: string
+  sourceRefId: string
+}
+
+type SideEffectMarkerClient = {
+  findMany?: (args: any) => Promise<SideEffectMarkerRecord[]>
+  findUnique?: (args: any) => Promise<SideEffectMarkerRecord | null>
+  upsert?: (args: any) => Promise<SideEffectMarkerRecord>
+  update?: (args: any) => Promise<SideEffectMarkerRecord>
+}
+
+type ProviderApplicationRow = {
+  id: string
+  phone: string
+  name: string
+  status?: 'PENDING' | 'MORE_INFO_REQUIRED' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+  skills: string[]
+  serviceAreas: string[]
+  experience: string | null
+  notes: string | null
+  providerId: string | null
+  isTestUser: boolean
+  cohortName: string | null
+}
+
+type AutoApproveDb = {
+  providerApplication: {
+    findMany: (args: any) => Promise<ProviderApplicationRow[]>
+    findUnique?: (args: any) => Promise<ProviderApplicationLookup | null>
+    updateMany: (args: any) => Promise<{ count: number }>
+  }
+  providerAutoApproveSideEffectMarker?: SideEffectMarkerClient
+  providerCategory?: {
+    createMany: (args: any) => Promise<{ count: number }>
+    updateMany: (args: any) => Promise<{ count: number }>
+  }
+  $queryRaw?: (...args: any[]) => Promise<unknown>
+  $transaction: (callbackOrOps: any, options?: any) => Promise<unknown>
+}
+
+type ProviderApplicationLookup = {
+  id: string
+  status: 'PENDING' | 'MORE_INFO_REQUIRED' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+  phone: string
+  name: string
+}
+
+type SideEffectActionResult = {
+  status: 'done' | 'skipped' | 'failed'
+  reason: string
+  attempted: boolean
+  awarded?: boolean
+}
+
+export type AutoApproveReconciliationItem = {
+  kind: SideEffectKind
+  applicationId: string
+  providerId: string
+  attemptedAt: Date
+  reason: string
+  retryCount: number
+  lastError: string | null
+}
+
+export type AutoApproveResult = {
+  attempted: number
+  approved: number
+  skipped: number
+  errors: number
+  txAborts: number
+  reconciliation: {
+    scanned: number
+    replayed: number
+    skipped: number
+    hardFailed: number
+  }
+  sideEffectSummary: {
+    promoAwarded: number
+    promoFailed: number
+    notifyQueued: number
+    queueReleased: number
+    enrichmentQueued: number
+  }
+  skippedReasons: string[]
+}
+
+type AutoApproveParams = {
+  limit?: number
+  runId?: string
+  reconciliationLimit?: number
+}
+
+type PreflightResult = {
+  isCompatible: boolean
+  reasons: string[]
+}
 
 const ACTOR_ID = 'system:auto-approve'
+const AUTO_APPROVE_LIMIT_DEFAULT = 50
+const AUTO_APPROVE_SOURCE_TYPE = 'provider_application'
+const AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES = 5
+const AUTO_APPROVE_SIDE_EFFECT_RETRY_MINUTES = [5, 15, 30, 60, 180]
+const AUTO_APPROVE_TRANSACTION_TIMEOUT_MS = 15000
+
+function toErrorText(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+function isTransactionAbort(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = (error as { code?: string }).code
+  return code === '25P02'
+}
+
+function buildSkippedReasonSet(values: string[]) {
+  return [...new Set(values)]
+}
+
+function nextRetryAt(retryCount: number) {
+  if (retryCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) return null
+  const delayMinutes = AUTO_APPROVE_SIDE_EFFECT_RETRY_MINUTES[
+    Math.min(retryCount, AUTO_APPROVE_SIDE_EFFECT_RETRY_MINUTES.length - 1)
+  ]
+  const nextDate = new Date()
+  nextDate.setMinutes(nextDate.getMinutes() + delayMinutes)
+  return nextDate
+}
+
+function markerWhere(kind: SideEffectKind, applicationId: string) {
+  return { kind_applicationId: { kind, applicationId } } as const
+}
+
+function markerRunResult(
+  rows: SideEffectMarkerRecord[],
+): AutoApproveReconciliationItem[] {
+  return rows.map((row) => ({
+    kind: row.kind,
+    applicationId: row.applicationId,
+    providerId: row.providerId,
+    attemptedAt: row.attemptedAt ?? new Date(),
+    reason: row.reason ?? 'pending',
+    retryCount: row.retryCount,
+    lastError: row.lastError,
+  }))
+}
+
+async function checkProviderPromoAwardSchemaCompatibility(client: AutoApproveDb): Promise<PreflightResult> {
+  const reasons: string[] = []
+  if (!client.$queryRaw) {
+    return { isCompatible: false, reasons: ['SCHEMA_CHECK_INTERFACE_MISSING'] }
+  }
+
+  const runRaw = client.$queryRaw as (...args: any[]) => Promise<unknown>
+
+  try {
+    // Ensure this branch cannot run against legacy reward schemas that predate the
+    // awardType column or the enum used by current promo logic.
+    const columns = await runRaw(
+      Prisma.sql`SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'provider_promo_awards'`,
+    ) as Array<{ column_name: string }>
+
+    const availableColumns = new Set(columns.map((row) => row.column_name))
+    const requiredColumns = ['providerId', 'awardType', 'referenceType', 'referenceId', 'status', 'metadata']
+    const missingColumns = requiredColumns.filter((columnName) => !availableColumns.has(columnName))
+    if (missingColumns.length > 0) {
+      reasons.push(`PROMO_AWARD_SCHEMA_MISSING_COLUMNS:${missingColumns.join(',')}`)
+    }
+
+    const enumValues = await runRaw(
+      Prisma.sql`SELECT e.enumlabel
+                 FROM pg_type t
+                 JOIN pg_enum e ON e.enumtypid = t.oid
+                 WHERE t.typname = 'ProviderPromoAwardType'
+                 ORDER BY e.enumsortorder`,
+    ) as Array<{ enumlabel: string }>
+
+    const expectedValues = new Set([
+      'MOBILE_VERIFIED',
+      'PROFILE_COMPLETED',
+      'KYC_APPROVED',
+      'FIRST_TOPUP',
+      'FIRST_COMPLETED_JOB',
+    ])
+    const actualValues = new Set(enumValues.map((row) => row.enumlabel))
+    const missingEnumValues = [...expectedValues].filter((value) => !actualValues.has(value))
+    if (missingEnumValues.length > 0) {
+      reasons.push(`PROMO_AWARD_SCHEMA_ENUM_VALUES_MISSING:${missingEnumValues.join(',')}`)
+    }
+
+    if (enumValues.length === 0) {
+      reasons.push('PROMO_AWARD_SCHEMA_ENUM_MISSING')
+    }
+
+    return { isCompatible: reasons.length === 0, reasons }
+  } catch (error) {
+    const message = toErrorText(error)
+    return { isCompatible: false, reasons: [`PROMO_AWARD_SCHEMA_PRECHECK_FAILED:${message}`] }
+  }
+}
+
+async function upsertSideEffectMarker(
+  client: AutoApproveDb,
+  marker: {
+    kind: SideEffectKind
+    applicationId: string
+    providerId: string
+    sourceRefType: string
+    sourceRefId: string
+    runId: string
+  },
+) {
+  const storage = client.providerAutoApproveSideEffectMarker
+  if (!storage?.upsert) return null
+
+  return storage.upsert({
+    where: markerWhere(marker.kind, marker.applicationId),
+    create: {
+      kind: marker.kind,
+      applicationId: marker.applicationId,
+      providerId: marker.providerId,
+      sourceRefType: marker.sourceRefType,
+      sourceRefId: marker.sourceRefId,
+      status: 'PENDING',
+      reason: 'SCHEDULED',
+      retryCount: 0,
+      lastError: null,
+      runId: marker.runId,
+      nextRetryAt: null,
+      attemptedAt: null,
+    },
+    update: {
+      kind: marker.kind,
+      status: 'PENDING',
+      reason: 'SCHEDULED',
+      providerId: marker.providerId,
+      lastError: null,
+      runId: marker.runId,
+      nextRetryAt: null,
+      sourceRefType: marker.sourceRefType,
+      sourceRefId: marker.sourceRefId,
+    },
+  })
+}
+
+async function updateSideEffectMarker(client: AutoApproveDb, kind: SideEffectKind, applicationId: string, data: {
+  status: SideEffectStatus
+  reason: string
+  runId: string
+  retryCount?: number
+  lastError?: string | null
+  attemptedAt: Date
+  nextRetryAt?: Date | null
+}) {
+  const storage = client.providerAutoApproveSideEffectMarker
+  if (!storage?.update) return null
+
+  return storage.update({
+    where: markerWhere(kind, applicationId),
+    data,
+  })
+}
+
+async function executeSideEffectAction(params: {
+  client: AutoApproveDb
+  kind: SideEffectKind
+  applicationId: string
+  providerId: string
+  sourceRefType: string
+  sourceRefId: string
+}) {
+  if (params.kind === 'PROMO_AWARD') {
+    const award = await awardPromoCreditsForMilestone(
+      params.providerId,
+      'MOBILE_VERIFIED',
+      {
+        referenceType: params.sourceRefType,
+        referenceId: params.sourceRefId,
+        createdBy: ACTOR_ID,
+        metadata: { autoApprove: true },
+      },
+    )
+
+    if (!award.awarded) {
+      return {
+        status: 'done' as const,
+        reason: `MOBILE_VERIFIED_${award.skippedReason ?? 'SKIPPED'}`,
+        awarded: false,
+        attempted: true,
+      }
+    }
+
+    return {
+      status: 'done' as const,
+      reason: 'MOBILE_VERIFIED_AWARDED',
+      awarded: true,
+      attempted: true,
+    }
+  }
+
+  if (params.kind === 'NOTIFICATION') {
+    const app = await params.client.providerApplication.findUnique?.({
+      where: { id: params.applicationId },
+      select: { status: true, phone: true, name: true },
+    })
+    if (!app) {
+      return { status: 'skipped' as const, reason: 'NOTIFICATION_SKIPPED_APPLICATION_NOT_FOUND', attempted: false }
+    }
+    if (app.status !== 'APPROVED') {
+      return {
+        status: 'skipped' as const,
+        reason: `NOTIFICATION_SKIPPED_${app.status}`,
+        attempted: false,
+      }
+    }
+
+    const result = await notifyProviderApplicationApprovedOnce({
+      applicationId: params.applicationId,
+      phone: app.phone,
+      name: app.name,
+    })
+
+    return {
+      status: 'done' as const,
+      reason: result.status === 'sent' ? 'NOTIFICATION_SENT' : `NOTIFICATION_${result.reason.toUpperCase()}`,
+      awarded: false,
+      attempted: true,
+    }
+  }
+
+  const matchResult = await checkJobsForNewProviderAvailability(params.providerId)
+  return {
+    status: 'done' as const,
+    reason: `MATCH_RECHECK_DISPATCHED:${matchResult.dispatchedOpenJobs || 0}`,
+    attempted: true,
+  }
+}
+
+function shouldRetry(retryCount: number, compatible: boolean, markerStatus: SideEffectStatus) {
+  if (!compatible) return { run: false, terminal: false, reason: 'SIDE_EFFECT_SCHEMA_CHECK_REQUIRED' }
+  if (markerStatus === 'FAILED' && retryCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
+    return { run: false, terminal: true, reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED' }
+  }
+  return { run: true, terminal: false, reason: 'SIDE_EFFECT_RETRY' }
+}
+
+async function scheduleAndRunSideEffect(params: {
+  client: AutoApproveDb
+  kind: SideEffectKind
+  applicationId: string
+  providerId: string
+  runId: string
+  sourceRefType: string
+  sourceRefId: string
+  enabled: boolean
+}): Promise<SideEffectActionResult> {
+  const storage = params.client.providerAutoApproveSideEffectMarker
+
+  // Marker-backed path: safe for retries and duplicate prevention.
+  if (storage?.upsert && storage?.update) {
+    const marker = await upsertSideEffectMarker(params.client, {
+      kind: params.kind,
+      applicationId: params.applicationId,
+      providerId: params.providerId,
+      sourceRefType: params.sourceRefType,
+      sourceRefId: params.sourceRefId,
+      runId: params.runId,
+    })
+
+    if (!marker) {
+      return { status: 'skipped', reason: 'SIDE_EFFECT_MARKER_UPSERT_FAILED', attempted: false }
+    }
+
+    if (marker.status === 'DONE') {
+      return { status: 'skipped', reason: 'SIDE_EFFECT_ALREADY_DONE', attempted: false }
+    }
+
+    if (marker.status === 'FAILED' && marker.retryCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
+      return {
+        status: 'failed',
+        reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
+        attempted: false,
+      }
+    }
+
+    const retryPolicy = shouldRetry(marker.retryCount, params.enabled, marker.status)
+    if (!retryPolicy.run) {
+      if (marker.status !== 'FAILED') {
+        await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
+          status: 'PENDING',
+          reason: retryPolicy.reason,
+          runId: params.runId,
+          retryCount: marker.retryCount,
+          attemptedAt: new Date(),
+          nextRetryAt: marker.nextRetryAt,
+          lastError: marker.lastError,
+        })
+      }
+      return {
+        status: retryPolicy.terminal ? 'failed' : 'skipped',
+        reason: retryPolicy.reason,
+        attempted: false,
+      }
+    }
+
+    try {
+      const action = await executeSideEffectAction({
+        client: params.client,
+        kind: params.kind,
+        applicationId: params.applicationId,
+        providerId: params.providerId,
+        sourceRefType: params.sourceRefType,
+        sourceRefId: params.sourceRefId,
+      })
+
+      await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
+        status: 'DONE',
+        reason: action.reason,
+        runId: params.runId,
+        retryCount: marker.retryCount + 1,
+        attemptedAt: new Date(),
+        nextRetryAt: null,
+        lastError: null,
+      })
+
+      return action
+    } catch (error) {
+      const nextCount = marker.retryCount + 1
+      const retryAt = nextRetryAt(marker.retryCount)
+      if (!retryAt || nextCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
+        await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
+          status: 'FAILED',
+          reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
+          runId: params.runId,
+          retryCount: nextCount,
+          attemptedAt: new Date(),
+          nextRetryAt: null,
+          lastError: toErrorText(error),
+        })
+
+        return {
+          status: 'failed',
+          reason: toErrorText(error),
+          attempted: true,
+        }
+      }
+
+      await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
+        status: 'PENDING',
+        reason: 'SIDE_EFFECT_RETRY',
+        runId: params.runId,
+        retryCount: nextCount,
+        attemptedAt: new Date(),
+        nextRetryAt: retryAt,
+        lastError: toErrorText(error),
+      })
+
+      return {
+        status: 'failed',
+        reason: toErrorText(error),
+        attempted: true,
+      }
+    }
+  }
+
+  // Fallback path used in old schema deployments where marker table is absent.
+  if (!params.enabled) {
+    return { status: 'skipped', reason: 'SIDE_EFFECT_SCHEMA_DISABLED', attempted: false }
+  }
+
+  try {
+    const action = await executeSideEffectAction({
+      client: params.client,
+      kind: params.kind,
+      applicationId: params.applicationId,
+      providerId: params.providerId,
+      sourceRefType: params.sourceRefType,
+      sourceRefId: params.sourceRefId,
+    })
+    return action
+  } catch (error) {
+    return {
+      status: 'failed',
+      reason: toErrorText(error),
+      attempted: true,
+    }
+  }
+}
+
+async function reconcilePendingSideEffects(client: AutoApproveDb, runId: string, limit?: number) {
+  const storage = client.providerAutoApproveSideEffectMarker
+  const result = {
+    scanned: 0,
+    replayed: 0,
+    skipped: 0,
+    hardFailed: 0,
+  }
+  if (!storage?.findMany) return result
+
+  const now = new Date()
+  const rows = await storage.findMany({
+    where: {
+      status: 'PENDING',
+      OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+    },
+    orderBy: { attemptedAt: 'asc' },
+    take: limit ?? 50,
+  }) as SideEffectMarkerRecord[]
+
+  for (const marker of rows) {
+    result.scanned += 1
+
+    if (marker.status === 'FAILED' && marker.retryCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
+      await updateSideEffectMarker(client, marker.kind, marker.applicationId, {
+        status: 'FAILED',
+        reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
+        runId,
+        retryCount: marker.retryCount,
+        attemptedAt: new Date(),
+        nextRetryAt: null,
+        lastError: marker.lastError,
+      })
+      result.hardFailed += 1
+      continue
+    }
+
+    try {
+      const action = await executeSideEffectAction({
+        client,
+        kind: marker.kind,
+        applicationId: marker.applicationId,
+        providerId: marker.providerId,
+        sourceRefType: marker.sourceRefType,
+        sourceRefId: marker.sourceRefId,
+      })
+
+      if (action.status === 'skipped') {
+        await updateSideEffectMarker(client, marker.kind, marker.applicationId, {
+          status: 'DONE',
+          reason: action.reason,
+          runId,
+          retryCount: marker.retryCount,
+          attemptedAt: new Date(),
+          nextRetryAt: null,
+          lastError: null,
+        })
+        result.skipped += 1
+        continue
+      }
+
+      await updateSideEffectMarker(client, marker.kind, marker.applicationId, {
+        status: 'DONE',
+        reason: action.reason,
+        runId,
+        retryCount: marker.retryCount + 1,
+        attemptedAt: new Date(),
+        nextRetryAt: null,
+        lastError: null,
+      })
+      result.replayed += 1
+    } catch (error) {
+      const retryCount = marker.retryCount + 1
+      const retryAt = nextRetryAt(marker.retryCount)
+
+      if (!retryAt) {
+        await updateSideEffectMarker(client, marker.kind, marker.applicationId, {
+          status: 'FAILED',
+          reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
+          runId,
+          retryCount,
+          attemptedAt: new Date(),
+          nextRetryAt: null,
+          lastError: toErrorText(error),
+        })
+        result.hardFailed += 1
+        continue
+      }
+
+      await updateSideEffectMarker(client, marker.kind, marker.applicationId, {
+        status: 'PENDING',
+        reason: 'SIDE_EFFECT_RETRY',
+        runId,
+        retryCount,
+        attemptedAt: new Date(),
+        nextRetryAt: retryAt,
+        lastError: toErrorText(error),
+      })
+      result.skipped += 1
+    }
+  }
+
+  return result
+}
+
+export async function reconcileAutoApproveSideEffects(
+  client: AutoApproveDb = db,
+  params: { limit?: number; runId?: string } = {},
+): Promise<{ scanned: number; replayed: number; skipped: number; hardFailed: number }> {
+  return reconcilePendingSideEffects(client, params.runId ?? Math.random().toString(36).slice(2), params.limit)
+}
 
 export async function autoApproveProviderApplications(
-  client: typeof db = db,
-  params: { limit?: number } = {},
-): Promise<{ approved: number; skipped: number; errors: number }> {
+  client: AutoApproveDb = db,
+  params: AutoApproveParams = {},
+): Promise<AutoApproveResult> {
+  // Read a bounded batch of PENDING applications to keep cron runtime predictable.
   const applications = await client.providerApplication.findMany({
     where: { status: 'PENDING' },
     select: {
@@ -44,42 +661,82 @@ export async function autoApproveProviderApplications(
       cohortName: true,
     },
     orderBy: { submittedAt: 'asc' },
-    take: params.limit ?? 50,
+    take: params.limit ?? AUTO_APPROVE_LIMIT_DEFAULT,
   })
 
-  let approved = 0
-  let skipped = 0
-  let errors = 0
+  // Check optional promo side-effect compatibility once per run.
+  const preflight = await checkProviderPromoAwardSchemaCompatibility(client)
+  if (!preflight.isCompatible) {
+    console.error('[auto-approve:promo-schema] preflight failed', { reasons: preflight.reasons })
+  }
+
+  const result: AutoApproveResult = {
+    attempted: applications.length,
+    approved: 0,
+    skipped: 0,
+    errors: 0,
+    txAborts: 0,
+    reconciliation: {
+      scanned: 0,
+      replayed: 0,
+      skipped: 0,
+      hardFailed: 0,
+    },
+    sideEffectSummary: {
+      promoAwarded: 0,
+      promoFailed: 0,
+      notifyQueued: 0,
+      queueReleased: 0,
+      enrichmentQueued: 0,
+    },
+    skippedReasons: [...preflight.reasons],
+  }
+
+  const runId = params.runId ?? Math.random().toString(36).slice(2)
+  const sideEffectSource = {
+    sourceRefType: AUTO_APPROVE_SOURCE_TYPE,
+  }
 
   for (const app of applications) {
-    // Incomplete profiles and configured auto-approval-blocking categories require manual
-    // review. Uploading proof is provider-supplied only; it does not become a
-    // verified certification until an ops reviewer records that decision.
+    // Enforce field completeness and policy guardrails before any writes.
     const assessment = assessProviderApplicationForOpsReview(app)
     const hasMissingFields = assessment.reasonCodes.some((code) => code.startsWith('MISSING_'))
-    const hasAutoApprovalBlocker = hasAutoApprovalBlockingServiceSelection(app.skills)
+    const hasAutoApprovalBlocker = assessment.reasonCodes.includes('HIGH_RISK_CATEGORY')
     if (hasMissingFields || hasAutoApprovalBlocker) {
-      skipped++
+      result.skipped += 1
+      result.skippedReasons.push(hasMissingFields ? `ASSESSMENT_${assessment.reasonCodes.join('+')}` : 'ASSESSMENT_HIGH_RISK_CATEGORY')
       continue
     }
 
-    // Two active applications for the same phone would create duplicate provider
-    // rows. Block until ops resolves the conflict.
-    const conflicts = await findConflictingActiveProviderApplications(client, app.phone, {
+    // Avoid duplicates for duplicate active applications on same phone.
+    const conflictClient = {
+      providerApplication: {
+        findFirst: async () => null as { id: string; phone: string; status: string; name?: string | null; providerId?: string | null; submittedAt?: Date } | null,
+        findMany: client.providerApplication.findMany,
+      },
+    } as {
+      providerApplication: {
+        findFirst: (...args: any[]) => Promise<{ id: string; phone: string; status: string; name?: string | null; providerId?: string | null; submittedAt?: Date } | null>
+        findMany: (...args: any[]) => Promise<Array<{ id: string; phone: string; status: string; name?: string | null; providerId?: string | null; submittedAt?: Date }>>
+      }
+    }
+
+    const conflicts = await findConflictingActiveProviderApplications(conflictClient, app.phone, {
       excludeId: app.id,
     })
     if (conflicts.length > 0) {
-      skipped++
+      result.skipped += 1
+      result.skippedReasons.push('CONFLICT_ACTIVE_APPLICATION')
       continue
     }
 
+    let providerId: string | null = null
+
     try {
-      const result = await client.$transaction(async (tx: Prisma.TransactionClient) => {
-        // skipEnrichment prevents syncProviderSkills/upsertStructuredServiceAreas
-        // from running inside the transaction. A caught DB error in those helpers
-        // puts the PostgreSQL connection in ABORTED state even if swallowed in JS,
-        // causing all subsequent tx queries to fail. Enrichment runs after the tx.
-        const providerId = await syncProviderRecord(tx as typeof db, {
+      const phaseAResult = await client.$transaction(async (txClient: unknown) => {
+        // Phase A: create/update provider record + approval update + category set
+        // + queue release as the only transactionally required path.
+        const providerIdFromRecord = await syncProviderRecord(txClient as any, {
           phone: app.phone,
           name: app.name,
           skills: app.skills,
@@ -92,127 +749,161 @@ export async function autoApproveProviderApplications(
           skipEnrichment: true,
         })
 
-        const statusUpdate = await tx.providerApplication.updateMany({
+        const statusUpdate = await (txClient as any).providerApplication.updateMany({
           where: { id: app.id, status: 'PENDING' },
           data: {
             status: 'APPROVED',
-            providerId,
+            providerId: providerIdFromRecord,
             reviewedAt: new Date(),
             reviewedById: ACTOR_ID,
           },
         })
 
-        // Another process approved this application concurrently — skip silently.
-        if (statusUpdate.count === 0) return null
+        if (statusUpdate.count === 0) {
+          // Another worker already approved or changed this row.
+          return null
+        }
 
         const categoryRows = app.skills.map((skill) => ({
-          providerId,
-          categorySlug:
-            resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
+          providerId: providerIdFromRecord,
+          categorySlug: resolveServiceCategoryTag(skill) ?? skill.toLowerCase().replace(/\s+/g, '_'),
           approvalStatus: 'APPROVED',
         }))
 
         if (categoryRows.length > 0) {
-          await (tx as any).providerCategory?.createMany?.({
+          await (txClient as any).providerCategory.createMany({
             data: categoryRows,
             skipDuplicates: true,
           })
-          await (tx as any).providerCategory?.updateMany?.({
+          await (txClient as any).providerCategory.updateMany({
             where: {
-              providerId,
-              categorySlug: { in: categoryRows.map((r) => r.categorySlug) },
+              providerId: providerIdFromRecord,
+              categorySlug: { in: categoryRows.map((row) => row.categorySlug) },
             },
             data: { approvalStatus: 'APPROVED' },
           })
         }
 
-        try {
-          await awardMobileVerifiedPromoCreditsInTransaction(tx, providerId, {
-            referenceType: 'provider_application',
-            referenceId: app.id,
-            createdBy: ACTOR_ID,
-          })
-        } catch (err) {
-          // Keep onboarding flowing even when legacy/legacy-schema wallets do not
-          // yet support this award metadata. Credits can be reconciled out-of-band.
-          console.error('[auto-approve] promo award step failed', {
-            applicationId: app.id,
-            providerId,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        }
-
-        await releaseOpsQueueItem(tx as typeof db, {
+        await releaseOpsQueueItem(txClient as any, {
           queueType: OPS_QUEUE_TYPES.PROVIDER_ONBOARDING,
           entityId: app.id,
         })
 
-        return { providerId }
-      }, { timeout: 15000 })
+        return providerIdFromRecord
+      }, { timeout: AUTO_APPROVE_TRANSACTION_TIMEOUT_MS } as never)
 
-      if (!result) {
-        skipped++
+      if (!phaseAResult) {
+        result.skipped += 1
+        result.skippedReasons.push('APPROVAL_ALREADY_PROCESSED')
         continue
       }
 
-      // Post-transaction enrichment: sync skills and service areas outside the
-      // transaction so any caught DB errors cannot abort the approval itself.
-      syncProviderRecord(client, {
-        phone: app.phone,
-        name: app.name,
-        skills: app.skills,
-        serviceAreas: app.serviceAreas,
-        active: true,
-        availableNow: true,
-        verified: true,
-        isTestUser: app.isTestUser,
-        cohortName: app.cohortName,
-      }).catch((err: unknown) => {
-        console.error('[auto-approve] post-tx enrichment failed', {
-          applicationId: app.id,
-          error: err,
-        })
-      })
-
-      approved++
-
-      // Fire-and-forget — cron step 1e in match-leads will retry if this fails.
-      notifyProviderApplicationApprovedOnce({
+      providerId = phaseAResult as string
+      result.approved += 1
+      result.sideEffectSummary.queueReleased += 1
+    } catch (error) {
+      result.errors += 1
+      if (isTransactionAbort(error)) result.txAborts += 1
+      result.skippedReasons.push(isTransactionAbort(error) ? 'TRANSACTION_ABORT' : 'PHASE_A_ERROR')
+      console.error('[auto-approve] phase A failed', {
         applicationId: app.id,
-        phone: app.phone,
-        name: app.name,
-      }).catch((err: unknown) => {
-        console.error('[auto-approve] WhatsApp notification failed', {
-          applicationId: app.id,
-          error: err,
-        })
+        error: toErrorText(error),
       })
-
-      // Re-check open job requests against the newly active provider.
-      checkJobsForNewProviderAvailability(result.providerId).catch((err: unknown) => {
-        console.error('[auto-approve] job recheck failed', {
-          providerId: result.providerId,
-          error: err,
-        })
-      })
-
-      recordAuditLog({
-        actorId: ACTOR_ID,
-        actorRole: 'system',
-        action: 'provider_application.auto_approve',
-        entityType: 'ProviderApplication',
-        entityId: app.id,
-        after: {
-          providerId: result.providerId,
-          recommendation: assessment.recommendation,
-          reasonCodes: assessment.reasonCodes,
-        } as Prisma.InputJsonValue,
-      }).catch(() => undefined)
-    } catch (err) {
-      console.error('[auto-approve] approval failed', { applicationId: app.id, error: err })
-      errors++
+      continue
     }
+
+    // Phase B: non-branching side effects are fire-and-forget + retryable.
+    syncProviderRecord(client as unknown as any, {
+      phone: app.phone,
+      name: app.name,
+      skills: app.skills,
+      serviceAreas: app.serviceAreas,
+      active: true,
+      availableNow: true,
+      verified: true,
+      isTestUser: app.isTestUser,
+      cohortName: app.cohortName,
+    }).catch((error: unknown) => {
+      console.error('[auto-approve] enrichment sync failed', {
+        applicationId: app.id,
+        error,
+      })
+    })
+    result.sideEffectSummary.enrichmentQueued += 1
+
+    if (!providerId) continue
+
+    const sourceRefId = app.id
+
+    const promoResult = await scheduleAndRunSideEffect({
+      client,
+      kind: 'PROMO_AWARD',
+      applicationId: app.id,
+      providerId,
+      runId,
+      enabled: preflight.isCompatible,
+      sourceRefType: sideEffectSource.sourceRefType,
+      sourceRefId,
+    })
+
+    if (promoResult.status === 'done' && promoResult.awarded) {
+      result.sideEffectSummary.promoAwarded += 1
+    }
+    if (promoResult.status === 'failed') {
+      result.sideEffectSummary.promoFailed += 1
+      result.skippedReasons.push(`PROMO_AWARD_${promoResult.reason}`)
+    }
+
+    const notificationResult = await scheduleAndRunSideEffect({
+      client,
+      kind: 'NOTIFICATION',
+      applicationId: app.id,
+      providerId,
+      runId,
+      enabled: true,
+      sourceRefType: sideEffectSource.sourceRefType,
+      sourceRefId,
+    })
+    if (notificationResult.status === 'done' || notificationResult.status === 'skipped') {
+      result.sideEffectSummary.notifyQueued += 1
+    }
+    if (notificationResult.status === 'failed') {
+      result.skippedReasons.push(`NOTIFICATION_${notificationResult.reason}`)
+    }
+
+    const recheckResult = await scheduleAndRunSideEffect({
+      client,
+      kind: 'MATCH_RECHECK',
+      applicationId: app.id,
+      providerId,
+      runId,
+      enabled: true,
+      sourceRefType: sideEffectSource.sourceRefType,
+      sourceRefId,
+    })
+    if (recheckResult.status === 'failed') {
+      result.skippedReasons.push(`MATCH_RECHECK_${recheckResult.reason}`)
+    }
+
+    recordAuditLog({
+      actorId: ACTOR_ID,
+      actorRole: 'system',
+      action: 'provider_application.auto_approve',
+      entityType: 'ProviderApplication',
+      entityId: app.id,
+      after: {
+        providerId,
+        recommendation: assessment.recommendation,
+        reasonCodes: assessment.reasonCodes,
+      } as PrismaTypes.InputJsonValue,
+    }).catch(() => undefined)
   }
 
-  return { approved, skipped, errors }
+  result.reconciliation = await reconcileAutoApproveSideEffects(client, {
+    limit: params.reconciliationLimit,
+    runId,
+  })
+  result.skippedReasons = buildSkippedReasonSet(result.skippedReasons)
+
+  return result
 }

@@ -1,7 +1,7 @@
 // ─── Admin: Settings ──────────────────────────────────────────────────────────
 // Platform configuration — static display, no Business model.
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 60
 
 import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'

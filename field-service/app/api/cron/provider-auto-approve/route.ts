@@ -20,10 +20,10 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const reqId = crypto.randomUUID().slice(0, 8)
+  const reqId = Math.random().toString(36).slice(2, 10)
 
   try {
-    const result = await autoApproveProviderApplications(db)
+    const result = await autoApproveProviderApplications(db, { runId: reqId })
     console.log(`[cron/provider-auto-approve:${reqId}]`, result)
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {

@@ -1,7 +1,7 @@
 // ─── Admin: Job Categories ─────────────────────────────────────────────────────
 // Static display of the 8 job categories the platform supports.
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 60
 
 import { requireAdmin } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
