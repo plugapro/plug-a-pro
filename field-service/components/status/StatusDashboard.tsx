@@ -9,7 +9,6 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
-  ChevronUp,
   Clock,
   EyeOff,
   GitBranch,
@@ -22,7 +21,6 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   buildFallbackHealthModel,
   getActiveIssues,
@@ -36,38 +34,132 @@ import {
   type HealthStatus,
 } from '@/lib/status/health'
 
-// ——— STATUS UTILITIES ———
+// ─────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────
 
-function statusDotClass(status: HealthStatus): string {
-  switch (status) {
-    case 'operational': return 'bg-[var(--tone-success-fg)]'
-    case 'degraded': return 'bg-[var(--tone-warning-fg)]'
-    case 'down': return 'bg-[var(--tone-danger-fg)]'
-    default: return 'bg-[var(--tone-neutral-fg)]'
-  }
-}
+const AUTO_REFRESH_INTERVAL_S = 30
 
-function statusBadgeVariant(status: HealthStatus) {
+// Journey definitions with status-aware plain-language impact text
+const JOURNEY_DEFS: {
+  id: string
+  groupId: string
+  label: string
+  sub: string
+  icon: ComponentType<{ className?: string }>
+  impact: Record<HealthStatus | 'default', string>
+}[] = [
+  {
+    id: 'client',
+    groupId: 'client-journey',
+    label: 'Customers',
+    sub: 'Booking & requests',
+    icon: Users,
+    impact: {
+      operational: 'Booking, search, and requests are available.',
+      degraded: 'Some booking features may be slower than usual.',
+      down: 'Customers may be unable to book or browse.',
+      unknown: 'Booking status cannot be confirmed right now.',
+      not_monitored: 'Booking status is not directly monitored.',
+      default: 'Booking status is not directly monitored.',
+    },
+  },
+  {
+    id: 'provider',
+    groupId: 'provider-journey',
+    label: 'Providers',
+    sub: 'Leads & jobs',
+    icon: Wrench,
+    impact: {
+      operational: 'Leads, jobs, and availability are visible.',
+      degraded: 'Job visibility or updates may be delayed.',
+      down: 'Providers may not receive new leads or jobs.',
+      unknown: 'Provider portal status cannot be confirmed.',
+      not_monitored: 'Provider portal is not directly monitored.',
+      default: 'Provider portal is not directly monitored.',
+    },
+  },
+  {
+    id: 'merchant',
+    groupId: 'merchant-journey',
+    label: 'Payments',
+    sub: 'Quotes & invoices',
+    icon: Building2,
+    impact: {
+      operational: 'Quotes, payments, and invoices are processing.',
+      degraded: 'Some payment actions may be slower than usual.',
+      down: 'Payments and invoicing may be unavailable.',
+      unknown: 'Payment status cannot be confirmed right now.',
+      not_monitored: 'Payment status is not directly monitored.',
+      default: 'Payment status is not directly monitored.',
+    },
+  },
+  {
+    id: 'ops',
+    groupId: 'core-platform',
+    label: 'Platform',
+    sub: 'Core infrastructure',
+    icon: Activity,
+    impact: {
+      operational: 'Core services and database are healthy.',
+      degraded: 'Core services are partially degraded.',
+      down: 'Platform infrastructure is experiencing issues.',
+      unknown: 'Platform status cannot be confirmed right now.',
+      not_monitored: 'Platform monitoring is active.',
+      default: 'Platform monitoring is active.',
+    },
+  },
+]
+
+// ─────────────────────────────────────────────────────────────
+// STATUS UTILITIES
+// ─────────────────────────────────────────────────────────────
+
+type Tone = 'success' | 'warning' | 'danger' | 'neutral'
+
+function tone(status: HealthStatus): Tone {
   return statusToneFromCheck[status]
 }
 
-function statusIcon(status: HealthStatus, className = 'size-4') {
-  switch (status) {
-    case 'operational':
-      return <CheckCircle2 className={`${className} text-[var(--tone-success-fg)]`} />
-    case 'degraded':
-      return <AlertCircle className={`${className} text-[var(--tone-warning-fg)]`} />
-    case 'down':
-      return <XCircle className={`${className} text-[var(--tone-danger-fg)]`} />
-    default:
-      return <HelpCircle className={`${className} text-[var(--tone-neutral-fg)]`} />
-  }
-}
+// Tailwind classes keyed by tone — avoids dynamic string interpolation
+const T = {
+  success: {
+    bg: 'bg-[var(--tone-success-bg)]',
+    border: 'border-[var(--tone-success-border)]',
+    fg: 'text-[var(--tone-success-fg)]',
+    dot: 'bg-[var(--tone-success-fg)]',
+    borderL: 'border-l-[var(--tone-success-fg)]',
+    borderT: 'border-t-[var(--tone-success-fg)]',
+  },
+  warning: {
+    bg: 'bg-[var(--tone-warning-bg)]',
+    border: 'border-[var(--tone-warning-border)]',
+    fg: 'text-[var(--tone-warning-fg)]',
+    dot: 'bg-[var(--tone-warning-fg)]',
+    borderL: 'border-l-[var(--tone-warning-fg)]',
+    borderT: 'border-t-[var(--tone-warning-fg)]',
+  },
+  danger: {
+    bg: 'bg-[var(--tone-danger-bg)]',
+    border: 'border-[var(--tone-danger-border)]',
+    fg: 'text-[var(--tone-danger-fg)]',
+    dot: 'bg-[var(--tone-danger-fg)]',
+    borderL: 'border-l-[var(--tone-danger-fg)]',
+    borderT: 'border-t-[var(--tone-danger-fg)]',
+  },
+  neutral: {
+    bg: 'bg-[var(--tone-neutral-bg)]',
+    border: 'border-[var(--tone-neutral-border)]',
+    fg: 'text-[var(--tone-neutral-fg)]',
+    dot: 'bg-[var(--tone-neutral-fg)]',
+    borderL: 'border-l-[var(--tone-neutral-fg)]',
+    borderT: 'border-t-[var(--tone-neutral-fg)]',
+  },
+} satisfies Record<Tone, Record<string, string>>
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString('en-ZA', {
     weekday: 'short',
-    year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -75,172 +167,180 @@ function formatDate(value: string) {
   })
 }
 
-// ——— JOURNEY DEFINITIONS ———
+function headlineFor(status: HealthStatus): string {
+  switch (status) {
+    case 'operational': return 'All Systems Operational'
+    case 'degraded': return 'Partial Service Disruption'
+    case 'down': return 'Service Outage Detected'
+    default: return 'Status Unavailable'
+  }
+}
 
-const JOURNEY_DEFS: {
-  id: string
-  groupId: string
-  label: string
-  description: string
-  icon: ComponentType<{ className?: string }>
-}[] = [
-  { id: 'client', groupId: 'client-journey', label: 'Client Journey', description: 'Track booking, request creation, provider browsing', icon: Users },
-  { id: 'provider', groupId: 'provider-journey', label: 'Provider Journey', description: 'Leads, jobs, portal and availability', icon: Wrench },
-  { id: 'merchant', groupId: 'merchant-journey', label: 'Merchant / Commercial', description: 'Quoting, payments, invoicing', icon: Building2 },
-  { id: 'ops', groupId: 'core-platform', label: 'Platform Operations', description: 'Core services and monitoring', icon: Activity },
-]
+// ─────────────────────────────────────────────────────────────
+// ATOMS
+// ─────────────────────────────────────────────────────────────
 
-const AUTO_REFRESH_INTERVAL_S = 30
+function StatusDot({ status, size = 'md' }: { status: HealthStatus; size?: 'sm' | 'md' | 'lg' }) {
+  const cls = T[tone(status)]
+  const ping = status === 'operational'
+  const pulse = status === 'down'
+  const sizes = { sm: 'size-2', md: 'size-2.5', lg: 'size-3.5' }
+  const rings = { sm: 'size-4', md: 'size-5', lg: 'size-6' }
 
-// ——— STATUS HEADER ———
+  return (
+    <span className="relative inline-flex shrink-0 items-center justify-center">
+      {(ping || pulse) && (
+        <span
+          className={`absolute inline-flex ${rings[size]} rounded-full opacity-25 ${cls.dot} ${ping ? 'animate-ping' : 'animate-pulse'}`}
+        />
+      )}
+      <span className={`relative inline-flex ${sizes[size]} rounded-full ${cls.dot}`} />
+    </span>
+  )
+}
 
-function StatusHeader({
+function StatusIcon({ status, className = 'size-4' }: { status: HealthStatus; className?: string }) {
+  const cls = T[tone(status)]
+  switch (status) {
+    case 'operational': return <CheckCircle2 className={`${className} ${cls.fg}`} />
+    case 'degraded':    return <AlertCircle  className={`${className} ${cls.fg}`} />
+    case 'down':        return <XCircle      className={`${className} ${cls.fg}`} />
+    default:            return <HelpCircle   className={`${className} ${cls.fg}`} />
+  }
+}
+
+function StatusPill({ status }: { status: HealthStatus }) {
+  return (
+    <Badge variant={tone(status)} className="font-mono text-[11px] tracking-wide">
+      {STATUS_LABELS[status]}
+    </Badge>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// HERO STATUS BANNER
+// ─────────────────────────────────────────────────────────────
+
+function HeroStatusBanner({
+  model,
   onRefresh,
   loading,
   countdown,
+  error,
 }: {
+  model: HealthDashboardModel
   onRefresh: () => void
   loading: boolean
   countdown: number
+  error: string | null
 }) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="space-y-0.5">
-        <p className="app-kicker">Plug-A-Pro</p>
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Plug-A-Pro Public Service Status
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Live visibility into Plug-A-Pro platform health and journeys.
-        </p>
-      </div>
-      <Button
-        onClick={onRefresh}
-        disabled={loading}
-        size="sm"
-        variant="outline"
-        className="shrink-0"
-      >
-        <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-        {loading ? 'Refreshing…' : `Refresh (${countdown}s)`}
-      </Button>
-    </div>
-  )
-}
-
-// ——— OVERALL STATUS CARD ———
-
-function OverallStatusCard({ model }: { model: HealthDashboardModel }) {
-  const status = model.overall
-  const variant = statusBadgeVariant(status)
-
-  const borderLeft: Record<typeof variant, string> = {
-    success: 'border-l-[var(--tone-success-fg)]',
-    warning: 'border-l-[var(--tone-warning-fg)]',
-    danger: 'border-l-[var(--tone-danger-fg)]',
-    neutral: 'border-l-[var(--tone-neutral-fg)]',
-  }
-  const bg: Record<typeof variant, string> = {
-    success: 'bg-[var(--tone-success-bg)]',
-    warning: 'bg-[var(--tone-warning-bg)]',
-    danger: 'bg-[var(--tone-danger-bg)]',
-    neutral: 'bg-[var(--tone-neutral-bg)]',
-  }
-  const shouldPulse = status === 'operational' || status === 'down'
+  const cls = T[tone(model.overall)]
 
   return (
     <div
-      className={`rounded-2xl border border-l-4 ${borderLeft[variant]} ${bg[variant]} p-4 shadow-[var(--shadow-soft)]`}
+      className={`relative overflow-hidden rounded-2xl border border-l-4 ${cls.borderL} ${cls.border} bg-card shadow-[var(--shadow-soft)]`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          {/* Animated status dot */}
-          <span className="relative flex size-4 shrink-0 items-center justify-center">
-            <span
-              className={`absolute inline-flex size-full rounded-full opacity-40 ${statusDotClass(status)} ${shouldPulse ? 'animate-pulse' : ''}`}
-            />
-            <span className={`relative inline-flex size-2.5 rounded-full ${statusDotClass(status)}`} />
+      {/* Subtle tinted top-right accent blob */}
+      <div
+        className={`pointer-events-none absolute -right-10 -top-10 size-32 rounded-full opacity-10 blur-2xl ${cls.dot}`}
+        aria-hidden
+      />
+
+      <div className="relative px-5 py-5 sm:px-6">
+        {/* Top row: brand kicker + refresh */}
+        <div className="mb-4 flex items-center justify-between">
+          <p className="app-kicker text-muted-foreground/60">Plug-A-Pro · Service Status</p>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Refresh status"
+          >
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Checking…' : `${countdown}s`}
+          </button>
+        </div>
+
+        {/* Main status */}
+        <div className="flex items-start gap-3 sm:gap-4">
+          <div className="mt-1 shrink-0">
+            <StatusDot status={model.overall} size="lg" />
+          </div>
+          <div className="min-w-0">
+            <h1 className={`text-xl font-bold tracking-tight sm:text-2xl ${cls.fg}`}>
+              {headlineFor(model.overall)}
+            </h1>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+              {model.botMessage}
+            </p>
+          </div>
+        </div>
+
+        {/* Meta row */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/60">
+          <span className="flex items-center gap-1">
+            <Clock className="size-3 shrink-0" />
+            {formatDate(model.asOf)}
           </span>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold tracking-tight">{STATUS_LABELS[status]}</span>
-              <Badge variant={variant} className="text-xs">Overall</Badge>
-            </div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock className="size-3" />
-              Last checked: {formatDate(model.asOf)}
-            </div>
-          </div>
+          <span aria-hidden className="hidden sm:inline">·</span>
+          <span className="flex items-center gap-1">
+            <Bot className="size-3 shrink-0" />
+            Plug-A-Pro Bot
+          </span>
+          <span aria-hidden className="hidden sm:inline">·</span>
+          <span>Auto-refresh every {AUTO_REFRESH_INTERVAL_S}s</span>
         </div>
-        {statusIcon(status, 'size-8 opacity-50')}
+
+        {/* Fetch error notice */}
+        {error && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)] px-3 py-2 text-xs">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[var(--tone-warning-fg)]" />
+            <span>
+              <span className="font-semibold text-[var(--tone-warning-fg)]">Refresh failed. </span>
+              <span className="text-muted-foreground">Showing last known state.</span>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// ——— BOT SUMMARY BANNER ———
+// ─────────────────────────────────────────────────────────────
+// JOURNEY HEALTH STRIP
+// ─────────────────────────────────────────────────────────────
 
-function BotSummaryBanner({ message, error }: { message: string; error: string | null }) {
-  return (
-    <div className="space-y-2">
-      <div className="rounded-xl border border-border/80 bg-card/90 p-4 shadow-[var(--shadow-soft)]">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-border/80 bg-surface-subtle">
-            <Bot className="size-4 text-brand-strong" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground">Plug-A-Pro Bot</p>
-            <p className="mt-0.5 text-sm sm:text-base">{message}</p>
-          </div>
-        </div>
-      </div>
-
-      {error ? (
-        <div className="flex items-start gap-2 rounded-xl border border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)] px-3 py-2.5 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--tone-warning-fg)]" />
-          <div>
-            <p className="font-medium text-[var(--tone-warning-fg)]">Last refresh was not clean.</p>
-            <p className="text-xs text-muted-foreground">{error}</p>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-// ——— JOURNEY HEALTH STRIP ———
-
-function JourneyHealthCard({
+function JourneyCard({
   label,
-  description,
+  sub,
   status,
+  impactText,
   icon: Icon,
 }: {
   label: string
-  description: string
+  sub: string
   status: HealthStatus
+  impactText: string
   icon: ComponentType<{ className?: string }>
 }) {
-  const variant = statusBadgeVariant(status)
-  const cardBg: Record<typeof variant, string> = {
-    success: 'bg-[var(--tone-success-bg)] border-[var(--tone-success-border)]',
-    warning: 'bg-[var(--tone-warning-bg)] border-[var(--tone-warning-border)]',
-    danger: 'bg-[var(--tone-danger-bg)] border-[var(--tone-danger-border)]',
-    neutral: 'bg-card border-border/80',
-  }
+  const cls = T[tone(status)]
+  const isIssue = status === 'down' || status === 'degraded'
 
   return (
-    <div className={`flex flex-col gap-2 rounded-xl border p-3 shadow-[var(--shadow-soft)] ${cardBg[variant]}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5">
+    <div
+      className={`flex flex-col gap-2.5 rounded-xl border border-t-2 ${cls.borderT} ${cls.border} ${isIssue ? cls.bg : 'bg-card'} px-3.5 py-3 shadow-[var(--shadow-soft)]`}
+    >
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <Icon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="text-sm font-medium leading-tight">{label}</span>
+          <span className="truncate text-sm font-semibold tracking-tight">{label}</span>
         </div>
-        {statusIcon(status, 'size-4 shrink-0')}
+        <StatusDot status={status} size="sm" />
       </div>
-      <p className="text-xs leading-snug text-muted-foreground">{description}</p>
-      <div className="mt-auto pt-1">
-        <Badge variant={variant} className="text-xs">{STATUS_LABELS[status]}</Badge>
+      <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{impactText}</p>
+      <div className="mt-auto">
+        <StatusPill status={status} />
       </div>
     </div>
   )
@@ -253,60 +353,66 @@ function JourneyHealthStrip({ model }: { model: HealthDashboardModel }) {
   )
 
   return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Journey Health
+    <section aria-label="Journey health overview">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+        Journey Status
       </p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {JOURNEY_DEFS.map(({ id, groupId, label, description, icon }) => {
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {JOURNEY_DEFS.map(({ id, groupId, label, sub, icon, impact }) => {
           const group = groupMap[groupId]
           const summary = group ? summarizeGroup(group.services) : null
           const status: HealthStatus = summary
             ? summary.overall
             : (groupId === 'core-platform' ? model.platform : 'not_monitored')
+          const impactText = impact[status] ?? impact.default
 
           return (
-            <JourneyHealthCard
+            <JourneyCard
               key={id}
               label={label}
-              description={description}
+              sub={sub}
               status={status}
+              impactText={impactText}
               icon={icon}
             />
           )
         })}
       </div>
-    </div>
+    </section>
   )
 }
 
-// ——— ISSUE RIBBON ———
+// ─────────────────────────────────────────────────────────────
+// ACTIVE ISSUE RIBBON
+// ─────────────────────────────────────────────────────────────
 
 function IssueRibbon({ model }: { model: HealthDashboardModel }) {
   const issues = useMemo(() => getActiveIssues(model.groups), [model.groups])
   if (issues.length === 0) return null
 
   const hasDown = issues.some((i) => i.status === 'down')
-  const tone = hasDown
-    ? { border: 'border-[var(--tone-danger-border)]', bg: 'bg-[var(--tone-danger-bg)]', fg: 'text-[var(--tone-danger-fg)]', dot: 'bg-[var(--tone-danger-fg)]' }
-    : { border: 'border-[var(--tone-warning-border)]', bg: 'bg-[var(--tone-warning-bg)]', fg: 'text-[var(--tone-warning-fg)]', dot: 'bg-[var(--tone-warning-fg)]' }
+  const t: Tone = hasDown ? 'danger' : 'warning'
+  const cls = T[t]
 
   return (
-    <div className={`rounded-xl border ${tone.border} ${tone.bg} p-3 shadow-[var(--shadow-soft)]`}>
-      <div className="mb-2 flex items-center gap-2">
-        <AlertTriangle className={`size-4 shrink-0 ${tone.fg}`} />
-        <span className={`text-sm font-semibold ${tone.fg}`}>
-          {issues.length === 1 ? '1 active issue detected' : `${issues.length} active issues detected`}
+    <div
+      className={`rounded-xl border ${cls.border} ${cls.bg} px-4 py-3 shadow-[var(--shadow-soft)]`}
+      role="alert"
+      aria-live="polite"
+    >
+      <div className="flex items-center gap-2">
+        <AlertTriangle className={`size-4 shrink-0 ${cls.fg}`} />
+        <span className={`text-sm font-bold tracking-tight ${cls.fg}`}>
+          {issues.length === 1 ? '1 active issue' : `${issues.length} active issues`}
         </span>
       </div>
-      <ul className="space-y-1.5">
+      <ul className="mt-2.5 space-y-2">
         {issues.map((issue) => (
-          <li key={issue.id} className="flex items-start gap-2">
-            <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${tone.dot}`} />
-            <div className="text-sm">
-              <span className="font-medium">{issue.name}</span>
-              {' — '}
-              <span className="text-muted-foreground">Possible impact: {issue.impact}</span>
+          <li key={issue.id} className="flex items-start gap-2.5 text-sm">
+            <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${cls.dot}`} />
+            <div className="min-w-0">
+              <span className="font-semibold">{issue.name}</span>
+              <span className="text-muted-foreground"> — Possible impact: {issue.impact}</span>
             </div>
           </li>
         ))}
@@ -315,233 +421,217 @@ function IssueRibbon({ model }: { model: HealthDashboardModel }) {
   )
 }
 
-// ——— SERVICE MATRIX ———
-
-const TOP_N = 4
+// ─────────────────────────────────────────────────────────────
+// SERVICE MATRIX (accordion)
+// ─────────────────────────────────────────────────────────────
 
 function ServiceRow({ service }: { service: HealthService }) {
-  const variant = statusBadgeVariant(service.status)
+  const cls = T[tone(service.status)]
   const isIssue = service.status === 'down' || service.status === 'degraded'
-  const isUnknown = service.status === 'unknown'
 
-  const sourceCopy =
+  const sourceLabel =
     service.source === 'not monitored'
       ? 'Not separately monitored'
       : service.source === 'derived'
         ? 'Derived from core health'
         : 'Live check'
 
-  const impactCopy = isUnknown
-    ? "We're unable to confirm this check right now."
-    : isIssue
-      ? `Possible impact: ${service.impact}`
-      : service.impact
+  const impactLabel =
+    service.status === 'unknown'
+      ? "We're unable to confirm this check right now."
+      : isIssue
+        ? `Possible impact: ${service.impact}`
+        : service.impact
 
   return (
-    <li
-      className={`rounded-lg border p-2.5 ${
-        isIssue
-          ? 'border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]/50'
-          : 'border-border/60 bg-muted/20'
-      }`}
-    >
+    <li className={`rounded-lg border px-3 py-2.5 ${isIssue ? `${cls.bg} ${cls.border}` : 'border-border/40 bg-muted/10'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 space-y-0.5">
-          <p className="text-xs font-medium leading-snug">{service.name}</p>
-          <p className="text-xs leading-snug text-muted-foreground">{impactCopy}</p>
-          <p className="text-xs leading-snug text-muted-foreground/60">{sourceCopy}</p>
+          <p className="text-xs font-semibold leading-tight">{service.name}</p>
+          <p className="text-xs italic leading-snug text-muted-foreground">{impactLabel}</p>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/40">
+            {sourceLabel}
+          </p>
         </div>
-        <Badge variant={variant} className="mt-0.5 shrink-0 text-xs">
-          {STATUS_LABELS[service.status]}
-        </Badge>
+        <div className="shrink-0 pt-0.5">
+          <StatusPill status={service.status} />
+        </div>
       </div>
     </li>
   )
 }
 
-function ServiceGroupCard({ group }: { group: HealthServiceGroup }) {
-  const [expanded, setExpanded] = useState(false)
+function ServiceGroupAccordion({ group }: { group: HealthServiceGroup }) {
+  const [open, setOpen] = useState(false)
   const summary = useMemo(() => summarizeGroup(group.services), [group.services])
-  const topServices = group.services.slice(0, TOP_N)
-  const remaining = group.services.slice(TOP_N)
+  const cls = T[tone(summary.overall)]
+  const hasIssues = summary.down > 0 || summary.degraded > 0
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="gap-2 pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-sm font-semibold leading-snug">{group.name}</CardTitle>
-          {statusIcon(summary.overall, 'size-4 shrink-0 mt-0.5')}
-        </div>
+    <div className="overflow-hidden rounded-xl border border-border/60">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/20"
+      >
+        {/* Status icon */}
+        <StatusIcon status={summary.overall} className="size-4 shrink-0" />
 
-        {/* Status count chips */}
-        <div className="flex flex-wrap gap-1.5">
+        {/* Group name */}
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{group.name}</span>
+
+        {/* Issue flag */}
+        {hasIssues && (
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${T[summary.down > 0 ? 'danger' : 'warning'].bg} ${T[summary.down > 0 ? 'danger' : 'warning'].fg} ${T[summary.down > 0 ? 'danger' : 'warning'].border} border`}>
+            {summary.down > 0 ? 'Outage' : 'Degraded'}
+          </span>
+        )}
+
+        {/* Count chips — desktop only */}
+        <div className="hidden shrink-0 items-center gap-1 sm:flex">
           {summary.operational > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] px-2 py-0.5 text-xs text-[var(--tone-success-fg)]">
-              <span className="size-1.5 rounded-full bg-[var(--tone-success-fg)]" />
-              {summary.operational} running
+            <span className="font-mono text-[10px] text-[var(--tone-success-fg)]">
+              {summary.operational}↑
             </span>
           )}
           {summary.degraded > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)] px-2 py-0.5 text-xs text-[var(--tone-warning-fg)]">
-              <span className="size-1.5 rounded-full bg-[var(--tone-warning-fg)]" />
-              {summary.degraded} degraded
+            <span className="font-mono text-[10px] text-[var(--tone-warning-fg)]">
+              {summary.degraded}~
             </span>
           )}
           {summary.down > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--tone-danger-border)] bg-[var(--tone-danger-bg)] px-2 py-0.5 text-xs text-[var(--tone-danger-fg)]">
-              <span className="size-1.5 rounded-full bg-[var(--tone-danger-fg)]" />
-              {summary.down} down
-            </span>
-          )}
-          {summary.unknown > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--tone-neutral-border)] bg-[var(--tone-neutral-bg)] px-2 py-0.5 text-xs text-[var(--tone-neutral-fg)]">
-              <span className="size-1.5 rounded-full bg-[var(--tone-neutral-fg)]" />
-              {summary.unknown} unknown
+            <span className="font-mono text-[10px] text-[var(--tone-danger-fg)]">
+              {summary.down}↓
             </span>
           )}
           {summary.notMonitored > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
+            <span className="flex items-center gap-0.5 font-mono text-[10px] text-muted-foreground/50">
               <EyeOff className="size-2.5" />
-              {summary.notMonitored} not separately monitored
+              {summary.notMonitored}
             </span>
           )}
         </div>
-      </CardHeader>
 
-      <CardContent className="flex flex-col gap-2 pt-0">
-        <ul className="space-y-2">
-          {topServices.map((service) => (
-            <ServiceRow key={service.id} service={service} />
-          ))}
-        </ul>
+        {/* Status pill */}
+        <StatusPill status={summary.overall} />
 
-        {remaining.length > 0 && (
-          <>
-            {expanded && (
-              <ul className="space-y-2">
-                {remaining.map((service) => (
-                  <ServiceRow key={service.id} service={service} />
-                ))}
-              </ul>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-1 h-8 w-full text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setExpanded((prev) => !prev)}
-            >
-              {expanded ? (
-                <><ChevronUp className="size-3.5" />Show fewer</>
-              ) : (
-                <><ChevronDown className="size-3.5" />View all {group.services.length} services</>
-              )}
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
+        {/* Chevron */}
+        <ChevronDown
+          className={`size-4 shrink-0 text-muted-foreground/60 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
 
-function ServiceMatrixSection({ model }: { model: HealthDashboardModel }) {
-  return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Service Matrix
-      </p>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {model.groups.map((group) => (
-          <ServiceGroupCard key={group.id} group={group} />
-        ))}
-      </div>
+      {open && (
+        <div className="border-t border-border/40 bg-muted/5 px-3 pb-3 pt-2">
+          <ul className="space-y-1.5">
+            {group.services.map((service) => (
+              <ServiceRow key={service.id} service={service} />
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
 
-// ——— BUILD DIAGNOSTICS PANEL ———
+function ServiceMatrix({ model }: { model: HealthDashboardModel }) {
+  return (
+    <section aria-label="Service detail matrix">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+        Service Detail
+      </p>
+      <div className="space-y-2">
+        {model.groups.map((group) => (
+          <ServiceGroupAccordion key={group.id} group={group} />
+        ))}
+      </div>
+    </section>
+  )
+}
 
-function BuildDiagnosticsPanel({ model }: { model: HealthDashboardModel }) {
+// ─────────────────────────────────────────────────────────────
+// BUILD METADATA BAR
+// ─────────────────────────────────────────────────────────────
+
+function BuildBar({ model }: { model: HealthDashboardModel }) {
   const { build } = model
   const hasBuild = build.commitShaShort ?? build.commitRef ?? build.builtAt
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <Shield className="size-4 text-muted-foreground" />
-        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Build &amp; Diagnostics
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-border/40 bg-muted/10 px-4 py-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+        <Shield className="size-3 shrink-0" />
+        Build
+      </div>
+      <div className="flex items-center gap-1 text-xs text-muted-foreground/60">
+        API:
+        <span className={`ml-1 font-mono font-semibold ${T[tone(model.healthEndpoint)].fg}`}>
+          {STATUS_LABELS[model.healthEndpoint]}
         </span>
       </div>
-      <div className="grid gap-x-6 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex items-center gap-1.5">
-          <Activity className="size-3 shrink-0" />
-          <span>API: {STATUS_LABELS[model.healthEndpoint]}</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Activity className="size-3 shrink-0" />
-          <span>Database: {STATUS_LABELS[model.database]}</span>
-        </div>
-        {hasBuild ? (
-          <>
-            {build.commitShaShort && (
-              <div className="flex items-center gap-1.5">
-                <GitBranch className="size-3 shrink-0" />
-                <span>
-                  {build.commitShaShort}
-                  {build.commitRef ? ` (${build.commitRef})` : ''}
-                </span>
-              </div>
-            )}
-            {build.builtAt && (
-              <div className="flex items-center gap-1.5">
-                <Clock className="size-3 shrink-0" />
-                <span>Built: {build.builtAt}</span>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="col-span-2 flex items-center gap-1.5">
-            <EyeOff className="size-3 shrink-0" />
-            <span>Build metadata not available</span>
-          </div>
-        )}
+      <div className="flex items-center gap-1 text-xs text-muted-foreground/60">
+        DB:
+        <span className={`ml-1 font-mono font-semibold ${T[tone(model.database)].fg}`}>
+          {STATUS_LABELS[model.database]}
+        </span>
       </div>
+      {hasBuild && build.commitShaShort ? (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground/50">
+          <GitBranch className="size-3 shrink-0" />
+          <span className="font-mono">
+            {build.commitShaShort}
+            {build.commitRef ? ` (${build.commitRef})` : ''}
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground/40">
+          <EyeOff className="size-3 shrink-0" />
+          <span>Build metadata unavailable</span>
+        </div>
+      )}
     </div>
   )
 }
 
-// ——— PUBLIC NOTICE FOOTER ———
+// ─────────────────────────────────────────────────────────────
+// FOOTER
+// ─────────────────────────────────────────────────────────────
 
-function PublicNoticeFooter({ asOf }: { asOf: string }) {
+function StatusFooter({ asOf }: { asOf: string }) {
   return (
-    <footer className="rounded-xl border border-border/60 bg-surface-subtle/50 px-4 py-3 text-center text-xs text-muted-foreground">
-      <p>This page is for public service visibility. No customer or provider data is exposed.</p>
-      <p className="mt-1 opacity-70">
-        Last checked: {formatDate(asOf)} · Public-only checks · Short commit ref only
-      </p>
+    <footer className="pb-2 pt-1 text-center text-[11px] text-muted-foreground/40">
+      <p>Public visibility only — no customer or provider data is shown.</p>
+      <p className="mt-0.5">Last checked: {formatDate(asOf)} · Public-only health checks</p>
     </footer>
   )
 }
 
-// ——— LOADING STATE ———
+// ─────────────────────────────────────────────────────────────
+// LOADING SKELETON
+// ─────────────────────────────────────────────────────────────
 
-function StatusLoadingState() {
+function StatusSkeleton() {
   return (
-    <div className="mx-auto flex min-h-[60vh] max-w-4xl flex-col items-center justify-center gap-4 px-4 py-10">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <RefreshCw className="size-5 animate-spin" />
-        <span>Checking platform health…</span>
+    <div className="mx-auto max-w-2xl space-y-4 px-4 py-8 sm:px-6">
+      <div className="h-32 animate-pulse rounded-2xl bg-muted/20" />
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-[104px] animate-pulse rounded-xl bg-muted/20" />
+        ))}
       </div>
-      <div className="w-full max-w-sm space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-12 animate-pulse rounded-xl bg-muted/40" />
+      <div className="space-y-2">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-12 animate-pulse rounded-xl bg-muted/20" />
         ))}
       </div>
     </div>
   )
 }
 
-// ——— MAIN EXPORT ———
+// ─────────────────────────────────────────────────────────────
+// MAIN EXPORT
+// ─────────────────────────────────────────────────────────────
 
 export function StatusDashboard() {
   const [model, setModel] = useState<HealthDashboardModel | null>(null)
@@ -557,8 +647,8 @@ export function StatusDashboard() {
       if (!res.ok) throw new Error(`Health endpoint returned ${res.status}`)
       const payload = await res.json() as unknown
       setModel(normalizeHealthPayload(payload))
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Unknown error'
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Unknown error'
       setModel(buildFallbackHealthModel(reason))
       setLoadError(reason)
     } finally {
@@ -571,12 +661,12 @@ export function StatusDashboard() {
     void loadHealth()
   }, [loadHealth])
 
-  useEffect(() => {
-    void loadHealth()
-  }, [loadHealth])
+  // Initial load
+  useEffect(() => { void loadHealth() }, [loadHealth])
 
+  // Auto-refresh countdown
   useEffect(() => {
-    const interval = setInterval(() => {
+    const id = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           void loadHealth()
@@ -585,22 +675,26 @@ export function StatusDashboard() {
         return prev - 1
       })
     }, 1000)
-    return () => clearInterval(interval)
+    return () => clearInterval(id)
   }, [loadHealth])
 
-  if (loading && !model) return <StatusLoadingState />
+  if (loading && !model) return <StatusSkeleton />
   if (!model) return null
 
   return (
-    <main className="mx-auto min-h-[100vh] max-w-4xl space-y-5 px-4 py-6 sm:px-6 lg:py-8">
-      <StatusHeader onRefresh={handleRefresh} loading={loading} countdown={countdown} />
-      <OverallStatusCard model={model} />
-      <BotSummaryBanner message={model.botMessage} error={loadError} />
+    <main className="mx-auto min-h-[100dvh] max-w-2xl space-y-4 px-4 py-6 sm:px-6 lg:py-8">
+      <HeroStatusBanner
+        model={model}
+        onRefresh={handleRefresh}
+        loading={loading}
+        countdown={countdown}
+        error={loadError}
+      />
       <JourneyHealthStrip model={model} />
       <IssueRibbon model={model} />
-      <ServiceMatrixSection model={model} />
-      <BuildDiagnosticsPanel model={model} />
-      <PublicNoticeFooter asOf={model.asOf} />
+      <ServiceMatrix model={model} />
+      <BuildBar model={model} />
+      <StatusFooter asOf={model.asOf} />
     </main>
   )
 }
