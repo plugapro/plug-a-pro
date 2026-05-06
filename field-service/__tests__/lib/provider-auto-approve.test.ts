@@ -298,6 +298,12 @@ describe('provider auto-approval', () => {
     const client: any = {
       providerApplication: {
         findMany: vi.fn().mockResolvedValue([standardApplication]),
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'app-standard',
+          status: 'APPROVED',
+          phone: standardApplication.phone,
+          name: standardApplication.name,
+        }),
       },
       providerAutoApproveSideEffectMarker: markerStorage,
       $queryRaw: vi.fn(),
