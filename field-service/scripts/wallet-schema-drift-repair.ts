@@ -383,9 +383,18 @@ function normalizeLegacyLedgerRows(
 async function runCommand(command: string, args: string[]) {
   if (!isApply) return
   if (!resolveMigrations && command === 'resolve') return
-  const result = execSync(`${command} ${args.map((arg) => `${arg}`).join(' ')}`, {
+  const commandString = `${command} ${args.map((arg) => `${arg}`).join(' ')}`
+  const env = {
+    ...process.env,
+    ...(process.env.DATABASE_URL ? {
+      DATABASE_URL: process.env.DATABASE_URL,
+      DIRECT_URL: process.env.DATABASE_URL,
+    } : {}),
+  }
+  const result = execSync(commandString, {
     encoding: 'utf8',
     stdio: ['ignore', 'inherit', 'inherit'],
+    env,
   })
   if (result !== undefined) void result
 }
@@ -483,13 +492,17 @@ async function ensureCanonicalWalletSchema(tx: any) {
   await tx.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "wallet_ledger_entries_referenceType_referenceId_idx" ON "wallet_ledger_entries"("referenceType", "referenceId")
   `)
-  await tx.$executeRawUnsafe(`
-    CREATE INDEX IF NOT EXISTS "wallet_ledger_entries_isTestTransaction_createdAt_idx" ON "wallet_ledger_entries"("isTestTransaction", "createdAt")
-  `)
+    await tx.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "wallet_ledger_entries_isTestTransaction_createdAt_idx" ON "wallet_ledger_entries"("isTestTransaction", "createdAt")
+    `)
 }
 
-async function runWalletRebuild(): Promise<void> {
-  await db.$transaction(async (tx) => {
+function isTransactionApiError(error: unknown): boolean {
+  const message = String((error as { message?: string })?.message ?? error)
+  return message.includes('Transaction API error: Transaction not found') || message.includes('P2028')
+}
+
+async function runWalletRebuildInRunner(tx: any): Promise<void> {
     const providerIds = new Set(
       (await tx.provider.findMany({
         select: { id: true },
@@ -640,7 +653,22 @@ async function runWalletRebuild(): Promise<void> {
     console.log(`Active providers without wallet rows: ${activeWalletCoverage[0]?.missing ?? 0}`)
     console.log(`provider_wallet row count: ${walletCount[0]?.count ?? 0}`)
     console.log(`wallet_ledger_entries row count: ${ledgerCount[0]?.count ?? 0}`)
-  })
+  }
+
+  async function runWalletRebuild(): Promise<void> {
+  try {
+    await db.$transaction(async (tx) => {
+      await runWalletRebuildInRunner(tx)
+    })
+  } catch (error) {
+    if (isApply && isTransactionApiError(error)) {
+      console.log('\nPrisma transaction mode failed with pooled connection API error. Retrying rebuild outside transaction...')
+      await runWalletRebuildInRunner(db)
+      return
+    }
+
+    throw error
+  }
 }
 
 function printManualCommands() {
