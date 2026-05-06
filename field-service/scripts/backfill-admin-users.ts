@@ -28,6 +28,8 @@ const LEGACY_TO_ROLE: Record<string, Role> = {
 async function main() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const args = new Set(process.argv.slice(2))
+  const isDryRun = args.has('--dry-run')
 
   if (!supabaseUrl || !serviceKey) {
     console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
@@ -45,6 +47,7 @@ async function main() {
   let total = 0
   let created = 0
   let skipped = 0
+  let wouldCreate = 0
 
   while (true) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 })
@@ -76,6 +79,12 @@ async function main() {
         continue
       }
 
+      if (isDryRun) {
+        console.log(`  dry  ${email}  →  ${role}`)
+        wouldCreate++
+        continue
+      }
+
       await db.adminUser.create({
         data: {
           userId: user.id,
@@ -94,7 +103,12 @@ async function main() {
     page++
   }
 
-  console.log(`\nDone. Scanned ${total} users; created ${created}; skipped ${skipped}.`)
+  const mode = isDryRun ? 'dry-run' : 'completed'
+  console.log(`\nDone (${mode}). Scanned ${total} users; created ${created}; skipped ${skipped}; would create ${wouldCreate}.`)
+
+  if (isDryRun) {
+    console.log('Dry-run mode enabled: no rows were written.')
+  }
 }
 
 main()

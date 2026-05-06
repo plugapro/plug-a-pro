@@ -205,12 +205,7 @@ export async function proxy(request: NextRequest) {
         }
         effectiveRole = adminUser.role.toLowerCase()
       } else {
-        // No AdminUser row, deny admin access and force recovery via sign-in.
-        console.warn('[proxy] admin route denied because AdminUser row is missing', {
-          userId: user.id,
-          email: user.email,
-          pathname,
-        })
+        console.warn('[proxy] admin access blocked: no AdminUser row', { userId: user.id })
         return redirectToSignIn(request, pathname, isAdminDomain)
       }
     }
