@@ -140,6 +140,34 @@ const AUTO_APPROVE_SOURCE_TYPE = 'provider_application'
 const AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES = 5
 const AUTO_APPROVE_SIDE_EFFECT_RETRY_MINUTES = [5, 15, 30, 60, 180]
 const AUTO_APPROVE_TRANSACTION_TIMEOUT_MS = 15000
+const AUTO_APPROVE_SIDE_EFFECT_KINDS = ['PROMO_AWARD', 'NOTIFICATION', 'MATCH_RECHECK'] as const
+const AUTO_APPROVE_SIDE_EFFECT_STATUSES = ['PENDING', 'DONE', 'FAILED'] as const
+const AUTO_APPROVE_SIDE_EFFECT_MARKER_REQUIRED_COLUMNS = [
+  'id',
+  'kind',
+  'applicationId',
+  'providerId',
+  'sourceRefType',
+  'sourceRefId',
+  'status',
+  'reason',
+  'retryCount',
+  'lastError',
+  'runId',
+  'attemptedAt',
+  'nextRetryAt',
+  'createdAt',
+  'updatedAt',
+] as const
+
+function isSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = (error as { code?: string }).code
+  if (code === '42P01' || code === '42704') return true
+
+  const message = toErrorText(error).toLowerCase()
+  return message.includes('does not exist') || message.includes('relation')
+}
 
 function toErrorText(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -238,6 +266,79 @@ async function checkProviderPromoAwardSchemaCompatibility(client: AutoApproveDb)
   } catch (error) {
     const message = toErrorText(error)
     return { isCompatible: false, reasons: [`PROMO_AWARD_SCHEMA_PRECHECK_FAILED:${message}`] }
+  }
+}
+
+async function checkProviderAutoApproveSideEffectSchemaCompatibility(client: AutoApproveDb): Promise<PreflightResult> {
+  const reasons: string[] = []
+  if (!client.$queryRaw) {
+    return { isCompatible: false, reasons: ['SIDE_EFFECT_SCHEMA_INTERFACE_MISSING'] }
+  }
+
+  const runRaw = client.$queryRaw as (...args: any[]) => Promise<unknown>
+
+  try {
+    const columns = await runRaw(
+      Prisma.sql`SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'provider_auto_approve_side_effect_markers'`,
+    ) as Array<{ column_name: string }>
+
+    const availableColumns = new Set(columns.map((row) => row.column_name))
+    const missingColumns = AUTO_APPROVE_SIDE_EFFECT_MARKER_REQUIRED_COLUMNS.filter(
+      (columnName) => !availableColumns.has(columnName),
+    )
+    if (missingColumns.length > 0) {
+      reasons.push(`SIDE_EFFECT_SCHEMA_MISSING_COLUMNS:${missingColumns.join(',')}`)
+    }
+
+    const kindValues = await runRaw(
+      Prisma.sql`SELECT e.enumlabel
+                 FROM pg_type t
+                 JOIN pg_enum e ON e.enumtypid = t.oid
+                 WHERE t.typname = 'ProviderAutoApproveSideEffectKind'
+                 ORDER BY e.enumsortorder`,
+    ) as Array<{ enumlabel: string }>
+
+    const statusValues = await runRaw(
+      Prisma.sql`SELECT e.enumlabel
+                 FROM pg_type t
+                 JOIN pg_enum e ON e.enumtypid = t.oid
+                 WHERE t.typname = 'ProviderAutoApproveSideEffectStatus'
+                 ORDER BY e.enumsortorder`,
+    ) as Array<{ enumlabel: string }>
+
+    const expectedKinds = new Set(AUTO_APPROVE_SIDE_EFFECT_KINDS)
+    const expectedStatuses = new Set(AUTO_APPROVE_SIDE_EFFECT_STATUSES)
+    const presentKinds = new Set(kindValues.map((row) => row.enumlabel))
+    const presentStatuses = new Set(statusValues.map((row) => row.enumlabel))
+
+    const missingKinds = [...expectedKinds].filter((kind) => !presentKinds.has(kind))
+    const missingStatuses = [...expectedStatuses].filter((status) => !presentStatuses.has(status))
+
+    if (missingKinds.length > 0) {
+      reasons.push(`SIDE_EFFECT_KIND_ENUM_VALUES_MISSING:${missingKinds.join(',')}`)
+    }
+
+    if (missingStatuses.length > 0) {
+      reasons.push(`SIDE_EFFECT_STATUS_ENUM_VALUES_MISSING:${missingStatuses.join(',')}`)
+    }
+
+    if (kindValues.length === 0) {
+      reasons.push('SIDE_EFFECT_KIND_ENUM_MISSING')
+    }
+
+    if (statusValues.length === 0) {
+      reasons.push('SIDE_EFFECT_STATUS_ENUM_MISSING')
+    }
+
+    return { isCompatible: reasons.length === 0, reasons }
+  } catch (error) {
+    if (isSchemaError(error)) {
+      return { isCompatible: false, reasons: ['SIDE_EFFECT_SCHEMA_MISSING_OR_INCOMPATIBLE'] }
+    }
+    return { isCompatible: false, reasons: [`SIDE_EFFECT_SCHEMA_PRECHECK_FAILED:${toErrorText(error)}`] }
   }
 }
 
@@ -394,58 +495,79 @@ async function scheduleAndRunSideEffect(params: {
   runId: string
   sourceRefType: string
   sourceRefId: string
+  markerEnabled: boolean
   enabled: boolean
 }): Promise<SideEffectActionResult> {
   const storage = params.client.providerAutoApproveSideEffectMarker
+  const canUseMarker = params.markerEnabled && Boolean(storage?.upsert && storage?.update)
 
-  // Marker-backed path: safe for retries and duplicate prevention.
-  if (storage?.upsert && storage?.update) {
-    const marker = await upsertSideEffectMarker(params.client, {
+  const runDirectAction = async (): Promise<SideEffectActionResult> => {
+    if (!params.enabled) {
+      return { status: 'skipped', reason: 'SIDE_EFFECT_SCHEMA_DISABLED', attempted: false }
+    }
+
+    const action = await executeSideEffectAction({
+      client: params.client,
       kind: params.kind,
       applicationId: params.applicationId,
       providerId: params.providerId,
       sourceRefType: params.sourceRefType,
       sourceRefId: params.sourceRefId,
-      runId: params.runId,
     })
 
-    if (!marker) {
-      return { status: 'skipped', reason: 'SIDE_EFFECT_MARKER_UPSERT_FAILED', attempted: false }
-    }
+    return action
+  }
 
-    if (marker.status === 'DONE') {
-      return { status: 'skipped', reason: 'SIDE_EFFECT_ALREADY_DONE', attempted: false }
-    }
-
-    if (marker.status === 'FAILED' && marker.retryCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
-      return {
-        status: 'failed',
-        reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
-        attempted: false,
-      }
-    }
-
-    const retryPolicy = shouldRetry(marker.retryCount, params.enabled, marker.status)
-    if (!retryPolicy.run) {
-      if (marker.status !== 'FAILED') {
-        await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
-          status: 'PENDING',
-          reason: retryPolicy.reason,
-          runId: params.runId,
-          retryCount: marker.retryCount,
-          attemptedAt: new Date(),
-          nextRetryAt: marker.nextRetryAt,
-          lastError: marker.lastError,
-        })
-      }
-      return {
-        status: retryPolicy.terminal ? 'failed' : 'skipped',
-        reason: retryPolicy.reason,
-        attempted: false,
-      }
-    }
-
+  // Marker-backed path: safe for retries and duplicate prevention.
+  if (canUseMarker) {
+    let marker: SideEffectMarkerRecord | null = null
     try {
+      marker = await upsertSideEffectMarker(params.client, {
+        kind: params.kind,
+        applicationId: params.applicationId,
+        providerId: params.providerId,
+        sourceRefType: params.sourceRefType,
+        sourceRefId: params.sourceRefId,
+        runId: params.runId,
+      })
+
+      if (!marker) {
+        return { status: 'skipped', reason: 'SIDE_EFFECT_MARKER_UPSERT_FAILED', attempted: false }
+      }
+
+      if (marker.status === 'DONE') {
+        return { status: 'skipped', reason: 'SIDE_EFFECT_ALREADY_DONE', attempted: false }
+      }
+
+      if (marker.status === 'FAILED' && marker.retryCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
+        return {
+          status: 'failed',
+          reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
+          attempted: false,
+        }
+      }
+
+      const retryPolicy = shouldRetry(marker.retryCount, params.enabled, marker.status)
+      if (!retryPolicy.run) {
+        if (marker.status !== 'FAILED') {
+          await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
+            status: 'PENDING',
+            reason: retryPolicy.reason,
+            runId: params.runId,
+            retryCount: marker.retryCount,
+            attemptedAt: new Date(),
+            nextRetryAt: marker.nextRetryAt,
+            lastError: marker.lastError,
+          })
+        }
+
+        return {
+          status: retryPolicy.terminal ? 'failed' : 'skipped',
+          reason: retryPolicy.reason,
+          attempted: false,
+        }
+      }
+
       const action = await executeSideEffectAction({
         client: params.client,
         kind: params.kind,
@@ -467,63 +589,55 @@ async function scheduleAndRunSideEffect(params: {
 
       return action
     } catch (error) {
-      const nextCount = marker.retryCount + 1
-      const retryAt = nextRetryAt(marker.retryCount)
-      if (!retryAt || nextCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
-        await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
-          status: 'FAILED',
-          reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
-          runId: params.runId,
-          retryCount: nextCount,
-          attemptedAt: new Date(),
-          nextRetryAt: null,
-          lastError: toErrorText(error),
-        })
-
-        return {
-          status: 'failed',
-          reason: toErrorText(error),
-          attempted: true,
+      if (marker) {
+        const nextCount = marker.retryCount + 1
+        const retryAt = nextRetryAt(marker.retryCount)
+        if (!retryAt || nextCount >= AUTO_APPROVE_SIDE_EFFECT_MAX_RETRIES) {
+          await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
+            status: 'FAILED',
+            reason: 'SIDE_EFFECT_RETRY_LIMIT_REACHED',
+            runId: params.runId,
+            retryCount: nextCount,
+            attemptedAt: new Date(),
+            nextRetryAt: null,
+            lastError: toErrorText(error),
+          })
+        } else {
+          await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
+            status: 'PENDING',
+            reason: 'SIDE_EFFECT_RETRY',
+            runId: params.runId,
+            retryCount: nextCount,
+            attemptedAt: new Date(),
+            nextRetryAt: retryAt,
+            lastError: toErrorText(error),
+          })
         }
       }
 
-      await updateSideEffectMarker(params.client, params.kind, params.applicationId, {
-        status: 'PENDING',
-        reason: 'SIDE_EFFECT_RETRY',
-        runId: params.runId,
-        retryCount: nextCount,
-        attemptedAt: new Date(),
-        nextRetryAt: retryAt,
-        lastError: toErrorText(error),
+      console.error('[auto-approve] marker-backed side effect failed, fallback to direct execution', {
+        applicationId: params.applicationId,
+        kind: params.kind,
+        error: toErrorText(error),
       })
 
-      return {
-        status: 'failed',
-        reason: toErrorText(error),
-        attempted: true,
+      if (!params.enabled && params.kind === 'PROMO_AWARD') {
+        return { status: 'skipped', reason: 'SIDE_EFFECT_MARKER_FALLBACK_DISABLED', attempted: false }
       }
     }
   }
 
-  // Fallback path used in old schema deployments where marker table is absent.
-  if (!params.enabled) {
+  // Marker-backed path unavailable or has failed; run direct action when safe.
+  if (!params.enabled && params.kind === 'PROMO_AWARD') {
     return { status: 'skipped', reason: 'SIDE_EFFECT_SCHEMA_DISABLED', attempted: false }
   }
 
   try {
-    const action = await executeSideEffectAction({
-      client: params.client,
-      kind: params.kind,
-      applicationId: params.applicationId,
-      providerId: params.providerId,
-      sourceRefType: params.sourceRefType,
-      sourceRefId: params.sourceRefId,
-    })
-    return action
+    return await runDirectAction()
   } catch (error) {
     return {
       status: 'failed',
-      reason: toErrorText(error),
+      reason: `SIDE_EFFECT_FALLBACK_${toErrorText(error)}`,
       attempted: true,
     }
   }
@@ -664,10 +778,15 @@ export async function autoApproveProviderApplications(
     take: params.limit ?? AUTO_APPROVE_LIMIT_DEFAULT,
   })
 
-  // Check optional promo side-effect compatibility once per run.
-  const preflight = await checkProviderPromoAwardSchemaCompatibility(client)
-  if (!preflight.isCompatible) {
-    console.error('[auto-approve:promo-schema] preflight failed', { reasons: preflight.reasons })
+  // Check optional side-effect compatibility once per run.
+  const promoPreflight = await checkProviderPromoAwardSchemaCompatibility(client)
+  const markerPreflight = await checkProviderAutoApproveSideEffectSchemaCompatibility(client)
+
+  if (!promoPreflight.isCompatible) {
+    console.error('[auto-approve:promo-schema] preflight failed', { reasons: promoPreflight.reasons })
+  }
+  if (!markerPreflight.isCompatible) {
+    console.error('[auto-approve:marker-schema] preflight failed', { reasons: markerPreflight.reasons })
   }
 
   const result: AutoApproveResult = {
@@ -689,8 +808,9 @@ export async function autoApproveProviderApplications(
       queueReleased: 0,
       enrichmentQueued: 0,
     },
-    skippedReasons: [...preflight.reasons],
+    skippedReasons: [...promoPreflight.reasons, ...markerPreflight.reasons],
   }
+  const markerSchemaCompatible = markerPreflight.isCompatible
 
   const runId = params.runId ?? Math.random().toString(36).slice(2)
   const sideEffectSource = {
@@ -841,7 +961,8 @@ export async function autoApproveProviderApplications(
       applicationId: app.id,
       providerId,
       runId,
-      enabled: preflight.isCompatible,
+      markerEnabled: markerSchemaCompatible,
+      enabled: promoPreflight.isCompatible,
       sourceRefType: sideEffectSource.sourceRefType,
       sourceRefId,
     })
@@ -860,6 +981,7 @@ export async function autoApproveProviderApplications(
       applicationId: app.id,
       providerId,
       runId,
+      markerEnabled: markerSchemaCompatible,
       enabled: true,
       sourceRefType: sideEffectSource.sourceRefType,
       sourceRefId,
@@ -877,6 +999,7 @@ export async function autoApproveProviderApplications(
       applicationId: app.id,
       providerId,
       runId,
+      markerEnabled: markerSchemaCompatible,
       enabled: true,
       sourceRefType: sideEffectSource.sourceRefType,
       sourceRefId,

@@ -260,6 +260,79 @@ describe('provider auto-approval', () => {
     expect(mockAwardPromoCreditsForMilestone).toHaveBeenCalledOnce()
   })
 
+  it('falls back to direct side-effect execution when marker writes fail', async () => {
+    const tx = {
+      providerApplication: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      providerCategory: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    }
+
+    const markerStorage = {
+      upsert: vi.fn().mockRejectedValue(new Error('relation \"provider_auto_approve_side_effect_markers\" does not exist')),
+      update: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const markerAndPromoPreflight = [
+      // promo schema columns
+      [{ column_name: 'providerId' }, { column_name: 'awardType' }, { column_name: 'referenceType' }, { column_name: 'referenceId' }, { column_name: 'status' }, { column_name: 'metadata' }],
+      // promo schema enum
+      [
+        { enumlabel: 'MOBILE_VERIFIED' },
+        { enumlabel: 'PROFILE_COMPLETED' },
+        { enumlabel: 'KYC_APPROVED' },
+        { enumlabel: 'FIRST_TOPUP' },
+        { enumlabel: 'FIRST_COMPLETED_JOB' },
+      ],
+      // marker schema columns
+      [{ column_name: 'id' }, { column_name: 'kind' }, { column_name: 'applicationId' }, { column_name: 'providerId' }, { column_name: 'sourceRefType' }, { column_name: 'sourceRefId' }, { column_name: 'status' }, { column_name: 'reason' }, { column_name: 'retryCount' }, { column_name: 'lastError' }, { column_name: 'runId' }, { column_name: 'attemptedAt' }, { column_name: 'nextRetryAt' }, { column_name: 'createdAt' }, { column_name: 'updatedAt' }],
+      // marker kind enum
+      [{ enumlabel: 'PROMO_AWARD' }, { enumlabel: 'NOTIFICATION' }, { enumlabel: 'MATCH_RECHECK' }],
+      // marker status enum
+      [{ enumlabel: 'PENDING' }, { enumlabel: 'DONE' }, { enumlabel: 'FAILED' }],
+    ]
+
+    const client: any = {
+      providerApplication: {
+        findMany: vi.fn().mockResolvedValue([standardApplication]),
+      },
+      providerAutoApproveSideEffectMarker: markerStorage,
+      $queryRaw: vi.fn(),
+      $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
+    }
+
+    const query = client.$queryRaw as ReturnType<typeof vi.fn>
+    markerAndPromoPreflight.forEach((row) => query.mockResolvedValueOnce(row))
+
+    mockAwardPromoCreditsForMilestone.mockResolvedValue({
+      awarded: false,
+      skippedReason: 'DUPLICATE',
+      award: null,
+      wallet: null,
+      ledgerEntries: [],
+    })
+
+    const result = await autoApproveProviderApplications(client)
+
+    expect(result).toMatchObject({
+      attempted: 1,
+      approved: 1,
+      skipped: 0,
+      sideEffectSummary: {
+        promoAwarded: 0,
+        notifyQueued: 1,
+        queueReleased: 1,
+      },
+    })
+    expect(markerStorage.upsert).toHaveBeenCalled()
+    expect(mockNotifyProviderApplicationApprovedOnce).toHaveBeenCalled()
+    expect(mockCheckJobsForNewProviderAvailability).toHaveBeenCalled()
+    expect(mockAwardPromoCreditsForMilestone).toHaveBeenCalled()
+  })
+
   it('marks no-op when a concurrent worker already updated the row', async () => {
     const tx = {
       providerApplication: {
