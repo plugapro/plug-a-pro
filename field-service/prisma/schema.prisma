@@ -278,6 +278,7 @@ model Provider {
   liveStatus                ProviderLiveStatus?
   candidatePool             CandidatePool[]
   capacity                  ProviderCapacity?
+  providerAutoApproveSideEffectMarkers ProviderAutoApproveSideEffectMarker[]
   wallet                    ProviderWallet?
   walletLedgerEntries       WalletLedgerEntry[]
   paymentIntents            PaymentIntent[]
@@ -1026,11 +1027,11 @@ model ProviderAutoApproveSideEffectMarker {
 
   provider      Provider                              @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
-  @@unique([kind, applicationId], map: "provider_auto_approve_side_effect_markers_kind_applicationId_key")
-  @@index([status, nextRetryAt], map: "provider_auto_approve_side_effect_markers_status_next_retryAt_idx")
+  @@unique([kind, applicationId], map: "provider_auto_ae_markers_kind_appid_key")
+  @@index([status, nextRetryAt], map: "provider_auto_ae_markers_status_retry_idx")
   @@index([providerId, kind], map: "provider_auto_approve_side_effect_markers_providerId_kind_idx")
-  @@index([applicationId], map: "provider_auto_approve_side_effect_markers_applicationId_idx")
-  @@index([sourceRefType, sourceRefId], map: "provider_auto_approve_side_effect_markers_sourceRefType_sourceRefId_idx")
+  @@index([applicationId], map: "provider_auto_ae_markers_appid_idx")
+  @@index([sourceRefType, sourceRefId], map: "provider_auto_ae_markers_srctype_srcid_idx")
   @@index([attemptedAt], map: "provider_auto_approve_side_effect_markers_attemptedAt_idx")
   @@map("provider_auto_approve_side_effect_markers")
 }
