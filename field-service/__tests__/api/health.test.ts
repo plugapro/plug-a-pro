@@ -11,7 +11,10 @@ vi.mock('@/lib/db', () => ({
 // ─── GET /api/health ──────────────────────────────────────────────────────────
 
 describe('GET /api/health', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+  })
 
   it('returns 200 with status ok when DB responds', async () => {
     const { db } = await import('@/lib/db')
@@ -46,5 +49,29 @@ describe('GET /api/health', () => {
     expect(body.status).toBe('degraded')
     expect(body.db).toBe('error')
     expect(typeof body.timestamp).toBe('string')
+  })
+
+  it('includes whatsapp field in response (unknown when credentials not set)', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET()
+    const body = await res.json()
+
+    expect(body).toHaveProperty('whatsapp')
+    expect(['ok', 'error', 'unknown']).toContain(body.whatsapp as string)
+  })
+
+  it('includes payments field in response (unknown when credentials not set)', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET()
+    const body = await res.json()
+
+    expect(body).toHaveProperty('payments')
+    expect(['ok', 'unknown']).toContain(body.payments as string)
   })
 })

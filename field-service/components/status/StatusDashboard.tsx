@@ -90,9 +90,19 @@ const JOURNEY_DEFS: {
   { id: 'ops', groupId: 'core-platform', label: 'Platform Operations', description: 'Core services and monitoring', icon: Activity },
 ]
 
+const AUTO_REFRESH_INTERVAL_S = 30
+
 // ——— STATUS HEADER ———
 
-function StatusHeader({ onRefresh, loading }: { onRefresh: () => void; loading: boolean }) {
+function StatusHeader({
+  onRefresh,
+  loading,
+  countdown,
+}: {
+  onRefresh: () => void
+  loading: boolean
+  countdown: number
+}) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="space-y-0.5">
@@ -112,7 +122,7 @@ function StatusHeader({ onRefresh, loading }: { onRefresh: () => void; loading: 
         className="shrink-0"
       >
         <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-        {loading ? 'Refreshing…' : 'Refresh status'}
+        {loading ? 'Refreshing…' : `Refresh (${countdown}s)`}
       </Button>
     </div>
   )
@@ -537,6 +547,7 @@ export function StatusDashboard() {
   const [model, setModel] = useState<HealthDashboardModel | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL_S)
 
   const loadHealth = useCallback(async () => {
     setLoading(true)
@@ -555,8 +566,26 @@ export function StatusDashboard() {
     }
   }, [])
 
+  const handleRefresh = useCallback(() => {
+    setCountdown(AUTO_REFRESH_INTERVAL_S)
+    void loadHealth()
+  }, [loadHealth])
+
   useEffect(() => {
     void loadHealth()
+  }, [loadHealth])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          void loadHealth()
+          return AUTO_REFRESH_INTERVAL_S
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
   }, [loadHealth])
 
   if (loading && !model) return <StatusLoadingState />
@@ -564,7 +593,7 @@ export function StatusDashboard() {
 
   return (
     <main className="mx-auto min-h-[100vh] max-w-4xl space-y-5 px-4 py-6 sm:px-6 lg:py-8">
-      <StatusHeader onRefresh={loadHealth} loading={loading} />
+      <StatusHeader onRefresh={handleRefresh} loading={loading} countdown={countdown} />
       <OverallStatusCard model={model} />
       <BotSummaryBanner message={model.botMessage} error={loadError} />
       <JourneyHealthStrip model={model} />

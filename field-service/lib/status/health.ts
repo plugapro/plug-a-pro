@@ -12,6 +12,8 @@ export type HealthSource = 'live check' | 'derived' | 'not monitored'
 interface RawHealthPayload {
   status?: unknown
   db?: unknown
+  whatsapp?: unknown
+  payments?: unknown
   timestamp?: unknown
   build?: unknown
 }
@@ -76,6 +78,15 @@ function normalizeStatus(value: unknown): HealthStatus {
   if (normalized === 'error') return 'down'
   if (normalized === 'degraded') return 'degraded'
   return BASE_CHECK_DEFAULT
+}
+
+// Probe statuses: 'ok'→operational, 'error'→down, anything else (including 'unknown')→not_monitored
+function normalizeProbeStatus(value: unknown): HealthStatus {
+  const s = normalizeString(value)?.toLowerCase()
+  if (s === 'ok') return 'operational'
+  if (s === 'error') return 'down'
+  if (s === 'degraded') return 'degraded'
+  return 'not_monitored'
 }
 
 function mergeStatus(statuses: HealthStatus[]): HealthStatus {
@@ -212,6 +223,8 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
   const endpointStatus = healthStatus
   const platformStatus = derivePlatformStatus(healthStatus, dbStatus)
   const build = normalizeBuildSummary(body?.build)
+  const whatsappStatus = normalizeProbeStatus(body?.whatsapp)
+  const paymentsStatus = normalizeProbeStatus(body?.payments)
 
   const buildStatus: HealthStatus = build.commitShaShort || build.commitRef || build.builtAt
     ? platformStatus
@@ -351,7 +364,17 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
       buildNotMonitoredService('merchant-profile', 'Merchant Profile', 'Not separately monitored yet.', 'No dedicated merchant-specific probe exists here.'),
       buildNotMonitoredService('service-catalogue', 'Service Catalogue', 'Not separately monitored yet.', 'Catalogue data is read from shared service records.'),
       buildNotMonitoredService('pricing-quote', 'Pricing / Quote Flow', 'Not separately monitored yet.', 'Quote status changes are currently operationally monitored via internal queues.'),
-      buildNotMonitoredService('payment-status', 'Payment Status', 'Not separately monitored yet.', 'Payment status is not surfaced in the public health model yet.'),
+      {
+        id: 'payment-status',
+        name: 'Payment Gateway',
+        status: paymentsStatus,
+        source: paymentsStatus === 'not_monitored' ? 'not monitored' : 'derived',
+        summary: STATUS_LABELS[paymentsStatus],
+        impact: 'Checkout, payment collection, and refunds depend on the payment gateway.',
+        details: paymentsStatus === 'not_monitored'
+          ? 'Payment gateway credentials not configured in this environment.'
+          : 'Payment gateway credentials are configured.',
+      },
       buildNotMonitoredService('invoice-receipt', 'Invoice / Receipt Flow', 'Not separately monitored yet.', 'Receipt generation depends on job completion and billing sync jobs.'),
     ],
   }
@@ -362,7 +385,19 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
     services: [
       buildNotMonitoredService('email-notifications', 'Email Notifications', 'Not separately monitored yet.', 'No SMTP/transmission probe in /api/health.'),
       buildNotMonitoredService('sms-notifications', 'SMS Notifications', 'Not separately monitored yet.', 'No SMS probe in /api/health.'),
-      buildNotMonitoredService('whatsapp-cloud', 'WhatsApp Cloud API', 'Not separately monitored yet.', 'WhatsApp flow health is not currently exposed in public checks.'),
+      {
+        id: 'whatsapp-cloud',
+        name: 'WhatsApp Cloud API',
+        status: whatsappStatus,
+        source: whatsappStatus === 'not_monitored' ? 'not monitored' : 'live check',
+        summary: STATUS_LABELS[whatsappStatus],
+        impact: 'Booking confirmations, leads, and job notifications are sent via WhatsApp.',
+        details: whatsappStatus === 'not_monitored'
+          ? 'WhatsApp credentials not configured in this environment.'
+          : whatsappStatus === 'operational'
+            ? 'WhatsApp Cloud API is reachable and responding.'
+            : 'WhatsApp Cloud API probe returned an error. Notifications may be delayed.',
+      },
       buildNotMonitoredService('in-app-notifications', 'In-App Notifications', 'Not separately monitored yet.', 'No dedicated UI notification heartbeat here.'),
     ],
   }

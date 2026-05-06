@@ -155,4 +155,46 @@ describe('status health model', () => {
     expect(model.overall).toBe('unknown')
     expect(model.groups.length).toBeGreaterThan(0)
   })
+
+  it('maps whatsapp:ok probe to operational in notification group', () => {
+    const model = normalizeHealthPayload({
+      status: 'ok', db: 'ok', whatsapp: 'ok', timestamp: '2026-01-01T10:00:00.000Z',
+    })
+    const whatsappService = model.groups
+      .find((g) => g.id === 'notification-journey')?.services
+      .find((s) => s.id === 'whatsapp-cloud')
+    expect(whatsappService?.status).toBe('operational')
+    expect(whatsappService?.source).toBe('live check')
+  })
+
+  it('maps whatsapp:error probe to down in notification group', () => {
+    const model = normalizeHealthPayload({
+      status: 'ok', db: 'ok', whatsapp: 'error', timestamp: '2026-01-01T10:00:00.000Z',
+    })
+    const whatsappService = model.groups
+      .find((g) => g.id === 'notification-journey')?.services
+      .find((s) => s.id === 'whatsapp-cloud')
+    expect(whatsappService?.status).toBe('down')
+  })
+
+  it('maps whatsapp:unknown probe to not_monitored in notification group', () => {
+    const model = normalizeHealthPayload({
+      status: 'ok', db: 'ok', whatsapp: 'unknown', timestamp: '2026-01-01T10:00:00.000Z',
+    })
+    const whatsappService = model.groups
+      .find((g) => g.id === 'notification-journey')?.services
+      .find((s) => s.id === 'whatsapp-cloud')
+    expect(whatsappService?.status).toBe('not_monitored')
+  })
+
+  it('maps payments:ok probe to operational in merchant group', () => {
+    const model = normalizeHealthPayload({
+      status: 'ok', db: 'ok', payments: 'ok', timestamp: '2026-01-01T10:00:00.000Z',
+    })
+    const paymentService = model.groups
+      .find((g) => g.id === 'merchant-journey')?.services
+      .find((s) => s.id === 'payment-status')
+    expect(paymentService?.status).toBe('operational')
+    expect(paymentService?.source).toBe('derived')
+  })
 })
