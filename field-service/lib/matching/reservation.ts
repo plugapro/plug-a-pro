@@ -62,7 +62,7 @@ export async function reserveBestProviderAtomically(params: {
         }
 
         // ── 3. Capacity guard ─────────────────────────────────────────────────
-        const capacity = await (tx as any).providerCapacity.findUnique({
+        const capacity = await tx.providerCapacity.findUnique({
           where: { providerId: candidate.id },
           select: { activeHolds: true, maxConcurrent: true },
         })
@@ -131,7 +131,7 @@ export async function reserveBestProviderAtomically(params: {
         })
 
         // ── 8. Increment capacity counter ─────────────────────────────────────
-        await (tx as any).providerCapacity.upsert({
+        await tx.providerCapacity.upsert({
           where: { providerId: candidate.id },
           create: { providerId: candidate.id, activeHolds: 1, activeJobs: 0, maxConcurrent: 2 },
           update: { activeHolds: { increment: 1 }, updatedAt: new Date() },
@@ -160,7 +160,7 @@ export async function reserveBestProviderAtomically(params: {
 // ── Decrement capacity counter — call when a hold resolves ─────────────────────
 
 export async function releaseProviderCapacity(providerId: string): Promise<void> {
-  await (db as any).providerCapacity.updateMany({
+  await db.providerCapacity.updateMany({
     where: { providerId, activeHolds: { gt: 0 } },
     data: { activeHolds: { decrement: 1 }, updatedAt: new Date() },
   })
