@@ -128,6 +128,18 @@ function buildNotMonitoredService(id: string, name: string, details: string, imp
   }
 }
 
+function buildNotMonitoredGroup(
+  id: string,
+  name: string,
+  services: Array<{ id: string; name: string; details: string; impact: string }>
+): HealthServiceGroup {
+  return {
+    id,
+    name,
+    services: services.map((service) => buildNotMonitoredService(service.id, service.name, service.details, service.impact)),
+  }
+}
+
 function buildGroupStatusSummary(group: HealthServiceGroup): {
   operational: number
   degraded: number
@@ -178,7 +190,7 @@ function buildBotMessage(overall: HealthStatus, platform: HealthStatus): string 
   }
 
   if (platform === 'degraded') {
-    return 'Some core checks are degraded. We are monitoring the issue and customer journeys may be slower.'
+    return 'Some areas may be affected. We are monitoring and will update soon.'
   }
 
   if (platform === 'operational') {
@@ -402,7 +414,7 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
           id: 'web-app',
           name: 'Web App',
           status: unknownBase,
-          source: 'derived',
+          source: 'not monitored',
           summary: STATUS_LABELS.unknown,
           impact: 'Cannot verify right now.',
           details: errorMessage,
@@ -445,7 +457,176 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
         },
       ],
     },
+    buildNotMonitoredGroup(
+      'auth-access',
+      'Authentication & Access',
+      [
+        {
+          id: 'login-service',
+          name: 'Login Service',
+          impact: 'Authentication checks are unavailable while the health endpoint is unreachable.',
+          details: errorMessage,
+        },
+        {
+          id: 'signup-service',
+          name: 'Signup Service',
+          impact: 'Signup checks are unavailable while the health endpoint is unreachable.',
+          details: errorMessage,
+        },
+        {
+          id: 'session-validation',
+          name: 'Session Validation',
+          impact: 'Session checks are unavailable while the health endpoint is unreachable.',
+          details: errorMessage,
+        },
+        {
+          id: 'password-reset',
+          name: 'Password Reset',
+          impact: 'Password reset checks are unavailable while the health endpoint is unreachable.',
+          details: errorMessage,
+        },
+      ]
+    ),
+    buildNotMonitoredGroup(
+      'client-journey',
+      'Client Journey',
+      [
+        {
+          id: 'search-services',
+          name: 'Browse Services',
+          impact: 'Service search checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'provider-search',
+          name: 'Search Providers',
+          impact: 'Provider search checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'provider-profile-view',
+          name: 'View Provider Profile',
+          impact: 'Provider profile checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'create-booking',
+          name: 'Create Booking Request',
+          impact: 'Booking request checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'track-booking',
+          name: 'Track Booking Status',
+          impact: 'Booking tracking checks are unavailable.',
+          details: errorMessage,
+        },
+      ],
+    ),
+    buildNotMonitoredGroup(
+      'provider-journey',
+      'Provider Journey',
+      [
+        {
+          id: 'provider-registration',
+          name: 'Provider Registration',
+          impact: 'Provider registration checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'provider-login',
+          name: 'Provider Login',
+          impact: 'Provider login checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'provider-profile-management',
+          name: 'Profile Management',
+          impact: 'Profile management checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'job-completion',
+          name: 'Job Completion Flow',
+          impact: 'Job completion checks are unavailable.',
+          details: errorMessage,
+        },
+      ],
+    ),
+    buildNotMonitoredGroup(
+      'merchant-journey',
+      'Merchant / Commercial Journey',
+      [
+        {
+          id: 'merchant-profile',
+          name: 'Merchant Profile',
+          impact: 'Merchant profile checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'service-catalogue',
+          name: 'Service Catalogue',
+          impact: 'Service catalogue checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'pricing-quote',
+          name: 'Pricing / Quote Flow',
+          impact: 'Pricing flow checks are unavailable.',
+          details: errorMessage,
+        },
+      ],
+    ),
+    buildNotMonitoredGroup(
+      'notification-journey',
+      'Notification Journey',
+      [
+        {
+          id: 'email-notifications',
+          name: 'Email Notifications',
+          impact: 'Email notification checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'sms-notifications',
+          name: 'SMS Notifications',
+          impact: 'SMS notification checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'whatsapp-cloud',
+          name: 'WhatsApp Cloud API',
+          impact: 'WhatsApp checks are unavailable.',
+          details: errorMessage,
+        },
+      ],
+    ),
+    buildNotMonitoredGroup(
+      'admin-operations',
+      'Admin / Operations',
+      [
+        {
+          id: 'admin-dashboard',
+          name: 'Admin Dashboard',
+          impact: 'Admin dashboard checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'user-management',
+          name: 'User Management',
+          impact: 'User management checks are unavailable.',
+          details: errorMessage,
+        },
+        {
+          id: 'provider-verification',
+          name: 'Provider Verification',
+          impact: 'Provider verification checks are unavailable.',
+          details: errorMessage,
+        },
+      ],
+    ),
   ]
+
   return {
     asOf: nowIso,
     overall: unknownBase,
@@ -456,6 +637,12 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
     build: defaultBuildSummary,
     botMessage: "I cannot reach the health endpoint right now. Platform status cannot be confirmed.",
   }
+}
+
+export function getActiveIssues(groups: HealthServiceGroup[]): HealthService[] {
+  return groups
+    .flatMap((g) => g.services)
+    .filter((s) => s.status === 'down' || s.status === 'degraded')
 }
 
 export function serviceStatusSummary(services: HealthService[]): string {
