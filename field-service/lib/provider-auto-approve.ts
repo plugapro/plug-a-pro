@@ -75,6 +75,10 @@ export async function autoApproveProviderApplications(
 
     try {
       const result = await client.$transaction(async (tx: Prisma.TransactionClient) => {
+        // skipEnrichment prevents syncProviderSkills/upsertStructuredServiceAreas
+        // from running inside the transaction. A caught DB error in those helpers
+        // puts the PostgreSQL connection in ABORTED state even if swallowed in JS,
+        // causing all subsequent tx queries to fail. Enrichment runs after the tx.
         const providerId = await syncProviderRecord(tx as typeof db, {
           phone: app.phone,
           name: app.name,
@@ -85,6 +89,7 @@ export async function autoApproveProviderApplications(
           verified: true,
           isTestUser: app.isTestUser,
           cohortName: app.cohortName,
+          skipEnrichment: true,
         })
 
         const statusUpdate = await tx.providerApplication.updateMany({
@@ -149,6 +154,25 @@ export async function autoApproveProviderApplications(
         skipped++
         continue
       }
+
+      // Post-transaction enrichment: sync skills and service areas outside the
+      // transaction so any caught DB errors cannot abort the approval itself.
+      syncProviderRecord(client, {
+        phone: app.phone,
+        name: app.name,
+        skills: app.skills,
+        serviceAreas: app.serviceAreas,
+        active: true,
+        availableNow: true,
+        verified: true,
+        isTestUser: app.isTestUser,
+        cohortName: app.cohortName,
+      }).catch((err: unknown) => {
+        console.error('[auto-approve] post-tx enrichment failed', {
+          applicationId: app.id,
+          error: err,
+        })
+      })
 
       approved++
 

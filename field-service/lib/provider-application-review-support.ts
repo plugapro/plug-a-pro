@@ -110,18 +110,21 @@ export async function routeProviderApplicationsForOpsReview(
         where: { id: application.id, status: 'PENDING' },
         data: { notes: nextNotes },
       })
-    }
 
-    await client.auditLog?.create({
-      data: {
-        actorId: params.actorId ?? 'system',
-        actorRole: 'system',
-        action: 'provider_application.review_support_routed',
-        entityType: 'ProviderApplication',
-        entityId: application.id,
-        after: assessment as unknown as Prisma.InputJsonValue,
-      },
-    }).catch(() => undefined)
+      // Only log the first time an application is routed (when notes change).
+      // Subsequent cron runs re-upsert the queue assignment (idempotent) but
+      // must not create duplicate audit entries.
+      await client.auditLog?.create({
+        data: {
+          actorId: params.actorId ?? 'system',
+          actorRole: 'system',
+          action: 'provider_application.review_support_routed',
+          entityType: 'ProviderApplication',
+          entityId: application.id,
+          after: assessment as unknown as Prisma.InputJsonValue,
+        },
+      }).catch(() => undefined)
+    }
 
     routed += 1
   }
