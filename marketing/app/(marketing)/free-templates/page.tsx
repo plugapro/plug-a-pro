@@ -103,7 +103,7 @@ export default function FreeTemplatesPage() {
                 A one-page printable checklist for service team managers to run every morning before dispatching technicians.
               </p>
               <a
-                href="https://wa.me/27693552447?text=Hi+ServiceMen%2C+I%27d+like+the+free+dispatch+checklist+please."
+                href="https://wa.me/27693552447?text=Hi+Plug+A+Pro%2C+I%27d+like+the+free+dispatch+checklist+please."
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-4 inline-flex h-9 items-center rounded-full border border-border px-4 text-sm font-medium transition-colors hover:bg-muted"
@@ -118,7 +118,7 @@ export default function FreeTemplatesPage() {
                 Track jobs, invoices, and payment status. Includes a dashboard showing outstanding invoices and monthly revenue.
               </p>
               <a
-                href="https://wa.me/27693552447?text=Hi+ServiceMen%2C+I%27d+like+the+free+cash+flow+tracker+please."
+                href="https://wa.me/27693552447?text=Hi+Plug+A+Pro%2C+I%27d+like+the+free+cash+flow+tracker+please."
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-4 inline-flex h-9 items-center rounded-full border border-border px-4 text-sm font-medium transition-colors hover:bg-muted"

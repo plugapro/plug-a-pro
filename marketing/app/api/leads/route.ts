@@ -88,9 +88,9 @@ const journeyPrefill: Record<string, string> = {
 };
 
 const magnetPrefill: Record<string, string> = {
-  "template-pack": "Hi ServiceMen, I'd like the free WhatsApp template pack please.",
-  "dispatch-checklist": "Hi ServiceMen, I'd like the free dispatch checklist please.",
-  "cashflow-tracker": "Hi ServiceMen, I'd like the free cash flow tracker please.",
+  "template-pack": "Hi Plug A Pro, I'd like the free WhatsApp template pack please.",
+  "dispatch-checklist": "Hi Plug A Pro, I'd like the free dispatch checklist please.",
+  "cashflow-tracker": "Hi Plug A Pro, I'd like the free cash flow tracker please.",
 };
 
 export async function POST(request: Request) {

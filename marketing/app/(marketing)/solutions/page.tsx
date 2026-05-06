@@ -21,7 +21,7 @@ import { WhatsAppTextLink } from "@/components/marketing/WhatsAppTextLink";
 export const metadata: Metadata = buildMetadata({
   title: "Services",
   description:
-    "Plug A Pro matches you to nearby workers for plumbing, painting, garden work, handyman jobs, appliance repairs, electrical, and DIY assistance.",
+    "Plug A Pro matches you to nearby local service providers for small home jobs including plumbing, painting, gardening, handyman work, appliance fixes, electrical and DIY support.",
 });
 
 const SERVICES: {
@@ -100,7 +100,6 @@ const SERVICES: {
       "Plug and socket faults",
       "DB board trip investigation",
       "Outdoor light and sensor fitting",
-      "Extending a power point or adding a switch",
     ],
     caveat: "Note: work on distribution boards, new circuits, or wiring extensions may require a Certificate of Compliance (COC) under South African law. Confirm with your provider before work begins.",
   },
@@ -141,7 +140,7 @@ export default function ServicesPage() {
           Small jobs done right
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg">
-          Plug A Pro matches you to nearby workers for a wide range of small home jobs. Describe what you need — we&apos;ll find the right person.
+          Plug A Pro matches you to nearby local service providers for small home jobs. Describe what you need — we&apos;ll find the right person.
         </p>
         <p className="text-sm font-medium mt-6 mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}
@@ -218,7 +217,7 @@ export default function ServicesPage() {
             Don&apos;t see what you need?
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            If it&apos;s a small home job, there&apos;s probably a worker near you who can do it. Describe your job and we&apos;ll try to match you.
+            If it&apos;s a small job, there&apos;s probably a trusted local provider near you who can help. Describe your job and we&apos;ll try to match you.
           </p>
           <WhatsAppTextLink
             audience="customer"

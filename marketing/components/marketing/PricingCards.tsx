@@ -11,7 +11,7 @@ const SIDES = [
     emoji: "🏠",
     headline: "Free to request help",
     description:
-      "Describe your job, get matched to nearby workers, and receive quotes — at no cost. You only pay the worker for the job itself.",
+      "Describe your job, get matched to nearby local pros, and receive written quotes — at no cost. You only pay the service provider for the job itself.",
     points: [
       "No platform fee to request a match",
       "Approve quotes before any work begins",
@@ -24,18 +24,18 @@ const SIDES = [
     highlight: false,
   },
   {
-    audience: "For workers",
+    audience: "For service providers",
     emoji: "🔧",
-    headline: "Simple, fair access to work",
+    headline: "Simple, fair access to customers",
     description:
-      "Register your skills and area, receive matching job leads, and grow your local reputation. No upfront fees to join.",
+      "Register your skills and service areas, receive matched job leads on WhatsApp, and build a visible reputation over time. No upfront fees to join.",
     points: [
       "Free to register and create your profile",
-      "Receive job leads based on your skills and area",
-      "Small commission per completed job (announced at launch)",
-      "Build a platform review history that earns you more leads",
+      "Receive matched leads based on your trade and area",
+      "Small credit fee per lead unlock (announced at launch, before it applies)",
+      "Build a review history that earns you more leads",
     ],
-    cta: "I’m looking for work",
+    cta: "Join as a service provider",
     href: buildWhatsAppLink(whatsappMessages.worker),
     ctaAudience: "worker" as const,
     highlight: true,

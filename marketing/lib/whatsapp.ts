@@ -6,9 +6,9 @@ export const whatsappNumberDigits = siteConfig.whatsappNumber.replace(/\D/g, "")
 export const whatsappNumberDisplay = "+27 69 355 2447";
 
 export const whatsappMessages: Record<WhatsAppAudience, string> = {
-  customer: "Hi ServiceMen, I’m looking for a service provider.",
-  worker: "Hi ServiceMen, I’m looking for work opportunities.",
-  provider: "Hi ServiceMen, I’d like to join as a service provider.",
+  customer: "Hi Plug A Pro, I need help with a small job.",
+  worker: "Hi Plug A Pro, I’d like to register as a service provider.",
+  provider: "Hi Plug A Pro, I’d like to join as a service provider or partner.",
 };
 
 export function buildWhatsAppLink(message?: string) {
@@ -34,9 +34,9 @@ export const whatsappAudienceOptions: Array<{
   },
   {
     audience: "worker",
-    label: "I’m looking for work",
+    label: "I want to offer my services",
     message: whatsappMessages.worker,
-    description: "Tell us what jobs you want, where you work, and how to reach you.",
+    description: "Tell us your trade, which areas you cover, and we’ll get the conversation started.",
   },
   {
     audience: "provider",

@@ -58,7 +58,7 @@ export function OperatingModel() {
                 <Wrench className="size-5" aria-hidden="true" />
               </div>
               <div>
-                <h3 className="font-bold text-lg">For workers</h3>
+                <h3 className="font-bold text-lg">For service providers</h3>
                 <p className="text-xs text-muted-foreground">Apply, unlock, accept, and update</p>
               </div>
             </div>

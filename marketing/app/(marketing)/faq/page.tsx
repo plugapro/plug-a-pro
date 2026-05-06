@@ -10,13 +10,13 @@ import {
 export const metadata: Metadata = buildMetadata({
   title: "FAQ",
   description:
-    "Frequently asked questions about Plug A Pro. For customers looking for home-job help and workers looking for local jobs.",
+    "Frequently asked questions about Plug A Pro — for customers who need small home job help and local service providers looking for steady work.",
 });
 
 const CUSTOMER_FAQS = [
   {
     q: "What is Plug A Pro?",
-    a: "Plug A Pro connects people in South Africa to nearby independent handymen and home-job workers. You describe your job, we match you to a rated local worker, and Plug A Pro keeps the quote, booking, and job updates in one written record.",
+    a: "Plug A Pro connects people in South Africa to local service providers for small jobs. You describe your job, we match you to a rated local provider, and Plug A Pro keeps the quote, booking, and job updates in one written record.",
   },
   {
     q: "What types of jobs can I get help with?",
@@ -27,12 +27,12 @@ const CUSTOMER_FAQS = [
     a: "No. You can describe your job and get updates entirely through WhatsApp. No app, no account needed to start. There's also a web app if you want a fuller view of quotes and history.",
   },
   {
-    q: "Will the worker see my phone number?",
-    a: "Not by default. Plug A Pro handles the initial intake, matching, quote approval, and job updates from the platform number. If you and the worker want to share direct contact details later, that happens by choice.",
+    q: "Will the provider see my phone number?",
+    a: "Not by default. Plug A Pro handles the initial intake, matching, quote approval, and job updates from the platform number. If you and the provider want to share direct contact details later, that happens by choice.",
   },
   {
     q: "How do quotes work?",
-    a: "After accepting a job, the worker sends a written quote with the description, price, and timeline. You approve before any work starts. If extra work comes up on-site, the worker must send a new request before they can proceed.",
+    a: "After accepting a job, the provider sends a written quote with the description, price, and timeline. You approve before any work starts. If extra work comes up on-site, the provider must send a new request before they can proceed.",
   },
   {
     q: "What happens if something goes wrong?",
@@ -40,7 +40,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "Started a DIY project and got stuck?",
-    a: "Yes, our workers can assess, continue, or finish a job you started yourself. Describe where you are and what you need and we'll match you to someone who can help.",
+    a: "Yes, our providers can assess, continue, or finish a job you started yourself. Describe where you are and what you need and we'll match you to someone who can help.",
   },
   {
     q: "How do I pay?",
@@ -50,8 +50,8 @@ const CUSTOMER_FAQS = [
 
 const WORKER_FAQS = [
   {
-    q: "Who can register as a worker?",
-    a: "Anyone with practical home-job skills: handymen, painters, plumbers (small jobs), gardeners, appliance repairers, electricians (minor work), and general DIY workers. You don't need a registered company to join. For certain job types — electrical, gas, structural work — South African law may require a licence regardless of business registration. You are responsible for holding the right credentials for the work you offer.",
+    q: "Who can register as a service provider?",
+    a: "Anyone with practical home-job skills: plumbers, painters, gardeners, appliance repairers, electricians (minor work), and general maintenance providers. You don't need a registered company to join. For certain job types — electrical, gas, structural work — South African law may require a licence regardless of business registration. You are responsible for holding the right credentials for the work you offer.",
   },
   {
     q: "How do I register?",
@@ -71,7 +71,7 @@ const WORKER_FAQS = [
   },
   {
     q: "How do I get more customers?",
-    a: "Every completed job adds a rating and optional comment from the customer. These show on your profile. The better your ratings, the more likely customers are to pick you.",
+    a: "Every completed job adds a rating and optional comment from the customer. These show on your profile. The stronger your reputation, the more likely customers are to pick you again.",
   },
   {
     q: "Is there a cost to join?",
@@ -110,10 +110,10 @@ export default function FAQPage() {
         Frequently asked questions
       </h1>
       <p className="text-muted-foreground text-center mb-12">
-        For customers looking for home-job help, and workers looking for local work.
+        For customers looking for home-job help, and service providers building reliable work.
       </p>
       <FaqGroup label="For customers" items={CUSTOMER_FAQS} />
-      <FaqGroup label="For workers" items={WORKER_FAQS} />
+      <FaqGroup label="For service providers" items={WORKER_FAQS} />
     </div>
   );
 }

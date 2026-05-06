@@ -24,7 +24,7 @@ export function WhatsAppButton({
   audience,
 }: WhatsAppButtonProps) {
   const resolvedMessage =
-    message ?? (audience ? whatsappMessages[audience] : "Hi ServiceMen, I’d like to chat on WhatsApp.");
+    message ?? (audience ? whatsappMessages[audience] : "Hi Plug A Pro, I’d like to chat on WhatsApp.");
   const href = buildWhatsAppLink(resolvedMessage);
 
   const handleClick = () => {

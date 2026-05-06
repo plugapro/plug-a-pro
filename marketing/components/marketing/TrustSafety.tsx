@@ -26,12 +26,12 @@ const TRUST_POINTS: {
   {
     icon: FileText,
     title: "All quotes are documented",
-    body: "Quotes are submitted through the platform, not verbally. You see the price before agreeing, and so does your worker.",
+    body: "Quotes are submitted through the platform, not verbally. You see the price before agreeing, and so does your provider.",
   },
   {
     icon: Camera,
     title: "Before and after photos on every job",
-    body: "Workers upload photos at the start and end of every job. They stay on record to help with job history and dispute review.",
+    body: "Service providers upload photos at the start and end of every job. They stay on record to help with job history and dispute review.",
   },
   {
     icon: MessageCircle,
@@ -41,7 +41,7 @@ const TRUST_POINTS: {
   {
     icon: Star,
     title: "Ratings build over time",
-    body: "Every completed job adds a review to the worker's profile. You can see their track record before accepting a quote.",
+    body: "Every completed job adds a review to the provider profile. You can see their track record before accepting a quote.",
   },
 ];
 

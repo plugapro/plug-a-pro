@@ -8,9 +8,9 @@ import { whatsappNumberDisplay } from "@/lib/whatsapp";
 import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
 
 export const metadata: Metadata = buildMetadata({
-  title: "For Workers",
+  title: "For Service Providers",
   description:
-    "Register as a home-job worker on Plug A Pro. Get matched to local customers, receive structured leads, submit quotes, and build your reputation.",
+    "Register as a local service provider on Plug A Pro. Get matched to nearby customers for small home jobs, receive WhatsApp lead alerts, submit quotes in writing, and build your reputation with real reviews.",
 });
 
 const BENEFITS = [
@@ -75,13 +75,13 @@ export default function ForWorkersPage() {
       {/* Header */}
       <div className="py-16 md:py-20 px-4 border-b border-border/40 text-center">
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
-          For workers
+          For service providers
         </p>
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
-          Your skills. Digital local demand.
+          More jobs. Less waiting.
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-lg mb-8">
-          Plug A Pro helps skilled local providers become easier to find online. Register once, set your areas and skills, and receive matched lead previews on WhatsApp when you are approved and eligible.
+          You have the skills. Getting steady, paying customers is the hard part. Plug A Pro matches you to nearby customers looking for exactly your trade — and delivers job lead previews to your WhatsApp. Register once. Set your areas. Start receiving matched jobs.
         </p>
         <p className="text-sm font-medium mb-8">
           Start on WhatsApp at {whatsappNumberDisplay}
@@ -185,11 +185,11 @@ export default function ForWorkersPage() {
             {[
               "Gardeners and landscapers",
               "Painters",
-              "Handymen and odd-job workers",
+              "Handymen and practical service providers",
               "Plumbers (small jobs)",
               "Appliance repairers",
               "Electricians (minor work)",
-              "General DIY workers",
+              "General home-service providers",
               "Installers",
             ].map((type) => (
               <li

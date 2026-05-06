@@ -12,7 +12,7 @@ const CUSTOMER_PROBLEMS: { icon: React.ElementType; label: string; problem: stri
   {
     icon: SearchX,
     label: "No clear way to compare local help",
-    problem: "Searching online gives big national companies, not nearby workers",
+    problem: "Searching online gives big national companies, not nearby local providers",
   },
   {
     icon: ShieldOff,
@@ -50,7 +50,7 @@ const PROVIDER_PROBLEMS: { icon: React.ElementType; label: string; problem: stri
   {
     icon: ShieldOff,
     label: "Hard to build trust with new customers",
-    problem: "No reputation, no reviews. Every new job is a cold start.",
+    problem: "No reputation, no reviews. Every new job starts from zero.",
   },
 ];
 
@@ -113,13 +113,13 @@ export function ProblemStatement() {
           <ProblemColumn
             label="For customers"
             headline="Getting home help shouldn't be this hard"
-            body="Finding a nearby worker for a small job is harder than it should be, especially when you cannot see enough detail to make an informed choice."
+            body="Finding a reliable local provider for a small job is harder than it should be, especially when you cannot see enough detail to make an informed choice."
             items={CUSTOMER_PROBLEMS}
           />
           <ProblemColumn
-            label="For workers"
+            label="For service providers"
             headline="Skills aren't the problem. Access to work is."
-            body="Skilled independent workers across South Africa have the ability but lack a structured, traceable way to connect with paying customers."
+            body="Skilled local service providers across South Africa have the skills, but lack a structured, traceable way to connect with paying customers."
             items={PROVIDER_PROBLEMS}
           />
         </div>

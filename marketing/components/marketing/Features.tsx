@@ -13,7 +13,7 @@ const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
     icon: MapPin,
     title: "Local matching",
     description:
-      "Jobs are matched to workers by proximity and skill. Customers get someone nearby. Workers get jobs they can actually reach.",
+      "Jobs are matched to nearby service providers by proximity and skill. Customers get a local provider quickly. Providers get jobs they can actually reach.",
   },
   {
     icon: Phone,
@@ -31,19 +31,19 @@ const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
     icon: Navigation,
     title: "Live job tracking",
     description:
-      "Customers get WhatsApp updates at every stage: worker on the way, arrived, job started, completed. No more chasing for updates.",
+      "Customers get WhatsApp updates at every stage: provider on the way, arrived, job started, completed. No more chasing for updates.",
   },
   {
     icon: Camera,
     title: "Before & after photos",
     description:
-      "Workers upload photos at the start and end of every job. Proof for both sides, protecting against disputes.",
+      "Service providers upload photos at the start and end of every job. Proof for both sides, protecting against disputes.",
   },
   {
     icon: Star,
     title: "Trusted reviews",
     description:
-      "Every completed job builds the worker's public profile. Customers can see reviews before they accept a quote.",
+      "Every completed job builds the provider profile. Customers can see reviews before they accept a quote.",
   },
 ];
 

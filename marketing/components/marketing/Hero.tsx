@@ -39,12 +39,12 @@ export function Hero() {
           Local help. Real quotes. On WhatsApp.
         </p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-          Get home help done right. Nearby workers, quoted in writing, on WhatsApp.
+          Find trusted local help for small jobs. Quoted in writing, on WhatsApp.
         </h1>
         <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-          Describe your job. We match you with nearby independent workers, show
-          you the provider profile and quote, and keep the decision in writing
-          before anything starts. No app downloads. Just WhatsApp.
+          Tell us what you need and we&apos;ll match you to a nearby service provider.
+          Keep your request moving with written quotes, WhatsApp updates,
+          and clear handover steps for both sides.
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Button
