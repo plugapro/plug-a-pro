@@ -37,6 +37,7 @@ import { normalizePhone } from './utils'
 import { createTraceId } from './support-diagnostics'
 import { createTestCohortContext } from './internal-test-cohort'
 import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
+import { FLAG_KEYS, isEnabled } from './flags'
 import { phoneLookupVariants, resolveWhatsAppUserContext } from './whatsapp-identity'
 import { normaliseLocationDisplayName } from './location-format'
 import { parseProviderOpportunityArrivalText } from './provider-opportunity-whatsapp'
@@ -917,6 +918,16 @@ async function processInboundMessageUnlocked(
 
     if (reply.id?.startsWith('accept:')) {
       // ── Matching engine v2: AssignmentHold acceptance ────────────────────────
+      const isShortlistDispatchEnabled = await isEnabled(FLAG_KEYS.SHORTLIST_DISPATCH_V2).catch(() => false)
+      // In shortlisted flow, paid accept actions are no longer surfaced and we
+      // must prevent any hidden legacy acceptance path from deducting credits.
+      if (isShortlistDispatchEnabled) {
+        await sendText(
+          phone,
+          "This lead is in shortlist mode.\n\nNo credits are deducted for the preview step. Please use your shortlist responses (\"I'm interested\" / \"Not interested\") from the lead message.",
+        )
+        return
+      }
       await handleAssignmentHoldAcceptance(phone, reply.id)
       return
     }
@@ -935,9 +946,21 @@ async function processInboundMessageUnlocked(
           orderBy: { sentAt: 'desc' },
           select: { assignmentHoldId: true },
         })
-        if (activeLead?.assignmentHoldId) {
-          await handleAssignmentHoldAcceptance(phone, `accept:${activeLead.assignmentHoldId}`)
-          return
+        if (activeLead) {
+          const isShortlistDispatchEnabled = await isEnabled(FLAG_KEYS.SHORTLIST_DISPATCH_V2).catch(() => false)
+          // Keep shortlist lead capture free until customer confirmation; never
+          // fall back to legacy paid acceptance by typed "accept".
+          if (isShortlistDispatchEnabled) {
+            await sendText(
+              phone,
+              "This lead is in shortlist mode.\n\nNo credits are deducted for the preview step. Tap \"I'm interested\" on the lead message and submit your rate/arrival.",
+            )
+            return
+          }
+          if (activeLead.assignmentHoldId) {
+            await handleAssignmentHoldAcceptance(phone, `accept:${activeLead.assignmentHoldId}`)
+            return
+          }
         }
       }
       // No active lead — fall through to main menu
@@ -2136,6 +2159,15 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
   })
 
   if (buttonId.startsWith('match_accept_')) {
+    const isShortlistDispatchEnabled = await isEnabled(FLAG_KEYS.SHORTLIST_DISPATCH_V2).catch(() => false)
+    // In shortlist mode, legacy match_accept_ buttons must not deduct credits.
+    if (isShortlistDispatchEnabled) {
+      await sendText(
+        phone,
+        "This lead is in shortlist mode.\n\nNo credits are deducted for the preview step. Please use your shortlist responses (\"I'm interested\" / \"Not interested\") from the lead message.",
+      )
+      return
+    }
     const { acceptLead } = await import('./matching-engine')
     let result
     try {

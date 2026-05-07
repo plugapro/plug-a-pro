@@ -19,7 +19,7 @@ export type ParsedInterestRate = {
   raw: string
 }
 
-const FEE_PATTERN = /R?\s*(\d{2,5})/i
+const FEE_PATTERN = /R?\s*(\d{1,5})/i
 
 const TIME_PATTERN = /(\d{1,2})[:.](\d{2})\s*(am|pm)?/i
 const SHORT_TIME_PATTERN = /(\d{1,2})\s*(am|pm)/i
@@ -40,7 +40,7 @@ function parseFee(text: string): number | null {
   const match = text.match(FEE_PATTERN)
   if (!match) return null
   const numeric = Number(match[1])
-  if (!Number.isFinite(numeric) || numeric <= 0 || numeric > 100000) return null
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 100000) return null
   return numeric
 }
 
