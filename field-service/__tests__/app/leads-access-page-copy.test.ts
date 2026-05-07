@@ -33,6 +33,11 @@ describe('signed provider lead page copy', () => {
     expect(source).toContain('canRespondToLead && confirmingAccept && hasEnoughCredits')
   })
 
+  it('lead detail page no longer renders expiry countdown once a lead is accepted', () => {
+    expect(authenticatedSource).toContain("const isAcceptedLead = lead.status === 'ACCEPTED'")
+    expect(authenticatedSource).toContain('lead.expiresAt && !isAcceptedLead && (')
+  })
+
   it('renders arrival scheduling as a completed step after an arrival time is saved', () => {
     expect(source).toContain('const hasPlannedArrival = isAccepted && Boolean(jr.match?.plannedArrivalStart)')
     expect(source).toContain('const arrivalActionsDone = Boolean(')

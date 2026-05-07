@@ -503,14 +503,14 @@ function isTransactionApiError(error: unknown): boolean {
 }
 
 async function runWalletRebuildInRunner(tx: any): Promise<void> {
-    const providerIds = new Set(
+  const activeProviderIds: Set<string> = new Set(
       (await tx.provider.findMany({
+        where: { active: true },
         select: { id: true },
       })).map((provider: { id: string }) => provider.id),
     )
-    const activeProviderIds = new Set(
+  const providerIds: Set<string> = new Set(
       (await tx.provider.findMany({
-        where: { active: true },
         select: { id: true },
       })).map((provider: { id: string }) => provider.id),
     )
@@ -553,7 +553,7 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
 
     console.log('\n── 3/7 restore provider_wallet from legacy snapshot')
     const legacyWalletRows = hasProviderWallets
-      ? (await tx.$queryRawUnsafe<LegacyRow[]>(`SELECT * FROM "${PROVIDER_WALLET_BACKUP}"`))
+      ? ((await tx.$queryRawUnsafe(`SELECT * FROM "${PROVIDER_WALLET_BACKUP}"`)) as LegacyRow[])
       : []
     const mappedWallets = normalizeLegacyWalletRows(legacyWalletRows).filter((wallet) => providerIds.has(wallet.providerId))
     console.log(`Restoring ${mappedWallets.length} legacy wallet rows`)
@@ -587,9 +587,11 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
     const restoredWallets = await tx.providerWallet.findMany({
       select: { id: true, providerId: true },
     })
-    const walletByProviderId = new Map(restoredWallets.map((wallet: { id: string; providerId: string }) => [wallet.providerId, wallet.id]))
+    const walletByProviderId: Map<string, string> = new Map(
+      restoredWallets.map((wallet: { id: string; providerId: string }) => [wallet.providerId, wallet.id]),
+    )
     const legacyLedgerRows = hasLedger
-      ? (await tx.$queryRawUnsafe<LegacyRow[]>(`SELECT * FROM "${LEDGER_BACKUP}" ORDER BY "createdAt" ASC, "id" ASC`))
+      ? ((await tx.$queryRawUnsafe(`SELECT * FROM "${LEDGER_BACKUP}" ORDER BY "createdAt" ASC, "id" ASC`)) as LegacyRow[])
       : []
     const mappedLedgerRows = normalizeLegacyLedgerRows(legacyLedgerRows, walletByProviderId)
     const validLedgerRows = mappedLedgerRows.filter((entry) => providerIds.has(entry.providerId))
@@ -638,7 +640,7 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
     `)
 
     console.log('\n── 7/7 post-repair integrity summary')
-    const activeWalletCoverage = await tx.$queryRawUnsafe<{ missing: number }[]>(`
+    const activeWalletCoverage = await (tx.$queryRawUnsafe(`
       SELECT COUNT(*)::int AS missing
       FROM providers p
       WHERE p.active = true
@@ -647,9 +649,9 @@ async function runWalletRebuildInRunner(tx: any): Promise<void> {
           FROM provider_wallets w
           WHERE w."providerId" = p.id
         )
-    `)
-    const walletCount = await tx.$queryRawUnsafe<{ count: number }[]>(`SELECT COUNT(*)::int AS count FROM provider_wallets`)
-    const ledgerCount = await tx.$queryRawUnsafe<{ count: number }[]>(`SELECT COUNT(*)::int AS count FROM wallet_ledger_entries`)
+    `) as Promise<{ missing: number }[]>)
+    const walletCount = await (tx.$queryRawUnsafe(`SELECT COUNT(*)::int AS count FROM provider_wallets`) as Promise<{ count: number }[]>)
+    const ledgerCount = await (tx.$queryRawUnsafe(`SELECT COUNT(*)::int AS count FROM wallet_ledger_entries`) as Promise<{ count: number }[]>)
     console.log(`Active providers without wallet rows: ${activeWalletCoverage[0]?.missing ?? 0}`)
     console.log(`provider_wallet row count: ${walletCount[0]?.count ?? 0}`)
     console.log(`wallet_ledger_entries row count: ${ledgerCount[0]?.count ?? 0}`)

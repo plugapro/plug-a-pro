@@ -1507,7 +1507,14 @@ async function processInboundMessageUnlocked(
       data: { ...data, ...(result.nextData ?? {}) },
     })
   } catch (err) {
-    console.error(`[whatsapp-bot] Error processing message from ${phone}:`, err)
+    console.error('[whatsapp-bot] Error processing inbound message', {
+      traceId: createTraceId('wbot'),
+      phone: maskedPhone(phone),
+      messageId: message.id,
+      flow,
+      step,
+      error: err instanceof Error ? err.message : String(err),
+    })
     // Fail gracefully and preserve recoverable state. Do not tell the user to
     // restart blindly: the recovery resolver explains what happened and gives
     // safe next actions without exposing internals.
@@ -3296,7 +3303,7 @@ async function handleProviderOpportunityCapture(
       source: 'whatsapp',
       idempotencyKey: `whatsapp:${provider.id}:${leadId}:interested`,
     })
-    if (!result.ok) {
+    if (!result.response) {
       await sendText(phone, '⚠️ We could not record your interest at this time. Please try again or reply *menu*.')
       await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
       return

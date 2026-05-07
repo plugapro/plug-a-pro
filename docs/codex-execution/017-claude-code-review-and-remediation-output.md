@@ -450,3 +450,63 @@ Both flags can be flipped via `pnpm tsx scripts/seed-flags.ts --flag=qualified_s
 ## Final OpenBrain note (second pass)
 
 Second-pass remediation closed every product-flow gap that was reachable without a product decision: WhatsApp button rewiring (additive — legacy buttons still work), customer ask-more/cancel actions, selected-provider confirm/decline buttons with a backout path to the shortlist, structured `accessNotes` and `safeForPreview` privacy controls (with additive migrations), `LeadStatus` extended (additive), provider `MORE_INFO_REQUIRED` reply helper, PWA API parity, and an auto-trigger for shortlist generation. 19 new tests cover the new behaviour; full suite is 1154 tests, zero regressions. Two feature flags (`qualified_shortlist.dispatch_v2`, `qualified_shortlist.auto_trigger`) gate the new dispatch and auto-trigger so the pilot can ramp deliberately. Remaining out-of-scope items all require either a product decision or operational work (backfills, conversational fee-capture flow, full trust/profile capture, broader logging sweep) and are listed above.
+
+## Third-pass remediation (safe final alignment)
+
+### Additional issue fixed
+
+**Response row duplication on provider opportunity taps**
+
+During the final review cycle, it was confirmed that repeated `INTERESTED`/`NOT_INTERESTED` actions for the same provider and lead could create duplicate `ProviderLeadResponse` rows, because `providerId + leadInviteId` was not treated as a deduplicated identity in DB logic and the response write path always performed `create()`.
+
+This can distort shortlist cardinality and ranking and can be triggered by repeated WhatsApp button taps when the same payload is sent without a stable idempotency key.
+
+### Fix applied
+
+`field-service/lib/provider-opportunity-responses.ts`
+
+- `respondToProviderOpportunity()` now checks for an existing response in the transaction with:
+  - `tx.providerLeadResponse.findFirst({ where: { leadInviteId, providerId } })`
+- If found, it updates that row (`tx.providerLeadResponse.update(...)`) instead of always creating.
+- If not found, it creates a new row as before.
+- Response overwrite behavior is explicit: transitioning to `NOT_INTERESTED` clears `callOutFee` and `estimatedArrivalAt`.
+- Existing idempotency-key short-circuit remains intact (`idempotencyKey` path returns existing response).
+
+### Additional safety fix in same area
+
+`field-service/lib/whatsapp-bot.ts`
+
+- The interactive flow handler now checks `if (!result.response)` instead of the invalid `if (!result.ok)` check introduced before this pass.
+
+### Tests added
+
+`field-service/__tests__/lib/provider-opportunity-responses.test.ts`
+
+- `updates an existing response instead of creating a duplicate row`
+- `switches from interested to not interested on overwrite without creating a new row`
+
+These tests assert:
+
+- duplicate provider lead responses do not call `create`
+- existing rows are updated by id
+- overwrite resets amount/time fields for `NOT_INTERESTED`
+
+### Validation status after third pass
+
+| Command | Result |
+|---|---|
+| `npm test -- --run` | Passed: **156 files passed, 1526 tests passed**, 1 skipped, 4 todo. |
+| `npx prisma validate` | Passed. |
+| `npx tsc --noEmit` | Passed clean after patching legacy script typing in `scripts/wallet-schema-drift-repair.ts`. |
+| `npm run lint` | Passed with the same 3 pre-existing unrelated warnings. |
+
+### File index updates
+
+| File | Change summary |
+|---|---|
+| `field-service/lib/provider-opportunity-responses.ts` | Upsert-like dedupe path for provider responses (find-first + update-or-create in transaction). |
+| `field-service/__tests__/lib/provider-opportunity-responses.test.ts` | Added duplicate-suppression and overwrite regression tests. |
+| `field-service/lib/whatsapp-bot.ts` | Corrected response check from `.ok` to `.response` to match actual service return shape. |
+| `field-service/scripts/wallet-schema-drift-repair.ts` | Minor type assertions and `Map` typing fixes to allow `npx tsc --noEmit` to pass without changing repair behavior. |
+| `field-service/app/api/cron/session-timeout/route.ts` | Masked conversation phone numbers in remaining send/error logs. |
+| `field-service/lib/whatsapp-flows/status.ts` | Masked phone in request-status log path to avoid raw phone logging in diagnostics. |

@@ -176,6 +176,7 @@ export default async function LeadDetailPage({
   const isUnlocked = lead.isUnlocked
   const unlockDispute = lead.unlock?.dispute ?? null
   const termsUrl = getProviderTermsUrl()
+  const isAcceptedLead = lead.status === 'ACCEPTED'
   const canDisputeUnlock = Boolean(
     lead.unlock &&
     lead.unlock.status === 'UNLOCKED' &&
@@ -207,7 +208,7 @@ export default async function LeadDetailPage({
       </div>
 
       {/* Expiry banner */}
-      {lead.expiresAt && (
+      {lead.expiresAt && !isAcceptedLead && (
         <AlertCallout tone={isExpired ? 'danger' : 'warning'}>
           {isExpired
             ? 'This lead has expired and can no longer be accepted.'

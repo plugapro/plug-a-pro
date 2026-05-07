@@ -183,23 +183,43 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
   }
 
   let jobRequestIdForTrigger: string | null = null
+  const responsePayload = {
+    response: input.response,
+    callOutFee: input.response === 'NOT_INTERESTED' ? null : rates.callOutFee,
+    estimatedArrivalAt: input.response === 'NOT_INTERESTED' ? null : input.estimatedArrivalAt ?? null,
+    rateType: input.rateType ?? null,
+    rateAmount: rates.hourlyRate,
+    negotiable: input.negotiable ?? true,
+    providerNote: input.providerNote?.trim() || null,
+    source: input.source ?? null,
+  }
+
   const response = await db.$transaction(async (tx) => {
-    const response = await tx.providerLeadResponse.create({
-      data: {
-        id: randomUUID(),
+    const existingResponse = await tx.providerLeadResponse.findFirst({
+      where: {
         leadInviteId: input.leadId,
         providerId: input.providerId,
-        response: input.response,
-        callOutFee: rates.callOutFee,
-        estimatedArrivalAt: input.estimatedArrivalAt ?? null,
-        rateType: input.rateType ?? null,
-        rateAmount: rates.hourlyRate,
-        negotiable: input.negotiable ?? true,
-        providerNote: input.providerNote?.trim() || null,
-        source: input.source ?? null,
-        idempotencyKey: input.idempotencyKey ?? null,
       },
+      select: { id: true, idempotencyKey: true },
     })
+
+    const response = existingResponse
+      ? await tx.providerLeadResponse.update({
+          where: { id: existingResponse.id },
+          data: {
+            ...responsePayload,
+            idempotencyKey: input.idempotencyKey ?? existingResponse.idempotencyKey,
+          },
+        })
+      : await tx.providerLeadResponse.create({
+          data: {
+            id: randomUUID(),
+            leadInviteId: input.leadId,
+            providerId: input.providerId,
+            ...responsePayload,
+            idempotencyKey: input.idempotencyKey ?? null,
+          },
+        })
 
     const updatedLead = await tx.lead.update({
       where: { id: input.leadId },

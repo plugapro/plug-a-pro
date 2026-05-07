@@ -10,6 +10,7 @@ import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interac
 import { db } from '../db'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { getPublicAppUrl } from '../provider-credit-copy'
+import { maskPhone } from '../support-diagnostics'
 import type { FlowContext, FlowResult } from './types'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
@@ -317,7 +318,7 @@ async function showRequestStatus(
   ...ownership: [expectedCustomerId?: string]
 ): Promise<FlowResult> {
   const expectedCustomerId = ownership[0]
-  const log = (msg: string) => console.log(`[status-flow:${reqId}] phone=${phone} ${msg}`)
+  const log = (msg: string) => console.log(`[status-flow:${reqId}] phone=${maskPhone(phone)} ${msg}`)
 
   async function loadLatestRequestForCustomer() {
     if (!expectedCustomerId) return null

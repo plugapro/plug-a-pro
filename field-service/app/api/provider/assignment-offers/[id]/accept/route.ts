@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { acceptAssignmentOffer } from '@/lib/matching/service'
+import { acceptLead } from '@/lib/matching-engine'
 
 export async function POST(
   request: NextRequest,
@@ -20,12 +20,12 @@ export async function POST(
   const body = await request.json().catch(() => ({})) as { inspectionNeeded?: boolean }
   const { id } = await params
 
-  const result = await acceptAssignmentOffer({
+  const result = await acceptLead({
     leadId: id,
     providerId: provider.id,
     inspectionNeeded: body.inspectionNeeded,
+    source: 'api',
   })
 
   return NextResponse.json(result, { status: result.ok ? 200 : 409 })
 }
-

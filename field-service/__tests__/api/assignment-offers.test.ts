@@ -7,6 +7,10 @@ vi.mock('@/lib/auth', () => ({
   getSession: vi.fn(),
 }))
 
+vi.mock('@/lib/matching-engine', () => ({
+  acceptLead: vi.fn(),
+}))
+
 vi.mock('@/lib/db', () => ({
   db: {
     provider: { findUnique: vi.fn() },
@@ -14,7 +18,6 @@ vi.mock('@/lib/db', () => ({
 }))
 
 vi.mock('@/lib/matching/service', () => ({
-  acceptAssignmentOffer: vi.fn(),
   rejectAssignmentOffer: vi.fn(),
 }))
 
@@ -89,10 +92,10 @@ describe('POST /api/provider/assignment-offers/[id]/accept', () => {
   it('returns 200 and the result when acceptance succeeds', async () => {
     const { getSession } = await import('@/lib/auth')
     const { db } = await import('@/lib/db')
-    const { acceptAssignmentOffer } = await import('@/lib/matching/service')
+    const { acceptLead } = await import('@/lib/matching-engine')
     ;(getSession as any).mockResolvedValue(makeProviderSession())
     ;(db.provider.findUnique as any).mockResolvedValue(makeProvider())
-    ;(acceptAssignmentOffer as any).mockResolvedValue({
+    ;(acceptLead as any).mockResolvedValue({
       ok: true,
       responseOutcome: 'ACCEPTED',
       matchId: 'match-1',
@@ -107,22 +110,23 @@ describe('POST /api/provider/assignment-offers/[id]/accept', () => {
     const res = await POST(makeRequest({ inspectionNeeded: false }), makeParams('lead-1'))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.ok).toBe(true)
-    expect(body.matchId).toBe('match-1')
-    expect(acceptAssignmentOffer).toHaveBeenCalledWith({
+      expect(body.ok).toBe(true)
+      expect(body.matchId).toBe('match-1')
+    expect(acceptLead).toHaveBeenCalledWith({
       leadId: 'lead-1',
       providerId: 'provider-1',
       inspectionNeeded: false,
+      source: 'api',
     })
   })
 
   it('returns 409 when offer is already taken', async () => {
     const { getSession } = await import('@/lib/auth')
     const { db } = await import('@/lib/db')
-    const { acceptAssignmentOffer } = await import('@/lib/matching/service')
+    const { acceptLead } = await import('@/lib/matching-engine')
     ;(getSession as any).mockResolvedValue(makeProviderSession())
     ;(db.provider.findUnique as any).mockResolvedValue(makeProvider())
-    ;(acceptAssignmentOffer as any).mockResolvedValue({
+    ;(acceptLead as any).mockResolvedValue({
       ok: false,
       reason: 'TAKEN',
     })
@@ -141,10 +145,10 @@ describe('POST /api/provider/assignment-offers/[id]/accept', () => {
   it('returns 409 when lead is not found', async () => {
     const { getSession } = await import('@/lib/auth')
     const { db } = await import('@/lib/db')
-    const { acceptAssignmentOffer } = await import('@/lib/matching/service')
+    const { acceptLead } = await import('@/lib/matching-engine')
     ;(getSession as any).mockResolvedValue(makeProviderSession())
     ;(db.provider.findUnique as any).mockResolvedValue(makeProvider())
-    ;(acceptAssignmentOffer as any).mockResolvedValue({
+    ;(acceptLead as any).mockResolvedValue({
       ok: false,
       reason: 'NOT_FOUND',
     })
@@ -160,10 +164,10 @@ describe('POST /api/provider/assignment-offers/[id]/accept', () => {
   it('passes inspectionNeeded from request body', async () => {
     const { getSession } = await import('@/lib/auth')
     const { db } = await import('@/lib/db')
-    const { acceptAssignmentOffer } = await import('@/lib/matching/service')
+    const { acceptLead } = await import('@/lib/matching-engine')
     ;(getSession as any).mockResolvedValue(makeProviderSession())
     ;(db.provider.findUnique as any).mockResolvedValue(makeProvider())
-    ;(acceptAssignmentOffer as any).mockResolvedValue({
+    ;(acceptLead as any).mockResolvedValue({
       ok: true,
       responseOutcome: 'ACCEPTED',
       matchId: 'match-1',
@@ -176,9 +180,30 @@ describe('POST /api/provider/assignment-offers/[id]/accept', () => {
     )
 
     await POST(makeRequest({ inspectionNeeded: true }), makeParams())
-    expect(acceptAssignmentOffer).toHaveBeenCalledWith(
+    expect(acceptLead).toHaveBeenCalledWith(
       expect.objectContaining({ inspectionNeeded: true })
     )
+  })
+
+  it('returns 409 and lets matching-engine enforce shortlisted lead ownership rules', async () => {
+    const { getSession } = await import('@/lib/auth')
+    const { db } = await import('@/lib/db')
+    const { acceptLead } = await import('@/lib/matching-engine')
+    ;(getSession as any).mockResolvedValue(makeProviderSession())
+    ;(db.provider.findUnique as any).mockResolvedValue(makeProvider('provider-2'))
+    ;(acceptLead as any).mockResolvedValue({
+      ok: false,
+      reason: 'FORBIDDEN',
+    })
+
+    const { POST } = await import(
+      '../../app/api/provider/assignment-offers/[id]/accept/route'
+    )
+
+    const res = await POST(makeRequest(), makeParams())
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.reason).toBe('FORBIDDEN')
   })
 })
 

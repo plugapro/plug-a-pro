@@ -76,6 +76,8 @@ describe('provider opportunity responses', () => {
     state.tx = {
       providerLeadResponse: {
         create: vi.fn().mockResolvedValue({ id: 'response-1', response: 'INTERESTED' }),
+        findFirst: vi.fn().mockResolvedValue(null),
+        update: vi.fn().mockResolvedValue({ id: 'response-1', response: 'INTERESTED' }),
       },
       lead: {
         update: vi.fn().mockResolvedValue({ id: 'lead-1', jobRequestId: 'request-1' }),
@@ -190,6 +192,78 @@ describe('provider opportunity responses', () => {
         respondedAt: expect.any(Date),
       }),
     }))
+  })
+
+  it('updates an existing response instead of creating a duplicate row', async () => {
+    mockDb.lead.findUnique.mockResolvedValueOnce(state.lead)
+    state.tx.providerLeadResponse.findFirst.mockResolvedValueOnce({
+      id: 'response-existing',
+      idempotencyKey: 'old-key',
+    })
+    state.tx.providerLeadResponse.update.mockResolvedValueOnce({
+      id: 'response-existing',
+      response: 'INTERESTED',
+    })
+
+    const result = await respondToProviderOpportunity({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      response: 'INTERESTED',
+      callOutFeeText: '250',
+      estimatedArrivalAt: new Date('2026-05-02T12:00:00.000Z'),
+      idempotencyKey: 'repeat-key',
+    })
+
+    expect(result).toMatchObject({ response: { id: 'response-existing' } })
+    expect(state.tx.providerLeadResponse.findFirst).toHaveBeenCalledWith({
+      where: {
+        leadInviteId: 'lead-1',
+        providerId: 'provider-1',
+      },
+      select: { id: true, idempotencyKey: true },
+    })
+    expect(state.tx.providerLeadResponse.update).toHaveBeenCalledWith({
+      where: { id: 'response-existing' },
+      data: expect.objectContaining({
+        response: 'INTERESTED',
+        callOutFee: 250,
+        estimatedArrivalAt: new Date('2026-05-02T12:00:00.000Z'),
+        idempotencyKey: 'repeat-key',
+      }),
+    })
+    expect(state.tx.providerLeadResponse.create).not.toHaveBeenCalled()
+  })
+
+  it('switches from interested to not interested on overwrite without creating a new row', async () => {
+    mockDb.lead.findUnique.mockResolvedValueOnce(state.lead)
+    state.tx.providerLeadResponse.findFirst.mockResolvedValueOnce({
+      id: 'response-existing',
+      idempotencyKey: 'old-key',
+    })
+    state.tx.providerLeadResponse.update.mockResolvedValueOnce({
+      id: 'response-existing',
+      response: 'NOT_INTERESTED',
+    })
+
+    const result = await respondToProviderOpportunity({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      response: 'NOT_INTERESTED',
+      providerNote: 'Too far',
+      idempotencyKey: 'decline-key',
+    })
+
+    expect(result).toMatchObject({ response: { id: 'response-existing' } })
+    expect(state.tx.providerLeadResponse.update).toHaveBeenCalledWith({
+      where: { id: 'response-existing' },
+      data: expect.objectContaining({
+        response: 'NOT_INTERESTED',
+        callOutFee: null,
+        estimatedArrivalAt: null,
+        providerNote: 'Too far',
+      }),
+    })
+    expect(state.tx.providerLeadResponse.create).not.toHaveBeenCalled()
   })
 
   it('rejects expired opportunities', async () => {

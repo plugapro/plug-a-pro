@@ -100,12 +100,12 @@ export async function GET(request: Request) {
 
       sent++
       console.log(
-        `[cron/session-timeout:${reqId}] sent phone=${conv.phone} flow=${conv.flow} id=${conv.id}`
+        `[cron/session-timeout:${reqId}] sent phone=${maskPhone(conv.phone)} flow=${conv.flow} id=${conv.id}`
       )
     } catch (err) {
       errors++
       console.error(
-        `[cron/session-timeout:${reqId}] error phone=${conv.phone} id=${conv.id}:`,
+        `[cron/session-timeout:${reqId}] error phone=${maskPhone(conv.phone)} id=${conv.id}:`,
         err
       )
     }
