@@ -22,6 +22,7 @@ const {
     $transaction: vi.fn(),
     provider: { findFirst: vi.fn() },
     lead: { findUnique: vi.fn(), upsert: vi.fn() },
+    attachment: { count: vi.fn().mockResolvedValue(0) },
   },
   mockGeocodeAddress: vi.fn(),
   mockResolveCategoryRequirements: vi.fn(),

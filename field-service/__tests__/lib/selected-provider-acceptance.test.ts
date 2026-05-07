@@ -178,6 +178,7 @@ describe('selected provider final acceptance', () => {
     expect(providerSend).toBeDefined()
     expect(providerSend.text).toContain('Acme Customer')
     expect(providerSend.text).toContain('1 credit used')
+    expect(providerSend.text).toContain('Available balance:')
     expect(providerSend.text).toContain('+27222222222')
     expect(providerSend.text).toContain('12 Hill Crescent')
     expect(providerSend.text).toContain('Ruimsig Heights')

@@ -85,6 +85,7 @@ export default async function ProviderHomePage() {
   const [
     activeJobs,
     upcomingJobs,
+    recentCompletedJobs,
     completedJobsCount,
     pendingOpportunitiesCount,
     selectedPendingCount,
@@ -116,6 +117,15 @@ export default async function ProviderHomePage() {
       include: jobInclude,
       orderBy: { booking: { scheduledDate: 'asc' } },
       take: 10,
+    }),
+    db.job.findMany({
+      where: {
+        providerId: provider.id,
+        status: { in: ['PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] },
+      },
+      include: jobInclude,
+      orderBy: { completedAt: 'desc' },
+      take: 5,
     }),
     db.job.count({
       where: {
@@ -321,6 +331,17 @@ export default async function ProviderHomePage() {
         <section className="space-y-3">
           <h2 className="app-kicker">Upcoming ({upcomingJobs.length})</h2>
           {upcomingJobs.map((job) => (
+            <JobCard key={job.id} job={job} basePath="/provider" />
+          ))}
+        </section>
+      )}
+
+      {recentCompletedJobs.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="app-kicker">
+            Recent history ({completedJobsCount} completed)
+          </h2>
+          {recentCompletedJobs.map((job) => (
             <JobCard key={job.id} job={job} basePath="/provider" />
           ))}
         </section>

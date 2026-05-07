@@ -190,8 +190,16 @@ export function resolveProviderWhatsappCommand(text: string | null | undefined) 
   const normalized = normalizeProviderCommandText(text ?? '')
   if (!normalized) return null
 
+  // Prefer exact alias matches before prefix matches to prevent shorter aliases
+  // (e.g. "start" in the menu command) from shadowing longer multi-word commands
+  // (e.g. "start job" in the job-execution command).
+  const exactMatch = PROVIDER_WHATSAPP_COMMANDS.find((command) =>
+    command.aliases.some((alias) => normalized === alias),
+  )
+  if (exactMatch) return exactMatch
+
   return PROVIDER_WHATSAPP_COMMANDS.find((command) =>
-    command.aliases.some((alias) => normalized === alias || normalized.startsWith(`${alias} `)),
+    command.aliases.some((alias) => normalized.startsWith(`${alias} `)),
   ) ?? null
 }
 

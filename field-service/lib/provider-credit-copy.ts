@@ -407,10 +407,11 @@ export function buildInsufficientCreditsMessage(params: {
   void params.topupUrl
 
   return [
-    '⚠️ *Not enough credits*',
+    'Not enough credits.',
     '',
-    `You need ${creditCountLabel(required)} to accept this selected job.`,
-    `Your current credits balance is ${creditCountLabel(params.availableCredits)}.`,
+    `You need ${creditCountLabel(required)} to accept this job.`,
+    `Your current balance is ${creditCountLabel(params.availableCredits)}.`,
+    'No credit was deducted.',
     '',
     'Please top up in the Worker Portal. The top-up link is available below.',
   ].join('\n')

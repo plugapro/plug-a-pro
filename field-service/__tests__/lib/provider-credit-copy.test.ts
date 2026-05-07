@@ -249,9 +249,10 @@ describe('provider credit copy', () => {
       topupUrl: 'https://example.com/provider/credits',
     })
 
-    expect(message).toContain('Not enough credits')
-    expect(message).toContain('You need 1 credit to accept this selected job')
-    expect(message).toContain('Your current credits balance is 0 credits')
+    expect(message).toContain('Not enough credits.')
+    expect(message).toContain('You need 1 credit to accept this job')
+    expect(message).toContain('Your current balance is 0 credits')
+    expect(message).toContain('No credit was deducted')
     expect(message).toContain('top-up link is available below')
     expect(message).not.toContain('https://')
   })

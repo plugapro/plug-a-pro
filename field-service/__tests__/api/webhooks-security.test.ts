@@ -236,3 +236,8 @@ describe('POST /api/webhooks/payments — idempotency', () => {
     expect(JSON.stringify(body)).not.toContain('database timeout')
   })
 })
+
+// Note: WhatsApp sender → provider mapping tests live in
+// __tests__/lib/whatsapp-identity.test.ts (sender mismatch and unknown-sender
+// cases are covered by the 'returns unknown for a new number' and
+// 'returns provider for an approved active provider number' tests there).

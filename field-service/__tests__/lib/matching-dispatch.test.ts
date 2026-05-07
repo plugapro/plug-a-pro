@@ -9,6 +9,7 @@ const {
   mockDb: {
     lead: { findUnique: vi.fn(), upsert: vi.fn() },
     messageEvent: { findFirst: vi.fn(), create: vi.fn() },
+    attachment: { count: vi.fn().mockResolvedValue(2) },
   },
   mockSendCtaUrl: vi.fn(),
   mockSendButtons: vi.fn(),
@@ -44,6 +45,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     mockDb.lead.findUnique.mockResolvedValue(null)   // no existing declined lead — proceed
     mockDb.lead.upsert.mockResolvedValue({ id: 'lead-1' })
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
+    mockDb.attachment.count.mockResolvedValue(2)
     mockSendCtaUrl.mockResolvedValue('wamid-cta')
     mockSendButtons.mockResolvedValue('wamid-buttons')
     mockNotifyZeroBalance.mockResolvedValue(undefined)

@@ -3,6 +3,8 @@ import {
   creditCountLabel,
   getProviderTermsUrl,
   getWorkerPortalUrl,
+  PROVIDER_CREDITS_PRICE_LINE,
+  PROVIDER_ACCEPTED_LEAD_CREDIT_COST,
 } from './provider-credit-copy'
 
 const APPROVAL_NOTIFICATION_LOCK_STALE_MINUTES = 10
@@ -38,6 +40,146 @@ export function buildProviderApplicationApprovedMessage(
     mainBody: `✅ *Application approved!*\n\nHi *${name}*, you're now active on Plug A Pro and can receive job leads through this WhatsApp number.\n\n${creditLine}${breakdownLine}\n\nCredits are prepaid platform units, not cash, loans, or financial credit.\n1 credit = R50.\nNo credits are used for previewing or saying you are interested.\n1 credit is used only when a customer selects you and you accept that selected job.\nFull customer details unlock after acceptance.\n\nYou can continue here on WhatsApp. You can also open the Worker Portal for credits, working hours, and jobs:`,
     termsBody: `Provider credits terms and rules:\n\nDefault availability: *Available now*\n\nReply *menu* to check your status anytime.`,
   }
+}
+
+/**
+ * Builds the WhatsApp message body for a MORE_INFO_REQUIRED application status.
+ *
+ * Body intentionally contains no raw URL. Caller should follow up with a
+ * sendCtaUrl to expose the Worker Portal application page behind an
+ * "Update Application" CTA.
+ */
+export function buildProviderApplicationMoreInfoRequiredMessage(params: {
+  name?: string | null
+  applicationRef: string
+  notes?: string | null
+}): string {
+  const firstName = params.name?.trim().split(/\s+/)[0] || 'there'
+  const notesLine = params.notes?.trim()
+    ? `\n\n*What we need:*\n${params.notes.trim()}`
+    : ''
+
+  return [
+    '📋 *More information needed*',
+    '',
+    `Hi *${firstName}*, your Plug A Pro provider application needs a few more details before we can complete the review.`,
+    '',
+    `Ref: *${params.applicationRef}*`,
+    `Status: *More details needed*`,
+    notesLine.trim(),
+    '',
+    'Please reply with the requested information or open the Worker Portal to update your application.',
+    '',
+    'No credits are used for previewing or saying you are interested.',
+    `${PROVIDER_CREDITS_PRICE_LINE} ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} is used only when a customer selects you and you accept that selected job.`,
+    '',
+    'You can continue here on WhatsApp. You can also open the Worker Portal for more details.',
+  ].filter((line) => line !== undefined).join('\n')
+}
+
+/**
+ * Builds the WhatsApp message body for a REJECTED application status.
+ *
+ * Body intentionally contains no raw URL. Caller should follow up with a
+ * sendCtaUrl to expose support behind a "Contact Support" CTA.
+ */
+export function buildProviderApplicationRejectedMessage(params: {
+  name?: string | null
+  applicationRef: string
+  reason?: string | null
+}): string {
+  const firstName = params.name?.trim().split(/\s+/)[0] || 'there'
+  const reasonLine = params.reason?.trim()
+    ? `\n\n*Reason:*\n${params.reason.trim()}`
+    : ''
+
+  return [
+    '❌ *Application not approved*',
+    '',
+    `Hi *${firstName}*, your Plug A Pro provider application was not approved.`,
+    '',
+    `Ref: *${params.applicationRef}*`,
+    `Status: *Not approved*`,
+    reasonLine.trim(),
+    '',
+    'If you believe this decision is incorrect, or if you would like to understand the reason, please contact support.',
+    '',
+    'You can continue here on WhatsApp. You can also open the Worker Portal to contact support.',
+  ].filter((line) => line !== undefined).join('\n')
+}
+
+/**
+ * Builds the WhatsApp message body confirming that a provider has registered
+ * their interest in a job opportunity. No credits are charged at this stage.
+ *
+ * Body intentionally contains no raw URL. Caller should follow up with a
+ * sendCtaUrl to expose the lead detail page behind a "View Lead" CTA if
+ * a signed lead URL is available.
+ */
+export function buildInterestSubmittedMessage(params: {
+  category: string
+  area: string
+  callOutFee?: number | null
+  estimatedArrivalLabel?: string | null
+}): string {
+  const feeLines = params.callOutFee != null
+    ? [`Call-out fee submitted: *R${params.callOutFee}*`]
+    : []
+  const arrivalLines = params.estimatedArrivalLabel
+    ? [`Estimated arrival: *${params.estimatedArrivalLabel}*`]
+    : []
+
+  return [
+    '👍 *Interest registered*',
+    '',
+    `Your interest in the *${params.category}* job in *${params.area}* has been submitted.`,
+    '',
+    ...feeLines,
+    ...arrivalLines,
+    '',
+    'No credits are used for previewing or saying you are interested.',
+    `${PROVIDER_CREDITS_PRICE_LINE} ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} is used only if the customer selects you and you accept that selected job.`,
+    '',
+    'You will be notified here if the customer selects you.',
+    '',
+    'You can continue here on WhatsApp. You can also open the Worker Portal for more details.',
+  ].filter((line) => line !== undefined).join('\n')
+}
+
+/**
+ * Builds the WhatsApp message body when a previously-available job lead is
+ * no longer available (expired, taken, or closed). No credits were charged.
+ *
+ * Body intentionally contains no raw URL.
+ */
+export function buildJobUnavailableMessage(params: {
+  category?: string | null
+  area?: string | null
+  reason?: 'expired' | 'taken' | 'closed' | 'unknown'
+}): string {
+  const jobLine = params.category
+    ? `The *${params.category}*${params.area ? ` job in *${params.area}*` : ''} is`
+    : 'This job is'
+
+  const reasonMap: Record<string, string> = {
+    expired: 'has expired and can no longer be accepted',
+    taken: 'has been accepted by another provider',
+    closed: 'has been closed by the customer',
+    unknown: 'is no longer available',
+  }
+  const reasonPhrase = reasonMap[params.reason ?? 'unknown'] ?? reasonMap.unknown
+
+  return [
+    '⏰ *Job no longer available*',
+    '',
+    `${jobLine} ${reasonPhrase}.`,
+    '',
+    'No credits were used.',
+    '',
+    'New leads will be sent here as jobs arise in your service areas.',
+    '',
+    'You can continue here on WhatsApp. You can also open the Worker Portal to review your availability.',
+  ].join('\n')
 }
 
 async function getApprovalCreditSummary(applicationId: string): Promise<ProviderApprovalCreditSummary> {

@@ -535,10 +535,10 @@ async function notifySelectedProvider(params: {
     const remainingCredits = Math.max(0, balance.totalCreditBalance - 1)
     const area = params.suburb ? ` in ${params.suburb}` : ''
     const body =
-      `Customer selected you\n\n` +
+      `✅ Customer selected you\n\n` +
       `The customer selected you for this ${params.category} job${area}.\n\n` +
       `Accepting this job uses 1 credit.\n\n` +
-      `Available credits: ${formatCredits(balance.totalCreditBalance)}\n` +
+      `Available balance: ${formatCredits(balance.totalCreditBalance)}\n` +
       `After acceptance: ${formatCredits(remainingCredits)}`
 
     await sendButtons(

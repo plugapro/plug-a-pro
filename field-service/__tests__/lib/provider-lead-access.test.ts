@@ -342,3 +342,131 @@ describe('provider lead access tokens', () => {
     ])
   })
 })
+
+// ─── Security: phone hash binding and cross-provider access prevention ─────────
+
+describe('provider lead access — phone hash and sender verification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+    process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
+    process.env.PROVIDER_LEAD_APP_URL = 'https://app.plugapro.co.za'
+  })
+
+  it('rejects a token whose providerPhoneHash does not match the stored provider phone', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken, hashProviderPhone } = await import('@/lib/provider-lead-access')
+    // Token is created for a provider whose phone is +27820000000
+    const token = createProviderLeadAccessToken({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      providerPhone: '+27820000000',
+    })
+    // But the DB record has a different phone — indicates token was replayed
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({
+      provider: { id: 'provider-1', name: 'Sipho Pro', phone: '+27829999999', active: true, status: 'ACTIVE' },
+    }))
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(resolved.status).toBe('invalid')
+    expect(resolved.lead).toBeNull()
+    expect(resolved.traceId).toBeTruthy()
+  })
+
+  it('accepts a token when providerPhoneHash matches the stored provider phone', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      providerPhone: '+27820000000',
+    })
+    // DB record has the matching phone
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(resolved.status).toBe('active')
+    expect(resolved.lead).not.toBeNull()
+  })
+
+  it('accepts a token with no providerPhoneHash without phone validation', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    // No phone provided → no hash in token
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(resolved.status).toBe('active')
+    expect(resolved.lead).not.toBeNull()
+  })
+
+  it('rejects when assertSenderPhone does not match the stored provider phone', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
+
+    // Wrong number is sending the command — different WhatsApp user
+    const resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: '+27821111111' })
+
+    expect(resolved.status).toBe('invalid')
+    expect(resolved.lead).toBeNull()
+    expect(resolved.traceId).toBeTruthy()
+  })
+
+  it('accepts when assertSenderPhone matches the stored provider phone', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
+
+    const resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: '+27820000000' })
+
+    expect(resolved.status).toBe('active')
+    expect(resolved.lead).not.toBeNull()
+  })
+
+  it('returns a traceId on successful resolution', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead())
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(resolved.status).toBe('active')
+    expect(resolved.traceId).toMatch(/^[0-9a-f-]{8}/)
+  })
+
+  it('cannot use provider-1 token to access provider-2 lead', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    // Token claims provider-1 but DB lead belongs to provider-2
+    const token = createProviderLeadAccessToken({ leadId: 'lead-2', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLead({ id: 'lead-2', providerId: 'provider-2' }),
+    )
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(resolved.status).toBe('invalid')
+    expect(resolved.lead).toBeNull()
+    expect(resolved.traceId).toBeTruthy()
+  })
+
+  it('cannot use provider-1 token to access a different job request than embedded', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    // Token has jobRequestId embedded
+    const token = createProviderLeadAccessToken({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'jr-original',
+    })
+    // DB returns a lead linked to a different job request
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLead({ jobRequestId: 'jr-different' }),
+    )
+
+    const resolved = await resolveProviderLeadAccessToken(token)
+
+    expect(resolved.status).toBe('invalid')
+    expect(resolved.lead).toBeNull()
+  })
+})

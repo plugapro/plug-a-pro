@@ -89,7 +89,13 @@ export async function dispatchMatchLead(params: {
           timeZone: 'Africa/Johannesburg',
         })}`
       : 'Flexible'
-  const balance = await getProviderWalletBalanceReadOnly(provider.id)
+  const [balance, previewAttachmentsCount] = await Promise.all([
+    getProviderWalletBalanceReadOnly(provider.id),
+    // Count only attachments flagged as safe for preview — protected docs stay hidden.
+    db.attachment.count({
+      where: { jobRequestId: jobRequest.id, safeForPreview: true },
+    }).catch(() => null as number | null),
+  ])
   const body = buildProviderLeadPreviewMessage({
     category,
     area: suburb,
@@ -101,6 +107,7 @@ export async function dispatchMatchLead(params: {
     subcategory: jobRequest.subcategory,
     urgency: jobRequest.urgency,
     matchingPreference: jobRequest.providerPreference ?? jobRequest.budgetPreference,
+    photosCount: previewAttachmentsCount,
   })
   const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
   const msgMeta = {

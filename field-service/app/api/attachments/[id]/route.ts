@@ -195,10 +195,14 @@ export async function GET(
     if (!session && leadTokenScope?.status) {
       const error = leadTokenScope.status === 'active' ? 'Forbidden' : 'Invalid or expired lead token'
       const status = leadTokenScope.status === 'active' ? 403 : 401
+      const leadTraceId = (leadTokenScope as { traceId?: string }).traceId ?? reqId
       console.warn(
-        `[attachments:${reqId}] Lead token denied: tokenStatus=${leadTokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'} tokenJobRequest=${leadTokenScope.jobRequestId ?? 'none'}`,
+        `[attachments:${reqId}] Lead token denied: tokenStatus=${leadTokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'} tokenJobRequest=${leadTokenScope.jobRequestId ?? 'none'} leadTraceId=${leadTraceId}`,
       )
-      return NextResponse.json({ error }, { status })
+      return NextResponse.json(
+        { error, traceId: leadTraceId },
+        { status, headers: { 'X-Trace-Id': leadTraceId } },
+      )
     }
 
     if (!session && tokenScope?.status) {
@@ -207,14 +211,17 @@ export async function GET(
       console.warn(
         `[attachments:${reqId}] Token denied: tokenStatus=${tokenScope.status} attachment=${id} jobRequest=${attachmentJobRequestId ?? 'none'}`,
       )
-      return NextResponse.json({ error }, { status })
+      return NextResponse.json(
+        { error, traceId: reqId },
+        { status, headers: { 'X-Trace-Id': reqId } },
+      )
     }
 
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized', traceId: reqId }, { status: 401, headers: { 'X-Trace-Id': reqId } })
     }
 
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return NextResponse.json({ error: 'Forbidden', traceId: reqId }, { status: 403, headers: { 'X-Trace-Id': reqId } })
   }
 
   // Resolve a server-side download URL first so private blobs stay opaque to clients.

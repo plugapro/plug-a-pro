@@ -271,7 +271,7 @@ describe('processInboundMessage stateless notification replies', () => {
     })
     expect(mockSendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('You need 1 credit to accept this selected job'),
+      expect.stringContaining('You need 1 credit to accept this job'),
       expect.arrayContaining([
         expect.objectContaining({ id: 'provider_top_up_credits', title: 'Top up credits' }),
         expect.objectContaining({ id: 'match_inspect_lead-1', title: 'View Lead' }),
@@ -358,6 +358,69 @@ describe('processInboundMessage stateless notification replies', () => {
         requestId: 'lead-short-1',
       }),
     )
+  })
+
+  it('sends job-unavailable message with no-deduction confirmation when LEAD_EXPIRED on confirm_accept', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'LEAD_EXPIRED',
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-short-2'))
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('This job is no longer available'),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('No credit was deducted'),
+    )
+  })
+
+  it('sends job-unavailable message with no-deduction confirmation when REQUEST_NOT_AWAITING_CONFIRMATION on confirm_accept', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'REQUEST_NOT_AWAITING_CONFIRMATION',
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-short-3'))
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('This job is no longer available'),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('No credit was deducted'),
+    )
+  })
+
+  it('sends insufficient-credits message with no-deduction confirmation on confirm_accept', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'INSUFFICIENT_CREDITS',
+      currentCreditBalance: 0,
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-short-4'))
+
+    // When NEXT_PUBLIC_APP_URL is set (as in .env), the handler sends via sendCtaUrl.
+    // When it is unset, it falls back to sendText. Accept either path by checking the
+    // message body appears in at least one of the two send calls.
+    const allBodies = [
+      ...mockSendText.mock.calls
+        .filter(([phone]) => phone === PHONE)
+        .map(([, body]) => body as string),
+      ...mockSendCtaUrl.mock.calls
+        .filter(([phone]) => phone === PHONE)
+        .map(([, body]) => body as string),
+    ]
+    expect(allBodies.some((b) => b.includes('Not enough credits'))).toBe(true)
+    expect(allBodies.some((b) => b.includes('No credit was deducted'))).toBe(true)
   })
 
   it('uses status-aware recovery when status flow throws before rendering', async () => {

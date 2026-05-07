@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'crypto'
 import { db } from './db'
 import { previewNotes } from './provider-lead-detail'
 import { getProviderLeadPublicAppUrl } from './provider-credit-copy'
+import { maskPhone } from './support-diagnostics'
 
 const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
 
@@ -235,10 +236,17 @@ export async function getProviderSignedJobHandoverUrlByLeadId(leadId: string) {
   })
 }
 
-export async function resolveProviderLeadAccessToken(token: string) {
+export async function resolveProviderLeadAccessToken(
+  token: string,
+  opts?: {
+    /** When set, the token's providerPhoneHash (if present) is checked against this phone. */
+    assertSenderPhone?: string
+  },
+) {
+  const traceId = crypto.randomUUID().slice(0, 8)
   const verified = verifyProviderLeadAccessToken(token)
   if (verified.status !== 'active') {
-    return { status: verified.status, lead: null, payload: verified.payload }
+    return { status: verified.status, lead: null, payload: verified.payload, traceId }
   }
 
   const lead = await db.lead.findUnique({
@@ -306,12 +314,55 @@ export async function resolveProviderLeadAccessToken(token: string) {
     !lead.provider.active ||
     lead.provider.status !== 'ACTIVE'
   ) {
-    return { status: 'invalid' as const, lead: null, payload: verified.payload }
+    console.warn('[provider-lead-access] token invalid: scope mismatch or inactive provider', {
+      traceId,
+      leadFound: Boolean(lead),
+      providerId: verified.payload.providerId,
+      jobRequestId: verified.payload.jobRequestId ?? null,
+    })
+    return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
+  }
+
+  // Verify providerPhoneHash when the caller supplies the inbound sender phone
+  // (WhatsApp path) or when the token itself embeds a hash. This ensures the
+  // token cannot be replayed from a different WhatsApp number.
+  const expectedHash = verified.payload.providerPhoneHash
+  if (expectedHash) {
+    const actualHash = hashProviderPhone(lead.provider.phone)
+    if (actualHash !== expectedHash) {
+      console.warn('[provider-lead-access] token rejected: phone hash mismatch', {
+        traceId,
+        providerId: verified.payload.providerId,
+        leadId: verified.payload.leadId,
+        providerPhoneMasked: maskPhone(lead.provider.phone),
+      })
+      return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
+    }
+  }
+
+  if (opts?.assertSenderPhone) {
+    const senderHash = hashProviderPhone(opts.assertSenderPhone)
+    const storedHash = hashProviderPhone(lead.provider.phone)
+    if (senderHash !== storedHash) {
+      console.warn('[provider-lead-access] token rejected: sender phone does not match provider record', {
+        traceId,
+        providerId: verified.payload.providerId,
+        leadId: verified.payload.leadId,
+        senderPhoneMasked: maskPhone(opts.assertSenderPhone),
+        providerPhoneMasked: maskPhone(lead.provider.phone),
+      })
+      return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
+    }
   }
 
   // If the underlying match was cancelled (job cancelled or reassigned), revoke access.
   if (lead.jobRequest.match?.status === 'CANCELLED') {
-    return { status: 'invalid' as const, lead: null, payload: verified.payload }
+    console.warn('[provider-lead-access] token rejected: match cancelled', {
+      traceId,
+      leadId: lead.id,
+      providerId: lead.providerId,
+    })
+    return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
   }
 
   const hasAcceptedUnlock = lead.status === 'ACCEPTED' && lead.unlock?.providerId === lead.providerId
@@ -358,18 +409,19 @@ export async function resolveProviderLeadAccessToken(token: string) {
     }
   }
 
-  return { status: 'active' as const, lead: scopedLead, payload: verified.payload }
+  return { status: 'active' as const, lead: scopedLead, payload: verified.payload, traceId }
 }
 
 export async function resolveProviderLeadAttachmentScope(token: string) {
   const resolved = await resolveProviderLeadAccessToken(token)
   if (resolved.status !== 'active' || !resolved.lead) {
-    return { status: resolved.status, jobRequestId: null, leadId: resolved.payload?.leadId ?? null }
+    return { status: resolved.status, jobRequestId: null, leadId: resolved.payload?.leadId ?? null, traceId: resolved.traceId }
   }
 
   return {
     status: 'active' as const,
     jobRequestId: resolved.lead.jobRequestId,
     leadId: resolved.lead.id,
+    traceId: resolved.traceId,
   }
 }

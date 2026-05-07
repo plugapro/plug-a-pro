@@ -166,6 +166,31 @@ export default async function JobDetailPage({
         </CardContent>
       </Card>
 
+      {/* Completion note — shown once job is awaiting or completed */}
+      {(['PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] as const).includes(
+        job.status as 'PENDING_COMPLETION_CONFIRMATION' | 'COMPLETED'
+      ) && (job as any).completionNote && (
+        <Card>
+          <CardContent className="p-4 space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Completion note
+            </p>
+            <p className="text-sm">{(job as any).completionNote}</p>
+            {(job as any).completedAt && (
+              <p className="text-xs text-muted-foreground">
+                Completed {(job as any).completedAt.toLocaleString('en-ZA', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Status controls — client component */}
       <JobStatusControls jobId={job.id} currentStatus={job.status} />
 

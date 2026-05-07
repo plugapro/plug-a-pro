@@ -630,6 +630,7 @@ async function processInboundMessageUnlocked(
     //   - evidence collection in the provider registration flow (reg_collect_evidence)
     //   - profile photo capture in the provider registration flow (reg_collect_profile_photo)
     //   - customer photo upload in the job-request flow (collect_photos)
+    //   - completion photo upload in the provider job completion flow (providerCompletionStep === 'photo')
     // Must be checked BEFORE flow dispatch so mid-flow reactions don't retrigger menus.
     // WHY profile-photo is here: omitting it caused images uploaded at the
     // profile-photo step to be silently dropped — the flow went dead, the user
@@ -640,7 +641,13 @@ async function processInboundMessageUnlocked(
       (conversation.flow === 'registration' &&
         (conversation.step === 'reg_collect_evidence' ||
           conversation.step === 'reg_collect_profile_photo')) ||
-      (conversation.flow === 'job_request' && conversation.step === 'collect_photos')
+      (conversation.flow === 'job_request' && conversation.step === 'collect_photos') ||
+      // Provider completion photo: conversation is in tech_job_view with a pending
+      // completion job and the provider has already supplied the note (photo step).
+      (conversation.flow === 'provider_job' &&
+        conversation.step === 'tech_job_view' &&
+        Boolean((data as ConversationData).pendingCompletionJobId) &&
+        (data as ConversationData).providerCompletionStep === 'photo')
     if ((reply.type === 'image' || reply.type === 'document') && !isMediaAllowedStep) {
       console.info('[whatsapp-bot] dropped media at non-media step', {
         normalized_phone: phone,
@@ -1346,7 +1353,7 @@ async function processInboundMessageUnlocked(
       return
     } else if (
       flow === 'idle' &&
-      ['dispute', 'issue with job', 'raise issue'].some((k) => rawText === k)
+      ['dispute', 'issue', 'issue with job', 'raise issue'].some((k) => rawText === k)
     ) {
       // M5-T4: dispute — two-step; first message sent here, reply handled by provider_journey dispatcher
       const disputeResult = await handleProviderDisputeFlow(phone)
@@ -3055,11 +3062,11 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         return
       }
       if (result.reason === 'LEAD_EXPIRED') {
-        await sendText(phone, '⏰ This job has expired and can no longer be accepted. No credits used.')
+        await sendText(phone, 'This job is no longer available. No credit was deducted.')
         return
       }
       if (result.reason === 'REQUEST_NOT_AWAITING_CONFIRMATION') {
-        await sendText(phone, '⚠️ This job is no longer awaiting your confirmation.')
+        await sendText(phone, 'This job is no longer available. No credit was deducted.')
         return
       }
       console.error('[whatsapp-bot] confirm_accept failed', { traceId, leadId, reason: result.reason })

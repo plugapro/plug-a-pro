@@ -103,6 +103,11 @@ describe('parseProviderJobCommand', () => {
     expect(parseProviderJobCommand(null)).toBeNull()
   })
 
+  it('returns null for "issue" — it routes to dispute flow, not a job status command', () => {
+    // "issue" is intentionally handled by the dispute flow in whatsapp-bot, not here.
+    expect(parseProviderJobCommand('issue')).toBeNull()
+  })
+
   it('parses "arrive in 2 hours" as a relative arrival command', () => {
     const fixedNow = new Date('2026-05-02T08:00:00.000Z')
     const result = parseProviderJobCommand('arrive in 2 hours', { now: fixedNow })
@@ -264,6 +269,43 @@ describe('executeProviderJobCommand', () => {
     expect(result.ok).toBe(true)
     expect(transitionJob).not.toHaveBeenCalled()
     expect(result.ok && result.message).toContain('No duplicate customer notification')
+  })
+
+  it('transitions EN_ROUTE to ARRIVED on "arrived"', async () => {
+    const { transitionJob } = await import('../../lib/jobs')
+    mockDb.job.findMany.mockResolvedValueOnce([makeJob({ status: 'EN_ROUTE' })])
+
+    const result = await executeProviderJobCommand({
+      phone: '+27111111111',
+      command: parseProviderJobCommand('arrived')!,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(transitionJob).toHaveBeenCalledWith(expect.objectContaining({
+      jobId: 'job-1',
+      toStatus: 'ARRIVED',
+      actorRole: 'provider',
+    }))
+    expect(result.ok && result.message).toContain('Status updated: Arrived')
+    expect(result.ok && result.message).toContain('Customer notified')
+  })
+
+  it('transitions ARRIVED to STARTED on "start"', async () => {
+    const { transitionJob } = await import('../../lib/jobs')
+    mockDb.job.findMany.mockResolvedValueOnce([makeJob({ status: 'ARRIVED' })])
+
+    const result = await executeProviderJobCommand({
+      phone: '+27111111111',
+      command: parseProviderJobCommand('start')!,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(transitionJob).toHaveBeenCalledWith(expect.objectContaining({
+      jobId: 'job-1',
+      toStatus: 'STARTED',
+      actorRole: 'provider',
+    }))
+    expect(result.ok && result.message).toContain('Status updated: Job in progress')
   })
 
   it('blocks non-linear transitions', async () => {
