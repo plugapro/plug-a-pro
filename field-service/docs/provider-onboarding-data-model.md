@@ -82,6 +82,6 @@ Severity ladder (most strict first):
 
 1. ✅ Optional hourly-rate capture (was Phase 4 follow-up Task 1) — shipped.
 2. ✅ Bio capture during onboarding (was Phase 4 follow-up Task 2) — shipped.
-3. Surface the completeness validator output on the admin review screen so reviewers see exactly what's missing before approving (Phase 4 follow-up Task 3 — pending).
+3. ✅ Completeness validator output is surfaced on the admin review screen, and approval is blocked server-side when `canApprove` is false.
 4. Audit `Provider.status` auto-update on application APPROVAL race (Phase 4 follow-up Task 5 — pending).
 5. Customer shortlist card UI surface for the new hourly rate field — already present in `lib/customer-shortlists.ts` via `displayCallOutFee`; consumers reading `ProviderApplication.hourlyRate` directly will pick up Task 1 data automatically.

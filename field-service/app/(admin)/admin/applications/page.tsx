@@ -22,6 +22,8 @@ import {
 } from '@/lib/provider-applications'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
+import { evaluateProviderProfileCompleteness } from '@/lib/provider-onboarding-completeness'
+import { PROVIDER_PROFILE_PHOTO_LABEL } from '@/lib/provider-attachment-labels'
 import {
   OPS_QUEUE_TYPES,
   claimOpsQueueItem,
@@ -76,6 +78,7 @@ const providerApplicationSelect = {
   serviceAreas: true,
   experience: true,
   availability: true,
+  callOutFee: true,
   status: true,
   notes: true,
   reviewedAt: true,
@@ -102,6 +105,7 @@ const providerApplicationSelect = {
       id: true,
       verified: true,
       kycStatus: true,
+      avatarUrl: true,
       providerCategories: {
         select: {
           categorySlug: true,
@@ -118,6 +122,37 @@ function resolveCategorySlug(skill: string) {
   return resolveServiceCategoryTag(skill) ?? skill.toLowerCase().trim().replace(/\s+/g, '_')
 }
 
+function evaluateApplicationCompleteness(application: {
+  name: string
+  phone: string
+  skills: string[]
+  serviceAreas: string[]
+  experience: string | null
+  availability: string | null
+  callOutFee: { toString(): string } | number | string | null
+  idNumber: string | null
+  attachments: Array<{ label: string | null; id: string }>
+  provider?: { avatarUrl: string | null } | null
+}) {
+  const profilePhotoAttachmentId =
+    application.attachments.find((attachment) => attachment.label === PROVIDER_PROFILE_PHOTO_LABEL)?.id ?? null
+  const callOutFee =
+    application.callOutFee == null ? null : Number(application.callOutFee)
+
+  return evaluateProviderProfileCompleteness({
+    name: application.name,
+    phone: application.phone,
+    skills: application.skills,
+    serviceAreas: application.serviceAreas,
+    experience: application.experience,
+    availability: application.availability,
+    callOutFee,
+    idNumber: application.idNumber,
+    avatarUrl: application.provider?.avatarUrl ?? null,
+    profilePhotoAttachmentId,
+  })
+}
+
 // ─── Server Actions ───────────────────────────────────────────────────────────
 
 async function approveApplication(formData: FormData) {
@@ -130,6 +165,15 @@ async function approveApplication(formData: FormData) {
     select: providerApplicationSelect,
   })
   if (!app || !['PENDING', 'MORE_INFO_REQUIRED'].includes(app.status)) return
+
+  const completeness = evaluateApplicationCompleteness(app)
+  if (!completeness.canApprove) {
+    console.warn('[applications] Approval blocked by onboarding completeness requirements', {
+      applicationId: app.id,
+      missingFields: completeness.missing.map((item) => item.field),
+    })
+    redirect('/admin/applications?message=incomplete_application_for_approval')
+  }
 
   const conflictingApplications = await findConflictingActiveProviderApplications(db, app.phone, {
     excludeId: app.id,
@@ -612,6 +656,11 @@ export default async function ApplicationsPage({
           const hasConflict = conflictingApplicationIds.has(app.id)
           const assignment = assignments.get(app.id)
           const claimedByCurrentUser = assignment?.claimedById === admin.id
+          const completeness = evaluateApplicationCompleteness(app)
+          const blockingItems = completeness.missing.filter((item) =>
+            item.severity === 'block_submit' || item.severity === 'block_approve',
+          )
+          const approvalBlockedByCompleteness = !completeness.canApprove
 
           return (
             <Card key={app.id}>
@@ -689,6 +738,16 @@ export default async function ApplicationsPage({
                     Duplicate active application detected for this phone number. Reject or resolve the duplicate before approving so one provider does not end up with multiple active application records.
                   </div>
                 )}
+                {approvalBlockedByCompleteness && (
+                  <div className="tone-warning rounded-xl border px-3 py-2 text-sm">
+                    Approval blocked by missing required onboarding fields:
+                    <ul className="ml-5 mt-1 list-disc">
+                      {blockingItems.map((item) => (
+                        <li key={`${app.id}-${item.field}`}>{item.field}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <div className="flex gap-2 pt-1">
                   {!claimedByCurrentUser ? (
@@ -712,7 +771,7 @@ export default async function ApplicationsPage({
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={!crudEnabled || hasConflict}
+                      disabled={!crudEnabled || hasConflict || approvalBlockedByCompleteness}
                       className="bg-[var(--tone-success-fg)] text-white hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground"
                     >
                       Approve

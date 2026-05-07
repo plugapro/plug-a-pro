@@ -13,15 +13,21 @@
 // Usage:
 //   WHATSAPP_ACCESS_TOKEN=<token> WHATSAPP_WABA_ID=<waba_id> node scripts/register-whatsapp-templates.mjs
 //   WHATSAPP_ACCESS_TOKEN=<token> WHATSAPP_WABA_ID=<waba_id> node scripts/register-whatsapp-templates.mjs --delete-rejected
+//   node scripts/register-whatsapp-templates.mjs --audit-coverage
 //
 // --delete-rejected: deletes the 16 previously rejected en_US templates first
+
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const WABA_ID = process.env.WHATSAPP_WABA_ID
 const TOKEN   = process.env.WHATSAPP_ACCESS_TOKEN
 const BASE    = 'https://graph.facebook.com/v21.0'
 const DELETE_FIRST = process.argv.includes('--delete-rejected')
+const AUDIT_COVERAGE = process.argv.includes('--audit-coverage')
 
-if (!WABA_ID || !TOKEN) {
+if (!AUDIT_COVERAGE && (!WABA_ID || !TOKEN)) {
   console.error('Set WHATSAPP_WABA_ID and WHATSAPP_ACCESS_TOKEN')
   process.exit(1)
 }
@@ -137,6 +143,33 @@ const TEMPLATES = [
   },
 ]
 
+// Templates that are intentionally managed outside this script's creation
+// batch (already registered or registered through separate rollout scripts).
+// Keep this list in sync with actual WABA registration status.
+const MANAGED_EXISTING_TEMPLATE_NAMES = [
+  'booking_cancelled',
+  'booking_confirmation',
+  'booking_reminder',
+  'customer_match_found',
+  'customer_provider_en_route',
+  'customer_provider_running_late',
+  'customer_quote_ready',
+  'extra_work_approval',
+  'follow_up',
+  'job_completed',
+  'lead_unlock_customer_intro',
+  'lead_unlock_provider',
+  'provider_invoice_send',
+  'quote_ready',
+  'technician_arrived',
+  'technician_on_the_way',
+  'wallet_low_balance',
+  'wallet_payfast_topup_initiated',
+  'wallet_payment_credited',
+  'wallet_payment_intent_created',
+  'wallet_zero_balance_lead',
+]
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function deleteTemplate(id) {
@@ -169,9 +202,51 @@ async function registerTemplate(tpl) {
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
 
+function extractTemplateNamesFromRegistry() {
+  const scriptDir = dirname(fileURLToPath(import.meta.url))
+  const registryPath = resolve(scriptDir, '../lib/messaging-templates.ts')
+  const source = readFileSync(registryPath, 'utf8')
+  const matches = source.matchAll(/name:\s*'([^']+)'/g)
+  const names = new Set()
+  for (const match of matches) {
+    names.add(match[1])
+  }
+  return [...names].sort()
+}
+
+function auditCoverage() {
+  const registryNames = extractTemplateNamesFromRegistry()
+  const registrationBatchNames = new Set(TEMPLATES.map((tpl) => tpl.name))
+  const managedExisting = new Set(MANAGED_EXISTING_TEMPLATE_NAMES)
+  const coveredNames = new Set([
+    ...registrationBatchNames,
+    ...managedExisting,
+  ])
+  const missingFromRegistrationScript = registryNames.filter((name) => !coveredNames.has(name))
+
+  console.log(`Templates declared in lib/messaging-templates.ts: ${registryNames.length}`)
+  console.log(`Templates currently in scripts/register-whatsapp-templates.mjs batch: ${registrationBatchNames.size}`)
+  console.log(`Templates covered by managed-existing allowlist: ${managedExisting.size}`)
+
+  if (missingFromRegistrationScript.length === 0) {
+    console.log('Coverage OK: registration batch includes all template names.')
+    return 0
+  }
+
+  console.log('\nTemplates missing from registration batch:')
+  for (const name of missingFromRegistrationScript) console.log(`- ${name}`)
+  console.log('\nUpdate this script before production registration to avoid template drift.')
+  return 2
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  if (AUDIT_COVERAGE) {
+    process.exitCode = auditCoverage()
+    return
+  }
+
   // ── Step 1: Delete rejected templates ──────────────────────────────────────
   if (DELETE_FIRST) {
     console.log(`\nDeleting ${REJECTED_IDS.length} rejected en_US templates...\n`)

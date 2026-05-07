@@ -20,6 +20,11 @@ export function getApplicationsAdminMessage(code?: string | null) {
         tone: 'error' as const,
         text: 'Approval blocked because another active application already exists for this phone number.',
       }
+    case 'incomplete_application_for_approval':
+      return {
+        tone: 'error' as const,
+        text: 'Approval blocked because required onboarding fields are missing. Ask the provider for more information and review again.',
+      }
     default:
       return null
   }

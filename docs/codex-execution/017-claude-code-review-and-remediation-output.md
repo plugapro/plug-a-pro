@@ -510,3 +510,67 @@ These tests assert:
 | `field-service/scripts/wallet-schema-drift-repair.ts` | Minor type assertions and `Map` typing fixes to allow `npx tsc --noEmit` to pass without changing repair behavior. |
 | `field-service/app/api/cron/session-timeout/route.ts` | Masked conversation phone numbers in remaining send/error logs. |
 | `field-service/lib/whatsapp-flows/status.ts` | Masked phone in request-status log path to avoid raw phone logging in diagnostics. |
+
+## Fourth-pass remediation (close prior out-of-scope product/ops follow-ups)
+
+This pass closes the three high-level follow-ups that were previously marked out-of-scope by design: template registration operations, provider profile/trust completeness review flow, and backfill jobs.
+
+### 1) Template registration follow-up closed
+
+`field-service/scripts/register-whatsapp-templates.mjs`
+
+- Added `--audit-coverage` mode that compares the template names declared in `lib/messaging-templates.ts` against the registration batch in the script.
+- Prints missing names and exits non-zero if drift exists.
+- This gives ops a deterministic pre-release gate before WABA registration runs.
+
+`field-service/package.json`
+
+- Added command: `npm run whatsapp:templates:audit`
+
+### 2) Profile/trust capture review flow closed
+
+`field-service/app/(admin)/admin/applications/page.tsx`
+
+- Added onboarding completeness evaluation to the admin applications flow using `evaluateProviderProfileCompleteness`.
+- Approval is now blocked server-side when required submit/approve fields are missing.
+- Pending-application cards now show a visible “approval blocked” warning with the missing blocking fields.
+- Approve button is disabled when completeness blocking rules fail.
+
+`field-service/lib/admin-action-messages.ts`
+
+- Added `incomplete_application_for_approval` admin banner text.
+
+`field-service/docs/provider-onboarding-data-model.md`
+
+- Updated the prior pending task marker: admin completeness visibility is now implemented.
+
+### 3) Backfill jobs follow-up closed
+
+`field-service/scripts/backfill-qualified-shortlist-foundation.ts`
+
+- Added an idempotent backfill script (dry-run by default; `--commit` to apply) that executes all three pending jobs:
+  - Backfill `JobRequest.requestRef`
+  - Backfill `Lead.matchScore` and `Lead.rankingPosition` from `MatchAttempt`
+  - Create missing `ProviderCategory` rows from `Provider.skills` and `TechnicianSkill`
+- Script batches writes and is safe to re-run.
+
+`field-service/package.json`
+
+- Added command: `npm run db:backfill:qualified-shortlist`
+
+### Runbook commands
+
+```bash
+# 1) Check template registration drift before release
+npm run whatsapp:templates:audit
+
+# 2) Dry-run shortlist backfills
+npm run db:backfill:qualified-shortlist
+
+# 3) Apply shortlist backfills
+npm run db:backfill:qualified-shortlist -- --commit
+```
+
+### Fourth-pass OpenBrain note
+
+Final ops/product follow-ups from this review are now executable and enforced in code: template registration drift is auditable via a script gate, provider onboarding trust/profile completeness is enforced at admin approval time, and the three shortlist-foundation backfills are implemented as an idempotent dry-run/commit script. These changes remove the last “out-of-scope by design” blockers for controlled phone-based retesting and release-readiness workflows.
