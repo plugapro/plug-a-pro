@@ -2023,7 +2023,7 @@ async function handleCollectPreferredLanguage(ctx: FlowContext): Promise<FlowRes
     }
   }
 
-  const provided = ctx.reply.text?.trim()
+  const provided = ctx.reply.text?.trim().slice(0, 64)
   if (!provided) {
     await sendText(ctx.phone, 'Please type your preferred language, or tap Skip.')
     return { nextStep: 'reg_collect_preferred_language' }

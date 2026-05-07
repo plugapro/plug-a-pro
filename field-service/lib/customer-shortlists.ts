@@ -560,7 +560,8 @@ async function notifySelectedProvider(params: {
     if (leadUrl) {
       // CTA URL is a supplementary message — send it best-effort so a failure
       // does not roll back the primary Accept/Decline buttons the provider already received.
-      sendCtaUrl(
+      // Must be awaited: unawaited Promises are dropped when the Vercel function exits.
+      await sendCtaUrl(
         params.providerPhone,
         'Open this offer in the app to review job details.',
         ctaLabelFor('generic_details'),

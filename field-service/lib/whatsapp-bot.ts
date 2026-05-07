@@ -3071,6 +3071,13 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
     }
     if (result.alreadyUnlocked) {
       await sendText(phone, 'This job is already assigned to you. No additional credit was deducted. Reply *my jobs* to manage it.')
+      return
+    }
+    if (!result.notificationSent) {
+      await sendText(
+        phone,
+        '✅ You have accepted this job and a credit was used. The customer has been notified.\n\nReply *my jobs* to manage your assignments.',
+      )
     }
     return
   }
@@ -3274,27 +3281,35 @@ async function handleProviderOpportunityCapture(
     return
   }
 
-  const { respondToProviderOpportunity } = await import('./provider-opportunity-responses')
-  const result = await respondToProviderOpportunity({
-    leadId,
-    providerId: provider.id,
-    response: 'INTERESTED',
-    callOutFeeText: data.providerOpportunityCallOutFeeText,
-    estimatedArrivalAt: data.providerOpportunityEstimatedArrivalAtIso
-      ? new Date(data.providerOpportunityEstimatedArrivalAtIso)
-      : null,
-    negotiable: data.providerOpportunityNegotiable ?? true,
-    providerNote,
-    source: 'whatsapp',
-    idempotencyKey: `whatsapp:${provider.id}:${leadId}:interested`,
-  })
-
-  await sendText(
-    phone,
-    `Interest submitted.\n\nCall-out: ${data.providerOpportunityCallOutFeeText}\nArrival: ${data.providerOpportunityEstimatedArrivalAtIso ? new Date(data.providerOpportunityEstimatedArrivalAtIso).toLocaleString('en-ZA') : 'Saved'}\nRate: ${data.providerOpportunityNegotiable === false ? 'Fixed' : 'Negotiable'}${providerNote ? `\nNote: ${providerNote}` : ''}\n\nNo credits were used.\nWe'll notify you if the customer selects you.`,
-  )
+  try {
+    const { respondToProviderOpportunity } = await import('./provider-opportunity-responses')
+    const result = await respondToProviderOpportunity({
+      leadId,
+      providerId: provider.id,
+      response: 'INTERESTED',
+      callOutFeeText: data.providerOpportunityCallOutFeeText,
+      estimatedArrivalAt: data.providerOpportunityEstimatedArrivalAtIso
+        ? new Date(data.providerOpportunityEstimatedArrivalAtIso)
+        : null,
+      negotiable: data.providerOpportunityNegotiable ?? true,
+      providerNote,
+      source: 'whatsapp',
+      idempotencyKey: `whatsapp:${provider.id}:${leadId}:interested`,
+    })
+    if (!result.ok) {
+      await sendText(phone, '⚠️ We could not record your interest at this time. Please try again or reply *menu*.')
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+    await sendText(
+      phone,
+      `Interest submitted.\n\nCall-out: ${data.providerOpportunityCallOutFeeText}\nArrival: ${data.providerOpportunityEstimatedArrivalAtIso ? new Date(data.providerOpportunityEstimatedArrivalAtIso).toLocaleString('en-ZA') : 'Saved'}\nRate: ${data.providerOpportunityNegotiable === false ? 'Fixed' : 'Negotiable'}${providerNote ? `\nNote: ${providerNote}` : ''}\n\nNo credits were used.\nWe'll notify you if the customer selects you.`,
+    )
+  } catch (err) {
+    console.error('[whatsapp-bot] handleProviderOpportunityCapture failed', { leadId, providerId: provider.id, err })
+    await sendText(phone, '⚠️ Something went wrong recording your interest. Please try again or reply *menu*.')
+  }
   await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
-  void result
 }
 
 async function handleProviderCompletionCapture(
