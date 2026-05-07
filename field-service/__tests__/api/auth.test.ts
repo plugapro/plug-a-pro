@@ -1011,6 +1011,33 @@ describe('POST /api/auth/provider/verify-code', () => {
     expect(db.provider.update).not.toHaveBeenCalled()
   })
 
+  it('returns WORKER_NOT_APPROVED for a missing provider profile with a MORE_INFO_REQUIRED application', async () => {
+    const { db } = await import('@/lib/db')
+    ;(db.provider.findMany as any).mockResolvedValue([])
+    ;(db.providerApplication.findFirst as any).mockResolvedValue({
+      id: 'app-more',
+      status: 'MORE_INFO_REQUIRED',
+      providerId: null,
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/verify-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/verify-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0823035070', code: '123456' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(body).toMatchObject({
+      ok: false,
+      code: 'WORKER_NOT_APPROVED',
+      message: "Your provider application is still under review. We'll notify you on WhatsApp once it has been approved.",
+    })
+  })
+
   it('returns WORKER_INACTIVE for rejected or suspended providers', async () => {
     const { db } = await import('@/lib/db')
     ;(db.provider.findMany as any).mockResolvedValue([{

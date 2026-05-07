@@ -45,12 +45,14 @@ describe('parseProviderInterestRateText', () => {
     expect(parseProviderInterestRateText(null, { now: FIXED_NOW })).toBeNull()
   })
 
-  it('rejects zero fees', () => {
-    expect(parseProviderInterestRateText('R0 | tomorrow morning', { now: FIXED_NOW })).toBeNull()
+  it('accepts R0 as a zero call-out fee (no call-out fee)', () => {
+    const result = parseProviderInterestRateText('R0 | tomorrow morning', { now: FIXED_NOW })
+    expect(result).not.toBeNull()
+    expect(result?.callOutFee).toBe(0)
   })
 
   it('caps fee parsing to reasonable digit count (avoids interpreting random long numbers as fees)', () => {
-    // The fee regex captures 2–5 digits, so a phone-style "1234567890" should not be parsed.
+    // The fee regex captures 1–5 digits, so a phone-style "1234567890" should not be parsed.
     const result = parseProviderInterestRateText('1234567890 tomorrow morning', { now: FIXED_NOW })
     // Must not interpret "1234567890" as a small reasonable fee.
     expect(result?.callOutFee).not.toBe(1234567890)

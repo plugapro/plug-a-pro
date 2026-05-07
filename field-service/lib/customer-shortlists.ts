@@ -3,6 +3,7 @@ import { db } from './db'
 import { getJobRequestAccessUrl } from './job-request-access'
 import { getProviderLeadAccessUrlByLeadId } from './provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
+import { orchestrateMatch } from './matching/orchestrator'
 import { sendText } from './whatsapp'
 import { sendButtons, sendCtaUrl } from './whatsapp-interactive'
 import { ctaLabelFor } from './whatsapp-copy'
@@ -396,9 +397,9 @@ export async function cancelRequestFromShortlist(params: { requestId: string }) 
 
 /**
  * Customer asks for more shortlist options. We mark the current shortlist as
- * superseded and reset the request to MATCHING so the dispatch pipeline can
- * fan out to additional providers. Existing interested responses remain valid
- * and will be re-included in the next shortlist generation.
+ * superseded and reopen the request so the dispatch pipeline can run another
+ * match pass. Existing interested responses remain valid and will be
+ * re-included in the next shortlist generation.
  */
 export async function requestMoreShortlistOptions(params: { requestId: string }) {
   const request = await db.jobRequest.findUnique({
@@ -422,7 +423,7 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
     })
     await tx.jobRequest.update({
       where: { id: params.requestId },
-      data: { status: 'MATCHING' },
+      data: { status: 'OPEN' },
     })
     await tx.auditLog.create({
       data: {
@@ -435,6 +436,13 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
       },
     }).catch(() => undefined)
   })
+
+  // Continue matching immediately for the reopen rematch request.
+  try {
+    await orchestrateMatch(params.requestId, { triggeredBy: 'rematch' })
+  } catch (error) {
+    console.error('[customer-shortlists] rematch orchestration failed:', error)
+  }
 
   return { ok: true as const }
 }
@@ -526,14 +534,12 @@ async function notifySelectedProvider(params: {
     ])
     const remainingCredits = Math.max(0, balance.totalCreditBalance - 1)
     const area = params.suburb ? ` in ${params.suburb}` : ''
-    const linkLine = leadUrl ? `\n\nOpen job: ${leadUrl}` : ''
-
     const body =
       `Customer selected you\n\n` +
       `The customer selected you for this ${params.category} job${area}.\n\n` +
       `Accepting this job uses 1 credit.\n\n` +
       `Available credits: ${formatCredits(balance.totalCreditBalance)}\n` +
-      `After acceptance: ${formatCredits(remainingCredits)}${linkLine}`
+      `After acceptance: ${formatCredits(remainingCredits)}`
 
     await sendButtons(
       params.providerPhone,
@@ -551,6 +557,22 @@ async function notifySelectedProvider(params: {
         },
       },
     )
+    if (leadUrl) {
+      await sendCtaUrl(
+        params.providerPhone,
+        'Open this offer in the app to review job details.',
+        ctaLabelFor('generic_details'),
+        leadUrl,
+        undefined,
+        {
+          templateName: 'interactive:provider_selected_for_confirmation_cta',
+          metadata: {
+            leadId: params.leadId,
+            providerId: params.providerId,
+          },
+        },
+      )
+    }
 
     return { sent: true as const }
   } catch (error) {

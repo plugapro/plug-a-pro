@@ -338,6 +338,12 @@ model ProviderApplication {
   evidenceNote     String?
   evidenceFileUrls String[]          @default([])
   idNumber         String?           // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
+  alternateMobileE164 String?         @db.VarChar(32)
+  preferredLanguage String?          // Optional preferred language for customer communication
+  reference1Name    String?
+  reference1Mobile  String?
+  reference2Name    String?
+  reference2Mobile  String?
   isTestUser       Boolean           @default(false)
   cohortName       String?
   status       ApplicationStatus @default(PENDING)

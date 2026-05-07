@@ -128,19 +128,19 @@ describe('reg_collect_hourly_rate step (Phase 4 follow-up Task 1)', () => {
 // ─── Task 2: bio ────────────────────────────────────────────────────────────
 
 describe('reg_collect_bio step (Phase 4 follow-up Task 2)', () => {
-  it('skip via button id transitions to reg_collect_evidence', async () => {
+  it('skip via button id transitions to reg_collect_alternate_mobile', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({
       step: 'reg_collect_bio',
       reply: { type: 'button_reply', id: 'provider_bio_skip', title: '⏭️ Skip' },
     })
     const result = await handleRegistrationFlow(ctx)
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_alternate_mobile')
     expect(result.nextData?.providerBioSkipped).toBe(true)
     expect(result.nextData?.providerBio).toBeUndefined()
   })
 
-  it('uses certification-specific proof prompt when high-risk services were selected', async () => {
+  it('transitions to reg_collect_alternate_mobile when high-risk services were selected (labels computed at evidence step)', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({
       step: 'reg_collect_bio',
@@ -148,18 +148,16 @@ describe('reg_collect_bio step (Phase 4 follow-up Task 2)', () => {
       reply: { type: 'button_reply', id: 'provider_bio_skip', title: '⏭️ Skip' },
     })
     const result = await handleRegistrationFlow(ctx)
-    expect(result.nextStep).toBe('reg_collect_evidence')
-    expect(result.nextData?.highRiskServiceLabels).toEqual(['Electrical'])
+    expect(result.nextStep).toBe('reg_collect_alternate_mobile')
     expect(sendButtonsMock).toHaveBeenCalledWith(
       ctx.phone,
-      expect.stringContaining('Selected high-risk services: *Electrical*'),
+      expect.stringContaining('add an alternate mobile'),
       expect.arrayContaining([
-        expect.objectContaining({ id: 'evidence_upload', title: '📎 Upload proof' }),
+        expect.objectContaining({ id: 'alternate_mobile_skip' }),
       ]),
     )
-    const prompt = sendButtonsMock.mock.calls.at(-1)?.[1] as string
-    expect(prompt).toContain('certificate, licence, trade qualification')
-    expect(prompt).toContain('does not automatically mean Plug A Pro has verified it')
+    // highRiskServiceLabels is computed in promptEvidenceAfterBio (called from
+    // reg_collect_reference2), not at the bio step. Skills are preserved in ctx.data.
   })
 
   it('keeps generic proof prompt when only standard services were selected', async () => {
@@ -170,27 +168,28 @@ describe('reg_collect_bio step (Phase 4 follow-up Task 2)', () => {
       reply: { type: 'button_reply', id: 'provider_bio_skip', title: '⏭️ Skip' },
     })
     await handleRegistrationFlow(ctx)
+    expect((sendButtonsMock.mock.calls.at(-1)?.[1] as string)).toContain('alternate mobile')
     const prompt = sendButtonsMock.mock.calls.at(-1)?.[1] as string
-    expect(prompt).toContain('optional work note')
+    expect(prompt).toContain('alternate mobile')
     expect(prompt).not.toContain('Selected high-risk services')
   })
 
-  it('skip via free-text "skip" transitions to reg_collect_evidence', async () => {
+  it('skip via free-text "skip" transitions to reg_collect_alternate_mobile', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({ step: 'reg_collect_bio', reply: { type: 'text', text: 'skip' } })
     const result = await handleRegistrationFlow(ctx)
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_alternate_mobile')
     expect(result.nextData?.providerBioSkipped).toBe(true)
   })
 
-  it('captures a typed bio and transitions to evidence', async () => {
+  it('captures a typed bio and transitions to reg_collect_alternate_mobile', async () => {
     const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
     const ctx = buildCtx({
       step: 'reg_collect_bio',
       reply: { type: 'text', text: '10 years fixing geysers and bathroom leaks. Always on time.' },
     })
     const result = await handleRegistrationFlow(ctx)
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_alternate_mobile')
     expect(result.nextData?.providerBio).toBe('10 years fixing geysers and bathroom leaks. Always on time.')
     expect(result.nextData?.providerBioSkipped).toBe(false)
   })
@@ -203,7 +202,7 @@ describe('reg_collect_bio step (Phase 4 follow-up Task 2)', () => {
       reply: { type: 'text', text: longBio },
     })
     const result = await handleRegistrationFlow(ctx)
-    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextStep).toBe('reg_collect_alternate_mobile')
     expect(result.nextData?.providerBio).toBe('A'.repeat(280))
   })
 
@@ -212,5 +211,109 @@ describe('reg_collect_bio step (Phase 4 follow-up Task 2)', () => {
     const ctx = buildCtx({ step: 'reg_collect_bio', reply: { type: 'text', text: '   ' } })
     const result = await handleRegistrationFlow(ctx)
     expect(result.nextStep).toBe('reg_collect_bio')
+  })
+})
+
+describe('reg_collect_alternate_mobile step (Task 5)', () => {
+  it('accepts a valid alternate mobile and normalizes to E.164', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_alternate_mobile',
+      data: { providerBio: 'Bio text' },
+      reply: { type: 'text', text: '082 123 4567' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_preferred_language')
+    expect(result.nextData?.alternateMobileE164).toBe('+27821234567')
+  })
+
+  it('re-prompts on invalid alternate mobile format', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_alternate_mobile',
+      reply: { type: 'text', text: '12345' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_alternate_mobile')
+    expect(sendTextMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('Enter a valid South African mobile number'),
+    )
+    expect(result.nextData).toBeUndefined()
+  })
+
+  it('skip button forwards to preferred language step', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_alternate_mobile',
+      reply: { type: 'button_reply', id: 'alternate_mobile_skip', title: '⏭️ Skip' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_preferred_language')
+  })
+})
+
+describe('reg_collect_preferred_language step', () => {
+  it('accepts a language button and forwards to reference 1 prompt', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_preferred_language',
+      reply: { type: 'button_reply', id: 'preferred_language_english', title: 'English' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_reference1')
+    expect(result.nextData?.preferredLanguage).toBe('English')
+  })
+
+  it('allows custom language text and forwards to reference 1 prompt', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_preferred_language',
+      reply: { type: 'text', text: 'Afrikaans' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_reference1')
+    expect(result.nextData?.preferredLanguage).toBe('Afrikaans')
+  })
+})
+
+describe('reg_collect_reference steps (Task 5)', () => {
+  it('parses and stores reference 1 when sent as Name, Phone', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_reference1',
+      reply: { type: 'text', text: 'Sipho Mokoena, 082 555 1234' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_reference2')
+    expect(result.nextData?.reference1Name).toBe('Sipho Mokoena')
+    expect(result.nextData?.reference1Mobile).toBe('+27825551234')
+  })
+
+  it('prompts again when reference input has no phone number', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_reference1',
+      reply: { type: 'text', text: 'Sipho Mokoena' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_reference1')
+    expect(sendTextMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('Please send Reference 1 as: Name, Phone number'),
+    )
+  })
+
+  it('stores reference 2 and then transitions to evidence flow', async () => {
+    const { handleRegistrationFlow } = await import('@/lib/whatsapp-flows/registration')
+    const ctx = buildCtx({
+      step: 'reg_collect_reference2',
+      data: { reference1Name: 'Sipho Mokoena', reference1Mobile: '+27825551234' },
+      reply: { type: 'text', text: 'Lerato Dlamini, 078 999 2222' },
+    })
+    const result = await handleRegistrationFlow(ctx)
+    expect(result.nextStep).toBe('reg_collect_evidence')
+    expect(result.nextData?.reference2Name).toBe('Lerato Dlamini')
+    expect(result.nextData?.reference2Mobile).toBe('+27789992222')
   })
 })

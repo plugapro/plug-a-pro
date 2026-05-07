@@ -2,7 +2,7 @@
 
 ## Status
 
-Partially completed with warnings
+Completed
 
 ## Blueprint file executed
 
@@ -61,6 +61,8 @@ The customer request access page now shows provider shortlist cards when a publi
 
 Added selected-provider WhatsApp notification copy from the selection service. It tells the provider the customer selected them, shows that final acceptance uses 1 credit, includes current/remaining credit balance, and links to the signed provider lead URL when available.
 
+Added shortlist-ready outbound customer CTA via WhatsApp message and CTA URL to the shortlist access screen.
+
 ## Security and privacy impact
 
 Customer shortlist cards show provider profile/business data only. Provider private personal data is not exposed in the customer card. Full customer details are still not revealed to providers at customer selection time.
@@ -103,8 +105,8 @@ npm run lint
 - [x] Request status updates to `PROVIDER_CONFIRMATION_PENDING`.
 - [x] Selected provider notification is attempted.
 - [x] No credit is deducted on selection.
-- [ ] Dedicated ask-for-more-options action is not yet implemented.
-- [ ] Dedicated customer cancel-request action is not yet implemented in this shortlist UI.
+- [x] Ask-for-more-options action is available in shortlist UI and wired to `requestMoreShortlistOptions`.
+- [x] Customer cancel-request action is available in shortlist UI and wired to `cancelRequestFromShortlist`.
 
 ## Risks and follow-ups
 

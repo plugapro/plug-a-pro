@@ -57,11 +57,11 @@ export async function ensureJobRequestAccessToken(jobRequestId: string) {
   return { token, expiresAt }
 }
 
-export async function getJobRequestAccessUrl(jobRequestId: string, intent?: string) {
+export async function getJobRequestAccessUrl(jobRequestId: string, view?: string) {
   const appUrl = getPublicAppUrl()
   if (!appUrl) return null
   const { token } = await ensureJobRequestAccessToken(jobRequestId)
-  const query = intent ? `?intent=${encodeURIComponent(intent)}` : ''
+  const query = view ? `?view=${encodeURIComponent(view)}` : ''
   return `${appUrl}/requests/access/${token}${query}`
 }
 

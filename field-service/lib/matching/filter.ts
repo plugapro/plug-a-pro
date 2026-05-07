@@ -119,6 +119,7 @@ type SkillRow = { skillTag: string }
 type CertRow = { certificationCode: string; status: string }
 type AdminCertRow = { name: string; verifiedAt: Date | null }
 type AdminEquipRow = { label: string; category: string | null; active: boolean }
+type ProviderCategoryRow = { approvalStatus: string }
 
 type MetricsRow = {
   id: string
@@ -274,6 +275,7 @@ export async function filterEligibleProviders(
   const providerIds = rawCandidates.map((c) => c.id)
   const address = jobRequest.address
   const requestWindow = deriveRequestWindow(jobRequest)
+  const normalizedCategory = jobRequest.category.trim().toLowerCase()
 
   // ── Batch-fetch all detail tables in parallel ─────────────────────────────
   const [
@@ -286,6 +288,7 @@ export async function filterEligibleProviders(
     scheduleItemRows,
     adminCertRows,
     adminEquipRows,
+    categoryApprovalRows,
   ] = await Promise.all([
     (db as any).provider?.findMany?.({
       where: {
@@ -357,6 +360,10 @@ export async function filterEligibleProviders(
       where: { providerId: { in: providerIds }, active: true },
       select: { providerId: true, label: true, category: true, active: true },
     }).catch(() => []) as Promise<Array<{ providerId: string } & AdminEquipRow>>,
+    (db as any).providerCategory?.findMany?.({
+      where: { providerId: { in: providerIds }, categorySlug: normalizedCategory },
+      select: { providerId: true, approvalStatus: true },
+    }).catch(() => []) as Promise<Array<{ providerId: string } & ProviderCategoryRow>>,
   ])
 
   // ── Cooldown: find providers who already timed out on THIS job recently ────────
@@ -399,6 +406,9 @@ export async function filterEligibleProviders(
   const scheduleItemsById = indexByProvider(scheduleItemRows)
   const adminCertsById = indexByProvider(adminCertRows)
   const adminEquipById = indexByProvider(adminEquipRows)
+  const approvedCategoryById = new Map(
+    categoryApprovalRows.map((row) => [row.providerId, row.approvalStatus]),
+  )
 
   // ── Category requirements (one call, shared across all providers) ─────────
   const categoryRequirements = await resolveCategoryRequirements({
@@ -436,6 +446,10 @@ export async function filterEligibleProviders(
     const adminEquip = adminEquipById.get(candidate.id) ?? []
     const equipmentTags = metrics?.equipmentTags ?? []
     const vehicleTypes = metrics?.vehicleTypes ?? []
+    const categoryApprovalStatus = approvedCategoryById.get(candidate.id)
+    // Permissive default: no row means the provider has not been category-reviewed
+    // yet and should not be blocked. Only exclude explicit REJECTED / PENDING_REVIEW.
+    const categoryApproved = categoryApprovalStatus == null || categoryApprovalStatus === 'APPROVED'
 
     const filteredReasonCodes: string[] = []
 
@@ -508,6 +522,9 @@ export async function filterEligibleProviders(
 
     if (!hasRequiredVehicles(categoryRequirements.requiredVehicleTypes, vehicleTypes)) {
       filteredReasonCodes.push('MISSING_REQUIRED_VEHICLE')
+    }
+    if (!categoryApproved) {
+      filteredReasonCodes.push('CATEGORY_NOT_APPROVED')
     }
 
     // ── Schedule fit ────────────────────────────────────────────────────────

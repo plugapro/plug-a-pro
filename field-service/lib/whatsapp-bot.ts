@@ -1148,7 +1148,9 @@ async function processInboundMessageUnlocked(
       step = 'pj_application_status'
     } else if (reply.id === 'provider_update_application') {
       const application = await db.providerApplication.findFirst({
-        where: { phone, status: { in: ['PENDING', 'APPROVED'] } },
+        // Include MORE_INFO_REQUIRED so providers awaiting requested admin follow-up
+        // can continue onboarding from the same menu action.
+        where: { phone, status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] } },
         orderBy: { submittedAt: 'desc' },
         select: {
           id: true,

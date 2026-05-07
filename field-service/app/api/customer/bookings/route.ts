@@ -18,6 +18,31 @@ import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-n
 const MAX_REQUEST_PHOTOS = 5
 const MAX_REQUEST_PHOTO_SIZE = 10 * 1024 * 1024
 
+type PhotoSafeForPreviewList = boolean[]
+
+function parsePhotoSafeForPreview(raw: string | null, photoCount: number): PhotoSafeForPreviewList {
+  if (photoCount === 0) return []
+  if (!raw) return Array.from({ length: photoCount }, () => true)
+
+  if (raw === 'true' || raw === 'false') {
+    return Array.from({ length: photoCount }, () => raw === 'true')
+  }
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return parsed
+        .slice(0, photoCount)
+        .map((value) => value !== false)
+        .concat(Array.from({ length: Math.max(0, photoCount - parsed.length) }, () => true))
+    }
+  } catch {
+    // fallback to default true when parsing fails
+  }
+
+  return Array.from({ length: photoCount }, () => true)
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session || session.role !== 'customer') {
@@ -57,6 +82,7 @@ export async function POST(req: NextRequest) {
     verifiedOnly?: boolean
   }
   let photos: File[] = []
+  let photoSafeForPreview: PhotoSafeForPreviewList = []
 
   try {
     const contentType = req.headers.get('content-type') ?? ''
@@ -66,6 +92,7 @@ export async function POST(req: NextRequest) {
       const rawWindowEnd = formData.get('requestedWindowEnd')
       const rawArrivalLatest = formData.get('requestedArrivalLatest')
       const rawMaxCallOutFee = formData.get('maxCallOutFee')
+      const rawPhotoSafeForPreview = formData.get('photoSafeForPreview')
       body = {
         category: String(formData.get('category') ?? ''),
         subcategory: formData.get('subcategory') ? String(formData.get('subcategory')) : undefined,
@@ -89,8 +116,13 @@ export async function POST(req: NextRequest) {
       photos = formData
         .getAll('photos')
         .filter((value): value is File => value instanceof File && value.size > 0)
+      photoSafeForPreview = parsePhotoSafeForPreview(
+        typeof rawPhotoSafeForPreview === 'string' ? rawPhotoSafeForPreview : null,
+        photos.length,
+      )
     } else {
       body = await req.json()
+      photoSafeForPreview = []
     }
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
@@ -210,13 +242,13 @@ export async function POST(req: NextRequest) {
     })
 
     let uploadedPhotoCount = 0
-    for (const photo of photos) {
+    for (const [index, photo] of photos.entries()) {
       await uploadJobRequestPhoto({
         jobRequestId: result.jobRequestId,
         file: photo,
         label: 'customer_photo',
         caption: 'Customer job photo',
-        safeForPreview: true,
+        safeForPreview: photoSafeForPreview[index] ?? true,
         uploadedBy: session.id,
       })
       uploadedPhotoCount++

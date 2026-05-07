@@ -43,8 +43,8 @@ Step 12 and 13 added selected-provider notification copy:
 ## Remaining Follow-Ups
 
 - Legacy WhatsApp bot branches still contain some old "lead accepted" wording for the sequential assignment compatibility path.
-- WhatsApp button IDs for "Interested" and "Not interested" should be fully wired to the step 11 opportunity response service before public rollout.
-- Customer "shortlist ready" outbound message should be added when shortlist generation is triggered automatically.
+- [x] WhatsApp button IDs for "Interested" and "Not interested" are wired to step 11 opportunity response handlers via `whatsapp-bot` (`interested:` / `not_interested:`).
+- [x] Customer "shortlist ready" outbound message is sent when shortlist generation is triggered automatically, with a direct shortlist cta link.
 
 ## OpenBrain Note
 

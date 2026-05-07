@@ -36,7 +36,10 @@ import {
   getServiceComplianceRequirement,
   hasHighRiskServiceSelection,
 } from '../service-category-policy'
-import { PROVIDER_CERT_DOCUMENT_LABEL } from '../provider-attachment-labels'
+import {
+  PROVIDER_CERT_DOCUMENT_LABEL,
+  PROVIDER_WORK_PHOTO_LABEL,
+} from '../provider-attachment-labels'
 import {
   ACTIVE_PILOT_CITY_LABEL,
   ACTIVE_PILOT_REGION_LABEL,
@@ -45,6 +48,7 @@ import {
   getRegionServiceStatus,
   type ServiceAreaStatus,
 } from '../service-area-guard'
+import { normalizeOtpPhoneNumber } from '../phone-normalization'
 import type { FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -215,6 +219,12 @@ function validateSubmitData(ctx: FlowContext) {
   const availability = uniqueStrings(ctx.data.availability ?? [])
   const evidenceAttachmentIds = uniqueStrings(ctx.data.evidenceFileUrls ?? []).slice(0, MAX_EVIDENCE_FILES)
   const idNumber = ctx.data.providerIdNumber?.trim()
+  const alternateMobileE164 = ctx.data.alternateMobileE164?.trim() || undefined
+  const preferredLanguage = ctx.data.preferredLanguage?.trim() || undefined
+  const reference1Name = ctx.data.reference1Name?.trim() || undefined
+  const reference1Mobile = ctx.data.reference1Mobile?.trim() || undefined
+  const reference2Name = ctx.data.reference2Name?.trim() || undefined
+  const reference2Mobile = ctx.data.reference2Mobile?.trim() || undefined
 
   if (!name || name.length < 2) {
     throw new ProviderApplicationSubmitError(
@@ -265,6 +275,12 @@ function validateSubmitData(ctx: FlowContext) {
     name,
     skills,
     availability,
+    alternateMobileE164,
+    preferredLanguage,
+    reference1Name,
+    reference1Mobile,
+    reference2Name,
+    reference2Mobile,
     evidenceAttachmentIds,
     idNumber: idNumber || undefined,
     resolvedAreaLabels: normaliseLocationDisplayNames(locationNodeIds.length > 0
@@ -396,6 +412,14 @@ export async function handleRegistrationFlow(ctx: FlowContext): Promise<FlowResu
       return handleCollectSuburbSelect(ctx)
     case 'reg_collect_suburb_text':
       return handleCollectSuburbText(ctx)
+    case 'reg_collect_alternate_mobile':
+      return handleCollectAlternateMobile(ctx)
+    case 'reg_collect_preferred_language':
+      return handleCollectPreferredLanguage(ctx)
+    case 'reg_collect_reference1':
+      return handleCollectReference1(ctx)
+    case 'reg_collect_reference2':
+      return handleCollectReference2(ctx)
     case 'reg_collect_availability':
       return handleCollectAvailability(ctx)
     case 'reg_collect_rates':
@@ -1541,8 +1565,8 @@ async function handleCollectEvidence(ctx: FlowContext): Promise<FlowResult> {
       const { attachmentId } = await downloadAndStoreWhatsAppMedia({
         mediaId: ctx.reply.mediaId,
         // no providerApplicationId yet — backfilled at submission
-        prefix: proofUpload ? 'certification_proof' : 'evidence',
-        label: proofUpload ? PROVIDER_CERT_DOCUMENT_LABEL : 'evidence',
+        prefix: proofUpload ? 'certification_proof' : 'provider_work_photo',
+        label: proofUpload ? PROVIDER_CERT_DOCUMENT_LABEL : PROVIDER_WORK_PHOTO_LABEL,
       })
       const updated = uniqueStrings([...existing, attachmentId]).slice(0, MAX_EVIDENCE_FILES)
       const updatedMediaIds = uniqueStrings([...existingMediaIds, ctx.reply.mediaId])
@@ -1674,10 +1698,16 @@ async function showRegistrationSummary(
     skills,
     serviceAreas,
     experience,
+    alternateMobileE164,
+    preferredLanguage,
     evidenceNote,
     evidenceFileUrls,
     callOutFee,
     rateNegotiable,
+    reference1Name,
+    reference1Mobile,
+    reference2Name,
+    reference2Mobile,
   } = merged
   const skillList = (skills ?? []).join(', ')
   // Prefer suburb-level labels if the provider drilled down, else fall back to region/area labels
@@ -1690,7 +1720,7 @@ async function showRegistrationSummary(
 
   await sendButtons(
     ctx.phone,
-    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 Identity: *${verificationStatusLabel(merged)}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n${highRiskLabels.length ? `⚠️ High-risk review: *${highRiskLabels.join(', ')}*\n🧾 Certification proof: *${certificationProofStatus}*\n` : ''}📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
+    `📋 *Your Application Summary*\n\n👤 Name: *${name}*\n🪪 Identity: *${verificationStatusLabel(merged)}*\n👷 Provider type: *Independent service provider*\n🔧 Skills: *${skillList}*\n${highRiskLabels.length ? `⚠️ High-risk review: *${highRiskLabels.join(', ')}*\n🧾 Certification proof: *${certificationProofStatus}*\n` : ''}📍 Area: *${areaList}*\n💼 Experience: *${experience ?? 'Not specified'}*\n📅 Availability: *${availLabel}*\n💰 Call-out fee: *${formatRandAmountForProviderOnboarding(typeof callOutFee === 'number' ? callOutFee : null)}*\n⏱️ Hourly rate: *${typeof merged.hourlyRate === 'number' ? `${formatRandAmountForProviderOnboarding(merged.hourlyRate)}/hour` : 'Not provided'}*\n🤝 Rate negotiable: *${rateNegotiable === false ? 'No' : 'Yes'}*\n📞 Alternate mobile: *${alternateMobileE164 ?? 'Not provided'}*\n🗣️ Preferred language: *${preferredLanguage ?? 'Not specified'}*\n${reference1Name || reference1Mobile ? `👥 Reference 1: *${reference1Name ?? 'Not provided'}*${reference1Mobile ? ` (${reference1Mobile})` : ''}\n` : ''}${reference2Name || reference2Mobile ? `👥 Reference 2: *${reference2Name ?? 'Not provided'}*${reference2Mobile ? ` (${reference2Mobile})` : ''}\n` : ''}📸 Profile photo: *${merged.profilePhotoAttachmentId ? 'Uploaded' : 'Skipped'}*\n📝 Bio: *${merged.providerBio ? 'Added' : 'Skipped'}*\n${evidenceNote ? `🧾 Proof note: *${evidenceNote}*\n` : ''}${fileCount > 0 ? `📎 Files: *${fileCount} uploaded*\n` : ''}\n${WHATSAPP_COPY.confirmSubmitApplication}`,
     [
       { id: 'submit_yes', title: '✅ Submit' },
       { id: 'reg_edit', title: '✏️ Edit' },
@@ -1877,7 +1907,7 @@ async function handleCollectBio(ctx: FlowContext): Promise<FlowResult> {
     ctx.reply.text?.trim().toLowerCase() === 'skip'
   ) {
     await sendText(ctx.phone, 'No bio for now. You can add one later from the Worker Portal.')
-    return promptEvidenceAfterBio(ctx, { providerBioSkipped: true })
+    return promptAlternateMobileAfterBio(ctx, { providerBioSkipped: true })
   }
 
   const bio = ctx.reply.text?.trim()
@@ -1893,7 +1923,194 @@ async function handleCollectBio(ctx: FlowContext): Promise<FlowResult> {
       ? `✅ Bio saved (trimmed to ${PROVIDER_BIO_MAX_CHARS} characters for the customer card).`
       : '✅ Bio saved.',
   )
-  return promptEvidenceAfterBio(ctx, { providerBio: trimmed, providerBioSkipped: false })
+  return promptAlternateMobileAfterBio(ctx, { providerBio: trimmed, providerBioSkipped: false })
+}
+
+// Phase 5: collect alternate mobile first, then preferred language + references,
+// then fall through to proof/evidence summary.
+async function promptAlternateMobileAfterBio(
+  ctx: FlowContext,
+  nextData: Partial<typeof ctx.data>,
+): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    [
+      '📱 Optional: add an alternate mobile number.',
+      '',
+      'This can help customers contact you on a safer number if your primary line is busy.',
+      'Reply with a South African mobile number or tap Skip.',
+      'Examples: 082 123 4567, +27 82 123 4567, or 27821234567.',
+    ].join('\n'),
+    [
+      { id: 'alternate_mobile_skip', title: '⏭️ Skip' },
+    ],
+  )
+  return { nextStep: 'reg_collect_alternate_mobile', nextData }
+}
+
+async function handleCollectAlternateMobile(ctx: FlowContext): Promise<FlowResult> {
+  if (
+    ctx.reply.id === 'alternate_mobile_skip' ||
+    ctx.reply.text?.trim().toLowerCase() === 'skip'
+  ) {
+    await sendText(ctx.phone, 'No alternate number added.')
+    return promptPreferredLanguageAfterAlternateMobile(ctx, {})
+  }
+
+  const text = ctx.reply.text?.trim()
+  if (!text) {
+    await sendText(ctx.phone, 'Please reply with a valid SA mobile number, or tap Skip.')
+    return { nextStep: 'reg_collect_alternate_mobile' }
+  }
+
+  const normalized = normalizeOtpPhoneNumber(text)
+  if (!normalized.ok) {
+    await sendText(ctx.phone, `${normalized.reason} Please type a valid SA mobile number (starts with 06/07/08).`)
+    return { nextStep: 'reg_collect_alternate_mobile' }
+  }
+
+  await sendText(ctx.phone, `✅ Alternate mobile saved: *${normalized.e164}*`)
+  return promptPreferredLanguageAfterAlternateMobile(ctx, { alternateMobileE164: normalized.e164 })
+}
+
+async function promptPreferredLanguageAfterAlternateMobile(
+  ctx: FlowContext,
+  nextData: Partial<typeof ctx.data>,
+): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    [
+      '🗣️ Optional: preferred language for customer communication.',
+      '',
+      'Choose one below, or type your own and send.',
+      'You can update this later in your Worker Portal.',
+    ].join('\n'),
+    [
+      { id: 'preferred_language_english', title: '🇬🇧 English' },
+      { id: 'preferred_language_afrikaans', title: '🇿🇦 Afrikaans' },
+      { id: 'preferred_language_zulu', title: '🗣️ isiZulu' },
+      { id: 'preferred_language_xhosa', title: '🗣️ isiXhosa' },
+      { id: 'preferred_language_other', title: '✍️ Other' },
+      { id: 'preferred_language_skip', title: '⏭️ Skip' },
+    ],
+  )
+  return { nextStep: 'reg_collect_preferred_language', nextData }
+}
+
+async function handleCollectPreferredLanguage(ctx: FlowContext): Promise<FlowResult> {
+  if (
+    ctx.reply.id === 'preferred_language_skip' ||
+    ctx.reply.text?.trim().toLowerCase() === 'skip'
+  ) {
+    await sendText(ctx.phone, 'No preferred language selected. You can set this later.')
+    return promptReference1AfterLanguage(ctx, {})
+  }
+
+  if (ctx.reply.id) {
+    const languageByButton: Record<string, string> = {
+      preferred_language_english: 'English',
+      preferred_language_afrikaans: 'Afrikaans',
+      preferred_language_zulu: 'isiZulu',
+      preferred_language_xhosa: 'isiXhosa',
+    }
+    if (ctx.reply.id === 'preferred_language_other') {
+      await sendText(ctx.phone, 'Please type your preferred language (e.g. Sepedi).')
+      return { nextStep: 'reg_collect_preferred_language' }
+    }
+    if (languageByButton[ctx.reply.id]) {
+      await sendText(ctx.phone, `✅ Preferred language saved: *${languageByButton[ctx.reply.id]}*`)
+      return promptReference1AfterLanguage(ctx, { preferredLanguage: languageByButton[ctx.reply.id] })
+    }
+  }
+
+  const provided = ctx.reply.text?.trim()
+  if (!provided) {
+    await sendText(ctx.phone, 'Please type your preferred language, or tap Skip.')
+    return { nextStep: 'reg_collect_preferred_language' }
+  }
+
+  await sendText(ctx.phone, `✅ Preferred language saved: *${provided}*`)
+  return promptReference1AfterLanguage(ctx, { preferredLanguage: provided })
+}
+
+async function promptReference1AfterLanguage(
+  ctx: FlowContext,
+  nextData: Partial<typeof ctx.data>,
+): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    [
+      '👤 Optional: add Reference 1 (name + phone).',
+      '',
+      'Send it as: Name, Phone number.',
+      'Example: Thabo Mokoena, 082 123 4567',
+      'You can skip if you do not want to add references.',
+    ].join('\n'),
+    [{ id: 'reference1_skip', title: '⏭️ Skip' }],
+  )
+  return { nextStep: 'reg_collect_reference1', nextData }
+}
+
+async function handleCollectReference1(ctx: FlowContext): Promise<FlowResult> {
+  if (
+    ctx.reply.id === 'reference1_skip' ||
+    ctx.reply.text?.trim().toLowerCase() === 'skip'
+  ) {
+    await sendText(ctx.phone, 'Reference 1 skipped.')
+    return promptReference2AfterReference1(ctx, {})
+  }
+
+  const parsed = parseReferenceInput(ctx.reply.text)
+  if (!parsed) {
+    await sendText(ctx.phone, 'Please send Reference 1 as: Name, Phone number. Example: Sipho Mokoena, 082 123 4567')
+    return { nextStep: 'reg_collect_reference1' }
+  }
+
+  await sendText(ctx.phone, `✅ Reference 1 saved: *${parsed.name}*`)
+  return promptReference2AfterReference1(ctx, {
+    reference1Name: parsed.name,
+    reference1Mobile: parsed.mobileE164,
+  })
+}
+
+async function promptReference2AfterReference1(
+  ctx: FlowContext,
+  nextData: Partial<typeof ctx.data>,
+): Promise<FlowResult> {
+  await sendButtons(
+    ctx.phone,
+    [
+      '👤 Optional: add Reference 2 (name + phone).',
+      '',
+      'Send it as: Name, Phone number.',
+      'Example: Lerato Dlamini, 078 987 6543',
+      'You can skip if you only want to add one reference.',
+    ].join('\n'),
+    [{ id: 'reference2_skip', title: '⏭️ Skip' }],
+  )
+  return { nextStep: 'reg_collect_reference2', nextData }
+}
+
+async function handleCollectReference2(ctx: FlowContext): Promise<FlowResult> {
+  if (
+    ctx.reply.id === 'reference2_skip' ||
+    ctx.reply.text?.trim().toLowerCase() === 'skip'
+  ) {
+    await sendText(ctx.phone, 'Reference 2 skipped.')
+    return promptEvidenceAfterBio(ctx, {})
+  }
+
+  const parsed = parseReferenceInput(ctx.reply.text)
+  if (!parsed) {
+    await sendText(ctx.phone, 'Please send Reference 2 as: Name, Phone number. Example: Nonkululeko, 078 987 6543')
+    return { nextStep: 'reg_collect_reference2' }
+  }
+
+  await sendText(ctx.phone, `✅ Reference 2 saved: *${parsed.name}*`)
+  return promptEvidenceAfterBio(ctx, {
+    reference2Name: parsed.name,
+    reference2Mobile: parsed.mobileE164,
+  })
 }
 
 // Centralised "transition to evidence/work-note prompt".
@@ -1977,6 +2194,12 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
             callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
             hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
             rateNegotiable: ctx.data.rateNegotiable !== false,
+            alternateMobileE164: ctx.data.alternateMobileE164?.trim(),
+            preferredLanguage: ctx.data.preferredLanguage?.trim(),
+            reference1Name: ctx.data.reference1Name?.trim(),
+            reference1Mobile: ctx.data.reference1Mobile?.trim(),
+            reference2Name: ctx.data.reference2Name?.trim(),
+            reference2Mobile: ctx.data.reference2Mobile?.trim(),
             evidenceNote: ctx.data.evidenceNote ?? null,
             evidenceFileUrls: uniqueStrings(ctx.data.evidenceFileUrls ?? []),
             idNumber: ctx.data.providerIdNumber?.trim(),
@@ -2152,6 +2375,12 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
           serviceAreas: submitData.resolvedAreaLabels,
           experience: ctx.data.experience ?? null,
           availability: formatAvailabilityLabel(submitData.availability),
+          alternateMobileE164: submitData.alternateMobileE164,
+          preferredLanguage: submitData.preferredLanguage,
+          reference1Name: submitData.reference1Name,
+          reference1Mobile: submitData.reference1Mobile,
+          reference2Name: submitData.reference2Name,
+          reference2Mobile: submitData.reference2Mobile,
           callOutFee: typeof ctx.data.callOutFee === 'number' ? ctx.data.callOutFee : null,
           // Phase 4 follow-up Task 1: optional hourly rate.
           hourlyRate: typeof ctx.data.hourlyRate === 'number' ? ctx.data.hourlyRate : null,
@@ -2616,6 +2845,35 @@ async function handleEditField(ctx: FlowContext): Promise<FlowResult> {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parseReferenceInput(raw: string | undefined): { name: string; mobileE164: string } | null {
+  const trimmed = raw?.trim()
+  if (!trimmed) return null
+
+  const separatorMatch = trimmed.match(/^(.*?)\s*(?:,|;|\||:)\s*(.+)$/)
+  let name = ''
+  let phoneLike = ''
+
+  if (separatorMatch?.[1] && separatorMatch[2]) {
+    name = separatorMatch[1].trim()
+    phoneLike = separatorMatch[2].trim()
+  } else {
+    const candidates = trimmed.match(/(?:\+?\d[\d\s().-]{8,}\d)/g) ?? []
+    if (candidates.length === 0) return null
+    phoneLike = candidates.at(-1) ?? ''
+    if (phoneLike.length >= trimmed.length) return null
+    name = trimmed.replace(phoneLike, '').trim().replace(/[,\-;:]$/, '')
+  }
+
+  const normalized = normalizeOtpPhoneNumber(phoneLike)
+  if (!normalized.ok) return null
+  if (!name || name.length < 2) return null
+
+  return {
+    name,
+    mobileE164: normalized.e164,
+  }
+}
 
 /**
  * Parses a WhatsApp reply into a deduplicated, sorted list of 1-based positive integers.

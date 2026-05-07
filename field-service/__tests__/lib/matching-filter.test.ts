@@ -18,6 +18,7 @@ const { mockDb } = vi.hoisted(() => ({
     technicianScheduleItem: { findMany: vi.fn() },
     providerCertification: { findMany: vi.fn() },
     providerEquipment: { findMany: vi.fn() },
+    providerCategory: { findMany: vi.fn() },
   },
 }))
 
@@ -128,6 +129,7 @@ function setupDefaultBatchMocks() {
   mockDb.technicianScheduleItem.findMany.mockResolvedValue([])
   mockDb.providerCertification.findMany.mockResolvedValue([])
   mockDb.providerEquipment.findMany.mockResolvedValue([])
+  mockDb.providerCategory.findMany.mockResolvedValue([{ providerId: 'p1', approvalStatus: 'APPROVED' }])
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -409,6 +411,58 @@ describe('filterEligibleProviders — provider availability controls', () => {
     expect(eligible).toHaveLength(0)
     expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes)
       .toContain('EMERGENCY_NOT_AVAILABLE')
+  })
+})
+
+describe('filterEligibleProviders — category approval', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupDefaultBatchMocks()
+    mockDb.$queryRaw
+      .mockResolvedValueOnce([])   // timedOutRows
+      .mockResolvedValueOnce([])   // declinedLeadRows
+      .mockResolvedValueOnce([])   // dailyJobRows
+  })
+
+  it('excludes providers without an APPROVED category row for the requested category', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([
+      { providerId: 'p1', approvalStatus: 'PENDING_REVIEW' },
+    ])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(0)
+    expect(filteredOut.find((f) => f.providerId === 'p1')?.filteredReasonCodes)
+      .toContain('CATEGORY_NOT_APPROVED')
+  })
+
+  it('passes providers with no category approval row (permissive default — not yet categorised)', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(1)
+    expect(filteredOut.find((f) => f.providerId === 'p1')).toBeUndefined()
+  })
+
+  it('passes providers with an APPROVED category row for the requested category', async () => {
+    mockDb.providerCategory.findMany.mockResolvedValue([
+      { providerId: 'p1', approvalStatus: 'APPROVED' },
+    ])
+
+    const { eligible, filteredOut } = await filterEligibleProviders(
+      [makeCandidate()],
+      makeJobRequest(),
+    )
+
+    expect(eligible).toHaveLength(1)
+    expect(filteredOut.find((f) => f.providerId === 'p1')).toBeUndefined()
   })
 })
 

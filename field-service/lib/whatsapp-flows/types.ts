@@ -61,6 +61,10 @@ export type FlowStep =
   | 'reg_collect_hourly_rate'    // optional hourly labour rate (Phase 4 follow-up Task 1)
   | 'reg_collect_profile_photo'  // optional profile photo upload (Phase 4b)
   | 'reg_collect_bio'            // optional short bio for the customer card (Phase 4 follow-up Task 2)
+  | 'reg_collect_alternate_mobile' // optional alternate mobile number for provider contact
+  | 'reg_collect_preferred_language' // optional preferred contact language
+  | 'reg_collect_reference1'      // optional first reference contact capture
+  | 'reg_collect_reference2'      // optional second reference contact capture
   | 'reg_collect_evidence'
   | 'reg_confirm'
   | 'reg_pending'
@@ -201,6 +205,12 @@ export interface ConversationData {
   hourlyRateSkipped?: boolean       // true if provider explicitly skipped the hourly rate step
   providerBio?: string              // optional short bio shown on the customer shortlist card
   providerBioSkipped?: boolean      // true if provider explicitly skipped the bio step
+  alternateMobileE164?: string      // optional alternate mobile number in E.164 format
+  preferredLanguage?: string        // optional preferred communication language
+  reference1Name?: string
+  reference1Mobile?: string
+  reference2Name?: string
+  reference2Mobile?: string
 
   // Structured service areas (registration)
   locationNodeIds?: string[]         // selected region/suburb node IDs for provider

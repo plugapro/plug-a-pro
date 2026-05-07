@@ -21,6 +21,28 @@ type ProviderApplicationLookupClient = {
   }
 }
 
+// TODO: replace any-typed method args with Prisma.TransactionClient once
+// ProviderCategory model is fully stable and the type can be imported here.
+type ProviderCategoryApprovalClient = {
+  providerApplication: {
+    findUnique: (...args: any[]) => Promise<{
+      id: string
+      status: string
+      providerId: string | null
+    } | null>
+  }
+  providerCategory: {
+    findUnique: (...args: any[]) => Promise<{ id: string } | null>
+    create: (...args: any[]) => Promise<unknown>
+    updateMany: (...args: any[]) => Promise<{ count: number }>
+  }
+  auditLog?: {
+    create: (...args: any[]) => Promise<unknown>
+  }
+}
+
+export type ProviderCategoryApprovalStatus = 'APPROVED' | 'REJECTED' | 'PENDING_REVIEW'
+
 export function normalizeProviderApplicationPhone(phone: string) {
   return normalizePhone(phone)
 }
@@ -71,6 +93,98 @@ export async function findConflictingActiveProviderApplications(
       submittedAt: true,
     },
   })
+}
+
+/**
+ * Update or create a ProviderCategory approval row for a reviewed application.
+ *
+ * The flow requires an application-linked provider record for category
+ * administration. Pending applications do not yet have a provider row and must
+ * therefore pass through normal approval/reject paths first.
+ */
+export async function updateProviderApplicationCategoryApproval(
+  client: ProviderCategoryApprovalClient,
+  params: {
+    applicationId: string
+    categorySlug: string
+    approvalStatus: ProviderCategoryApprovalStatus
+    actorId?: string
+  },
+): Promise<
+  | { ok: true; applicationId: string; providerId: string; categorySlug: string; approvalStatus: ProviderCategoryApprovalStatus }
+  | { ok: false; reason: 'NOT_FOUND' | 'NO_PROVIDER' | 'INVALID_APPLICATION_STATE' }
+> {
+  const app = await client.providerApplication.findUnique({
+    where: { id: params.applicationId },
+    select: { id: true, status: true, providerId: true },
+  })
+
+  if (!app) {
+    return { ok: false, reason: 'NOT_FOUND' }
+  }
+  if (!app.providerId) {
+    return { ok: false, reason: 'NO_PROVIDER' }
+  }
+  if (app.status !== 'APPROVED' && app.status !== 'MORE_INFO_REQUIRED') {
+    // Category controls are available for approved providers and after they are
+    // created. A pending application has no provider row yet in this model.
+    return { ok: false, reason: 'INVALID_APPLICATION_STATE' }
+  }
+
+  const normalizedCategorySlug = params.categorySlug.trim().toLowerCase()
+
+  const existing = await client.providerCategory.findUnique({
+    where: {
+      providerId_categorySlug: {
+        providerId: app.providerId,
+        categorySlug: normalizedCategorySlug,
+      },
+    },
+  })
+
+  if (existing) {
+    await client.providerCategory.updateMany({
+      where: {
+        providerId: app.providerId,
+        categorySlug: normalizedCategorySlug,
+      },
+      data: {
+        approvalStatus: params.approvalStatus,
+      },
+    })
+  } else {
+    await client.providerCategory.create({
+      data: {
+        providerId: app.providerId,
+        categorySlug: normalizedCategorySlug,
+        approvalStatus: params.approvalStatus,
+      },
+    })
+  }
+
+  await client.auditLog?.create?.({
+    data: {
+      actorId: params.actorId ?? 'admin',
+      actorRole: 'admin',
+      action: 'provider_category.approval_updated',
+      entityType: 'ProviderCategory',
+      entityId: `${app.providerId}:${normalizedCategorySlug}`,
+      after: {
+        applicationId: app.id,
+        providerId: app.providerId,
+        categorySlug: normalizedCategorySlug,
+        approvalStatus: params.approvalStatus,
+      } as Record<string, unknown>,
+    },
+  }).catch(() => undefined)
+
+  return {
+    ok: true,
+    applicationId: app.id,
+    providerId: app.providerId,
+    categorySlug: normalizedCategorySlug,
+    approvalStatus: params.approvalStatus,
+  }
 }
 
 type ApplicationLike = {

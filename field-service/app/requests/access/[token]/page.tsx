@@ -151,6 +151,8 @@ export default async function TicketAccessPage({
   const selectedShortlistItem =
     shortlist?.items.find((item) => Boolean(item.customerSelectedAt) || jobRequest.selectedLeadInviteId === item.leadInviteId) ?? null
   const match = jobRequest.match
+  const canRequestMoreOptions = destination.allowedActions.includes('request_more_options')
+  const canCancelRequest = destination.allowedActions.includes('cancel_request')
   const latestQuote = match?.quotes[0] ?? null
   const booking = match?.booking ?? null
   const provider = match?.provider ?? null
@@ -517,22 +519,26 @@ export default async function TicketAccessPage({
               )
             })}
           </div>
-          {jobRequest.status === 'SHORTLIST_READY' && (
+          {(canRequestMoreOptions || canCancelRequest) && (
             <div className="grid grid-cols-2 gap-2">
-              <form action={askForMoreShortlistOptions}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="requestId" value={jobRequest.id} />
-                <Button type="submit" variant="outline" className="w-full">
-                  Ask for more options
-                </Button>
-              </form>
-              <form action={cancelRequestAction}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="requestId" value={jobRequest.id} />
-                <Button type="submit" variant="ghost" className="w-full text-destructive">
-                  Cancel request
-                </Button>
-              </form>
+              {canRequestMoreOptions && (
+                <form action={askForMoreShortlistOptions}>
+                  <input type="hidden" name="token" value={token} />
+                  <input type="hidden" name="requestId" value={jobRequest.id} />
+                  <Button type="submit" variant="outline" className="w-full">
+                    Ask for more options
+                  </Button>
+                </form>
+              )}
+              {canCancelRequest && (
+                <form action={cancelRequestAction}>
+                  <input type="hidden" name="token" value={token} />
+                  <input type="hidden" name="requestId" value={jobRequest.id} />
+                  <Button type="submit" variant="ghost" className="w-full text-destructive">
+                    Cancel request
+                  </Button>
+                </form>
+              )}
             </div>
           )}
         </section>

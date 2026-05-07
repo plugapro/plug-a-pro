@@ -429,9 +429,9 @@ Three additive migrations added. None are destructive; existing data is untouche
 
 ## What remains as out-of-scope follow-ups (genuine product or operational work)
 
-1. **Conversational rate capture for WhatsApp `Interested` flow.** The minimal handler accepts the interested signal and prompts the provider to reply with a structured fee + arrival message. A first-class conversation flow that walks the provider through (a) call-out fee number prompt, (b) arrival-window list reply, (c) optional negotiable toggle, then writes a complete `ProviderLeadResponse`, is a separate piece of bot work. Until that is built, the auto-trigger threshold should be adjusted to account for partial responses.
-2. **Bot wiring for `resumeMoreInfoApplication`.** The helper is shipped, audited, and tested. The bot still needs a small recognizer that, on inbound from a provider whose most-recent application is `MORE_INFO_REQUIRED`, invokes the helper.
-3. **PWA UI inputs for the new request fields.** The API now accepts urgency / preference / budget / accessNotes / subcategory; the React form (`components/customer/BookingFlow.tsx`) is unchanged and still does not collect them.
+1. **No longer outstanding:** WhatsApp `Interested` flow now uses the dedicated `providerOpportunity` conversational capture path, and can persist call-out fee, arrival time, negotiable flag, and optional note before shortlist eligibility.
+2. **No longer outstanding:** `resumeMoreInfoApplication` wiring is now implemented in the WhatsApp bot; providers can reply from `MORE_INFO_REQUIRED` back to PENDING with their follow-up note.
+3. **No longer outstanding:** PWA form now collects shortlist-relevant request fields in `components/customer/BookingFlow.tsx` (including `accessNotes`, `subcategory`, and shortlist preferences).
 4. **Backfills.** `requestRef`, provider categories, and lead match score/ranking remain unbackfilled. They are operationally important but require a DB pass; they are not safe to run from a code change alone.
 5. **Provider trust/profile capture.** References, profile photo, classified ID/cert/work-photo evidence, business profile fields. This is a multi-step WhatsApp flow refactor and a product decision (which fields are mandatory at submission vs. requested via more-info).
 6. **Quote-after-arrival product decision.** Today `acceptSelectedProviderJob` synthesises an `APPROVED` quote at the provider's call-out fee. If product wants a quote-after-inspection step, this short-circuits that — call out to product before pilot.

@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { db } from '@/lib/db'
 import { requireAdmin, createServiceClient } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
@@ -17,6 +18,7 @@ import { awardMobileVerifiedPromoCreditsInTransaction } from '@/lib/provider-pro
 import {
   findConflictingActiveProviderApplications,
   getConflictingActiveProviderApplicationIds,
+  updateProviderApplicationCategoryApproval,
 } from '@/lib/provider-applications'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveServiceCategoryTag } from '@/lib/service-categories'
@@ -55,6 +57,12 @@ const RejectApplicationSchema = ApplicationActionSchema.extend({
   reason: z.string().optional(),
 })
 
+const CategoryApprovalSchema = z.object({
+  id: z.string().min(1),
+  categorySlug: z.string().min(1),
+  approvalStatus: z.enum(['PENDING_REVIEW', 'APPROVED', 'REJECTED']),
+})
+
 const MoreInfoApplicationSchema = ApplicationActionSchema.extend({
   reason: z.string().min(5),
 })
@@ -76,8 +84,39 @@ const providerApplicationSelect = {
   cohortName: true,
   submittedAt: true,
   idNumber: true,
+  evidenceNote: true,
+  evidenceFileUrls: true,
+  attachments: {
+    select: {
+      id: true,
+      url: true,
+      label: true,
+      mimeType: true,
+      safeForPreview: true,
+      uploadedBy: true,
+      createdAt: true,
+    },
+  },
+  provider: {
+    select: {
+      id: true,
+      verified: true,
+      kycStatus: true,
+      providerCategories: {
+        select: {
+          categorySlug: true,
+          approvalStatus: true,
+          updatedAt: true,
+        },
+      },
+    },
+  },
   _count: { select: { attachments: true } },
 } as const
+
+function resolveCategorySlug(skill: string) {
+  return resolveServiceCategoryTag(skill) ?? skill.toLowerCase().trim().replace(/\s+/g, '_')
+}
 
 // ─── Server Actions ───────────────────────────────────────────────────────────
 
@@ -338,6 +377,41 @@ async function requestMoreInfo(formData: FormData) {
   revalidatePath('/admin')
 }
 
+async function updateCategoryApproval(formData: FormData) {
+  'use server'
+  const parseResult = CategoryApprovalSchema.safeParse({
+    id: String(formData.get('id') ?? ''),
+    categorySlug: String(formData.get('categorySlug') ?? ''),
+    approvalStatus: String(formData.get('approvalStatus') ?? ''),
+  })
+  if (!parseResult.success) return
+
+  const admin = await requireAdmin()
+
+  await crudAction({
+    entity: 'ProviderCategory',
+    entityId: `${parseResult.data.id}:${parseResult.data.categorySlug}`,
+    action: 'provider_application.category_approval',
+    requiredRole: [...APPLICATION_ROLES],
+    requiredFlag: FLAG,
+    schema: CategoryApprovalSchema,
+    input: parseResult.data,
+    run: async (_input, tx) => {
+      await updateProviderApplicationCategoryApproval(tx, {
+        applicationId: parseResult.data.id,
+        categorySlug: parseResult.data.categorySlug,
+        approvalStatus: parseResult.data.approvalStatus,
+        actorId: admin.id,
+      })
+
+      return { ok: true }
+    },
+  })
+
+  revalidatePath('/admin/applications')
+  revalidatePath('/admin')
+}
+
 async function rejectApplication(formData: FormData) {
   'use server'
   const id = formData.get('id') as string
@@ -499,8 +573,9 @@ export default async function ApplicationsPage({
     applications.map((application) => application.id),
   )
 
-  const pending  = applications.filter((a) => a.status === 'PENDING')
-  const reviewed = applications.filter((a) => a.status !== 'PENDING')
+  const pending = applications.filter((a) => a.status === 'PENDING')
+  const approved = applications.filter((a) => a.status === 'APPROVED')
+  const reviewed = applications.filter((a) => !['PENDING', 'APPROVED'].includes(a.status))
 
   return (
     <div className="space-y-8">
@@ -581,6 +656,34 @@ export default async function ApplicationsPage({
                   {' · '}ID: {app.idNumber ? '✓ provided' : app._count.attachments > 0 ? `${app._count.attachments} file(s)` : 'not provided'}
                 </p>
 
+                <div className="space-y-2 rounded-lg border border-border p-2 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground">Application evidence</p>
+                  {app.evidenceFileUrls.length > 0 ? (
+                    <p>Evidence URLs: {app.evidenceFileUrls.join(', ')}</p>
+                  ) : null}
+                  {app.evidenceNote ? <p>Evidence note: {app.evidenceNote}</p> : null}
+                  {app.idNumber ? <p>Identity number field present: supplied</p> : null}
+                  {app.attachments.length > 0 ? (
+                    <div className="space-y-1">
+                      <p>Uploaded files ({app.attachments.length}):</p>
+                      <ul className="ml-4 list-disc space-y-1">
+                        {app.attachments.map((attachment) => (
+                          <li key={attachment.id}>
+                            <a
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              {attachment.label || attachment.id}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+
                 {hasConflict && (
                   <div className="tone-warning rounded-xl border px-3 py-2 text-sm">
                     Duplicate active application detected for this phone number. Reject or resolve the duplicate before approving so one provider does not end up with multiple active application records.
@@ -648,6 +751,116 @@ export default async function ApplicationsPage({
           )
         })}
       </section>
+
+      {approved.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+            Approved ({approved.length})
+          </h2>
+
+          {approved.map((app) => {
+            const requestedCategories = Array.from(new Set(app.skills.map(resolveCategorySlug)))
+              .filter(Boolean)
+              .filter((slug) => slug.length > 0)
+            const providerCategoryStatusBySlug = new Map(
+              (app.provider?.providerCategories ?? []).map((row) => [row.categorySlug, row.approvalStatus]),
+            )
+
+            return (
+              <Card key={app.id}>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <p className="font-medium">{app.name}</p>
+                      <p className="text-sm text-muted-foreground">{app.phone}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Provider profile: {app.provider?.id ?? 'not created'} ·
+                        {' '}
+                        KYC: {app.provider?.kycStatus?.replace(/_/g, ' ') ?? 'not started'} ·
+                        {' '}
+                        Verified: {app.provider?.verified ? 'Yes' : 'No'}
+                        {' '}
+                        ·
+                        {' '}
+                        {app.provider?.id ? (
+                          <Link href={`/admin/technicians/${app.provider.id}`}>Open provider profile</Link>
+                        ) : (
+                          <span>Profile not linked yet</span>
+                        )}
+                      </p>
+                    </div>
+                    <Badge variant={getStatusVariant(app.status)} className="rounded-full">
+                      {app.status}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Category-level approval</p>
+                    {requestedCategories.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No categories captured on this application.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {requestedCategories.map((categorySlug) => {
+                          const currentStatus = providerCategoryStatusBySlug.get(categorySlug) ?? 'not-set'
+                          return (
+                            <div key={categorySlug} className="space-y-1 rounded-md border border-border p-2">
+                              <div className="flex items-center justify-between gap-2 text-sm">
+                                <span className="font-medium">{categorySlug}</span>
+                                <span className="text-xs text-muted-foreground">{currentStatus}</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <form action={updateCategoryApproval}>
+                                  <input type="hidden" name="id" value={app.id} />
+                                  <input type="hidden" name="categorySlug" value={categorySlug} />
+                                  <input type="hidden" name="approvalStatus" value="APPROVED" />
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={!crudEnabled}
+                                  >
+                                    Approve
+                                  </Button>
+                                </form>
+                                <form action={updateCategoryApproval}>
+                                  <input type="hidden" name="id" value={app.id} />
+                                  <input type="hidden" name="categorySlug" value={categorySlug} />
+                                  <input type="hidden" name="approvalStatus" value="REJECTED" />
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={!crudEnabled}
+                                  >
+                                    Reject
+                                  </Button>
+                                </form>
+                                <form action={updateCategoryApproval}>
+                                  <input type="hidden" name="id" value={app.id} />
+                                  <input type="hidden" name="categorySlug" value={categorySlug} />
+                                  <input type="hidden" name="approvalStatus" value="PENDING_REVIEW" />
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={!crudEnabled}
+                                  >
+                                    Hold
+                                  </Button>
+                                </form>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </section>
+      )}
 
       {/* Reviewed */}
       {reviewed.length > 0 && (

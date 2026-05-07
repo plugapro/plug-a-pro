@@ -179,7 +179,9 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
     : await (db as any).providerApplication?.findFirst?.({
         where: {
           phone: { in: phoneVariants },
-          status: { in: ['PENDING', 'APPROVED'] },
+          // Include MORE_INFO_REQUIRED so onboarding follow-up messages can be
+          // routed as pending work while admin review resumes.
+          status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] },
         },
         orderBy: { submittedAt: 'desc' },
         select: {
@@ -216,7 +218,8 @@ export async function resolveWhatsAppIdentity(phone: string): Promise<WhatsAppId
     isInactiveProvider ? 'provider_inactive' :
     isPendingProvider ? 'provider_pending' :
     isActiveProvider || application?.status === 'APPROVED' ? 'provider' :
-    application?.status === 'PENDING' ? 'provider_pending' :
+    application?.status === 'PENDING' || application?.status === 'MORE_INFO_REQUIRED'
+      ? 'provider_pending' :
     'unknown'
 
   const role: WhatsAppIdentityRole =

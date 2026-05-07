@@ -22,6 +22,11 @@ const {
     messageEvent: { create: vi.fn() },
     match: { findFirst: vi.fn() },
     booking: { findFirst: vi.fn() },
+    providerApplication: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
   },
   mockAcceptLead: vi.fn(),
   mockAcceptSelectedProviderJob: vi.fn(),
@@ -177,8 +182,59 @@ describe('processInboundMessage stateless notification replies', () => {
     mockSendJourneyRecovery.mockResolvedValue(undefined)
     mockAcceptSelectedProviderJob.mockResolvedValue({ ok: true, alreadyUnlocked: false })
     mockDeclineSelectedProviderJob.mockResolvedValue({ ok: true })
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
+    mockDb.providerApplication.findUnique.mockResolvedValue(null)
+    mockDb.providerApplication.update.mockResolvedValue({})
     mockBuildAcceptedLeadContactUrlForProvider.mockResolvedValue('https://wa.me/27820000001?text=hello')
     expiredMidFlowConversation()
+  })
+
+  it('captures MORE_INFO_REQUIRED onboarding replies as more-info responses when no command is detected', async () => {
+    // Use an idle (non-expired) conversation so the session-timeout early-return is skipped
+    // and the MORE_INFO_REQUIRED recognizer at the bottom of processInboundMessageUnlocked is reached.
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+    mockDb.providerApplication.findFirst.mockResolvedValue({
+      id: 'more-info-app-1',
+      phone: PHONE,
+      status: 'MORE_INFO_REQUIRED',
+      submittedAt: new Date(),
+    } as any)
+    mockDb.providerApplication.findUnique.mockResolvedValue({
+      id: 'more-info-app-1',
+      status: 'MORE_INFO_REQUIRED',
+      notes: 'Previous verification request.',
+    } as any)
+
+    await processInboundMessage(textMessage('wamid.more-info-reply', 'I have uploaded my additional documents.'))
+
+    expect(mockDb.providerApplication.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'MORE_INFO_REQUIRED' }),
+      }),
+    )
+    expect(mockDb.providerApplication.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'more-info-app-1' },
+      }),
+    )
+    expect(mockDb.providerApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'more-info-app-1' },
+        data: expect.objectContaining({ status: 'PENDING' }),
+      }),
+    )
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Thanks — your reply has been added to your application.'),
+    )
+    expect(handleJobRequestFlow).not.toHaveBeenCalled()
+    expect(handleRegistrationFlow).not.toHaveBeenCalled()
   })
 
   it('processes assignment accept buttons even when the previous conversation session expired mid-flow', async () => {

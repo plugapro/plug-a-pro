@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -60,11 +61,13 @@ interface BookingFlowProps {
     jobType: string
     title: string
     description: string
+    accessNotes: string
     urgency: string
     preferredDate: string
     preferredTimeWindow: string
     providerPreference: string
     budgetPreference: string
+    photosSafeForPreview: boolean
   }>
   /** Saved customer addresses (address book). Only shown when addressBookEnabled=true. */
   savedSites?: SavedSite[]
@@ -138,6 +141,7 @@ export function BookingFlow({
   const [jobType, setJobType] = useState<JobType>(coerceOption(initialDraft?.jobType, JOB_TYPE_OPTIONS, 'repair'))
   const [title, setTitle] = useState(initialDraft?.title ?? '')
   const [description, setDescription] = useState(initialDraft?.description ?? '')
+  const [accessNotes, setAccessNotes] = useState(initialDraft?.accessNotes ?? '')
   const [photos, setPhotos] = useState<File[]>([])
   const [closestCategory, setClosestCategory] = useState('')
   const [urgency, setUrgency] = useState<Urgency>(coerceUrgency(initialDraft?.urgency))
@@ -152,6 +156,7 @@ export function BookingFlow({
     coerceOption(initialDraft?.budgetPreference, BUDGET_PREFERENCE_OPTIONS, 'balanced_value'),
   )
   const [maxCallOutFee, setMaxCallOutFee] = useState('')
+  const [photosSafeForPreview, setPhotosSafeForPreview] = useState(true)
   const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false)
   const [termsAcknowledged, setTermsAcknowledged] = useState(false)
   const [locationNodeId, setLocationNodeId] = useState<string | null>(null)
@@ -177,23 +182,27 @@ export function BookingFlow({
         jobType: string
         title: string
         description: string
+        accessNotes: string
         urgency: Urgency
         preferredDate: string
         preferredTimeWindow: PreferredTimeWindow
         providerPreference: ProviderPreference
         budgetPreference: BudgetPreference
         maxCallOutFee: string
+        photosSafeForPreview: boolean
       }>
       setSubcategory(draft.subcategory ?? '')
       setJobType(coerceOption(draft.jobType, JOB_TYPE_OPTIONS, 'repair'))
       setTitle(draft.title ?? '')
       setDescription(draft.description ?? '')
+      setAccessNotes(draft.accessNotes ?? '')
       setUrgency(coerceUrgency(draft.urgency))
       setPreferredDate(draft.preferredDate ?? '')
       setPreferredTimeWindow(coerceOption(draft.preferredTimeWindow, TIME_WINDOW_OPTIONS, 'flexible'))
       setProviderPreference(coerceOption(draft.providerPreference, PROVIDER_PREFERENCE_OPTIONS, 'fastest_available'))
       setBudgetPreference(coerceOption(draft.budgetPreference, BUDGET_PREFERENCE_OPTIONS, 'balanced_value'))
       setMaxCallOutFee(draft.maxCallOutFee ?? '')
+      setPhotosSafeForPreview(draft.photosSafeForPreview ?? true)
     } catch {
       window.localStorage.removeItem(draftStorageKey)
     }
@@ -205,16 +214,19 @@ export function BookingFlow({
       jobType,
       title,
       description,
+      accessNotes,
       urgency,
       preferredDate,
       preferredTimeWindow,
       providerPreference,
       budgetPreference,
       maxCallOutFee,
-    }
+    photosSafeForPreview,
+  }
     window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
   }, [
     budgetPreference,
+    accessNotes,
     description,
     draftStorageKey,
     jobType,
@@ -225,6 +237,7 @@ export function BookingFlow({
     subcategory,
     title,
     urgency,
+    photosSafeForPreview,
   ])
 
   function normalizeValue(value: string) {
@@ -458,6 +471,7 @@ export function BookingFlow({
       formData.set('providerPreference', providerPreference)
       formData.set('budgetPreference', budgetPreference)
       formData.set('verifiedOnly', String(providerPreference === 'verified_only'))
+      if (accessNotes.trim()) formData.set('accessNotes', accessNotes.trim())
       if (maxCallOutFee.trim()) formData.set('maxCallOutFee', maxCallOutFee.trim())
 
       // Urgency → timing window fields (extracted by the bookings API route)
@@ -468,6 +482,9 @@ export function BookingFlow({
       // Photos are optional evidence. They travel with the request so the matched
       // provider can quote without asking the client to repeat the problem.
       photos.forEach((photo) => formData.append('photos', photo))
+      if (photos.length > 0) {
+        formData.set('photoSafeForPreview', JSON.stringify(photos.map(() => photosSafeForPreview)))
+      }
 
       const res = await fetch('/api/customer/bookings', {
         method: 'POST',
@@ -856,6 +873,21 @@ export function BookingFlow({
               />
             </div>
             <div className="space-y-1">
+              <Label htmlFor="accessNotes" className="text-muted-foreground">
+                Access notes <span className="text-muted-foreground/60">(optional)</span>
+              </Label>
+              <Textarea
+                id="accessNotes"
+                value={accessNotes}
+                onChange={(event) => setAccessNotes(event.target.value)}
+                placeholder="Landmarks, gate/security instructions, parking notes, dog warnings"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                Access notes are shared only with the selected provider after they accept your job.
+              </p>
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="photos" className="text-muted-foreground">
                 Photos <span className="text-muted-foreground/60">(optional)</span>
               </Label>
@@ -893,6 +925,23 @@ export function BookingFlow({
                   </div>
                 </div>
               )}
+              <div className="space-y-1 border border-border rounded-xl px-4 py-3 bg-muted/30">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="photosSafeForPreview"
+                    checked={photosSafeForPreview}
+                    onCheckedChange={(value) => setPhotosSafeForPreview(value === true)}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="photosSafeForPreview" className="text-muted-foreground">
+                      Share photos with shortlisted providers before acceptance
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Keep this on so providers can better estimate arrival and pricing before you select one.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Urgency picker */}
@@ -1035,6 +1084,7 @@ export function BookingFlow({
               <Row label="Type">{JOB_TYPE_OPTIONS.find((option) => option.value === jobType)?.label ?? jobType}</Row>
               <Row label="Job">{title}</Row>
               {description && <Row label="Details">{description}</Row>}
+              {accessNotes && <Row label="Access notes">{accessNotes}</Row>}
               {photos.length > 0 && <Row label="Photos">{photos.length} attached</Row>}
               <Row label="Timing">{URGENCY_LABELS[urgency]}</Row>
               {preferredDate && (

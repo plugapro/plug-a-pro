@@ -73,19 +73,22 @@ describe('WhatsApp identity resolution', () => {
     })
   })
 
-  it('returns provider_pending for a pending provider application', async () => {
+  it.each([
+    'PENDING',
+    'MORE_INFO_REQUIRED',
+  ])('returns provider_pending for a %s provider application', async (status) => {
     vi.mocked(db.providerApplication.findFirst).mockResolvedValue({
-      id: 'app_1',
+      id: `app-${status.toLowerCase()}`,
       phone: '+27821234567',
       name: 'Kobus Terblanche',
-      status: 'PENDING',
+      status,
       providerId: null,
       submittedAt: new Date(),
     } as any)
 
     await expect(resolveWhatsAppIdentity('+27821234567')).resolves.toMatchObject({
       role: 'provider_pending',
-      applicationId: 'app_1',
+      applicationId: `app-${status.toLowerCase()}`,
       firstName: 'Kobus',
     })
   })

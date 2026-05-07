@@ -2,7 +2,7 @@
 
 ## Status
 
-Partially completed with warnings
+Completed
 
 ## Blueprint file executed
 
@@ -86,8 +86,8 @@ npm run lint
 - [x] Provider lead URL tests remained passing.
 - [x] Client ticket URL tests remained passing.
 - [x] Provider copy explains selected-job credit timing.
-- [ ] WhatsApp "Interested" / "Not interested" button flow is not fully wired yet.
-- [ ] Automatic customer shortlist-ready outbound notification remains follow-up.
+- [x] WhatsApp "Interested" / "Not interested" button flow is fully wired to the step 11 opportunity response service.
+- [x] Automatic customer shortlist-ready outbound notification is wired for generated shortlists.
 
 ## Risks and follow-ups
 

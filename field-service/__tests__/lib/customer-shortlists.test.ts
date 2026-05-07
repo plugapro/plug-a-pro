@@ -8,12 +8,13 @@ import {
   selectShortlistedProviderForRequest,
 } from '../../lib/customer-shortlists'
 
-const { mockDb, state } = vi.hoisted(() => {
+const { mockDb, state, mockOrchestrateMatch } = vi.hoisted(() => {
   const state: { tx: any; shortlistItem: any; declineLead: any } = {
     tx: null,
     shortlistItem: null,
     declineLead: null,
   }
+  const mockOrchestrateMatch = vi.fn()
   const mockDb = {
     jobRequest: {
       findUnique: vi.fn(),
@@ -32,9 +33,8 @@ const { mockDb, state } = vi.hoisted(() => {
     },
     $transaction: vi.fn(),
   }
-  return { mockDb, state }
+  return { mockDb, state, mockOrchestrateMatch }
 })
-
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/provider-wallet', () => ({
   getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({ totalCreditBalance: 3 }),
@@ -43,13 +43,19 @@ vi.mock('../../lib/provider-lead-access', () => ({
   getProviderLeadAccessUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.test/leads/access/token'),
 }))
 vi.mock('../../lib/job-request-access', () => ({
-  getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.plugapro.test/requests/access/customer-token'),
+  getJobRequestAccessUrl: vi.fn().mockImplementation((_id: string, view?: string) =>
+    Promise.resolve(`https://app.plugapro.test/requests/access/customer-token${view ? `?view=${view}` : ''}`),
+  ),
 }))
 vi.mock('../../lib/whatsapp', () => ({
   sendText: vi.fn().mockResolvedValue('wamid-1'),
 }))
 vi.mock('../../lib/whatsapp-interactive', () => ({
   sendButtons: vi.fn().mockResolvedValue('wamid-buttons'),
+  sendCtaUrl: vi.fn().mockResolvedValue('wamid-cta'),
+}))
+vi.mock('../../lib/matching/orchestrator', () => ({
+  orchestrateMatch: mockOrchestrateMatch,
 }))
 
 function makeInterestedResponse(overrides: Record<string, unknown> = {}) {
@@ -78,6 +84,10 @@ function makeInterestedResponse(overrides: Record<string, unknown> = {}) {
 describe('customer shortlists', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockOrchestrateMatch.mockResolvedValue({
+      status: 'SKIP',
+      reason: 'JOB_STATUS_OPEN',
+    })
     mockDb.jobRequest.findUnique.mockResolvedValue({
       id: 'request-1',
       status: 'SHORTLIST_READY',
@@ -206,7 +216,7 @@ describe('customer shortlists', () => {
   })
 
   it('selects a provider without deducting credits and notifies the provider with confirm buttons', async () => {
-    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    const { sendButtons, sendCtaUrl } = await import('../../lib/whatsapp-interactive')
     const result = await selectShortlistedProviderForRequest({
       requestId: 'request-1',
       shortlistItemId: 'item-1',
@@ -237,11 +247,22 @@ describe('customer shortlists', () => {
         templateName: 'interactive:provider_selected_for_confirmation',
       }),
     )
+    expect(sendCtaUrl).toHaveBeenCalledWith(
+      '+27111111111',
+      expect.stringContaining('Open this offer'),
+      'View details',
+      'https://app.plugapro.test/leads/access/token',
+      undefined,
+      expect.objectContaining({
+        templateName: 'interactive:provider_selected_for_confirmation_cta',
+      }),
+    )
     expect(state.tx).not.toHaveProperty('walletLedgerEntry')
   })
 
   it('notifies the customer when a shortlist becomes ready', async () => {
     const { sendText } = await import('../../lib/whatsapp')
+    const { sendCtaUrl } = await import('../../lib/whatsapp-interactive')
     state.tx.providerShortlist.create = vi.fn().mockResolvedValue({
       id: 'shortlist-1',
       items: [{ id: 'item-1' }, { id: 'item-2' }],
@@ -252,6 +273,16 @@ describe('customer shortlists', () => {
       text: expect.stringContaining('shortlist is ready'),
       templateName: 'interactive:client_shortlist_ready',
     }))
+    expect(sendCtaUrl).toHaveBeenCalledWith(
+      '+27222222222',
+      expect.stringContaining('Provider selection is available below.'),
+      'View details',
+      'https://app.plugapro.test/requests/access/customer-token?view=shortlist',
+      undefined,
+      expect.objectContaining({
+        templateName: 'interactive:client_shortlist_ready_cta',
+      }),
+    )
   })
 
   it('rejects re-selection once the request has advanced past SHORTLIST_READY', async () => {
@@ -292,6 +323,21 @@ describe('customer shortlists', () => {
 
     const result = await cancelRequestFromShortlist({ requestId: 'request-1' })
     expect(result).toEqual({ ok: true })
+    expect(state.tx.providerShortlist.updateMany).toHaveBeenCalledWith({
+      where: { requestId: 'request-1', status: 'PUBLISHED' },
+      data: { status: 'SUPERSEDED' },
+    })
+    expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
+      where: {
+        jobRequestId: 'request-1',
+        status: { in: ['SENT', 'VIEWED'] },
+      },
+      data: {
+        status: 'EXPIRED',
+        cancelledAt: expect.any(Date),
+        respondedAt: expect.any(Date),
+      },
+    })
     expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
       where: { id: 'request-1' },
       data: expect.objectContaining({
@@ -300,7 +346,6 @@ describe('customer shortlists', () => {
         selectedLeadInviteId: null,
       }),
     })
-    expect(state.tx.lead.updateMany).toHaveBeenCalled()
   })
 
   it('refuses cancellation once a provider is being confirmed', async () => {
@@ -316,7 +361,7 @@ describe('customer shortlists', () => {
     ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
   })
 
-  it('returns the request to MATCHING when more options are requested', async () => {
+  it('returns the request to OPEN when more options are requested', async () => {
     state.tx = {
       providerShortlist: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -332,9 +377,16 @@ describe('customer shortlists', () => {
 
     const result = await requestMoreShortlistOptions({ requestId: 'request-1' })
     expect(result).toEqual({ ok: true })
+    expect(state.tx.providerShortlist.updateMany).toHaveBeenCalledWith({
+      where: { requestId: 'request-1', status: 'PUBLISHED' },
+      data: { status: 'SUPERSEDED' },
+    })
     expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
       where: { id: 'request-1' },
-      data: { status: 'MATCHING' },
+      data: { status: 'OPEN' },
+    })
+    expect(mockOrchestrateMatch).toHaveBeenCalledWith('request-1', {
+      triggeredBy: 'rematch',
     })
   })
 

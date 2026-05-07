@@ -112,9 +112,13 @@ npm test -- --run __tests__/lib/provider-applications.test.ts __tests__/lib/prov
 - [x] Approved provider categories are marked approved in the new category foundation.
 - [x] Starter credits still use ledger-first promo award path.
 - [x] More-info providers remain unapproved for leads.
-- [ ] Category-specific approve/reject UI per category.
+- [x] Category-specific approve/reject UI per category.
 - [ ] Verification/trust level admin controls.
 - [ ] Document/photo/reference review UI.
+
+## Alignment status
+
+- Step 6 alignment remains partial: trust verification controls and full document/photo/reference review UX remain follow-ups.
 
 ## Risks and follow-ups
 

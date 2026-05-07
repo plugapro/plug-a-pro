@@ -181,7 +181,9 @@ export function checkWorkerPortalAccess(
   application?: WorkerApplicationStatus | null,
 ): WorkerPortalAccessDecision {
   if (!provider) {
-    if (application?.status === 'PENDING') return { ok: false, code: 'WORKER_NOT_APPROVED' }
+    if (application?.status === 'PENDING' || application?.status === 'MORE_INFO_REQUIRED') {
+      return { ok: false, code: 'WORKER_NOT_APPROVED' }
+    }
     return { ok: false, code: 'WORKER_NOT_FOUND' }
   }
 
@@ -294,7 +296,10 @@ export async function resolveCurrentWorkerFromVerifiedOtpSession(params: {
 
   const application = params.client.providerApplication
     ? await params.client.providerApplication.findFirst({
-        where: { phone, status: { in: ['PENDING', 'APPROVED'] } },
+        // Keep MORE_INFO_REQUIRED applications in this session path so the user
+        // stays in the onboarding hold state instead of falling through to
+        // WORKER_NOT_FOUND.
+        where: { phone, status: { in: ['PENDING', 'MORE_INFO_REQUIRED', 'APPROVED'] } },
         orderBy: { submittedAt: 'desc' },
         select: { id: true, status: true, providerId: true },
       })

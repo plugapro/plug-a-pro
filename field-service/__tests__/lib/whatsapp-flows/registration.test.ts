@@ -1085,6 +1085,19 @@ describe('registration flow — evidence file uploads', () => {
     expect(result.nextData?.evidenceMediaIds).toEqual(['media_abc123'])
   })
 
+  it('stores non-risk uploaded evidence with provider_work_photo label', async () => {
+    const result = await handleRegistrationFlow(makeMediaCtx('image', 'media_work_001'))
+
+    expect(whatsappMedia.downloadAndStoreWhatsAppMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaId: 'media_work_001',
+        prefix: 'provider_work_photo',
+        label: 'provider_work_photo',
+      })
+    )
+    expect(result.nextStep).toBe('reg_collect_evidence')
+  })
+
   it('stores high-risk certification proof media with private certification label', async () => {
     const ctx = makeMediaCtx('document', 'media_cert_001')
     ctx.data = { skills: ['Electrical'], certificationProofIntent: true } as any

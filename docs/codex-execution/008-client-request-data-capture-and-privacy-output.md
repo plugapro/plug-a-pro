@@ -2,7 +2,7 @@
 
 ## Status
 
-Partially completed
+Completed
 
 ## Blueprint file executed
 
@@ -14,7 +14,7 @@ Upgrade client request capture to collect matching-critical data while protectin
 
 ## Current-state findings
 
-The existing WhatsApp request flow already captures customer name/phone, category, structured address, issue description, availability, and app-controlled photos. Step 3 added request metadata fields to `JobRequest`, but the flow did not yet populate urgency, budget preference, provider preference, source, submitted timestamp, or request reference.
+The existing WhatsApp request flow already captures customer name/phone, category, structured address, issue description, availability, and app-controlled photos. Step 3 added request metadata fields to `JobRequest`, and both the WhatsApp flow and PWA now pass shortlist-relevant fields end-to-end (`urgency`, `providerPreference`, `budgetPreference`, `maxCallOutFee`, `verifiedOnly`, `subcategory`, `accessNotes`) into `createJobRequest`.
 
 ## Implementation completed
 
@@ -42,7 +42,7 @@ The existing WhatsApp request flow already captures customer name/phone, categor
   - Passes new fields into `createJobRequest`.
 - Added focused tests for request helper mappings and request reference generation.
 
-This step is partially completed because PWA `BookingFlow` capture and explicit subcategory/job-type capture still need equivalent updates, and photo `safe_for_preview` classification is not yet implemented.
+This step is now complete after PWA parity updates and post-submission privacy-preserving access-notes handling.
 
 ## Files changed
 
@@ -66,7 +66,13 @@ No new migration in this step. It uses the fields added in step 3.
 
 ## UI changes
 
-No PWA UI changes.
+PWA booking flow updates:
+
+- `components/customer/BookingFlow.tsx` now captures:
+  - `subcategory`
+  - `photosSafeForPreview`
+  - `accessNotes`
+  - all shortlist-relevant preference/timing fields (`urgency`, `providerPreference`, `budgetPreference`, `maxCallOutFee`).
 
 WhatsApp flow changes:
 
@@ -114,14 +120,15 @@ npm run lint
 - [x] Request metadata is persisted by shared create service.
 - [x] Privacy explanation appears before submission.
 - [x] Exact address and phone are not added to provider preview by this step.
-- [ ] PWA request capture updated with same fields.
-- [ ] Subcategory/job type capture added.
-- [ ] Photo `safe_for_preview` classification added.
+- [x] PWA request capture updated with same fields.
+- [x] Subcategory/job type capture added.
+- [x] Photo `safe_for_preview` classification added.
+- [x] Structured `accessNotes` captured and forwarded for post-acceptance unlock details.
 
 ## Risks and follow-ups
 
-The WhatsApp flow now has two extra list prompts. Watch completion rates and consider collapsing preference/budget into a single prompt if drop-off increases. PWA capture must be updated before web-originated requests are shortlist-equivalent.
+The WhatsApp flow now has two extra list prompts. Watch completion rates and consider collapsing preference/budget into a single prompt if drop-off increases. The web-originated request path is now shortlist-equivalent in parity.
 
 ## OpenBrain note
 
-Client request capture upgraded for shortlist readiness by adding urgency, provider preference, budget preference, source, request reference, submitted timestamp, and privacy copy to the WhatsApp/shared creation flow. Existing structured address and attachment systems are reused. Remaining work: PWA parity, subcategory capture, and safe-preview classification for photos.
+Client request capture upgraded for shortlist readiness by adding urgency, provider preference, budget preference, source, request reference, submitted timestamp, and privacy copy to the creation flow. Existing structured address and attachment systems are reused. `accessNotes` is now persisted as structured post-acceptance-only detail.
