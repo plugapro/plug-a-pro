@@ -1,3 +1,4 @@
+-- @prisma-migrate disable-transaction
 -- Add indexes to core models for status-filtered list queries.
 -- All indexes use CREATE INDEX CONCURRENTLY to avoid table locks on large tables.
 

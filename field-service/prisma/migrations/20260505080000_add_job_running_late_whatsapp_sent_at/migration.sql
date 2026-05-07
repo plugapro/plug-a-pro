@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE "jobs" ADD COLUMN "runningLateWhatsappSentAt" TIMESTAMP(3);
+ALTER TABLE "jobs" ADD COLUMN IF NOT EXISTS "runningLateWhatsappSentAt" TIMESTAMP(3);
