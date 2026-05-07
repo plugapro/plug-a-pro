@@ -558,7 +558,9 @@ async function notifySelectedProvider(params: {
       },
     )
     if (leadUrl) {
-      await sendCtaUrl(
+      // CTA URL is a supplementary message — send it best-effort so a failure
+      // does not roll back the primary Accept/Decline buttons the provider already received.
+      sendCtaUrl(
         params.providerPhone,
         'Open this offer in the app to review job details.',
         ctaLabelFor('generic_details'),
@@ -571,7 +573,13 @@ async function notifySelectedProvider(params: {
             providerId: params.providerId,
           },
         },
-      )
+      ).catch((ctaError) => {
+        console.warn('[customer-shortlists] CTA URL message failed (non-fatal)', {
+          leadId: params.leadId,
+          providerId: params.providerId,
+          error: ctaError,
+        })
+      })
     }
 
     return { sent: true as const }

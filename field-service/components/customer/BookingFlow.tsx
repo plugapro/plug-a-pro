@@ -221,8 +221,8 @@ export function BookingFlow({
       providerPreference,
       budgetPreference,
       maxCallOutFee,
-    photosSafeForPreview,
-  }
+      photosSafeForPreview,
+    }
     window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
   }, [
     budgetPreference,
@@ -925,23 +925,25 @@ export function BookingFlow({
                   </div>
                 </div>
               )}
-              <div className="space-y-1 border border-border rounded-xl px-4 py-3 bg-muted/30">
-                <div className="flex items-start gap-2">
-                  <Checkbox
-                    id="photosSafeForPreview"
-                    checked={photosSafeForPreview}
-                    onCheckedChange={(value) => setPhotosSafeForPreview(value === true)}
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="photosSafeForPreview" className="text-muted-foreground">
-                      Share photos with shortlisted providers before acceptance
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Keep this on so providers can better estimate arrival and pricing before you select one.
-                    </p>
+              {photos.length > 0 && (
+                <div className="space-y-1 border border-border rounded-xl px-4 py-3 bg-muted/30">
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="photosSafeForPreview"
+                      checked={photosSafeForPreview}
+                      onCheckedChange={(value) => setPhotosSafeForPreview(value === true)}
+                    />
+                    <div className="space-y-1">
+                      <Label htmlFor="photosSafeForPreview" className="text-muted-foreground">
+                        Share photos with shortlisted providers before acceptance
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Keep this on so providers can better estimate arrival and pricing before you select one.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Urgency picker */}

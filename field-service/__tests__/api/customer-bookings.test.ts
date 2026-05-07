@@ -103,7 +103,7 @@ describe('POST /api/customer/bookings', () => {
     }))
   })
 
-  it('respects customer photo safe-for-preview setting', async () => {
+  it('respects customer photo safe-for-preview setting via boolean-string', async () => {
     const formData = new FormData()
     formData.set('category', 'plumbing')
     formData.set('title', 'Fix leaking pipe')
@@ -128,15 +128,105 @@ describe('POST /api/customer/bookings', () => {
     expect(mockUploadJobRequestPhoto).toHaveBeenCalledTimes(2)
     expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({
-        safeForPreview: false,
-      }),
+      expect.objectContaining({ safeForPreview: false }),
     )
     expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({
-        safeForPreview: false,
-      }),
+      expect.objectContaining({ safeForPreview: false }),
+    )
+  })
+
+  it('respects safe-for-preview setting via JSON array', async () => {
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+    formData.set('photoSafeForPreview', JSON.stringify([true, false]))
+    formData.append('photos', new File(['img'], 'a.png', { type: 'image/png' }))
+    formData.append('photos', new File(['img2'], 'b.png', { type: 'image/png' }))
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ safeForPreview: true }),
+    )
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ safeForPreview: false }),
+    )
+  })
+
+  it('defaults safe-for-preview to true when JSON array is shorter than photo count', async () => {
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+    formData.set('photoSafeForPreview', JSON.stringify([false]))
+    formData.append('photos', new File(['img'], 'a.png', { type: 'image/png' }))
+    formData.append('photos', new File(['img2'], 'b.png', { type: 'image/png' }))
+    formData.append('photos', new File(['img3'], 'c.png', { type: 'image/png' }))
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    // First photo: explicitly false
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ safeForPreview: false }),
+    )
+    // Photos 2 and 3: fall back to true (safe default for unspecified entries)
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ safeForPreview: true }),
+    )
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ safeForPreview: true }),
+    )
+  })
+
+  it('treats non-boolean JSON values as not-safe (strict opt-in)', async () => {
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+    formData.set('photoSafeForPreview', JSON.stringify([null, 1, 'true']))
+    formData.append('photos', new File(['img'], 'a.png', { type: 'image/png' }))
+    formData.append('photos', new File(['img2'], 'b.png', { type: 'image/png' }))
+    formData.append('photos', new File(['img3'], 'c.png', { type: 'image/png' }))
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    // null, 1, and "true" are all non-boolean true — should NOT be treated as safe
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ safeForPreview: false }),
+    )
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ safeForPreview: false }),
+    )
+    expect(mockUploadJobRequestPhoto).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ safeForPreview: false }),
     )
   })
 

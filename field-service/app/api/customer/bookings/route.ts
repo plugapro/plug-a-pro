@@ -33,7 +33,7 @@ function parsePhotoSafeForPreview(raw: string | null, photoCount: number): Photo
     if (Array.isArray(parsed)) {
       return parsed
         .slice(0, photoCount)
-        .map((value) => value !== false)
+        .map((value) => value === true)
         .concat(Array.from({ length: Math.max(0, photoCount - parsed.length) }, () => true))
     }
   } catch {

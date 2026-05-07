@@ -208,7 +208,7 @@ async function approveApplication(formData: FormData) {
       }
 
       const statusUpdate = await tx.providerApplication.updateMany({
-        where: { id, status: 'PENDING' },
+        where: { id, status: { in: ['PENDING', 'MORE_INFO_REQUIRED'] } },
         data: {
           status: 'APPROVED',
           providerId,
