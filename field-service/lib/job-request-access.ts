@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto'
 import { db } from './db'
 import { getPublicAppUrl } from './provider-credit-copy'
+import { createTraceId } from './support-diagnostics'
 
 const ACCESS_TOKEN_TTL_DAYS = 90
 
@@ -66,6 +67,7 @@ export async function getJobRequestAccessUrl(jobRequestId: string, view?: string
 }
 
 export async function resolveJobRequestAccessScope(token: string) {
+  const traceId = createTraceId('jra')
   const jobRequest = await db.jobRequest.findUnique({
     where: { customerAccessToken: token },
     select: {
@@ -76,7 +78,8 @@ export async function resolveJobRequestAccessScope(token: string) {
   })
 
   if (!jobRequest) {
-    return { status: 'invalid' as const, jobRequestId: null }
+    console.warn(`[job-request-access:${traceId}] token invalid: no matching record`)
+    return { status: 'invalid' as const, jobRequestId: null, traceId }
   }
 
   const now = new Date()
@@ -85,20 +88,34 @@ export async function resolveJobRequestAccessScope(token: string) {
     !jobRequest.customerAccessTokenExpiresAt ||
     jobRequest.customerAccessTokenExpiresAt <= now
   ) {
-    return { status: 'expired' as const, jobRequestId: jobRequest.id }
+    console.warn(`[job-request-access:${traceId}] token expired or revoked: jobRequest=${jobRequest.id}`)
+    return { status: 'expired' as const, jobRequestId: jobRequest.id, traceId }
   }
 
-  return { status: 'active' as const, jobRequestId: jobRequest.id }
+  return { status: 'active' as const, jobRequestId: jobRequest.id, traceId }
 }
 
 export async function resolveJobRequestAccessToken(token: string) {
+  const traceId = createTraceId('jrt')
   const jobRequest = await db.jobRequest.findUnique({
     where: { customerAccessToken: token },
-    include: {
+    select: {
+      id: true,
+      customerId: true,
+      category: true,
+      title: true,
+      description: true,
+      status: true,
+      expiresAt: true,
+      createdAt: true,
+      updatedAt: true,
+      selectedLeadInviteId: true,
+      customerAccessTokenExpiresAt: true,
+      customerAccessTokenRevokedAt: true,
       customer: { select: { id: true, userId: true, name: true, phone: true } },
       address: true,
       attachments: {
-        where: { label: { in: ['customer_photo', 'evidence'] } },
+        where: { label: { in: ['customer_photo', 'evidence'] }, safeForPreview: true },
         orderBy: { createdAt: 'asc' },
       },
       leads: {
@@ -152,7 +169,10 @@ export async function resolveJobRequestAccessToken(token: string) {
     },
   })
 
-  if (!jobRequest) return { status: 'invalid' as const, jobRequest: null }
+  if (!jobRequest) {
+    console.warn(`[job-request-access:${traceId}] token invalid: no matching record`)
+    return { status: 'invalid' as const, jobRequest: null, traceId }
+  }
 
   const now = new Date()
   if (
@@ -160,8 +180,25 @@ export async function resolveJobRequestAccessToken(token: string) {
     !jobRequest.customerAccessTokenExpiresAt ||
     jobRequest.customerAccessTokenExpiresAt <= now
   ) {
-    return { status: 'expired' as const, jobRequest }
+    console.warn(`[job-request-access:${traceId}] token expired or revoked: jobRequest=${jobRequest.id}`)
+    // Strip all token columns before returning — callers must not re-expose them.
+    // customerAccessToken is not in the select above, but we strip it defensively
+    // in case the shape is widened or the mock includes it.
+    const {
+      customerAccessToken: _tok,
+      customerAccessTokenExpiresAt: _exp,
+      customerAccessTokenRevokedAt: _rev,
+      ...safeJobRequest
+    } = jobRequest as typeof jobRequest & { customerAccessToken?: unknown }
+    return { status: 'expired' as const, jobRequest: safeJobRequest, traceId }
   }
 
-  return { status: 'active' as const, jobRequest }
+  // Strip token columns from the returned shape so callers never re-expose the secret
+  const {
+    customerAccessToken: _tok,
+    customerAccessTokenExpiresAt: _exp,
+    customerAccessTokenRevokedAt: _rev,
+    ...safeJobRequest
+  } = jobRequest as typeof jobRequest & { customerAccessToken?: unknown }
+  return { status: 'active' as const, jobRequest: safeJobRequest, traceId }
 }

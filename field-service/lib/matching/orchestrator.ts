@@ -20,6 +20,7 @@ import { reserveBestProviderAtomically } from './reservation'
 import { dispatchMatchLead } from './dispatch'
 import { emitMatchEvent } from './events'
 import { sendCustomerMatchFoundNotification } from '@/lib/whatsapp'
+import { notifyCustomerMatchingInProgress } from '@/lib/client-pwa-submission-notifications'
 import { isEnabled } from '@/lib/flags'
 import { findAlternativeSlots } from './alternative-slots'
 import type { SlotOption } from './types'
@@ -226,6 +227,22 @@ export async function orchestrateMatch(
       hold: reserved.hold,
       provider: reserved.provider,
     })
+
+    // 5a. Notify customer that matching is in progress (spec MSG2).
+    // Fires once per request — idempotency is enforced by matchFoundWhatsappSentAt:
+    // if CW2 was already sent we skip to avoid duplicate "checking" messages.
+    // Failure is non-fatal and must not crash the orchestrator.
+    await notifyCustomerMatchingInProgress({
+      customerPhone: jobRequest.customer?.phone ?? null,
+      category: jobRequest.category,
+      requestId: jobRequest.id,
+      isAlreadySent: Boolean(jobRequest.matchFoundWhatsappSentAt),
+    }).catch((err) =>
+      console.error('[orchestrator] matching-in-progress notification failed (non-fatal)', {
+        jobRequestId: jobRequest.id,
+        err,
+      })
+    )
 
     // 5b. Notify customer that a provider has been matched (CW2)
     // Defensive: failure must not crash the orchestrator

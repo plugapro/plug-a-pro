@@ -466,3 +466,182 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     )
   })
 })
+
+// ─── G1 regression: safeForPreview enforcement for ticket-token access ─────────
+// Ticket tokens (customer access links) must NOT serve safeForPreview=false
+// request attachments. Only job attachments (work evidence) are exempt because
+// those are post-acceptance by definition.
+describe('GET /api/attachments/[id] — safeForPreview enforcement with ticket tokens', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockHead.mockResolvedValue({ downloadUrl: 'https://blob.example.com/download/att-1' })
+    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200 })
+    mockResolveJobRequestAccessScope.mockResolvedValue({ status: 'active', jobRequestId: 'jr-1' })
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
+    mockDb.lead.findUnique.mockResolvedValue(null)
+  })
+
+  it('allows a ticket-token request for a safeForPreview=true request attachment', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: true,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeTokenRequest('token-abc'), { params: makeParams() })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks a ticket-token request for a safeForPreview=false request attachment (pre-acceptance)', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: false,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeTokenRequest('token-abc'), { params: makeParams() })
+
+    // safeForPreview=false on a request attachment must be blocked even with a valid ticket token
+    expect(res.status).toBe(403)
+  })
+
+  it('allows a ticket-token request for a job attachment (work evidence) regardless of safeForPreview', async () => {
+    // Job attachments are post-acceptance work evidence — always visible to the ticket holder
+    mockGetSession.mockResolvedValue(null)
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      safeForPreview: false,
+      job: {
+        providerId: 'provider-db-id',
+        booking: {
+          match: {
+            jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+          },
+        },
+      },
+      jobRequest: null,
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeTokenRequest('token-abc'), { params: makeParams() })
+
+    // Post-acceptance work evidence is always accessible
+    expect(res.status).toBe(200)
+  })
+})
+
+// ─── G2 regression: safeForPreview enforcement for lead-token access ──────────
+// Provider lead tokens (signed links) must NOT serve safeForPreview=false
+// request attachments unless the provider has an accepted unlock (isAccepted=true).
+// After acceptance the full request-level attachment set is allowed.
+describe('GET /api/attachments/[id] — safeForPreview enforcement with lead tokens (CODEX-15)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockHead.mockResolvedValue({ downloadUrl: 'https://blob.example.com/download/att-1' })
+    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200 })
+    mockResolveJobRequestAccessScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
+    mockDb.lead.findUnique.mockResolvedValue(null)
+  })
+
+  it('blocks a non-accepted lead-token request for a safeForPreview=false request attachment', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-1',
+      leadId: 'lead-1',
+      isAccepted: false,
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: false,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeLeadTokenRequest('lead-token-preview'), { params: makeParams() })
+
+    // safeForPreview=false must be blocked for non-accepted provider lead tokens
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an accepted lead-token request for a safeForPreview=false request attachment', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-1',
+      leadId: 'lead-1',
+      isAccepted: true,
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: false,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeLeadTokenRequest('lead-token-accepted'), { params: makeParams() })
+
+    // After acceptance the provider may access all request attachments
+    expect(res.status).toBe(200)
+  })
+
+  it('allows a non-accepted lead-token request for a safeForPreview=true attachment', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-1',
+      leadId: 'lead-1',
+      isAccepted: false,
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      job: null,
+      safeForPreview: true,
+      jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeLeadTokenRequest('lead-token-preview-safe'), { params: makeParams() })
+
+    // safeForPreview=true is always accessible even before acceptance
+    expect(res.status).toBe(200)
+  })
+
+  it('allows a non-accepted lead-token request for a job attachment (work evidence)', async () => {
+    mockGetSession.mockResolvedValue(null)
+    mockResolveProviderLeadAttachmentScope.mockResolvedValue({
+      status: 'active',
+      jobRequestId: 'jr-1',
+      leadId: 'lead-1',
+      isAccepted: false,
+    })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      safeForPreview: false,
+      job: {
+        providerId: 'provider-db-id',
+        booking: {
+          match: {
+            jobRequest: { id: 'jr-1', customer: { id: 'cust-db-id' } },
+          },
+        },
+      },
+      jobRequest: null,
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeLeadTokenRequest('lead-token-job-evidence'), { params: makeParams() })
+
+    // Job attachments (work evidence) are always accessible via lead tokens
+    expect(res.status).toBe(200)
+  })
+})

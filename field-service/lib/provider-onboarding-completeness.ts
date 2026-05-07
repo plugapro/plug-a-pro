@@ -17,6 +17,11 @@ export type ProviderProfileLike = {
   email?: string | null
   skills?: string[] | null
   serviceAreas?: string[] | null
+  /** Structured location node IDs from the LocationNode table. Satisfies
+   * the serviceAreas completeness requirement when populated, so callers
+   * should pass whichever field they have — either serviceAreas (legacy
+   * freetext) or locationNodeIds (structured) or both. */
+  locationNodeIds?: string[] | null
   experience?: string | null
   availability?: string | null
   callOutFee?: number | string | null
@@ -94,8 +99,13 @@ const FIELD_REQUIREMENTS: ReadonlyArray<{
     field: 'serviceAreas',
     group: 'availability_coverage',
     severity: 'block_submit',
-    reason: 'Service areas drive matching to job locations.',
-    satisfiedBy: (p) => Array.isArray(p.serviceAreas) && p.serviceAreas.length > 0,
+    // G4: locationNodeIds (structured) satisfies this requirement in the same way
+    // as legacy freetext serviceAreas. Both encode "where this provider operates"
+    // and are used by the matching engine.
+    reason: 'Service areas (or structured location nodes) drive matching to job locations.',
+    satisfiedBy: (p) =>
+      (Array.isArray(p.serviceAreas) && p.serviceAreas.length > 0) ||
+      (Array.isArray(p.locationNodeIds) && p.locationNodeIds.length > 0),
   },
   {
     field: 'availability',

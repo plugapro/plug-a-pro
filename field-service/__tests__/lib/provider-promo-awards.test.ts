@@ -4,6 +4,7 @@ import {
   PROVIDER_PROMO_CREDIT_REWARDS,
   awardFirstCompletedJobWithCustomerRatingPromoCredits,
   awardFirstTopUpPromoCreditsInTransaction,
+  awardMobileVerifiedPromoCreditsInTransaction,
   awardPromoCreditsForMilestone,
   evaluateAndAwardProviderProfileCompletionPromoCredits,
 } from '../../lib/provider-promo-awards'
@@ -491,6 +492,56 @@ describe('provider promo award service', () => {
       awardType: 'FIRST_COMPLETED_JOB',
       referenceType: 'review',
       referenceId: 'review-2',
+    })
+  })
+
+  // G3: manual admin approval promo credits
+  // Confirms that awardMobileVerifiedPromoCreditsInTransaction — the exact
+  // function called by the admin approveApplication server action — awards
+  // MOBILE_VERIFIED credits with a provider_application reference and is
+  // idempotent when called a second time (e.g., if an admin retries the action).
+  describe('G3: manual admin approval calls awardMobileVerifiedPromoCreditsInTransaction', () => {
+    it('awards MOBILE_VERIFIED credits via the manual admin approval call signature', async () => {
+      const result = await awardMobileVerifiedPromoCreditsInTransaction(
+        mockDb as any,
+        'provider-1',
+        {
+          referenceType: 'provider_application',
+          referenceId: 'application-manual-1',
+          createdBy: 'admin-user-42',
+        },
+      )
+
+      expect(result.awarded).toBe(true)
+      expect(result.award).toMatchObject({
+        providerId: 'provider-1',
+        awardType: 'MOBILE_VERIFIED',
+        creditsAwarded: PROVIDER_PROMO_CREDIT_REWARDS.MOBILE_VERIFIED,
+        referenceType: 'provider_application',
+        referenceId: 'application-manual-1',
+      })
+      expect(result.wallet).toMatchObject({
+        promoCreditBalance: PROVIDER_PROMO_CREDIT_REWARDS.MOBILE_VERIFIED,
+      })
+    })
+
+    it('is idempotent — second manual approval attempt does not double-award', async () => {
+      await awardMobileVerifiedPromoCreditsInTransaction(mockDb as any, 'provider-1', {
+        referenceType: 'provider_application',
+        referenceId: 'application-manual-1',
+        createdBy: 'admin-user-42',
+      })
+
+      const retry = await awardMobileVerifiedPromoCreditsInTransaction(mockDb as any, 'provider-1', {
+        referenceType: 'provider_application',
+        referenceId: 'application-manual-1',
+        createdBy: 'admin-user-42',
+      })
+
+      expect(retry.awarded).toBe(false)
+      expect(retry.skippedReason).toBe('DUPLICATE')
+      expect(state.promoAwards.filter((a) => a.awardType === 'MOBILE_VERIFIED')).toHaveLength(1)
+      expect(state.wallet.promoCreditBalance).toBe(PROVIDER_PROMO_CREDIT_REWARDS.MOBILE_VERIFIED)
     })
   })
 })

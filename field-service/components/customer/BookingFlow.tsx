@@ -143,6 +143,7 @@ export function BookingFlow({
   const [description, setDescription] = useState(initialDraft?.description ?? '')
   const [accessNotes, setAccessNotes] = useState(initialDraft?.accessNotes ?? '')
   const [photos, setPhotos] = useState<File[]>([])
+  const [photoErrors, setPhotoErrors] = useState<string[]>([])
   const [closestCategory, setClosestCategory] = useState('')
   const [urgency, setUrgency] = useState<Urgency>(coerceUrgency(initialDraft?.urgency))
   const [preferredDate, setPreferredDate] = useState(initialDraft?.preferredDate ?? '')
@@ -897,13 +898,34 @@ export function BookingFlow({
                 accept="image/*"
                 multiple
                 onChange={(event) => {
-                  const selected = Array.from(event.target.files ?? []).slice(0, 5)
-                  setPhotos(selected)
+                  const MAX_PHOTO_SIZE = 10 * 1024 * 1024
+                  const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif']
+                  const raw = Array.from(event.target.files ?? []).slice(0, 5)
+                  const valid: File[] = []
+                  const errors: string[] = []
+                  for (const file of raw) {
+                    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+                      errors.push(`"${file.name}" is not a supported image type (JPEG, PNG, WEBP, HEIC, GIF).`)
+                    } else if (file.size > MAX_PHOTO_SIZE) {
+                      errors.push(`"${file.name}" is too large — photos must be 10 MB or smaller.`)
+                    } else {
+                      valid.push(file)
+                    }
+                  }
+                  setPhotos(valid)
+                  setPhotoErrors(errors)
                 }}
               />
               <p className="text-xs text-muted-foreground">
                 Add up to 5 photos of the problem so the provider can quote with less back-and-forth.
               </p>
+              {photoErrors.length > 0 && (
+                <div className="space-y-1">
+                  {photoErrors.map((err, i) => (
+                    <p key={i} className="text-xs text-destructive">{err}</p>
+                  ))}
+                </div>
+              )}
               {photos.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground">

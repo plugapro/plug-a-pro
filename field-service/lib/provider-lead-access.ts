@@ -418,10 +418,18 @@ export async function resolveProviderLeadAttachmentScope(token: string) {
     return { status: resolved.status, jobRequestId: null, leadId: resolved.payload?.leadId ?? null, traceId: resolved.traceId }
   }
 
+  // Expose whether the provider has an accepted unlock — the attachment proxy
+  // uses this to decide whether to enforce safeForPreview on request-level
+  // attachments. After acceptance, the provider may view all request attachments.
+  const hasAcceptedUnlock =
+    resolved.lead.status === 'ACCEPTED' &&
+    resolved.lead.unlock?.providerId === resolved.lead.providerId
+
   return {
     status: 'active' as const,
     jobRequestId: resolved.lead.jobRequestId,
     leadId: resolved.lead.id,
+    isAccepted: hasAcceptedUnlock,
     traceId: resolved.traceId,
   }
 }

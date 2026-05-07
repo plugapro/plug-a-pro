@@ -64,3 +64,62 @@ describe('job request access tokens', () => {
     expect(url).toBe('https://app.plugapro.co.za/requests/access/existing-token?view=shortlist')
   })
 })
+
+// ─── G1 regression: safeForPreview enforcement ────────────────────────────────
+// The token-page attachment query MUST filter on safeForPreview: true so that
+// attachments flagged as not safe for preview are never included in the customer
+// access token page response (pre-acceptance context).
+describe('resolveJobRequestAccessToken — safeForPreview enforcement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('requests only safeForPreview=true attachments in the token query', async () => {
+    const { db } = await import('@/lib/db')
+
+    ;(db.jobRequest.findUnique as any).mockResolvedValue(null)
+
+    const { resolveJobRequestAccessToken } = await import('@/lib/job-request-access')
+    await resolveJobRequestAccessToken('some-token')
+
+    expect(db.jobRequest.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { customerAccessToken: 'some-token' },
+        select: expect.objectContaining({
+          attachments: expect.objectContaining({
+            where: expect.objectContaining({
+              safeForPreview: true,
+            }),
+          }),
+        }),
+      }),
+    )
+  })
+
+  it('returns active status and includes only safeForPreview attachments', async () => {
+    const { db } = await import('@/lib/db')
+    const expiresAt = new Date('2030-01-01T00:00:00Z')
+
+    const safeAttachment = { id: 'att-safe', label: 'customer_photo', safeForPreview: true, caption: null, createdAt: new Date() }
+    // The unsafe attachment should never appear because the DB query filters it out
+    ;(db.jobRequest.findUnique as any).mockResolvedValue({
+      id: 'jr-1',
+      customerAccessToken: 'valid-token',
+      customerAccessTokenExpiresAt: expiresAt,
+      customerAccessTokenRevokedAt: null,
+      customer: { id: 'cust-1', userId: 'user-1', name: 'Alice', phone: '+27820000001' },
+      address: null,
+      attachments: [safeAttachment],
+      leads: [],
+      match: null,
+    })
+
+    const { resolveJobRequestAccessToken } = await import('@/lib/job-request-access')
+    const result = await resolveJobRequestAccessToken('valid-token')
+
+    expect(result.status).toBe('active')
+    expect(result.jobRequest?.attachments).toEqual([safeAttachment])
+    // The unsafe one is absent because the query never returns it
+    expect(result.jobRequest?.attachments.some((a: any) => a.safeForPreview === false)).toBe(false)
+  })
+})

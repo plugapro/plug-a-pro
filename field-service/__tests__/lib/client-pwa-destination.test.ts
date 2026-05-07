@@ -95,7 +95,10 @@ describe('client PWA destination resolver', () => {
     const { resolveClientPwaDestination } = await import('../../lib/client-pwa-destination')
     await resolveClientPwaDestination({ requestId: 'request-1' })
 
-    const providerSelect = mockDb.jobRequest.findUnique.mock.calls[0][0].include.match.include.provider.select
+    // Since CLIENT-10, the root query uses `select` (not `include`) to prevent
+    // leaking scalar fields. Provider fields are nested under select.match.include.provider.select
+    const queryArg = mockDb.jobRequest.findUnique.mock.calls[0][0]
+    const providerSelect = queryArg.select?.match?.include?.provider?.select
     expect(providerSelect).not.toHaveProperty('phone')
     expect(providerSelect).not.toHaveProperty('privateAddress')
     expect(providerSelect).not.toHaveProperty('adminNotes')

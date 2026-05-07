@@ -32,6 +32,7 @@ export type SelectedProviderAcceptanceResult =
         | 'LEAD_EXPIRED'
         | 'LEAD_ALREADY_ACCEPTED'
         | 'DUPLICATE_ACCEPT_IGNORED'
+        | 'CREDIT_DEDUCTION_FAILED'
         | 'JOB_ASSIGNMENT_FAILED'
       currentCreditBalance?: number
     }
@@ -439,11 +440,12 @@ async function notifySelectedAcceptanceCommitted(params: {
     await sendText({
       to: params.providerPhone,
       text:
-        `Job accepted.\n\n` +
-        `${LEAD_UNLOCK_COST_CREDITS} credit used. ${PROVIDER_CREDITS_PRICE_LINE}\n` +
-        `Available balance: ${params.currentCreditBalance}\n` +
+        `✅ Job accepted\n\n` +
+        `You used ${LEAD_UNLOCK_COST_CREDITS} credit. ${PROVIDER_CREDITS_PRICE_LINE}\n` +
+        `Available balance: ${params.currentCreditBalance} credits\n` +
         `Starter/onboarding: ${params.promoCreditBalance}\n` +
         `Purchased: ${params.paidCreditBalance}\n\n` +
+        `Full customer details are now unlocked.\n\n` +
         `Customer details:\n` +
         `Name: ${params.customerName}\n` +
         `Phone: ${params.customerPhone}\n` +
@@ -471,10 +473,11 @@ async function notifySelectedAcceptanceCommitted(params: {
     await sendText({
       to: params.customerPhone,
       text:
-        `Your provider accepted the job\n\n` +
+        `✅ Your provider accepted the job\n\n` +
         `Provider: ${params.providerName}\n` +
         `Expected arrival: ${params.estimatedArrivalAt?.toLocaleString('en-ZA') ?? 'To be confirmed'}\n` +
-        `Call-out fee: ${formatRand(params.callOutFee)}${ticketUrl ? `\n\nYour request is available below.` : ''}`,
+        `Call-out fee: ${formatRand(params.callOutFee)}` +
+        (ticketUrl ? `\n\nYour request details are available below.` : ''),
       templateName: 'interactive:selected_job_accepted_customer',
       metadata: { leadId: params.leadId, providerId: params.providerId },
     })

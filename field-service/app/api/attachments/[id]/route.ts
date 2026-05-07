@@ -110,14 +110,26 @@ export async function GET(
     attachment.jobRequest?.id ??
     attachment.job?.booking?.match?.jobRequest?.id ??
     null
+  // Ticket tokens (customer access links) may only serve request-level attachments
+  // that are flagged safe for preview. Work-evidence photos (attached to a Job, not a
+  // JobRequest) are always accessible after acceptance — the job-attachment path is used
+  // for those. This blocks a direct-fetch of a safeForPreview=false attachment even when
+  // the caller holds a valid ticket token.
+  const isJobAttachment = attachment?.job != null
   const tokenAllowsAttachment =
     tokenScope?.status === 'active' &&
     attachmentJobRequestId != null &&
-    tokenScope.jobRequestId === attachmentJobRequestId
+    tokenScope.jobRequestId === attachmentJobRequestId &&
+    (isJobAttachment || attachment?.safeForPreview !== false)
+  // Lead tokens (provider signed links) may only serve safeForPreview attachments
+  // until the provider has an accepted unlock. After acceptance the full
+  // request-level attachment set is allowed, as is any job-level work evidence.
+  const leadTokenIsAccepted = (leadTokenScope as { isAccepted?: boolean } | null)?.isAccepted === true
   const leadTokenAllowsAttachment =
     leadTokenScope?.status === 'active' &&
     attachmentJobRequestId != null &&
-    leadTokenScope.jobRequestId === attachmentJobRequestId
+    leadTokenScope.jobRequestId === attachmentJobRequestId &&
+    (isJobAttachment || leadTokenIsAccepted || attachment?.safeForPreview !== false)
 
   let sessionAllowsAttachment = false
 

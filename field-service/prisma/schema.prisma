@@ -240,6 +240,17 @@ model Provider {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Name split — optional; `name` remains the primary display field for backwards compat
+  firstName    String?
+  lastName     String?
+
+  // Provider type — sole-trader vs company; optional until compliance requirement firms up
+  providerType String?
+
+  // Lifecycle timestamps
+  approvedAt       DateTime?  // set when ProviderApplication is approved; used for SLA reporting
+  payoutVerifiedAt DateTime?  // set when payout banking details are verified
+
   // Moderation / lifecycle
   status         ProviderStatus @default(ACTIVE)
   kycStatus      KycStatus      @default(NOT_STARTED)
@@ -286,6 +297,8 @@ model Provider {
 
   @@index([active, verified])
   @@index([isTestUser])
+  @@index([status, createdAt])
+  @@index([kycStatus, status])
   @@map("providers")
 }
 
@@ -338,6 +351,7 @@ model ProviderApplication {
   evidenceNote     String?
   evidenceFileUrls String[]          @default([])
   idNumber         String?           // POPIA §26 special personal info — do NOT log, export raw, or include in API responses. Encrypt at rest before GA.
+                                     // TODO(POPIA): idNumber stored plaintext — encrypt before GA (§26 special personal info)
   alternateMobileE164 String?         @db.VarChar(32)
   preferredLanguage String?          // Optional preferred language for customer communication
   reference1Name    String?
@@ -362,6 +376,7 @@ model ProviderApplication {
 
   @@index([approvalWhatsappSentAt])
   @@index([isTestUser, status])
+  @@index([status, submittedAt])
   @@map("provider_applications")
 }
 
@@ -980,6 +995,12 @@ model WalletLedgerEntry {
   referenceType              String
   referenceId                String
   description                String?
+  // idempotencyKey prevents duplicate credit writes under retries or double-delivery
+  idempotencyKey             String?               @unique
+  // traceId propagated from the originating payment or admin action for distributed tracing
+  traceId                    String?
+  // source identifies the system component that wrote the entry: "system" | "admin" | "payment_intent" | "promo"
+  source                     String?
   metadata                   Json                  @default("{}")
   createdAt                  DateTime              @default(now())
   createdBy                  String?
@@ -1120,6 +1141,7 @@ model TechnicianAvailability {
   pauseReason        String?
   emergencyAvailable Boolean  @default(false)
   sameDayAvailable   Boolean  @default(true)
+  weekendAvailable   Boolean  @default(false)
   lastUpdatedBy      String?
   lastUpdatedChannel String?
   notes              String?

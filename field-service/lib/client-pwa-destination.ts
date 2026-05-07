@@ -10,11 +10,25 @@ import {
 
 export type ClientPwaAccessLevel = 'public_token' | 'trusted_reference' | 'invalid' | 'expired'
 
-const clientPwaRequestInclude = Prisma.validator<Prisma.JobRequestInclude>()({
+const clientPwaRequestSelect = Prisma.validator<Prisma.JobRequestSelect>()({
+  id: true,
+  customerId: true,
+  category: true,
+  title: true,
+  description: true,
+  status: true,
+  expiresAt: true,
+  createdAt: true,
+  updatedAt: true,
+  // selectedLeadInviteId is an internal routing field used only to highlight
+  // the customer-selected shortlist item. It is a DB foreign key (UUID), not
+  // personal data. It is included here because the ticket page needs it to
+  // mark the selected card without a second query.
+  selectedLeadInviteId: true,
   customer: { select: { id: true, userId: true, name: true, phone: true } },
   address: true,
   attachments: {
-    where: { label: { in: ['customer_photo', 'evidence'] } },
+    where: { label: { in: ['customer_photo', 'evidence'] }, safeForPreview: true },
     orderBy: { createdAt: 'asc' },
   },
   leads: {
@@ -68,7 +82,7 @@ const clientPwaRequestInclude = Prisma.validator<Prisma.JobRequestInclude>()({
 })
 
 export type ClientPwaDestinationRequest = Prisma.JobRequestGetPayload<{
-  include: typeof clientPwaRequestInclude
+  select: typeof clientPwaRequestSelect
 }>
 
 export type ClientPwaDestinationJob = NonNullable<
@@ -99,7 +113,7 @@ export async function resolveClientPwaDestination(params: {
   if (params.requestId) {
     const request = await db.jobRequest.findUnique({
       where: { id: params.requestId },
-      include: clientPwaRequestInclude,
+      select: clientPwaRequestSelect,
     })
     return request ? buildDestination({ request, accessLevel: 'trusted_reference' }) : invalidDestination('request_not_found')
   }

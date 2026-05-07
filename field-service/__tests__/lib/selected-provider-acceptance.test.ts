@@ -176,9 +176,13 @@ describe('selected provider final acceptance', () => {
       (call: any[]) => call[0]?.to === '+27111111111',
     )?.[0]
     expect(providerSend).toBeDefined()
-    expect(providerSend.text).toContain('Acme Customer')
-    expect(providerSend.text).toContain('1 credit used')
+    // Blueprint-spec header: "✅ Job accepted"
+    expect(providerSend.text).toContain('✅ Job accepted')
+    // Blueprint-spec credit line: "You used 1 credit."
+    expect(providerSend.text).toContain('You used 1 credit')
     expect(providerSend.text).toContain('Available balance:')
+    // Blueprint-spec unlock confirmation
+    expect(providerSend.text).toContain('Full customer details are now unlocked')
     expect(providerSend.text).toContain('+27222222222')
     expect(providerSend.text).toContain('12 Hill Crescent')
     expect(providerSend.text).toContain('Ruimsig Heights')
@@ -190,6 +194,16 @@ describe('selected provider final acceptance', () => {
     expect(providerSend.text).toContain('Photos: 2 available')
     expect(providerSend.text).toContain('Example: 14:00')
     expect(providerSend.text).not.toContain('https://')
+
+    // Customer WhatsApp body must not embed raw URLs — URL travels via CTA only.
+    const customerSend = (sendText as any).mock.calls.find(
+      (call: any[]) => call[0]?.to === '+27222222222',
+    )?.[0]
+    expect(customerSend).toBeDefined()
+    expect(customerSend.text).toContain('✅ Your provider accepted the job')
+    expect(customerSend.text).not.toContain('https://')
+    expect(customerSend.text).not.toContain('http://')
+
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27111111111',
       expect.stringContaining('Job details and photos'),

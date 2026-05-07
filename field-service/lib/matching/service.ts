@@ -325,6 +325,7 @@ function buildMatchingJobRequest(record: {
   providerPreference: string | null
   status: MatchingJobRequest['status']
   expiresAt?: Date | null
+  matchFoundWhatsappSentAt?: Date | null
   customer?: { id: string; name: string; phone: string } | null
   address?: {
     street: string
@@ -361,6 +362,7 @@ function buildMatchingJobRequest(record: {
     providerPreference: record.providerPreference ?? null,
     status: record.status,
     expiresAt: record.expiresAt ?? null,
+    matchFoundWhatsappSentAt: record.matchFoundWhatsappSentAt ?? null,
     customer: record.customer ?? { id: record.customerId, name: 'Customer', phone: '' },
     address: record.address
       ? {
@@ -405,6 +407,7 @@ export async function loadMatchingJobRequest(client: any, jobRequestId: string) 
       providerPreference: true,
       status: true,
       expiresAt: true,
+      matchFoundWhatsappSentAt: true,
       customer: {
         select: {
           id: true,
@@ -2509,10 +2512,14 @@ export async function expireAssignmentOffer(params: {
         outcomeReasonCode: 'OFFER_TIMEOUT',
       },
     })
+    // Include INTERESTED: providers who expressed free interest in dispatch_v2
+    // mode must also have their lead marked EXPIRED when the hold times out.
+    // Without this, their lead status stays INTERESTED indefinitely, causing
+    // stale shortlist state and incorrect selectable-guard checks.
     const leadUpdate = await tx.lead.updateMany({
       where: {
         assignmentHoldId: hold.id,
-        status: { in: ['SENT', 'VIEWED'] },
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
       },
       data: { status: 'EXPIRED', respondedAt: new Date() },
     })

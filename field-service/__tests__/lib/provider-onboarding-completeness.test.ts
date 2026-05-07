@@ -95,6 +95,50 @@ describe('evaluateProviderProfileCompleteness', () => {
     })
     expect(result.ok).toBe(true)
   })
+
+  // G4: locationNodeIds completeness validation
+  it('blocks submission when both serviceAreas and locationNodeIds are absent', () => {
+    const result = evaluateProviderProfileCompleteness({
+      ...completeProfile,
+      serviceAreas: [],
+      locationNodeIds: [],
+    })
+    expect(result.canSubmit).toBe(false)
+    const entry = result.missing.find((m) => m.field === 'serviceAreas')
+    expect(entry).toBeDefined()
+    expect(entry?.severity).toBe('block_submit')
+  })
+
+  it('accepts locationNodeIds alone as sufficient for the service-area requirement', () => {
+    const result = evaluateProviderProfileCompleteness({
+      ...completeProfile,
+      serviceAreas: [],
+      locationNodeIds: ['loc_abc123', 'loc_def456'],
+    })
+    // serviceAreas field should not appear in missing list
+    expect(result.missing.find((m) => m.field === 'serviceAreas')).toBeUndefined()
+    expect(result.canSubmit).toBe(true)
+  })
+
+  it('accepts legacy serviceAreas alone when locationNodeIds is absent', () => {
+    const result = evaluateProviderProfileCompleteness({
+      ...completeProfile,
+      serviceAreas: ['Soweto'],
+      locationNodeIds: null,
+    })
+    expect(result.missing.find((m) => m.field === 'serviceAreas')).toBeUndefined()
+    expect(result.canSubmit).toBe(true)
+  })
+
+  it('accepts when both serviceAreas and locationNodeIds are provided', () => {
+    const result = evaluateProviderProfileCompleteness({
+      ...completeProfile,
+      serviceAreas: ['Soweto'],
+      locationNodeIds: ['loc_abc123'],
+    })
+    expect(result.missing.find((m) => m.field === 'serviceAreas')).toBeUndefined()
+    expect(result.canSubmit).toBe(true)
+  })
 })
 
 describe('describeMissingFields', () => {

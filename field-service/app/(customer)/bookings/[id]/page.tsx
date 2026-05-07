@@ -18,18 +18,9 @@ import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertCallout } from '@/components/shared/AlertCallout'
+import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 
 export const metadata = buildMetadata({ title: 'Booking Details' })
-
-const JOB_TIMELINE: Array<{ status: string; label: string; description: string }> = [
-  { status: 'SCHEDULED',         label: 'Provider assigned',    description: 'A provider has been assigned to your job' },
-  { status: 'EN_ROUTE',          label: 'On the way',            description: 'Your provider is travelling to you' },
-  { status: 'ARRIVED',           label: 'Arrived',               description: 'Your provider is on site' },
-  { status: 'STARTED',           label: 'Work started',          description: 'Work is in progress' },
-  { status: 'AWAITING_APPROVAL', label: 'Your approval needed',  description: 'Review additional work request' },
-  { status: 'PENDING_COMPLETION_CONFIRMATION', label: 'Awaiting your sign-off', description: 'Review the completed work and confirm if everything is done' },
-  { status: 'COMPLETED',         label: 'Completed',             description: 'Your job is complete' },
-]
 
 export default async function BookingDetailPage({
   params,
@@ -47,7 +38,7 @@ export default async function BookingDetailPage({
         include: {
           jobRequest: {
             include: {
-              customer: true,
+              customer: { select: { id: true } },
               address: true,
             },
           },
@@ -83,7 +74,12 @@ export default async function BookingDetailPage({
   })
 
   const currentJobStatus = booking.job?.status
-  const currentStatusIndex = JOB_TIMELINE.findIndex((s) => s.status === currentJobStatus)
+  const trackingSteps = booking.job
+    ? buildClientPwaJobTrackingSteps({
+        status: currentJobStatus ?? null,
+        arrivalTimeConfirmedAt: booking.job.arrivalTimeConfirmedAt,
+      })
+    : []
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const disputes = booking.job
     ? await db.dispute.findMany({
@@ -144,7 +140,7 @@ export default async function BookingDetailPage({
       include: {
         match: {
           include: {
-            jobRequest: { include: { customer: true } },
+            jobRequest: { include: { customer: { select: { id: true } } } },
           },
         },
         job: { select: { id: true, status: true } },
@@ -178,7 +174,7 @@ export default async function BookingDetailPage({
       include: {
         match: {
           include: {
-            jobRequest: { include: { customer: true } },
+            jobRequest: { include: { customer: { select: { id: true } } } },
           },
         },
         job: { select: { id: true } },
@@ -337,39 +333,33 @@ export default async function BookingDetailPage({
         </AlertCallout>
       )}
 
-      {/* Job timeline */}
-      {booking.job && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Job progress
-          </h2>
-          <div className="space-y-0">
-            {JOB_TIMELINE.map((step, i) => {
-              const isDone    = currentStatusIndex > i
-              const isCurrent = currentStatusIndex === i
-              return (
-                <div key={step.status} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className={`mt-1 h-4 w-4 rounded-full border-2 flex-shrink-0 ${
-                      isDone    ? 'border-primary bg-primary'
-                      : isCurrent ? 'border-foreground bg-foreground'
-                      : 'border-muted-foreground/30 bg-transparent'
-                    }`} />
-                    {i < JOB_TIMELINE.length - 1 && (
-                      <div className={`w-0.5 flex-1 my-0.5 ${isDone ? 'bg-primary' : 'bg-border'}`} />
-                    )}
-                  </div>
-                  <div className={`pb-4 ${isCurrent ? '' : isDone ? 'opacity-70' : 'opacity-30'}`}>
-                    <p className={`text-sm ${isCurrent ? 'font-medium' : ''}`}>{step.label}</p>
-                    {isCurrent && (
-                      <p className="text-xs text-muted-foreground">{step.description}</p>
-                    )}
-                  </div>
+      {/* Job timeline — 9-step blueprint timeline driven by buildClientPwaJobTrackingSteps */}
+      {booking.job && trackingSteps.length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-0">
+            <p className="text-sm font-medium mb-3 uppercase tracking-wide text-muted-foreground">Job progress</p>
+            {trackingSteps.map((step, index) => (
+              <div key={step.key} className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <div className={`mt-1 h-4 w-4 rounded-full border-2 flex-shrink-0 ${
+                    step.done    ? 'border-primary bg-primary'
+                    : step.current ? 'border-foreground bg-foreground'
+                    : 'border-muted-foreground/30 bg-transparent'
+                  }`} />
+                  {index < trackingSteps.length - 1 && (
+                    <div className={`w-0.5 flex-1 my-0.5 ${step.done ? 'bg-primary' : 'bg-border'}`} />
+                  )}
                 </div>
-              )
-            })}
-          </div>
-        </div>
+                <div className={`pb-4 ${step.current ? '' : step.done ? 'opacity-70' : 'opacity-30'}`}>
+                  <p className={`text-sm ${step.current ? 'font-medium' : ''}`}>{step.label}</p>
+                  {step.current && (
+                    <p className="text-xs text-muted-foreground">{step.description}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
 
       {booking.job && (
@@ -411,30 +401,33 @@ export default async function BookingDetailPage({
         </Card>
       )}
 
-      {/* Rating prompt */}
-      {booking.status === 'COMPLETED' && !existingRating && booking.job && (
-        <Link
-          href={`/bookings/${booking.id}/rate`}
-          className="block w-full rounded-xl border-2 border-dashed p-4 text-center text-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
-        >
-          Rate your experience →
-        </Link>
-      )}
-      {existingRating && (
-        <div className="rounded-xl border bg-card p-4 text-center text-sm text-muted-foreground">
-          You rated this {existingRating.score}/5 — thank you!
-        </div>
-      )}
-
-      {/* Invoice download — only for completed jobs */}
+      {/* Completion card — blueprint: "Job completed / Please confirm everything is in order." */}
       {booking.job?.status === 'COMPLETED' && (
-        <a
-          href={`/api/customer/bookings/${booking.id}/invoice`}
-          download
-          className="flex items-center justify-center gap-2 w-full rounded-xl border bg-card p-4 text-sm font-medium hover:bg-accent transition-colors"
-        >
-          Download invoice (PDF)
-        </a>
+        <Card>
+          <CardContent className="space-y-3 px-4 py-4 text-sm">
+            <p className="font-medium">Job completed</p>
+            <p className="text-muted-foreground">Please confirm everything is in order.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {!existingRating ? (
+                <Button asChild className="w-full">
+                  <Link href={`/bookings/${booking.id}/rate`}>Rate provider</Link>
+                </Button>
+              ) : (
+                <div className="flex items-center justify-center rounded-md border px-3 py-2 text-xs text-muted-foreground">
+                  Rated {existingRating.score}/5 — thank you!
+                </div>
+              )}
+              <Button asChild variant="outline" className="w-full">
+                <Link href={`/book/${encodeURIComponent(booking.match.jobRequest.category)}`}>Book again</Link>
+              </Button>
+            </div>
+            <Button asChild variant="ghost" className="w-full">
+              <a href={`/api/customer/bookings/${booking.id}/invoice`} download>
+                View invoice / receipt
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {booking.job && (

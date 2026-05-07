@@ -1,5 +1,5 @@
 // ─── Provider access security — unauthorized access prevention ────────────────
-// Focused regression suite for Step 14 security requirements:
+// Focused regression suite for CODEX-15 security requirements:
 //  1. WhatsApp sender number must map to the correct provider (done via whatsapp-identity)
 //  2. Secure tokens scoped to provider/lead/job cannot be replayed by wrong party
 //  3. Provider can view only own opportunities and jobs
@@ -9,6 +9,7 @@
 //  7. Expired/superseded invites revoke full-detail access
 //  8. Attachment access requires authorization (see attachments-authz.test.ts)
 //  9. Admin-only data must not appear in provider token resolution
+// 10. resolveProviderLeadAttachmentScope returns isAccepted to enforce safeForPreview
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -273,5 +274,81 @@ describe('expired and superseded token revocation', () => {
     expect(resolved.lead).toBeNull()
     // Confirm traceId is present for audit
     expect(resolved.traceId).toBeTruthy()
+  })
+})
+
+describe('resolveProviderLeadAttachmentScope — isAccepted flag for safeForPreview enforcement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+    process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-pla-secret-step15'
+  })
+
+  it('returns isAccepted=false for a SENT lead (preview context)', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({ status: 'SENT', unlock: null }))
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('active')
+    expect(scope.jobRequestId).toBe('jr-1')
+    expect((scope as { isAccepted?: boolean }).isAccepted).toBe(false)
+  })
+
+  it('returns isAccepted=true for an ACCEPTED lead with matching unlock', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique
+      .mockResolvedValueOnce(
+        makeLead({ status: 'ACCEPTED', unlock: { id: 'u-1', providerId: 'provider-1' } }),
+      )
+      // Second call for the sensitive data fetch — return minimal shape
+      .mockResolvedValueOnce({
+        jobRequest: {
+          customer: { id: 'c-1', name: 'Test', phone: '+27820000001' },
+          address: {
+            street: '1 Street',
+            addressLine1: null,
+            addressLine2: null,
+            complexName: null,
+            unitNumber: null,
+            suburb: 'Sandton',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            region: null,
+          },
+        },
+      })
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('active')
+    expect((scope as { isAccepted?: boolean }).isAccepted).toBe(true)
+  })
+
+  it('returns isAccepted=false when the unlock belongs to a different provider', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    // Unlock is by provider-99, not provider-1
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLead({ status: 'ACCEPTED', unlock: { id: 'u-x', providerId: 'provider-99' } }),
+    )
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('active')
+    expect((scope as { isAccepted?: boolean }).isAccepted).toBe(false)
+  })
+
+  it('returns invalid status for an expired token', async () => {
+    const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
+    const pastExpiry = new Date(Date.now() - 1000)
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1', expiresAt: pastExpiry })
+
+    const scope = await resolveProviderLeadAttachmentScope(token)
+
+    expect(scope.status).toBe('expired')
+    expect(scope.jobRequestId).toBeNull()
   })
 })

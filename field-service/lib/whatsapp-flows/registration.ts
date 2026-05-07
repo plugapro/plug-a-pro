@@ -733,7 +733,7 @@ async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
         label: PROVIDER_ID_DOCUMENT_LABEL,
       })
       console.info('[registration:handleVerifyUploadDoc] ID document saved', {
-        phone: ctx.phone,
+        phone: maskPhoneForLog(ctx.phone),
         mediaIdSuffix: ctx.reply.mediaId.slice(-8),
         attachmentId,
       })
@@ -743,7 +743,7 @@ async function handleVerifyUploadDoc(ctx: FlowContext): Promise<FlowResult> {
         nextData: { verificationDocAttachmentId: attachmentId, verificationDocMediaId: ctx.reply.mediaId },
       }
     } catch (err) {
-      console.error('[registration:handleVerifyUploadDoc] media upload failed', { phone: ctx.phone, err })
+      console.error('[registration:handleVerifyUploadDoc] media upload failed', { phone: maskPhoneForLog(ctx.phone), err })
       await sendWhatsAppJourneyRecovery(ctx.phone, {
         userRole: 'provider',
         channel: 'whatsapp',
@@ -784,7 +784,7 @@ async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
         label: PROVIDER_ID_SELFIE_LABEL,
       })
       console.info('[registration:handleVerifyUploadSelfie] ID selfie saved', {
-        phone: ctx.phone,
+        phone: maskPhoneForLog(ctx.phone),
         mediaIdSuffix: ctx.reply.mediaId.slice(-8),
         attachmentId,
       })
@@ -799,7 +799,7 @@ async function handleVerifyUploadSelfie(ctx: FlowContext): Promise<FlowResult> {
         },
       }
     } catch (err) {
-      console.error('[registration:handleVerifyUploadSelfie] media upload failed', { phone: ctx.phone, err })
+      console.error('[registration:handleVerifyUploadSelfie] media upload failed', { phone: maskPhoneForLog(ctx.phone), err })
       await sendWhatsAppJourneyRecovery(ctx.phone, {
         userRole: 'provider',
         channel: 'whatsapp',

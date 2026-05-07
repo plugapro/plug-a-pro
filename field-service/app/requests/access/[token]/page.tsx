@@ -474,10 +474,16 @@ export default async function TicketAccessPage({
                   <CardContent className="space-y-3 text-sm">
                     {item.provider.bio && <p className="text-muted-foreground">{item.provider.bio}</p>}
                     <div className="grid grid-cols-2 gap-2">
+                      <MiniStat label="Category" value={jobRequest.category} />
+                      <MiniStat label="Experience" value={item.provider.experience || 'On profile'} />
                       <MiniStat label="Call-out fee" value={formatCurrency(item.callOutFee)} />
                       <MiniStat label="Arrival" value={formatDateTime(item.estimatedArrivalAt)} />
                       <MiniStat label="Rate" value={item.rateAmount == null ? (item.negotiable ? 'Negotiable' : 'Not provided') : formatCurrency(item.rateAmount)} />
                       <MiniStat label="Jobs" value={String(item.provider.completedJobsCount)} />
+                      <MiniStat
+                        label="Rating"
+                        value={item.provider.averageRating == null ? 'New' : `${item.provider.averageRating.toFixed(1)} / 5`}
+                      />
                     </div>
                     {item.provider.portfolioUrls.length > 0 && (
                       <div className="space-y-1">

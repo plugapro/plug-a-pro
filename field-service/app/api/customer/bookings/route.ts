@@ -6,7 +6,10 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { createJobRequest } from '@/lib/job-requests/create-job-request'
+import {
+  createJobRequest,
+  DuplicateActiveRequestError,
+} from '@/lib/job-requests/create-job-request'
 import {
   InvalidStructuredAddressError,
   resolveStructuredAddressCapture,
@@ -276,6 +279,16 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof InvalidStructuredAddressError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    if (err instanceof DuplicateActiveRequestError) {
+      return NextResponse.json(
+        {
+          error: 'DUPLICATE_ACTIVE_REQUEST',
+          existingRequestId: err.existingId,
+          existingStatus: err.existingStatus,
+        },
+        { status: 409 },
+      )
     }
     console.error('[bookings] createJobRequest failed', err)
     return NextResponse.json({ error: 'Failed to create job request' }, { status: 500 })

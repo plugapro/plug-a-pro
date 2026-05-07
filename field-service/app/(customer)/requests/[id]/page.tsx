@@ -7,6 +7,7 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveClientPwaDestination } from '@/lib/client-pwa-destination'
+import { getCustomerShortlistForRequest } from '@/lib/customer-shortlists'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
@@ -14,15 +15,24 @@ import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
+import { normaliseLocationDisplayName } from '@/lib/location-format'
+import {
+  selectShortlistProviderAction,
+  requestMoreShortlistOptionsAction,
+  cancelRequestFromShortlistAction,
+} from './actions'
 
 export const metadata = buildMetadata({ title: 'Request Details', noIndex: true })
 
 export default async function RequestDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ selection?: string }>
 }) {
   const { id } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : {}
   const session = await getSession()
   if (!session || session.role !== 'customer') {
     redirect(`/sign-in?next=${encodeURIComponent(`/requests/${id}`)}`)
@@ -52,6 +62,21 @@ export default async function RequestDetailPage({
         evidenceNote: provider.evidenceNote,
       })
     : []
+
+  // Load the shortlist when the request is awaiting selection or waiting on
+  // provider confirmation. No shortlist is shown once a match exists.
+  const showShortlist =
+    (jobRequest.status === 'SHORTLIST_READY' || jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING') &&
+    !match
+  const shortlist = showShortlist ? await getCustomerShortlistForRequest(jobRequest.id) : null
+  const selectedShortlistItem =
+    shortlist?.items.find(
+      (item) =>
+        Boolean(item.customerSelectedAt) ||
+        jobRequest.selectedLeadInviteId === item.leadInviteId,
+    ) ?? null
+  const canRequestMoreOptions = jobRequest.status === 'SHORTLIST_READY'
+  const canCancelRequest = jobRequest.status === 'SHORTLIST_READY'
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
@@ -119,6 +144,230 @@ export default async function RequestDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* Cancelled state banner */}
+      {jobRequest.status === 'CANCELLED' && (
+        <Card className="border-muted-foreground/30 bg-muted">
+          <CardContent className="space-y-3 px-4 py-4 text-sm">
+            <p className="font-medium">Request cancelled</p>
+            <p className="text-muted-foreground">You can start a new request anytime.</p>
+            <Button asChild className="w-full">
+              <Link href="/services">Start new request</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Expired state banner — no suitable providers found within the match window */}
+      {jobRequest.status === 'EXPIRED' && (
+        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+          <CardContent className="space-y-3 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
+            <p className="font-medium">We could not find enough suitable providers yet.</p>
+            <p>
+              You can change your preferred time, expand your area, request manual assistance, or start a new
+              request.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button asChild variant="outline" className="w-full">
+                <Link href="https://plugapro.co.za/contact">Ask for help</Link>
+              </Button>
+              <Button asChild className="w-full">
+                <Link href="/services">Start new request</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Provider confirmation banner — shown when a provider has been selected
+          and their confirmation is pending. */}
+      {jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING' && selectedShortlistItem && (
+        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+          <CardContent className="space-y-2 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
+            <p className="font-medium">Waiting for provider confirmation</p>
+            <p>
+              You selected {selectedShortlistItem.provider.name}. We notified them on WhatsApp and are asking them to confirm the job.
+              You will be notified once they accept.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Provider declined banner — shown when the selected provider could not confirm */}
+      {resolvedSearchParams.selection === 'provider-declined' && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="space-y-2 px-4 py-4 text-sm text-destructive">
+            <p className="font-medium">The selected provider could not confirm this job.</p>
+            <p>
+              You can choose another provider from your shortlist below. If you need help, please contact us.
+            </p>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="https://plugapro.co.za/contact">Contact support</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Matching timed out — still in matching after extended wait */}
+      {jobRequest.status === 'MATCHING' && resolvedSearchParams.selection === 'matching-timeout' && (
+        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+          <CardContent className="space-y-2 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
+            <p className="font-medium">We&apos;re still waiting for provider responses.</p>
+            <p>
+              You can keep waiting, adjust your request, or ask us for help.
+            </p>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="https://plugapro.co.za/contact">Ask for help</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Shortlist — shown when SHORTLIST_READY or PROVIDER_CONFIRMATION_PENDING with no final match */}
+      {shortlist && shortlist.items.length > 0 && !match && (
+        <section className="space-y-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Provider shortlist
+            </p>
+            <h2 className="mt-1 text-lg font-semibold">
+              We found {shortlist.items.length} suitable provider{shortlist.items.length === 1 ? '' : 's'}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Compare their experience, call-out fee, availability, and profile before choosing.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {shortlist.items.map((item) => {
+              const selected =
+                Boolean(item.customerSelectedAt) ||
+                jobRequest.selectedLeadInviteId === item.leadInviteId
+              const signals = buildProviderTrustSignals({
+                marketplaceApproved: item.provider.verified,
+                skills: item.provider.skills,
+                experience: item.provider.experience,
+                evidenceNote: item.provider.evidenceNote,
+                completedJobs: item.provider.completedJobsCount,
+                averageRating: item.provider.averageRating,
+              })
+              return (
+                <Card key={item.id} className={selected ? 'border-primary' : undefined}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-base">{item.provider.name}</CardTitle>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {item.provider.verified ? 'Application reviewed' : 'Provider-supplied profile'}
+                        </p>
+                      </div>
+                      {item.provider.avatarUrl && (
+                        <div
+                          aria-label={`${item.provider.name} profile photo`}
+                          className="h-12 w-12 rounded-full bg-cover bg-center"
+                          role="img"
+                          style={{ backgroundImage: `url(${item.provider.avatarUrl})` }}
+                        />
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    {item.provider.bio && (
+                      <p className="text-muted-foreground">{item.provider.bio}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <MiniStat label="Category" value={jobRequest.category} />
+                      <MiniStat
+                        label="Experience"
+                        value={item.provider.experience || 'On profile'}
+                      />
+                      <MiniStat label="Call-out fee" value={formatCurrency(item.callOutFee)} />
+                      <MiniStat label="Arrival" value={formatDateTime(item.estimatedArrivalAt)} />
+                      <MiniStat
+                        label="Rate"
+                        value={
+                          item.rateAmount == null
+                            ? item.negotiable
+                              ? 'Negotiable'
+                              : 'Not provided'
+                            : formatCurrency(item.rateAmount)
+                        }
+                      />
+                      <MiniStat label="Jobs" value={String(item.provider.completedJobsCount)} />
+                      <MiniStat
+                        label="Rating"
+                        value={
+                          item.provider.averageRating == null
+                            ? 'New'
+                            : `${item.provider.averageRating.toFixed(1)} / 5`
+                        }
+                      />
+                    </div>
+                    {item.provider.skills.length > 0 && (
+                      <Row label="Skills">
+                        {item.provider.skills.slice(0, 5).join(', ')}
+                      </Row>
+                    )}
+                    {item.provider.portfolioUrls.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Previous work
+                        </p>
+                        {item.provider.portfolioUrls.slice(0, 3).map((url) => (
+                          <a
+                            key={url}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block break-all text-xs text-primary underline"
+                          >
+                            View previous work
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <ProviderTrustSignals signals={signals} />
+                    <ProviderTrustNote marketplaceApproved={item.provider.verified} />
+                    <Button asChild variant="outline" className="w-full">
+                      <Link href={`/providers/${item.providerId}`}>View profile</Link>
+                    </Button>
+                    {selected ? (
+                      <div className="rounded-md bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
+                        Selected. We are asking this provider to confirm on WhatsApp.
+                      </div>
+                    ) : (
+                      jobRequest.status === 'SHORTLIST_READY' && (
+                        <form action={selectShortlistProviderAction.bind(null, jobRequest.id, item.id)}>
+                          <Button type="submit" className="w-full">
+                            Select provider
+                          </Button>
+                        </form>
+                      )
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+          {(canRequestMoreOptions || canCancelRequest) && (
+            <div className="grid grid-cols-2 gap-2">
+              {canRequestMoreOptions && (
+                <form action={requestMoreShortlistOptionsAction.bind(null, jobRequest.id)}>
+                  <Button type="submit" variant="outline" className="w-full">
+                    Ask for more options
+                  </Button>
+                </form>
+              )}
+              {canCancelRequest && (
+                <form action={cancelRequestFromShortlistAction.bind(null, jobRequest.id)}>
+                  <Button type="submit" variant="ghost" className="w-full text-destructive">
+                    Cancel request
+                  </Button>
+                </form>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {provider && (
         <Card>
@@ -239,6 +488,42 @@ export default async function RequestDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
+            {jobRequest.status === 'PENDING_VALIDATION' && (
+              <div className="space-y-1">
+                <p className="font-medium">Request submitted</p>
+                <p className="text-muted-foreground">
+                  We&apos;ve received your {jobRequest.category} request
+                  {jobRequest.address
+                    ? ` in ${normaliseLocationDisplayName(jobRequest.address.suburb)}, ${normaliseLocationDisplayName(jobRequest.address.city)}`
+                    : ''}
+                  .
+                </p>
+                <p className="text-muted-foreground">We&apos;re checking suitable providers in your area.</p>
+              </div>
+            )}
+            {jobRequest.status === 'OPEN' && (
+              <div className="space-y-2">
+                <p className="font-medium">We match based on:</p>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  {['Service type', 'Area', 'Availability', 'Experience', 'Rate', 'Verification level'].map(
+                    (item) => (
+                      <span key={item} className="rounded-md border px-2 py-1">
+                        {item}
+                      </span>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+            {jobRequest.status === 'MATCHING' && (
+              <div className="space-y-1">
+                <p className="font-medium">Providers are reviewing your request</p>
+                <p className="text-muted-foreground">
+                  Suitable providers are reviewing your request. We&apos;ll notify you when your shortlist is
+                  ready.
+                </p>
+              </div>
+            )}
             {(
               jobRequest.status === 'PENDING_VALIDATION' ||
               jobRequest.status === 'OPEN' ||
@@ -291,11 +576,35 @@ function getMatchEtaCopy(): string {
   return "We'll pick this up first thing in the morning and match you quickly."
 }
 
+function formatCurrency(amount: number | null) {
+  if (amount == null) return 'Not provided'
+  return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(amount)
+}
+
+function formatDateTime(value: Date | null) {
+  if (!value) return 'Not provided'
+  return value.toLocaleString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right">{children}</span>
+    </div>
+  )
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-medium">{value}</p>
     </div>
   )
 }

@@ -1,3 +1,20 @@
+// ── G1 AUTH GAP — WhatsApp-only providers ─────────────────────────────────────
+// Providers who register and are approved entirely via WhatsApp do not have a
+// Supabase Auth account at the point this approval notification is sent.
+// The Worker Portal URL included in the CTA is therefore inaccessible to them
+// until an auth account is provisioned.
+//
+// Planned mitigation (tracked, not yet implemented):
+//   On application approval, send a Supabase OTP invite to the provider's phone
+//   number so they can authenticate with the portal.  The invite should be
+//   issued in the same `crudAction` transaction that flips the application status
+//   to APPROVED, immediately before this notification is dispatched.
+//
+// Until the OTP invite is shipped the Worker Portal link in the approval message
+// is decorative.  Providers can still use WhatsApp commands (reply "menu") to
+// check their status and accept leads.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { db } from './db'
 import {
   creditCountLabel,

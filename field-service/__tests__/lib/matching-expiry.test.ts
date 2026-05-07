@@ -378,6 +378,31 @@ describe('expireAssignmentOffer', () => {
     )
   })
 
+  it('includes INTERESTED leads in expiry sweep (dispatch_v2 regression)', async () => {
+    // G1 regression: leads in INTERESTED status (Qualified Shortlist Model) must
+    // be transitioned to EXPIRED when the assignment hold times out.
+    // Previously the filter was { in: ['SENT', 'VIEWED'] }, which silently skipped
+    // INTERESTED leads, leaving stale status in the DB.
+    mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
+    mockDb.matchAttempt.findMany.mockResolvedValue([])
+    mockDb.provider.findUnique.mockResolvedValue(null)
+
+    await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
+
+    const leadUpdateCall = mockDb.lead.updateMany.mock.calls.find(
+      (call: unknown[]) =>
+        call[0] &&
+        typeof call[0] === 'object' &&
+        'where' in (call[0] as Record<string, unknown>) &&
+        'data' in (call[0] as Record<string, unknown>)
+    )
+    expect(leadUpdateCall).toBeDefined()
+    const where = (leadUpdateCall![0] as { where: { status: { in: string[] } } }).where
+    expect(where.status?.in).toContain('INTERESTED')
+    expect(where.status?.in).toContain('SENT')
+    expect(where.status?.in).toContain('VIEWED')
+  })
+
   it('temporarily auto-pauses a provider after three consecutive offer timeouts', async () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold({ providerId: 'provider-timeout' }))
     mockDb.assignmentHold.count.mockResolvedValue(3)

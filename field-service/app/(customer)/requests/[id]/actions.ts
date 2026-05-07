@@ -5,12 +5,88 @@ import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import { processQuoteDecision } from '@/lib/quotes'
+import {
+  cancelRequestFromShortlist,
+  requestMoreShortlistOptions,
+  selectShortlistedProviderForRequest,
+  CustomerShortlistError,
+} from '@/lib/customer-shortlists'
 
 async function resolveCustomerPhone(): Promise<string | null> {
   const session = await getSession()
   if (!session) return null
   const customer = await resolveCustomerForSession(db, session)
   return customer?.phone ?? null
+}
+
+/**
+ * Verify the authenticated session owns the given request.
+ * Returns the customer id if access is allowed, null otherwise.
+ */
+async function resolveCustomerIdForRequest(requestId: string): Promise<string | null> {
+  const session = await getSession()
+  if (!session || session.role !== 'customer') return null
+  const customer = await resolveCustomerForSession(db, session)
+  if (!customer) return null
+  const request = await db.jobRequest.findUnique({
+    where: { id: requestId },
+    select: { customerId: true },
+  })
+  if (!request || request.customerId !== customer.id) return null
+  return customer.id
+}
+
+export async function selectShortlistProviderAction(
+  requestId: string,
+  shortlistItemId: string,
+): Promise<{ error?: string }> {
+  const customerId = await resolveCustomerIdForRequest(requestId)
+  if (!customerId) return { error: 'Not authenticated' }
+
+  try {
+    await selectShortlistedProviderForRequest({ requestId, shortlistItemId })
+  } catch (err) {
+    if (err instanceof CustomerShortlistError) return { error: err.message }
+    return { error: 'Selection could not be completed. Please try again.' }
+  }
+
+  revalidatePath(`/requests/${requestId}`)
+  return {}
+}
+
+export async function requestMoreShortlistOptionsAction(
+  requestId: string,
+): Promise<{ error?: string }> {
+  const customerId = await resolveCustomerIdForRequest(requestId)
+  if (!customerId) return { error: 'Not authenticated' }
+
+  try {
+    await requestMoreShortlistOptions({ requestId })
+  } catch (err) {
+    if (err instanceof CustomerShortlistError) return { error: err.message }
+    return { error: 'Could not request more options. Please try again.' }
+  }
+
+  revalidatePath(`/requests/${requestId}`)
+  return {}
+}
+
+export async function cancelRequestFromShortlistAction(
+  requestId: string,
+): Promise<{ error?: string }> {
+  const customerId = await resolveCustomerIdForRequest(requestId)
+  if (!customerId) return { error: 'Not authenticated' }
+
+  try {
+    await cancelRequestFromShortlist({ requestId })
+  } catch (err) {
+    if (err instanceof CustomerShortlistError) return { error: err.message }
+    return { error: 'Could not cancel the request. Please try again.' }
+  }
+
+  revalidatePath(`/requests/${requestId}`)
+  revalidatePath('/bookings')
+  return {}
 }
 
 export async function approveQuoteAction(
