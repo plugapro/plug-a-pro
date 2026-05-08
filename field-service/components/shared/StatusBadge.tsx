@@ -36,7 +36,7 @@ const MATCH_CONFIG: Record<MatchStatus, { label: string; variant: BadgeVariant }
 }
 
 const JOB_REQUEST_CONFIG: Record<JobRequestStatus, { label: string; variant: BadgeVariant }> = {
-  PENDING_VALIDATION: { label: 'Draft', variant: 'neutral' },
+  PENDING_VALIDATION: { label: 'Choose matching mode', variant: 'warning' },
   OPEN: { label: 'Open', variant: 'info' },
   MATCHING: { label: 'Matching', variant: 'brand' },
   SHORTLIST_READY: { label: 'Choose provider', variant: 'warning' },

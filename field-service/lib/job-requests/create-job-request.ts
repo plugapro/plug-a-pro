@@ -2,7 +2,8 @@
 // Single entry point for both the web API route and the WhatsApp flow.
 // Wraps customer resolution + address creation + JobRequest creation in a
 // single Prisma transaction so the intake is atomic under retry/failure.
-// Triggers lead dispatch fire-and-forget after the transaction commits.
+// Can either trigger matching immediately or defer matching until customer
+// chooses a post-submit matching mode.
 
 import { after } from 'next/server'
 import { db } from '../db'
@@ -43,6 +44,7 @@ export interface CreateJobRequestParams {
   requestedWindowEnd?: Date | null
   requestedArrivalLatest?: Date | null
   assignmentMode?: 'AUTO_ASSIGN' | 'OPS_REVIEW'
+  deferMatchingModeSelection?: boolean
   preferredProviderId?: string | null
   customerAcceptedAmount?: number | null
   customerAcceptedScope?: string | null
@@ -333,7 +335,7 @@ export async function createJobRequest(
         providerPreference: params.providerPreference?.trim() || undefined,
         verifiedOnly: params.verifiedOnly === true,
         submittedAt: new Date(),
-        status: 'OPEN',
+        status: params.deferMatchingModeSelection ? 'PENDING_VALIDATION' : 'OPEN',
         expiresAt,
         requestedWindowStart: params.requestedWindowStart ?? undefined,
         requestedWindowEnd: params.requestedWindowEnd ?? undefined,
@@ -432,13 +434,15 @@ export async function createJobRequest(
     }
   }
 
-  try {
-    after(runMatching)
-  } catch {
-    // after() is not available in this execution context (e.g. nested inside another after()
-    // callback from the WhatsApp webhook handler). Await directly so matching completes
-    // within the outer after() lifetime rather than being abandoned fire-and-forget.
-    await runMatching()
+  if (!params.deferMatchingModeSelection) {
+    try {
+      after(runMatching)
+    } catch {
+      // after() is not available in this execution context (e.g. nested inside another after()
+      // callback from the WhatsApp webhook handler). Await directly so matching completes
+      // within the outer after() lifetime rather than being abandoned fire-and-forget.
+      await runMatching()
+    }
   }
 
   let ticketUrl: string | null = null

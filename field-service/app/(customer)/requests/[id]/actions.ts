@@ -11,6 +11,7 @@ import {
   selectShortlistedProviderForRequest,
   CustomerShortlistError,
 } from '@/lib/customer-shortlists'
+import { selectCustomerRequestMatchingMode, type CustomerMatchingMode } from '@/lib/request-matching-mode'
 
 async function resolveCustomerPhone(): Promise<string | null> {
   const session = await getSession()
@@ -85,6 +86,18 @@ export async function cancelRequestFromShortlistAction(
     throw new Error('Could not cancel the request. Please try again.')
   }
 
+  revalidatePath(`/requests/${requestId}`)
+  revalidatePath('/bookings')
+}
+
+export async function chooseMatchingModeAction(
+  requestId: string,
+  mode: CustomerMatchingMode,
+  _formData: FormData,
+): Promise<void> {
+  const customerId = await resolveCustomerIdForRequest(requestId)
+  if (!customerId) throw new Error('Not authenticated')
+  await selectCustomerRequestMatchingMode({ requestId, customerId, mode })
   revalidatePath(`/requests/${requestId}`)
   revalidatePath('/bookings')
 }

@@ -75,7 +75,6 @@ export async function POST(req: NextRequest) {
     requiredEquipmentTags?: string[]
     requiredVehicleTypes?: string[]
     preferredProviderId?: string
-    assignmentMode?: 'AUTO_ASSIGN' | 'OPS_REVIEW'
     customerAcceptedAmount?: number
     customerAcceptedScope?: string
     locationNodeId: string
@@ -152,7 +151,6 @@ export async function POST(req: NextRequest) {
     requiredEquipmentTags,
     requiredVehicleTypes,
     preferredProviderId,
-    assignmentMode,
     customerAcceptedAmount,
     customerAcceptedScope,
     locationNodeId,
@@ -253,7 +251,8 @@ export async function POST(req: NextRequest) {
       requestedWindowStart: requestedWindowStart ? new Date(requestedWindowStart) : null,
       requestedWindowEnd: requestedWindowEnd ? new Date(requestedWindowEnd) : null,
       requestedArrivalLatest: requestedArrivalLatest ? new Date(requestedArrivalLatest) : null,
-      assignmentMode: assignmentMode ?? 'AUTO_ASSIGN',
+      assignmentMode: 'OPS_REVIEW',
+      deferMatchingModeSelection: true,
       preferredProviderId: sanitizedPreferredProviderId,
       customerAcceptedAmount: typeof customerAcceptedAmount === 'number' ? customerAcceptedAmount : null,
       customerAcceptedScope: customerAcceptedScope ?? null,

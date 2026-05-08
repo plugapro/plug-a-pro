@@ -49,7 +49,7 @@ export function resolveClientPwaScreenForState(params: {
 
   switch (params.requestStatus) {
     case 'PENDING_VALIDATION':
-      return { screen: 'request_submitted', reason: 'request_awaiting_validation' }
+      return { screen: 'request_submitted', reason: 'request_awaiting_matching_mode' }
     case 'OPEN':
       return { screen: 'matching_progress', reason: 'request_open_matching_can_start' }
     case 'MATCHING':

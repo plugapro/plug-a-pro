@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import {
+  chooseMatchingModeAction,
   selectShortlistProviderAction,
   requestMoreShortlistOptionsAction,
   cancelRequestFromShortlistAction,
@@ -505,7 +506,7 @@ export default async function RequestDetailPage({
           <CardContent className="space-y-3 text-sm">
             {jobRequest.status === 'PENDING_VALIDATION' && (
               <div className="space-y-1">
-                <p className="font-medium">Request submitted</p>
+                <p className="font-medium">Choose how to find your provider</p>
                 <p className="text-muted-foreground">
                   We&apos;ve received your {jobRequest.category} request
                   {jobRequest.address
@@ -513,7 +514,31 @@ export default async function RequestDetailPage({
                     : ''}
                   .
                 </p>
-                <p className="text-muted-foreground">We&apos;re checking suitable providers in your area.</p>
+                <p className="text-muted-foreground">
+                  Select Quick Match to contact one suitable provider at a time, or Review Providers First to compare options before choosing.
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <form
+                    action={async (formData) => {
+                      'use server'
+                      await chooseMatchingModeAction(jobRequest.id, 'quick_match', formData)
+                    }}
+                  >
+                    <Button type="submit" className="w-full">
+                      Quick Match
+                    </Button>
+                  </form>
+                  <form
+                    action={async (formData) => {
+                      'use server'
+                      await chooseMatchingModeAction(jobRequest.id, 'review_first', formData)
+                    }}
+                  >
+                    <Button type="submit" variant="outline" className="w-full">
+                      Review Providers First
+                    </Button>
+                  </form>
+                </div>
               </div>
             )}
             {jobRequest.status === 'OPEN' && (
@@ -539,16 +564,16 @@ export default async function RequestDetailPage({
                 </p>
               </div>
             )}
-            {(
-              jobRequest.status === 'PENDING_VALIDATION' ||
-              jobRequest.status === 'OPEN' ||
-              jobRequest.status === 'MATCHING'
-            ) && (
+            {(jobRequest.status === 'OPEN' || jobRequest.status === 'MATCHING') && (
               <div className="rounded-lg bg-muted/50 border px-4 py-3 text-sm text-foreground">
                 {getMatchEtaCopy()}
               </div>
             )}
-            {jobRequest.leads.length === 0 ? (
+            {jobRequest.status === 'PENDING_VALIDATION' ? (
+              <p className="text-muted-foreground">
+                Matching starts after you choose a mode above.
+              </p>
+            ) : jobRequest.leads.length === 0 ? (
               <p className="text-muted-foreground">
                 We&apos;re still validating the request before it is sent to providers.
               </p>
@@ -586,7 +611,7 @@ export default async function RequestDetailPage({
 
 function getMatchEtaCopy(): string {
   const hour = new Date().getHours()
-  if (hour >= 8 && hour < 18) return "We're looking for a provider — typically matched within 5–15 minutes."
+  if (hour >= 8 && hour < 18) return "We're checking one suitable provider at a time — first response is typically within 5–10 minutes."
   if (hour >= 18 && hour < 22) return "We're looking for a provider — typically within 30–60 minutes during off-peak hours."
   return "We'll pick this up first thing in the morning and match you quickly."
 }

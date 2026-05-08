@@ -155,7 +155,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('still checking suitable providers'),
+      expect.stringContaining("checking with suitable providers one at a time"),
       'Refresh status',
       `${APP_URL}/requests/access/jr_abc123`
     )
@@ -173,7 +173,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining("haven't found suitable available providers"),
+      expect.stringContaining("haven't confirmed a provider yet"),
       'Refresh status',
       `${APP_URL}/requests/access/jr_abc123`
     )
@@ -190,7 +190,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('still checking suitable providers'),
+      expect.stringContaining("checking with suitable providers one at a time"),
       'Refresh status',
       `${APP_URL}/requests/access/jr_abc123`
     )
@@ -209,7 +209,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
       vi.mocked(wa.sendCtaUrl).mock.calls[0]?.[1] ??
       vi.mocked(wa.sendButtons).mock.calls[0]?.[1] ?? ''
     expect(body).toContain('Request PAP-ABC123')
-    expect(body).toContain('Checking your request')
+    expect(body).toContain('Choose your matching mode')
     expect(result.nextStep).toBe('done')
   })
 

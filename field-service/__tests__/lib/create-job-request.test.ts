@@ -313,6 +313,26 @@ describe('createJobRequest', () => {
     expect(mockOrchestrateMatch).toHaveBeenCalledWith('jr-1', { triggeredBy: 'job_creation' })
   })
 
+  it('does not trigger matching when matching-mode selection is deferred', async () => {
+    const tx = makeTx()
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({ ...BASE_PARAMS, deferMatchingModeSelection: true })
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+
+    expect(tx.jobRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'PENDING_VALIDATION',
+        }),
+      }),
+    )
+    expect(mockOrchestrateMatch).not.toHaveBeenCalled()
+  })
+
   it('does not throw if orchestrateMatch fails — matching is non-blocking', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })

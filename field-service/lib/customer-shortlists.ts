@@ -404,7 +404,11 @@ export async function cancelRequestFromShortlist(params: { requestId: string }) 
 export async function requestMoreShortlistOptions(params: { requestId: string }) {
   const request = await db.jobRequest.findUnique({
     where: { id: params.requestId },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      customer: { select: { phone: true } },
+    },
   })
   if (!request) {
     throw new CustomerShortlistError('REQUEST_NOT_FOUND', 'Job request not found.')
@@ -415,6 +419,20 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
       'More options can only be requested while the shortlist is awaiting selection.',
     )
   }
+
+  const activeLeadOffers = typeof (db as any).lead?.findMany === 'function'
+    ? await db.lead.findMany({
+        where: {
+          jobRequestId: params.requestId,
+          status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
+          assignmentHold: { status: 'ACTIVE' },
+        },
+        select: {
+          id: true,
+          providerId: true,
+        },
+      })
+    : []
 
   await db.$transaction(async (tx) => {
     await tx.providerShortlist.updateMany({
@@ -437,11 +455,38 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
     }).catch(() => undefined)
   })
 
-  // Continue matching immediately for the reopen rematch request.
-  try {
-    await orchestrateMatch(params.requestId, { triggeredBy: 'rematch' })
-  } catch (error) {
-    console.error('[customer-shortlists] rematch orchestration failed:', error)
+  if (activeLeadOffers.length > 0) {
+    const { rejectAssignmentOffer } = await import('./matching/service')
+    for (const lead of activeLeadOffers) {
+      await rejectAssignmentOffer({
+        leadId: lead.id,
+        providerId: lead.providerId,
+        reasonCode: 'CUSTOMER_REQUESTED_NEXT_PROVIDER',
+      }).catch((error) => {
+        console.error('[customer-shortlists] failed to release active lead while requesting more options', {
+          requestId: params.requestId,
+          leadId: lead.id,
+          providerId: lead.providerId,
+          error,
+        })
+      })
+    }
+  } else {
+    // Continue matching immediately for the reopen rematch request.
+    try {
+      await orchestrateMatch(params.requestId, { triggeredBy: 'rematch' })
+    } catch (error) {
+      console.error('[customer-shortlists] rematch orchestration failed:', error)
+    }
+  }
+
+  if (request.customer?.phone) {
+    await sendText({
+      to: request.customer.phone,
+      text: `No problem. We'll check with another suitable provider now.`,
+      templateName: 'interactive:quick_match_try_another',
+      metadata: { requestId: params.requestId },
+    }).catch(() => undefined)
   }
 
   return { ok: true as const }

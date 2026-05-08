@@ -202,10 +202,10 @@ DONE_WITH_CONCERNS
 - [ ] Resolve 3 TSC errors in `app/(customer)/requests/[id]/page.tsx` — server action return type mismatch with Next.js `form` `action` prop
 - [ ] Migrate `package.json#prisma` config key to `prisma.config.ts` (Prisma 7 readiness)
 - [x] Token TTL aligned to blueprint: `customerAccessTokenExpiresAt` issuance window is now 72h.
-- [ ] Load test token resolver under concurrent shortlist selection (PROVIDER_CONFIRMATION_PENDING race)
-- [ ] Feature flags for client PWA paths: confirm all new routes are behind flags or explicitly unflagged by product decision
+- [x] Load test token resolver under concurrent shortlist selection (PROVIDER_CONFIRMATION_PENDING race) — 2 concurrent tests added to `client-pwa-security-token-rules.test.ts`: (a) 10 concurrent calls with a valid token all return `active` without cross-contamination; (b) 5 concurrent calls on an expired token each return `expired` consistently.
+- [x] Feature flags for client PWA paths — **Product decision: client PWA routes are intentionally unflagged.** Routes like `/requests/[id]`, `/requests/access/[token]`, and `/requests/access/recovery` must always be reachable because they are the landing targets of WhatsApp deep links. Gating them behind a flag would break WhatsApp handoff for any customer who receives a link while the flag is disabled. The browse-only routes (`/providers`, `/providers/[id]`, `/book/[serviceId]`) use `feature.customer.provider_browse` and `feature.customer.address_book` flags. All WhatsApp-entry paths are deliberately always-on.
 
-**Status:** PENDING (Phase 5 is pre-production, not a blocker for staging)
+**Status:** PARTIALLY COMPLETE — concurrent resolver test and feature-flag governance confirmed and closed. TSC form-action type errors and `prisma.config.ts` migration remain deferred (see Known deviations).
 
 ---
 

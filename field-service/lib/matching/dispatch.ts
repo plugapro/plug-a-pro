@@ -15,6 +15,7 @@ import {
   buildProviderLeadPreviewMessage,
 } from '@/lib/provider-credit-copy'
 import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
+import { MATCHING_CONFIG } from './config'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
 
@@ -108,6 +109,7 @@ export async function dispatchMatchLead(params: {
     urgency: jobRequest.urgency,
     matchingPreference: jobRequest.providerPreference ?? jobRequest.budgetPreference,
     photosCount: previewAttachmentsCount,
+    responseWindowMinutes: MATCHING_CONFIG.offerTtlMinutes,
   })
   const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
   const msgMeta = {
@@ -205,8 +207,8 @@ export async function dispatchMatchLead(params: {
   const dispatchV2 = await isEnabled('qualified_shortlist.dispatch_v2').catch(() => false)
   const buttons = dispatchV2
     ? [
-        { id: `interested:${lead.id}`, title: "I'm interested" },
-        { id: `not_interested:${lead.id}`, title: 'Not interested' },
+        { id: `interested:${lead.id}`, title: "I'm available" },
+        { id: `not_interested:${lead.id}`, title: 'Not available' },
       ]
     : [
         { id: `accept:${hold.id}`, title: 'Accept Lead' },

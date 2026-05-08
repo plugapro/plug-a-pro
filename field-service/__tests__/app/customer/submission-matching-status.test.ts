@@ -30,7 +30,7 @@ describe('CLIENT-06: status screen resolution', () => {
     const { resolveClientPwaScreenForState } = await import('../../../lib/client-pwa-state')
     const result = resolveClientPwaScreenForState({ requestStatus: 'PENDING_VALIDATION' })
     expect(result.screen).toBe('request_submitted')
-    expect(result.reason).toBe('request_awaiting_validation')
+    expect(result.reason).toBe('request_awaiting_matching_mode')
   })
 
   it('OPEN maps to matching_progress screen', async () => {
@@ -98,7 +98,7 @@ describe('CLIENT-06: submission WhatsApp notification', () => {
     const textBody: string = mockSendText.mock.calls[0][0].text
     expect(textBody).toContain('Request submitted')
     expect(textBody).toContain('electrical')
-    expect(textBody).toContain('shortlist is ready')
+    expect(textBody).toContain('Choose how you\'d like to find a provider')
     // URL not inlined in text body
     expect(textBody).not.toContain('https://')
   })
@@ -160,8 +160,8 @@ describe('CLIENT-06: matching-in-progress WhatsApp notification', () => {
     })
     expect(result.sent).toBe(true)
     const text: string = mockSendText.mock.calls[0][0].text
-    expect(text).toContain('Providers are being checked')
-    expect(text).toContain('shortlist is ready')
+    expect(text).toContain('Quick Match in progress')
+    expect(text).toContain("we'll try the next suitable provider")
   })
 
   it('is idempotent — skips send when isAlreadySent is true', async () => {

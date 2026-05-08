@@ -65,7 +65,7 @@ describe('resolveClientPwaScreenForState — handoff map coverage', () => {
   it('PENDING_VALIDATION → request_submitted', () => {
     expect(resolveClientPwaScreenForState({ requestStatus: 'PENDING_VALIDATION' })).toMatchObject({
       screen: 'request_submitted',
-      reason: 'request_awaiting_validation',
+      reason: 'request_awaiting_matching_mode',
     })
   })
 

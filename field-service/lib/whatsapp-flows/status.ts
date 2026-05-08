@@ -27,7 +27,7 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 }
 
 const JOB_REQUEST_STATUS_LABELS: Record<string, string> = {
-  PENDING_VALIDATION:              '🔍 Checking your request',
+  PENDING_VALIDATION:              '🧭 Choose your matching mode',
   OPEN:                            '📢 Finding a provider',
   MATCHING:                        '🔎 Matching you with a provider',
   SHORTLIST_READY:                 '✅ Provider options are ready',
@@ -636,13 +636,17 @@ function requestStatusBody(
   shortlist: ShortlistOption[] | null,
   latestDispatchStatus: DispatchDecisionStatus | null,
 ) {
+  if (requestStatus === 'PENDING_VALIDATION') {
+    return `${statusLabel}\n\nChoose *Quick Match* to contact one suitable provider at a time, or *Review Providers First* to compare options before choosing.`
+  }
+
   if (requestStatus === 'OPEN' || requestStatus === 'MATCHING') {
     if (leadSummary.total === 0 && latestDispatchStatus === 'NO_MATCH') {
-      return `${statusLabel}\n\nWe haven't found suitable available providers yet. We're still checking.`
+      return `${statusLabel}\n\nWe haven't confirmed a provider yet. We're widening checks and will keep you updated.`
     }
 
     if (leadSummary.total === 0) {
-      return `${statusLabel}\n\nYour request is still checking suitable providers in your area.`
+      return `${statusLabel}\n\nWe're checking with suitable providers one at a time.`
     }
 
     if (leadSummary.interested > 0) {
@@ -653,10 +657,10 @@ function requestStatusBody(
     }
 
     if (leadSummary.activeOutreach > 0) {
-      return `${statusLabel}\n\nYour request is being matched with suitable providers. We'll update you here when providers respond.`
+      return `${statusLabel}\n\nA provider is reviewing your request now. If they don't respond in time, we'll try the next suitable provider.`
     }
 
-    return `${statusLabel}\n\nWe're still checking for suitable providers.`
+    return `${statusLabel}\n\nWe're rotating through suitable providers and will update you here after each response.`
   }
 
   return `${categoryLine}\n${statusLabel}\n\nTap Refresh status to check for the latest update.`

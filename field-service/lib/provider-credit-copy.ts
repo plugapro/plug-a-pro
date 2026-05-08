@@ -312,6 +312,7 @@ export function buildProviderLeadPreviewMessage(params: {
   area: string
   preferredTime: string
   deadlineTime: string
+  responseWindowMinutes?: number
   balance: CreditBalanceBreakdown
   title?: string | null
   description?: string | null
@@ -358,7 +359,7 @@ export function buildProviderLeadPreviewMessage(params: {
     `${PROVIDER_CREDITS_PRICE_LINE} You spend ${creditCountLabel(PROVIDER_ACCEPTED_LEAD_CREDIT_COST)} only if the customer selects you and you accept the selected job. Full customer contact and exact address stay locked until then.`,
     `Available credits: ${creditCountLabel(params.balance.totalCreditBalance)} (${providerCreditBreakdownLabel(params.balance)}).`,
     '',
-    `Respond by *${params.deadlineTime}*.`,
+    `You have *${params.responseWindowMinutes ?? 10} minutes* to respond (by *${params.deadlineTime}*).`,
   ].join('\n')
 }
 

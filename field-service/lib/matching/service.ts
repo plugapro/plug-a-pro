@@ -103,6 +103,42 @@ function formatLeadExpiryArea(address: { suburb?: string | null; city?: string |
   return suburb || city || 'your area'
 }
 
+async function notifyCustomerProviderRotation(params: {
+  jobRequestId: string
+  reason: 'provider_declined' | 'provider_timeout'
+  nextOfferedProviderId: string | null
+}) {
+  const request = await db.jobRequest.findUnique({
+    where: { id: params.jobRequestId },
+    select: {
+      customer: { select: { phone: true } },
+    },
+  })
+  const phone = request?.customer?.phone
+  if (!phone) return
+
+  const body = params.reason === 'provider_timeout'
+    ? params.nextOfferedProviderId
+      ? `That provider did not respond in time. We're checking with the next suitable provider.`
+      : `That provider did not respond in time. We're continuing to check suitable providers now.`
+    : params.nextOfferedProviderId
+      ? `That provider is not available. We're checking with the next suitable provider.`
+      : `That provider is not available. We're continuing to check suitable providers now.`
+
+  await sendText(
+    phone,
+    body,
+    {
+      templateName: 'interactive:quick_match_rotation',
+      metadata: {
+        jobRequestId: params.jobRequestId,
+        reason: params.reason,
+        nextProviderFound: Boolean(params.nextOfferedProviderId),
+      },
+    },
+  ).catch(() => undefined)
+}
+
 async function notifyProviderLeadInviteExpired(params: {
   hold: ExpiredAssignmentNotificationHold
   wasReassigned: boolean
@@ -2462,6 +2498,12 @@ export async function rejectAssignmentOffer(params: {
     reason: params.reasonCode,
   })
 
+  await notifyCustomerProviderRotation({
+    jobRequestId: lead.jobRequestId,
+    reason: 'provider_declined',
+    nextOfferedProviderId,
+  }).catch(() => undefined)
+
   return {
     ok: true,
     responseOutcome: 'REJECTED',
@@ -2608,6 +2650,11 @@ export async function expireAssignmentOffer(params: {
       attempt: attemptsCompleted,
       triggeredBy: 'hold_expiry',
     })
+    await notifyCustomerProviderRotation({
+      jobRequestId: hold.jobRequestId,
+      reason: 'provider_timeout',
+      nextOfferedProviderId: next.nextOfferedProviderId,
+    }).catch(() => undefined)
   } else {
     emitMatchEvent({
       event: 'match.exhausted',

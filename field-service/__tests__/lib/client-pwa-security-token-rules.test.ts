@@ -356,7 +356,53 @@ describe('resolveProviderLeadAttachmentScope — isAccepted blocks non-preview a
   })
 })
 
-// ─── 6. Admin-only provider fields absent from token payload ─────────────────
+// ─── 6. Concurrent resolver safety (PROVIDER_CONFIRMATION_PENDING race) ──────
+describe('resolveJobRequestAccessToken — concurrent resolver safety', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+  })
+
+  it('N concurrent calls with the same valid token all return active without cross-contamination', async () => {
+    for (let i = 0; i < 10; i++) {
+      mockDb.jobRequest.findUnique.mockResolvedValueOnce(
+        makeJobRequest({ status: 'PROVIDER_CONFIRMATION_PENDING' }),
+      )
+    }
+    const { resolveJobRequestAccessToken } = await import('@/lib/job-request-access')
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => resolveJobRequestAccessToken('concurrent-token')),
+    )
+
+    expect(results).toHaveLength(10)
+    for (const result of results) {
+      expect(result.status).toBe('active')
+      expect(result.jobRequest?.id).toBe('jr-1')
+    }
+  })
+
+  it('concurrent calls on an expired token each return expired consistently', async () => {
+    for (let i = 0; i < 5; i++) {
+      mockDb.jobRequest.findUnique.mockResolvedValueOnce(
+        makeJobRequest({ customerAccessTokenExpiresAt: new Date(Date.now() - 1000) }),
+      )
+    }
+    const { resolveJobRequestAccessToken } = await import('@/lib/job-request-access')
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => resolveJobRequestAccessToken('expired-concurrent-token')),
+    )
+
+    expect(results).toHaveLength(5)
+    for (const result of results) {
+      expect(result.status).toBe('expired')
+      expect(result.traceId).toBeTruthy()
+    }
+  })
+})
+
+// ─── 7. Admin-only provider fields absent from token payload ─────────────────
 describe('admin-only provider fields absent from token payload', () => {
   beforeEach(() => {
     vi.clearAllMocks()

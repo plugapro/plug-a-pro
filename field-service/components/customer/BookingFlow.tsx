@@ -89,6 +89,7 @@ interface Address {
 }
 
 type Step = 'address' | 'description' | 'confirm' | 'submitted' | 'waitlisted'
+type MatchingMode = 'quick_match' | 'review_first'
 
 type Urgency = 'asap' | 'this_week' | 'flexible'
 
@@ -169,6 +170,8 @@ export function BookingFlow({
   const [error, setError] = useState<string | null>(null)
   const [jobRequestId, setJobRequestId] = useState<string | null>(null)
   const [ticketUrl, setTicketUrl] = useState<string | null>(null)
+  const [selectedMatchingMode, setSelectedMatchingMode] = useState<MatchingMode | null>(null)
+  const [matchingModeSubmitting, setMatchingModeSubmitting] = useState(false)
   const [waitlistedCity, setWaitlistedCity] = useState<string | null>(null)
   const streetSummary = buildLegacyStreetAddress(address)
   const draftStorageKey = `plugapro:client-request-draft:${category.slug}`
@@ -521,6 +524,30 @@ export function BookingFlow({
       setError(err instanceof Error ? err.message : 'We could not submit your request right now. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleMatchingModeSelect(mode: MatchingMode) {
+    if (!jobRequestId || matchingModeSubmitting) return
+    setError(null)
+    setMatchingModeSubmitting(true)
+    try {
+      const res = await fetch(`/api/customer/requests/${jobRequestId}/matching-mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      })
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('Your session has expired. Please sign in again.')
+        }
+        throw new Error('Could not start matching mode right now. Please try again.')
+      }
+      setSelectedMatchingMode(mode)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start matching mode right now. Please try again.')
+    } finally {
+      setMatchingModeSubmitting(false)
     }
   }
 
@@ -1210,9 +1237,39 @@ export function BookingFlow({
               <p className="text-xs text-muted-foreground font-mono">
                 Ref: {jobRequestId.slice(-8).toUpperCase()}
               </p>
-              <p className="text-sm text-muted-foreground">
-                We&apos;re checking suitable providers in your area. We&apos;ll send you a WhatsApp message when your shortlist is ready.
-              </p>
+              {!selectedMatchingMode ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    How would you like to find a provider?
+                  </p>
+                  <div className="space-y-2">
+                    <Button
+                      className="w-full"
+                      disabled={matchingModeSubmitting}
+                      onClick={() => handleMatchingModeSelect('quick_match')}
+                    >
+                      {matchingModeSubmitting ? 'Starting…' : 'Quick Match'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={matchingModeSubmitting}
+                      onClick={() => handleMatchingModeSelect('review_first')}
+                    >
+                      Review Providers First
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Quick Match asks one suitable provider at a time. If they don&apos;t respond, we try the next provider.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {selectedMatchingMode === 'quick_match'
+                    ? 'Quick Match is active. We are checking with one suitable provider now and will rotate if they do not respond.'
+                    : 'Review Providers First is active. We are collecting provider responses so you can compare before selecting.'}
+                </p>
+              )}
             </CardContent>
           </Card>
 

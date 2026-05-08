@@ -154,8 +154,8 @@ describe('notifyCustomerMatchingInProgress — matching_in_progress', () => {
     })
 
     const body: string = mockSendText.mock.calls[0][0].text
-    expect(body).toContain('Providers are being checked')
-    expect(body).toContain("We'll notify you when your shortlist is ready.")
+    expect(body).toContain('Quick Match in progress')
+    expect(body).toContain("If they don't respond")
     expect(body).not.toContain('https://')
     expect(body).not.toContain('http://')
   })

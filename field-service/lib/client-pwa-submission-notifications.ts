@@ -29,7 +29,7 @@ export async function notifyCustomerPwaRequestSubmitted(params: {
     text:
       `Request submitted\n\n` +
       `We've received your ${params.category} request${area ? ` in ${area}` : ''}.\n\n` +
-      `We're checking suitable providers in your area. We'll notify you when your shortlist is ready.\n\n` +
+      `Choose how you'd like to find a provider: Quick Match or Review Providers First.\n\n` +
       CLIENT_PWA_PRIVACY_COPY +
       (params.ticketUrl ? `\n\nYour request tracker is available below.` : ''),
     templateName: 'interactive:client_pwa_request_submitted',
@@ -73,9 +73,9 @@ export async function notifyCustomerMatchingInProgress(params: {
     await sendText({
       to: params.customerPhone,
       text:
-        `Providers are being checked\n\n` +
-        `We've found potential providers for your ${params.category} request and are waiting for their responses.\n\n` +
-        `We'll notify you when your shortlist is ready.`,
+        `Quick Match in progress\n\n` +
+        `We're checking with a suitable provider for your ${params.category} request now.\n\n` +
+        `If they don't respond, we'll try the next suitable provider.`,
       templateName: 'interactive:client_matching_in_progress',
       metadata: { requestId: params.requestId },
     })

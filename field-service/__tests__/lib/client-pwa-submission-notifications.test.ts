@@ -18,7 +18,7 @@ describe('client PWA submission notifications', () => {
     vi.clearAllMocks()
   })
 
-  it('sends WhatsApp confirmation with ticket link and shortlist expectation', async () => {
+  it('sends WhatsApp confirmation with ticket link and matching-mode prompt', async () => {
     mockSendText.mockResolvedValue('wamid-1')
     mockSendCtaUrl.mockResolvedValue('wamid-cta')
 
@@ -38,7 +38,7 @@ describe('client PWA submission notifications', () => {
       templateName: 'interactive:client_pwa_request_submitted',
       metadata: { requestId: 'request-1' },
     }))
-    expect(mockSendText.mock.calls[0][0].text).toContain("We'll notify you when your shortlist is ready.")
+    expect(mockSendText.mock.calls[0][0].text).toContain('Choose how you\'d like to find a provider')
     expect(mockSendText.mock.calls[0][0].text).not.toContain('https://')
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       '+27821234567',
@@ -72,8 +72,8 @@ describe('notifyCustomerMatchingInProgress', () => {
     const call = mockSendText.mock.calls[0][0]
     expect(call.to).toBe('+27821234567')
     expect(call.templateName).toBe('interactive:client_matching_in_progress')
-    expect(call.text).toContain('Providers are being checked')
-    expect(call.text).toContain("We'll notify you when your shortlist is ready.")
+    expect(call.text).toContain('Quick Match in progress')
+    expect(call.text).toContain("we'll try the next suitable provider")
     expect(call.text).not.toContain('https://')
     expect(call.metadata).toEqual({ requestId: 'request-2' })
   })

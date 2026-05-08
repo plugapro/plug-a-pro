@@ -5,6 +5,7 @@ import { isEnabled } from './flags'
 import { normaliseLocationDisplayName } from './location-format'
 import { previewNotes } from './provider-lead-detail'
 import { validateProviderOnboardingRates } from './provider-onboarding-data'
+import { sendText } from './whatsapp-interactive'
 
 export type ProviderOpportunityResponseInput = {
   leadId: string
@@ -261,6 +262,41 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
     })
   }
 
+  if (input.response === 'NOT_INTERESTED') {
+    const { rejectAssignmentOffer } = await import('./matching/service')
+    const declined = await rejectAssignmentOffer({
+      leadId: input.leadId,
+      providerId: input.providerId,
+      reasonCode: 'PROVIDER_NOT_AVAILABLE',
+    }).catch(() => null)
+
+    if (jobRequestIdForTrigger) {
+      const request = await db.jobRequest.findUnique({
+        where: { id: jobRequestIdForTrigger },
+        select: { customer: { select: { phone: true } } },
+      })
+      const customerPhone = request?.customer?.phone
+      if (customerPhone) {
+        const body = declined?.ok
+          ? declined.nextOfferedProviderId
+            ? `That provider is not available. We're checking with the next suitable provider.`
+            : `That provider is not available. We're continuing to check suitable providers for your request.`
+          : `That provider is not available. We're checking other suitable providers now.`
+        await sendText(
+          customerPhone,
+          body,
+          {
+            templateName: 'interactive:quick_match_provider_declined',
+            metadata: {
+              requestId: jobRequestIdForTrigger,
+              leadId: input.leadId,
+            },
+          },
+        ).catch(() => undefined)
+      }
+    }
+  }
+
   return { response, creditsDeducted: 0 }
 }
 
@@ -272,17 +308,19 @@ async function maybeAutoTriggerShortlist(requestId: string) {
 
   const request = await db.jobRequest.findUnique({
     where: { id: requestId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, assignmentMode: true },
   })
   // Only promote requests that are still actively matching. Once a shortlist
   // exists or a provider has been selected, do not regenerate.
   if (!request) return
   if (request.status !== 'OPEN' && request.status !== 'MATCHING') return
 
-  const threshold = Math.max(
-    1,
-    Number(process.env.SHORTLIST_AUTO_TRIGGER_THRESHOLD) || DEFAULT_AUTO_TRIGGER_THRESHOLD,
-  )
+  const threshold = request.assignmentMode === 'AUTO_ASSIGN'
+    ? 1
+    : Math.max(
+        1,
+        Number(process.env.SHORTLIST_AUTO_TRIGGER_THRESHOLD) || DEFAULT_AUTO_TRIGGER_THRESHOLD,
+      )
   const interestedCount = await db.providerLeadResponse.count({
     where: {
       response: 'INTERESTED',
