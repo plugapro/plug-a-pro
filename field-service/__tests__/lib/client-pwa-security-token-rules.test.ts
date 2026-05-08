@@ -17,6 +17,7 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     jobRequest: { findUnique: vi.fn() },
     lead: { findUnique: vi.fn() },
+    providerShortlist: { findFirst: vi.fn() },
   },
 }))
 

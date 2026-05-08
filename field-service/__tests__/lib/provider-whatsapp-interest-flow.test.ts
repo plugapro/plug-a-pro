@@ -259,7 +259,7 @@ describe('callout step — fee validation', () => {
   it('re-prompt message confirms no credits are used at this stage', async () => {
     await processInboundMessage(textMessage('not-a-fee'))
 
-    const call = mockSendText.mock.calls.find(([, body]: [string, string]) =>
+    const call = mockSendText.mock.calls.find(([, body]: string[]) =>
       body.includes('valid call-out fee'),
     )
     expect(call).toBeDefined()
@@ -433,7 +433,7 @@ describe('note step — optional note and submission', () => {
   it('confirmation message includes "No credits were used"', async () => {
     await processInboundMessage(buttonMessage('provider_opp_note_skip'))
 
-    const confirmCall = mockSendText.mock.calls.find(([, body]: [string, string]) =>
+    const confirmCall = mockSendText.mock.calls.find(([, body]: string[]) =>
       body.includes('Interest submitted'),
     )
     expect(confirmCall).toBeDefined()
@@ -443,7 +443,7 @@ describe('note step — optional note and submission', () => {
   it('confirmation message includes call-out, arrival, and rate fields', async () => {
     await processInboundMessage(buttonMessage('provider_opp_note_skip'))
 
-    const confirmCall = mockSendText.mock.calls.find(([, body]: [string, string]) =>
+    const confirmCall = mockSendText.mock.calls.find(([, body]: string[]) =>
       body.includes('Interest submitted'),
     )
     expect(confirmCall).toBeDefined()
@@ -456,7 +456,7 @@ describe('note step — optional note and submission', () => {
   it('confirmation message tells provider they will be notified if selected', async () => {
     await processInboundMessage(buttonMessage('provider_opp_note_skip'))
 
-    const confirmCall = mockSendText.mock.calls.find(([, body]: [string, string]) =>
+    const confirmCall = mockSendText.mock.calls.find(([, body]: string[]) =>
       body.includes('Interest submitted'),
     )
     expect(confirmCall).toBeDefined()
@@ -516,7 +516,7 @@ describe('no credit deduction — full flow invariant', () => {
     expect(result.creditsDeducted).toBe(0)
 
     // Bot must send confirmation, not a credit-deducted message.
-    const callArgs = mockSendText.mock.calls.find(([, body]: [string, string]) =>
+    const callArgs = mockSendText.mock.calls.find(([, body]: string[]) =>
       body.includes('Interest submitted'),
     )
     expect(callArgs).toBeDefined()
@@ -562,7 +562,7 @@ describe('duplicate and interrupted responses', () => {
       PHONE,
       expect.stringContaining('Interest submitted'),
     )
-    expect(mockSendText.mock.calls.find(([, body]: [string, string]) =>
+    expect(mockSendText.mock.calls.find(([, body]: string[]) =>
       body.includes('Interest submitted'),
     )![1]).toContain('No credits were used')
   })
@@ -581,7 +581,7 @@ describe('duplicate and interrupted responses', () => {
     await processInboundMessage(buttonMessage('provider_opp_note_skip'))
 
     // Must show a recoverable error — not the success confirmation
-    const errorCall = mockSendText.mock.calls.find(([, body]: [string, string]) =>
+    const errorCall = mockSendText.mock.calls.find(([, body]: string[]) =>
       body.includes('Something went wrong') || body.includes('try again'),
     )
     expect(errorCall).toBeDefined()

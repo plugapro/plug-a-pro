@@ -39,54 +39,54 @@ async function resolveCustomerIdForRequest(requestId: string): Promise<string | 
 export async function selectShortlistProviderAction(
   requestId: string,
   shortlistItemId: string,
-): Promise<{ error?: string }> {
+  _formData: FormData,
+): Promise<void> {
   const customerId = await resolveCustomerIdForRequest(requestId)
-  if (!customerId) return { error: 'Not authenticated' }
+  if (!customerId) throw new Error('Not authenticated')
 
   try {
     await selectShortlistedProviderForRequest({ requestId, shortlistItemId })
   } catch (err) {
-    if (err instanceof CustomerShortlistError) return { error: err.message }
-    return { error: 'Selection could not be completed. Please try again.' }
+    if (err instanceof CustomerShortlistError) throw err
+    throw new Error('Selection could not be completed. Please try again.')
   }
 
   revalidatePath(`/requests/${requestId}`)
-  return {}
 }
 
 export async function requestMoreShortlistOptionsAction(
   requestId: string,
-): Promise<{ error?: string }> {
+  _formData: FormData,
+): Promise<void> {
   const customerId = await resolveCustomerIdForRequest(requestId)
-  if (!customerId) return { error: 'Not authenticated' }
+  if (!customerId) throw new Error('Not authenticated')
 
   try {
     await requestMoreShortlistOptions({ requestId })
   } catch (err) {
-    if (err instanceof CustomerShortlistError) return { error: err.message }
-    return { error: 'Could not request more options. Please try again.' }
+    if (err instanceof CustomerShortlistError) throw err
+    throw new Error('Could not request more options. Please try again.')
   }
 
   revalidatePath(`/requests/${requestId}`)
-  return {}
 }
 
 export async function cancelRequestFromShortlistAction(
   requestId: string,
-): Promise<{ error?: string }> {
+  _formData: FormData,
+): Promise<void> {
   const customerId = await resolveCustomerIdForRequest(requestId)
-  if (!customerId) return { error: 'Not authenticated' }
+  if (!customerId) throw new Error('Not authenticated')
 
   try {
     await cancelRequestFromShortlist({ requestId })
   } catch (err) {
-    if (err instanceof CustomerShortlistError) return { error: err.message }
-    return { error: 'Could not cancel the request. Please try again.' }
+    if (err instanceof CustomerShortlistError) throw err
+    throw new Error('Could not cancel the request. Please try again.')
   }
 
   revalidatePath(`/requests/${requestId}`)
   revalidatePath('/bookings')
-  return {}
 }
 
 export async function approveQuoteAction(

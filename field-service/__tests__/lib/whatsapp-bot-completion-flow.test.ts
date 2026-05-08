@@ -212,7 +212,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
       expect(mockCompleteProviderJobFromWhatsApp).not.toHaveBeenCalled()
       // Conversation should be saved with photo step
       const upsertCall = mockDb.conversation.upsert.mock.calls.find(
-        ([args]: [any]) => args?.create?.step === 'tech_job_view' || args?.update?.step === 'tech_job_view'
+        ([args]: any[]) => args?.create?.step === 'tech_job_view' || args?.update?.step === 'tech_job_view'
       )
       expect(upsertCall).toBeDefined()
     })
@@ -275,7 +275,7 @@ describe('WhatsApp bot — provider job completion capture', () => {
 
       const jobCompleted = mockCompleteProviderJobFromWhatsApp.mock.calls.length > 0
       const reprompted = mockSendText.mock.calls.some(
-        ([, text]: [string, string]) =>
+        ([, text]: string[]) =>
           typeof text === 'string' && (
             text.includes('Please upload a completion photo') ||
             text.includes('could not save that photo')
