@@ -4,6 +4,7 @@ import {
   declineLead,
   dispatchLeads,
   expireStaleLeads,
+  sendLeadReminders,
 } from '../../lib/matching-engine'
 
 const {
@@ -15,11 +16,13 @@ const {
   mockNotifyProviderNewJob,
   mockReconcileProviderRecordsFromApplications,
   mockNotifyPostMatchAcceptance,
+  mockSendCtaUrl,
+  mockGetProviderLeadAccessUrl,
 } = vi.hoisted(() => ({
   mockDb: {
     jobRequest: { findUnique: vi.fn(), updateMany: vi.fn() },
     provider: { findMany: vi.fn() },
-    lead: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
+    lead: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
     match: { findUnique: vi.fn(), create: vi.fn() },
   },
   mockRunAssignmentForJobRequest: vi.fn(),
@@ -29,6 +32,8 @@ const {
   mockNotifyProviderNewJob: vi.fn(),
   mockReconcileProviderRecordsFromApplications: vi.fn(),
   mockNotifyPostMatchAcceptance: vi.fn(),
+  mockSendCtaUrl: vi.fn(),
+  mockGetProviderLeadAccessUrl: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({
@@ -54,11 +59,20 @@ vi.mock('../../lib/post-match-communications', () => ({
   notifyPostMatchAcceptance: mockNotifyPostMatchAcceptance,
 }))
 
+vi.mock('../../lib/whatsapp-interactive', () => ({
+  sendCtaUrl: mockSendCtaUrl,
+}))
+
+vi.mock('../../lib/provider-lead-access', () => ({
+  getProviderLeadAccessUrl: mockGetProviderLeadAccessUrl,
+}))
+
 describe('matching-engine compatibility wrappers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockReconcileProviderRecordsFromApplications.mockResolvedValue({ reconciled: 0 })
     mockNotifyPostMatchAcceptance.mockResolvedValue({ providerNotified: true, customerNotified: true })
+    mockGetProviderLeadAccessUrl.mockResolvedValue('https://app.plugapro.co.za/leads/access/signed.token')
   })
 
   it('dispatchLeads returns an offered hold for the top ranked technician', async () => {
@@ -192,5 +206,47 @@ describe('matching-engine compatibility wrappers', () => {
 
     expect(result).toBe(2)
     expect(mockProcessPendingAssignmentWorkflows).toHaveBeenCalledTimes(1)
+  })
+
+  it('sendLeadReminders marks lead viewed reminders with a safe expiring-soon copy and no 0-minute countdown', async () => {
+    mockDb.lead.findMany.mockResolvedValue([
+      {
+        id: 'lead-1',
+        providerId: 'provider-1',
+        expiresAt: new Date(Date.now() + 20_000),
+        provider: { phone: '+27820000000' },
+        jobRequest: { category: 'Handyman', address: { suburb: 'Bromhof', city: 'Johannesburg' } },
+      },
+    ])
+
+    const sent = await sendLeadReminders()
+
+    expect(sent).toBe(1)
+    expect(mockSendCtaUrl).toHaveBeenCalledTimes(1)
+    const message = mockSendCtaUrl.mock.calls[0][1] as string
+    expect(message).toContain('Reminder — Lead Expires Soon')
+    expect(message).not.toContain('0 min left')
+    expect(mockDb.lead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: { reminderSentAt: expect.any(Date) },
+    })
+  })
+
+  it('sendLeadReminders applies active-provider and active-request guards in the lead query', async () => {
+    mockDb.lead.findMany.mockResolvedValue([])
+
+    await sendLeadReminders()
+
+    expect(mockDb.lead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        provider: {
+          active: true,
+          status: 'ACTIVE',
+        },
+        jobRequest: {
+          status: { in: ['OPEN', 'MATCHING', 'SHORTLIST_READY', 'PROVIDER_CONFIRMATION_PENDING'] },
+        },
+      }),
+    }))
   })
 })

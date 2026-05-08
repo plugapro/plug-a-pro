@@ -9,6 +9,7 @@ import { ArrivalSubmitButton } from '@/components/provider/ArrivalSubmitButton'
 import { LeadActionSubmitButton } from '@/components/provider/LeadActionSubmitButton'
 import { db } from '@/lib/db'
 import {
+  hashSignedToken,
   providerLeadTokenAllowsScope,
   resolveProviderLeadAccessToken,
   verifyProviderLeadAccessToken,
@@ -458,6 +459,19 @@ function ClosedLeadMessage({
   )
 }
 
+function ClosedLeadActions() {
+  return (
+    <div className="mt-4 grid gap-2">
+      <Button asChild size="sm" variant="outline" className="bg-background">
+        <Link href="/provider/leads">View other jobs</Link>
+      </Button>
+      <Button asChild size="sm" variant="outline" className="bg-background">
+        <Link href="/provider">Main menu</Link>
+      </Button>
+    </div>
+  )
+}
+
 export default async function ProviderLeadAccessPage({
   params,
   searchParams,
@@ -485,55 +499,119 @@ export default async function ProviderLeadAccessPage({
 }) {
   const { token } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
-  const resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: await resolveSessionProviderPhone() })
+  const traceId = createTraceId('lead_view')
+  const tokenHash = hashSignedToken(token)
+
+  let senderPhone: string | undefined
+  try {
+    senderPhone = await resolveSessionProviderPhone()
+  } catch (error) {
+    console.warn('[leads/access] unable to resolve provider session phone while opening lead', {
+      trace_id: traceId,
+      token_hash: tokenHash,
+      route: '/leads/access/[token]',
+      error: safeErrorMessage(error),
+    })
+  }
+
+  let resolved: Awaited<ReturnType<typeof resolveProviderLeadAccessToken>>
+  try {
+    resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: senderPhone })
+  } catch (error) {
+    console.error('[leads/access] lead preview resolution failed', {
+      trace_id: traceId,
+      token_hash: tokenHash,
+      route: '/leads/access/[token]',
+      error: safeErrorMessage(error),
+    })
+    return (
+      <ClosedLeadMessage
+        title="We couldn't load this lead right now."
+        reason="Your provider account is active, but this lead could not be loaded right now. Please try again from the latest WhatsApp message."
+        diagnostics={{
+          code: 'JOB_ACCESS_DENIED',
+          action: 'View Lead',
+          traceId,
+        }}
+      >
+        <ClosedLeadActions />
+      </ClosedLeadMessage>
+    )
+  }
+
+  console.info('[leads/access] lead link opened', {
+    trace_id: traceId,
+    token_hash: tokenHash,
+    route: '/leads/access/[token]',
+    token_status: resolved.status,
+    token_reason: resolved.reason ?? null,
+    token_lead_id: resolved.payload?.leadId ?? null,
+    token_provider_id: resolved.payload?.providerId ?? null,
+    resolved_lead_id: resolved.lead?.id ?? null,
+    resolved_provider_id: resolved.lead?.providerId ?? null,
+    expires_at: resolved.lead?.expiresAt ?? null,
+  })
 
   if (resolved.status === 'expired') {
-    const traceId = createTraceId('job')
     console.warn('[leads/access] signed lead link expired', {
       traceId,
       leadId: resolved.payload?.leadId,
       providerId: resolved.payload?.providerId,
-      action: 'View Job',
+      action: 'View Lead',
     })
     return (
       <ClosedLeadMessage
-        title="This job link has expired."
-        reason="The secure WhatsApp job link has expired. Request a fresh link and we will send a new one to the accepted provider number."
+        title="This lead is no longer available."
+        reason="This secure lead link has expired. Please use the latest WhatsApp message for current lead actions."
         diagnostics={{
           code: 'JOB_LINK_EXPIRED',
-          action: 'View Job',
+          action: 'View Lead',
           traceId,
           jobRef: resolved.payload?.leadId?.slice(-8).toUpperCase(),
         }}
       >
-        <form action={requestFreshLinkWithToken}>
-          <input type="hidden" name="token" value={token} />
-          <Button type="submit" className="mt-3 w-full">Request a fresh WhatsApp link</Button>
-        </form>
+        <ClosedLeadActions />
       </ClosedLeadMessage>
     )
   }
 
   if (resolved.status !== 'active' || !resolved.lead) {
-    const traceId = createTraceId('job')
+    const invalidReason = resolved.reason
+    const isInactiveProvider = invalidReason === 'PROVIDER_NOT_ACTIVE'
+    const isUnavailableLead = ['LEAD_NOT_FOUND', 'MATCH_CANCELLED', 'PROVIDER_MISMATCH', 'JOB_REQUEST_MISMATCH'].includes(
+      invalidReason ?? '',
+    )
+    const title = isInactiveProvider
+      ? 'Your provider profile is not active.'
+      : isUnavailableLead
+        ? 'This lead is no longer available to you.'
+        : 'This lead link is invalid or expired.'
+    const reason = isInactiveProvider
+      ? 'Your provider account cannot receive leads right now. Please contact support or check your provider status.'
+      : isUnavailableLead
+        ? 'This lead is closed, reassigned, or no longer available for this profile.'
+        : 'We could not validate this secure lead link. Please use the latest link sent to your provider WhatsApp number.'
     console.warn('[leads/access] signed lead link invalid', {
       traceId,
       status: resolved.status,
+      reason: invalidReason ?? null,
       leadId: resolved.payload?.leadId,
       providerId: resolved.payload?.providerId,
-      action: 'View Job',
+      action: 'View Lead',
     })
     return (
       <ClosedLeadMessage
-        title="This job link is invalid."
-        reason="We could not validate this secure WhatsApp job link. Please use the latest link sent to your provider WhatsApp number."
+        title={title}
+        reason={reason}
         diagnostics={{
           code: 'JOB_LINK_INVALID',
-          action: 'View Job',
+          action: 'View Lead',
           traceId,
           jobRef: resolved.payload?.leadId?.slice(-8).toUpperCase(),
         }}
-      />
+      >
+        <ClosedLeadActions />
+      </ClosedLeadMessage>
     )
   }
 
@@ -552,7 +630,6 @@ export default async function ProviderLeadAccessPage({
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
 
   if (((isExpired && !isAccepted) || isDeclined) && !resolvedSearchParams.declined) {
-    const traceId = createTraceId('job')
     const code: DiagnosticCode = isExpired ? 'JOB_LINK_EXPIRED' : 'JOB_ACCESS_DENIED'
     console.warn('[leads/access] signed lead link closed', {
       traceId,
@@ -560,29 +637,39 @@ export default async function ProviderLeadAccessPage({
       providerId: lead.providerId,
       leadStatus: lead.status,
       expiresAt: lead.expiresAt,
-      action: 'View Job',
+      action: 'View Lead',
     })
     return (
       <ClosedLeadMessage
         title={
           isExpired
-            ? 'This lead has expired.'
-            : 'This lead has already been declined.'
+            ? 'This lead is no longer available.'
+            : 'You already responded to this lead.'
         }
-        reason="This secure job link is closed and cannot be used for job updates."
+        reason="This lead is closed and can no longer be changed from this link."
         diagnostics={{
           code,
-          action: 'View Job',
+          action: 'View Lead',
           traceId,
           jobRef,
           providerPhone: lead.provider.phone,
         }}
-      />
+      >
+        <ClosedLeadActions />
+      </ClosedLeadMessage>
     )
   }
 
   if (lead.status === 'SENT') {
-    await db.lead.update({ where: { id: lead.id }, data: { status: 'VIEWED' } })
+    await db.lead.update({ where: { id: lead.id }, data: { status: 'VIEWED' } }).catch((error) => {
+      console.warn('[leads/access] failed to mark lead as viewed', {
+        trace_id: traceId,
+        lead_id: lead.id,
+        provider_id: lead.providerId,
+        route: '/leads/access/[token]',
+        error: safeErrorMessage(error),
+      })
+    })
   }
 
   const previewArea = addr
@@ -629,11 +716,23 @@ export default async function ProviderLeadAccessPage({
     plannedArrivalEnd: jr.match?.plannedArrivalEnd,
     fallback: deriveDefaultArrivalWindow(customerAvailability),
   })
-  const providerWallet = await db.providerWallet.findUnique({
-    where: { providerId: lead.providerId },
-    select: { paidCreditBalance: true, promoCreditBalance: true },
-  })
+  let providerWallet: { paidCreditBalance: number; promoCreditBalance: number } | null = null
+  try {
+    providerWallet = await db.providerWallet.findUnique({
+      where: { providerId: lead.providerId },
+      select: { paidCreditBalance: true, promoCreditBalance: true },
+    })
+  } catch (error) {
+    console.error('[leads/access] provider wallet lookup failed', {
+      trace_id: traceId,
+      lead_id: lead.id,
+      provider_id: lead.providerId,
+      route: '/leads/access/[token]',
+      error: safeErrorMessage(error),
+    })
+  }
   const providerCreditBalance = (providerWallet?.paidCreditBalance ?? 0) + (providerWallet?.promoCreditBalance ?? 0)
+  const walletMissing = !providerWallet
   const termsUrl = getProviderTermsUrl()
   const remainingCreditBalanceAfterAccept = providerCreditBalance - LEAD_UNLOCK_COST_CREDITS
   const hasEnoughCredits = providerCreditBalance >= LEAD_UNLOCK_COST_CREDITS
@@ -843,6 +942,16 @@ export default async function ProviderLeadAccessPage({
               Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
               Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
+          </div>
+        )}
+
+        {walletMissing && canRespondToLead && (
+          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
+            <p className="font-medium">Credits setup issue detected.</p>
+            <p className="mt-1">
+              Your provider account is active, but your credits wallet could not be loaded right now. You can still review this lead safely.
+            </p>
+            <p className="mt-2 text-xs">Please try again shortly or contact support if this continues.</p>
           </div>
         )}
 

@@ -271,6 +271,13 @@ export async function sendLeadReminders(): Promise<number> {
       sentAt: { lte: tenMinutesAgo },
       reminderSentAt: null,
       expiresAt: { gt: new Date() },
+      provider: {
+        active: true,
+        status: 'ACTIVE',
+      },
+      jobRequest: {
+        status: { in: ['OPEN', 'MATCHING', 'SHORTLIST_READY', 'PROVIDER_CONFIRMATION_PENDING'] },
+      },
     },
     select: {
       id: true,
@@ -285,14 +292,27 @@ export async function sendLeadReminders(): Promise<number> {
   let sent = 0
 
   for (const lead of pendingLeads) {
+    const millisUntilExpiry = lead.expiresAt ? lead.expiresAt.getTime() - Date.now() : null
+    if (millisUntilExpiry != null && millisUntilExpiry <= 0) {
+      console.info('[matching] lead reminder skipped because lead is already expired at send time', {
+        leadId: lead.id,
+        providerId: lead.providerId,
+        expiresAt: lead.expiresAt,
+      })
+      continue
+    }
+
     const area = lead.jobRequest.address
       ? [lead.jobRequest.address.suburb, lead.jobRequest.address.city].filter(Boolean).join(', ')
       : 'your area'
     const ref = lead.id.slice(-8).toUpperCase()
-    const minutesLeft = lead.expiresAt
-      ? Math.max(0, Math.round((lead.expiresAt.getTime() - Date.now()) / 60_000))
-      : null
-    const expiryNote = minutesLeft != null ? ` · ${minutesLeft} min left` : ''
+    const minutesLeft = millisUntilExpiry != null ? Math.ceil(millisUntilExpiry / 60_000) : null
+    const isExpiringSoon = millisUntilExpiry != null && millisUntilExpiry < 60_000
+    const expiryNote = isExpiringSoon
+      ? ' · expires soon'
+      : minutesLeft != null
+        ? ` · ${minutesLeft} min left`
+        : ''
 
     try {
       const { sendCtaUrl } = await import('./whatsapp-interactive')
@@ -304,9 +324,12 @@ export async function sendLeadReminders(): Promise<number> {
       if (!leadUrl) {
         throw new Error('Missing provider lead access URL')
       }
+      const reminderTitle = isExpiringSoon
+        ? '⏰ *Reminder — Lead Expires Soon*'
+        : '⏰ *Reminder — Lead Still Available*'
       await sendCtaUrl(
         lead.provider.phone,
-        `⏰ *Reminder — Lead Still Available*\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
+        `${reminderTitle}\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
         'View Lead',
         leadUrl,
         { footer: 'View the lead preview. Accepting uses 1 credit.' },

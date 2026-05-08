@@ -107,6 +107,24 @@ describe('provider lead access tokens', () => {
     expect(verifyProviderLeadAccessToken(token).status).toBe('expired')
   })
 
+  it('returns invalid instead of throwing when signing secrets are missing', async () => {
+    delete process.env.PROVIDER_LEAD_ACCESS_SECRET
+    delete process.env.NEXTAUTH_SECRET
+
+    const { verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const payload = Buffer.from(
+      JSON.stringify({ v: 1, leadId: 'lead-1', providerId: 'provider-1', exp: Math.floor(Date.now() / 1000) + 600 }),
+      'utf8',
+    ).toString('base64url')
+    const result = verifyProviderLeadAccessToken(`${payload}.fake-signature`)
+
+    expect(result).toMatchObject({
+      status: 'invalid',
+      reason: 'SIGNING_SECRET_MISSING',
+      payload: null,
+    })
+  })
+
   it('resolves only when the token provider matches the lead provider', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
@@ -127,6 +145,7 @@ describe('provider lead access tokens', () => {
     await expect(resolveProviderLeadAccessToken(token)).resolves.toMatchObject({
       status: 'invalid',
       lead: null,
+      reason: 'PROVIDER_NOT_ACTIVE',
     })
   })
 

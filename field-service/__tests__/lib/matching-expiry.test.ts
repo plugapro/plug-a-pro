@@ -71,6 +71,7 @@ vi.mock('../../lib/matching/events', () => ({ emitMatchEvent: mockEmitMatchEvent
 vi.mock('../../lib/whatsapp-interactive', () => ({
   sendText: mockSendText,
   sendButtons: vi.fn().mockResolvedValue(undefined),
+  sendCtaUrl: vi.fn().mockResolvedValue(undefined),
 }))
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -183,6 +184,7 @@ function setupBaseTransaction() {
 describe('expireAssignmentOffer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
     mockSendText.mockResolvedValue(undefined)
     setupBaseTransaction()
   })
@@ -537,6 +539,7 @@ describe('expireAssignmentOffer', () => {
 describe('processPendingAssignmentWorkflows', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
     setupBaseTransaction()
   })
 
@@ -604,6 +607,7 @@ describe('processPendingAssignmentWorkflows', () => {
 describe('reconcileStaleAssignmentState', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
     mockDb.providerCapacity.update.mockResolvedValue({})
   })
 

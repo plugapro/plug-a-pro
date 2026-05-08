@@ -356,12 +356,16 @@ export async function shortlistProviderForCustomerReview(params: {
     },
   })
 
-  const shortlist = await db.providerShortlist.upsert({
-    where: { requestId_status: { requestId: request.id, status: 'DRAFT' } },
-    create: { requestId: request.id, status: 'DRAFT' },
-    update: {},
+  let shortlist = await db.providerShortlist.findFirst({
+    where: { requestId: request.id, status: 'DRAFT' },
     select: { id: true },
   })
+  if (!shortlist) {
+    shortlist = await db.providerShortlist.create({
+      data: { requestId: request.id, status: 'DRAFT' },
+      select: { id: true },
+    })
+  }
 
   await db.providerShortlistItem.upsert({
     where: {

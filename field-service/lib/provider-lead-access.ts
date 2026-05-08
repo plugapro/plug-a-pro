@@ -51,6 +51,16 @@ type ProviderLeadTokenPayload = {
   exp: number
 }
 
+type ProviderLeadAccessInvalidReason =
+  | 'SIGNING_SECRET_MISSING'
+  | 'LEAD_NOT_FOUND'
+  | 'PROVIDER_NOT_ACTIVE'
+  | 'PROVIDER_MISMATCH'
+  | 'JOB_REQUEST_MISMATCH'
+  | 'PROVIDER_PHONE_MISMATCH'
+  | 'SENDER_PHONE_MISMATCH'
+  | 'MATCH_CANCELLED'
+
 function base64url(input: Buffer | string) {
   return Buffer.from(input).toString('base64url')
 }
@@ -58,12 +68,10 @@ function base64url(input: Buffer | string) {
 function getSigningSecret() {
   const secret =
     process.env.PROVIDER_LEAD_ACCESS_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    process.env.WHATSAPP_APP_SECRET ||
-    process.env.CRON_SECRET
+    process.env.NEXTAUTH_SECRET
 
   if (!secret) {
-    throw new Error('Missing PROVIDER_LEAD_ACCESS_SECRET or fallback signing secret')
+    throw new Error('Missing PROVIDER_LEAD_ACCESS_SECRET or NEXTAUTH_SECRET')
   }
 
   return secret
@@ -129,7 +137,15 @@ export function verifyProviderLeadAccessToken(token: string) {
   const [encodedPayload, signature] = token.split('.')
   if (!encodedPayload || !signature) return { status: 'invalid' as const, payload: null }
 
-  const expected = signPayload(encodedPayload)
+  let expected: string
+  try {
+    expected = signPayload(encodedPayload)
+  } catch (error) {
+    console.error('[provider-lead-access] signing secret missing while verifying token', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return { status: 'invalid' as const, payload: null, reason: 'SIGNING_SECRET_MISSING' as const }
+  }
   const actualBuffer = Buffer.from(signature)
   const expectedBuffer = Buffer.from(expected)
   if (
@@ -246,7 +262,13 @@ export async function resolveProviderLeadAccessToken(
   const traceId = crypto.randomUUID().slice(0, 8)
   const verified = verifyProviderLeadAccessToken(token)
   if (verified.status !== 'active') {
-    return { status: verified.status, lead: null, payload: verified.payload, traceId }
+    return {
+      status: verified.status,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: (verified as { reason?: ProviderLeadAccessInvalidReason }).reason ?? null,
+    }
   }
 
   const lead = await db.lead.findUnique({
@@ -307,20 +329,68 @@ export async function resolveProviderLeadAccessToken(
     },
   })
 
-  if (
-    !lead ||
-    lead.providerId !== verified.payload.providerId ||
-    (verified.payload.jobRequestId && lead.jobRequestId !== verified.payload.jobRequestId) ||
-    !lead.provider.active ||
-    lead.provider.status !== 'ACTIVE'
-  ) {
+  if (!lead) {
+    console.warn('[provider-lead-access] token invalid: lead not found', {
+      traceId,
+      providerId: verified.payload.providerId,
+      leadId: verified.payload.leadId,
+    })
+    return {
+      status: 'invalid' as const,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: 'LEAD_NOT_FOUND' as const,
+    }
+  }
+
+  if (lead.providerId !== verified.payload.providerId) {
+    console.warn('[provider-lead-access] token invalid: provider mismatch', {
+      traceId,
+      providerId: verified.payload.providerId,
+      leadProviderId: lead.providerId,
+      leadId: lead.id,
+    })
+    return {
+      status: 'invalid' as const,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: 'PROVIDER_MISMATCH' as const,
+    }
+  }
+
+  if (verified.payload.jobRequestId && lead.jobRequestId !== verified.payload.jobRequestId) {
+    console.warn('[provider-lead-access] token invalid: job request mismatch', {
+      traceId,
+      providerId: verified.payload.providerId,
+      tokenJobRequestId: verified.payload.jobRequestId,
+      leadJobRequestId: lead.jobRequestId,
+      leadId: lead.id,
+    })
+    return {
+      status: 'invalid' as const,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: 'JOB_REQUEST_MISMATCH' as const,
+    }
+  }
+
+  if (!lead.provider.active || lead.provider.status !== 'ACTIVE') {
     console.warn('[provider-lead-access] token invalid: scope mismatch or inactive provider', {
       traceId,
-      leadFound: Boolean(lead),
+      leadFound: true,
       providerId: verified.payload.providerId,
       jobRequestId: verified.payload.jobRequestId ?? null,
     })
-    return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
+    return {
+      status: 'invalid' as const,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: 'PROVIDER_NOT_ACTIVE' as const,
+    }
   }
 
   // Verify providerPhoneHash when the caller supplies the inbound sender phone
@@ -336,7 +406,13 @@ export async function resolveProviderLeadAccessToken(
         leadId: verified.payload.leadId,
         providerPhoneMasked: maskPhone(lead.provider.phone),
       })
-      return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
+      return {
+        status: 'invalid' as const,
+        lead: null,
+        payload: verified.payload,
+        traceId,
+        reason: 'PROVIDER_PHONE_MISMATCH' as const,
+      }
     }
   }
 
@@ -351,7 +427,13 @@ export async function resolveProviderLeadAccessToken(
         senderPhoneMasked: maskPhone(opts.assertSenderPhone),
         providerPhoneMasked: maskPhone(lead.provider.phone),
       })
-      return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
+      return {
+        status: 'invalid' as const,
+        lead: null,
+        payload: verified.payload,
+        traceId,
+        reason: 'SENDER_PHONE_MISMATCH' as const,
+      }
     }
   }
 
@@ -362,7 +444,13 @@ export async function resolveProviderLeadAccessToken(
       leadId: lead.id,
       providerId: lead.providerId,
     })
-    return { status: 'invalid' as const, lead: null, payload: verified.payload, traceId }
+    return {
+      status: 'invalid' as const,
+      lead: null,
+      payload: verified.payload,
+      traceId,
+      reason: 'MATCH_CANCELLED' as const,
+    }
   }
 
   const hasAcceptedUnlock = lead.status === 'ACCEPTED' && lead.unlock?.providerId === lead.providerId
@@ -409,7 +497,7 @@ export async function resolveProviderLeadAccessToken(
     }
   }
 
-  return { status: 'active' as const, lead: scopedLead, payload: verified.payload, traceId }
+  return { status: 'active' as const, lead: scopedLead, payload: verified.payload, traceId, reason: null }
 }
 
 export async function resolveProviderLeadAttachmentScope(token: string) {
