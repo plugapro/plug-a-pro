@@ -1,5 +1,19 @@
+const DEFAULT_FAST_MATCH_PROVIDER_RESPONSE_MINUTES = 10
+
+function parsePositiveIntEnv(raw: string | undefined, fallback: number) {
+  const value = Number.parseInt(raw ?? '', 10)
+  if (!Number.isFinite(value)) return fallback
+  if (value <= 0) return fallback
+  return value
+}
+
+export const FAST_MATCH_PROVIDER_RESPONSE_MINUTES = parsePositiveIntEnv(
+  process.env.FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
+  DEFAULT_FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
+)
+
 export const MATCHING_CONFIG = {
-  offerTtlMinutes: 15,
+  offerTtlMinutes: FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
   retryDelayMinutes: 1,
   staleLocationThresholdHours: 8,
   // Providers whose last heartbeat is older than this are treated as offline.

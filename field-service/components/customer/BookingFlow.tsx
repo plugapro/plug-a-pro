@@ -56,6 +56,7 @@ interface SavedSite {
 
 interface BookingFlowProps {
   category: CategoryData
+  preferredProviderId?: string | null
   initialDraft?: Partial<{
     subcategory: string
     jobType: string
@@ -118,6 +119,7 @@ const URGENCY_LABELS: Record<Urgency, string> = {
 
 export function BookingFlow({
   category,
+  preferredProviderId = null,
   initialDraft,
   savedSites = [],
   addressBookEnabled = false,
@@ -472,6 +474,7 @@ export function BookingFlow({
       formData.set('providerPreference', providerPreference)
       formData.set('budgetPreference', budgetPreference)
       formData.set('verifiedOnly', String(providerPreference === 'verified_only'))
+      if (preferredProviderId) formData.set('preferredProviderId', preferredProviderId)
       if (accessNotes.trim()) formData.set('accessNotes', accessNotes.trim())
       if (maxCallOutFee.trim()) formData.set('maxCallOutFee', maxCallOutFee.trim())
 

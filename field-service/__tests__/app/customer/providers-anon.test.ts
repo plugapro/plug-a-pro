@@ -54,6 +54,7 @@ describe('anonymous provider discovery', () => {
         id: 'provider-1',
         name: 'Ana K',
         bio: 'Reliable installer for domestic systems.',
+        experience: '8 years',
         skills: ['plumbing', 'electrical'],
         serviceAreas: ['Johannesburg'],
         averageRating: 4.9,
@@ -63,6 +64,22 @@ describe('anonymous provider discovery', () => {
         availableNow: true,
         reliabilityScore: 0.85,
         strikes: 0,
+        providerCategories: [
+          {
+            categorySlug: 'plumbing',
+            subServices: ['Leak repair'],
+            yearsExperience: 8,
+            approvalStatus: 'APPROVED',
+          },
+        ],
+        providerRates: [
+          {
+            categorySlug: 'plumbing',
+            callOutFee: { toNumber: () => 450 },
+            hourlyRate: { toNumber: () => 350 },
+            rateNegotiable: true,
+          },
+        ],
         technicianAvailability: { availabilityState: 'AVAILABLE' },
       },
     ])
@@ -70,6 +87,13 @@ describe('anonymous provider discovery', () => {
     const html = renderToStaticMarkup(await ProvidersPage({ searchParams: Promise.resolve({}) }))
 
     expect(mockProviderFindMany).toHaveBeenCalledTimes(1)
+    expect(mockProviderFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+      }),
+    }))
     expect(html).toContain('Find a Provider')
     expect(html).toContain('Ana K')
   })
@@ -78,21 +102,24 @@ describe('anonymous provider discovery', () => {
     mockProviderFindUnique.mockResolvedValue({
       id: 'provider-1',
       name: 'Ana K',
+      avatarUrl: null,
       bio: 'Reliable installer for domestic systems.',
-      experience: 8,
+      experience: '8 years',
       skills: ['plumbing'],
       serviceAreas: ['Johannesburg'],
       evidenceNote: null,
       portfolioUrls: [],
       verified: true,
+      providerCategories: [],
+      providerRates: [],
     })
     mockJobFindMany.mockResolvedValue([])
     mockReviewFindMany.mockResolvedValue([])
 
     const html = renderToStaticMarkup(await ProviderProfilePage({ params: Promise.resolve({ id: 'provider-1' }) }))
 
-    expect(html).toContain('Sign in to book')
-    expect(html).toContain('/sign-in?next=%2Fproviders%2Fprovider-1')
+    expect(html).toContain('Sign in to request service')
+    expect(html).toContain('/sign-in?next=%2Fbook%2Fplumbing%3Fprovider%3Dprovider-1')
   })
 
   it('renders a booking CTA on a provider profile when session.role is customer', async () => {
@@ -100,21 +127,24 @@ describe('anonymous provider discovery', () => {
     mockProviderFindUnique.mockResolvedValue({
       id: 'provider-1',
       name: 'Ana K',
+      avatarUrl: null,
       bio: 'Reliable installer for domestic systems.',
-      experience: 8,
+      experience: '8 years',
       skills: ['plumbing'],
       serviceAreas: ['Johannesburg'],
       evidenceNote: null,
       portfolioUrls: [],
       verified: true,
+      providerCategories: [],
+      providerRates: [],
     })
     mockJobFindMany.mockResolvedValue([])
     mockReviewFindMany.mockResolvedValue([])
 
     const html = renderToStaticMarkup(await ProviderProfilePage({ params: Promise.resolve({ id: 'provider-1' }) }))
 
-    expect(html).toContain('Book')
+    expect(html).toContain('Request service from this provider')
     expect(html).toContain('/book/plumbing?provider=provider-1')
-    expect(html).not.toContain('Sign in to book')
+    expect(html).not.toContain('Sign in to request service')
   })
 })

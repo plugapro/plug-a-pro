@@ -9,6 +9,7 @@ const {
   mockAddToServiceAreaWaitlist,
   mockNotifyCustomerPwaRequestSubmitted,
   mockUploadJobRequestPhoto,
+  mockProviderFindFirst,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockCreateJobRequest: vi.fn(),
@@ -17,9 +18,17 @@ const {
   mockAddToServiceAreaWaitlist: vi.fn(),
   mockNotifyCustomerPwaRequestSubmitted: vi.fn(),
   mockUploadJobRequestPhoto: vi.fn(),
+  mockProviderFindFirst: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
+vi.mock('@/lib/db', () => ({
+  db: {
+    provider: {
+      findFirst: mockProviderFindFirst,
+    },
+  },
+}))
 vi.mock('@/lib/job-requests/create-job-request', () => ({ createJobRequest: mockCreateJobRequest }))
 vi.mock('@/lib/structured-address', () => ({
   InvalidStructuredAddressError: class InvalidStructuredAddressError extends Error {},
@@ -57,6 +66,7 @@ describe('POST /api/customer/bookings', () => {
       customerId: 'cust-1',
       ticketUrl: 'https://app.example/requests/access/token',
     })
+    mockProviderFindFirst.mockResolvedValue(null)
     mockUploadJobRequestPhoto.mockResolvedValue('https://blob.example/photo.png')
     mockNotifyCustomerPwaRequestSubmitted.mockResolvedValue({ sent: true })
   })
@@ -256,6 +266,8 @@ describe('POST /api/customer/bookings', () => {
   })
 
   it('passes shortlist fields and access notes from multipart form to createJobRequest', async () => {
+    mockProviderFindFirst.mockResolvedValue({ id: 'provider-9' })
+
     const formData = new FormData()
     formData.set('category', 'plumbing')
     formData.set('title', 'Fix leaking pipe')
@@ -268,6 +280,7 @@ describe('POST /api/customer/bookings', () => {
     formData.set('budgetPreference', 'low_cost')
     formData.set('verifiedOnly', 'true')
     formData.set('maxCallOutFee', '400')
+    formData.set('preferredProviderId', 'provider-9')
     formData.set('accessNotes', 'Gate code 4321, house alarm at entrance.')
 
     const { POST } = await import('@/app/api/customer/bookings/route')
@@ -286,7 +299,30 @@ describe('POST /api/customer/bookings', () => {
       budgetPreference: 'low_cost',
       verifiedOnly: true,
       maxCallOutFee: 400,
+      preferredProviderId: 'provider-9',
       accessNotes: 'Gate code 4321, house alarm at entrance.',
+    }))
+  })
+
+  it('drops preferredProviderId when provider is not eligible for discovery/request', async () => {
+    mockProviderFindFirst.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('category', 'plumbing')
+    formData.set('title', 'Fix leaking pipe')
+    formData.set('addressLine1', '12 Main Road')
+    formData.set('locationNodeId', 'node-1')
+    formData.set('preferredProviderId', 'provider-ineligible')
+
+    const { POST } = await import('@/app/api/customer/bookings/route')
+    const response = await POST(new NextRequest('http://localhost/api/customer/bookings', {
+      method: 'POST',
+      body: formData,
+    }))
+
+    expect(response.status).toBe(200)
+    expect(mockCreateJobRequest).toHaveBeenCalledWith(expect.objectContaining({
+      preferredProviderId: null,
     }))
   })
 

@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { db } from '@/lib/db'
 import {
   createJobRequest,
   DuplicateActiveRequestError,
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest) {
         providerPreference: formData.get('providerPreference') ? String(formData.get('providerPreference')) : undefined,
         budgetPreference: formData.get('budgetPreference') ? String(formData.get('budgetPreference')) : undefined,
         maxCallOutFee: rawMaxCallOutFee ? Number(rawMaxCallOutFee) : undefined,
+        preferredProviderId: formData.get('preferredProviderId') ? String(formData.get('preferredProviderId')) : undefined,
         verifiedOnly: formData.get('verifiedOnly') === 'true',
         ...(rawWindowStart ? { requestedWindowStart: String(rawWindowStart) } : {}),
         ...(rawWindowEnd ? { requestedWindowEnd: String(rawWindowEnd) } : {}),
@@ -205,6 +207,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ waitlisted: true, city: resolvedAddress.city })
     }
 
+    let sanitizedPreferredProviderId: string | null = null
+    if (preferredProviderId?.trim()) {
+      const preferredProvider = await db.provider.findFirst({
+        where: {
+          id: preferredProviderId.trim(),
+          active: true,
+          verified: true,
+          status: 'ACTIVE',
+          AND: [
+            { OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: new Date() } }] },
+            {
+              OR: [
+                {
+                  providerCategories: {
+                    some: {
+                      categorySlug: category,
+                      approvalStatus: 'APPROVED',
+                    },
+                  },
+                },
+                {
+                  AND: [
+                    { providerCategories: { none: {} } },
+                    { skills: { has: category } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        select: { id: true },
+      })
+      sanitizedPreferredProviderId = preferredProvider?.id ?? null
+    }
+
     const result = await createJobRequest({
       userId: session.id,
       phone: session.phone!,
@@ -217,7 +254,7 @@ export async function POST(req: NextRequest) {
       requestedWindowEnd: requestedWindowEnd ? new Date(requestedWindowEnd) : null,
       requestedArrivalLatest: requestedArrivalLatest ? new Date(requestedArrivalLatest) : null,
       assignmentMode: assignmentMode ?? 'AUTO_ASSIGN',
-      preferredProviderId: preferredProviderId ?? null,
+      preferredProviderId: sanitizedPreferredProviderId,
       customerAcceptedAmount: typeof customerAcceptedAmount === 'number' ? customerAcceptedAmount : null,
       customerAcceptedScope: customerAcceptedScope ?? null,
       requiredSkillTags: requiredSkillTags ?? [],

@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockAutoApprove } = vi.hoisted(() => ({
+const { mockAutoApprove, mockIsEnabled } = vi.hoisted(() => ({
   mockAutoApprove: vi.fn(),
+  mockIsEnabled: vi.fn(),
 }))
 
 vi.mock('@/lib/provider-auto-approve', () => ({
   autoApproveProviderApplications: mockAutoApprove,
+}))
+
+vi.mock('@/lib/flags', () => ({
+  isEnabled: mockIsEnabled,
 }))
 
 import { GET } from '@/app/api/cron/provider-auto-approve/route'
@@ -16,6 +21,7 @@ describe('GET /api/cron/provider-auto-approve', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.CRON_SECRET = CRON_SECRET
+    mockIsEnabled.mockResolvedValue(true)
     mockAutoApprove.mockResolvedValue({
       attempted: 2,
       approved: 2,
@@ -51,6 +57,20 @@ describe('GET /api/cron/provider-auto-approve', () => {
     }))
 
     expect(res.status).toBe(401)
+    expect(mockAutoApprove).not.toHaveBeenCalled()
+  })
+
+  it('skips auto-approval when provider.onboarding.auto_approve flag is disabled', async () => {
+    mockIsEnabled.mockResolvedValue(false)
+
+    const res = await GET(new Request('http://localhost/api/cron/provider-auto-approve', {
+      headers: { authorization: `Bearer ${CRON_SECRET}` },
+    }))
+
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ ok: true, skipped: true, reason: 'FEATURE_FLAG_DISABLED' })
     expect(mockAutoApprove).not.toHaveBeenCalled()
   })
 

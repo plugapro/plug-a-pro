@@ -101,6 +101,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'feature.customer.provider_browse',
     description: 'Enable public provider catalogue browsing on customer PWA (M6).',
   },
+  {
+    key: 'provider.onboarding.auto_approve',
+    description: 'Enable cron-based auto-approval of standard (non-high-risk) provider applications. When disabled, all applications queue for manual admin review only.',
+  },
 ]
 
 async function main() {

@@ -28,14 +28,21 @@ export default async function RequestJobPage({
   searchParams,
 }: {
   params: Promise<{ serviceId: string }>
-  searchParams: Promise<{ template?: string }>
+  searchParams: Promise<{ template?: string; provider?: string }>
 }) {
-  const [{ serviceId: category }, { template: templateId }] = await Promise.all([
+  const [{ serviceId: category }, { template: templateId, provider: preferredProviderIdRaw }] = await Promise.all([
     params,
     searchParams,
   ])
+  const preferredProviderId = preferredProviderIdRaw?.trim() || null
   const session = await getSession()
-  if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/book/${category}`)}`)
+  if (!session) {
+    const next = new URLSearchParams()
+    if (templateId) next.set('template', templateId)
+    if (preferredProviderId) next.set('provider', preferredProviderId)
+    const nextPath = `/book/${category}${next.toString() ? `?${next.toString()}` : ''}`
+    redirect(`/sign-in?next=${encodeURIComponent(nextPath)}`)
+  }
 
   const categoryInfo = CATEGORIES[category]
   if (!categoryInfo) notFound()
@@ -74,12 +81,46 @@ export default async function RequestJobPage({
     }
   }
 
+  const eligiblePreferredProvider = preferredProviderId
+    ? await db.provider.findFirst({
+        where: {
+          id: preferredProviderId,
+          active: true,
+          verified: true,
+          status: 'ACTIVE',
+          AND: [
+            { OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: new Date() } }] },
+            {
+              OR: [
+                {
+                  providerCategories: {
+                    some: {
+                      categorySlug: category,
+                      approvalStatus: 'APPROVED',
+                    },
+                  },
+                },
+                {
+                  AND: [
+                    { providerCategories: { none: {} } },
+                    { skills: { has: category } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        select: { id: true },
+      })
+    : null
+
   return (
     <BookingFlow
       category={categoryData}
       savedSites={savedSites}
       addressBookEnabled={addressBookEnabled}
       initialDraft={initialDraft}
+      preferredProviderId={eligiblePreferredProvider?.id ?? null}
     />
   )
 }

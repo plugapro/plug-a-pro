@@ -12,6 +12,7 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { autoApproveProviderApplications } from '@/lib/provider-auto-approve'
 
 export async function GET(request: Request) {
@@ -21,6 +22,13 @@ export async function GET(request: Request) {
   }
 
   const reqId = Math.random().toString(36).slice(2, 10)
+
+  // Gate: disabled flag routes all applications to manual admin review only.
+  const autoApproveEnabled = await isEnabled('provider.onboarding.auto_approve')
+  if (!autoApproveEnabled) {
+    console.log(`[cron/provider-auto-approve:${reqId}] skipped — feature flag provider.onboarding.auto_approve is disabled; applications require manual admin review`)
+    return NextResponse.json({ ok: true, skipped: true, reason: 'FEATURE_FLAG_DISABLED' })
+  }
 
   try {
     const result = await autoApproveProviderApplications(db, { runId: reqId })

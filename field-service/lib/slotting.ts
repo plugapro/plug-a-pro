@@ -95,6 +95,77 @@ export async function getProviderSchedule(params: {
   return slots
 }
 
+/**
+ * Return provider IDs that have an active schedule entry for the given day of
+ * the week and optionally filtered to those whose service areas include the
+ * requested location slug.
+ */
+export async function getProvidersAvailableOn(params: {
+  dayOfWeek: number
+  serviceAreaSlug?: string
+}): Promise<string[]> {
+  const schedules = await db.providerSchedule.findMany({
+    where: {
+      dayOfWeek: params.dayOfWeek,
+      active: true,
+    },
+    select: { providerId: true },
+  })
+
+  if (!params.serviceAreaSlug) {
+    return [...new Set(schedules.map((s) => s.providerId))]
+  }
+
+  const providerIds = [...new Set(schedules.map((s) => s.providerId))]
+
+  const matching = await db.provider.findMany({
+    where: {
+      id: { in: providerIds },
+      serviceAreas: { has: params.serviceAreaSlug },
+      active: true,
+    },
+    select: { id: true },
+  })
+
+  return matching.map((p) => p.id)
+}
+
+export interface ScheduleDay {
+  dayOfWeek: number
+  startTime: string
+  endTime: string
+  active?: boolean
+}
+
+/**
+ * Upsert (create or update) ProviderSchedule rows for a provider.
+ * Days not present in the array are left unchanged.
+ */
+export async function upsertSchedule(
+  providerId: string,
+  days: ScheduleDay[],
+): Promise<void> {
+  await Promise.all(
+    days.map((day) =>
+      db.providerSchedule.upsert({
+        where: { providerId_dayOfWeek: { providerId, dayOfWeek: day.dayOfWeek } },
+        create: {
+          providerId,
+          dayOfWeek: day.dayOfWeek,
+          startTime: day.startTime,
+          endTime: day.endTime,
+          active: day.active ?? true,
+        },
+        update: {
+          startTime: day.startTime,
+          endTime: day.endTime,
+          active: day.active ?? true,
+        },
+      }),
+    ),
+  )
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatSlotLabel(date: Date, windowStart: string, windowEnd: string): string {

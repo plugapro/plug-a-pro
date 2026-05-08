@@ -27,6 +27,12 @@ import {
 import { createTraceId, maskPhone, safeErrorMessage, timestamp, type DiagnosticCode } from '@/lib/support-diagnostics'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
+import { getSession } from '@/lib/auth'
+
+async function resolveSessionProviderPhone(): Promise<string | undefined> {
+  const session = await getSession()
+  return session?.role === 'provider' && session.phone ? session.phone : undefined
+}
 
 type LeadActionErrorParams = {
   error: string
@@ -93,7 +99,7 @@ async function acceptLeadWithToken(formData: FormData) {
     })
   }
 
-  const resolved = await resolveProviderLeadAccessToken(token)
+  const resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: await resolveSessionProviderPhone() })
   if (resolved.status !== 'active' || !resolved.lead) {
     redirectLeadActionError(token, {
       error: 'invalid',
@@ -209,7 +215,7 @@ async function declineLeadWithToken(formData: FormData) {
     })
   }
 
-  const resolved = await resolveProviderLeadAccessToken(token)
+  const resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: await resolveSessionProviderPhone() })
   if (resolved.status !== 'active' || !resolved.lead) {
     redirectLeadActionError(token, {
       error: 'invalid',
@@ -479,7 +485,7 @@ export default async function ProviderLeadAccessPage({
 }) {
   const { token } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
-  const resolved = await resolveProviderLeadAccessToken(token)
+  const resolved = await resolveProviderLeadAccessToken(token, { assertSenderPhone: await resolveSessionProviderPhone() })
 
   if (resolved.status === 'expired') {
     const traceId = createTraceId('job')
