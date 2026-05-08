@@ -7,7 +7,7 @@
 // This rewrite makes auto-approval itself a bounded transactional operation and
 // moves optional side-effects into replayable markers.
 
-import { Prisma, type Prisma as PrismaTypes } from '@prisma/client'
+import { type Prisma as PrismaTypes } from '@prisma/client'
 import { db } from './db'
 import { assessProviderApplicationForOpsReview } from './provider-application-review-support'
 import { syncProviderRecord } from './provider-record'
@@ -74,6 +74,7 @@ type AutoApproveDb = {
     updateMany: (args: any) => Promise<{ count: number }>
   }
   $queryRaw?: (...args: any[]) => Promise<unknown>
+  $queryRawUnsafe?: (query: string, ...values: any[]) => Promise<unknown>
   $transaction: (callbackOrOps: any, options?: any) => Promise<unknown>
 }
 
@@ -214,20 +215,16 @@ function markerRunResult(
 
 async function checkProviderPromoAwardSchemaCompatibility(client: AutoApproveDb): Promise<PreflightResult> {
   const reasons: string[] = []
-  if (!client.$queryRaw) {
+  const runRaw = client.$queryRawUnsafe ?? client.$queryRaw
+  if (!runRaw) {
     return { isCompatible: false, reasons: ['SCHEMA_CHECK_INTERFACE_MISSING'] }
   }
 
-  const runRaw = client.$queryRaw as (...args: any[]) => Promise<unknown>
+  const execRaw = (sql: string) => (runRaw as (q: string) => Promise<unknown>)(sql)
 
   try {
-    // Ensure this branch cannot run against legacy reward schemas that predate the
-    // awardType column or the enum used by current promo logic.
-    const columns = await runRaw(
-      Prisma.sql`SELECT column_name
-                 FROM information_schema.columns
-                 WHERE table_schema = 'public'
-                   AND table_name = 'provider_promo_awards'`,
+    const columns = await execRaw(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'provider_promo_awards'`,
     ) as Array<{ column_name: string }>
 
     const availableColumns = new Set(columns.map((row) => row.column_name))
@@ -237,12 +234,8 @@ async function checkProviderPromoAwardSchemaCompatibility(client: AutoApproveDb)
       reasons.push(`PROMO_AWARD_SCHEMA_MISSING_COLUMNS:${missingColumns.join(',')}`)
     }
 
-    const enumValues = await runRaw(
-      Prisma.sql`SELECT e.enumlabel
-                 FROM pg_type t
-                 JOIN pg_enum e ON e.enumtypid = t.oid
-                 WHERE t.typname = 'ProviderPromoAwardType'
-                 ORDER BY e.enumsortorder`,
+    const enumValues = await execRaw(
+      `SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'ProviderPromoAwardType' ORDER BY e.enumsortorder`,
     ) as Array<{ enumlabel: string }>
 
     const expectedValues = new Set([
@@ -271,18 +264,16 @@ async function checkProviderPromoAwardSchemaCompatibility(client: AutoApproveDb)
 
 async function checkProviderAutoApproveSideEffectSchemaCompatibility(client: AutoApproveDb): Promise<PreflightResult> {
   const reasons: string[] = []
-  if (!client.$queryRaw) {
+  const runRaw = client.$queryRawUnsafe ?? client.$queryRaw
+  if (!runRaw) {
     return { isCompatible: false, reasons: ['SIDE_EFFECT_SCHEMA_INTERFACE_MISSING'] }
   }
 
-  const runRaw = client.$queryRaw as (...args: any[]) => Promise<unknown>
+  const execRaw = (sql: string) => (runRaw as (q: string) => Promise<unknown>)(sql)
 
   try {
-    const columns = await runRaw(
-      Prisma.sql`SELECT column_name
-                 FROM information_schema.columns
-                 WHERE table_schema = 'public'
-                   AND table_name = 'provider_auto_approve_side_effect_markers'`,
+    const columns = await execRaw(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'provider_auto_approve_side_effect_markers'`,
     ) as Array<{ column_name: string }>
 
     const availableColumns = new Set(columns.map((row) => row.column_name))
@@ -293,20 +284,12 @@ async function checkProviderAutoApproveSideEffectSchemaCompatibility(client: Aut
       reasons.push(`SIDE_EFFECT_SCHEMA_MISSING_COLUMNS:${missingColumns.join(',')}`)
     }
 
-    const kindValues = await runRaw(
-      Prisma.sql`SELECT e.enumlabel
-                 FROM pg_type t
-                 JOIN pg_enum e ON e.enumtypid = t.oid
-                 WHERE t.typname = 'ProviderAutoApproveSideEffectKind'
-                 ORDER BY e.enumsortorder`,
+    const kindValues = await execRaw(
+      `SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'ProviderAutoApproveSideEffectKind' ORDER BY e.enumsortorder`,
     ) as Array<{ enumlabel: string }>
 
-    const statusValues = await runRaw(
-      Prisma.sql`SELECT e.enumlabel
-                 FROM pg_type t
-                 JOIN pg_enum e ON e.enumtypid = t.oid
-                 WHERE t.typname = 'ProviderAutoApproveSideEffectStatus'
-                 ORDER BY e.enumsortorder`,
+    const statusValues = await execRaw(
+      `SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'ProviderAutoApproveSideEffectStatus' ORDER BY e.enumsortorder`,
     ) as Array<{ enumlabel: string }>
 
     const expectedKinds = new Set(AUTO_APPROVE_SIDE_EFFECT_KINDS)
