@@ -1,6 +1,7 @@
 import { db } from './db'
 import { orchestrateMatch } from './matching/orchestrator'
 import { sendText } from './whatsapp-interactive'
+import { getProviderCandidatesForCustomerReview } from './review-first'
 
 export type CustomerMatchingMode = 'quick_match' | 'review_first'
 
@@ -33,6 +34,7 @@ export async function selectCustomerRequestMatchingMode(params: {
       id: true,
       customerId: true,
       status: true,
+      assignmentMode: true,
       category: true,
       customer: { select: { phone: true } },
     },
@@ -50,9 +52,37 @@ export async function selectCustomerRequestMatchingMode(params: {
   }
 
   const targetAssignmentMode = params.mode === 'quick_match' ? 'AUTO_ASSIGN' : 'OPS_REVIEW'
+
+  const activeHold = await db.assignmentHold.findFirst({
+    where: { jobRequestId: request.id, status: 'ACTIVE' },
+    select: { id: true },
+  })
+
+  if (activeHold) {
+    if (request.assignmentMode === targetAssignmentMode) {
+      console.info('[matching-mode] noop — already in progress', { requestId: request.id, mode: params.mode })
+      return { requestId: request.id, mode: params.mode, status: 'already_in_progress' as const }
+    }
+    console.info('[matching-mode] rejected — hold active', { requestId: request.id, mode: params.mode })
+    throw new RequestMatchingModeError(
+      'REQUEST_NOT_EDITABLE',
+      'Cannot change matching mode while a provider outreach is active.',
+    )
+  }
   let nextStatus = request.status
 
-  if (request.status === 'PENDING_VALIDATION') {
+  if (params.mode === 'review_first') {
+    if (request.status === 'PENDING_VALIDATION' || request.status === 'OPEN') {
+      await db.jobRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'PENDING_VALIDATION',
+          assignmentMode: 'OPS_REVIEW',
+        },
+      })
+      nextStatus = 'PENDING_VALIDATION'
+    }
+  } else if (request.status === 'PENDING_VALIDATION') {
     await db.jobRequest.update({
       where: { id: request.id },
       data: {
@@ -69,7 +99,17 @@ export async function selectCustomerRequestMatchingMode(params: {
     nextStatus = 'OPEN'
   }
 
-  if (nextStatus === 'OPEN') {
+  if (params.mode === 'review_first') {
+    await getProviderCandidatesForCustomerReview({
+      requestId: request.id,
+      batch: 1,
+    }).catch((error) => {
+      console.error('[request-matching-mode] review-first candidate generation failed', {
+        requestId: request.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
+  } else if (nextStatus === 'OPEN') {
     await orchestrateMatch(request.id, { triggeredBy: 'manual' }).catch((error) => {
       console.error('[request-matching-mode] matching trigger failed', {
         requestId: request.id,
@@ -105,6 +145,11 @@ export async function selectCustomerRequestMatchingMode(params: {
   return {
     requestId: request.id,
     mode: params.mode,
-    status: nextStatus === 'OPEN' ? 'matching_started' : 'already_in_progress',
+    status:
+      params.mode === 'review_first'
+        ? 'review_options_ready'
+        : nextStatus === 'OPEN'
+          ? 'matching_started'
+          : 'already_in_progress',
   } as const
 }

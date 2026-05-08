@@ -18,10 +18,13 @@ import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import {
   chooseMatchingModeAction,
+  sendReviewShortlistAction,
+  shortlistReviewProviderAction,
   selectShortlistProviderAction,
   requestMoreShortlistOptionsAction,
   cancelRequestFromShortlistAction,
 } from './actions'
+import { getCustomerReviewShortlist, getProviderCandidatesForCustomerReview } from '@/lib/review-first'
 
 export const metadata = buildMetadata({ title: 'Request Details', noIndex: true })
 
@@ -30,10 +33,11 @@ export default async function RequestDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams?: Promise<{ selection?: string }>
+  searchParams?: Promise<{ selection?: string; batch?: string }>
 }) {
   const { id } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
+  const reviewBatch = Math.max(1, Number.parseInt(resolvedSearchParams.batch ?? '1', 10) || 1)
   const session = await getSession()
   if (!session || session.role !== 'customer') {
     redirect(`/sign-in?next=${encodeURIComponent(`/requests/${id}`)}`)
@@ -78,6 +82,15 @@ export default async function RequestDetailPage({
     ) ?? null
   const canRequestMoreOptions = jobRequest.status === 'SHORTLIST_READY'
   const canCancelRequest = jobRequest.status === 'SHORTLIST_READY'
+  const isReviewFirstPending =
+    jobRequest.status === 'PENDING_VALIDATION' &&
+    jobRequest.assignmentMode === 'OPS_REVIEW'
+  const reviewCandidates = isReviewFirstPending
+    ? await getProviderCandidatesForCustomerReview({ requestId: jobRequest.id, batch: reviewBatch }).catch(() => null)
+    : null
+  const reviewShortlist = isReviewFirstPending
+    ? await getCustomerReviewShortlist({ requestId: jobRequest.id, customerId: customer.id }).catch(() => null)
+    : null
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
@@ -506,39 +519,127 @@ export default async function RequestDetailPage({
           <CardContent className="space-y-3 text-sm">
             {jobRequest.status === 'PENDING_VALIDATION' && (
               <div className="space-y-1">
-                <p className="font-medium">Choose how to find your provider</p>
-                <p className="text-muted-foreground">
-                  We&apos;ve received your {jobRequest.category} request
-                  {jobRequest.address
-                    ? ` in ${normaliseLocationDisplayName(jobRequest.address.suburb)}, ${normaliseLocationDisplayName(jobRequest.address.city)}`
-                    : ''}
-                  .
-                </p>
-                <p className="text-muted-foreground">
-                  Select Quick Match to contact one suitable provider at a time, or Review Providers First to compare options before choosing.
-                </p>
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <form
-                    action={async (formData) => {
-                      'use server'
-                      await chooseMatchingModeAction(jobRequest.id, 'quick_match', formData)
-                    }}
-                  >
-                    <Button type="submit" className="w-full">
-                      Quick Match
-                    </Button>
-                  </form>
-                  <form
-                    action={async (formData) => {
-                      'use server'
-                      await chooseMatchingModeAction(jobRequest.id, 'review_first', formData)
-                    }}
-                  >
-                    <Button type="submit" variant="outline" className="w-full">
-                      Review Providers First
-                    </Button>
-                  </form>
-                </div>
+                {!isReviewFirstPending ? (
+                  <>
+                    <p className="font-medium">Choose how to find your provider</p>
+                    <p className="text-muted-foreground">
+                      We&apos;ve received your {jobRequest.category} request
+                      {jobRequest.address
+                        ? ` in ${normaliseLocationDisplayName(jobRequest.address.suburb)}, ${normaliseLocationDisplayName(jobRequest.address.city)}`
+                        : ''}
+                      .
+                    </p>
+                    <p className="text-muted-foreground">
+                      Select Quick Match to contact one suitable provider at a time, or Review Providers First to compare options before choosing.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 pt-2">
+                      <form
+                        action={async (formData) => {
+                          'use server'
+                          await chooseMatchingModeAction(jobRequest.id, 'quick_match', formData)
+                        }}
+                      >
+                        <Button type="submit" className="w-full">
+                          Quick Match
+                        </Button>
+                      </form>
+                      <form
+                        action={async (formData) => {
+                          'use server'
+                          await chooseMatchingModeAction(jobRequest.id, 'review_first', formData)
+                        }}
+                      >
+                        <Button type="submit" variant="outline" className="w-full">
+                          Review Providers First
+                        </Button>
+                      </form>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-3 pt-1">
+                    <p className="font-medium">Review Providers First</p>
+                    <p className="text-muted-foreground">
+                      Shortlist 1 to 3 providers, then send your request only to those providers.
+                    </p>
+                    {reviewCandidates?.candidates?.length ? (
+                      <div className="space-y-2">
+                        {reviewCandidates.candidates.map((candidate) => (
+                          <Card key={candidate.providerId}>
+                            <CardContent className="space-y-2 px-4 py-3 text-sm">
+                              <p className="font-medium">{candidate.name}</p>
+                              <p className="text-muted-foreground">
+                                {(candidate.skills[0] ?? jobRequest.category)} · {candidate.serviceAreas[0] ?? 'Your area'}
+                              </p>
+                              {candidate.callOutFee != null && (
+                                <p className="text-muted-foreground">Call-out fee: R{Math.round(candidate.callOutFee)}</p>
+                              )}
+                              {candidate.experience && (
+                                <p className="text-muted-foreground">Experience: {candidate.experience}</p>
+                              )}
+                              <p className="text-muted-foreground">Why matched: {candidate.whyMatched}</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {candidate.profileUrl ? (
+                                  <Button asChild variant="outline" className="w-full">
+                                    <Link href={candidate.profileUrl}>View profile</Link>
+                                  </Button>
+                                ) : (
+                                  <Button variant="outline" className="w-full" disabled>
+                                    View profile
+                                  </Button>
+                                )}
+                                <form
+                                  action={async (formData) => {
+                                    'use server'
+                                    await shortlistReviewProviderAction(jobRequest.id, candidate.providerId, formData)
+                                  }}
+                                >
+                                  <Button type="submit" className="w-full">
+                                    Shortlist
+                                  </Button>
+                                </form>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No matching providers are available right now.</p>
+                    )}
+                    {reviewShortlist && (
+                      <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+                        <CardContent className="space-y-2 px-4 py-3 text-sm">
+                          <p className="font-medium text-[var(--tone-warning-fg)]">Your shortlist</p>
+                          {reviewShortlist.providers.length === 0 ? (
+                            <p className="text-[var(--tone-warning-fg)]">Please shortlist at least one provider first.</p>
+                          ) : (
+                            <div className="space-y-1 text-[var(--tone-warning-fg)]">
+                              {reviewShortlist.providers.map((provider, idx) => (
+                                <p key={provider.providerId}>{idx + 1}. {provider.name}</p>
+                              ))}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <Button asChild variant="outline" className="w-full">
+                              <Link href={`/requests/${jobRequest.id}?batch=${reviewBatch + 1}`}>
+                                Show 3 more
+                              </Link>
+                            </Button>
+                            <form
+                              action={async (formData) => {
+                                'use server'
+                                await sendReviewShortlistAction(jobRequest.id, formData)
+                              }}
+                            >
+                              <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
+                                Send request
+                              </Button>
+                            </form>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {jobRequest.status === 'OPEN' && (
@@ -559,8 +660,9 @@ export default async function RequestDetailPage({
               <div className="space-y-1">
                 <p className="font-medium">Providers are reviewing your request</p>
                 <p className="text-muted-foreground">
-                  Suitable providers are reviewing your request. We&apos;ll notify you when your shortlist is
-                  ready.
+                  {jobRequest.assignmentMode === 'OPS_REVIEW'
+                    ? 'Your shortlisted providers are reviewing your request. We\'ll notify you as each response comes in.'
+                    : 'Suitable providers are reviewing your request. We\'ll notify you when your shortlist is ready.'}
                 </p>
               </div>
             )}

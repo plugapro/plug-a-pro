@@ -17,6 +17,7 @@ const clientPwaRequestSelect = Prisma.validator<Prisma.JobRequestSelect>()({
   title: true,
   description: true,
   status: true,
+  assignmentMode: true,
   expiresAt: true,
   createdAt: true,
   updatedAt: true,

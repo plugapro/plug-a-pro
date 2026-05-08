@@ -33,7 +33,7 @@ function formatCredits(value: number) {
   return `${value} credit${value === 1 ? '' : 's'}`
 }
 
-export async function generateCustomerShortlistForRequest(requestId: string, limit = 5) {
+export async function generateCustomerShortlistForRequest(requestId: string, limit = 5, options?: { quickMatch?: boolean }) {
   const request = await db.jobRequest.findUnique({
     where: { id: requestId },
     select: {
@@ -112,21 +112,74 @@ export async function generateCustomerShortlistForRequest(requestId: string, lim
     return shortlist
   })
 
-  await notifyCustomerShortlistReady({
-    requestId: request.id,
-    customerPhone: request.customer?.phone ?? null,
-    category: request.category,
-    suburb: request.address?.suburb ?? null,
-    city: request.address?.city ?? null,
-    optionCount: shortlist.items.length,
-  }).catch((error) => {
-    console.error('[customer-shortlists] shortlist-ready notification failed', {
-      requestId,
-      error,
+  if (options?.quickMatch && responses.length === 1) {
+    const top = responses[0]
+    await notifyCustomerQuickMatchProviderAvailable({
+      requestId: request.id,
+      customerPhone: request.customer?.phone ?? null,
+      category: request.category,
+      providerName: top.provider.name ?? 'the provider',
+      callOutFee: top.callOutFee,
+      estimatedArrivalAt: top.estimatedArrivalAt,
+    }).catch((error) => {
+      console.error('[customer-shortlists] quick-match available notification failed', { requestId, error })
     })
-  })
+  } else {
+    await notifyCustomerShortlistReady({
+      requestId: request.id,
+      customerPhone: request.customer?.phone ?? null,
+      category: request.category,
+      suburb: request.address?.suburb ?? null,
+      city: request.address?.city ?? null,
+      optionCount: shortlist.items.length,
+    }).catch((error) => {
+      console.error('[customer-shortlists] shortlist-ready notification failed', { requestId, error })
+    })
+  }
 
   return shortlist
+}
+
+async function notifyCustomerQuickMatchProviderAvailable(params: {
+  requestId: string
+  customerPhone: string | null
+  category: string
+  providerName: string
+  callOutFee: Parameters<typeof decimalToNumber>[0]
+  estimatedArrivalAt: Date | null
+}) {
+  if (!params.customerPhone) return { sent: false as const, reason: 'no_customer_phone' }
+  const rawUrl = await getJobRequestAccessUrl(params.requestId).catch(() => null)
+  const safeTicketUrl = rawUrl?.startsWith('https://') ? rawUrl : null
+  if (!safeTicketUrl && rawUrl) {
+    console.warn('[customer-shortlists] dropped CTA URL — non-https ticket url', { requestId: params.requestId })
+  }
+  const feeDisplay = params.callOutFee != null ? `R${decimalToNumber(params.callOutFee)}` : 'To be confirmed'
+  const etaDisplay = params.estimatedArrivalAt
+    ? params.estimatedArrivalAt.toLocaleString('en-ZA', { timeStyle: 'short', dateStyle: 'medium' })
+    : 'To be confirmed'
+  await sendText({
+    to: params.customerPhone,
+    text:
+      `Good news. ${params.providerName} is available for your ${params.category} request.\n\n` +
+      `Call-out fee: ${feeDisplay}\n` +
+      `Estimated arrival: ${etaDisplay}\n\n` +
+      `Choose this provider or ask us to try another.` +
+      (safeTicketUrl ? `\n\nYour options are available below.` : ''),
+    templateName: 'interactive:client_quick_match_available',
+    metadata: { requestId: params.requestId },
+  })
+  if (safeTicketUrl) {
+    await sendCtaUrl(
+      params.customerPhone,
+      'Your options are available below.',
+      ctaLabelFor('generic_details'),
+      safeTicketUrl,
+      undefined,
+      { templateName: 'interactive:client_quick_match_available_cta', metadata: { requestId: params.requestId } },
+    )
+  }
+  return { sent: true as const }
 }
 
 async function notifyCustomerShortlistReady(params: {
@@ -138,7 +191,11 @@ async function notifyCustomerShortlistReady(params: {
   optionCount: number
 }) {
   if (!params.customerPhone) return { sent: false as const, reason: 'no_customer_phone' }
-  const ticketUrl = await getJobRequestAccessUrl(params.requestId, 'shortlist').catch(() => null)
+  const rawUrl = await getJobRequestAccessUrl(params.requestId, 'shortlist').catch(() => null)
+  const safeTicketUrl = rawUrl?.startsWith('https://') ? rawUrl : null
+  if (!safeTicketUrl && rawUrl) {
+    console.warn('[customer-shortlists] dropped CTA URL — non-https ticket url', { requestId: params.requestId })
+  }
   const area = [params.suburb, params.city].filter(Boolean).join(', ')
   await sendText({
     to: params.customerPhone,
@@ -147,16 +204,16 @@ async function notifyCustomerShortlistReady(params: {
       `${params.optionCount} suitable provider${params.optionCount === 1 ? '' : 's'} in ${area || 'your area'} responded with their call-out fee and earliest arrival.\n\n` +
       `You can compare providers before choosing.\n\n` +
       `Choose the provider you'd like for this job. Your phone number and exact address will only be shared after you select a provider and they accept.` +
-      (ticketUrl ? `\n\nProvider selection is available below.` : ''),
+      (safeTicketUrl ? `\n\nProvider selection is available below.` : ''),
     templateName: 'interactive:client_shortlist_ready',
     metadata: { requestId: params.requestId },
   })
-  if (ticketUrl) {
+  if (safeTicketUrl) {
     await sendCtaUrl(
       params.customerPhone,
       'Provider selection is available below.',
       ctaLabelFor('generic_details'),
-      ticketUrl,
+      safeTicketUrl,
       undefined,
       { templateName: 'interactive:client_shortlist_ready_cta', metadata: { requestId: params.requestId } },
     )

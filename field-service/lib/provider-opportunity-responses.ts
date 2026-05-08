@@ -6,6 +6,7 @@ import { normaliseLocationDisplayName } from './location-format'
 import { previewNotes } from './provider-lead-detail'
 import { validateProviderOnboardingRates } from './provider-onboarding-data'
 import { sendText } from './whatsapp-interactive'
+import { notifyCustomerRfpResponseSummary } from './review-first'
 
 export type ProviderOpportunityResponseInput = {
   leadId: string
@@ -294,13 +295,16 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
           },
         ).catch(() => undefined)
       }
+      await notifyCustomerRfpResponseSummary(jobRequestIdForTrigger).catch(() => undefined)
     }
+  }
+
+  if (input.response === 'INTERESTED' && jobRequestIdForTrigger) {
+    await notifyCustomerRfpResponseSummary(jobRequestIdForTrigger).catch(() => undefined)
   }
 
   return { response, creditsDeducted: 0 }
 }
-
-const DEFAULT_AUTO_TRIGGER_THRESHOLD = 2
 
 async function maybeAutoTriggerShortlist(requestId: string) {
   const enabled = await isEnabled('qualified_shortlist.auto_trigger').catch(() => false)
@@ -319,7 +323,7 @@ async function maybeAutoTriggerShortlist(requestId: string) {
     ? 1
     : Math.max(
         1,
-        Number(process.env.SHORTLIST_AUTO_TRIGGER_THRESHOLD) || DEFAULT_AUTO_TRIGGER_THRESHOLD,
+        Number(process.env.SHORTLIST_AUTO_TRIGGER_THRESHOLD) || 2,
       )
   const interestedCount = await db.providerLeadResponse.count({
     where: {
@@ -338,5 +342,9 @@ async function maybeAutoTriggerShortlist(requestId: string) {
   if (interestedCount < threshold) return
 
   const { generateCustomerShortlistForRequest } = await import('./customer-shortlists')
-  await generateCustomerShortlistForRequest(requestId)
+  if (request.assignmentMode === 'AUTO_ASSIGN') {
+    await generateCustomerShortlistForRequest(requestId, 1, { quickMatch: true })
+  } else {
+    await generateCustomerShortlistForRequest(requestId)
+  }
 }

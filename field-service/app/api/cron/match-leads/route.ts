@@ -14,6 +14,7 @@ import { sendLeadReminders } from '@/lib/matching-engine'
 import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from '@/lib/matching/service'
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
+import { expireRfpInvitations } from '@/lib/review-first'
 import { reconcileProviderRecordsFromApplications } from '@/lib/provider-record'
 import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-application-notifications'
 import { routeProviderApplicationsForOpsReview } from '@/lib/provider-application-review-support'
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0 }
+  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0, rfpExpired: 0 }
 
   // 0. Reconcile stale capacity counters (safety net — corrects counter drift)
   try {
@@ -63,6 +64,8 @@ export async function GET(request: Request) {
     const workflowResult = await processPendingAssignmentWorkflows()
     results.expired = workflowResult.expiredOffers
     results.reoffered = workflowResult.reoffered
+    const rfpResult = await expireRfpInvitations()
+    results.rfpExpired = rfpResult.expiredCount
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error processing assignment workflows:`, err)
     results.errors++

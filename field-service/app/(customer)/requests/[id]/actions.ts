@@ -12,6 +12,11 @@ import {
   CustomerShortlistError,
 } from '@/lib/customer-shortlists'
 import { selectCustomerRequestMatchingMode, type CustomerMatchingMode } from '@/lib/request-matching-mode'
+import {
+  ReviewFirstError,
+  shortlistProviderForCustomerReview,
+  sendRequestToShortlistedProviders,
+} from '@/lib/review-first'
 
 async function resolveCustomerPhone(): Promise<string | null> {
   const session = await getSession()
@@ -98,6 +103,38 @@ export async function chooseMatchingModeAction(
   const customerId = await resolveCustomerIdForRequest(requestId)
   if (!customerId) throw new Error('Not authenticated')
   await selectCustomerRequestMatchingMode({ requestId, customerId, mode })
+  revalidatePath(`/requests/${requestId}`)
+  revalidatePath('/bookings')
+}
+
+export async function shortlistReviewProviderAction(
+  requestId: string,
+  providerId: string,
+  _formData: FormData,
+): Promise<void> {
+  const customerId = await resolveCustomerIdForRequest(requestId)
+  if (!customerId) throw new Error('Not authenticated')
+  try {
+    await shortlistProviderForCustomerReview({ requestId, customerId, providerId })
+  } catch (error) {
+    if (error instanceof ReviewFirstError) throw error
+    throw new Error('Could not shortlist provider right now.')
+  }
+  revalidatePath(`/requests/${requestId}`)
+}
+
+export async function sendReviewShortlistAction(
+  requestId: string,
+  _formData: FormData,
+): Promise<void> {
+  const customerId = await resolveCustomerIdForRequest(requestId)
+  if (!customerId) throw new Error('Not authenticated')
+  try {
+    await sendRequestToShortlistedProviders({ requestId, customerId })
+  } catch (error) {
+    if (error instanceof ReviewFirstError) throw error
+    throw new Error('Could not send request to shortlisted providers.')
+  }
   revalidatePath(`/requests/${requestId}`)
   revalidatePath('/bookings')
 }
