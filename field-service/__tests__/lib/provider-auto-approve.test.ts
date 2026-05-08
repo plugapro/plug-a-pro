@@ -231,15 +231,8 @@ describe('provider auto-approval', () => {
       providerApplication: {
         findMany: vi.fn().mockResolvedValue([standardApplication]),
       },
-      $queryRaw: vi.fn()
-        .mockResolvedValueOnce([{ column_name: 'providerId' }, { column_name: 'awardType' }, { column_name: 'referenceType' }, { column_name: 'referenceId' }, { column_name: 'status' }, { column_name: 'metadata' }])
-        .mockResolvedValueOnce([
-          { enumlabel: 'MOBILE_VERIFIED' },
-          { enumlabel: 'PROFILE_COMPLETED' },
-          { enumlabel: 'KYC_APPROVED' },
-          { enumlabel: 'FIRST_TOPUP' },
-          { enumlabel: 'FIRST_COMPLETED_JOB' },
-        ]),
+      // Promo schema passes; marker schema absent → forces direct (non-marker) execution path.
+      providerPromoAward: { count: vi.fn().mockResolvedValue(0) },
       $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
     }
 
@@ -272,28 +265,10 @@ describe('provider auto-approval', () => {
     }
 
     const markerStorage = {
+      findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockRejectedValue(new Error('relation \"provider_auto_approve_side_effect_markers\" does not exist')),
       update: vi.fn().mockResolvedValue(undefined),
     }
-
-    const markerAndPromoPreflight = [
-      // promo schema columns
-      [{ column_name: 'providerId' }, { column_name: 'awardType' }, { column_name: 'referenceType' }, { column_name: 'referenceId' }, { column_name: 'status' }, { column_name: 'metadata' }],
-      // promo schema enum
-      [
-        { enumlabel: 'MOBILE_VERIFIED' },
-        { enumlabel: 'PROFILE_COMPLETED' },
-        { enumlabel: 'KYC_APPROVED' },
-        { enumlabel: 'FIRST_TOPUP' },
-        { enumlabel: 'FIRST_COMPLETED_JOB' },
-      ],
-      // marker schema columns
-      [{ column_name: 'id' }, { column_name: 'kind' }, { column_name: 'applicationId' }, { column_name: 'providerId' }, { column_name: 'sourceRefType' }, { column_name: 'sourceRefId' }, { column_name: 'status' }, { column_name: 'reason' }, { column_name: 'retryCount' }, { column_name: 'lastError' }, { column_name: 'runId' }, { column_name: 'attemptedAt' }, { column_name: 'nextRetryAt' }, { column_name: 'createdAt' }, { column_name: 'updatedAt' }],
-      // marker kind enum
-      [{ enumlabel: 'PROMO_AWARD' }, { enumlabel: 'NOTIFICATION' }, { enumlabel: 'MATCH_RECHECK' }],
-      // marker status enum
-      [{ enumlabel: 'PENDING' }, { enumlabel: 'DONE' }, { enumlabel: 'FAILED' }],
-    ]
 
     const client: any = {
       providerApplication: {
@@ -305,13 +280,10 @@ describe('provider auto-approval', () => {
           name: standardApplication.name,
         }),
       },
+      providerPromoAward: { count: vi.fn().mockResolvedValue(0) },
       providerAutoApproveSideEffectMarker: markerStorage,
-      $queryRaw: vi.fn(),
       $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
     }
-
-    const query = client.$queryRaw as ReturnType<typeof vi.fn>
-    markerAndPromoPreflight.forEach((row) => query.mockResolvedValueOnce(row))
 
     mockAwardPromoCreditsForMilestone.mockResolvedValue({
       awarded: false,

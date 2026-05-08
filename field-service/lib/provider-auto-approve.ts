@@ -69,12 +69,13 @@ type AutoApproveDb = {
     updateMany: (args: any) => Promise<{ count: number }>
   }
   providerAutoApproveSideEffectMarker?: SideEffectMarkerClient
+  providerPromoAward?: {
+    count: (args?: any) => Promise<number>
+  }
   providerCategory?: {
     createMany: (args: any) => Promise<{ count: number }>
     updateMany: (args: any) => Promise<{ count: number }>
   }
-  $queryRaw?: (...args: any[]) => Promise<unknown>
-  $queryRawUnsafe?: (query: string, ...values: any[]) => Promise<unknown>
   $transaction: (callbackOrOps: any, options?: any) => Promise<unknown>
 }
 
@@ -214,109 +215,24 @@ function markerRunResult(
 }
 
 async function checkProviderPromoAwardSchemaCompatibility(client: AutoApproveDb): Promise<PreflightResult> {
-  const reasons: string[] = []
-  const runRaw = client.$queryRawUnsafe ?? client.$queryRaw
-  if (!runRaw) {
-    return { isCompatible: false, reasons: ['SCHEMA_CHECK_INTERFACE_MISSING'] }
+  if (!client.providerPromoAward?.count) {
+    return { isCompatible: false, reasons: ['PROMO_AWARD_MODEL_MISSING'] }
   }
-
-  const execRaw = (sql: string) => (runRaw as (q: string) => Promise<unknown>)(sql)
-
   try {
-    const columns = await execRaw(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'provider_promo_awards'`,
-    ) as Array<{ column_name: string }>
-
-    const availableColumns = new Set(columns.map((row) => row.column_name))
-    const requiredColumns = ['providerId', 'awardType', 'referenceType', 'referenceId', 'status', 'metadata']
-    const missingColumns = requiredColumns.filter((columnName) => !availableColumns.has(columnName))
-    if (missingColumns.length > 0) {
-      reasons.push(`PROMO_AWARD_SCHEMA_MISSING_COLUMNS:${missingColumns.join(',')}`)
-    }
-
-    const enumValues = await execRaw(
-      `SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'ProviderPromoAwardType' ORDER BY e.enumsortorder`,
-    ) as Array<{ enumlabel: string }>
-
-    const expectedValues = new Set([
-      'MOBILE_VERIFIED',
-      'PROFILE_COMPLETED',
-      'KYC_APPROVED',
-      'FIRST_TOPUP',
-      'FIRST_COMPLETED_JOB',
-    ])
-    const actualValues = new Set(enumValues.map((row) => row.enumlabel))
-    const missingEnumValues = [...expectedValues].filter((value) => !actualValues.has(value))
-    if (missingEnumValues.length > 0) {
-      reasons.push(`PROMO_AWARD_SCHEMA_ENUM_VALUES_MISSING:${missingEnumValues.join(',')}`)
-    }
-
-    if (enumValues.length === 0) {
-      reasons.push('PROMO_AWARD_SCHEMA_ENUM_MISSING')
-    }
-
-    return { isCompatible: reasons.length === 0, reasons }
+    await client.providerPromoAward.count({})
+    return { isCompatible: true, reasons: [] }
   } catch (error) {
-    const message = toErrorText(error)
-    return { isCompatible: false, reasons: [`PROMO_AWARD_SCHEMA_PRECHECK_FAILED:${message}`] }
+    return { isCompatible: false, reasons: [`PROMO_AWARD_SCHEMA_PRECHECK_FAILED:${toErrorText(error)}`] }
   }
 }
 
 async function checkProviderAutoApproveSideEffectSchemaCompatibility(client: AutoApproveDb): Promise<PreflightResult> {
-  const reasons: string[] = []
-  const runRaw = client.$queryRawUnsafe ?? client.$queryRaw
-  if (!runRaw) {
-    return { isCompatible: false, reasons: ['SIDE_EFFECT_SCHEMA_INTERFACE_MISSING'] }
+  if (!client.providerAutoApproveSideEffectMarker?.findMany) {
+    return { isCompatible: false, reasons: ['SIDE_EFFECT_MODEL_MISSING'] }
   }
-
-  const execRaw = (sql: string) => (runRaw as (q: string) => Promise<unknown>)(sql)
-
   try {
-    const columns = await execRaw(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'provider_auto_approve_side_effect_markers'`,
-    ) as Array<{ column_name: string }>
-
-    const availableColumns = new Set(columns.map((row) => row.column_name))
-    const missingColumns = AUTO_APPROVE_SIDE_EFFECT_MARKER_REQUIRED_COLUMNS.filter(
-      (columnName) => !availableColumns.has(columnName),
-    )
-    if (missingColumns.length > 0) {
-      reasons.push(`SIDE_EFFECT_SCHEMA_MISSING_COLUMNS:${missingColumns.join(',')}`)
-    }
-
-    const kindValues = await execRaw(
-      `SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'ProviderAutoApproveSideEffectKind' ORDER BY e.enumsortorder`,
-    ) as Array<{ enumlabel: string }>
-
-    const statusValues = await execRaw(
-      `SELECT e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'ProviderAutoApproveSideEffectStatus' ORDER BY e.enumsortorder`,
-    ) as Array<{ enumlabel: string }>
-
-    const expectedKinds = new Set(AUTO_APPROVE_SIDE_EFFECT_KINDS)
-    const expectedStatuses = new Set(AUTO_APPROVE_SIDE_EFFECT_STATUSES)
-    const presentKinds = new Set(kindValues.map((row) => row.enumlabel))
-    const presentStatuses = new Set(statusValues.map((row) => row.enumlabel))
-
-    const missingKinds = [...expectedKinds].filter((kind) => !presentKinds.has(kind))
-    const missingStatuses = [...expectedStatuses].filter((status) => !presentStatuses.has(status))
-
-    if (missingKinds.length > 0) {
-      reasons.push(`SIDE_EFFECT_KIND_ENUM_VALUES_MISSING:${missingKinds.join(',')}`)
-    }
-
-    if (missingStatuses.length > 0) {
-      reasons.push(`SIDE_EFFECT_STATUS_ENUM_VALUES_MISSING:${missingStatuses.join(',')}`)
-    }
-
-    if (kindValues.length === 0) {
-      reasons.push('SIDE_EFFECT_KIND_ENUM_MISSING')
-    }
-
-    if (statusValues.length === 0) {
-      reasons.push('SIDE_EFFECT_STATUS_ENUM_MISSING')
-    }
-
-    return { isCompatible: reasons.length === 0, reasons }
+    await client.providerAutoApproveSideEffectMarker.findMany({ where: { id: '__precheck__' }, take: 0 })
+    return { isCompatible: true, reasons: [] }
   } catch (error) {
     if (isSchemaError(error)) {
       return { isCompatible: false, reasons: ['SIDE_EFFECT_SCHEMA_MISSING_OR_INCOMPATIBLE'] }
