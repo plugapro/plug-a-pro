@@ -336,7 +336,12 @@ export default async function RequestDetailPage({
                       </div>
                     ) : (
                       jobRequest.status === 'SHORTLIST_READY' && (
-                        <form action={selectShortlistProviderAction.bind(null, jobRequest.id, item.id)}>
+                        <form
+                          action={async (formData) => {
+                            'use server'
+                            await selectShortlistProviderAction(jobRequest.id, item.id, formData)
+                          }}
+                        >
                           <Button type="submit" className="w-full">
                             Select provider
                           </Button>
@@ -351,14 +356,24 @@ export default async function RequestDetailPage({
           {(canRequestMoreOptions || canCancelRequest) && (
             <div className="grid grid-cols-2 gap-2">
               {canRequestMoreOptions && (
-                <form action={requestMoreShortlistOptionsAction.bind(null, jobRequest.id)}>
+                <form
+                  action={async (formData) => {
+                    'use server'
+                    await requestMoreShortlistOptionsAction(jobRequest.id, formData)
+                  }}
+                >
                   <Button type="submit" variant="outline" className="w-full">
                     Ask for more options
                   </Button>
                 </form>
               )}
               {canCancelRequest && (
-                <form action={cancelRequestFromShortlistAction.bind(null, jobRequest.id)}>
+                <form
+                  action={async (formData) => {
+                    'use server'
+                    await cancelRequestFromShortlistAction(jobRequest.id, formData)
+                  }}
+                >
                   <Button type="submit" variant="ghost" className="w-full text-destructive">
                     Cancel request
                   </Button>
