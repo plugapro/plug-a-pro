@@ -27,6 +27,9 @@ describe('internal test cohort', () => {
       ['0827006695', '+27827006695'],
       ['27827006695', '+27827006695'],
       ['+27827006695', '+27827006695'],
+      ['0738131154', '+27738131154'],
+      ['27738131154', '+27738131154'],
+      ['+27738131154', '+27738131154'],
     ] as const
 
     for (const [input, normalized] of cases) {
@@ -47,6 +50,7 @@ describe('internal test cohort', () => {
       '+27832114183',
       '+27824978565',
       '+27827006695',
+      '+27738131154',
     ])
     expect(isInternalTestPhone('+27821234567')).toBe(false)
     expect(createTestCohortContext('0821234567')).toEqual({
