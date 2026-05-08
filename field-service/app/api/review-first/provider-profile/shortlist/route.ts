@@ -3,12 +3,21 @@ import { resolveReviewProviderProfileToken } from '@/lib/review-provider-profile
 import { shortlistProviderForCustomerReview } from '@/lib/review-first'
 
 export async function POST(req: Request) {
+  const reqOrigin = new URL(req.url).origin
   const origin = req.headers.get('origin')
+  const referer = req.headers.get('referer')
   if (origin) {
-    const reqOrigin = new URL(req.url).origin
-    if (origin !== reqOrigin) {
+    if (origin !== reqOrigin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  } else if (referer) {
+    try {
+      const refererOrigin = new URL(referer).origin
+      if (refererOrigin !== reqOrigin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    } catch {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+  } else {
+    // Require at least Origin or Referer so cross-site form posts cannot pass.
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const form = await req.formData()

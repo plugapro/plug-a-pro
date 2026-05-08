@@ -244,8 +244,13 @@ Archive legacy dispatch mode code paths once 2 weeks of clean production data ar
 | 10 | Attachment access uses job ownership, not uploader | DONE — `attachments-authz.test.ts` regression added |
 | 11 | Credit ledger entries carry idempotencyKey and traceId | DONE — enforced in `provider-acceptance-credit-unlock.test.ts` |
 | 12 | Negative credit balance impossible (INSUFFICIENT_FUNDS + optimistic lock) | DONE — `provider-credit-balance-and-ledger-flow.test.ts` |
-| 13 | Playwright smoke suite references valid routes only | PENDING — `e2e/smoke.spec.ts` still references `/admin/breached` and `/admin/supply` which have no matching app routes; update required before Phase 8 cutover |
+| 13 | Playwright smoke suite references valid routes only | DONE — `e2e/smoke.spec.ts` now derives admin routes from `lib/admin-nav-routes.ts` and asserts stale routes (`/admin/breached`, `/admin/supply`) are excluded |
 | 14 | OpenBrain knowledge log entry filed for each completed step | DONE — all 15 prior steps logged |
+| 15 | Dedicated Fast Match regression sweep must pass before release (`npm test -- --run __tests__/lib/fast-match-regression-sweep.test.ts`) | DONE — `__tests__/lib/fast-match-regression-sweep.test.ts` (mode-gating, TTL config default/override, copy/privacy/credit wording invariants) |
+| 16 | Cross-channel journey harness must pass (`npm run test:e2e:journeys`) | DONE — `__tests__/integration/cross-channel-release-harness.test.ts` verifies mode selection → provider response → customer selection → final acceptance credit invariants |
+| 17 | Status-vocabulary mapping coverage must pass (`npm test -- --run __tests__/lib/journey-status-vocabulary.test.ts`) | DONE — canonical mapping layer in `lib/journey-status-vocabulary.ts` with full request-status matrix coverage |
+| 18 | Fast Match KPI soft gate evidence generated for release (`npm run ops:fast-match:kpi-report -- --days=7 --json`) | DONE — script added at `scripts/report-fast-match-kpis.ts`; required by closeout gates runbook |
+| 19 | Live WhatsApp harness evidence captured (`npm run ops:whatsapp:live-harness -- --request-id=<id>`) | DONE — live observer script added at `scripts/run-live-whatsapp-harness.ts`; required by closeout gates runbook |
 
 ---
 

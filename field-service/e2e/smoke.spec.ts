@@ -10,6 +10,7 @@
 //   E2E_ADMIN_PASSWORD — password of the test admin account
 
 import { test, expect, type Page } from '@playwright/test'
+import { ADMIN_SMOKE_ROUTES, CLIENT_PUBLIC_SMOKE_ROUTES } from '../lib/admin-nav-routes'
 
 // ─── Sign-in helper ───────────────────────────────────────────────────────────
 // The admin sign-in form is at /admin-sign-in and uses email/password inputs
@@ -30,27 +31,17 @@ test.beforeEach(async ({ page }) => {
 
 // ─── Admin list routes ────────────────────────────────────────────────────────
 
-const ADMIN_LIST_ROUTES = [
-  '/admin',
-  '/admin/validation',
-  '/admin/dispatch',
-  '/admin/field-exceptions',
-  '/admin/flows',
-  '/admin/quotes',
-  '/admin/bookings',
-  '/admin/matches',
-  '/admin/applications',
-  '/admin/providers',
-  '/admin/customers',
-  '/admin/categories',
-  '/admin/locations',
-  '/admin/disputes',
-  '/admin/payments',
-  '/admin/reports',
-  '/admin/messages',
-  '/admin/services',
-  '/admin/settings',
-]
+const ADMIN_LIST_ROUTES = [...ADMIN_SMOKE_ROUTES]
+
+// Explicit stale routes that previously appeared in smoke checks.
+// Keeping this assertion in the suite prevents route-regression drift.
+const KNOWN_STALE_ADMIN_ROUTES = ['/admin/breached', '/admin/supply'] as const
+
+test('smoke route source excludes known stale admin routes', () => {
+  for (const staleRoute of KNOWN_STALE_ADMIN_ROUTES) {
+    expect(ADMIN_LIST_ROUTES).not.toContain(staleRoute)
+  }
+})
 
 for (const route of ADMIN_LIST_ROUTES) {
   test(`list route renders without error: ${route}`, async ({ page }) => {
@@ -65,10 +56,7 @@ for (const route of ADMIN_LIST_ROUTES) {
 // ─── Public client-PWA routes ────────────────────────────────────────────────
 // These routes are customer-facing handoff/recovery pages that must not 404
 // in production smoke checks.
-const CLIENT_PUBLIC_ROUTES = [
-  '/requests/access/recovery?reason=invalid',
-  '/book/plumbing',
-]
+const CLIENT_PUBLIC_ROUTES = [...CLIENT_PUBLIC_SMOKE_ROUTES]
 
 for (const route of CLIENT_PUBLIC_ROUTES) {
   test(`client route renders without error: ${route}`, async ({ page }) => {
