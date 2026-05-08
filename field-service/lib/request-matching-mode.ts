@@ -102,6 +102,7 @@ export async function selectCustomerRequestMatchingMode(params: {
   if (params.mode === 'review_first') {
     await getProviderCandidatesForCustomerReview({
       requestId: request.id,
+      customerId: params.customerId,
       batch: 1,
     }).catch((error) => {
       console.error('[request-matching-mode] review-first candidate generation failed', {

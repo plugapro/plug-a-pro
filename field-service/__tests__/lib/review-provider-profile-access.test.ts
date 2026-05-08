@@ -25,6 +25,33 @@ describe('review provider profile access token', () => {
     expect(verified.payload?.providerId).toBe('prov-1')
   })
 
+  it('returns expired for a token past its exp timestamp', async () => {
+    const { createReviewProviderProfileToken, verifyReviewProviderProfileToken } = await import('../../lib/review-provider-profile-access')
+    const pastDate = new Date(Date.now() - 1000)
+    const token = createReviewProviderProfileToken({ requestId: 'req-1', providerId: 'prov-1', expiresAt: pastDate })
+    const verified = verifyReviewProviderProfileToken(token)
+    expect(verified.status).toBe('expired')
+    expect(verified.payload?.providerId).toBe('prov-1')
+  })
+
+  it('rejects a token with tampered payload (providerId changed)', async () => {
+    const { createReviewProviderProfileToken, verifyReviewProviderProfileToken } = await import('../../lib/review-provider-profile-access')
+    const token = createReviewProviderProfileToken({ requestId: 'req-1', providerId: 'prov-1' })
+    const [, signature] = token.split('.')
+    const tamperedPayload = Buffer.from(JSON.stringify({ v: 1, requestId: 'req-1', providerId: 'prov-EVIL', exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')
+    const tampered = `${tamperedPayload}.${signature}`
+    const verified = verifyReviewProviderProfileToken(tampered)
+    expect(verified.status).toBe('invalid')
+  })
+
+  it('rejects a token with stripped signature', async () => {
+    const { createReviewProviderProfileToken, verifyReviewProviderProfileToken } = await import('../../lib/review-provider-profile-access')
+    const token = createReviewProviderProfileToken({ requestId: 'req-1', providerId: 'prov-1' })
+    const [encodedPayload] = token.split('.')
+    const verified = verifyReviewProviderProfileToken(encodedPayload)
+    expect(verified.status).toBe('invalid')
+  })
+
   it('resolves active token to safe provider view data', async () => {
     const { resolveReviewProviderProfileToken, createReviewProviderProfileToken } = await import('../../lib/review-provider-profile-access')
 

@@ -19,12 +19,10 @@ function getSigningSecret() {
   const secret =
     process.env.REVIEW_PROVIDER_PROFILE_ACCESS_SECRET ||
     process.env.PROVIDER_LEAD_ACCESS_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    process.env.WHATSAPP_APP_SECRET ||
-    process.env.CRON_SECRET
+    process.env.NEXTAUTH_SECRET
 
   if (!secret) {
-    throw new Error('Missing review provider profile signing secret')
+    throw new Error('Missing review provider profile signing secret. Set REVIEW_PROVIDER_PROFILE_ACCESS_SECRET.')
   }
 
   return secret

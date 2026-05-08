@@ -154,11 +154,21 @@ async function ensureReviewRankingDecision(params: {
 
 export async function getProviderCandidatesForCustomerReview(params: {
   requestId: string
+  customerId: string
   batch?: number
 }) {
   const batch = params.batch ?? 1
   if (batch < 1 || batch > MAX_PROVIDER_REVIEW_BATCHES) {
     throw new ReviewFirstError('INVALID_BATCH', 'Invalid provider batch.')
+  }
+
+  const ownerCheck = await db.jobRequest.findUnique({
+    where: { id: params.requestId },
+    select: { id: true, customerId: true },
+  })
+  if (!ownerCheck) throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
+  if (ownerCheck.customerId !== params.customerId) {
+    throw new ReviewFirstError('FORBIDDEN', 'Not allowed for this request.')
   }
 
   const decisionId = await ensureReviewRankingDecision({ requestId: params.requestId })
@@ -346,29 +356,14 @@ export async function shortlistProviderForCustomerReview(params: {
     },
   })
 
-  const shortlist = await db.providerShortlist.upsert({
-    where: {
-      id: `${request.id}-draft`,
-    },
-    create: {
-      id: `${request.id}-draft`,
-      requestId: request.id,
-      status: 'DRAFT',
-    },
-    update: {
-      status: 'DRAFT',
-    },
-  }).catch(async () => {
-    const existing = await db.providerShortlist.findFirst({
+  const shortlist = await db.$transaction(async (tx) => {
+    const existing = await tx.providerShortlist.findFirst({
       where: { requestId: request.id, status: 'DRAFT' },
       select: { id: true },
     })
-    if (existing) return { id: existing.id }
-    return db.providerShortlist.create({
-      data: {
-        requestId: request.id,
-        status: 'DRAFT',
-      },
+    if (existing) return existing
+    return tx.providerShortlist.create({
+      data: { requestId: request.id, status: 'DRAFT' },
       select: { id: true },
     })
   })
@@ -665,10 +660,14 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
   if (!request?.customer?.phone) return
 
   const total = request.leads.length
-  if (total === 0) return
+  if (total === 0) {
+    console.warn('[review-first] notifyCustomerRfpResponseSummary: no active leads found', { requestId })
+    return
+  }
   const available = request.leads.filter((lead) => lead.providerResponses.length > 0)
   const declined = request.leads.filter((lead) => lead.status === 'DECLINED')
-  const responded = available.length + declined.length
+  const respondedIds = new Set([...available.map((l) => l.id), ...declined.map((l) => l.id)])
+  const responded = respondedIds.size
   const pending = request.leads.filter(
     (lead) => (lead.status === 'SENT' || lead.status === 'VIEWED') && lead.providerResponses.length === 0,
   )
@@ -741,7 +740,6 @@ export async function expireRfpInvitations() {
     data: {
       status: 'EXPIRED',
       expiredAt: now,
-      respondedAt: now,
     },
   })
 

@@ -3,6 +3,14 @@ import { resolveReviewProviderProfileToken } from '@/lib/review-provider-profile
 import { shortlistProviderForCustomerReview } from '@/lib/review-first'
 
 export async function POST(req: Request) {
+  const origin = req.headers.get('origin')
+  if (origin) {
+    const reqOrigin = new URL(req.url).origin
+    if (origin !== reqOrigin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
   const form = await req.formData()
   const token = String(form.get('token') ?? '')
   if (!token) {

@@ -22,6 +22,20 @@ describe('POST /api/review-first/provider-profile/shortlist', () => {
     vi.clearAllMocks()
   })
 
+  it('rejects cross-origin POST (CSRF check)', async () => {
+    const { POST } = await import('@/app/api/review-first/provider-profile/shortlist/route')
+    const formData = new FormData()
+    formData.set('token', 'tok-1')
+    const req = new NextRequest('http://localhost/api/review-first/provider-profile/shortlist', {
+      method: 'POST',
+      body: formData,
+      headers: { origin: 'https://attacker.example.com' },
+    })
+    const response = await POST(req)
+    expect(response.status).toBe(403)
+    expect(mockResolveReviewProviderProfileToken).not.toHaveBeenCalled()
+  })
+
   it('rejects missing token', async () => {
     const { POST } = await import('@/app/api/review-first/provider-profile/shortlist/route')
     const req = new NextRequest('http://localhost/api/review-first/provider-profile/shortlist', {
