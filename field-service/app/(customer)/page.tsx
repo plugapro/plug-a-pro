@@ -1,117 +1,193 @@
-// Customer home — marketing landing page with job category catalogue
-// SSR: always fresh
-// Mobile-first, link-shareable
-
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
-import type { LucideIcon } from 'lucide-react'
 import {
-  Star, ChevronRight,
-  Wrench, Calendar,
-  Droplets, Paintbrush, Leaf, Hammer, Plug, Zap, House,
-  SprayCan, Grid2x2, Bug, Wind, HelpCircle, Layers,
+  ArrowRight,
+  Droplets,
+  Hammer,
+  Zap,
+  Paintbrush,
+  Sparkles,
+  Wrench,
+  Search,
+  ShieldCheck,
+  MessageCircle,
+  Users,
+  CheckCircle2,
 } from 'lucide-react'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
 export const metadata = buildMetadata({
-  title: 'Request local home services',
-  description: 'Describe the job, review written quotes, and choose a nearby provider.',
+  title: 'Find trusted service providers near you',
+  description:
+    'Search providers, compare profiles, request service, and get WhatsApp updates.',
 })
 
-// Icon mapping — one place to maintain as categories evolve.
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  plumbing:        Droplets,
-  painting:        Paintbrush,
-  garden:          Leaf,
-  handyman:        Hammer,
-  appliances:      Plug,
-  electrical:      Zap,
-  diy:             Wrench,
-  roofing:         House,
-  cleaning:        SprayCan,
-  tiling:          Grid2x2,
-  pest_control:    Bug,
-  carpentry:       Hammer,
-  waterproofing:   Layers,
-  air_conditioning: Wind,
-  other:           HelpCircle,
-}
-
-const CATEGORIES = SERVICE_CATEGORY_OPTIONS.map((cat) => ({
-  slug: cat.tag,
-  name: cat.label,
-  description: cat.description,
-  icon: CATEGORY_ICONS[cat.tag] ?? Wrench,
-}))
+const QUICK_CATEGORIES = [
+  { label: 'Plumbing', href: '/providers?category=plumbing', icon: Droplets },
+  { label: 'Handyman', href: '/providers?category=handyman', icon: Hammer },
+  { label: 'Electrical', href: '/providers?category=electrical', icon: Zap },
+  { label: 'Carpentry', href: '/providers?category=carpentry', icon: Wrench },
+  { label: 'Cleaning', href: '/providers?category=cleaning', icon: Sparkles },
+  { label: 'Painting', href: '/providers?category=painting', icon: Paintbrush },
+  { label: 'Appliance Repairs', href: '/providers?category=appliances', icon: Wrench },
+  { label: 'Geyser', href: '/providers?category=plumbing&q=geyser', icon: Droplets },
+]
 
 export default async function CustomerHomePage() {
   return (
-    <div className="min-h-screen">
-      <section className="relative overflow-hidden px-4 py-16 sm:py-24">
-        <div className="app-hero-surface mx-auto max-w-5xl px-6 py-12 text-center sm:px-10 sm:py-16">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border tone-brand px-3 py-1 text-xs font-medium">
-            <Star className="h-3 w-3" />
-            Built for written quotes and tracked jobs
+    <main className="mx-auto w-full max-w-lg space-y-6 px-4 py-6">
+      <section className="rounded-2xl border bg-card p-5 shadow-sm">
+        <p className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
+          <ShieldCheck className="h-3.5 w-3.5" />
+          Mobile service marketplace
+        </p>
+        <h1 className="mt-3 text-2xl font-semibold leading-tight">
+          Find trusted service providers near you
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Search for plumbers, handymen, electricians, carpenters and more. Compare profiles,
+          request service, and get updates on WhatsApp.
+        </p>
+
+        <form action="/providers" method="get" className="mt-4">
+          <label htmlFor="provider-search" className="sr-only">
+            Search providers
+          </label>
+          <div className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <input
+              id="provider-search"
+              name="q"
+              placeholder="Search plumbers, handymen, carpenters..."
+              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
           </div>
-          <h1 className="mb-4 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-            Request local home services
-          </h1>
-          <p className="mx-auto mb-8 max-w-2xl text-lg font-medium text-muted-foreground sm:text-xl">
-            Nearby providers. Written quotes. Clear records.
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <Button asChild size="lg" className="text-base font-semibold">
-              <Link href="/services">
-                Request a job
-                <ChevronRight className="ml-1 h-4 w-4" />
+        </form>
+
+        <div className="mt-4 grid grid-cols-1 gap-2">
+          <Button asChild size="lg" className="justify-between">
+            <Link href="/providers">
+              Find a provider
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+          <Button asChild size="lg" variant="outline" className="justify-between">
+            <Link href="/services">
+              Request a service
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+          <Button asChild size="lg" variant="secondary" className="justify-between">
+            <Link href="/provider-sign-in">
+              Join as a service provider
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Browse by category
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {QUICK_CATEGORIES.map((category) => {
+            const Icon = category.icon
+            return (
+              <Link
+                key={category.label}
+                href={category.href}
+                className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2 text-sm font-medium hover:bg-muted/40"
+              >
+                <Icon className="h-4 w-4 text-primary" />
+                <span className="truncate">{category.label}</span>
               </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline" className="text-base font-semibold">
-              <Link href="/bookings">Track my booking</Link>
-            </Button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-card p-4">
+        <p className="text-sm font-medium">Where do you need help?</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Add your suburb or city in provider search to find a closer match.
+        </p>
+      </section>
+
+      <section className="rounded-2xl border bg-card p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          How it works
+        </p>
+        <div className="mt-3 space-y-3 text-sm">
+          <div className="flex items-start gap-3">
+            <Search className="mt-0.5 h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Search providers</p>
+              <p className="text-muted-foreground">Find by category and area.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <Users className="mt-0.5 h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Compare profiles</p>
+              <p className="text-muted-foreground">Review service areas, experience, and trust signals.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <Wrench className="mt-0.5 h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Request service</p>
+              <p className="text-muted-foreground">Start your request and we route it through the qualified flow.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <MessageCircle className="mt-0.5 h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Get updates on WhatsApp</p>
+              <p className="text-muted-foreground">Track matching, provider confirmation, and progress.</p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="px-4 py-14">
-        <div className="mx-auto max-w-3xl">
-          <h2 className="mb-10 text-center text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-            How it works
-          </h2>
-          <div className="grid gap-8 sm:grid-cols-3">
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Wrench className="h-5 w-5" />
-              </div>
-              <p className="mb-1 font-semibold">Choose a category</p>
-              <p className="text-sm text-muted-foreground">Choose the type of help you need.</p>
-            </div>
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Calendar className="h-5 w-5" />
-              </div>
-              <p className="mb-1 font-semibold">Describe your job</p>
-              <p className="text-sm text-muted-foreground">Tell us what you need and where.</p>
-            </div>
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Star className="h-5 w-5" />
-              </div>
-              <p className="mb-1 font-semibold">We&apos;ll be there</p>
-              <p className="text-sm text-muted-foreground">We match your request to a nearby provider and keep the job record in writing.</p>
-            </div>
-          </div>
+      <section className="rounded-2xl border bg-card p-4">
+        <h2 className="text-sm font-semibold">Are you a service provider?</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Apply to receive job opportunities through WhatsApp.
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          <Button asChild className="w-full">
+            <Link href="/provider-sign-in">Join as provider</Link>
+          </Button>
+          <Button asChild variant="outline" className="w-full">
+            <a href="https://wa.me/?text=join%20plug%20a%20pro" target="_blank" rel="noopener noreferrer">
+              Apply on WhatsApp
+            </a>
+          </Button>
         </div>
       </section>
 
-      <section className="px-4 py-14">
-        <div className="mx-auto max-w-3xl">
-          <h2 className="mb-2 text-2xl font-bold tracking-tight">Our services</h2>
-          <p className="mb-10 text-sm text-muted-foreground">
-            Request a nearby provider in a few taps and review the quote before work starts.
+      <section className="rounded-2xl border bg-muted/40 p-4 text-sm">
+        <div className="flex items-start gap-2 text-foreground">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+          <p>Providers are reviewed before receiving work opportunities.</p>
+        </div>
+        <div className="mt-2 flex items-start gap-2 text-foreground">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+          <p>Your exact address and phone number are only shared after a provider accepts your request.</p>
+        </div>
+      </section>
+
+      <footer className="pb-4 pt-1 text-center">
+        <p className="text-xs text-muted-foreground">
+          © 2026 Plug A Pro. Customer requests and provider job acceptance are tracked end-to-end.
+        </p>
+      </footer>
+    </main>
+  )
+}
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
