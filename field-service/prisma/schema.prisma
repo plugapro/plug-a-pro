@@ -788,7 +788,7 @@ model ProviderShortlist {
   request JobRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   items   ProviderShortlistItem[]
 
-  @@index([requestId, status])
+  @@unique([requestId, status])
   @@map("provider_shortlists")
 }
 

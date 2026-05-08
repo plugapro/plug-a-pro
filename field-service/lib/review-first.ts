@@ -356,21 +356,11 @@ export async function shortlistProviderForCustomerReview(params: {
     },
   })
 
-  const shortlist = await db.$transaction(async (tx) => {
-    // Serialize DRAFT shortlist creation per request to avoid concurrent
-    // duplicate draft rows when two shortlist actions race.
-    // This lock is transaction-scoped and auto-released on commit/rollback.
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`provider_shortlist_draft:${request.id}`}))`
-
-    const existing = await tx.providerShortlist.findFirst({
-      where: { requestId: request.id, status: 'DRAFT' },
-      select: { id: true },
-    })
-    if (existing) return existing
-    return tx.providerShortlist.create({
-      data: { requestId: request.id, status: 'DRAFT' },
-      select: { id: true },
-    })
+  const shortlist = await db.providerShortlist.upsert({
+    where: { requestId_status: { requestId: request.id, status: 'DRAFT' } },
+    create: { requestId: request.id, status: 'DRAFT' },
+    update: {},
+    select: { id: true },
   })
 
   await db.providerShortlistItem.upsert({
