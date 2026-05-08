@@ -62,6 +62,23 @@ for (const route of ADMIN_LIST_ROUTES) {
   })
 }
 
+// ─── Public client-PWA routes ────────────────────────────────────────────────
+// These routes are customer-facing handoff/recovery pages that must not 404
+// in production smoke checks.
+const CLIENT_PUBLIC_ROUTES = [
+  '/requests/access/recovery?reason=invalid',
+  '/book/plumbing',
+]
+
+for (const route of CLIENT_PUBLIC_ROUTES) {
+  test(`client route renders without error: ${route}`, async ({ page }) => {
+    const response = await page.goto(route)
+    expect(response?.status()).toBeLessThan(400)
+    await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
+    await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
+  })
+}
+
 // ─── Detail page smoke ────────────────────────────────────────────────────────
 
 test('provider detail renders for the first provider', async ({ page }) => {

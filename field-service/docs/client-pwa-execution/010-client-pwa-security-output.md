@@ -13,7 +13,7 @@ PASS
 | Has expiry check | yes — `customerAccessTokenExpiresAt <= now` checked in both `resolveJobRequestAccessScope` and `resolveJobRequestAccessToken` |
 | Ownership verified | yes — token lookup is by the token value itself; the returned `jobRequest.customer` identity is used by the calling page for ownership checks |
 | Trace ID on denial | yes (FIXED) — both `resolveJobRequestAccessScope` and `resolveJobRequestAccessToken` now generate and return a `traceId` (via `createTraceId('jra')` / `createTraceId('jrt')`) on every denial path, and `console.warn` logs include it |
-| TTL deviation | 90d actual vs 72h blueprint — documented deviation from step 2; do NOT change without migration |
+| TTL deviation | Previously 90d vs 72h blueprint. **Resolved in final remediation**: issuance window is now 72h in `lib/job-request-access.ts`; existing tokens keep persisted expiries until rotated. |
 
 ---
 

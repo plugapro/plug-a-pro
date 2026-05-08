@@ -64,7 +64,7 @@ Note: "Start / Continue request / Add photos / Add address / Review" all map to 
 
 | Deviation | Detail |
 |---|---|
-| Token TTL: 90 days (code) vs 72 hours (blueprint) | `ACCESS_TOKEN_TTL_DAYS = 90` in `field-service/lib/job-request-access.ts:5`. Blueprint specifies 72 h. **Not changed** — reducing TTL requires a schema migration to reissue all active tokens; changing this value without a migration would immediately expire all outstanding customer links. Tracked as a deferred hardening item for CLIENT-10. |
+| Token TTL | Aligned to 72 hours (`lib/job-request-access.ts`). This closes the earlier 90-day deviation. Existing persisted token expiries remain valid until rotation. |
 | `intendedScreen` param has no routing effect | Accepted for API compatibility (callers pass it; the page passes `view` from search params). The resolver always uses live DB state. This is correct behaviour, not a gap. |
 | "View provider profile" has no dedicated screen | Provider profiles are surfaced via the shortlist screen; there is no separate `provider_profile` screen in `ClientPwaScreen`. The handoff intent `provider_profile` in `ClientPwaHandoffIntent` resolves to the shortlist view. This is an acceptable simplification given the current PWA scope. |
 
@@ -91,7 +91,7 @@ Overall suite: **167 passing, 1 skipped, 0 failing** (1872 tests, 4 todo).
 
 1. **Recovery route created** — `app/requests/access/recovery/page.tsx` now exists; the resolver's fallback routes are no longer dead links.
 2. **Comprehensive handoff model test coverage** — `client-pwa-handoff-model.test.ts` added with 52 tests covering every handoff map entry, stale-intent routing, and invalid/expired fallback.
-3. **TTL deviation documented** — 90-day vs 72-hour gap is now formally recorded; no code changed (correct decision).
+3. **TTL alignment completed** — issuance window now matches the 72-hour blueprint target.
 
 ## Files changed
 

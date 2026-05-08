@@ -170,7 +170,7 @@ The schema at prisma/schema.prisma is valid
 
 3. **4 todo tests**: These are placeholders. Review before tagging a production release to ensure they are not covering critical paths.
 
-4. **E2E smoke suite** (pre-existing gap from step 1): `field-service/e2e/smoke.spec.ts` still references `/admin/breached` and `/admin/supply` which do not exist in the route tree. This is a pre-existing issue not introduced by this blueprint.
+4. **E2E smoke suite**: stale `/admin/breached` and `/admin/supply` references were removed from `field-service/e2e/smoke.spec.ts`; smoke now includes client handoff routes (`/requests/access/recovery`, `/book/plumbing`).
 
 5. **End-to-end integration test**: The 1725 tests are unit and integration (Vitest, node environment). There is no live staging WhatsApp integration test. Manual end-to-end testing against a staging WhatsApp number is required before a production release.
 

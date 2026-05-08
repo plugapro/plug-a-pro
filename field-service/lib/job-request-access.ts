@@ -3,12 +3,13 @@ import { db } from './db'
 import { getPublicAppUrl } from './provider-credit-copy'
 import { createTraceId } from './support-diagnostics'
 
-const ACCESS_TOKEN_TTL_DAYS = 90
+// Client request access tokens should align with the blueprint hardening window.
+// Existing issued tokens keep their persisted expiry; this value affects only
+// newly issued or refreshed tokens.
+const ACCESS_TOKEN_TTL_HOURS = 72
 
 function buildExpiryDate() {
-  const expiresAt = new Date()
-  expiresAt.setDate(expiresAt.getDate() + ACCESS_TOKEN_TTL_DAYS)
-  return expiresAt
+  return new Date(Date.now() + ACCESS_TOKEN_TTL_HOURS * 60 * 60 * 1000)
 }
 
 function generateAccessToken() {

@@ -203,7 +203,7 @@ This file is the Session 0 audit for the current workspace.
   - smoke job runs on push only when secret `E2E_BASE_URL` is set
 - Important:
   - smoke tests do not currently run on PRs by default
-  - smoke suite still references `/admin/breached` and `/admin/supply`, which do not have matching app routes in the current tree
+  - smoke suite includes admin routes plus client recovery/booking routes; keep route inventory aligned with `field-service/e2e/smoke.spec.ts`
 
 ### Feature flags
 - Resolution order in `field-service/lib/flags.ts`
@@ -273,4 +273,3 @@ This file is the Session 0 audit for the current workspace.
 6. Every PR touching admin flows should keep or extend Playwright smoke coverage.
 7. No `as any` without a nearby TODO explaining why it is temporarily required.
 8. Detail pages must guard nullable relations; error boundaries are the last line of defence, not the first.
-

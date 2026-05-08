@@ -195,13 +195,13 @@ DONE_WITH_CONCERNS
 ---
 
 ### Phase 5: Production validation
-**Scope:** Playwright smoke update, Prisma `prisma.config.ts` migration, production token TTL decision, form action TS type resolution.
+**Scope:** Playwright smoke update, Prisma `prisma.config.ts` migration, token TTL alignment, form action TS type resolution.
 
 **Checklist:**
-- [ ] Update `e2e/smoke.spec.ts` to cover `/requests/access/[token]`, `/requests/access/recovery`, and `/book/[serviceId]` (current smoke still references removed routes `/admin/breached` and `/admin/supply`)
+- [x] Update `e2e/smoke.spec.ts` to cover `/requests/access/recovery` and `/book/[serviceId]`; stale `/admin/breached` + `/admin/supply` references removed.
 - [ ] Resolve 3 TSC errors in `app/(customer)/requests/[id]/page.tsx` — server action return type mismatch with Next.js `form` `action` prop
 - [ ] Migrate `package.json#prisma` config key to `prisma.config.ts` (Prisma 7 readiness)
-- [ ] Confirm token TTL business decision: blueprint says 72h, current implementation is 90d — requires product sign-off before any change
+- [x] Token TTL aligned to blueprint: `customerAccessTokenExpiresAt` issuance window is now 72h.
 - [ ] Load test token resolver under concurrent shortlist selection (PROVIDER_CONFIRMATION_PENDING race)
 - [ ] Feature flags for client PWA paths: confirm all new routes are behind flags or explicitly unflagged by product decision
 
@@ -226,8 +226,8 @@ DONE_WITH_CONCERNS
 
 | Deviation | Blueprint | Implementation | Decision |
 |---|---|---|---|
-| Token TTL | 72 hours | 90 days (`customerAccessTokenExpiresAt = now + 90d`) | Documented in CLIENT-10. Do NOT change without a migration plan and product sign-off. The 90d value pre-dates the blueprint and is present in production data. |
+| Token TTL | 72 hours | 72 hours (`customerAccessTokenExpiresAt = now + 72h`) | Aligned to blueprint in final remediation pass. Existing tokens retain their already-persisted expiries until rotated. |
 | Per-photo retry UI | Blueprint implies per-photo retry on failure | Batch retry only — if any photo fails validation, the entire submission is retried | Low-risk gap; the client-side MIME/size guards prevent most server-side rejections. A future enhancement task should be raised if per-photo granularity is required. |
 | `job_type` Prisma column | Blueprint treats `job_type` as a first-class field | Prepended to `description` string at submit; no dedicated Prisma column | Acknowledged in CLIENT-04. Adding a dedicated column is additive-only; no regression. |
 | `form action` TS type | Next.js expects `(formData: FormData) => void | Promise<void>` | `app/(customer)/requests/[id]/page.tsx` passes `() => Promise<{ error? }>` — 3 pre-existing TS2322 errors | Tests pass; type error is in production source. Fix is to wrap action calls with a `FormData`-accepting adapter. Raised as Phase 5 item. |
-| Smoke suite route alignment | CI smoke should cover real route inventory | `e2e/smoke.spec.ts` still references `/admin/breached` and `/admin/supply` which do not exist; new client PWA routes not yet covered | Raised as Phase 5 item. |
+| Smoke suite route alignment | CI smoke should cover real route inventory | `e2e/smoke.spec.ts` now includes `/requests/access/recovery` and `/book/plumbing`; stale `/admin/breached` + `/admin/supply` references are removed | Closed in final remediation pass. |
