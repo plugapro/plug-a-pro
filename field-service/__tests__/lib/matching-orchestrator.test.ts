@@ -167,6 +167,15 @@ describe('orchestrateMatch', () => {
     expect((result as any).reason).toBe('JOB_STATUS_MATCHING')
   })
 
+  it('returns SKIP when assignment mode is not AUTO_ASSIGN', async () => {
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest({ assignmentMode: 'OPS_REVIEW' }))
+
+    const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
+
+    expect(result.status).toBe('SKIP')
+    expect((result as any).reason).toBe('JOB_MODE_OPS_REVIEW')
+  })
+
   it('returns SKIP when an active hold already exists', async () => {
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockDb.assignmentHold.findFirst.mockResolvedValue({ id: 'existing-hold' })

@@ -11,4 +11,10 @@ describe('match-leads cron safety', () => {
     expect(source).not.toContain('awardMobileVerifiedPromoCreditsInTransaction')
     expect(source).toContain('routeProviderApplicationsForOpsReview')
   })
+
+  it('dispatches only explicit quick-match requests from cron', () => {
+    const source = readFileSync(join(process.cwd(), 'app/api/cron/match-leads/route.ts'), 'utf8')
+
+    expect(source).toContain("where: { status: 'OPEN', assignmentMode: 'AUTO_ASSIGN' }")
+  })
 })

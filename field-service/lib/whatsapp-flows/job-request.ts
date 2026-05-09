@@ -1498,7 +1498,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         source: 'whatsapp',
-        assignmentMode: 'AUTO_ASSIGN',
+        assignmentMode: 'OPS_REVIEW',
         deferMatchingModeSelection: true,
         urgency: ctx.data.urgency ?? null,
         budgetPreference: ctx.data.budgetPreference ?? null,
@@ -1528,7 +1528,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         source: 'whatsapp',
-        assignmentMode: 'AUTO_ASSIGN',
+        assignmentMode: 'OPS_REVIEW',
         deferMatchingModeSelection: true,
         urgency: ctx.data.urgency ?? null,
         budgetPreference: ctx.data.budgetPreference ?? null,
@@ -1555,7 +1555,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       `Choose how you'd like to find a provider next:\n` +
       `• Quick Match — we contact one suitable provider at a time.\n` +
       `• Review Providers First — compare providers before sending.\n\n` +
-      `Reply *status* now to choose your matching mode. Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.` +
+      `Tap a button below to choose your matching mode now. Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.` +
       (categoryRequirements.policy.bookingOnAssignment
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
         : '')
@@ -1570,27 +1570,19 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
           await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
         } catch (ctaErr) {
           console.error('[job-request-flow] Ticket CTA send failed:', ctaErr)
-          // CTA URL failed (e.g. non-HTTPS URL, domain not approved) — fall back
-          // to a plain button message which has no URL requirements.
-          await sendButtons(
-            ctx.phone,
-            successMessage,
-            [
-              { id: 'status', title: '📋 Track My Request' },
-              { id: 'back_home', title: '🏠 Main Menu' },
-            ]
-          )
+          // CTA URL failed (e.g. non-HTTPS URL, domain not approved).
+          // Continue with direct matching-mode action buttons.
         }
-      } else {
-        await sendButtons(
-          ctx.phone,
-          successMessage,
-          [
-            { id: 'status', title: '📋 Track My Request' },
-            { id: 'back_home', title: '🏠 Main Menu' },
-          ]
-        )
       }
+      await sendButtons(
+        ctx.phone,
+        successMessage,
+        [
+          { id: `status_mode_quick_${result.jobRequestId}`, title: 'Quick Match' },
+          { id: `status_mode_review_${result.jobRequestId}`, title: 'Review Providers' },
+          { id: `status_refresh_${result.jobRequestId}`, title: 'Track request' },
+        ]
+      )
     } catch (sendErr) {
       // Interactive message failed — last-resort plain text so the customer
       // knows their request was received. sendText is simpler and more resilient.

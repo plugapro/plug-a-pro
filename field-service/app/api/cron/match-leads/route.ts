@@ -226,7 +226,7 @@ export async function GET(request: Request) {
   // take: 20 is safe at 5-min cadence (matches the max concurrent open requests we'd expect).
   // If queue grows beyond this, add cursor-based pagination here.
   const openRequests = await db.jobRequest.findMany({
-    where: { status: 'OPEN' },
+    where: { status: 'OPEN', assignmentMode: 'AUTO_ASSIGN' },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
     take: 20,

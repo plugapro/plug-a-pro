@@ -160,6 +160,8 @@ export async function createJobRequest(
   const resolvedLocationNodeId =
     params.locationNodeId ?? (await resolveSuburbNodeId(locality.suburb, locality.city))
   const requestRef = params.requestRef?.trim() || buildRequestRef()
+  const initialAssignmentMode =
+    params.assignmentMode ?? (params.deferMatchingModeSelection ? 'OPS_REVIEW' : 'AUTO_ASSIGN')
 
   // Atomic: customer upsert + address + jobRequest in one transaction
   const result = await db.$transaction(async (tx) => {
@@ -346,7 +348,7 @@ export async function createJobRequest(
         requiredEquipmentTags: categoryRequirements.requiredEquipmentTags,
         requiredVehicleTypes: categoryRequirements.requiredVehicleTypes,
         preferredProviderId: params.preferredProviderId ?? undefined,
-        assignmentMode: params.assignmentMode ?? 'AUTO_ASSIGN',
+        assignmentMode: initialAssignmentMode,
         customerAcceptedAmount:
           typeof params.customerAcceptedAmount === 'number'
             ? params.customerAcceptedAmount
@@ -434,7 +436,7 @@ export async function createJobRequest(
     }
   }
 
-  if (!params.deferMatchingModeSelection) {
+  if (!params.deferMatchingModeSelection && initialAssignmentMode === 'AUTO_ASSIGN') {
     try {
       after(runMatching)
     } catch {

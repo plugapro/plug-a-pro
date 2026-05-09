@@ -56,6 +56,9 @@ export async function orchestrateMatch(
   if (jobRequest.status !== 'OPEN') {
     return { status: 'SKIP', reason: `JOB_STATUS_${jobRequest.status}` }
   }
+  if (jobRequest.assignmentMode !== 'AUTO_ASSIGN') {
+    return { status: 'SKIP', reason: `JOB_MODE_${jobRequest.assignmentMode}` }
+  }
 
   // Inline expiry guard: if the job has passed its expiresAt, transition it now
   // rather than dispatching. This covers the race between cron sweep ticks.

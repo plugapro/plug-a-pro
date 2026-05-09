@@ -500,7 +500,7 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
         expect.objectContaining({
-          assignmentMode: 'AUTO_ASSIGN',
+          assignmentMode: 'OPS_REVIEW',
           deferMatchingModeSelection: true,
           street: '14 Main Road',
           addressLine1: '14 Main Road',
@@ -572,7 +572,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       expect(result.nextData?.photoMediaIds).toEqual([])
     })
 
-    it('falls back to status buttons when ticket CTA delivery fails after a successful submission', async () => {
+    it('shows direct matching-mode buttons when ticket CTA delivery fails after a successful submission', async () => {
       ;(createJobRequestModule.createJobRequest as any).mockResolvedValue({
         jobRequestId: 'jr_test123456',
         customerId: 'cust_001',
@@ -589,8 +589,9 @@ describe('WhatsApp job-request flow — structured address', () => {
         PHONE,
         expect.stringContaining('Request submitted'),
         expect.arrayContaining([
-          expect.objectContaining({ id: 'status' }),
-          expect.objectContaining({ id: 'back_home' }),
+          expect.objectContaining({ id: 'status_mode_quick_jr_test123456' }),
+          expect.objectContaining({ id: 'status_mode_review_jr_test123456' }),
+          expect.objectContaining({ id: 'status_refresh_jr_test123456' }),
         ]),
       )
     })
