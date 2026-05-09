@@ -1,4 +1,5 @@
 import { createHash, randomInt } from 'crypto'
+import type { Prisma } from '@prisma/client'
 import { db } from './db'
 
 // Alphanumeric set excluding visually ambiguous characters O/0 and I/1
@@ -89,10 +90,10 @@ export async function captureApplicationError(
 
   try {
     const safeRequest = input.requestPayload != null
-      ? (redactPayload(input.requestPayload) as object)
+      ? (redactPayload(input.requestPayload) as Prisma.InputJsonValue)
       : undefined
     const safeResponse = input.responsePayload != null
-      ? (redactPayload(input.responsePayload) as object)
+      ? (redactPayload(input.responsePayload) as Prisma.InputJsonValue)
       : undefined
 
     await db.applicationErrorEvent.create({
@@ -114,7 +115,7 @@ export async function captureApplicationError(
         stackTrace: input.stackTrace ?? null,
         requestPayloadSummary: safeRequest,
         responsePayloadSummary: safeResponse,
-        metadata: input.metadata ?? {},
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
       },
     })
   } catch (persistErr) {
