@@ -33,6 +33,11 @@ export const FLAG_KEYS = {
   // generateCustomerShortlistForRequest after the Nth interested response
   // (default N=2; configurable via SHORTLIST_AUTO_TRIGGER_THRESHOLD).
   SHORTLIST_AUTO_TRIGGER: 'qualified_shortlist.auto_trigger',
+  // M1-T8: CustomerMember operator delegation.
+  // When enabled, resolveCustomerForSession checks CustomerMember by phone/userId.
+  // If an active membership is found the session resolves to the principal customer
+  // account, allowing business team members to book under the company account.
+  CUSTOMER_OPERATOR_MEMBER: 'feature.customer.operator_member',
 } as const
 
 export type FlagKey = typeof FLAG_KEYS[keyof typeof FLAG_KEYS]
