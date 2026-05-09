@@ -1498,6 +1498,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         source: 'whatsapp',
+        assignmentMode: 'AUTO_ASSIGN',
+        deferMatchingModeSelection: true,
         urgency: ctx.data.urgency ?? null,
         budgetPreference: ctx.data.budgetPreference ?? null,
         providerPreference: ctx.data.providerPreference ?? null,
@@ -1526,6 +1528,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         source: 'whatsapp',
+        assignmentMode: 'AUTO_ASSIGN',
+        deferMatchingModeSelection: true,
         urgency: ctx.data.urgency ?? null,
         budgetPreference: ctx.data.budgetPreference ?? null,
         providerPreference: ctx.data.providerPreference ?? null,
@@ -1548,7 +1552,10 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
     const successMessage =
       `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.requestRef}*${photoNote}\n\n` +
-      `We're checking suitable providers in your area. Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.` +
+      `Choose how you'd like to find a provider next:\n` +
+      `• Quick Match — we contact one suitable provider at a time.\n` +
+      `• Review Providers First — compare providers before sending.\n\n` +
+      `Reply *status* now to choose your matching mode. Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.` +
       (categoryRequirements.policy.bookingOnAssignment
         ? `\n\n_If your price is already agreed for this type of work, the booking can be confirmed as soon as a provider accepts._`
         : '')

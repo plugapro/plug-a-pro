@@ -49,6 +49,7 @@ import {
   type ServiceAreaStatus,
 } from '../service-area-guard'
 import { normalizeOtpPhoneNumber } from '../phone-normalization'
+import { captureApplicationError, generatePublicErrorRef } from '../application-error-service'
 import type { FlowContext, FlowResult } from './types'
 
 // ─── Trigger keywords that start the registration flow ────────────────────────
@@ -161,7 +162,7 @@ function prismaFailureDetails(error: unknown) {
   }
 }
 
-function submitFailureMessage(error: unknown, traceId: string) {
+function submitFailureMessage(error: unknown, publicRef: string) {
   if (error instanceof ProviderApplicationSubmitError) {
     if (
       error.code === 'PROVIDER_APPLICATION_VALIDATION_FAILED' ||
@@ -176,7 +177,7 @@ function submitFailureMessage(error: unknown, traceId: string) {
         '',
         'Please choose Edit Application to update this section.',
         '',
-        `Support ref: ${traceId}`,
+        `Reference: ${publicRef}`,
       ].join('\n')
     }
 
@@ -186,7 +187,7 @@ function submitFailureMessage(error: unknown, traceId: string) {
         '',
         'Your progress is saved. Please try Submit again in a moment, or choose Edit Application.',
         '',
-        `Support ref: ${traceId}`,
+        `Reference: ${publicRef}`,
       ].join('\n')
     }
 
@@ -195,16 +196,17 @@ function submitFailureMessage(error: unknown, traceId: string) {
       '',
       'Your progress is saved. Please choose Edit Application or contact support.',
       '',
-      `Support ref: ${traceId}`,
+      `Reference: ${publicRef}`,
     ].join('\n')
   }
 
   return [
-    "We couldn't submit your application right now, but your progress is saved.",
+    "Sorry, we couldn't submit your application right now.",
     '',
-    'Please try again. If it keeps failing, contact support with the reference below.',
+    'Your progress has been saved. Please try again in a few minutes.',
     '',
-    `Support ref: ${traceId}`,
+    'If the issue continues, contact support and share this reference:',
+    publicRef,
   ].join('\n')
 }
 
@@ -2728,33 +2730,59 @@ async function handlePending(ctx: FlowContext): Promise<FlowResult> {
 
     const errorCode = errorCodeFromUnknown(err)
     const dbFailure = prismaFailureDetails(err)
-    console.error('[registration-flow] provider application submit failed', {
-      trace_id: traceId,
-      phone_masked: maskPhoneForLog(normalizedPhone),
-      reply_id: ctx.reply.id ?? null,
-      selected_skills_count: ctx.data.skills?.length ?? 0,
-      selected_areas_count: ctx.data.locationNodeIds?.length ?? ctx.data.serviceAreas?.length ?? 0,
-      uploaded_files_count_from_session: ctx.data.evidenceFileUrls?.length ?? 0,
-      error_code: errorCode,
-      error_message: safeErrorMessage(err),
-      db_table_or_model: dbFailure?.modelName,
-      db_column: dbFailure?.column,
-      db_constraint: dbFailure?.constraint,
-      db_target: dbFailure?.target,
-      db_field_name: dbFailure?.fieldName,
-      prisma_code: dbFailure?.prismaCode,
-      stack: err instanceof Error ? err.stack : undefined,
+    const errorCategory = errorCode === 'PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED'
+      ? 'database_constraint'
+      : errorCode === 'PROVIDER_APPLICATION_ATTACHMENTS_NOT_READY'
+        ? 'validation'
+        : errorCode.includes('VALIDATION') || errorCode.includes('SKILLS') || errorCode.includes('AREAS') || errorCode.includes('AVAILABILITY')
+          ? 'validation'
+          : 'unknown_submit_failure'
+
+    const { publicRef } = await captureApplicationError({
+      traceId,
+      source: 'whatsapp',
+      workflow: 'provider_application',
+      step: 'submit',
+      whatsappPhone: normalizedPhone,
+      errorCode,
+      errorCategory,
+      severity: 'error',
+      retryable: true,
+      technicalMessage: safeErrorMessage(err),
+      stackTrace: err instanceof Error ? err.stack : undefined,
+      requestPayload: {
+        reply_id: ctx.reply.id ?? null,
+        selected_skills_count: ctx.data.skills?.length ?? 0,
+        selected_areas_count: ctx.data.locationNodeIds?.length ?? ctx.data.serviceAreas?.length ?? 0,
+        uploaded_files_count: ctx.data.evidenceFileUrls?.length ?? 0,
+      },
+      metadata: {
+        db_table_or_model: dbFailure?.modelName ?? null,
+        db_column: dbFailure?.column ?? null,
+        db_constraint: dbFailure?.constraint ?? null,
+        db_target: dbFailure?.target ?? null,
+        db_field_name: dbFailure?.fieldName ?? null,
+        prisma_code: dbFailure?.prismaCode ?? null,
+      },
+    }).catch((captureErr) => {
+      console.error('[registration-flow] captureApplicationError failed', {
+        trace_id: traceId,
+        phone_masked: maskPhoneForLog(normalizedPhone),
+        error: captureErr instanceof Error ? captureErr.message : String(captureErr),
+      })
+      return { publicRef: generatePublicErrorRef() }
     })
+
     await sendButtons(
       ctx.phone,
-      `😔 ${submitFailureMessage(err, traceId)}`,
+      `😔 ${submitFailureMessage(err, publicRef)}`,
       [
         { id: 'submit_yes', title: 'Try Again' },
         { id: 'reg_edit', title: 'Edit Application' },
         { id: 'provider_support', title: 'Contact Support' },
       ],
       undefined,
-      { metadata: { traceId, errorCode } },
+      { metadata: { traceId, publicRef } },
     )
     return { nextStep: 'reg_pending', nextData: ctx.data }
   }

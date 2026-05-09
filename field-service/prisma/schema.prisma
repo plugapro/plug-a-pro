@@ -2213,3 +2213,38 @@ model ReasonCode {
   @@unique([key, queueType])
   @@map("reason_codes")
 }
+
+// ─── Observability ────────────────────────────────────────────────────────────
+
+model ApplicationErrorEvent {
+  id                    String   @id @default(cuid())
+  publicErrorRef        String   @unique
+  traceId               String
+  source                String
+  workflow              String
+  step                  String
+  userId                String?
+  providerApplicationId String?
+  whatsappPhoneHash     String?
+  errorCode             String
+  errorCategory         String
+  severity              String   @default("error")
+  retryable             Boolean  @default(false)
+  userSafeMessage       String
+  technicalMessage      String?
+  stackTrace            String?
+  requestPayloadSummary Json?
+  responsePayloadSummary Json?
+  metadata              Json     @default("{}")
+  status                String   @default("open")
+  firstSeenAt           DateTime @default(now())
+  lastSeenAt            DateTime @default(now())
+  occurrenceCount       Int      @default(1)
+  createdAt             DateTime @default(now())
+
+  @@index([traceId])
+  @@index([errorCode])
+  @@index([workflow, step])
+  @@index([createdAt(sort: Desc)])
+  @@map("application_error_events")
+}

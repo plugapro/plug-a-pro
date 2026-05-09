@@ -22,6 +22,22 @@ vi.mock('@/lib/job-request-access', () => ({
   getJobRequestAccessUrl: vi.fn(async (jobRequestId: string) => `https://app.plugapro.co.za/requests/access/${jobRequestId}`),
 }))
 
+const { mockSelectCustomerRequestMatchingMode } = vi.hoisted(() => ({
+  mockSelectCustomerRequestMatchingMode: vi.fn(),
+}))
+
+vi.mock('@/lib/request-matching-mode', () => ({
+  RequestMatchingModeError: class RequestMatchingModeError extends Error {
+    code: string
+    constructor(code: string, message: string) {
+      super(message)
+      this.code = code
+      this.name = 'RequestMatchingModeError'
+    }
+  },
+  selectCustomerRequestMatchingMode: mockSelectCustomerRequestMatchingMode,
+}))
+
 import { handleStatusFlow } from '@/lib/whatsapp-flows/status'
 import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
@@ -68,6 +84,7 @@ function makeJobRequestWithJob(jobStatus: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.NEXT_PUBLIC_APP_URL = APP_URL
+  mockSelectCustomerRequestMatchingMode.mockResolvedValue({ status: 'matching_started' })
   vi.mocked(db.lead.findMany).mockResolvedValue([])
   vi.mocked(db.providerShortlist.findFirst).mockResolvedValue(null)
   vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue(null)
@@ -205,11 +222,37 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     const result = await handleStatusFlow(makeCtx())
 
-    const body: string =
-      vi.mocked(wa.sendCtaUrl).mock.calls[0]?.[1] ??
-      vi.mocked(wa.sendButtons).mock.calls[0]?.[1] ?? ''
+    const body: string = vi.mocked(wa.sendButtons).mock.calls[0]?.[1] ?? ''
     expect(body).toContain('Request PAP-ABC123')
     expect(body).toContain('Choose your matching mode')
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.any(String),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'status_mode_quick_jr_abc123', title: 'Quick Match' }),
+        expect.objectContaining({ id: 'status_mode_review_jr_abc123', title: 'Review Providers' }),
+      ]),
+      expect.any(Object),
+    )
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('handles Quick Match button replies by selecting mode and refreshing request status', async () => {
+    const jr = makeJobRequest({ id: 'jr_mode', requestRef: 'PAP-MODE01', status: 'PENDING_VALIDATION' })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+
+    const result = await handleStatusFlow(
+      makeCtx({
+        reply: { type: 'button_reply' as const, id: 'status_mode_quick_jr_mode', text: 'Quick Match' },
+      }),
+    )
+
+    expect(mockSelectCustomerRequestMatchingMode).toHaveBeenCalledWith({
+      requestId: 'jr_mode',
+      customerId: 'cust_1',
+      mode: 'quick_match',
+    })
     expect(result.nextStep).toBe('done')
   })
 

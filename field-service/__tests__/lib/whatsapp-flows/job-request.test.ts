@@ -500,6 +500,8 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
         expect.objectContaining({
+          assignmentMode: 'AUTO_ASSIGN',
+          deferMatchingModeSelection: true,
           street: '14 Main Road',
           addressLine1: '14 Main Road',
           suburb: 'Sandton',

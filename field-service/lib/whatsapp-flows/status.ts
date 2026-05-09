@@ -11,6 +11,11 @@ import { db } from '../db'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { getPublicAppUrl } from '../provider-credit-copy'
 import { maskPhone } from '../support-diagnostics'
+import {
+  RequestMatchingModeError,
+  selectCustomerRequestMatchingMode,
+  type CustomerMatchingMode,
+} from '../request-matching-mode'
 import type { FlowContext, FlowResult } from './types'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
@@ -124,6 +129,17 @@ function createDefaultLeadSummary(): LeadSummaryErrorSafe {
   return { total: 0, activeOutreach: 0, interested: 0 }
 }
 
+function parseMatchingModeReply(replyId?: string): { requestId: string; mode: CustomerMatchingMode } | null {
+  if (!replyId) return null
+  if (replyId.startsWith('status_mode_quick_')) {
+    return { requestId: replyId.replace('status_mode_quick_', ''), mode: 'quick_match' }
+  }
+  if (replyId.startsWith('status_mode_review_')) {
+    return { requestId: replyId.replace('status_mode_review_', ''), mode: 'review_first' }
+  }
+  return null
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
@@ -167,6 +183,40 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
         reqId,
         customer.id,
       )
+    }
+
+    const matchingModeReply = parseMatchingModeReply(ctx.reply.id)
+    if (matchingModeReply) {
+      log(`matching mode selected via WhatsApp requestId=${matchingModeReply.requestId} mode=${matchingModeReply.mode}`)
+      try {
+        await selectCustomerRequestMatchingMode({
+          requestId: matchingModeReply.requestId,
+          customerId: customer.id,
+          mode: matchingModeReply.mode,
+        })
+      } catch (error) {
+        if (error instanceof RequestMatchingModeError) {
+          const reason =
+            error.code === 'REQUEST_NOT_EDITABLE'
+              ? 'This request has already moved forward and matching mode can no longer be changed.'
+              : error.code === 'FORBIDDEN'
+                ? 'That request does not belong to this account.'
+                : error.code === 'REQUEST_NOT_FOUND'
+                  ? "We couldn't find that request."
+                  : 'That matching mode selection is not available right now.'
+          await sendButtons(
+            ctx.phone,
+            `⚠️ ${reason}\n\nPlease refresh your request status.`,
+            [
+              { id: `status_refresh_${matchingModeReply.requestId}`, title: 'Refresh status' },
+              { id: 'status', title: 'My Requests' },
+            ],
+          )
+          return { nextStep: 'done' }
+        }
+        throw error
+      }
+      return showRequestStatus(ctx.phone, matchingModeReply.requestId, reqId, customer.id)
     }
 
     if (ctx.reply.id?.startsWith('status_refresh_')) {
@@ -552,7 +602,29 @@ async function showRequestStatus(
       return { nextStep: 'done' }
     }
 
-    if (requestStatus === 'OPEN' || requestStatus === 'MATCHING' || requestStatus === 'PENDING_VALIDATION') {
+    if (requestStatus === 'PENDING_VALIDATION') {
+      const body = `📋 *Request ${requestReference(jr)}*\n\n${requestStatusBody(
+        requestStatus,
+        `🔧 ${jr.category}`,
+        statusLabel,
+        leadSummary,
+        shortlist,
+        latestDispatchStatus,
+      )}\n\nChoose an option below to continue.`
+      await sendButtons(
+        phone,
+        body,
+        [
+          { id: `status_mode_quick_${jr.id}`, title: 'Quick Match' },
+          { id: `status_mode_review_${jr.id}`, title: 'Review Providers' },
+          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+        ],
+        { footer: 'Reply "menu" to return to the main menu' },
+      )
+      return { nextStep: 'done' }
+    }
+
+    if (requestStatus === 'OPEN' || requestStatus === 'MATCHING') {
       let body = requestStatusBody(
         requestStatus,
         `🔧 ${jr.category}`,
