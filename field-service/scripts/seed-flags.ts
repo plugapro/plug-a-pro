@@ -105,6 +105,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'provider.onboarding.auto_approve',
     description: 'Enable cron-based auto-approval of standard (non-high-risk) provider applications. When disabled, all applications queue for manual admin review only.',
   },
+  {
+    key: 'feature.customer.operator_member',
+    description: 'M1-T8: CustomerMember operator delegation — when enabled, a session whose phone/userId matches an active CustomerMember record resolves to the principal customer account (B2B team booking).',
+  },
 ]
 
 async function main() {
