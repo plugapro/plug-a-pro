@@ -1565,9 +1565,11 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     // failures must NOT propagate to the outer catch — that would incorrectly
     // tell the customer their submission failed when it actually succeeded.
     try {
+      let ctaSent = false
       if (result.ticketUrl) {
         try {
           await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
+          ctaSent = true
         } catch (ctaErr) {
           console.error('[job-request-flow] Ticket CTA send failed:', ctaErr)
           // CTA URL failed (e.g. non-HTTPS URL, domain not approved).
@@ -1576,7 +1578,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       }
       await sendButtons(
         ctx.phone,
-        successMessage,
+        ctaSent ? 'Choose your matching preference:' : successMessage,
         [
           { id: `status_mode_quick_${result.jobRequestId}`, title: 'Quick Match' },
           { id: `status_mode_review_${result.jobRequestId}`, title: 'Review Providers' },

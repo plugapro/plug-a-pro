@@ -595,6 +595,36 @@ describe('WhatsApp job-request flow — structured address', () => {
         ]),
       )
     })
+
+    it('sends short follow-up body for matching buttons when ticket CTA delivery succeeds', async () => {
+      ;(createJobRequestModule.createJobRequest as any).mockResolvedValue({
+        jobRequestId: 'jr_test123456',
+        customerId: 'cust_001',
+        ticketUrl: 'https://app.plugapro.co.za/requests/access/test-token',
+      })
+      ;(wa.sendCtaUrl as any).mockResolvedValueOnce(undefined)
+
+      const result = await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
+      )
+
+      expect(result.nextStep).toBe('done')
+      // CTA succeeded — sendButtons must NOT repeat the full success message body
+      expect(wa.sendButtons).toHaveBeenCalledWith(
+        PHONE,
+        'Choose your matching preference:',
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'status_mode_quick_jr_test123456' }),
+          expect.objectContaining({ id: 'status_mode_review_jr_test123456' }),
+          expect.objectContaining({ id: 'status_refresh_jr_test123456' }),
+        ]),
+      )
+      expect(wa.sendButtons).not.toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Request submitted'),
+        expect.anything(),
+      )
+    })
   })
 
   // ── 6. Returning customer with structured address can reuse it ────────────
