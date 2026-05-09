@@ -420,15 +420,13 @@ describe('registration flow — duplicate prevention', () => {
         expect.stringContaining("We're still saving one or more uploaded files"),
         expect.any(Array),
         undefined,
-        expect.any(Object),
+        expect.objectContaining({
+          metadata: expect.objectContaining({ publicRef: expect.stringMatching(/^PAP-[A-Z2-9]{5}$/) }),
+        }),
       )
-      expect(wa.sendButtons).toHaveBeenCalledWith(
-        phone,
-        expect.stringContaining('Support ref: provider_app_submit_'),
-        expect.any(Array),
-        undefined,
-        expect.any(Object),
-      )
+      const attachErrBody = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as string
+      expect(attachErrBody).toContain('Reference: PAP-')
+      expect(attachErrBody).not.toContain('provider_app_submit_')
     })
 
     it('does not roll back submitted application when the WhatsApp confirmation send fails after commit', async () => {
@@ -511,18 +509,20 @@ describe('registration flow — duplicate prevention', () => {
       expect(result.nextData).toMatchObject(dataWithFullProfile)
       expect(wa.sendButtons).toHaveBeenCalledWith(
         phone,
-        expect.stringContaining("We couldn't submit your application right now"),
+        expect.stringContaining("couldn't submit your application right now"),
         expect.any(Array),
         undefined,
         expect.objectContaining({
-          metadata: expect.objectContaining({ errorCode: 'PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED' }),
+          metadata: expect.objectContaining({ publicRef: expect.stringMatching(/^PAP-[A-Z2-9]{5}$/) }),
         }),
       )
       const body = (wa.sendButtons as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as string
+      expect(body).toContain('PAP-')
       expect(body).not.toContain('P2022')
       expect(body).not.toContain('ProviderCategory')
       expect(body).not.toContain('column')
       expect(body).not.toContain('PROVIDER_APPLICATION_DB_CONSTRAINT_FAILED')
+      expect(body).not.toContain('provider_app_submit_')
     })
 
     it('does not require email or identity verification for MVP submit', async () => {
