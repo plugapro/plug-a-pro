@@ -51,6 +51,18 @@ export default async function BookingReschedulePage({
     const sess = await getSess()
     if (!sess) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}/reschedule`)}`)
 
+    // Re-verify ownership — render-time session cannot be trusted in a server action.
+    const { resolveCustomerForSession: resolveCust } = await import('@/lib/customer-session')
+    const { db: database } = await import('@/lib/db')
+    const cust = await resolveCust(database, sess)
+    const freshBooking = await database.booking.findUnique({
+      where: { id },
+      select: { match: { select: { jobRequest: { select: { customerId: true } } } } },
+    })
+    if (!cust || !freshBooking || freshBooking.match.jobRequest.customerId !== cust.id) {
+      redirect('/bookings')
+    }
+
     const reason = String(formData.get('reason') ?? '').trim()
     const availability = String(formData.get('availability') ?? '').trim()
     if (!reason || !availability) redirect(`/bookings/${id}/reschedule`)
