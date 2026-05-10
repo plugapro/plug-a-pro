@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { buildMetadata } from "@/lib/metadata";
+import { buildMetadata, getAppUrl } from "@/lib/metadata";
 import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
@@ -124,6 +124,13 @@ export default function ForCustomersPage() {
             source="for_customers_header"
             size="lg"
           />
+          <Button
+            nativeButton={false}
+            render={<Link href={`${getAppUrl()}/sign-up`} />}
+            size="lg"
+          >
+            Book on the web →
+          </Button>
           <Button
             nativeButton={false}
             render={<Link href="/solutions" />}

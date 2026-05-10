@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { analytics } from "@/lib/analytics";
 import { buildWhatsAppLink, whatsappMessages } from "@/lib/whatsapp";
+import { getAppUrl } from "@/lib/metadata";
 
 export function Hero() {
   return (
@@ -63,6 +64,16 @@ export function Hero() {
             }}
           >
             Start on WhatsApp
+          </Button>
+          <Button
+            nativeButton={false}
+            render={<Link href={`${getAppUrl()}/sign-up`} />}
+            variant="outline"
+            size="lg"
+            style={{ borderColor: "rgba(255,255,255,0.6)", color: "oklch(0.985 0 0)", background: "transparent" }}
+            onClick={() => analytics.ctaClick("Book on the web", "hero", "customer")}
+          >
+            Book on the web →
           </Button>
           <Button
             nativeButton={false}

@@ -17,6 +17,15 @@ export const siteConfig = {
   },
 } as const;
 
+/**
+ * Returns the web app origin.
+ * Reads NEXT_PUBLIC_APP_URL at runtime so deployments can override the
+ * hard-coded default without touching source.
+ */
+export function getAppUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL ?? siteConfig.links.app;
+}
+
 export function buildMetadata(overrides: {
   title?: string;
   description?: string;
