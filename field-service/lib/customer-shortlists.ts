@@ -77,6 +77,64 @@ function formatCredits(value: number) {
   return `${value} credit${value === 1 ? '' : 's'}`
 }
 
+type NotifySelectedProviderResult = {
+  sent: boolean
+  reason?:
+    | 'already_notified'
+    | 'request_not_ready'
+    | 'not_applicable'
+    | 'missing_provider_phone'
+    | 'provider_not_active'
+    | 'not_found'
+    | 'not_selected'
+    | 'send_failed'
+}
+
+function formatProviderLeadNotificationTiming(params: {
+  requestedWindowStart: Date | null
+  requestedWindowEnd: Date | null
+}) {
+  if (params.requestedWindowStart && params.requestedWindowEnd) {
+    return `Preferred time: ${params.requestedWindowStart.toLocaleString('en-ZA')} - ${params.requestedWindowEnd.toLocaleString('en-ZA')}`
+  }
+  if (params.requestedWindowStart) {
+    return `Preferred time: ${params.requestedWindowStart.toLocaleString('en-ZA')}`
+  }
+  if (params.requestedWindowEnd) {
+    return `Latest arrival: ${params.requestedWindowEnd.toLocaleString('en-ZA')}`
+  }
+  return 'Preferred time: flexible'
+}
+
+function buildProviderSelectedNotificationBody(params: {
+  category: string
+  suburb: string | null
+  urgency: string | null
+  title: string
+  description: string
+  requestedWindowStart: Date | null
+  requestedWindowEnd: Date | null
+  attachmentCount: number
+  remainingCreditLabel: string
+  balanceLabel: string
+}) {
+  const area = params.suburb ? ` in ${params.suburb}` : ''
+  return (
+    `✅ Customer selected you\n\n` +
+    `The customer selected you for this ${params.category} job${area}.\n\n` +
+    `${params.urgency ? `Urgency: ${params.urgency}\n` : ''}` +
+    `Issue: ${params.title || params.description || 'Service request'}\n` +
+    `${formatProviderLeadNotificationTiming({
+      requestedWindowStart: params.requestedWindowStart,
+      requestedWindowEnd: params.requestedWindowEnd,
+    })}\n` +
+    `Photos: ${params.attachmentCount}\n\n` +
+    `Accepting this job uses 1 credit.\n\n` +
+    `Available balance: ${params.balanceLabel}\n` +
+    `After acceptance: ${params.remainingCreditLabel}`
+  )
+}
+
 export async function generateCustomerShortlistForRequest(
   requestId: string,
   limit = 5,
@@ -433,6 +491,13 @@ export async function selectShortlistedProviderForRequest(params: {
     )
   }
 
+  if (!item.provider?.active || item.provider.status !== 'ACTIVE') {
+    throw new CustomerShortlistError(
+      'INVALID_PROVIDER_SELECTION',
+      'This provider is no longer active.',
+    )
+  }
+
   const selectedAt = new Date()
   const result = await db.$transaction(async (tx) => {
     await tx.jobRequest.update({
@@ -476,11 +541,6 @@ export async function selectShortlistedProviderForRequest(params: {
 
   const notification = await notifySelectedProvider({
     leadId: item.leadInviteId,
-    providerId: item.providerId,
-    providerPhone: item.provider.phone,
-    providerName: item.provider.name,
-    category: item.leadInvite.jobRequest.category,
-    suburb: item.leadInvite.jobRequest.address?.suburb ?? null,
   })
 
   return {
@@ -761,50 +821,145 @@ export async function declineSelectedProviderJob(params: {
   }
 }
 
-async function notifySelectedProvider(params: {
-  leadId: string
-  providerId: string
-  providerPhone: string
-  providerName: string
-  category: string
-  suburb: string | null
-}) {
+async function notifySelectedProvider(params: { leadId: string }): Promise<NotifySelectedProviderResult> {
+  console.info('[customer-shortlists.notification] attempt', {
+    leadId: params.leadId,
+  })
+
   try {
+    const lead = await db.lead.findUnique({
+      where: { id: params.leadId },
+      select: {
+        id: true,
+        status: true,
+        providerId: true,
+        jobRequest: {
+          select: {
+            id: true,
+            status: true,
+            category: true,
+            selectedProviderId: true,
+            selectedLeadInviteId: true,
+            title: true,
+            description: true,
+            urgency: true,
+            requestedWindowStart: true,
+            requestedWindowEnd: true,
+            _count: { select: { attachments: true } },
+            address: {
+              select: {
+                suburb: true,
+                city: true,
+              },
+            },
+          },
+        },
+        provider: {
+          select: {
+            id: true,
+            phone: true,
+            active: true,
+            status: true,
+            name: true,
+          },
+        },
+      },
+    })
+
+    if (!lead?.provider || !lead.jobRequest) {
+      console.warn('[customer-shortlists.notification] lead not found or missing request/provider', {
+        leadId: params.leadId,
+      })
+      return { sent: false, reason: 'not_found' }
+    }
+
+    if (lead.status === 'CUSTOMER_SELECTED') {
+      console.info('[customer-shortlists.notification] already_notified', {
+        leadId: lead.id,
+        requestId: lead.jobRequest.id,
+      })
+      return { sent: false, reason: 'already_notified' }
+    }
+
+    if (
+      lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING' ||
+      lead.jobRequest.selectedLeadInviteId !== lead.id ||
+      lead.jobRequest.selectedProviderId !== lead.providerId
+    ) {
+      console.info('[customer-shortlists.notification] not_selected', {
+        leadId: lead.id,
+        requestId: lead.jobRequest.id,
+      })
+      return { sent: false, reason: 'not_selected' }
+    }
+
+    if (
+      lead.status === 'ACCEPTED' ||
+      lead.status === 'DECLINED' ||
+      lead.status === 'EXPIRED' ||
+      lead.status === 'CANCELLED'
+    ) {
+      console.info('[customer-shortlists.notification] terminal_status', {
+        leadId: lead.id,
+        status: lead.status,
+      })
+      return { sent: false, reason: 'not_applicable' }
+    }
+
+    if (!lead.provider.active || lead.provider.status !== 'ACTIVE') {
+      console.info('[customer-shortlists.notification] provider_not_active', {
+        leadId: lead.id,
+        providerId: lead.providerId,
+      })
+      return { sent: false, reason: 'provider_not_active' }
+    }
+
+    if (!lead.provider.phone) {
+      console.info('[customer-shortlists.notification] missing_provider_phone', {
+        leadId: lead.id,
+        providerId: lead.providerId,
+      })
+      return { sent: false, reason: 'missing_provider_phone' }
+    }
+
     const [balance, leadUrl] = await Promise.all([
-      getProviderWalletBalanceReadOnly(params.providerId),
-      getProviderLeadAccessUrlByLeadId(params.leadId),
+      getProviderWalletBalanceReadOnly(lead.providerId),
+      getProviderLeadAccessUrlByLeadId(lead.id),
     ])
     const remainingCredits = Math.max(0, balance.totalCreditBalance - 1)
-    const area = params.suburb ? ` in ${params.suburb}` : ''
-    const body =
-      `✅ Customer selected you\n\n` +
-      `The customer selected you for this ${params.category} job${area}.\n\n` +
-      `Accepting this job uses 1 credit.\n\n` +
-      `Available balance: ${formatCredits(balance.totalCreditBalance)}\n` +
-      `After acceptance: ${formatCredits(remainingCredits)}`
+    const area = lead.jobRequest.address?.suburb ?? lead.jobRequest.address?.city ?? null
+    const body = buildProviderSelectedNotificationBody({
+      category: lead.jobRequest.category,
+      suburb: area,
+      urgency: lead.jobRequest.urgency ?? null,
+      title: lead.jobRequest.title,
+      description: lead.jobRequest.description,
+      requestedWindowStart: lead.jobRequest.requestedWindowStart,
+      requestedWindowEnd: lead.jobRequest.requestedWindowEnd,
+      attachmentCount: lead.jobRequest._count.attachments,
+      balanceLabel: formatCredits(balance.totalCreditBalance),
+      remainingCreditLabel: formatCredits(remainingCredits),
+    })
 
     await sendButtons(
-      params.providerPhone,
+      lead.provider.phone,
       body,
       [
-        { id: `confirm_accept:${params.leadId}`, title: 'Accept job' },
-        { id: `confirm_decline:${params.leadId}`, title: 'Decline' },
+        { id: `confirm_accept:${lead.id}`, title: 'Accept job' },
+        { id: `confirm_decline:${lead.id}`, title: 'Decline' },
       ],
       undefined,
       {
         templateName: 'interactive:provider_selected_for_confirmation',
         metadata: {
-          leadId: params.leadId,
-          providerId: params.providerId,
+          leadId: lead.id,
+          providerId: lead.providerId,
         },
       },
     )
     if (leadUrl) {
-      // CTA URL is a supplementary message — send it best-effort so a failure
-      // does not roll back the primary Accept/Decline buttons the provider already received.
-      // Must be awaited: unawaited Promises are dropped when the Vercel function exits.
       await sendCtaUrl(
-        params.providerPhone,
+        lead.provider.phone,
         'Open this offer in the app to review job details.',
         ctaLabelFor('generic_details'),
         leadUrl,
@@ -812,33 +967,60 @@ async function notifySelectedProvider(params: {
         {
           templateName: 'interactive:provider_selected_for_confirmation_cta',
           metadata: {
-            leadId: params.leadId,
-            providerId: params.providerId,
+            leadId: lead.id,
+            providerId: lead.providerId,
           },
         },
       ).catch((ctaError) => {
         console.warn(
           '[customer-shortlists] CTA URL message failed (non-fatal)',
           {
-            leadId: params.leadId,
-            providerId: params.providerId,
+            leadId: lead.id,
+            providerId: lead.providerId,
             error: ctaError,
           },
         )
       })
     }
 
-    return { sent: true as const }
+    await db.lead.update({
+      where: { id: lead.id },
+      data: { status: 'CUSTOMER_SELECTED' },
+    })
+
+    await db.auditLog
+      .create({
+        data: {
+          actorId: lead.providerId,
+          actorRole: 'provider',
+          action: 'lead.provider_selected_notified',
+          entityType: 'Lead',
+          entityId: lead.id,
+          after: {
+            leadStatus: 'CUSTOMER_SELECTED',
+            jobRequestId: lead.jobRequest.id,
+            providerId: lead.providerId,
+          } as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined)
+
+    console.info('[customer-shortlists.notification] provider selected notification sent', {
+      leadId: lead.id,
+      providerId: lead.providerId,
+      requestId: lead.jobRequest.id,
+    })
+
+    return { sent: true }
   } catch (error) {
     console.error(
       '[customer-shortlists] selected provider notification failed',
       {
         leadId: params.leadId,
-        providerId: params.providerId,
         error,
       },
     )
-    return { sent: false as const }
+    return { sent: false, reason: 'send_failed' }
   }
 }
 
@@ -849,7 +1031,6 @@ export async function selectProviderForCustomerRequest(params: {
 }) {
   console.info('[customer-shortlists.selection] attempt', {
     requestId: params.requestId,
-    customerId: params.customerId,
     providerId: params.providerId,
   })
 
@@ -1009,19 +1190,6 @@ export async function selectProviderForCustomerRequest(params: {
     )
   }
 
-  const requestStatus = request.status as string
-
-  if (requestStatus === 'PROVIDER_CONFIRMATION_PENDING') {
-    if (request.selectedProviderId !== params.providerId) {
-      throwDuplicateSelectionError(
-        'A provider has already been selected for this request.',
-      )
-    }
-    if (!request.selectedLeadInviteId || !selectedLead) {
-      throwDuplicateSelectionError('Provider selection state is inconsistent.')
-    }
-  }
-
   const result = await db.$transaction(async (tx) => {
     const reloaded = await tx.jobRequest.findUnique({
       where: { id: request.id },
@@ -1040,19 +1208,21 @@ export async function selectProviderForCustomerRequest(params: {
       )
     }
 
+    // Guard against concurrent selection: another request may have committed
+    // PROVIDER_CONFIRMATION_PENDING between our pre-transaction checks and now.
+    // selectedLead may still be null here (no existing lead row pre-transaction),
+    // so we fall back to reloaded.selectedLeadInviteId for the idempotent return.
     if (reloaded.status === 'PROVIDER_CONFIRMATION_PENDING') {
-      if (
-        reloaded.selectedProviderId !== params.providerId ||
-        reloaded.selectedLeadInviteId !== selectedLead!.id
-      ) {
+      if (reloaded.selectedProviderId !== params.providerId) {
         throwDuplicateSelectionError(
           'A provider has already been selected for this request.',
         )
       }
+      const leadId = selectedLead?.id ?? reloaded.selectedLeadInviteId ?? ''
       return {
         requestId: request.id,
         providerId: params.providerId,
-        leadId: selectedLead!.id,
+        leadId,
         alreadySelected: true,
       }
     }
@@ -1181,7 +1351,10 @@ export async function selectProviderForCustomerRequest(params: {
       providerId: result.providerId,
       leadId: result.leadId,
     })
-    return result
+    const notification = await notifySelectedProvider({
+      leadId: result.leadId,
+    })
+    return { ...result, notification }
   }
 
   console.info('[customer-shortlists.selection] success', {
@@ -1189,6 +1362,9 @@ export async function selectProviderForCustomerRequest(params: {
     providerId: result.providerId,
     leadId: result.leadId,
   })
+  const notification = await notifySelectedProvider({
+    leadId: result.leadId,
+  })
 
-  return result
+  return { ...result, notification }
 }

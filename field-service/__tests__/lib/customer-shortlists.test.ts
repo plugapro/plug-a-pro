@@ -10,7 +10,7 @@ import {
 } from '../../lib/customer-shortlists'
 
 const { mockDb, state, mockOrchestrateMatch } = vi.hoisted(() => {
-  const state: { tx: any; shortlistItem: any; declineLead: any } = {
+const state: { tx: any; shortlistItem: any; declineLead: any } = {
     tx: null,
     shortlistItem: null,
     declineLead: null,
@@ -35,7 +35,12 @@ const { mockDb, state, mockOrchestrateMatch } = vi.hoisted(() => {
     },
     lead: {
       findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn(),
+      update: vi.fn(),
+    },
+    auditLog: {
+      create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
     },
     $transaction: vi.fn(),
   }
@@ -130,6 +135,42 @@ function makeRequestForProviderSelection(
   }
 }
 
+function makeLeadForSelectedProviderNotification(
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: 'lead-1',
+    status: 'SENT',
+    providerId: 'provider-1',
+    jobRequestId: 'request-1',
+    provider: {
+      id: 'provider-1',
+      phone: '+27111111111',
+      active: true,
+      status: 'ACTIVE',
+      name: 'Alice Plumbing',
+    },
+    jobRequest: {
+      id: 'request-1',
+      status: 'PROVIDER_CONFIRMATION_PENDING',
+      selectedProviderId: 'provider-1',
+      selectedLeadInviteId: 'lead-1',
+      category: 'plumbing',
+      title: 'Leak test',
+      description: 'Leaking pipe under kitchen sink',
+      urgency: 'NORMAL',
+      requestedWindowStart: new Date('2026-05-02T10:00:00.000Z'),
+      requestedWindowEnd: null,
+      _count: { attachments: 1 },
+      address: {
+        suburb: 'Ruimsig',
+        city: 'Johannesburg',
+      },
+    },
+    ...overrides,
+  }
+}
+
 describe('customer shortlists', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -162,6 +203,11 @@ describe('customer shortlists', () => {
         name: 'Alice Plumbing',
         phone: '+27111111111',
       },
+    })
+    mockDb.lead.findUnique.mockResolvedValue(makeLeadForSelectedProviderNotification())
+    mockDb.lead.update.mockResolvedValue({
+      id: 'lead-1',
+      status: 'CUSTOMER_SELECTED',
     })
     mockDb.providerLeadResponse.findMany.mockResolvedValue([
       makeInterestedResponse(),
@@ -210,6 +256,8 @@ describe('customer shortlists', () => {
       },
       provider: {
         id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
         name: 'Alice Plumbing',
         phone: '+27111111111',
       },
@@ -347,6 +395,12 @@ describe('customer shortlists', () => {
         templateName: 'interactive:provider_selected_for_confirmation',
       }),
     )
+    expect(sendButtons).toHaveBeenCalledTimes(1)
+    expect(result.notification).toMatchObject({ sent: true })
+    expect(state.tx.lead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: { customerSelectedAt: expect.any(Date) },
+    })
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27111111111',
       expect.stringContaining('Open this offer'),
@@ -358,6 +412,191 @@ describe('customer shortlists', () => {
       }),
     )
     expect(state.tx).not.toHaveProperty('walletLedgerEntry')
+  })
+
+  it('does not send duplicate provider notification after the lead is already marked', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    mockDb.lead.findUnique
+      .mockResolvedValueOnce(makeLeadForSelectedProviderNotification())
+      .mockResolvedValueOnce(
+        makeLeadForSelectedProviderNotification({ status: 'CUSTOMER_SELECTED' }),
+      )
+
+    await selectShortlistedProviderForRequest({
+      requestId: 'request-1',
+      shortlistItemId: 'item-1',
+    })
+    await selectShortlistedProviderForRequest({
+      requestId: 'request-1',
+      shortlistItemId: 'item-1',
+    })
+
+    expect(sendButtons).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks WhatsApp notification when provider phone is missing', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification({
+        provider: {
+          id: 'provider-1',
+          phone: null,
+          active: true,
+          status: 'ACTIVE',
+          name: 'Alice Plumbing',
+        },
+      }),
+    )
+
+    const result = await selectShortlistedProviderForRequest({
+      requestId: 'request-1',
+      shortlistItemId: 'item-1',
+    })
+
+    expect(result.notification).toMatchObject({ sent: false, reason: 'missing_provider_phone' })
+    expect(sendButtons).not.toHaveBeenCalled()
+    expect(mockDb.lead.update).not.toHaveBeenCalled()
+  })
+
+  it('does not leak private request fields in the provider notification body', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification({
+        jobRequest: {
+          id: 'request-1',
+          status: 'PROVIDER_CONFIRMATION_PENDING',
+          selectedProviderId: 'provider-1',
+          selectedLeadInviteId: 'lead-1',
+          category: 'plumbing',
+          title: 'Leaking sink in kitchen',
+          description: 'Customer phone 082555444, street 14 Main street',
+          urgency: 'NORMAL',
+          requestedWindowStart: new Date('2026-05-02T10:00:00.000Z'),
+          requestedWindowEnd: null,
+          _count: { attachments: 1 },
+          address: {
+            suburb: 'Ruimsig',
+            city: 'Johannesburg',
+          },
+          privateAddress: 'Private address, not to be exposed',
+          accessNotes: 'Gate code is 1234',
+          customerPhone: '+27821112222',
+        } as any,
+      }),
+    )
+
+    await selectShortlistedProviderForRequest({
+      requestId: 'request-1',
+      shortlistItemId: 'item-1',
+    })
+
+    const body =
+      vi.mocked(sendButtons).mock.calls[0]?.[1] as string | undefined
+    expect(body).toBeDefined()
+    if (!body) return
+    expect(body).toContain('Leaking sink in kitchen')
+    expect(body).toContain('Ruimsig')
+    expect(body).not.toContain('Private address, not to be exposed')
+    expect(body).not.toContain('Gate code is 1234')
+    expect(body).not.toContain('Customer phone 082555444')
+  })
+
+  it('skips notification for inactive provider in the selected-notification replay path', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    state.shortlistItem.provider.active = false
+    state.shortlistItem.provider.status = 'ACTIVE'
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce(makeRequestForProviderSelection())
+
+    await expect(
+      selectShortlistedProviderForRequest({
+        requestId: 'request-1',
+        shortlistItemId: 'item-1',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('prevents notification when selected provider request is cancelled', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      status: 'PROVIDER_CONFIRMATION_PENDING',
+      selectedProviderId: 'provider-1',
+      selectedLeadInviteId: 'lead-1',
+    })
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification({
+        jobRequest: {
+          id: 'request-1',
+          status: 'CANCELLED',
+          selectedProviderId: 'provider-1',
+          selectedLeadInviteId: 'lead-1',
+          category: 'plumbing',
+          title: 'Leak test',
+          description: 'Leaking pipe under kitchen sink',
+          urgency: 'NORMAL',
+          requestedWindowStart: new Date('2026-05-02T10:00:00.000Z'),
+          requestedWindowEnd: null,
+          _count: { attachments: 1 },
+          address: {
+            suburb: 'Ruimsig',
+            city: 'Johannesburg',
+          },
+        },
+      }),
+    )
+
+    const result = await selectProviderForCustomerRequest({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result.alreadySelected).toBe(true)
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('does not mark lead notified when WhatsApp send fails', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    vi.mocked(sendButtons).mockRejectedValueOnce(new Error('whatsapp down'))
+    mockDb.lead.findUnique.mockReset()
+    mockDb.jobRequest.findUnique.mockResolvedValue(makeRequestForProviderSelection())
+    mockDb.lead.findUnique.mockResolvedValue(
+      makeLeadForSelectedProviderNotification({
+        status: 'SENT',
+        jobRequest: {
+          id: 'request-1',
+          status: 'PROVIDER_CONFIRMATION_PENDING',
+          selectedProviderId: 'provider-1',
+          selectedLeadInviteId: 'lead-1',
+          category: 'plumbing',
+          title: 'Leak test',
+          description: 'Leaking pipe under kitchen sink',
+          urgency: 'NORMAL',
+          requestedWindowStart: new Date('2026-05-02T10:00:00.000Z'),
+          requestedWindowEnd: null,
+          _count: { attachments: 1 },
+          address: {
+            suburb: 'Ruimsig',
+            city: 'Johannesburg',
+          },
+        },
+      }),
+    )
+
+    const result = await selectProviderForCustomerRequest({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+    })
+
+    expect('notification' in result).toBe(true)
+    if (!('notification' in result)) return
+    expect(result.notification).toMatchObject({
+      sent: false,
+      reason: 'send_failed',
+    })
+    expect(mockDb.lead.update).not.toHaveBeenCalled()
   })
 
   it('notifies the customer when a shortlist becomes ready', async () => {
@@ -893,5 +1132,67 @@ describe('customer shortlists', () => {
         providerId: 'provider-2',
       }),
     ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
+  })
+
+  it('rejects selection when request has no dispatch decision and no existing lead', async () => {
+    // latestDispatchDecisionId = null + empty leads → cannot resolve a provider → ITEM_NOT_FOUND
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({
+        leads: [],
+        latestDispatchDecisionId: null,
+      }),
+      status: 'SHORTLIST_READY',
+    })
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-unknown',
+      }),
+    ).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND' })
+
+    expect(mockDb.matchAttempt.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('in-transaction concurrent same-provider selection returns idempotent result without null dereference', async () => {
+    // Simulate: no existing lead pre-transaction (selectedLead is null), but a concurrent
+    // call committed PROVIDER_CONFIRMATION_PENDING for the same provider before our
+    // transaction runs. The in-transaction re-read sees the completed state.
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({ leads: [] }),
+      status: 'PENDING_VALIDATION',
+    })
+    mockDb.matchAttempt.findFirst.mockResolvedValueOnce({
+      id: 'match-1',
+      score: 0.76,
+      rankedPosition: 1,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    // Concurrent call already committed — tx re-read shows PROVIDER_CONFIRMATION_PENDING
+    state.tx.jobRequest.findUnique.mockResolvedValueOnce({
+      status: 'PROVIDER_CONFIRMATION_PENDING',
+      selectedProviderId: 'provider-1',
+      selectedLeadInviteId: 'lead-concurrent',
+      latestDispatchDecisionId: 'dispatch-1',
+    })
+
+    const result = await selectProviderForCustomerRequest({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result.alreadySelected).toBe(true)
+    expect(result.leadId).toBe('lead-concurrent')
+    // No jobRequest.update should happen — idempotent path
+    expect(state.tx.jobRequest.update).not.toHaveBeenCalled()
   })
 })
