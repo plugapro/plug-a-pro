@@ -135,7 +135,7 @@ export async function getMatchedProvidersForCustomerRequest(params: {
   batch?: number
 }) {
   const batch = params.batch ?? 1
-  if (batch < 1 || batch > MAX_PROVIDER_REVIEW_BATCHES) {
+  if (!Number.isFinite(batch) || !Number.isInteger(batch) || batch < 1 || batch > MAX_PROVIDER_REVIEW_BATCHES) {
     throw new ReviewFirstError('INVALID_BATCH', 'Invalid provider batch.')
   }
 
