@@ -45,7 +45,7 @@ export default function SignInPage() {
     try {
       const exists = await phoneExistsForSignIn(normalized.e164, 'customer')
       if (!exists) {
-        router.push(`/sign-up?phone=${encodeURIComponent(normalized.e164)}`)
+        router.push(`/sign-up?phone=${encodeURIComponent(normalized.e164)}&next=${encodeURIComponent(next)}`)
         return
       }
 

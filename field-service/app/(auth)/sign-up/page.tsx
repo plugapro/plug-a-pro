@@ -24,6 +24,7 @@ export default function SignUpPage() {
   const searchParams = useSearchParams()
 
   const prefillPhone = searchParams.get('phone') ?? ''
+  const prefillNext = searchParams.get('next') ?? '/bookings/new'
   const [phone, setPhone] = useState(prefillPhone)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -76,7 +77,7 @@ export default function SignUpPage() {
         phone: normalized.e164,
         name: name.trim(),
         intent: 'signup',
-        next: '/bookings/new',
+        next: prefillNext,
       })
       router.push(`/verify?${params.toString()}`)
     } catch {
