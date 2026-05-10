@@ -6,10 +6,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
-import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
-import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 
 function getSupabaseClient() {
@@ -19,41 +19,45 @@ function getSupabaseClient() {
   )
 }
 
-export default function SignInPage() {
+export default function SignUpPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [phone, setPhone] = useState('')
+
+  const prefillPhone = searchParams.get('phone') ?? ''
+  const [phone, setPhone] = useState(prefillPhone)
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const next = getSafeCustomerNextPath(
-    searchParams.get('next') ?? searchParams.get('callbackUrl'),
-    '/bookings',
-  )
+
+  const canSubmit = !loading && !!phone && name.trim().length >= 2 && agreed
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    setLoading(true)
+
+    if (name.trim().length < 2) {
+      setError('Please enter your full name (at least 2 characters).')
+      return
+    }
+    if (!agreed) {
+      setError('Please accept the Terms of Service and Privacy Policy to continue.')
+      return
+    }
 
     const normalized = normalizeOtpPhoneNumber(phone, 'ZA')
     if (!normalized.ok) {
       setError('Please enter a valid South African mobile number.')
-      setLoading(false)
       return
     }
 
+    setLoading(true)
     try {
-      const exists = await phoneExistsForSignIn(normalized.e164, 'customer')
-      if (!exists) {
-        router.push(`/sign-up?phone=${encodeURIComponent(normalized.e164)}`)
-        return
-      }
-
       const supabase = getSupabaseClient()
       const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalized.e164 })
 
       if (otpError) {
-        // Map known Supabase infrastructure errors to user-friendly messages
         const msg = otpError.message.toLowerCase()
         if (msg.includes('unsupported') || msg.includes('provider') || msg.includes('sms') || msg.includes('not enabled') || msg.includes('phone')) {
           setError('SMS login is temporarily unavailable. Please contact support@plugapro.co.za.')
@@ -62,15 +66,19 @@ export default function SignInPage() {
         } else if (msg.includes('invalid') || msg.includes('format')) {
           setError('Invalid phone number format. Please use your full South African number.')
         } else {
-          console.error('[sign-in] Supabase OTP error:', otpError.message)
+          console.error('[sign-up] Supabase OTP error:', otpError.message)
           setError('Could not send code. Please try again or contact support@plugapro.co.za.')
         }
         return
       }
 
-      router.push(
-        `/verify?phone=${encodeURIComponent(normalized.e164)}&next=${encodeURIComponent(next)}`,
-      )
+      const params = new URLSearchParams({
+        phone: normalized.e164,
+        name: name.trim(),
+        intent: 'signup',
+        next: '/bookings/new',
+      })
+      router.push(`/verify?${params.toString()}`)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
@@ -83,8 +91,8 @@ export default function SignInPage() {
       {/* Header */}
       <div className="space-y-1 text-center">
         <p className="app-kicker">Customer Access</p>
-        <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
-        <p className="text-sm text-muted-foreground">Enter your number to receive a one-time code</p>
+        <h1 className="text-2xl font-semibold text-foreground">Create your account</h1>
+        <p className="text-sm text-muted-foreground">We'll match you to nearby service providers</p>
       </div>
 
       {/* Form */}
@@ -103,29 +111,66 @@ export default function SignInPage() {
           </p>
         </div>
 
+        <div className="space-y-1.5">
+          <Label htmlFor="name" className="text-foreground">Full name</Label>
+          <Input
+            id="name"
+            type="text"
+            value={name}
+            onChange={(e) => { setName(e.target.value); setError(null) }}
+            placeholder="Your full name"
+            disabled={loading}
+            autoComplete="name"
+            required
+            minLength={2}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-foreground">
+            Email address <span className="text-muted-foreground font-normal">(optional)</span>
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            disabled={loading}
+            autoComplete="email"
+          />
+        </div>
+
+        <div className="flex items-start gap-2 pt-1">
+          <Checkbox
+            id="terms"
+            checked={agreed}
+            onCheckedChange={(v) => setAgreed(v === true)}
+            disabled={loading}
+          />
+          <Label htmlFor="terms" className="text-xs text-muted-foreground leading-relaxed cursor-pointer">
+            I agree to the{' '}
+            <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
+              Terms of Service
+            </Link>
+            {' '}and{' '}
+            <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+              Privacy Policy
+            </Link>
+          </Label>
+        </div>
+
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <Button type="submit" size="lg" disabled={loading || !phone} className="w-full">
+        <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
           {loading ? 'Sending code…' : 'Send code'}
         </Button>
       </form>
 
       <p className="text-center text-xs text-muted-foreground">
-        Your number is never shared. By continuing you agree to our terms.
-      </p>
-
-      <p className="text-center text-xs text-muted-foreground">
-        Are you a provider?{' '}
-        <Link href="/provider-sign-in" className="font-medium text-primary underline-offset-4 hover:underline">
-          Use provider sign in
-        </Link>
-        .
-      </p>
-
-      <p className="text-center text-xs text-muted-foreground">
-        New to Plug A Pro?{' '}
-        <Link href="/sign-up" className="font-medium text-primary underline-offset-4 hover:underline">
-          Create account →
+        Already have an account?{' '}
+        <Link href="/sign-in" className="font-medium text-primary underline-offset-4 hover:underline">
+          Sign in →
         </Link>
       </p>
     </div>

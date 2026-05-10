@@ -4,7 +4,7 @@
 // Links the authenticated Supabase user to the existing WhatsApp-created
 // Customer record (if one exists), or creates a fresh Customer row.
 //
-// Body: { phone: string }
+// Body: { phone: string; name?: string }
 // Returns: { customerId: string, isNew: boolean }
 //
 // Security: userId is sourced from the server-verified session cookie, not the
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { phone } = body
+    const { phone, name } = body
 
     if (!phone || typeof phone !== 'string' || !/^\+\d{10,15}$/.test(phone)) {
       return NextResponse.json({ error: 'Valid E.164 phone required' }, { status: 400 })
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await linkCustomerAccount({ userId: session.id, phone })
+    const result = await linkCustomerAccount({ userId: session.id, phone, name: name || undefined })
 
     return NextResponse.json({ customerId: result.id, isNew: result.isNew })
   } catch (err) {
