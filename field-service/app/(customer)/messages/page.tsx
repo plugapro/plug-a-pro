@@ -36,6 +36,20 @@ export default async function MessagesPage() {
     orderBy: { updatedAt: 'desc' },
   })
 
+  const bookingIds = bookings.map((b) => b.id)
+  const unreadCounts = await db.messageEvent.groupBy({
+    by: ['bookingId'],
+    where: {
+      bookingId: { in: bookingIds },
+      direction: 'INBOUND',
+      readAt: null,
+    },
+    _count: { id: true },
+  })
+  const unreadByBooking = Object.fromEntries(
+    unreadCounts.map((r) => [r.bookingId, r._count.id])
+  )
+
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
       <div>
@@ -62,9 +76,16 @@ export default async function MessagesPage() {
                     {booking.match.provider?.name ?? 'Provider'} · #{booking.id.slice(-8).toUpperCase()}
                   </p>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {booking.status.toLowerCase()}
-                </span>
+                <div className="flex items-center gap-2">
+                  {(unreadByBooking[booking.id] ?? 0) > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold h-5 min-w-5 px-1.5">
+                      {unreadByBooking[booking.id]}
+                    </span>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    {booking.status.toLowerCase()}
+                  </span>
+                </div>
               </div>
             </Link>
           ))}

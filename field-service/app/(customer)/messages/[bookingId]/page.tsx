@@ -84,6 +84,17 @@ export default async function MessageThreadPage({
     const body = String(formData.get('body') ?? '').trim()
     if (!body || body.length < 2 || body.length > 1000) redirect(`/messages/${bookingId}`)
 
+    // Rate limit: max 5 messages per booking per minute
+    const oneMinuteAgo = new Date(Date.now() - 60_000)
+    const recentCount = await database.messageEvent.count({
+      where: {
+        bookingId,
+        direction: 'OUTBOUND',
+        createdAt: { gte: oneMinuteAgo },
+      },
+    })
+    if (recentCount >= 5) redirect(`/messages/${bookingId}`)
+
     const providerPhone = freshBooking.match.provider?.phone
     if (!providerPhone) redirect(`/messages/${bookingId}`)
 
