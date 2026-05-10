@@ -133,7 +133,7 @@ export default async function MessageThreadPage({
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
-      <AutoRefresh />
+      <AutoRefresh terminalState={!canSend} />
 
       <div>
         <Link href="/messages" className="text-xs text-muted-foreground hover:text-foreground">

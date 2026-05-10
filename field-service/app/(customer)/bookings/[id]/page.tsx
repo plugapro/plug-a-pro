@@ -233,7 +233,7 @@ export default async function BookingDetailPage({
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
-      <AutoRefresh />
+      <AutoRefresh terminalState={booking.status === 'CANCELLED' || booking.status === 'COMPLETED'} />
       {/* Reschedule requested banner */}
       {reschedule === 'requested' && (
         <AlertCallout

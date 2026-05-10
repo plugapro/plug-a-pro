@@ -96,7 +96,7 @@ export default async function RequestDetailPage({
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
-      <AutoRefresh />
+      <AutoRefresh terminalState={(['CANCELLED', 'COMPLETED', 'EXPIRED', 'CLOSED'] as string[]).includes(jobRequest.status)} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <Link href="/bookings" className="text-xs text-muted-foreground hover:text-foreground">

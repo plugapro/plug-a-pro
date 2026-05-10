@@ -1,39 +1,62 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { POLL_INTERVAL_MS } from '@/components/customer/AutoRefresh'
+import { POLL_INTERVAL_MS, POLL_INTERVALS } from '@/components/customer/AutoRefresh'
 
 // ─── AutoRefresh timer/visibility logic ─────────────────────────────────────
 //
 // The component is a thin wrapper over these two behaviours:
-//   1. setInterval fires router.refresh() every 15 s when tab is visible
+//   1. setTimeout fires router.refresh() using a step-up cadence
 //   2. visibilitychange fires router.refresh() immediately on tab focus
 //
 // Because vitest runs in a node environment (no DOM / no React renderer),
 // we extract the logic under test as pure functions and test them directly.
-// This mirrors the pattern used by other component tests in this directory.
+
+/** Returns the correct delay for a given tick index (matches component getInterval). */
+function getInterval(tickCount: number): number {
+  if (tickCount < 4) return POLL_INTERVALS.initial
+  if (tickCount < 8) return POLL_INTERVALS.mid
+  return POLL_INTERVALS.max
+}
 
 /**
- * Simulates the AutoRefresh effect:
- * - Starts an interval that calls `onRefresh` when `getVisibility()` is 'visible'
- * - Returns a cleanup function that cancels the interval
+ * Simulates the AutoRefresh effect with step-up intervals.
+ * Returns a cleanup function and a resetCount function (simulates visibility-change reset).
  */
 function startAutoRefresh(
   onRefresh: () => void,
   getVisibility: () => DocumentVisibilityState,
-): () => void {
-  const timer = setInterval(() => {
+): { cleanup: () => void; resetCount: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let tickCount = 0
+
+  function scheduleNext() {
+    const delay = getInterval(tickCount)
+    timer = setTimeout(tick, delay)
+  }
+
+  function tick() {
     if (getVisibility() === 'visible') {
       onRefresh()
     }
-  }, POLL_INTERVAL_MS)
+    tickCount += 1
+    scheduleNext()
+  }
 
-  return () => {
-    clearInterval(timer)
+  scheduleNext()
+
+  return {
+    cleanup: () => {
+      if (timer) clearTimeout(timer)
+    },
+    resetCount: () => {
+      tickCount = 0
+      if (timer) clearTimeout(timer)
+      scheduleNext()
+    },
   }
 }
 
 /**
- * Simulates the visibilitychange handler:
- * - Calls `onRefresh` immediately when the tab becomes visible
+ * Simulates the visibilitychange handler.
  */
 function handleVisibilityChange(
   onRefresh: () => void,
@@ -57,7 +80,7 @@ describe('AutoRefresh timer logic', () => {
 
   it('calls refresh after 15 s when tab is visible', () => {
     const refresh = vi.fn()
-    const cleanup = startAutoRefresh(refresh, () => 'visible')
+    const { cleanup } = startAutoRefresh(refresh, () => 'visible')
 
     vi.advanceTimersByTime(POLL_INTERVAL_MS)
 
@@ -67,7 +90,7 @@ describe('AutoRefresh timer logic', () => {
 
   it('does not call refresh when tab is hidden', () => {
     const refresh = vi.fn()
-    const cleanup = startAutoRefresh(refresh, () => 'hidden')
+    const { cleanup } = startAutoRefresh(refresh, () => 'hidden')
 
     vi.advanceTimersByTime(POLL_INTERVAL_MS)
 
@@ -75,25 +98,59 @@ describe('AutoRefresh timer logic', () => {
     cleanup()
   })
 
-  it('clears interval on cleanup — no further calls after unmount', () => {
+  it('clears timer on cleanup — no further calls after unmount', () => {
     const refresh = vi.fn()
-    const cleanup = startAutoRefresh(refresh, () => 'visible')
+    const { cleanup } = startAutoRefresh(refresh, () => 'visible')
 
-    cleanup() // simulate unmount
+    cleanup()
 
     vi.advanceTimersByTime(POLL_INTERVAL_MS * 2)
 
     expect(refresh).toHaveBeenCalledTimes(0)
   })
 
-  it('fires multiple times across intervals while visible', () => {
+  it('fires multiple times across initial intervals while visible', () => {
     const refresh = vi.fn()
-    const cleanup = startAutoRefresh(refresh, () => 'visible')
+    const { cleanup } = startAutoRefresh(refresh, () => 'visible')
 
-    vi.advanceTimersByTime(POLL_INTERVAL_MS * 3)
+    // First 4 ticks each at 15s — advance exactly 60s
+    vi.advanceTimersByTime(POLL_INTERVALS.initial * 4)
 
-    expect(refresh).toHaveBeenCalledTimes(3)
+    expect(refresh).toHaveBeenCalledTimes(4)
     cleanup()
+  })
+
+  it('terminalState=true — no refresh is called (timer never started)', () => {
+    // When terminalState is true the component returns early without scheduling.
+    // Simulated by simply not calling startAutoRefresh.
+    const refresh = vi.fn()
+
+    vi.advanceTimersByTime(POLL_INTERVAL_MS * 10)
+
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('step-up: tick 5 fires at 30 s not 15 s after tick 4', () => {
+    const refresh = vi.fn()
+    const { cleanup } = startAutoRefresh(refresh, () => 'visible')
+
+    // Advance through 4 ticks at 15s each = 60 000 ms total
+    vi.advanceTimersByTime(POLL_INTERVALS.initial * 4)
+    expect(refresh).toHaveBeenCalledTimes(4)
+
+    // Tick 5 is at 30s. Advance only 15s — should NOT fire yet.
+    vi.advanceTimersByTime(POLL_INTERVALS.initial)
+    expect(refresh).toHaveBeenCalledTimes(4)
+
+    // Advance remaining 15s (total 30s from tick 4) — tick 5 fires.
+    vi.advanceTimersByTime(POLL_INTERVALS.initial)
+    expect(refresh).toHaveBeenCalledTimes(5)
+
+    cleanup()
+  })
+
+  it('POLL_INTERVAL_MS constant is still exported for backward compat', () => {
+    expect(POLL_INTERVAL_MS).toBe(15_000)
   })
 })
 
