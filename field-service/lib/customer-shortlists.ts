@@ -826,17 +826,19 @@ export async function declineSelectedProviderJob(params: {
   }
 }
 
-async function notifySelectedProvider(params: { leadId: string }): Promise<NotifySelectedProviderResult> {
+export async function notifySelectedProvider(params: { leadId: string }): Promise<NotifySelectedProviderResult> {
   console.info('[customer-shortlists.notification] attempt', {
     leadId: params.leadId,
   })
 
+  let wasSent = false
   try {
     const lead = await db.lead.findUnique({
       where: { id: params.leadId },
       select: {
         id: true,
         status: true,
+        notifiedAt: true,
         providerId: true,
         jobRequest: {
           select: {
@@ -878,7 +880,7 @@ async function notifySelectedProvider(params: { leadId: string }): Promise<Notif
       return { sent: false, reason: 'not_found' }
     }
 
-    if (lead.status === 'CUSTOMER_SELECTED') {
+    if (lead.notifiedAt !== null || lead.status === 'CUSTOMER_SELECTED') {
       console.info('[customer-shortlists.notification] already_notified', {
         leadId: lead.id,
         requestId: lead.jobRequest.id,
@@ -962,6 +964,7 @@ async function notifySelectedProvider(params: { leadId: string }): Promise<Notif
         },
       },
     )
+    wasSent = true
     if (leadUrl) {
       await sendCtaUrl(
         lead.provider.phone,
@@ -990,7 +993,7 @@ async function notifySelectedProvider(params: { leadId: string }): Promise<Notif
 
     await db.lead.update({
       where: { id: lead.id },
-      data: { status: 'CUSTOMER_SELECTED' },
+      data: { status: 'CUSTOMER_SELECTED', notifiedAt: new Date() },
     })
 
     await db.auditLog
@@ -1025,7 +1028,7 @@ async function notifySelectedProvider(params: { leadId: string }): Promise<Notif
         error,
       },
     )
-    return { sent: false, reason: 'send_failed' }
+    return wasSent ? { sent: true } : { sent: false, reason: 'send_failed' }
   }
 }
 

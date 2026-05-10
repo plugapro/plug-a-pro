@@ -141,6 +141,7 @@ function makeLeadForSelectedProviderNotification(
   return {
     id: 'lead-1',
     status: 'SENT',
+    notifiedAt: null,
     providerId: 'provider-1',
     jobRequestId: 'request-1',
     provider: {
@@ -402,6 +403,10 @@ describe('customer shortlists', () => {
       where: { id: 'lead-1' },
       data: { customerSelectedAt: expect.any(Date) },
     })
+    expect(mockDb.lead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: { status: 'CUSTOMER_SELECTED', notifiedAt: expect.any(Date) },
+    })
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27111111111',
       expect.stringContaining('Open this offer'),
@@ -420,7 +425,10 @@ describe('customer shortlists', () => {
     mockDb.lead.findUnique
       .mockResolvedValueOnce(makeLeadForSelectedProviderNotification())
       .mockResolvedValueOnce(
-        makeLeadForSelectedProviderNotification({ status: 'CUSTOMER_SELECTED' }),
+        makeLeadForSelectedProviderNotification({
+          status: 'CUSTOMER_SELECTED',
+          notifiedAt: new Date(),
+        }),
       )
 
     await selectShortlistedProviderForRequest({
