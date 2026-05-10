@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertCallout } from '@/components/shared/AlertCallout'
 import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
+import { AutoRefresh } from '@/components/customer/AutoRefresh'
 
 export const metadata = buildMetadata({ title: 'Booking Details' })
 
@@ -232,6 +233,7 @@ export default async function BookingDetailPage({
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
+      <AutoRefresh />
       {/* Reschedule requested banner */}
       {reschedule === 'requested' && (
         <AlertCallout
