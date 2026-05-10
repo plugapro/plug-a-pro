@@ -9,6 +9,7 @@ import {
   whatsappMessages,
   whatsappNumberDisplay,
 } from "@/lib/whatsapp";
+import { getAppUrl } from "@/lib/metadata";
 
 export function CTAStrip() {
   return (
@@ -48,6 +49,15 @@ export function CTAStrip() {
             }}
           >
             Chat on WhatsApp
+          </Button>
+          <Button
+            nativeButton={false}
+            render={<Link href={`${getAppUrl()}/sign-up`} />}
+            variant="outline"
+            size="lg"
+            onClick={() => analytics.ctaClick("Book on the web", "cta_strip", "customer")}
+          >
+            Book on the web →
           </Button>
           <Button
             nativeButton={false}

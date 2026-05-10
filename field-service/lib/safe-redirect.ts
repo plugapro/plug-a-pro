@@ -28,6 +28,7 @@ const CUSTOMER_ROUTE_PREFIXES = [
   '/book',
   '/bookings',
   '/confirm-completion',
+  '/messages',
   '/payments',
   '/providers',
   '/profile',

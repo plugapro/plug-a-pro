@@ -109,6 +109,14 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'feature.customer.operator_member',
     description: 'M1-T8: CustomerMember operator delegation — when enabled, a session whose phone/userId matches an active CustomerMember record resolves to the principal customer account (B2B team booking).',
   },
+  {
+    key: 'customer.messaging.v1',
+    description: 'Enable in-app messaging between customer and provider (read + write via WhatsApp relay).',
+  },
+  {
+    key: 'customer.realtime.v1',
+    description: 'Enable Supabase Realtime subscription for customer request/booking pages (Phase B). Falls back to polling when disabled.',
+  },
 ]
 
 async function main() {

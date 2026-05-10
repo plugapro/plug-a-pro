@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { buildMetadata } from "@/lib/metadata";
+import { buildMetadata, getAppUrl } from "@/lib/metadata";
 import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
 import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
+import { WebCtaButton } from "@/components/marketing/WebCtaButton";
 import {
   MessageCircle,
   MapPin,
@@ -122,6 +123,13 @@ export default function ForCustomersPage() {
             audience="customer"
             label="Start on WhatsApp"
             source="for_customers_header"
+            size="lg"
+          />
+          <WebCtaButton
+            href={`${getAppUrl()}/sign-up`}
+            label="Book on the web →"
+            source="for_customers_header"
+            variant="outline"
             size="lg"
           />
           <Button

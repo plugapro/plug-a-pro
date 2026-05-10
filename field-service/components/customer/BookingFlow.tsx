@@ -52,6 +52,7 @@ interface SavedSite {
   province: string
   postalCode: string | null
   locationNodeId: string | null
+  locationNode?: { regionKey: string | null } | null
 }
 
 interface BookingFlowProps {
@@ -261,7 +262,7 @@ export function BookingFlow({
     const region = normalizeValue(address.region)
     const postalCode = address.postalCode.trim()
 
-    if (!suburb || !city || !region || !province || !postalCode) {
+    if (!suburb || !city || (!region && !locationNodeId) || !province || !postalCode) {
       return 'Please complete the full service address before continuing.'
     }
 
@@ -378,7 +379,7 @@ export function BookingFlow({
       addressLine2: '',
       complexName: '',
       unitNumber: '',
-      region: '',
+      region: site.locationNode?.regionKey ?? '',
     }))
     setLocationNodeId(site.locationNodeId ?? null)
     setLocationDetectedLabel(null)

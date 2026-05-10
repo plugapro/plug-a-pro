@@ -207,7 +207,7 @@ export async function requestBookingReschedule(params: {
     entityId: booking.id,
     before: {
       bookingStatus: booking.status,
-      scheduledDate: booking.scheduledDate.toISOString(),
+      scheduledDate: booking.scheduledDate?.toISOString() ?? null,
       scheduledWindow: booking.scheduledWindow,
     },
     after: {

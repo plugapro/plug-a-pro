@@ -18,6 +18,8 @@ function VerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const phone = searchParams.get('phone') ?? ''
+  const name = searchParams.get('name') ?? ''
+  const intent = searchParams.get('intent') ?? ''
   const next = getSafeCustomerNextPath(
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
     '/bookings',
@@ -79,17 +81,29 @@ function VerifyForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // userId omitted — server reads it from the verified session cookie
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, name: name || undefined }),
       })
 
-      if (!res.ok) {
+      let destination = next
+      if (res.ok) {
+        const json = await res.json() as { customerId?: string; isNew?: boolean; isProvider?: boolean }
+        if (json.isProvider) {
+          setError(
+            'This phone is already registered as a service provider. To manage your bookings as a customer, please contact support@plugapro.co.za.'
+          )
+          return
+        }
+        if (intent === 'signup' || json.isNew) {
+          destination = '/services'
+        }
+      } else {
         console.warn('[verify] linkCustomerAccount failed:', await res.text())
       }
 
       // Mark as done before navigating so the form does not reappear while the
       // client-side navigation is still in progress (router.replace is non-blocking).
       setDone(true)
-      router.replace(next)
+      router.replace(destination)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
