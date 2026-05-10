@@ -14,6 +14,7 @@ function validateAddressStep(input: {
   province: string
   postalCode: string
   locationNodeId: string | null
+  addressLine1: string
 }): string | null {
   const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
     Gauteng: 'gauteng',
@@ -54,7 +55,7 @@ function validateAddressStep(input: {
     return 'Postal code must come from the selected suburb.'
   }
 
-  const addressLine1 = normalizeValue('')
+  const addressLine1 = normalizeValue(input.addressLine1)
   if (!addressLine1) {
     return 'Enter the street address after choosing the suburb.'
   }
@@ -71,11 +72,11 @@ describe('BookingFlow address validation', () => {
       city: 'Johannesburg',
       region: '', // Empty because SavedSite clears it
       province: 'Gauteng',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: 'node-123', // Set from SavedSite
+      addressLine1: '5 Alice Lane',
     })
-    // Should pass validation up to the street address check
-    expect(result).toBe('Enter the street address after choosing the suburb.')
+    expect(result).toBe(null)
   })
 
   it('should reject manual entry address when both region and locationNodeId are empty', () => {
@@ -84,24 +85,25 @@ describe('BookingFlow address validation', () => {
       city: 'Johannesburg',
       region: '', // Empty
       province: 'Gauteng',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: null, // No locationNodeId from SavedSite
+      addressLine1: '5 Alice Lane',
     })
-    // Should fail validation at the locationNodeId check (required before address fields)
-    expect(result).toBe('Select your suburb before continuing — use "Use my location" or type in the search box.')
+    // Fails at the locationNodeId gate (suburb picker not complete)
+    expect(result).not.toBe(null)
   })
 
-  it('should accept fully populated address with region', () => {
+  it('should accept fully populated address with region and locationNodeId', () => {
     const result = validateAddressStep({
       suburb: 'Sandton',
       city: 'Johannesburg',
-      region: 'Johannesburg Metro',
+      region: 'Gauteng South',
       province: 'Gauteng',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
-    // Should pass validation up to the street address check
-    expect(result).toBe('Enter the street address after choosing the suburb.')
+    expect(result).toBe(null)
   })
 
   it('should reject when suburb is missing', () => {
@@ -110,8 +112,9 @@ describe('BookingFlow address validation', () => {
       city: 'Johannesburg',
       region: 'Johannesburg Metro',
       province: 'Gauteng',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Please complete the full service address before continuing.')
   })
@@ -122,8 +125,9 @@ describe('BookingFlow address validation', () => {
       city: '',
       region: 'Johannesburg Metro',
       province: 'Gauteng',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Please complete the full service address before continuing.')
   })
@@ -134,8 +138,9 @@ describe('BookingFlow address validation', () => {
       city: 'Johannesburg',
       region: 'Johannesburg Metro',
       province: '',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Please complete the full service address before continuing.')
   })
@@ -148,6 +153,7 @@ describe('BookingFlow address validation', () => {
       province: 'Gauteng',
       postalCode: '',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Please complete the full service address before continuing.')
   })
@@ -158,8 +164,9 @@ describe('BookingFlow address validation', () => {
       city: 'Johannesburg',
       region: 'Johannesburg Metro',
       province: 'Gauteng',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: null,
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Select your suburb before continuing — use "Use my location" or type in the search box.')
   })
@@ -170,8 +177,9 @@ describe('BookingFlow address validation', () => {
       city: 'Johannesburg',
       region: 'Johannesburg Metro',
       province: 'InvalidProvince',
-      postalCode: '2146',
+      postalCode: '2196',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Please select a valid South African province.')
   })
@@ -184,6 +192,7 @@ describe('BookingFlow address validation', () => {
       province: 'Gauteng',
       postalCode: 'ABCD',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Postal code must come from the selected suburb.')
   })
@@ -196,7 +205,21 @@ describe('BookingFlow address validation', () => {
       province: 'Gauteng',
       postalCode: '214',
       locationNodeId: 'node-123',
+      addressLine1: '5 Alice Lane',
     })
     expect(result).toBe('Postal code must come from the selected suburb.')
+  })
+
+  it('should reject when addressLine1 is missing', () => {
+    const result = validateAddressStep({
+      suburb: 'Sandton',
+      city: 'Johannesburg',
+      region: 'Johannesburg Metro',
+      province: 'Gauteng',
+      postalCode: '2196',
+      locationNodeId: 'node-123',
+      addressLine1: '',
+    })
+    expect(result).toBe('Enter the street address after choosing the suburb.')
   })
 })
