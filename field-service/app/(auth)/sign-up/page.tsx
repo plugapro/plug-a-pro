@@ -25,7 +25,7 @@ export default function SignUpPage() {
   const searchParams = useSearchParams()
 
   const prefillPhone = searchParams.get('phone') ?? ''
-  const prefillNext = getSafeCustomerNextPath(searchParams.get('next'), '/bookings/new')
+  const prefillNext = getSafeCustomerNextPath(searchParams.get('next'), '/services')
   const [phone, setPhone] = useState(prefillPhone)
   const [name, setName] = useState('')
   const [agreed, setAgreed] = useState(false)

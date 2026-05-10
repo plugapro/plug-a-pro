@@ -6,14 +6,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { mockGetSession, mockLinkCustomerAccount } = vi.hoisted(() => ({
+const { mockGetSession, mockLinkCustomerAccount, mockDbProviderFindFirst } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockLinkCustomerAccount: vi.fn(),
+  mockDbProviderFindFirst: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
   getSession: mockGetSession,
   linkCustomerAccount: mockLinkCustomerAccount,
+}))
+
+vi.mock('@/lib/db', () => ({
+  db: {
+    provider: {
+      findFirst: mockDbProviderFindFirst,
+    },
+  },
 }))
 
 const VALID_SESSION = {

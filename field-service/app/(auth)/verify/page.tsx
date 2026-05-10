@@ -86,9 +86,15 @@ function VerifyForm() {
 
       let destination = next
       if (res.ok) {
-        const json = await res.json() as { customerId?: string; isNew?: boolean }
+        const json = await res.json() as { customerId?: string; isNew?: boolean; isProvider?: boolean }
+        if (json.isProvider) {
+          setError(
+            'This phone is already registered as a service provider. To manage your bookings as a customer, please contact support@plugapro.co.za.'
+          )
+          return
+        }
         if (intent === 'signup' || json.isNew) {
-          destination = '/bookings/new'
+          destination = '/services'
         }
       } else {
         console.warn('[verify] linkCustomerAccount failed:', await res.text())

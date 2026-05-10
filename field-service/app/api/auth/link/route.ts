@@ -5,13 +5,14 @@
 // Customer record (if one exists), or creates a fresh Customer row.
 //
 // Body: { phone: string; name?: string }
-// Returns: { customerId: string, isNew: boolean }
+// Returns: { customerId: string, isNew: boolean, isProvider: boolean }
 //
 // Security: userId is sourced from the server-verified session cookie, not the
 // request body, so a caller cannot impersonate another user.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession, linkCustomerAccount } from '@/lib/auth'
+import { db } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,7 +41,15 @@ export async function POST(request: NextRequest) {
 
     const result = await linkCustomerAccount({ userId: session.id, phone, name })
 
-    return NextResponse.json({ customerId: result.id, isNew: result.isNew })
+    // Detect provider-only accounts so the client can show a blocking message
+    // instead of redirecting into the customer journey with a provider role.
+    const provider = await db.provider.findFirst({
+      where: { userId: session.id },
+      select: { id: true },
+    })
+    const isProvider = provider !== null
+
+    return NextResponse.json({ customerId: result.id, isNew: result.isNew, isProvider })
   } catch (err) {
     console.error('[api/auth/link] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
