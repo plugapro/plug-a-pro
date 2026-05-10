@@ -39,6 +39,7 @@ export class ReviewFirstError extends Error {
       | 'REQUEST_MISSING_CATEGORY'
       | 'REQUEST_MISSING_LOCATION'
       | 'FORBIDDEN'
+      | 'MATCHES_NOT_READY'
       | 'NO_CANDIDATES'
       | 'PROVIDER_NOT_ELIGIBLE'
       | 'SHORTLIST_LIMIT_REACHED'
@@ -49,6 +50,247 @@ export class ReviewFirstError extends Error {
   ) {
     super(message)
     this.name = 'ReviewFirstError'
+  }
+}
+
+type MatchedProviderDisplay = {
+  providerId: string
+  displayName: string
+  profilePhotoUrl: string | null
+  mainSkill: string
+  secondarySkills: string[]
+  serviceArea: string | null
+  serviceZones: string[]
+  labourRateText: string | null
+  trustLevel: 'reviewed' | 'profile_only'
+  summary: string | null
+  availabilityIndicator: 'available_now' | 'availability_not_confirmed'
+  rank: number
+  score: number | null
+  whyMatched: string
+  // Existing review-first UI contract (kept for backwards compatibility)
+  name: string
+  bio: string | null
+  experience: string | null
+  skills: string[]
+  serviceAreas: string[]
+  avatarUrl: string | null
+  verified: boolean
+  averageRating: number | null
+  completedJobsCount: number
+  portfolioUrls: string[]
+  callOutFee: number | null
+  hourlyRate: number | null
+  negotiable: boolean
+  profileUrl: string | null
+}
+
+function isProviderDisplayEligible(provider: {
+  active: boolean
+  status: string
+  availableNow: boolean
+  name: string
+  skills: string[]
+  serviceAreas: string[]
+  technicianServiceAreas: Array<{ active: boolean; label: string | null; city: string | null }>
+}) {
+  if (!provider.active) return false
+  if (provider.status !== 'ACTIVE') return false
+  if (!provider.name.trim()) return false
+  if (!provider.availableNow) return false
+  if (provider.skills.length === 0) return false
+  const hasArea = provider.serviceAreas.length > 0 || provider.technicianServiceAreas.some((row) => row.active)
+  if (!hasArea) return false
+  return true
+}
+
+function pickMainSkill(skills: string[], requestCategory: string) {
+  const normalizedRequestCategory = requestCategory.trim().toLowerCase()
+  const requestSkill = skills.find((skill) => skill.trim().toLowerCase() === normalizedRequestCategory)
+  return requestSkill ?? skills[0] ?? requestCategory
+}
+
+function buildServiceAreaLabel(provider: {
+  serviceAreas: string[]
+  technicianServiceAreas: Array<{ active: boolean; label: string | null; city: string | null }>
+}) {
+  const structured = provider.technicianServiceAreas
+    .filter((row) => row.active)
+    .map((row) => row.label ?? row.city)
+    .filter((row): row is string => Boolean(row))
+  const zones = [...structured, ...provider.serviceAreas].filter(Boolean)
+  return zones[0] ?? null
+}
+
+function toLabourRateText(callOutFee: number | null, hourlyRate: number | null, negotiable: boolean) {
+  if (hourlyRate != null) return `from R${Math.round(hourlyRate)}/hr`
+  if (callOutFee != null) return `call-out from R${Math.round(callOutFee)}`
+  if (negotiable) return 'rate negotiable'
+  return null
+}
+
+export async function getMatchedProvidersForCustomerRequest(params: {
+  requestId: string
+  customerId: string
+  batch?: number
+}) {
+  const batch = params.batch ?? 1
+  if (batch < 1 || batch > MAX_PROVIDER_REVIEW_BATCHES) {
+    throw new ReviewFirstError('INVALID_BATCH', 'Invalid provider batch.')
+  }
+
+  console.info('[review-first.matches] retrieval_start', {
+    requestId: params.requestId,
+    customerId: params.customerId,
+    batch,
+  })
+
+  const request = await db.jobRequest.findUnique({
+    where: { id: params.requestId },
+    select: {
+      id: true,
+      customerId: true,
+      category: true,
+      latestDispatchDecisionId: true,
+      leads: { select: { providerId: true, status: true } },
+    },
+  })
+  if (!request) {
+    console.warn('[review-first.matches] request_not_found', { requestId: params.requestId })
+    throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
+  }
+  if (request.customerId !== params.customerId) {
+    console.warn('[review-first.matches] forbidden', {
+      requestId: params.requestId,
+      customerId: params.customerId,
+    })
+    throw new ReviewFirstError('FORBIDDEN', 'Not allowed for this request.')
+  }
+
+  const decisionId = request.latestDispatchDecisionId ?? (await ensureReviewRankingDecision({ requestId: request.id }))
+
+  const rankedAttempts = await db.matchAttempt.findMany({
+    where: { dispatchDecisionId: decisionId, stage: 'RANKED' },
+    orderBy: [{ rankedPosition: 'asc' }, { createdAt: 'asc' }],
+    include: {
+      provider: {
+        select: {
+          id: true,
+          active: true,
+          status: true,
+          availableNow: true,
+          name: true,
+          bio: true,
+          experience: true,
+          skills: true,
+          serviceAreas: true,
+          avatarUrl: true,
+          verified: true,
+          averageRating: true,
+          completedJobsCount: true,
+          portfolioUrls: true,
+          technicianServiceAreas: {
+            where: { active: true },
+            select: {
+              active: true,
+              label: true,
+              city: true,
+            },
+          },
+          providerRates: {
+            orderBy: { updatedAt: 'desc' },
+            take: 1,
+            select: {
+              callOutFee: true,
+              hourlyRate: true,
+              rateNegotiable: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  const engagedProviderIds = new Set(
+    request.leads
+      .filter((lead) => lead.status === 'SHORTLISTED' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'INTERESTED')
+      .map((lead) => lead.providerId),
+  )
+
+  const eligibleAttempts = rankedAttempts.filter((attempt) => {
+    if (engagedProviderIds.has(attempt.providerId)) return false
+    return isProviderDisplayEligible(attempt.provider)
+  })
+
+  const offset = (batch - 1) * PROVIDERS_PER_BATCH
+  const selected = eligibleAttempts.slice(offset, offset + PROVIDERS_PER_BATCH)
+
+  const providers: MatchedProviderDisplay[] = selected.map((attempt, index) => {
+    const rate = attempt.provider.providerRates[0] ?? null
+    const callOutFee = rate?.callOutFee ? Number(rate.callOutFee) : null
+    const hourlyRate = rate?.hourlyRate ? Number(rate.hourlyRate) : null
+    const negotiable = rate?.rateNegotiable ?? true
+    const mainSkill = pickMainSkill(attempt.provider.skills, request.category)
+    const serviceArea = buildServiceAreaLabel(attempt.provider)
+    const serviceZones = [
+      ...attempt.provider.serviceAreas,
+      ...attempt.provider.technicianServiceAreas
+        .map((row) => row.label ?? row.city)
+        .filter((row): row is string => Boolean(row)),
+    ]
+    const displayName = attempt.provider.name
+    const whyMatched = attempt.feasibilityNotes?.[0] ?? 'Matches your service category and area.'
+
+    return {
+      providerId: attempt.provider.id,
+      displayName,
+      profilePhotoUrl: attempt.provider.avatarUrl,
+      mainSkill,
+      secondarySkills: attempt.provider.skills.filter((skill) => skill !== mainSkill).slice(0, 4),
+      serviceArea,
+      serviceZones,
+      labourRateText: toLabourRateText(callOutFee, hourlyRate, negotiable),
+      trustLevel: attempt.provider.verified ? 'reviewed' : 'profile_only',
+      summary: attempt.provider.bio,
+      availabilityIndicator: attempt.provider.availableNow ? 'available_now' : 'availability_not_confirmed',
+      rank: offset + index + 1,
+      score: attempt.score ?? null,
+      whyMatched,
+      // Backwards-compatible fields used by current PWA review-first screens.
+      name: displayName,
+      bio: attempt.provider.bio,
+      experience: attempt.provider.experience,
+      skills: attempt.provider.skills,
+      serviceAreas: attempt.provider.serviceAreas,
+      avatarUrl: attempt.provider.avatarUrl,
+      verified: attempt.provider.verified,
+      averageRating: attempt.provider.averageRating,
+      completedJobsCount: attempt.provider.completedJobsCount,
+      portfolioUrls: attempt.provider.portfolioUrls,
+      callOutFee,
+      hourlyRate,
+      negotiable,
+      profileUrl: getReviewProviderProfileUrl({
+        requestId: request.id,
+        providerId: attempt.provider.id,
+      }),
+    }
+  })
+
+  console.info('[review-first.matches] retrieval_success', {
+    requestId: params.requestId,
+    customerId: params.customerId,
+    decisionId,
+    matchCount: providers.length,
+    totalEligibleCount: eligibleAttempts.length,
+  })
+
+  return {
+    requestId: request.id,
+    batch,
+    hasMore: offset + PROVIDERS_PER_BATCH < eligibleAttempts.length && batch < MAX_PROVIDER_REVIEW_BATCHES,
+    totalEligibleCount: eligibleAttempts.length,
+    providers,
   }
 }
 
@@ -120,6 +362,11 @@ function providerCoversRequestArea(
  * Status mapping (without a large enum rename):
  * - MATCHING_PENDING => JobRequest.OPEN
  * - MATCHES_FOUND    => JobRequest.SHORTLIST_READY
+ *
+ * Auth: this function performs DB writes without an ownership check. It is intentionally
+ * a system-level service callable only from trusted internal paths (ensureReviewRankingDecision,
+ * admin actions, background jobs). Never expose it directly to unauthenticated API routes.
+ * Customer-facing callers must validate ownership before invoking this.
  */
 export async function matchEligibleProvidersForServiceRequest(params: {
   serviceRequestId: string
@@ -154,7 +401,10 @@ export async function matchEligibleProvidersForServiceRequest(params: {
     throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
   }
 
-  if (['MATCHED', 'CANCELLED', 'EXPIRED'].includes(request.status)) {
+  // SHORTLIST_READY: customer is actively reviewing; re-matching would overwrite the decision they see.
+  // PROVIDER_CONFIRMATION_PENDING: a provider has been selected and is awaiting acceptance; re-matching
+  // would corrupt latestDispatchDecisionId mid-flow.
+  if (['MATCHED', 'CANCELLED', 'EXPIRED', 'SHORTLIST_READY', 'PROVIDER_CONFIRMATION_PENDING'].includes(request.status)) {
     console.warn('[mvp1.match] request_not_matchable', { serviceRequestId, status: request.status })
     throw new ReviewFirstError('REQUEST_NOT_MATCHABLE', 'Request is no longer eligible for matching.')
   }
@@ -272,7 +522,11 @@ export async function matchEligibleProvidersForServiceRequest(params: {
       // This keeps request matching deterministic even if upstream ranking inputs drift.
       if (!row.provider.active || row.provider.status !== 'ACTIVE' || !row.provider.availableNow) return false
       if (!row.provider.name.trim()) return false
-      if (row.provider.skills.length === 0 || row.provider.serviceAreas.length === 0) return false
+      if (row.provider.skills.length === 0) return false
+      // A provider may use legacy serviceAreas strings OR the structured technicianServiceAreas system.
+      // Requiring serviceAreas.length > 0 would incorrectly exclude structured-only providers.
+      const hasArea = row.provider.serviceAreas.length > 0 || row.provider.technicianServiceAreas.some((sa) => sa.active)
+      if (!hasArea) return false
       if (!row.provider.skills.map((skill) => normalize(skill)).includes(normalizedCategory)) return false
       if (!providerCoversRequestArea(row.provider, request)) return false
       return true
@@ -288,49 +542,57 @@ export async function matchEligibleProvidersForServiceRequest(params: {
     canMeetWindow: row.candidate.canMeetWindow,
   }))
 
-  const decision = await db.dispatchDecision.create({
-    data: {
-      jobRequestId: serviceRequestId,
-      mode: 'OPS_REVIEW',
-      status: finalCandidates.length > 0 ? 'RANKED' : 'NO_MATCH',
-      initiatedById: 'mvp1-matching',
-      initiatedByRole: 'system',
-      consideredCount: ranking.consideredCount,
-      eligibleCount: finalCandidates.length,
-      rankingSummary: rankingSummary as object[],
-      filterSummary: ranking.filteredOut as object[],
-      explanation: finalCandidates[0]?.candidate.selectionReason ?? 'No eligible providers passed MVP1 filters.',
-    },
-  })
-
-  for (const row of finalCandidates) {
-    await db.matchAttempt.create({
+  // Write the decision, all attempt rows, and the request pointer atomically.
+  // A crash between decision.create and matchAttempt.create would leave
+  // latestDispatchDecisionId pointing at a partially-populated decision; wrapping
+  // in a transaction ensures the cache check always sees a consistent state.
+  const decision = await db.$transaction(async (tx) => {
+    const dec = await tx.dispatchDecision.create({
       data: {
         jobRequestId: serviceRequestId,
-        providerId: row.provider!.id,
-        dispatchDecisionId: decision.id,
-        attemptNumber: row.rank,
-        rankedPosition: row.rank,
-        stage: 'RANKED',
-        hardFilterPassed: true,
-        filteredReasonCodes: [],
-        feasibilityNotes: row.candidate.feasibilityNotes,
-        score: row.candidate.score,
-        scoreBreakdown: row.candidate.scoreBreakdown as object,
+        mode: 'OPS_REVIEW',
+        status: finalCandidates.length > 0 ? 'RANKED' : 'NO_MATCH',
+        initiatedById: 'mvp1-matching',
+        initiatedByRole: 'system',
+        consideredCount: ranking.consideredCount,
+        eligibleCount: finalCandidates.length,
+        rankingSummary: rankingSummary as object[],
+        filterSummary: ranking.filteredOut as object[],
+        explanation: finalCandidates[0]?.candidate.selectionReason ?? 'No eligible providers passed MVP1 filters.',
       },
     })
-  }
 
-  // Keep the persisted request status compatible with the existing review-first
-  // flow: provider options are represented by a ranked dispatch decision while
-  // the request remains in PENDING_VALIDATION until shortlist publication.
-  await db.jobRequest.update({
-    where: { id: serviceRequestId },
-    data: {
-      latestDispatchDecisionId: decision.id,
-      assignmentMode: 'OPS_REVIEW',
-      status: 'PENDING_VALIDATION',
-    },
+    if (finalCandidates.length > 0) {
+      await tx.matchAttempt.createMany({
+        data: finalCandidates.map((row) => ({
+          jobRequestId: serviceRequestId,
+          providerId: row.provider!.id,
+          dispatchDecisionId: dec.id,
+          attemptNumber: row.rank,
+          rankedPosition: row.rank,
+          stage: 'RANKED' as const,
+          hardFilterPassed: true,
+          filteredReasonCodes: [],
+          feasibilityNotes: row.candidate.feasibilityNotes,
+          score: row.candidate.score,
+          scoreBreakdown: row.candidate.scoreBreakdown as object,
+        })),
+      })
+    }
+
+    // Keep the persisted request status compatible with the existing review-first
+    // flow: provider options are represented by a ranked dispatch decision while
+    // the request remains in PENDING_VALIDATION until shortlist publication.
+    await tx.jobRequest.update({
+      where: { id: serviceRequestId },
+      data: {
+        latestDispatchDecisionId: dec.id,
+        assignmentMode: 'OPS_REVIEW',
+        status: 'PENDING_VALIDATION',
+      },
+    })
+
+    return dec
   })
 
   const providers: Mvp1MatchProvider[] = finalCandidates.map((row) => ({
@@ -426,109 +688,35 @@ export async function getProviderCandidatesForCustomerReview(params: {
   customerId: string
   batch?: number
 }) {
-  const batch = params.batch ?? 1
-  if (batch < 1 || batch > MAX_PROVIDER_REVIEW_BATCHES) {
-    throw new ReviewFirstError('INVALID_BATCH', 'Invalid provider batch.')
-  }
-
-  const ownerCheck = await db.jobRequest.findUnique({
-    where: { id: params.requestId },
-    select: { id: true, customerId: true },
-  })
-  if (!ownerCheck) throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
-  if (ownerCheck.customerId !== params.customerId) {
-    throw new ReviewFirstError('FORBIDDEN', 'Not allowed for this request.')
-  }
-
-  const decisionId = await ensureReviewRankingDecision({ requestId: params.requestId })
-  const request = await db.jobRequest.findUnique({
-    where: { id: params.requestId },
-    select: {
-      id: true,
-      category: true,
-      customer: { select: { phone: true } },
-      leads: {
-        select: { providerId: true, status: true },
-      },
-    },
-  })
-  if (!request) throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
-
-  const ranked = await db.matchAttempt.findMany({
-    where: {
-      dispatchDecisionId: decisionId,
-      stage: 'RANKED',
-    },
-    orderBy: [{ rankedPosition: 'asc' }, { createdAt: 'asc' }],
-    include: {
-      provider: {
-        select: {
-          id: true,
-          name: true,
-          bio: true,
-          experience: true,
-          skills: true,
-          serviceAreas: true,
-          avatarUrl: true,
-          verified: true,
-          averageRating: true,
-          completedJobsCount: true,
-          portfolioUrls: true,
-          providerRates: {
-            orderBy: { updatedAt: 'desc' },
-            take: 1,
-            select: {
-              callOutFee: true,
-              hourlyRate: true,
-              rateNegotiable: true,
-            },
-          },
-        },
-      },
-    },
-  })
-
-  const engagedProviderIds = new Set(
-    request.leads
-      .filter((lead) => lead.status === 'SHORTLISTED' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'INTERESTED')
-      .map((lead) => lead.providerId),
-  )
-  const availableCandidates = ranked.filter((attempt) => !engagedProviderIds.has(attempt.providerId))
-
-  const offset = (batch - 1) * PROVIDERS_PER_BATCH
-  const selected = availableCandidates.slice(offset, offset + PROVIDERS_PER_BATCH)
-
-  const candidates = selected.map((attempt, index) => {
-    const rate = attempt.provider.providerRates[0] ?? null
-    return {
-      providerId: attempt.provider.id,
-      rank: offset + index + 1,
-      name: attempt.provider.name,
-      bio: attempt.provider.bio,
-      experience: attempt.provider.experience,
-      skills: attempt.provider.skills,
-      serviceAreas: attempt.provider.serviceAreas,
-      avatarUrl: attempt.provider.avatarUrl,
-      verified: attempt.provider.verified,
-      averageRating: attempt.provider.averageRating,
-      completedJobsCount: attempt.provider.completedJobsCount,
-      portfolioUrls: attempt.provider.portfolioUrls,
-      callOutFee: rate?.callOutFee ? Number(rate.callOutFee) : null,
-      hourlyRate: rate?.hourlyRate ? Number(rate.hourlyRate) : null,
-      negotiable: rate?.rateNegotiable ?? true,
-      whyMatched: attempt.feasibilityNotes?.[0] ?? 'Strong match for your service area and request details.',
-      profileUrl: getReviewProviderProfileUrl({
-        requestId: request.id,
-        providerId: attempt.provider.id,
-      }),
-    }
+  const matches = await getMatchedProvidersForCustomerRequest({
+    requestId: params.requestId,
+    customerId: params.customerId,
+    batch: params.batch,
   })
 
   return {
-    requestId: request.id,
-    batch,
-    hasMore: offset + PROVIDERS_PER_BATCH < availableCandidates.length && batch < MAX_PROVIDER_REVIEW_BATCHES,
-    candidates,
+    requestId: matches.requestId,
+    batch: matches.batch,
+    hasMore: matches.hasMore,
+    candidates: matches.providers.map((provider) => ({
+      providerId: provider.providerId,
+      rank: provider.rank,
+      name: provider.name,
+      bio: provider.bio,
+      experience: provider.experience,
+      skills: provider.skills,
+      serviceAreas: provider.serviceAreas,
+      avatarUrl: provider.avatarUrl,
+      verified: provider.verified,
+      averageRating: provider.averageRating,
+      completedJobsCount: provider.completedJobsCount,
+      portfolioUrls: provider.portfolioUrls,
+      callOutFee: provider.callOutFee,
+      hourlyRate: provider.hourlyRate,
+      negotiable: provider.negotiable,
+      whyMatched: provider.whyMatched,
+      profileUrl: provider.profileUrl,
+    })),
   }
 }
 
