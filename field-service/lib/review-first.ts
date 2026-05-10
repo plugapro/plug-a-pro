@@ -36,6 +36,7 @@ export class ReviewFirstError extends Error {
     public readonly code:
       | 'REQUEST_NOT_FOUND'
       | 'REQUEST_NOT_MATCHABLE'
+      | 'MATCHING_FAILED'
       | 'REQUEST_MISSING_CATEGORY'
       | 'REQUEST_MISSING_LOCATION'
       | 'FORBIDDEN'
@@ -151,6 +152,16 @@ export async function getMatchedProvidersForCustomerRequest(params: {
       id: true,
       customerId: true,
       category: true,
+      status: true,
+      address: {
+        select: {
+          suburb: true,
+          city: true,
+          region: true,
+          locationNodeId: true,
+          locationNode: { select: { regionKey: true } },
+        },
+      },
       latestDispatchDecisionId: true,
       leads: { select: { providerId: true, status: true } },
     },
@@ -167,7 +178,61 @@ export async function getMatchedProvidersForCustomerRequest(params: {
     throw new ReviewFirstError('FORBIDDEN', 'Not allowed for this request.')
   }
 
-  const decisionId = request.latestDispatchDecisionId ?? (await ensureReviewRankingDecision({ requestId: request.id }))
+  // In terminal or accepted states, matched providers should not be surfaced to
+  // avoid exposing a stale, no longer-valid provider set after the request is closed.
+  const nonDisplayableStatuses = new Set(['CANCELLED', 'EXPIRED', 'MATCHED', 'PROVIDER_CONFIRMATION_PENDING'])
+  if (nonDisplayableStatuses.has(request.status)) {
+    console.warn('[review-first.matches] request_not_matchable', {
+      requestId: params.requestId,
+      requestStatus: request.status,
+    })
+    throw new ReviewFirstError('REQUEST_NOT_MATCHABLE', 'Request is not in a valid state for provider matching view.')
+  }
+
+  if (!normalize(request.category)) {
+    console.warn('[review-first.matches] missing_category', {
+      requestId: params.requestId,
+    })
+    throw new ReviewFirstError('REQUEST_MISSING_CATEGORY', 'Request is missing a service category.')
+  }
+
+  const hasLocation = Boolean(
+    normalize(request.address?.suburb) ||
+      normalize(request.address?.city) ||
+      normalize(request.address?.region) ||
+      request.address?.locationNodeId,
+  )
+  if (!hasLocation) {
+    console.warn('[review-first.matches] missing_location', {
+      requestId: params.requestId,
+    })
+    throw new ReviewFirstError('REQUEST_MISSING_LOCATION', 'Request is missing location details.')
+  }
+
+  const normalizedRequestCategory = normalize(request.category)
+
+  let decisionId = request.latestDispatchDecisionId
+  if (decisionId) {
+    const latestDecision = await db.dispatchDecision.findUnique({
+      where: { id: decisionId },
+      select: { id: true, mode: true, status: true },
+    })
+    const hasUsableCachedDecision =
+      latestDecision?.mode === 'OPS_REVIEW' && (latestDecision.status === 'RANKED' || latestDecision.status === 'NO_MATCH')
+
+    if (!hasUsableCachedDecision) {
+      const fallbackDecision = await db.dispatchDecision.findFirst({
+        where: { jobRequestId: request.id, mode: 'OPS_REVIEW', status: { in: ['RANKED', 'NO_MATCH'] } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      })
+      decisionId = fallbackDecision?.id ?? null
+    }
+  }
+
+  if (!decisionId) {
+    decisionId = await ensureReviewRankingDecision({ requestId: request.id })
+  }
 
   const rankedAttempts = await db.matchAttempt.findMany({
     where: { dispatchDecisionId: decisionId, stage: 'RANKED' },
@@ -195,6 +260,9 @@ export async function getMatchedProvidersForCustomerRequest(params: {
               active: true,
               label: true,
               city: true,
+              suburbKey: true,
+              regionKey: true,
+              locationNodeId: true,
             },
           },
           providerRates: {
@@ -219,7 +287,24 @@ export async function getMatchedProvidersForCustomerRequest(params: {
 
   const eligibleAttempts = rankedAttempts.filter((attempt) => {
     if (engagedProviderIds.has(attempt.providerId)) return false
-    return isProviderDisplayEligible(attempt.provider)
+
+    // Exclude providers that no longer satisfy eligibility checks used by
+    // Review-first visibility rules before returning results to the customer.
+    if (!isProviderDisplayEligible(attempt.provider)) return false
+
+    // Enforce area-match defensively at read time in case cached ranking data
+    // drifted or was produced before recent policy changes.
+    if (!providerCoversRequestArea(attempt.provider, { address: request.address })) {
+      return false
+    }
+
+    // Protect against stale ranking rows where request category and provider
+    // skills drift out of sync with current matching policy.
+    if (!attempt.provider.skills.map((skill) => normalize(skill)).includes(normalizedRequestCategory)) {
+      return false
+    }
+
+    return true
   })
 
   const offset = (batch - 1) * PROVIDERS_PER_BATCH
@@ -276,6 +361,20 @@ export async function getMatchedProvidersForCustomerRequest(params: {
       }),
     }
   })
+
+  const filteredCount = rankedAttempts.length - eligibleAttempts.length
+  if (providers.length === 0) {
+    console.warn('[review-first.matches] retrieval_empty', {
+      requestId: params.requestId,
+      customerId: params.customerId,
+      decisionId,
+      batch,
+      matchCount: providers.length,
+      totalAttemptCount: rankedAttempts.length,
+      totalEligibleCount: eligibleAttempts.length,
+      filteredOutCount: filteredCount,
+    })
+  }
 
   console.info('[review-first.matches] retrieval_success', {
     requestId: params.requestId,
@@ -402,11 +501,26 @@ export async function matchEligibleProvidersForServiceRequest(params: {
   }
 
   // SHORTLIST_READY: customer is actively reviewing; re-matching would overwrite the decision they see.
-  // PROVIDER_CONFIRMATION_PENDING: a provider has been selected and is awaiting acceptance; re-matching
-  // would corrupt latestDispatchDecisionId mid-flow.
-  if (['MATCHED', 'CANCELLED', 'EXPIRED', 'SHORTLIST_READY', 'PROVIDER_CONFIRMATION_PENDING'].includes(request.status)) {
+  // PROVIDER_CONFIRMATION_PENDING: a provider has been selected and is awaiting acceptance.
+  const nonRematchableStatuses = [
+    'MATCHED',
+    'CANCELLED',
+    'EXPIRED',
+    'SHORTLIST_READY',
+    'PROVIDER_CONFIRMATION_PENDING',
+  ] as const
+  if (nonRematchableStatuses.includes(request.status as (typeof nonRematchableStatuses)[number])) {
     console.warn('[mvp1.match] request_not_matchable', { serviceRequestId, status: request.status })
-    throw new ReviewFirstError('REQUEST_NOT_MATCHABLE', 'Request is no longer eligible for matching.')
+    throw new ReviewFirstError(
+      'REQUEST_NOT_MATCHABLE',
+      request.status === 'MATCHED'
+        ? 'Request is already accepted and cannot be rematched.'
+        : request.status === 'CANCELLED'
+          ? 'Request was cancelled and cannot be rematched.'
+          : request.status === 'EXPIRED'
+            ? 'Request has expired and cannot be rematched.'
+            : 'Request is currently in a later matching state and cannot be rematched.',
+    )
   }
 
   if (!normalize(request.category)) {
@@ -431,13 +545,23 @@ export async function matchEligibleProvidersForServiceRequest(params: {
       })
     : null
 
+  const fallbackDecision = cachedDecision
+    ? null
+    : await db.dispatchDecision.findFirst({
+        where: { jobRequestId: serviceRequestId, mode: 'OPS_REVIEW', status: { in: ['RANKED', 'NO_MATCH'] } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, mode: true, status: true },
+      })
+
+  const resolvedDecision = cachedDecision ?? fallbackDecision
+
   if (
-    cachedDecision &&
-    cachedDecision.mode === 'OPS_REVIEW' &&
-    (cachedDecision.status === 'RANKED' || cachedDecision.status === 'NO_MATCH')
+    resolvedDecision &&
+    resolvedDecision.mode === 'OPS_REVIEW' &&
+    (resolvedDecision.status === 'RANKED' || resolvedDecision.status === 'NO_MATCH')
   ) {
     const cachedAttempts = await db.matchAttempt.findMany({
-      where: { dispatchDecisionId: cachedDecision.id, stage: 'RANKED' },
+      where: { dispatchDecisionId: resolvedDecision.id, stage: 'RANKED' },
       orderBy: [{ rankedPosition: 'asc' }, { createdAt: 'asc' }],
       take: limit,
       include: {
@@ -468,171 +592,190 @@ export async function matchEligibleProvidersForServiceRequest(params: {
 
     console.info('[mvp1.match] success_cached', {
       serviceRequestId,
-      decisionId: cachedDecision.id,
+      decisionId: resolvedDecision.id,
       matchedProviders: cachedProviders.length,
     })
     return {
       serviceRequestId,
-      decisionId: cachedDecision.id,
+      decisionId: resolvedDecision.id,
       status: cachedProviders.length > 0 ? 'MATCHES_FOUND' as const : 'NO_MATCH' as const,
       providers: cachedProviders,
       wasCached: true,
     }
   }
 
-  const ranking = await rankCandidatesForJobRequest(serviceRequestId)
-  const providerIds = ranking.candidates.map((candidate) => candidate.providerId)
+  const runMatching = async () => {
+    const ranking = await rankCandidatesForJobRequest(serviceRequestId)
+    const providerIds = ranking.candidates.map((candidate) => candidate.providerId)
 
-  const rankedProviders = providerIds.length
-    ? await db.provider.findMany({
-        where: { id: { in: providerIds } },
-        select: {
-          id: true,
-          active: true,
-          status: true,
-          availableNow: true,
-          verified: true,
-          name: true,
-          bio: true,
-          avatarUrl: true,
-          skills: true,
-          serviceAreas: true,
-          technicianServiceAreas: {
-            where: { active: true },
-            select: {
-              active: true,
-              label: true,
-              city: true,
-              regionKey: true,
-              suburbKey: true,
-              locationNodeId: true,
+    const rankedProviders = providerIds.length
+      ? await db.provider.findMany({
+          where: { id: { in: providerIds } },
+          select: {
+            id: true,
+            active: true,
+            status: true,
+            availableNow: true,
+            verified: true,
+            name: true,
+            bio: true,
+            avatarUrl: true,
+            skills: true,
+            serviceAreas: true,
+            technicianServiceAreas: {
+              where: { active: true },
+              select: {
+                active: true,
+                label: true,
+                city: true,
+                regionKey: true,
+                suburbKey: true,
+                locationNodeId: true,
+              },
             },
           },
+        })
+      : []
+
+    const providersById = new Map(rankedProviders.map((provider) => [provider.id, provider]))
+    const normalizedCategory = normalize(request.category)
+    const finalCandidates = ranking.candidates
+      .map((candidate, index) => ({ candidate, provider: providersById.get(candidate.providerId), rank: index + 1 }))
+      .filter((row) => {
+        if (!row.provider) return false
+        // Defensive server-side eligibility checks for retry-safe matching.
+        // This keeps request matching deterministic even if upstream ranking inputs drift.
+        if (!row.provider.active || row.provider.status !== 'ACTIVE' || !row.provider.availableNow) return false
+        // "Profile complete enough" for MVP1 match list visibility means at minimum
+        // a non-empty display name, at least one published skill, and at least one service area.
+        if (!row.provider.name.trim()) return false
+        if (row.provider.skills.length === 0) return false
+        const hasArea = row.provider.serviceAreas.length > 0 || row.provider.technicianServiceAreas.some((sa) => sa.active)
+        if (!hasArea) return false
+        if (!row.provider.skills.map((skill) => normalize(skill)).includes(normalizedCategory)) return false
+        if (!providerCoversRequestArea(row.provider, request)) return false
+        return true
+      })
+      .slice(0, limit)
+
+    const rankingSummary = finalCandidates.map((row) => ({
+      providerId: row.candidate.providerId,
+      score: row.candidate.score,
+      rankedPosition: row.rank,
+      selectionReason: row.candidate.selectionReason,
+      travelMinutes: row.candidate.travelMinutes,
+      canMeetWindow: row.candidate.canMeetWindow,
+    }))
+
+    // Write the decision, all attempt rows, and the request pointer atomically.
+    // A crash between decision.create and matchAttempt.create would leave
+    // latestDispatchDecisionId pointing at a partially-populated decision; wrapping
+    // in a transaction ensures the cache check always sees a consistent state.
+    const decision = await db.$transaction(async (tx) => {
+      const dec = await tx.dispatchDecision.create({
+        data: {
+          jobRequestId: serviceRequestId,
+          mode: 'OPS_REVIEW',
+          status: finalCandidates.length > 0 ? 'RANKED' : 'NO_MATCH',
+          initiatedById: 'mvp1-matching',
+          initiatedByRole: 'system',
+          consideredCount: ranking.consideredCount,
+          eligibleCount: finalCandidates.length,
+          rankingSummary: rankingSummary as object[],
+          filterSummary: ranking.filteredOut as object[],
+          explanation: finalCandidates[0]?.candidate.selectionReason ?? 'No eligible providers passed MVP1 filters.',
         },
       })
-    : []
 
-  const providersById = new Map(rankedProviders.map((provider) => [provider.id, provider]))
-  const normalizedCategory = normalize(request.category)
-  const finalCandidates = ranking.candidates
-    .map((candidate, index) => ({ candidate, provider: providersById.get(candidate.providerId), rank: index + 1 }))
-    .filter((row) => {
-      if (!row.provider) return false
-      // Defensive server-side eligibility checks for retry-safe matching.
-      // This keeps request matching deterministic even if upstream ranking inputs drift.
-      if (!row.provider.active || row.provider.status !== 'ACTIVE' || !row.provider.availableNow) return false
-      if (!row.provider.name.trim()) return false
-      if (row.provider.skills.length === 0) return false
-      // A provider may use legacy serviceAreas strings OR the structured technicianServiceAreas system.
-      // Requiring serviceAreas.length > 0 would incorrectly exclude structured-only providers.
-      const hasArea = row.provider.serviceAreas.length > 0 || row.provider.technicianServiceAreas.some((sa) => sa.active)
-      if (!hasArea) return false
-      if (!row.provider.skills.map((skill) => normalize(skill)).includes(normalizedCategory)) return false
-      if (!providerCoversRequestArea(row.provider, request)) return false
-      return true
-    })
-    .slice(0, limit)
+      if (finalCandidates.length > 0) {
+        await tx.matchAttempt.createMany({
+          data: finalCandidates.map((row) => ({
+            jobRequestId: serviceRequestId,
+            providerId: row.provider!.id,
+            dispatchDecisionId: dec.id,
+            attemptNumber: row.rank,
+            rankedPosition: row.rank,
+            stage: 'RANKED' as const,
+            hardFilterPassed: true,
+            filteredReasonCodes: [],
+            feasibilityNotes: row.candidate.feasibilityNotes,
+            score: row.candidate.score,
+            scoreBreakdown: row.candidate.scoreBreakdown as object,
+          })),
+        })
+      }
 
-  const rankingSummary = finalCandidates.map((row) => ({
-    providerId: row.candidate.providerId,
-    score: row.candidate.score,
-    rankedPosition: row.rank,
-    selectionReason: row.candidate.selectionReason,
-    travelMinutes: row.candidate.travelMinutes,
-    canMeetWindow: row.candidate.canMeetWindow,
-  }))
-
-  // Write the decision, all attempt rows, and the request pointer atomically.
-  // A crash between decision.create and matchAttempt.create would leave
-  // latestDispatchDecisionId pointing at a partially-populated decision; wrapping
-  // in a transaction ensures the cache check always sees a consistent state.
-  const decision = await db.$transaction(async (tx) => {
-    const dec = await tx.dispatchDecision.create({
-      data: {
-        jobRequestId: serviceRequestId,
-        mode: 'OPS_REVIEW',
-        status: finalCandidates.length > 0 ? 'RANKED' : 'NO_MATCH',
-        initiatedById: 'mvp1-matching',
-        initiatedByRole: 'system',
-        consideredCount: ranking.consideredCount,
-        eligibleCount: finalCandidates.length,
-        rankingSummary: rankingSummary as object[],
-        filterSummary: ranking.filteredOut as object[],
-        explanation: finalCandidates[0]?.candidate.selectionReason ?? 'No eligible providers passed MVP1 filters.',
-      },
-    })
-
-    if (finalCandidates.length > 0) {
-      await tx.matchAttempt.createMany({
-        data: finalCandidates.map((row) => ({
-          jobRequestId: serviceRequestId,
-          providerId: row.provider!.id,
-          dispatchDecisionId: dec.id,
-          attemptNumber: row.rank,
-          rankedPosition: row.rank,
-          stage: 'RANKED' as const,
-          hardFilterPassed: true,
-          filteredReasonCodes: [],
-          feasibilityNotes: row.candidate.feasibilityNotes,
-          score: row.candidate.score,
-          scoreBreakdown: row.candidate.scoreBreakdown as object,
-        })),
+      // Keep the persisted request status compatible with the existing review-first
+      // flow: provider options are represented by a ranked dispatch decision while
+      // the request remains in PENDING_VALIDATION until shortlist publication.
+      await tx.jobRequest.update({
+        where: { id: serviceRequestId },
+        data: {
+          latestDispatchDecisionId: dec.id,
+          assignmentMode: 'OPS_REVIEW',
+          status: 'PENDING_VALIDATION',
+        },
       })
+
+      return dec
+    })
+
+    const providers: Mvp1MatchProvider[] = finalCandidates.map((row) => ({
+      providerId: row.provider!.id,
+      name: row.provider!.name,
+      bio: row.provider!.bio,
+      avatarUrl: row.provider!.avatarUrl,
+      skills: row.provider!.skills,
+      serviceAreas: row.provider!.serviceAreas,
+      rank: row.rank,
+      score: row.candidate.score,
+      whyMatched: row.candidate.feasibilityNotes?.[0] ?? 'Eligible by category, area, profile status, and availability.',
+    }))
+
+    if (providers.length === 0) {
+      console.info('[mvp1.match] no_match', {
+        serviceRequestId,
+        decisionId: decision.id,
+        matchedProviders: providers.length,
+        consideredCount: ranking.consideredCount,
+      })
+      return {
+        serviceRequestId,
+        decisionId: decision.id,
+        status: 'NO_MATCH' as const,
+        providers,
+        wasCached: false,
+      }
     }
 
-    // Keep the persisted request status compatible with the existing review-first
-    // flow: provider options are represented by a ranked dispatch decision while
-    // the request remains in PENDING_VALIDATION until shortlist publication.
-    await tx.jobRequest.update({
-      where: { id: serviceRequestId },
-      data: {
-        latestDispatchDecisionId: dec.id,
-        assignmentMode: 'OPS_REVIEW',
-        status: 'PENDING_VALIDATION',
-      },
-    })
-
-    return dec
-  })
-
-  const providers: Mvp1MatchProvider[] = finalCandidates.map((row) => ({
-    providerId: row.provider!.id,
-    name: row.provider!.name,
-    bio: row.provider!.bio,
-    avatarUrl: row.provider!.avatarUrl,
-    skills: row.provider!.skills,
-    serviceAreas: row.provider!.serviceAreas,
-    rank: row.rank,
-    score: row.candidate.score,
-    whyMatched: row.candidate.feasibilityNotes?.[0] ?? 'Eligible by category, area, profile status, and availability.',
-  }))
-
-  if (providers.length === 0) {
-    console.info('[mvp1.match] no_match', {
+    console.info('[mvp1.match] success', {
       serviceRequestId,
       decisionId: decision.id,
-      consideredCount: ranking.consideredCount,
+      matchedProviders: providers.length,
     })
     return {
       serviceRequestId,
       decisionId: decision.id,
-      status: 'NO_MATCH' as const,
+      status: 'MATCHES_FOUND' as const,
       providers,
       wasCached: false,
     }
   }
 
-  console.info('[mvp1.match] success', {
-    serviceRequestId,
-    decisionId: decision.id,
-    matchedProviders: providers.length,
-  })
-  return {
-    serviceRequestId,
-    decisionId: decision.id,
-    status: 'MATCHES_FOUND' as const,
-    providers,
-    wasCached: false,
+  try {
+    return await runMatching()
+  } catch (error) {
+    if (error instanceof ReviewFirstError) throw error
+    const errorMessage = error instanceof Error ? error.message : 'Unknown matching error'
+    console.error('[mvp1.match] failed', {
+      serviceRequestId,
+      error: {
+        name: error instanceof Error ? error.name : 'Error',
+        message: errorMessage,
+        code: error instanceof Error && 'code' in error ? (error as { code?: unknown }).code : undefined,
+      },
+    })
+    throw new ReviewFirstError('MATCHING_FAILED', 'Matching failed. Please try again.')
   }
 }
 

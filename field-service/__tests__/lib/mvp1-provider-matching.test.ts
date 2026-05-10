@@ -14,6 +14,7 @@ const {
   mockDispatchDecision: {
     findUnique: vi.fn(),
     create: vi.fn(),
+    findFirst: vi.fn(),
   },
   mockMatchAttempt: {
     create: vi.fn(),
@@ -80,6 +81,7 @@ describe('matchEligibleProvidersForServiceRequest (MVP1 workflow 1)', () => {
     vi.clearAllMocks()
     mockJobRequest.update.mockResolvedValue({})
     mockDispatchDecision.create.mockResolvedValue({ id: 'dd-1' })
+    mockDispatchDecision.findFirst.mockResolvedValue(null)
     mockMatchAttempt.create.mockResolvedValue({})
     mockMatchAttempt.createMany.mockResolvedValue({ count: 0 })
     mockDispatchDecision.findUnique.mockResolvedValue(null)
@@ -197,6 +199,33 @@ describe('matchEligibleProvidersForServiceRequest (MVP1 workflow 1)', () => {
     ).rejects.toThrow(ReviewFirstError)
   })
 
+  it('throws REQUEST_MISSING_LOCATION when request address object is null', async () => {
+    mockJobRequest.findUnique.mockResolvedValue({ ...BASE_REQUEST, address: null })
+
+    const { matchEligibleProvidersForServiceRequest, ReviewFirstError } = await import('@/lib/review-first')
+    await expect(
+      matchEligibleProvidersForServiceRequest({ serviceRequestId: 'jr-1' }),
+    ).rejects.toThrow(ReviewFirstError)
+  })
+
+  it('rejects matching when request status is MATCHED (locked)', async () => {
+    mockJobRequest.findUnique.mockResolvedValue({ ...BASE_REQUEST, status: 'MATCHED' })
+
+    const { matchEligibleProvidersForServiceRequest, ReviewFirstError } = await import('@/lib/review-first')
+    await expect(
+      matchEligibleProvidersForServiceRequest({ serviceRequestId: 'jr-1' }),
+    ).rejects.toThrow(ReviewFirstError)
+  })
+
+  it('rejects matching when request is cancelled', async () => {
+    mockJobRequest.findUnique.mockResolvedValue({ ...BASE_REQUEST, status: 'CANCELLED' })
+
+    const { matchEligibleProvidersForServiceRequest, ReviewFirstError } = await import('@/lib/review-first')
+    await expect(
+      matchEligibleProvidersForServiceRequest({ serviceRequestId: 'jr-1' }),
+    ).rejects.toThrow(ReviewFirstError)
+  })
+
   it('excludes inactive providers', async () => {
     mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
     mockRankCandidatesForJobRequest.mockResolvedValue({
@@ -247,6 +276,68 @@ describe('matchEligibleProvidersForServiceRequest (MVP1 workflow 1)', () => {
         bio: null,
         avatarUrl: null,
         skills: ['painting'],
+        serviceAreas: ['Bromhof'],
+        technicianServiceAreas: [],
+      },
+    ])
+
+    const { matchEligibleProvidersForServiceRequest } = await import('@/lib/review-first')
+    const result = await matchEligibleProvidersForServiceRequest({ serviceRequestId: 'jr-1' })
+
+    expect(result.providers).toHaveLength(0)
+    expect(result.status).toBe('NO_MATCH')
+  })
+
+  it('excludes suspended providers', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockRankCandidatesForJobRequest.mockResolvedValue({
+      consideredCount: 1,
+      eligibleCount: 1,
+      filteredOut: [],
+      candidates: [candidate('p-1', 0.9)],
+    })
+    mockProvider.findMany.mockResolvedValue([
+      {
+        id: 'p-1',
+        active: true,
+        status: 'SUSPENDED',
+        availableNow: true,
+        verified: true,
+        name: 'Provider One',
+        bio: null,
+        avatarUrl: null,
+        skills: ['plumbing'],
+        serviceAreas: ['Bromhof'],
+        technicianServiceAreas: [],
+      },
+    ])
+
+    const { matchEligibleProvidersForServiceRequest } = await import('@/lib/review-first')
+    const result = await matchEligibleProvidersForServiceRequest({ serviceRequestId: 'jr-1' })
+
+    expect(result.providers).toHaveLength(0)
+    expect(result.status).toBe('NO_MATCH')
+  })
+
+  it('excludes providers with incomplete profile data', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockRankCandidatesForJobRequest.mockResolvedValue({
+      consideredCount: 1,
+      eligibleCount: 1,
+      filteredOut: [],
+      candidates: [candidate('p-1', 0.9)],
+    })
+    mockProvider.findMany.mockResolvedValue([
+      {
+        id: 'p-1',
+        active: true,
+        status: 'ACTIVE',
+        availableNow: true,
+        verified: true,
+        name: '   ',
+        bio: null,
+        avatarUrl: null,
+        skills: ['plumbing'],
         serviceAreas: ['Bromhof'],
         technicianServiceAreas: [],
       },
@@ -434,5 +525,46 @@ describe('matchEligibleProvidersForServiceRequest (MVP1 workflow 1)', () => {
     expect(mockDispatchDecision.create).not.toHaveBeenCalled()
     expect(mockMatchAttempt.create).not.toHaveBeenCalled()
     expect(mockRankCandidatesForJobRequest).not.toHaveBeenCalled()
+  })
+
+  it('returns MATCHING_FAILED when ranking service layer throws', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockRankCandidatesForJobRequest.mockRejectedValue(new Error('ranking failed'))
+
+    const { matchEligibleProvidersForServiceRequest, ReviewFirstError } = await import('@/lib/review-first')
+    const err = await matchEligibleProvidersForServiceRequest({ serviceRequestId: 'jr-1' }).catch((e) => e)
+    expect(err).toBeInstanceOf(ReviewFirstError)
+    expect(err.code).toBe('MATCHING_FAILED')
+  })
+
+  it('returns MATCHING_FAILED when matching persistence fails', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockRankCandidatesForJobRequest.mockResolvedValue({
+      consideredCount: 1,
+      eligibleCount: 1,
+      filteredOut: [],
+      candidates: [candidate('p-1', 0.9)],
+    })
+    mockProvider.findMany.mockResolvedValue([
+      {
+        id: 'p-1',
+        active: true,
+        status: 'ACTIVE',
+        availableNow: true,
+        verified: true,
+        name: 'Provider One',
+        bio: null,
+        avatarUrl: null,
+        skills: ['plumbing'],
+        serviceAreas: ['Bromhof'],
+        technicianServiceAreas: [],
+      },
+    ])
+    mockMatchAttempt.createMany.mockRejectedValue(new Error('transaction insert failed'))
+
+    const { matchEligibleProvidersForServiceRequest, ReviewFirstError } = await import('@/lib/review-first')
+    const err = await matchEligibleProvidersForServiceRequest({ serviceRequestId: 'jr-1' }).catch((e) => e)
+    expect(err).toBeInstanceOf(ReviewFirstError)
+    expect(err.code).toBe('MATCHING_FAILED')
   })
 })
