@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
+import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
 
 function getSupabaseClient() {
   return createClient(
@@ -24,10 +25,9 @@ export default function SignUpPage() {
   const searchParams = useSearchParams()
 
   const prefillPhone = searchParams.get('phone') ?? ''
-  const prefillNext = searchParams.get('next') ?? '/bookings/new'
+  const prefillNext = getSafeCustomerNextPath(searchParams.get('next'), '/bookings/new')
   const [phone, setPhone] = useState(prefillPhone)
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -124,21 +124,7 @@ export default function SignUpPage() {
             autoComplete="name"
             required
             minLength={2}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="email" className="text-foreground">
-            Email address <span className="text-muted-foreground font-normal">(optional)</span>
-          </Label>
-          <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            disabled={loading}
-            autoComplete="email"
+            maxLength={120}
           />
         </div>
 

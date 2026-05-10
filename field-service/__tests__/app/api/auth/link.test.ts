@@ -66,6 +66,19 @@ describe('POST /api/auth/link — name forwarding', () => {
     })
   })
 
+  it('rejects name longer than 120 characters with 400', async () => {
+    const { POST } = await import('../../../../app/api/auth/link/route')
+    const req = new NextRequest('http://localhost/api/auth/link', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567', name: 'a'.repeat(121) }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(400)
+    expect(mockLinkCustomerAccount).not.toHaveBeenCalled()
+  })
+
   it('still returns isNew in the response body', async () => {
     mockLinkCustomerAccount.mockResolvedValue({ id: 'cust-002', isNew: true })
 

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { phone, name } = body
+    const { phone } = body
 
     if (!phone || typeof phone !== 'string' || !/^\+\d{10,15}$/.test(phone)) {
       return NextResponse.json({ error: 'Valid E.164 phone required' }, { status: 400 })
@@ -33,7 +33,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await linkCustomerAccount({ userId: session.id, phone, name: name || undefined })
+    const name = typeof body.name === 'string' ? body.name.trim() : undefined
+    if (name !== undefined && (name.length < 2 || name.length > 120)) {
+      return NextResponse.json({ error: 'Name must be between 2 and 120 characters' }, { status: 400 })
+    }
+
+    const result = await linkCustomerAccount({ userId: session.id, phone, name })
 
     return NextResponse.json({ customerId: result.id, isNew: result.isNew })
   } catch (err) {
