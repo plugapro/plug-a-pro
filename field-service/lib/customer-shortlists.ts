@@ -943,10 +943,24 @@ export async function selectProviderForCustomerRequest(params: {
 
   // If we already have a lead for this provider, use that path first.
   // If there is no lead row yet, ensure the provider is in ranked matches and
-  // create a lightweight lead row so acceptance can proceed through the existing
-  // workflow without changing downstream event handlers.
+  // creation now happens inside the selection transaction to keep lead and request
+  // state updates in one atomic unit.
+  let rankedMatch: {
+    id: string
+    score: number | null
+    rankedPosition: number | null
+    provider: {
+      id: string
+      active: boolean
+      status: string
+      verified: boolean | null
+      name: string | null
+      phone: string | null
+    } | null
+  } | null = null
+
   if (!selectedLead && request.latestDispatchDecisionId) {
-    const rankedMatch = await db.matchAttempt.findFirst({
+    rankedMatch = await db.matchAttempt.findFirst({
       where: {
         dispatchDecisionId: request.latestDispatchDecisionId,
         providerId: params.providerId,
@@ -955,9 +969,9 @@ export async function selectProviderForCustomerRequest(params: {
       include: {
         provider: {
           select: {
+            id: true,
             active: true,
             status: true,
-            id: true,
             verified: true,
             name: true,
             phone: true,
@@ -965,82 +979,9 @@ export async function selectProviderForCustomerRequest(params: {
         },
       },
     })
-
-    if (!rankedMatch) {
-      throw new CustomerShortlistError(
-        'ITEM_NOT_FOUND',
-        'This provider is not in current matches for this request.',
-      )
-    }
-
-    if (
-      !rankedMatch.provider?.active ||
-      rankedMatch.provider.status !== 'ACTIVE'
-    ) {
-      throw new CustomerShortlistError(
-        'INVALID_PROVIDER_SELECTION',
-        'This provider is no longer available.',
-      )
-    }
-
-    const now = new Date()
-    const upserted = await db.lead.upsert({
-      where: {
-        jobRequestId_providerId: {
-          jobRequestId: request.id,
-          providerId: params.providerId,
-        },
-      },
-      create: {
-        jobRequestId: request.id,
-        providerId: params.providerId,
-        dispatchDecisionId: request.latestDispatchDecisionId,
-        matchAttemptId: rankedMatch.id,
-        status: 'VIEWED',
-        sentAt: now,
-        viewedAt: now,
-        matchScore: rankedMatch.score,
-        rankingPosition: rankedMatch.rankedPosition,
-        expiresAt: null,
-      },
-      update: {
-        dispatchDecisionId: request.latestDispatchDecisionId,
-        matchAttemptId: rankedMatch.id,
-        status: 'VIEWED',
-        viewedAt: now,
-        matchScore: rankedMatch.score,
-        rankingPosition: rankedMatch.rankedPosition,
-      },
-    })
-
-    const rankedProvider = rankedMatch.provider
-    if (!rankedProvider) {
-      throw new CustomerShortlistError(
-        'ITEM_NOT_FOUND',
-        'Could not resolve selected provider profile.',
-      )
-    }
-
-    selectedLead = {
-      id: upserted.id,
-      status: upserted.status,
-      dispatchDecisionId: upserted.dispatchDecisionId,
-      matchAttemptId: upserted.matchAttemptId,
-      matchScore: upserted.matchScore,
-      rankingPosition: upserted.rankingPosition,
-      customerSelectedAt: upserted.customerSelectedAt,
-      provider: {
-        id: rankedProvider.id,
-        active: rankedProvider.active,
-        status: rankedProvider.status,
-        verified: rankedProvider.verified ?? true,
-        name: rankedProvider.name ?? 'Provider',
-        phone: rankedProvider.phone,
-      },
-    }
   }
 
-  if (!selectedLead || !selectedLead.provider) {
+  if (!selectedLead && !rankedMatch) {
     throw new CustomerShortlistError(
       'ITEM_NOT_FOUND',
       'Could not resolve a selected provider lead.',
@@ -1048,8 +989,8 @@ export async function selectProviderForCustomerRequest(params: {
   }
 
   if (
-    !selectedLead.provider.active ||
-    selectedLead.provider.status !== 'ACTIVE'
+    selectedLead &&
+    (!selectedLead.provider.active || selectedLead.provider.status !== 'ACTIVE')
   ) {
     throw new CustomerShortlistError(
       'INVALID_PROVIDER_SELECTION',
@@ -1058,6 +999,16 @@ export async function selectProviderForCustomerRequest(params: {
   }
 
   const selectedAt = new Date()
+  if (
+    !selectedLead &&
+    (!rankedMatch?.provider?.active || rankedMatch?.provider.status !== 'ACTIVE')
+  ) {
+    throw new CustomerShortlistError(
+      'INVALID_PROVIDER_SELECTION',
+      'This provider is no longer available.',
+    )
+  }
+
   const requestStatus = request.status as string
 
   if (requestStatus === 'PROVIDER_CONFIRMATION_PENDING') {
@@ -1078,6 +1029,7 @@ export async function selectProviderForCustomerRequest(params: {
         status: true,
         selectedProviderId: true,
         selectedLeadInviteId: true,
+        latestDispatchDecisionId: true,
       },
     })
 
@@ -1109,6 +1061,69 @@ export async function selectProviderForCustomerRequest(params: {
       throwDuplicateSelectionError(
         'This request is no longer awaiting customer selection.',
       )
+    }
+
+    if (!selectedLead && reloaded.latestDispatchDecisionId && rankedMatch) {
+      const now = new Date()
+      const upserted = await tx.lead.upsert({
+        where: {
+          jobRequestId_providerId: {
+            jobRequestId: request.id,
+            providerId: params.providerId,
+          },
+        },
+        create: {
+          jobRequestId: request.id,
+          providerId: params.providerId,
+          dispatchDecisionId: reloaded.latestDispatchDecisionId,
+          matchAttemptId: rankedMatch.id,
+          status: 'VIEWED',
+          sentAt: now,
+          viewedAt: now,
+          matchScore: rankedMatch.score,
+          rankingPosition: rankedMatch.rankedPosition,
+          expiresAt: null,
+        },
+        update: {
+          dispatchDecisionId: reloaded.latestDispatchDecisionId,
+          matchAttemptId: rankedMatch.id,
+          status: 'VIEWED',
+          viewedAt: now,
+          matchScore: rankedMatch.score,
+          rankingPosition: rankedMatch.rankedPosition,
+        },
+      })
+
+      if (!rankedMatch.provider) {
+        throw new CustomerShortlistError(
+          'ITEM_NOT_FOUND',
+          'Could not resolve selected provider profile.',
+        )
+      }
+
+      selectedLead = {
+        id: upserted.id,
+        status: upserted.status,
+        dispatchDecisionId: upserted.dispatchDecisionId,
+        matchAttemptId: upserted.matchAttemptId,
+        matchScore: upserted.matchScore,
+        rankingPosition: upserted.rankingPosition,
+        customerSelectedAt: upserted.customerSelectedAt,
+        provider: {
+          id: rankedMatch.provider.id,
+          active: rankedMatch.provider.active,
+          status: rankedMatch.provider.status,
+          verified: rankedMatch.provider.verified ?? true,
+          name: rankedMatch.provider.name ?? 'Provider',
+          phone: rankedMatch.provider.phone,
+        },
+      }
+
+      console.info('[customer-shortlists.selection] lead_upserted', {
+        requestId: request.id,
+        providerId: params.providerId,
+        leadId: selectedLead.id,
+      })
     }
 
     await tx.jobRequest.update({
@@ -1168,22 +1183,6 @@ export async function selectProviderForCustomerRequest(params: {
     })
     return result
   }
-
-  if (!selectedLead?.provider.phone) {
-    throw new CustomerShortlistError(
-      'INVALID_PROVIDER_SELECTION',
-      'Selected provider has no phone number on record.',
-    )
-  }
-
-  await notifySelectedProvider({
-    leadId: result.leadId,
-    providerId: params.providerId,
-    providerPhone: selectedLead.provider.phone,
-    providerName: selectedLead.provider.name,
-    category: request.category,
-    suburb: request.address?.suburb ?? null,
-  })
 
   console.info('[customer-shortlists.selection] success', {
     requestId: result.requestId,

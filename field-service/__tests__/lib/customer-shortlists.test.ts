@@ -633,6 +633,119 @@ describe('customer shortlists', () => {
     })
   })
 
+  it('creates the lead inside the selection transaction when no lead row exists yet', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({
+        leads: [],
+      }),
+      status: 'PENDING_VALIDATION',
+    })
+    mockDb.matchAttempt.findFirst.mockResolvedValueOnce({
+      id: 'match-1',
+      score: 0.76,
+      rankedPosition: 1,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    state.tx.lead.upsert.mockResolvedValueOnce({
+      id: 'lead-tx-1',
+      status: 'VIEWED',
+      matchScore: 0.76,
+      rankingPosition: 1,
+      dispatchDecisionId: 'dispatch-1',
+      matchAttemptId: 'match-1',
+      customerSelectedAt: null,
+    })
+
+    const result = await selectProviderForCustomerRequest({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+    })
+
+    expect(mockDb.lead.upsert).not.toHaveBeenCalled()
+    expect(state.tx.lead.upsert).toHaveBeenCalledWith({
+      where: {
+        jobRequestId_providerId: {
+          jobRequestId: 'request-1',
+          providerId: 'provider-1',
+        },
+      },
+      create: expect.objectContaining({
+        jobRequestId: 'request-1',
+        providerId: 'provider-1',
+        dispatchDecisionId: 'dispatch-1',
+        matchAttemptId: 'match-1',
+      }),
+      update: expect.objectContaining({
+        dispatchDecisionId: 'dispatch-1',
+        matchAttemptId: 'match-1',
+      }),
+    })
+    expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
+      where: { id: 'request-1' },
+      data: {
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-tx-1',
+      },
+    })
+    expect(result).toMatchObject({
+      requestId: 'request-1',
+      providerId: 'provider-1',
+      leadId: 'lead-tx-1',
+      alreadySelected: false,
+    })
+  })
+
+  it('does not mutate state when request update fails while creating selection lead', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({
+        leads: [],
+      }),
+      status: 'PENDING_VALIDATION',
+    })
+    mockDb.matchAttempt.findFirst.mockResolvedValueOnce({
+      id: 'match-1',
+      score: 0.76,
+      rankedPosition: 1,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    state.tx.lead.upsert.mockResolvedValueOnce({
+      id: 'lead-tx-1',
+      status: 'VIEWED',
+      matchScore: 0.76,
+      rankingPosition: 1,
+      dispatchDecisionId: 'dispatch-1',
+      matchAttemptId: 'match-1',
+      customerSelectedAt: null,
+    })
+    state.tx.jobRequest.update.mockRejectedValueOnce(new Error('update failed'))
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toThrow('update failed')
+
+    expect(state.tx.lead.update).not.toHaveBeenCalled()
+  })
+
   it('rejects provider selection when provider is not in current matches', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValueOnce({
       id: 'request-1',
