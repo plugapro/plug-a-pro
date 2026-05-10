@@ -24,10 +24,13 @@ export const metadata = buildMetadata({ title: 'Booking Details' })
 
 export default async function BookingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ reschedule?: string }>
 }) {
   const { id } = await params
+  const { reschedule } = await searchParams
   const session = await getSession()
   if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}`)}`)
 
@@ -90,6 +93,9 @@ export default async function BookingDetailPage({
   const hasOpenDispute = disputes.some((dispute) => ['OPEN', 'UNDER_REVIEW'].includes(dispute.status))
 
   const canCancel =
+    booking.status === 'SCHEDULED' || booking.status === 'RESCHEDULED'
+
+  const canReschedule =
     booking.status === 'SCHEDULED' || booking.status === 'RESCHEDULED'
 
   async function cancelBooking(formData: FormData) {
@@ -226,6 +232,16 @@ export default async function BookingDetailPage({
 
   return (
     <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
+      {/* Reschedule requested banner */}
+      {reschedule === 'requested' && (
+        <AlertCallout
+          tone="success"
+          title="Reschedule request sent"
+        >
+          We&apos;ll contact both you and the provider to arrange a new time.
+        </AlertCallout>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
@@ -477,6 +493,15 @@ export default async function BookingDetailPage({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Reschedule booking */}
+      {canReschedule && (
+        <Link href={`/bookings/${id}/reschedule`}>
+          <Button variant="outline" className="w-full">
+            Request reschedule
+          </Button>
+        </Link>
       )}
 
       {/* Cancel booking */}
