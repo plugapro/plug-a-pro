@@ -11,11 +11,11 @@ const {
   mockDb,
   mockRunAssignmentForJobRequest,
   mockAcceptAssignmentOffer,
+  mockAcceptSelectedProviderJob,
   mockRejectAssignmentOffer,
   mockProcessPendingAssignmentWorkflows,
   mockNotifyProviderNewJob,
   mockReconcileProviderRecordsFromApplications,
-  mockNotifyPostMatchAcceptance,
   mockSendCtaUrl,
   mockGetProviderLeadAccessUrl,
 } = vi.hoisted(() => ({
@@ -27,11 +27,11 @@ const {
   },
   mockRunAssignmentForJobRequest: vi.fn(),
   mockAcceptAssignmentOffer: vi.fn(),
+  mockAcceptSelectedProviderJob: vi.fn(),
   mockRejectAssignmentOffer: vi.fn(),
   mockProcessPendingAssignmentWorkflows: vi.fn(),
   mockNotifyProviderNewJob: vi.fn(),
   mockReconcileProviderRecordsFromApplications: vi.fn(),
-  mockNotifyPostMatchAcceptance: vi.fn(),
   mockSendCtaUrl: vi.fn(),
   mockGetProviderLeadAccessUrl: vi.fn(),
 }))
@@ -47,16 +47,16 @@ vi.mock('../../lib/matching/service', () => ({
   processPendingAssignmentWorkflows: mockProcessPendingAssignmentWorkflows,
 }))
 
+vi.mock('../../lib/selected-provider-acceptance', () => ({
+  acceptSelectedProviderJob: mockAcceptSelectedProviderJob,
+}))
+
 vi.mock('../../lib/whatsapp-bot', () => ({
   notifyProviderNewJob: mockNotifyProviderNewJob,
 }))
 
 vi.mock('../../lib/provider-record', () => ({
   reconcileProviderRecordsFromApplications: mockReconcileProviderRecordsFromApplications,
-}))
-
-vi.mock('../../lib/post-match-communications', () => ({
-  notifyPostMatchAcceptance: mockNotifyPostMatchAcceptance,
 }))
 
 vi.mock('../../lib/whatsapp-interactive', () => ({
@@ -71,7 +71,6 @@ describe('matching-engine compatibility wrappers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockReconcileProviderRecordsFromApplications.mockResolvedValue({ reconciled: 0 })
-    mockNotifyPostMatchAcceptance.mockResolvedValue({ providerNotified: true, customerNotified: true })
     mockGetProviderLeadAccessUrl.mockResolvedValue('https://app.plugapro.co.za/leads/access/signed.token')
   })
 
@@ -98,13 +97,25 @@ describe('matching-engine compatibility wrappers', () => {
     })
   })
 
-  it('acceptLead delegates to the assignment offer acceptance service', async () => {
-    mockAcceptAssignmentOffer.mockResolvedValue({
+  it('acceptLead accepts only through selected-provider final confirmation', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      customerSelectedAt: new Date('2026-05-10T08:00:00.000Z'),
+      jobRequest: {
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
-      responseOutcome: 'ACCEPTED',
+      leadId: 'lead-1',
       matchId: 'match-1',
-      assignmentHoldId: 'hold-1',
-      nextOfferedProviderId: null,
+      creditTransactionId: null,
+      currentCreditBalance: 4,
+      alreadyUnlocked: false,
+      duplicateAcceptIgnored: false,
+      notificationSent: true,
     })
 
     const result = await acceptLead({ leadId: 'lead-1', providerId: 'provider-1' })
@@ -114,19 +125,30 @@ describe('matching-engine compatibility wrappers', () => {
       leadId: 'lead-1',
       matchId: 'match-1',
       creditTransactionId: null,
+      currentCreditBalance: 4,
+      alreadyUnlocked: false,
       inspectionNeeded: false,
       notificationSent: true,
     })
-    expect(mockNotifyPostMatchAcceptance).toHaveBeenCalledWith({
+    expect(mockAcceptSelectedProviderJob).toHaveBeenCalledWith({
       leadId: 'lead-1',
       providerId: 'provider-1',
-      matchId: 'match-1',
-      creditTransactionId: null,
+      source: undefined,
     })
+    expect(mockAcceptAssignmentOffer).not.toHaveBeenCalled()
   })
 
-  it('acceptLead does not notify the customer when unlock credit validation fails', async () => {
-    mockAcceptAssignmentOffer.mockResolvedValue({
+  it('acceptLead returns insufficient credits from selected-provider acceptance path', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      customerSelectedAt: new Date('2026-05-10T08:00:00.000Z'),
+      jobRequest: {
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: false,
       reason: 'INSUFFICIENT_CREDITS',
       currentCreditBalance: 0,
@@ -139,12 +161,33 @@ describe('matching-engine compatibility wrappers', () => {
       reason: 'INSUFFICIENT_CREDITS',
       currentCreditBalance: 0,
     })
-    expect(mockAcceptAssignmentOffer).toHaveBeenCalledWith({
+    expect(mockAcceptSelectedProviderJob).toHaveBeenCalledWith({
       leadId: 'lead-1',
       providerId: 'provider-1',
       source: 'whatsapp',
     })
-    expect(mockNotifyPostMatchAcceptance).not.toHaveBeenCalled()
+    expect(mockAcceptAssignmentOffer).not.toHaveBeenCalled()
+  })
+
+  it('acceptLead blocks non-selected legacy accepts and never charges', async () => {
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      customerSelectedAt: null,
+      jobRequest: {
+        status: 'MATCHING',
+        selectedProviderId: null,
+        selectedLeadInviteId: null,
+      },
+    })
+
+    const result = await acceptLead({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'EXPIRED',
+    })
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+    expect(mockAcceptAssignmentOffer).not.toHaveBeenCalled()
   })
 
   it('dispatchLeads propagates non-schema errors from the assignment service', async () => {

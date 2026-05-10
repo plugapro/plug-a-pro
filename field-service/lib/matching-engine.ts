@@ -6,12 +6,10 @@
 import { db } from './db'
 import { MATCHING_CONFIG } from './matching/config'
 import {
-  acceptAssignmentOffer,
   processPendingAssignmentWorkflows,
   rejectAssignmentOffer,
   runAssignmentForJobRequest,
 } from './matching/service'
-import { notifyPostMatchAcceptance } from './post-match-communications'
 
 export interface CandidateInput {
   category: string
@@ -168,75 +166,65 @@ export async function acceptLead(params: {
     },
   })
 
-  if (
-    selectedLead?.customerSelectedAt &&
-    selectedLead.jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING' &&
-    selectedLead.jobRequest.selectedProviderId === params.providerId &&
-    selectedLead.jobRequest.selectedLeadInviteId === params.leadId
-  ) {
-    const { acceptSelectedProviderJob } = await import('./selected-provider-acceptance')
-    const selectedResult = await acceptSelectedProviderJob({
-      leadId: params.leadId,
-      providerId: params.providerId,
-      source: params.source,
-    })
-
-    if (!selectedResult.ok) {
-      if (selectedResult.reason === 'INSUFFICIENT_CREDITS') {
-        return {
-          ok: false,
-          reason: 'INSUFFICIENT_CREDITS',
-          currentCreditBalance: selectedResult.currentCreditBalance,
-        }
-      }
-      if (selectedResult.reason === 'PROVIDER_NOT_SELECTED') return { ok: false, reason: 'FORBIDDEN' }
-      if (selectedResult.reason === 'LEAD_EXPIRED') return { ok: false, reason: 'EXPIRED' }
-      if (selectedResult.reason === 'DUPLICATE_ACCEPT_IGNORED') return { ok: false, reason: 'CONCURRENT_UNLOCK' }
-      return { ok: false, reason: 'LEAD_ACCEPTANCE_FAILED' }
-    }
-
-    return {
-      ok: true,
-      leadId: selectedResult.leadId,
-      matchId: selectedResult.matchId,
-      creditTransactionId: selectedResult.creditTransactionId,
-      currentCreditBalance: selectedResult.currentCreditBalance,
-      alreadyUnlocked: selectedResult.alreadyUnlocked,
-      inspectionNeeded: false,
-      notificationSent: selectedResult.notificationSent,
-    }
+  if (!selectedLead) {
+    return { ok: false, reason: 'NOT_FOUND' }
   }
 
-  const result = await acceptAssignmentOffer(params)
-  if (!result.ok) return result
+  // MVP1 acceptance unification:
+  // final credit-charging acceptance must happen only after customer selection.
+  if (selectedLead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING') {
+    return { ok: false, reason: 'EXPIRED' }
+  }
+  if (
+    !selectedLead.customerSelectedAt ||
+    selectedLead.jobRequest.selectedProviderId !== params.providerId ||
+    selectedLead.jobRequest.selectedLeadInviteId !== params.leadId
+  ) {
+    return { ok: false, reason: 'FORBIDDEN' }
+  }
 
-  let notificationSent = false
-  try {
-    const notifyResult = await notifyPostMatchAcceptance({
-      leadId: params.leadId,
-      providerId: params.providerId,
-      matchId: result.matchId ?? '',
-      creditTransactionId: result.creditTransactionId ?? null,
-    })
-    notificationSent = notifyResult.providerNotified
-  } catch (error: unknown) {
-    console.error('[matching-engine] post-match communication failed:', {
-      leadId: params.leadId,
-      providerId: params.providerId,
-      notificationSent,
-      error,
-    })
+  const { acceptSelectedProviderJob } = await import('./selected-provider-acceptance')
+  const selectedResult = await acceptSelectedProviderJob({
+    leadId: params.leadId,
+    providerId: params.providerId,
+    source: params.source,
+  })
+
+  if (!selectedResult.ok) {
+    if (selectedResult.reason === 'INSUFFICIENT_CREDITS') {
+      return {
+        ok: false,
+        reason: 'INSUFFICIENT_CREDITS',
+        currentCreditBalance: selectedResult.currentCreditBalance,
+      }
+    }
+    if (
+      selectedResult.reason === 'PROVIDER_NOT_SELECTED' ||
+      selectedResult.reason === 'LEAD_INVITE_NOT_SELECTED'
+    ) {
+      return { ok: false, reason: 'FORBIDDEN' }
+    }
+    if (
+      selectedResult.reason === 'LEAD_EXPIRED' ||
+      selectedResult.reason === 'REQUEST_NOT_AWAITING_CONFIRMATION'
+    ) {
+      return { ok: false, reason: 'EXPIRED' }
+    }
+    if (selectedResult.reason === 'DUPLICATE_ACCEPT_IGNORED') {
+      return { ok: false, reason: 'CONCURRENT_UNLOCK' }
+    }
+    return { ok: false, reason: 'LEAD_ACCEPTANCE_FAILED' }
   }
 
   return {
     ok: true,
-    leadId: params.leadId,
-    matchId: result.matchId ?? '',
-    creditTransactionId: result.creditTransactionId ?? null,
-    currentCreditBalance: result.currentCreditBalance,
-    alreadyUnlocked: result.alreadyUnlocked,
-    inspectionNeeded: params.inspectionNeeded === true,
-    notificationSent,
+    leadId: selectedResult.leadId,
+    matchId: selectedResult.matchId,
+    creditTransactionId: selectedResult.creditTransactionId,
+    currentCreditBalance: selectedResult.currentCreditBalance,
+    alreadyUnlocked: selectedResult.alreadyUnlocked,
+    inspectionNeeded: false,
+    notificationSent: selectedResult.notificationSent,
   }
 }
 
