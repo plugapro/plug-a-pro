@@ -75,6 +75,8 @@ type JobRequestWithRuntime = {
   requestRef: string | null
   customerId: string
   status: string
+  assignmentMode?: string
+  latestDispatchDecisionId?: string | null
   createdAt: Date
   match: {
     booking: {
@@ -175,16 +177,6 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
       return { nextStep: 'welcome' }
     }
 
-    if (ctx.step === 'status_show' && conversationPinnedRequestId) {
-      log(`status_show has pinned requestId=${conversationPinnedRequestId}`)
-      return showRequestStatus(
-        ctx.phone,
-        conversationPinnedRequestId,
-        reqId,
-        customer.id,
-      )
-    }
-
     const matchingModeReply = parseMatchingModeReply(ctx.reply.id)
     if (matchingModeReply) {
       log(`matching mode selected via WhatsApp requestId=${matchingModeReply.requestId} mode=${matchingModeReply.mode}`)
@@ -217,6 +209,16 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
         throw error
       }
       return showRequestStatus(ctx.phone, matchingModeReply.requestId, reqId, customer.id)
+    }
+
+    if (ctx.step === 'status_show' && conversationPinnedRequestId) {
+      log(`status_show has pinned requestId=${conversationPinnedRequestId}`)
+      return showRequestStatus(
+        ctx.phone,
+        conversationPinnedRequestId,
+        reqId,
+        customer.id,
+      )
     }
 
     if (ctx.reply.id?.startsWith('status_refresh_')) {
@@ -595,6 +597,59 @@ async function showRequestStatus(
         phone,
         body,
         [
+          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: 'back_home', title: 'Main menu' },
+        ],
+      )
+      return { nextStep: 'done' }
+    }
+
+    const reviewFirstOptionsReady =
+      requestStatus === 'PENDING_VALIDATION' &&
+      jr.assignmentMode === 'OPS_REVIEW' &&
+      Boolean(jr.latestDispatchDecisionId) &&
+      latestDispatchStatus === 'RANKED'
+
+    const reviewFirstNoCandidates =
+      requestStatus === 'PENDING_VALIDATION' &&
+      jr.assignmentMode === 'OPS_REVIEW' &&
+      Boolean(jr.latestDispatchDecisionId) &&
+      latestDispatchStatus === 'NO_MATCH'
+
+    if (reviewFirstOptionsReady) {
+      const trackingUrl = await safeTrackingUrl(jr.id)
+      const body =
+        `📋 *Request ${requestReference(jr)}*\n\n` +
+        `Review Providers First is ready.\n\n` +
+        `Open your request to view matching provider profiles, shortlist 1 to 3 providers, and send your request only to the providers you choose.`
+
+      if (trackingUrl) {
+        try {
+          await sendCtaUrl(phone, body, 'View providers', trackingUrl)
+          return { nextStep: 'done' }
+        } catch (error) {
+          log(`WARN: review-first CTA send failed — falling back to buttons. error=${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+
+      await sendButtons(
+        phone,
+        `${body}\n\nIf the app link is unavailable, you can switch to Quick Match.`,
+        [
+          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: `status_mode_quick_${jr.id}`, title: 'Quick Match' },
+          { id: 'back_home', title: 'Main menu' },
+        ],
+      )
+      return { nextStep: 'done' }
+    }
+
+    if (reviewFirstNoCandidates) {
+      await sendButtons(
+        phone,
+        `📋 *Request ${requestReference(jr)}*\n\nWe couldn't find matching providers for Review Providers First right now.\n\nYou can switch to Quick Match so we can try one suitable provider at a time.`,
+        [
+          { id: `status_mode_quick_${jr.id}`, title: 'Quick Match' },
           { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
           { id: 'back_home', title: 'Main menu' },
         ],

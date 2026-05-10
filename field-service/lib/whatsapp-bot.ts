@@ -300,6 +300,7 @@ function isStatelessNotificationReply(
     id.startsWith('status_mode_quick_') ||
     id.startsWith('status_mode_review_') ||
     id.startsWith('status_refresh_') ||
+    id.startsWith('status_req_') ||
     (!id && rawText === 'accept')
   )
 }

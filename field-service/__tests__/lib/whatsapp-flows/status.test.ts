@@ -237,6 +237,51 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(result.nextStep).toBe('done')
   })
 
+  it('shows Review First provider-options CTA after ranking exists', async () => {
+    const jr = makeJobRequest({
+      status: 'PENDING_VALIDATION',
+      assignmentMode: 'OPS_REVIEW',
+      latestDispatchDecisionId: 'dd_123',
+    })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue({ status: 'RANKED' } as never)
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Review Providers First is ready'),
+      'View providers',
+      `${APP_URL}/requests/access/jr_abc123`,
+    )
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('shows Review First no-candidates recovery when ranking found no providers', async () => {
+    const jr = makeJobRequest({
+      status: 'PENDING_VALIDATION',
+      assignmentMode: 'OPS_REVIEW',
+      latestDispatchDecisionId: 'dd_empty',
+    })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue({ status: 'NO_MATCH' } as never)
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find matching providers"),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'status_mode_quick_jr_abc123', title: 'Quick Match' }),
+      ]),
+    )
+    expect(result.nextStep).toBe('done')
+  })
+
   it('handles Quick Match button replies by selecting mode and refreshing request status', async () => {
     const jr = makeJobRequest({ id: 'jr_mode', requestRef: 'PAP-MODE01', status: 'PENDING_VALIDATION' })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
@@ -252,6 +297,26 @@ describe('handleStatusFlow — single active request (no job)', () => {
       requestId: 'jr_mode',
       customerId: 'cust_1',
       mode: 'quick_match',
+    })
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('handles matching-mode button replies before pinned request status refresh', async () => {
+    const jr = makeJobRequest({ id: 'jr_mode', requestRef: 'PAP-MODE01', status: 'PENDING_VALIDATION' })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+
+    const result = await handleStatusFlow(
+      makeCtx({
+        data: { jobRequestId: 'jr_mode', customerId: 'cust_1' },
+        reply: { type: 'button_reply' as const, id: 'status_mode_review_jr_mode', text: 'Review Providers' },
+      }),
+    )
+
+    expect(mockSelectCustomerRequestMatchingMode).toHaveBeenCalledWith({
+      requestId: 'jr_mode',
+      customerId: 'cust_1',
+      mode: 'review_first',
     })
     expect(result.nextStep).toBe('done')
   })

@@ -27,6 +27,12 @@ describe('journey status vocabulary mapping', () => {
     expect(mapRequestStatusToBlueprintState({
       status: 'PENDING_VALIDATION',
       assignmentMode: 'OPS_REVIEW',
+    })).toBe('awaiting_matching_mode')
+
+    expect(mapRequestStatusToBlueprintState({
+      status: 'PENDING_VALIDATION',
+      assignmentMode: 'OPS_REVIEW',
+      hasProviderOptions: true,
     })).toBe('provider_options_ready')
 
     expect(mapRequestStatusToBlueprintState({
@@ -64,4 +70,3 @@ describe('journey status vocabulary mapping', () => {
     ])
   })
 })
-

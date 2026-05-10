@@ -84,7 +84,8 @@ export default async function RequestDetailPage({
   const canCancelRequest = jobRequest.status === 'SHORTLIST_READY'
   const isReviewFirstPending =
     jobRequest.status === 'PENDING_VALIDATION' &&
-    jobRequest.assignmentMode === 'OPS_REVIEW'
+    jobRequest.assignmentMode === 'OPS_REVIEW' &&
+    Boolean(jobRequest.latestDispatchDecisionId)
   const reviewCandidates = isReviewFirstPending
     ? await getProviderCandidatesForCustomerReview({ requestId: jobRequest.id, customerId: customer.id, batch: reviewBatch }).catch(() => null)
     : null

@@ -15,6 +15,10 @@ Implementation notes:
   - `Review Providers`
   - `Track request`
 - A request can still open the ticket URL where available, but matching-mode actions are always present in WhatsApp.
+- WhatsApp `status_mode_*`, `status_refresh_*`, and `status_req_*` button IDs are stateless and route into the status flow even when the prior conversation is idle or stale.
+- Status flow parses matching-mode button IDs before pinned request refresh, so a stored `jobRequestId` from submission cannot swallow the customer's mode selection.
+- The PWA and WhatsApp status views treat Review Providers First as active only after a review ranking decision exists. Neutral deferred requests still show the initial choice screen.
+- Review First `NO_MATCH` ranking decisions are reused and shown as a no-provider recovery state instead of repeatedly reranking or showing a provider-options CTA.
 
 Safety outcomes:
 - Eliminates accidental Quick Match auto-start after submission.

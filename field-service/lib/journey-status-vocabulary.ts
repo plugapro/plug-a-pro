@@ -32,11 +32,14 @@ export function mapRequestStatusToBlueprintState(params: {
   status: JobRequestStatus
   assignmentMode: AssignmentMode
   hasInterestedProviders?: boolean
+  hasProviderOptions?: boolean
 }): BlueprintRequestState {
-  const { status, assignmentMode, hasInterestedProviders } = params
+  const { status, assignmentMode, hasInterestedProviders, hasProviderOptions } = params
 
   if (status === 'PENDING_VALIDATION') {
-    return assignmentMode === 'OPS_REVIEW' ? 'provider_options_ready' : 'awaiting_matching_mode'
+    return assignmentMode === 'OPS_REVIEW' && hasProviderOptions
+      ? 'provider_options_ready'
+      : 'awaiting_matching_mode'
   }
   if (status === 'OPEN') {
     return assignmentMode === 'OPS_REVIEW' ? 'review_matching_started' : 'quick_match_active'
@@ -73,7 +76,7 @@ export const REQUEST_STATUS_VOCABULARY_MATRIX: Record<JobRequestStatus, {
 }> = {
   PENDING_VALIDATION: {
     AUTO_ASSIGN: 'awaiting_matching_mode',
-    OPS_REVIEW: 'provider_options_ready',
+    OPS_REVIEW: 'awaiting_matching_mode',
   },
   OPEN: {
     AUTO_ASSIGN: 'quick_match_active',
@@ -104,4 +107,3 @@ export const REQUEST_STATUS_VOCABULARY_MATRIX: Record<JobRequestStatus, {
     OPS_REVIEW: 'cancelled',
   },
 }
-

@@ -69,7 +69,11 @@ async function ensureReviewRankingDecision(params: {
       })
     : null
 
-  if (existingDecision && existingDecision.mode === 'OPS_REVIEW' && existingDecision.status === 'RANKED') {
+  if (
+    existingDecision &&
+    existingDecision.mode === 'OPS_REVIEW' &&
+    (existingDecision.status === 'RANKED' || existingDecision.status === 'NO_MATCH')
+  ) {
     return existingDecision.id
   }
 
