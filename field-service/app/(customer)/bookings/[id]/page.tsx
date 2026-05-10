@@ -497,11 +497,9 @@ export default async function BookingDetailPage({
 
       {/* Reschedule booking */}
       {canReschedule && (
-        <Link href={`/bookings/${id}/reschedule`}>
-          <Button variant="outline" className="w-full">
-            Request reschedule
-          </Button>
-        </Link>
+        <Button asChild variant="outline" className="w-full">
+          <Link href={`/bookings/${id}/reschedule`}>Request reschedule</Link>
+        </Button>
       )}
 
       {/* Cancel booking */}
