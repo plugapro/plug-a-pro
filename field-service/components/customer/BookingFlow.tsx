@@ -261,7 +261,7 @@ export function BookingFlow({
     const region = normalizeValue(address.region)
     const postalCode = address.postalCode.trim()
 
-    if (!suburb || !city || !region || !province || !postalCode) {
+    if (!suburb || !city || (!region && !locationNodeId) || !province || !postalCode) {
       return 'Please complete the full service address before continuing.'
     }
 
