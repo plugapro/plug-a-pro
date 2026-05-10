@@ -64,6 +64,11 @@ export function resolveClientPwaScreenForState(params: {
       return { screen: 'expired', reason: 'request_expired' }
     case 'CANCELLED':
       return { screen: 'cancelled', reason: 'request_cancelled' }
+    default:
+      // Defensive runtime fallback for stale/unknown enum values that may exist
+      // in production data after phased rollouts. Keep rendering a safe status
+      // screen instead of throwing upstream.
+      return { screen: 'matching_progress', reason: 'request_status_unmapped' }
   }
 }
 
@@ -85,6 +90,10 @@ export function resolveClientPwaScreenForJobStatus(status: JobStatus): ClientPwa
     case 'CANCELLED':
     case 'FAILED':
       return { screen: 'cancelled', reason: 'job_cancelled_or_failed' }
+    default:
+      // Defensive runtime fallback to avoid crashing ticket rendering when an
+      // unexpected status value appears.
+      return { screen: 'job_tracking', reason: 'job_status_unmapped' }
   }
 }
 

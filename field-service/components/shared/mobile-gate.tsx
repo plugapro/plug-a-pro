@@ -5,6 +5,7 @@
 // a phone or tablet, because the product flows are designed for touch-first use.
 
 import { useSyncExternalStore } from 'react'
+import { usePathname } from 'next/navigation'
 
 const DESKTOP_BLOCK_QUERY = '(min-width: 1024px) and (hover: hover) and (pointer: fine)'
 
@@ -45,12 +46,33 @@ function getIsTabletUserAgent() {
   return false
 }
 
+function normalizeHost(host: string) {
+  const lower = host.trim().toLowerCase()
+  return lower.replace(/:\d+$/, '')
+}
+
+export function isDesktopAdminBypassPath(params: {
+  pathname: string | null
+  host: string | null
+}) {
+  const pathname = params.pathname ?? ''
+  const host = normalizeHost(params.host ?? '')
+
+  if (host === 'admin.plugapro.co.za') return true
+  if (pathname === '/admin-sign-in') return true
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) return true
+  return false
+}
+
 export function MobileGate({ children }: { children: React.ReactNode }) {
   const isDesktop = useSyncExternalStore(subscribe, getSnapshot, () => false)
+  const pathname = usePathname()
   const isIpad = getIsIpadUserAgent()
   const isTablet = getIsTabletUserAgent()
+  const host = typeof window === 'undefined' ? null : window.location.host
+  const desktopAdminBypass = isDesktopAdminBypassPath({ pathname, host })
 
-  if (isDesktop && !isIpad && !isTablet) {
+  if (isDesktop && !isIpad && !isTablet && !desktopAdminBypass) {
     return (
       <div className="min-h-screen bg-background">
         <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-10">
@@ -66,9 +88,8 @@ export function MobileGate({ children }: { children: React.ReactNode }) {
               experience, open this link on a mobile device.
             </p>
             <p className="mt-6 rounded border border-dashed border-border/70 px-4 py-3 text-xs text-muted-foreground">
-              Customer, provider, admin, and service workflows are mobile-only.
-              Your desktop session is currently blocked to protect the PWA-first
-              journey.
+              Customer and provider workflows are mobile-only. Use the dedicated
+              admin domain for desktop operations access.
             </p>
           </div>
         </div>

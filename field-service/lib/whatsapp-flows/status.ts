@@ -700,6 +700,7 @@ async function showRequestStatus(
             'Refresh status',
             trackingUrl,
           )
+          log(`INFO: request status CTA sent. requestId=${jr.id} label=Refresh status`)
         } catch (error) {
           log(`WARN: status CTA send failed — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
           await sendText(phone, `${body}\n\nTap Track My Request to refresh.`)
@@ -724,9 +725,10 @@ async function showRequestStatus(
       await sendCtaUrl(
         phone,
         `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${statusLabel}\n\nTap below to view your request.`,
-        'View Ticket',
+        'View request',
         trackingUrl,
       )
+      log(`INFO: request ticket CTA sent. requestId=${jr.id} label=View request`)
     } else {
       await sendButtons(
         phone,

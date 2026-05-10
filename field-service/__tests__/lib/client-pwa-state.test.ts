@@ -39,4 +39,25 @@ describe('client PWA state mapping', () => {
       reason: 'request_expired',
     })
   })
+
+  it('falls back safely when request status is unknown at runtime', () => {
+    const state = resolveClientPwaScreenForState({
+      requestStatus: 'UNKNOWN_STATUS' as unknown as never,
+    })
+    expect(state).toEqual({
+      screen: 'matching_progress',
+      reason: 'request_status_unmapped',
+    })
+  })
+
+  it('falls back safely when matched job status is unknown at runtime', () => {
+    const state = resolveClientPwaScreenForState({
+      requestStatus: 'MATCHED',
+      jobStatus: 'UNKNOWN_JOB_STATUS' as unknown as never,
+    })
+    expect(state).toEqual({
+      screen: 'job_tracking',
+      reason: 'job_status_unmapped',
+    })
+  })
 })

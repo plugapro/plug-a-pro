@@ -77,7 +77,7 @@ function toAdminInternalPath(pathname: string): string {
 
 export async function proxy(request: NextRequest) {
   const originalPathname = request.nextUrl.pathname
-  const host = request.headers.get('host') ?? ''
+  const host = getPrimaryHostHeader(request)
   const isAdminDomain = host === 'admin.plugapro.co.za'
 
   // Compute the internal path (rewritten for admin domain, unchanged otherwise)
@@ -245,16 +245,40 @@ function redirectToSignIn(
   }
 
   const callbackCandidate = request.nextUrl.pathname + request.nextUrl.search
+  const adminDomainCallbackCandidate = effectivePath + request.nextUrl.search
   // Sanitize candidate paths to avoid open-redirects and role-mixed callbacks.
   let callbackPath = callbackCandidate
-  if (destination === '/provider-sign-in') callbackPath = getSafeProviderNextPath(callbackCandidate, '/provider/jobs')
-  if (destination === '/admin-sign-in') callbackPath = getSafeAdminNextPath(callbackCandidate, '/admin')
-  if (destination === '/sign-in') callbackPath = getSafeCustomerNextPath(callbackCandidate, '/bookings')
+  if (destination === '/provider-sign-in') {
+    callbackPath = getSafeProviderNextPath(callbackCandidate, '/provider/jobs')
+  } else if (destination === '/admin-sign-in') {
+    callbackPath = getSafeAdminNextPath(callbackCandidate, '/admin')
+  } else if (destination === '/sign-in' && isAdminDomain && effectivePath.startsWith('/admin')) {
+    callbackPath = getSafeAdminNextPath(adminDomainCallbackCandidate, '/admin')
+  } else if (destination === '/sign-in') {
+    callbackPath = getSafeCustomerNextPath(callbackCandidate, '/bookings')
+  }
 
   const url = new URL(destination, request.url)
   url.searchParams.set('callbackUrl', callbackPath)
   url.searchParams.set('next', callbackPath)
   return NextResponse.redirect(url)
+}
+
+function getPrimaryHostHeader(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-host')
+  const direct = request.headers.get('host')
+  const fallback = request.nextUrl.hostname ?? ''
+  const raw = (forwarded ?? direct ?? fallback)
+    .split(',')[0]
+    .trim()
+    .toLowerCase()
+
+  if (!raw) return ''
+  if (raw.startsWith('[')) {
+    const closing = raw.indexOf(']')
+    return closing > 0 ? raw.slice(0, closing + 1) : raw
+  }
+  return raw.replace(/:\d+$/, '')
 }
 
 export const config = {

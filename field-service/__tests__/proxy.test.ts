@@ -325,4 +325,38 @@ describe('proxy admin access', () => {
     expect(res.headers.get('location')).toBeNull()
     expect(mockGetUser).not.toHaveBeenCalled()
   })
+
+  it('maps clean admin-domain routes to internal /admin paths and keeps admin callback', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/dispatch'))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'https://admin.plugapro.co.za/sign-in?callbackUrl=%2Fadmin%2Fdispatch&next=%2Fadmin%2Fdispatch',
+    )
+  })
+
+  it('treats host headers with port as admin domain for clean-path routing', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/customers', {
+      headers: { host: 'admin.plugapro.co.za:443' },
+    }))
+
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toBe(
+      'https://admin.plugapro.co.za/sign-in?callbackUrl=%2Fadmin%2Fcustomers&next=%2Fadmin%2Fcustomers',
+    )
+  })
+
+  it('keeps /sign-in public on admin domain and rewrites to internal /admin-sign-in', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('https://admin.plugapro.co.za/sign-in'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
 })
