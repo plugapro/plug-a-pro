@@ -38,6 +38,7 @@ export default async function MessageThreadPage({
         },
       },
       messages: {
+        where: { status: { not: 'QUEUED' } },
         orderBy: { createdAt: 'asc' },
         select: {
           id: true,
@@ -98,10 +99,28 @@ export default async function MessageThreadPage({
     const providerPhone = freshBooking.match.provider?.phone
     if (!providerPhone) redirect(`/messages/${bookingId}`)
 
+    // Pre-create QUEUED row so rate-limit counter increments even when sendText fails.
+    // logOutboundMessage (inside sendText) creates a SENT row on success; the QUEUED row
+    // is filtered from the thread display (where: { status: { not: 'QUEUED' } } above).
+    const messageText = `Message from customer (Booking #${bookingId.slice(-8).toUpperCase()}):\n\n${body}`
+    await database.messageEvent.create({
+      data: {
+        bookingId,
+        customerId: cust.id,
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        body: messageText,
+        to: providerPhone,
+        templateName: 'freeform:customer_message',
+        status: 'QUEUED',
+        metadata: { sentByCustomerId: cust.id },
+      },
+    })
+
     const { sendText } = await import('@/lib/whatsapp')
     await sendText({
       to: providerPhone,
-      text: `Message from customer (Booking #${bookingId.slice(-8).toUpperCase()}):\n\n${body}`,
+      text: messageText,
       bookingId,
       templateName: 'freeform:customer_message',
       metadata: { sentByCustomerId: cust.id },
