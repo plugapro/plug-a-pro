@@ -11,6 +11,10 @@ import { ctaLabelFor } from './whatsapp-copy'
 // How long the provider has to accept/decline after customer selection.
 const PROVIDER_CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000
 
+// Provider lead notification reservation TTL in milliseconds.
+// A reservation prevents duplicate notifications when a retry occurs.
+export const NOTIFICATION_ATTEMPT_TTL_MS = 5 * 60 * 1000
+
 export class CustomerShortlistError extends Error {
   constructor(
     public readonly code:
@@ -44,6 +48,7 @@ type ProviderSelectionLead = {
   matchScore: number | Prisma.Decimal | null
   rankingPosition: number | null
   customerSelectedAt: Date | null
+  expiresAt: Date | null
   provider: {
     id: string
     active: boolean
@@ -69,6 +74,10 @@ function throwDuplicateSelectionError(message: string) {
   throw new CustomerShortlistError('REQUEST_NOT_AWAITING_SELECTION', message)
 }
 
+function logSelectionRejected(reason: string, details: Record<string, unknown>) {
+  console.warn(`[customer-shortlists.selection] reject:${reason}`, details)
+}
+
 function decimalToNumber(
   value: Prisma.Decimal | number | string | null | undefined,
 ) {
@@ -91,6 +100,7 @@ type NotifySelectedProviderResult = {
     | 'not_found'
     | 'not_selected'
     | 'send_failed'
+    | 'db_update_failed'
 }
 
 function formatProviderLeadNotificationTiming(params: {
@@ -439,8 +449,22 @@ export async function selectShortlistedProviderForRequest(params: {
   requestId: string
   shortlistItemId: string
 }) {
+  const requestId = params.requestId?.trim()
+  const shortlistItemId = params.shortlistItemId?.trim()
+
+  if (!requestId || !shortlistItemId) {
+    logSelectionRejected('invalid_ids', {
+      requestId: params.requestId,
+      shortlistItemId: params.shortlistItemId,
+    })
+    throw new CustomerShortlistError(
+      'ITEM_NOT_FOUND',
+      'Shortlist provider was not found.',
+    )
+  }
+
   const item = await db.providerShortlistItem.findUnique({
-    where: { id: params.shortlistItemId },
+    where: { id: shortlistItemId },
     include: {
       shortlist: true,
       leadInvite: {
@@ -455,7 +479,11 @@ export async function selectShortlistedProviderForRequest(params: {
     },
   })
 
-  if (!item || item.shortlist.requestId !== params.requestId) {
+  if (!item || item.shortlist.requestId !== requestId) {
+    logSelectionRejected('item_missing', {
+      requestId,
+      shortlistItemId,
+    })
     throw new CustomerShortlistError(
       'ITEM_NOT_FOUND',
       'Shortlist provider was not found.',
@@ -478,7 +506,7 @@ export async function selectShortlistedProviderForRequest(params: {
   // being selected twice across requests, but does not prevent overwriting on
   // the same request.
   const requestStatus = await db.jobRequest.findUnique({
-    where: { id: params.requestId },
+    where: { id: requestId },
     select: { status: true },
   })
   if (!requestStatus) {
@@ -488,13 +516,36 @@ export async function selectShortlistedProviderForRequest(params: {
     )
   }
   if (requestStatus.status !== 'SHORTLIST_READY') {
+    logSelectionRejected('request_status_not_selectable', {
+      requestId,
+      shortlistItemId,
+      requestStatus: requestStatus.status,
+    })
     throw new CustomerShortlistError(
       'REQUEST_NOT_AWAITING_SELECTION',
       'This request is no longer awaiting customer selection.',
     )
   }
 
+  if (!item.provider) {
+    logSelectionRejected('provider_not_found', {
+      requestId,
+      providerId: item.providerId,
+      shortlistItemId,
+    })
+    throw new CustomerShortlistError(
+      'INVALID_PROVIDER_SELECTION',
+      'This provider is no longer available.',
+    )
+  }
+
   if (!item.provider?.active || item.provider.status !== 'ACTIVE') {
+    logSelectionRejected('provider_not_active', {
+      requestId,
+      providerId: item.providerId,
+      providerStatus: item.provider.status,
+      active: item.provider.active,
+    })
     throw new CustomerShortlistError(
       'INVALID_PROVIDER_SELECTION',
       'This provider is no longer active.',
@@ -502,6 +553,8 @@ export async function selectShortlistedProviderForRequest(params: {
   }
 
   const selectedAt = new Date()
+  const leadExpiryTs = new Date(selectedAt.getTime() + PROVIDER_CONFIRMATION_WINDOW_MS)
+
   const result = await db.$transaction(async (tx) => {
     await tx.jobRequest.update({
       where: { id: params.requestId },
@@ -831,7 +884,10 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
     leadId: params.leadId,
   })
 
-  let wasSent = false
+  let leadRef:
+    | { id: string; status: string; providerId: string; requestId: string }
+    | null = null
+
   try {
     const lead = await db.lead.findUnique({
       where: { id: params.leadId },
@@ -839,7 +895,9 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
         id: true,
         status: true,
         notifiedAt: true,
+        notificationAttemptedAt: true,
         providerId: true,
+        expiresAt: true,
         jobRequest: {
           select: {
             id: true,
@@ -847,6 +905,7 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
             category: true,
             selectedProviderId: true,
             selectedLeadInviteId: true,
+            expiresAt: true,
             title: true,
             description: true,
             urgency: true,
@@ -880,12 +939,34 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
       return { sent: false, reason: 'not_found' }
     }
 
+    leadRef = {
+      id: lead.id,
+      status: lead.status,
+      providerId: lead.providerId,
+      requestId: lead.jobRequest.id,
+    }
+
     if (lead.notifiedAt !== null || lead.status === 'CUSTOMER_SELECTED') {
       console.info('[customer-shortlists.notification] already_notified', {
         leadId: lead.id,
         requestId: lead.jobRequest.id,
       })
       return { sent: false, reason: 'already_notified' }
+    }
+
+    const now = new Date()
+    const staleAttemptCutoff = new Date(
+      now.getTime() - NOTIFICATION_ATTEMPT_TTL_MS,
+    )
+    if (
+      (lead.expiresAt != null && lead.expiresAt <= now) ||
+      (lead.jobRequest.expiresAt != null && lead.jobRequest.expiresAt <= now)
+    ) {
+      console.info('[customer-shortlists.notification] request_or_lead_expired', {
+        leadId: lead.id,
+        requestId: lead.jobRequest.id,
+      })
+      return { sent: false, reason: 'request_not_ready' }
     }
 
     if (
@@ -897,7 +978,7 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
         leadId: lead.id,
         requestId: lead.jobRequest.id,
       })
-      return { sent: false, reason: 'not_selected' }
+      return { sent: false, reason: 'request_not_ready' }
     }
 
     if (
@@ -913,6 +994,40 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
       return { sent: false, reason: 'not_applicable' }
     }
 
+    // Reserve the lead for notification before sending any outbound message.
+    // This avoids duplicate sends during repeated callback/retry windows.
+    const notificationAttemptStartedAt = new Date()
+    try {
+      await db.lead.update({
+        where: {
+          id: lead.id,
+          status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'SHORTLISTED'] },
+          notifiedAt: null,
+          OR: [
+            { notificationAttemptedAt: null },
+            { notificationAttemptedAt: { lt: staleAttemptCutoff } },
+          ],
+        },
+        data: {
+          notificationAttemptedAt: notificationAttemptStartedAt,
+        },
+      })
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        console.info('[customer-shortlists.notification] already_in_progress', {
+          leadId: lead.id,
+          providerId: lead.providerId,
+          requestId: lead.jobRequest.id,
+          status: lead.status,
+        })
+        return { sent: false, reason: 'already_notified' }
+      }
+      throw error
+    }
+
     if (!lead.provider.active || lead.provider.status !== 'ACTIVE') {
       console.info('[customer-shortlists.notification] provider_not_active', {
         leadId: lead.id,
@@ -926,8 +1041,28 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
         leadId: lead.id,
         providerId: lead.providerId,
       })
+      await db.lead.updateMany({
+        where: {
+          id: lead.id,
+          notificationAttemptedAt: notificationAttemptStartedAt,
+        },
+        data: {
+          notificationAttemptedAt: null,
+        },
+      })
       return { sent: false, reason: 'missing_provider_phone' }
     }
+
+    const clearNotificationAttempt = () =>
+      db.lead.updateMany({
+        where: {
+          id: lead.id,
+          notificationAttemptedAt: notificationAttemptStartedAt,
+        },
+        data: {
+          notificationAttemptedAt: null,
+        },
+      }).catch(() => undefined)
 
     const [balance, leadUrl] = await Promise.all([
       getProviderWalletBalanceReadOnly(lead.providerId),
@@ -948,25 +1083,52 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
       remainingCreditLabel: formatCredits(remainingCredits),
     })
 
-    await sendButtons(
-      lead.provider.phone,
-      body,
-      [
-        { id: `confirm_accept:${lead.id}`, title: 'Accept job' },
-        { id: `confirm_decline:${lead.id}`, title: 'Decline' },
-      ],
-      undefined,
-      {
-        templateName: 'interactive:provider_selected_for_confirmation',
-        metadata: {
+    let notificationMessageId: string | null = null
+    try {
+      const sentMessageId = await sendButtons(
+        lead.provider.phone,
+        body,
+        [
+          { id: `confirm_accept:${lead.id}`, title: 'Accept job' },
+          { id: `confirm_decline:${lead.id}`, title: 'Decline' },
+        ],
+        undefined,
+        {
+          templateName: 'interactive:provider_selected_for_confirmation',
+          metadata: {
+            leadId: lead.id,
+            providerId: lead.providerId,
+          },
+        },
+      )
+      if (typeof sentMessageId === 'string') {
+        notificationMessageId = sentMessageId
+      }
+    } catch (sendError) {
+      console.warn(
+        '[customer-shortlists.notification] send_buttons_failed',
+        {
           leadId: lead.id,
           providerId: lead.providerId,
+          requestId: lead.jobRequest.id,
+          error: sendError instanceof Error ? sendError.message : 'unknown',
         },
-      },
-    )
-    wasSent = true
+      )
+      await db.lead.updateMany({
+        where: {
+          id: lead.id,
+          notificationAttemptedAt: notificationAttemptStartedAt,
+        },
+        data: {
+          notificationAttemptedAt: null,
+        },
+      }).catch(() => undefined)
+      return { sent: false, reason: 'send_failed' }
+    }
+
+    let ctaMessageId: string | null = null
     if (leadUrl) {
-      await sendCtaUrl(
+      const ctaDispatchResult = await sendCtaUrl(
         lead.provider.phone,
         'Open this offer in the app to review job details.',
         ctaLabelFor('generic_details'),
@@ -985,42 +1147,78 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
           {
             leadId: lead.id,
             providerId: lead.providerId,
-            error: ctaError,
+            error: ctaError instanceof Error ? ctaError.message : 'unknown',
           },
         )
       })
+        if (typeof ctaDispatchResult === 'string') {
+        ctaMessageId = ctaDispatchResult
+      }
     }
 
-    await db.lead.update({
-      where: { id: lead.id },
-      data: { status: 'CUSTOMER_SELECTED', notifiedAt: new Date() },
-    })
+    try {
+      await db.$transaction(async (tx) => {
+        await tx.lead.update({
+          where: {
+            id: lead.id,
+            status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'SHORTLISTED'] },
+            notifiedAt: null,
+            notificationAttemptedAt: notificationAttemptStartedAt,
+          },
+          data: {
+            status: 'CUSTOMER_SELECTED',
+            notifiedAt: new Date(),
+            notificationAttemptedAt: null,
+          },
+        })
 
-    await db.auditLog
-      .create({
-        data: {
-          actorId: lead.providerId,
-          actorRole: 'provider',
-          action: 'lead.provider_selected_notified',
-          entityType: 'Lead',
-          entityId: lead.id,
-          after: {
-            leadStatus: 'CUSTOMER_SELECTED',
-            jobRequestId: lead.jobRequest.id,
-            providerId: lead.providerId,
-          } as Prisma.InputJsonValue,
-        },
+        await tx.auditLog.create({
+          data: {
+            actorId: lead.providerId,
+            actorRole: 'provider',
+            action: 'lead.provider_selected_notified',
+            entityType: 'Lead',
+            entityId: lead.id,
+            after: {
+              leadStatus: 'CUSTOMER_SELECTED',
+              jobRequestId: lead.jobRequest.id,
+              providerId: lead.providerId,
+            } as Prisma.InputJsonValue,
+          },
+        }).catch(() => undefined)
       })
-      .catch(() => undefined)
+    } catch (error) {
+      await clearNotificationAttempt()
+      throw error
+    }
 
     console.info('[customer-shortlists.notification] provider selected notification sent', {
       leadId: lead.id,
       providerId: lead.providerId,
       requestId: lead.jobRequest.id,
+      whatsappMessageId: notificationMessageId,
+      ctaMessageId,
     })
 
     return { sent: true }
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2025' &&
+      leadRef != null
+    ) {
+      console.warn(
+        '[customer-shortlists.notification] race_update_conflict',
+        {
+          leadId: leadRef.id,
+          requestId: leadRef.requestId,
+          providerId: leadRef.providerId,
+          status: leadRef.status,
+        },
+      )
+      return { sent: false, reason: 'already_notified' }
+    }
+
     console.error(
       '[customer-shortlists] selected provider notification failed',
       {
@@ -1028,7 +1226,10 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
         error,
       },
     )
-    return wasSent ? { sent: true } : { sent: false, reason: 'send_failed' }
+    return {
+      sent: false,
+      reason: leadRef == null ? 'send_failed' : 'db_update_failed',
+    }
   }
 }
 
@@ -1037,27 +1238,48 @@ export async function selectProviderForCustomerRequest(params: {
   customerId: string
   providerId: string
 }) {
+  const requestId = params.requestId?.trim()
+  const providerId = params.providerId?.trim()
+
+  if (!requestId) {
+    logSelectionRejected('request_id_missing', {
+      requestId: params.requestId,
+    })
+    throw new CustomerShortlistError('REQUEST_NOT_FOUND', 'Job request not found.')
+  }
+  if (!providerId) {
+    logSelectionRejected('provider_id_missing', {
+      requestId,
+    })
+    throw new CustomerShortlistError(
+      'INVALID_PROVIDER_SELECTION',
+      'Invalid provider selection.',
+    )
+  }
+
   console.info('[customer-shortlists.selection] attempt', {
-    requestId: params.requestId,
-    providerId: params.providerId,
+    requestId,
+    providerId,
   })
 
   const request = await db.jobRequest.findUnique({
-    where: { id: params.requestId },
+    where: { id: requestId },
     select: {
       id: true,
       customerId: true,
       category: true,
+      expiresAt: true,
       status: true,
       latestDispatchDecisionId: true,
       selectedProviderId: true,
       selectedLeadInviteId: true,
       address: { select: { suburb: true } },
       leads: {
-        where: { providerId: params.providerId },
+        where: { providerId },
         select: {
           id: true,
           status: true,
+          expiresAt: true,
           dispatchDecisionId: true,
           matchAttemptId: true,
           matchScore: true,
@@ -1084,7 +1306,20 @@ export async function selectProviderForCustomerRequest(params: {
       'Job request not found.',
     )
   }
+  if (!request.customerId) {
+    console.error('[customer-shortlists.selection] request_corrupt', {
+      requestId,
+    })
+    throw new CustomerShortlistError(
+      'INVALID_REQUEST_STATUS',
+      'Request is missing required customer reference.',
+    )
+  }
   if (request.customerId !== params.customerId) {
+    logSelectionRejected('request_forbidden', {
+      requestId,
+      customerId: params.customerId,
+    })
     throw new CustomerShortlistError(
       'FORBIDDEN',
       'Not allowed to select a provider for this request.',
@@ -1097,21 +1332,37 @@ export async function selectProviderForCustomerRequest(params: {
   if (
     (request.status === 'PROVIDER_CONFIRMATION_PENDING' ||
       request.status === 'PENDING_VALIDATION') &&
-    request.selectedProviderId === params.providerId &&
+    request.selectedProviderId === providerId &&
     request.selectedLeadInviteId
   ) {
     return {
       requestId: request.id,
-      providerId: params.providerId,
+      providerId,
       leadId: request.selectedLeadInviteId,
       alreadySelected: true,
     }
   }
 
   if (!requestCanAcceptSelection(request.status)) {
+    logSelectionRejected('request_not_ready', {
+      requestId,
+      requestStatus: request.status,
+      providerId,
+    })
     throw new CustomerShortlistError(
       'REQUEST_NOT_AWAITING_SELECTION',
       'This request is no longer awaiting selection.',
+    )
+  }
+  if (request.expiresAt && request.expiresAt <= new Date()) {
+    console.info('[customer-shortlists.selection] expired_request_rejected', {
+      requestId,
+      requestStatus: request.status,
+      expiresAt: request.expiresAt.toISOString(),
+    })
+    throw new CustomerShortlistError(
+      'REQUEST_NOT_AWAITING_SELECTION',
+      'This request has expired.',
     )
   }
 
@@ -1120,7 +1371,10 @@ export async function selectProviderForCustomerRequest(params: {
   // re-opens this flow.
   let selectedLead: ProviderSelectionLead | null =
     request.leads
-      .filter((lead) => isLeadSelectableForFinalSelection(lead.status))
+      .filter(
+        (lead) =>
+          Boolean(lead.provider) && isLeadSelectableForFinalSelection(lead.status),
+      )
       .map((lead) => ({
         ...lead,
         provider: {
@@ -1151,11 +1405,11 @@ export async function selectProviderForCustomerRequest(params: {
     } | null
   } | null = null
 
-  if (!selectedLead && request.latestDispatchDecisionId) {
+      if (!selectedLead && request.latestDispatchDecisionId) {
     rankedMatch = await db.matchAttempt.findFirst({
       where: {
         dispatchDecisionId: request.latestDispatchDecisionId,
-        providerId: params.providerId,
+        providerId,
         stage: 'RANKED',
       },
       include: {
@@ -1191,6 +1445,11 @@ export async function selectProviderForCustomerRequest(params: {
   }
 
   const selectedAt = new Date()
+  // Keep lead response window deterministic and short-lived so providers cannot
+  // accept a stale lead after long delays.
+  const leadExpiryTs = new Date(
+    selectedAt.getTime() + PROVIDER_CONFIRMATION_WINDOW_MS,
+  )
   if (
     !selectedLead &&
     (!rankedMatch?.provider?.active || rankedMatch?.provider.status !== 'ACTIVE')
@@ -1201,16 +1460,24 @@ export async function selectProviderForCustomerRequest(params: {
     )
   }
 
-  const result = await db.$transaction(async (tx) => {
-    const reloaded = await tx.jobRequest.findUnique({
-      where: { id: request.id },
-      select: {
-        status: true,
-        selectedProviderId: true,
-        selectedLeadInviteId: true,
-        latestDispatchDecisionId: true,
-      },
-    })
+  let result: {
+    requestId: string
+    providerId: string
+    leadId: string
+    alreadySelected: boolean
+  }
+
+  try {
+    result = await db.$transaction(async (tx) => {
+      const reloaded = await tx.jobRequest.findUnique({
+        where: { id: request.id },
+        select: {
+          status: true,
+          selectedProviderId: true,
+          selectedLeadInviteId: true,
+          latestDispatchDecisionId: true,
+        },
+      })
 
     if (!reloaded) {
       throw new CustomerShortlistError(
@@ -1223,16 +1490,51 @@ export async function selectProviderForCustomerRequest(params: {
     // PROVIDER_CONFIRMATION_PENDING between our pre-transaction checks and now.
     // selectedLead may still be null here (no existing lead row pre-transaction),
     // so we fall back to reloaded.selectedLeadInviteId for the idempotent return.
+    // Re-check provider availability inside the transaction so we cannot select
+    // a provider that was deactivated after the request was read.
+    const matchedProvider = await tx.provider.findUnique({
+      where: { id: providerId },
+      select: { id: true, active: true, status: true },
+    })
+    if (!matchedProvider) {
+      logSelectionRejected('provider_missing_in_tx', {
+        requestId,
+        providerId,
+      })
+      throw new CustomerShortlistError(
+        'INVALID_PROVIDER_SELECTION',
+        'The selected provider is no longer available.',
+      )
+    }
+    if (!matchedProvider.active || matchedProvider.status !== 'ACTIVE') {
+      logSelectionRejected('provider_not_active_in_tx', {
+        requestId,
+        providerId,
+        active: matchedProvider.active,
+        status: matchedProvider.status,
+      })
+      throw new CustomerShortlistError(
+        'INVALID_PROVIDER_SELECTION',
+        'This provider is no longer active.',
+      )
+    }
+
     if (reloaded.status === 'PROVIDER_CONFIRMATION_PENDING') {
-      if (reloaded.selectedProviderId !== params.providerId) {
+      if (reloaded.selectedProviderId !== providerId) {
         throwDuplicateSelectionError(
           'A provider has already been selected for this request.',
         )
       }
-      const leadId = selectedLead?.id ?? reloaded.selectedLeadInviteId ?? ''
+      if (!reloaded.selectedLeadInviteId) {
+        throw new CustomerShortlistError(
+          'ITEM_NOT_FOUND',
+          'Could not resolve the selected lead for this request.',
+        )
+      }
+      const leadId = selectedLead?.id ?? reloaded.selectedLeadInviteId
       return {
         requestId: request.id,
-        providerId: params.providerId,
+        providerId,
         leadId,
         alreadySelected: true,
       }
@@ -1254,8 +1556,8 @@ export async function selectProviderForCustomerRequest(params: {
         )
       }
 
-      const now = new Date()
-      const upserted = await tx.lead.upsert({
+        const now = new Date()
+        const upserted = await tx.lead.upsert({
         where: {
           jobRequestId_providerId: {
             jobRequestId: request.id,
@@ -1270,19 +1572,21 @@ export async function selectProviderForCustomerRequest(params: {
           status: 'VIEWED',
           sentAt: now,
           viewedAt: now,
+          // Always give a bounded response window once the customer selects.
+          expiresAt: leadExpiryTs,
           matchScore: rankedMatch.score,
           rankingPosition: rankedMatch.rankedPosition,
-          // Give the provider a concrete window to accept/decline.
-          expiresAt: new Date(now.getTime() + PROVIDER_CONFIRMATION_WINDOW_MS),
         },
         update: {
           dispatchDecisionId: reloaded.latestDispatchDecisionId,
           matchAttemptId: rankedMatch.id,
           status: 'VIEWED',
           viewedAt: now,
+          // Refresh the selection window to avoid stale/indefinite response windows
+          // when a customer re-runs selection for a valid lead row.
+          expiresAt: leadExpiryTs,
           matchScore: rankedMatch.score,
           rankingPosition: rankedMatch.rankedPosition,
-          // Preserve existing expiresAt on update; the provider already has a window.
         },
       })
 
@@ -1294,6 +1598,7 @@ export async function selectProviderForCustomerRequest(params: {
         matchScore: upserted.matchScore,
         rankingPosition: upserted.rankingPosition,
         customerSelectedAt: upserted.customerSelectedAt,
+        expiresAt: upserted.expiresAt,
         provider: {
           id: rankedMatch.provider.id,
           active: rankedMatch.provider.active,
@@ -1325,7 +1630,7 @@ export async function selectProviderForCustomerRequest(params: {
       where: { id: request.id },
       data: {
         status: 'PROVIDER_CONFIRMATION_PENDING',
-        selectedProviderId: params.providerId,
+        selectedProviderId: providerId,
         selectedLeadInviteId: selectedLead.id,
       },
     })
@@ -1333,14 +1638,16 @@ export async function selectProviderForCustomerRequest(params: {
     await tx.lead.update({
       where: { id: selectedLead.id },
       data: {
+        // Refresh the response window on selection to prevent stale lead expiries.
         customerSelectedAt: selectedAt,
+        expiresAt: leadExpiryTs,
       },
     })
 
     await tx.providerShortlistItem.updateMany({
       where: {
         shortlist: { requestId: request.id, status: 'PUBLISHED' },
-        providerId: params.providerId,
+        providerId,
       },
       data: { customerSelectedAt: selectedAt },
     })
@@ -1349,12 +1656,12 @@ export async function selectProviderForCustomerRequest(params: {
       .create({
         data: {
           actorId: params.customerId,
-          actorRole: 'customer',
+            actorRole: 'customer',
           action: 'shortlist.provider_selected',
           entityType: 'JobRequest',
           entityId: request.id,
           after: {
-            providerId: params.providerId,
+            providerId,
             leadInviteId: selectedLead.id,
             selectedAt: selectedAt.toISOString(),
           } as Prisma.InputJsonValue,
@@ -1362,12 +1669,26 @@ export async function selectProviderForCustomerRequest(params: {
       })
       .catch(() => undefined)
 
-    return {
-      requestId: request.id,
-      providerId: params.providerId,
-      leadId: selectedLead!.id,
-      alreadySelected: false,
-    }
+      return {
+        requestId: request.id,
+        providerId,
+        leadId: selectedLead!.id,
+        alreadySelected: false,
+      }
+    })
+  } catch (error) {
+    console.error('[customer-shortlists.selection] transaction_failed', {
+      requestId,
+      providerId,
+      error: error instanceof Error ? error.message : 'unknown',
+    })
+    throw error
+  }
+
+  console.info('[customer-shortlists.selection] completed', {
+    requestId: result.requestId,
+    providerId: result.providerId,
+    leadId: result.leadId,
   })
 
   if (result.alreadySelected) {

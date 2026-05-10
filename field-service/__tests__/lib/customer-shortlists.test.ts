@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Prisma } from '@prisma/client'
 import {
   cancelRequestFromShortlist,
   declineSelectedProviderJob,
+  notifySelectedProvider,
   generateCustomerShortlistForRequest,
   getCustomerShortlistForRequest,
   requestMoreShortlistOptions,
@@ -38,6 +40,7 @@ const state: { tx: any; shortlistItem: any; declineLead: any } = {
       findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     auditLog: {
       create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -181,6 +184,7 @@ describe('customer shortlists', () => {
     })
     mockDb.jobRequest.findUnique.mockResolvedValue({
       id: 'request-1',
+      customerId: 'customer-1',
       status: 'SHORTLIST_READY',
       category: 'plumbing',
       customer: { phone: '+27222222222' },
@@ -238,6 +242,13 @@ describe('customer shortlists', () => {
       providerShortlistItem: {
         update: vi.fn().mockResolvedValue({ id: 'item-1' }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      provider: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'provider-1',
+          active: true,
+          status: 'ACTIVE',
+        }),
       },
       auditLog: {
         create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -403,9 +414,15 @@ describe('customer shortlists', () => {
       where: { id: 'lead-1' },
       data: { customerSelectedAt: expect.any(Date) },
     })
-    expect(mockDb.lead.update).toHaveBeenCalledWith({
-      where: { id: 'lead-1' },
-      data: { status: 'CUSTOMER_SELECTED', notifiedAt: expect.any(Date) },
+    expect(state.tx.lead.update).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({
+        id: 'lead-1',
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'SHORTLISTED'] },
+      }),
+      data: expect.objectContaining({
+        status: 'CUSTOMER_SELECTED',
+        notifiedAt: expect.any(Date),
+      }),
     })
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27111111111',
@@ -418,6 +435,20 @@ describe('customer shortlists', () => {
       }),
     )
     expect(state.tx).not.toHaveProperty('walletLedgerEntry')
+  })
+
+  it('rejects shortlist selection when shortlisted provider row is removed', async () => {
+    mockDb.providerShortlistItem.findUnique.mockResolvedValueOnce({
+      ...state.shortlistItem,
+      provider: null,
+    })
+
+    await expect(
+      selectShortlistedProviderForRequest({
+        requestId: 'request-1',
+        shortlistItemId: 'item-1',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
   })
 
   it('does not send duplicate provider notification after the lead is already marked', async () => {
@@ -464,7 +495,7 @@ describe('customer shortlists', () => {
 
     expect(result.notification).toMatchObject({ sent: false, reason: 'missing_provider_phone' })
     expect(sendButtons).not.toHaveBeenCalled()
-    expect(mockDb.lead.update).not.toHaveBeenCalled()
+    expect(mockDb.lead.update).toHaveBeenCalledTimes(1)
   })
 
   it('does not leak private request fields in the provider notification body', async () => {
@@ -605,7 +636,156 @@ describe('customer shortlists', () => {
       sent: false,
       reason: 'send_failed',
     })
-    expect(mockDb.lead.update).not.toHaveBeenCalled()
+    expect(mockDb.lead.update).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects notify-selected-provider when the lead no longer exists', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+
+    mockDb.lead.findUnique.mockResolvedValueOnce(null)
+
+    const result = await notifySelectedProvider({ leadId: 'missing-lead' })
+
+    expect(result).toMatchObject({ sent: false, reason: 'not_found' })
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('blocks notification when selected lead is no longer ready due to expiry', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification({
+        status: 'SENT',
+        expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      }),
+    )
+
+    const result = await notifySelectedProvider({ leadId: 'lead-1' })
+
+    expect(result).toMatchObject({
+      sent: false,
+      reason: 'request_not_ready',
+    })
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('blocks notification when request has expired', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification({
+        status: 'SENT',
+        jobRequest: {
+          ...makeLeadForSelectedProviderNotification().jobRequest,
+          expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+      }),
+    )
+
+    const result = await notifySelectedProvider({ leadId: 'lead-1' })
+
+    expect(result).toMatchObject({
+      sent: false,
+      reason: 'request_not_ready',
+    })
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('does not mark lead as notified if DB update fails after successful WhatsApp send', async () => {
+    const { sendCtaUrl, sendButtons } = await import('../../lib/whatsapp-interactive')
+
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification(),
+    )
+    state.tx.lead.update = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('db write failed'))
+    state.tx.auditLog.create = vi.fn().mockResolvedValue({ id: 'audit-1' })
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
+
+    const result = await notifySelectedProvider({ leadId: 'lead-1' })
+
+    expect(result).toMatchObject({
+      sent: false,
+      reason: 'db_update_failed',
+    })
+    expect(sendButtons).toHaveBeenCalledTimes(1)
+    expect(sendCtaUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips duplicate notification while another attempt is in progress', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    const lockError = new Prisma.PrismaClientKnownRequestError(
+      'No rows updated',
+      {
+        code: 'P2025',
+        clientVersion: 'test',
+      },
+    )
+
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification({
+        notificationAttemptedAt: new Date(Date.now() - 60 * 1000),
+      }),
+    )
+    mockDb.lead.update.mockRejectedValueOnce(lockError)
+
+    const result = await notifySelectedProvider({ leadId: 'lead-1' })
+
+    expect(result).toMatchObject({
+      sent: false,
+      reason: 'already_notified',
+    })
+    expect(sendButtons).not.toHaveBeenCalled()
+  })
+
+  it('allows notification retry after stale in-flight lock expires', async () => {
+    const { sendButtons, sendCtaUrl } =
+      await import('../../lib/whatsapp-interactive')
+
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification({
+        notificationAttemptedAt: new Date(Date.now() - 20 * 60 * 1000),
+      }),
+    )
+
+    const result = await notifySelectedProvider({ leadId: 'lead-1' })
+
+    expect(result).toMatchObject({ sent: true })
+    expect(sendButtons).toHaveBeenCalledTimes(1)
+    expect(sendCtaUrl).toHaveBeenCalledTimes(1)
+    expect(mockDb.lead.update).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns already_notified when DB update races after selection', async () => {
+    const { sendButtons } = await import('../../lib/whatsapp-interactive')
+    const staleLeadRaceError = new Prisma.PrismaClientKnownRequestError(
+      'No rows updated',
+      {
+        code: 'P2025',
+        clientVersion: 'test',
+      },
+    )
+
+    mockDb.lead.findUnique.mockResolvedValueOnce(
+      makeLeadForSelectedProviderNotification(),
+    )
+    state.tx.lead.update = vi
+      .fn()
+      .mockRejectedValueOnce(staleLeadRaceError)
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
+
+    const result = await notifySelectedProvider({ leadId: 'lead-1' })
+
+    expect(result).toMatchObject({
+      sent: false,
+      reason: 'already_notified',
+    })
+    expect(sendButtons).toHaveBeenCalledTimes(1)
   })
 
   it('notifies the customer when a shortlist becomes ready', async () => {
@@ -875,9 +1055,10 @@ describe('customer shortlists', () => {
     })
     expect(state.tx.lead.update).toHaveBeenCalledWith({
       where: { id: 'lead-1' },
-      data: {
+      data: expect.objectContaining({
         customerSelectedAt: expect.any(Date),
-      },
+        expiresAt: expect.any(Date),
+      }),
     })
   })
 
@@ -994,6 +1175,39 @@ describe('customer shortlists', () => {
     expect(state.tx.lead.update).not.toHaveBeenCalled()
   })
 
+  it('does not create request changes when lead creation fails', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({
+        leads: [],
+      }),
+      status: 'PENDING_VALIDATION',
+    })
+    mockDb.matchAttempt.findFirst.mockResolvedValueOnce({
+      id: 'match-1',
+      score: 0.76,
+      rankedPosition: 1,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    state.tx.lead.upsert.mockRejectedValueOnce(new Error('lead upsert failed'))
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toThrow('lead upsert failed')
+
+    expect(state.tx.jobRequest.update).not.toHaveBeenCalled()
+  })
+
   it('rejects provider selection when provider is not in current matches', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValueOnce({
       id: 'request-1',
@@ -1015,6 +1229,102 @@ describe('customer shortlists', () => {
         providerId: 'provider-unknown',
       }),
     ).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND' })
+  })
+
+  it('rejects when requestId is missing', async () => {
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: '   ',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'REQUEST_NOT_FOUND' })
+  })
+
+  it('rejects when request has missing customer reference', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      customerId: null,
+    })
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST_STATUS' })
+  })
+
+  it('rejects when request has expired_at in the past', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      status: 'SHORTLIST_READY',
+      expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+    })
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
+  })
+
+  it('rejects when providerId is missing', async () => {
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: '   ',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
+  })
+
+  it('rejects when request no longer exists', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce(null)
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'missing-request',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'REQUEST_NOT_FOUND' })
+  })
+
+  it('rejects when selected provider disappears before transaction completes', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({ leads: [] }),
+      status: 'SHORTLIST_READY',
+    })
+    mockDb.matchAttempt.findFirst.mockResolvedValueOnce({
+      id: 'match-1',
+      score: 0.76,
+      rankedPosition: 1,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    state.tx.provider.findUnique = vi.fn().mockResolvedValue(null)
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
+    expect(state.tx.provider.findUnique).toHaveBeenCalledWith({
+      where: { id: 'provider-1' },
+      select: { id: true, active: true, status: true },
+    })
   })
 
   it('rejects inactive provider selection', async () => {
