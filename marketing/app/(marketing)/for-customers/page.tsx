@@ -127,6 +127,7 @@ export default function ForCustomersPage() {
           <Button
             nativeButton={false}
             render={<Link href={`${getAppUrl()}/sign-up`} />}
+            variant="outline"
             size="lg"
           >
             Book on the web →
