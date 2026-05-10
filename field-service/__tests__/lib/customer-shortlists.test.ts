@@ -186,6 +186,7 @@ describe('customer shortlists', () => {
       address: { suburb: 'Ruimsig', city: 'Johannesburg' },
     })
     mockDb.matchAttempt.findFirst.mockResolvedValue(null)
+    mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' })
     mockDb.lead.upsert.mockResolvedValue({
       id: 'lead-upserted',
       status: 'VIEWED',
