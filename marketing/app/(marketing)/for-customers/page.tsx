@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { CTAStrip } from "@/components/marketing/CTAStrip";
 import { whatsappNumberDisplay } from "@/lib/whatsapp";
 import { WhatsAppCtaButton } from "@/components/marketing/WhatsAppCtaButton";
+import { WebCtaButton } from "@/components/marketing/WebCtaButton";
 import {
   MessageCircle,
   MapPin,
@@ -124,14 +125,13 @@ export default function ForCustomersPage() {
             source="for_customers_header"
             size="lg"
           />
-          <Button
-            nativeButton={false}
-            render={<Link href={`${getAppUrl()}/sign-up`} />}
+          <WebCtaButton
+            href={`${getAppUrl()}/sign-up`}
+            label="Book on the web →"
+            source="for_customers_header"
             variant="outline"
             size="lg"
-          >
-            Book on the web →
-          </Button>
+          />
           <Button
             nativeButton={false}
             render={<Link href="/solutions" />}
