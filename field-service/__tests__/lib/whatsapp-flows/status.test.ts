@@ -161,6 +161,29 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(call[1]).not.toContain('technician')
   })
 
+  it('uses "View request" CTA label for non-open request states', async () => {
+    const jr = makeJobRequest({
+      status: 'MATCHED',
+      match: {
+        booking: {
+          job: { id: 'job_done_1', status: 'COMPLETED', bookingId: 'bk_done_1' },
+        },
+      },
+    })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+
+    await handleStatusFlow(makeCtx())
+
+    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Tap below to view your request.'),
+      'View request',
+      `${APP_URL}/requests/access/jr_abc123`,
+    )
+  })
+
   it('shows explicit pending matching copy when lead summary is empty', async () => {
     const jr = makeJobRequest()
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)

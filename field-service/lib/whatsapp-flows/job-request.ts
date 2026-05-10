@@ -1568,7 +1568,12 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       let ctaSent = false
       if (result.ticketUrl) {
         try {
-          await sendCtaUrl(ctx.phone, successMessage, 'View Ticket', result.ticketUrl)
+          await sendCtaUrl(ctx.phone, successMessage, 'View request', result.ticketUrl)
+          console.info('[job-request-flow] request tracker CTA sent', {
+            requestId: result.jobRequestId,
+            requestRef: result.requestRef,
+            ctaLabel: 'View request',
+          })
           ctaSent = true
         } catch (ctaErr) {
           console.error('[job-request-flow] Ticket CTA send failed:', ctaErr)

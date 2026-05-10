@@ -4,8 +4,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { buildMetadata } from '@/lib/metadata'
 import { resolveJobRequestAccessToken } from '@/lib/job-request-access'
-import { resolveClientPwaDestination } from '@/lib/client-pwa-destination'
-import { createTraceId } from '@/lib/support-diagnostics'
+import { buildCustomerRequestTicketViewModel } from '@/lib/customer-request-ticket-view-model'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
@@ -18,7 +17,6 @@ import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
 import {
   cancelRequestFromShortlist,
-  getCustomerShortlistForRequest,
   requestMoreShortlistOptions,
   selectShortlistedProviderForRequest,
 } from '@/lib/customer-shortlists'
@@ -107,46 +105,82 @@ export default async function TicketAccessPage({
 }) {
   const { token } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
-  const destination = await resolveClientPwaDestination({
+  const ticketVm = await buildCustomerRequestTicketViewModel({
     token,
     intendedScreen: resolvedSearchParams.view ?? resolvedSearchParams.intent ?? null,
   })
 
-  if (destination.accessLevel !== 'public_token' || !destination.request) {
-    const expired = destination.accessLevel === 'expired'
-    const code = expired ? 'TICKET_EXPIRED' : 'TICKET_INVALID'
-    const traceId = createTraceId('tkt')
+  if (ticketVm.kind !== 'ready') {
+    const expired = ticketVm.reason === 'expired'
+    const invalid = ticketVm.reason === 'invalid'
+    const code = expired ? 'TICKET_LINK_EXPIRED' : invalid ? 'TICKET_LINK_INVALID' : 'TICKET_LOOKUP_FAILED'
+    const title = expired ? 'This request link has expired.' : "We couldn't open this request link."
+    const body = expired
+      ? 'This secure request link is time-limited. Open the latest WhatsApp message to get a fresh link, or start a new request below.'
+      : 'We could not verify this request link. It may be old, malformed, or no longer available.'
     return (
       <div className="mx-auto max-w-lg space-y-4 px-4 py-10">
         <Card>
           <CardContent className="space-y-3 px-4 py-5 text-sm">
-            <p className="font-semibold">
-              This link is no longer valid.
-            </p>
+            <p className="font-semibold">{title}</p>
             <p className="text-muted-foreground">
-              Please open the latest WhatsApp message or request a new link. We could not verify access to this request from this link.
+              {body}
             </p>
             <div className="rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
               <span className="mr-2 font-semibold">Code:</span>{code}
               <br />
-              <span className="mr-2 font-semibold">Ref:</span>{traceId}
+              <span className="mr-2 font-semibold">Ref:</span>{ticketVm.traceId}
             </div>
           </CardContent>
         </Card>
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-2">
+          <Button asChild variant="outline" className="w-full">
+            <a href="https://wa.me/" target="_blank" rel="noopener noreferrer">Return to WhatsApp</a>
+          </Button>
+          <Button asChild className="w-full">
+            <Link href="/services">Start a new request</Link>
+          </Button>
           <Button asChild className="w-full">
             <Link href="/sign-in">Sign in to view your tickets</Link>
           </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            You can also return to WhatsApp and ask Plug A Pro to resend your ticket link.
-          </p>
+          <Button asChild variant="ghost" className="w-full">
+            <Link href="/">Go home</Link>
+          </Button>
         </div>
       </div>
     )
   }
 
+  const destination = ticketVm.destination
   const jobRequest = destination.request
-  const shortlist = await getCustomerShortlistForRequest(jobRequest.id)
+  if (!jobRequest) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 px-4 py-10">
+        <Card>
+          <CardContent className="space-y-3 px-4 py-5 text-sm">
+            <p className="font-semibold">We could not load this request.</p>
+            <p className="text-muted-foreground">
+              This request may no longer be available from this link. Please use your latest WhatsApp update.
+            </p>
+            <div className="rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground">
+              <span className="mr-2 font-semibold">Code:</span>TICKET_REQUEST_MISSING
+              <br />
+              <span className="mr-2 font-semibold">Ref:</span>{ticketVm.traceId}
+            </div>
+          </CardContent>
+        </Card>
+        <div className="grid grid-cols-1 gap-2">
+          <Button asChild className="w-full">
+            <Link href="/services">Start a new request</Link>
+          </Button>
+          <Button asChild variant="outline" className="w-full">
+            <Link href="/">Go home</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  const shortlist = ticketVm.shortlist
   const profileItem = shortlist?.items.find((item) => item.providerId === resolvedSearchParams.provider) ?? null
   const selectedShortlistItem =
     shortlist?.items.find((item) => Boolean(item.customerSelectedAt) || jobRequest.selectedLeadInviteId === item.leadInviteId) ?? null
