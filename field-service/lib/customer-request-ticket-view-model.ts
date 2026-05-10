@@ -1,8 +1,14 @@
 import { resolveClientPwaDestination, type ClientPwaDestination } from './client-pwa-destination'
 import { getCustomerShortlistForRequest } from './customer-shortlists'
+import {
+  getCustomerReviewShortlist,
+  getProviderCandidatesForCustomerReview,
+} from './review-first'
 import { createTraceId } from './support-diagnostics'
 
 type ShortlistShape = Awaited<ReturnType<typeof getCustomerShortlistForRequest>>
+type ReviewCandidatesShape = Awaited<ReturnType<typeof getProviderCandidatesForCustomerReview>> | null
+type ReviewShortlistShape = Awaited<ReturnType<typeof getCustomerReviewShortlist>> | null
 
 export type CustomerRequestTicketViewModel =
   | {
@@ -11,6 +17,8 @@ export type CustomerRequestTicketViewModel =
       token: string
       destination: ClientPwaDestination
       shortlist: ShortlistShape
+      reviewCandidates: ReviewCandidatesShape
+      reviewShortlist: ReviewShortlistShape
     }
   | {
       kind: 'unavailable'
@@ -27,6 +35,7 @@ export type CustomerRequestTicketViewModel =
 export async function buildCustomerRequestTicketViewModel(params: {
   token: string
   intendedScreen?: string | null
+  reviewBatch?: number
 }): Promise<CustomerRequestTicketViewModel> {
   const traceId = createTraceId('tkt')
   const token = params.token
@@ -91,6 +100,58 @@ export async function buildCustomerRequestTicketViewModel(params: {
     shortlist = null
   }
 
+  const batch = Math.max(1, params.reviewBatch ?? 1)
+  const isReviewFirstPending =
+    destination.request.status === 'PENDING_VALIDATION' &&
+    destination.request.assignmentMode === 'OPS_REVIEW' &&
+    Boolean(destination.request.latestDispatchDecisionId)
+
+  let reviewCandidates: ReviewCandidatesShape = null
+  let reviewShortlist: ReviewShortlistShape = null
+  const customerId = destination.request.customer?.id
+
+  if (isReviewFirstPending && customerId) {
+    try {
+      reviewCandidates = await getProviderCandidatesForCustomerReview({
+        requestId: destination.request.id,
+        customerId,
+        batch,
+      })
+    } catch (error) {
+      // Candidate rendering should fail closed to a clear empty-state in the
+      // ticket page, not crash the whole public-token flow.
+      console.warn('[ticket-access] review candidates fetch failed (non-fatal)', {
+        traceId,
+        route: '/requests/access/[token]',
+        requestId: destination.request.id,
+        requestStatus: destination.request.status,
+        assignmentMode: destination.request.assignmentMode,
+        batch,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      reviewCandidates = null
+    }
+
+    try {
+      reviewShortlist = await getCustomerReviewShortlist({
+        requestId: destination.request.id,
+        customerId,
+      })
+    } catch (error) {
+      // Shortlist read errors are non-fatal for the same reason as shortlist
+      // fetch above; we still render the request details safely.
+      console.warn('[ticket-access] review shortlist fetch failed (non-fatal)', {
+        traceId,
+        route: '/requests/access/[token]',
+        requestId: destination.request.id,
+        requestStatus: destination.request.status,
+        assignmentMode: destination.request.assignmentMode,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      reviewShortlist = null
+    }
+  }
+
   console.info('[ticket-access] ticket view model ready', {
     traceId,
     route: '/requests/access/[token]',
@@ -100,6 +161,8 @@ export async function buildCustomerRequestTicketViewModel(params: {
     destinationScreen: destination.screen,
     destinationReason: destination.reason,
     shortlistItems: shortlist?.items.length ?? 0,
+    reviewCandidateCount: reviewCandidates?.candidates.length ?? 0,
+    reviewShortlistCount: reviewShortlist?.providers.length ?? 0,
   })
 
   return {
@@ -108,5 +171,7 @@ export async function buildCustomerRequestTicketViewModel(params: {
     token,
     destination,
     shortlist,
+    reviewCandidates,
+    reviewShortlist,
   }
 }

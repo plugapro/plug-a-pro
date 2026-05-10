@@ -20,6 +20,7 @@ import {
   requestMoreShortlistOptions,
   selectShortlistedProviderForRequest,
 } from '@/lib/customer-shortlists'
+import { sendRequestToShortlistedProviders } from '@/lib/review-first'
 
 export const metadata = buildMetadata({ title: 'Ticket Details', noIndex: true })
 
@@ -81,6 +82,28 @@ async function cancelRequestAction(formData: FormData) {
   redirect(`/requests/access/${encodeURIComponent(token)}?selection=cancelled`)
 }
 
+async function sendReviewShortlistFromToken(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const requestId = String(formData.get('requestId') ?? '')
+  const resolved = await resolveJobRequestAccessToken(token)
+
+  if (resolved.status !== 'active' || resolved.jobRequest?.id !== requestId) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
+  }
+
+  try {
+    await sendRequestToShortlistedProviders({
+      requestId,
+      customerId: resolved.jobRequest.customerId,
+    })
+  } catch {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=send-shortlist-failed`)
+  }
+
+  redirect(`/requests/access/${encodeURIComponent(token)}?selection=sent-to-shortlist`)
+}
+
 function formatCurrency(amount: number | null) {
   if (amount == null) return 'Not provided'
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(amount)
@@ -101,13 +124,15 @@ export default async function TicketAccessPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>
-  searchParams?: Promise<{ intent?: string; provider?: string; selection?: string; view?: string }>
+  searchParams?: Promise<{ intent?: string; provider?: string; selection?: string; view?: string; batch?: string }>
 }) {
   const { token } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
+  const reviewBatch = Math.max(1, Number.parseInt(resolvedSearchParams.batch ?? '1', 10) || 1)
   const ticketVm = await buildCustomerRequestTicketViewModel({
     token,
     intendedScreen: resolvedSearchParams.view ?? resolvedSearchParams.intent ?? null,
+    reviewBatch,
   })
 
   if (ticketVm.kind !== 'ready') {
@@ -187,6 +212,12 @@ export default async function TicketAccessPage({
   const match = jobRequest.match
   const canRequestMoreOptions = destination.allowedActions.includes('request_more_options')
   const canCancelRequest = destination.allowedActions.includes('cancel_request')
+  const isReviewFirstPending =
+    jobRequest.status === 'PENDING_VALIDATION' &&
+    jobRequest.assignmentMode === 'OPS_REVIEW' &&
+    Boolean(jobRequest.latestDispatchDecisionId)
+  const reviewCandidates = ticketVm.reviewCandidates
+  const reviewShortlist = ticketVm.reviewShortlist
   const latestQuote = match?.quotes[0] ?? null
   const booking = match?.booking ?? null
   const provider = match?.provider ?? null
@@ -345,7 +376,8 @@ export default async function TicketAccessPage({
 
       {(resolvedSearchParams.selection === 'invalid' ||
         resolvedSearchParams.selection === 'more-options-failed' ||
-        resolvedSearchParams.selection === 'cancel-failed') && (
+        resolvedSearchParams.selection === 'cancel-failed' ||
+        resolvedSearchParams.selection === 'send-shortlist-failed') && (
         <Card className="border-destructive/30 bg-destructive/5">
           <CardContent className="space-y-2 px-4 py-4 text-sm text-destructive">
             <p className="font-medium">We could not complete that action</p>
@@ -353,6 +385,15 @@ export default async function TicketAccessPage({
             <Button asChild variant="outline" className="w-full">
               <Link href={supportHref}>Contact support</Link>
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {resolvedSearchParams.selection === 'sent-to-shortlist' && (
+        <Card className="border-[var(--tone-success-border)] bg-[var(--tone-success-bg)]">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-success-fg)]">
+            <p className="font-medium">Request sent to shortlisted providers</p>
+            <p>We notified your selected providers on WhatsApp. We&apos;ll keep updating your request status here.</p>
           </CardContent>
         </Card>
       )}
@@ -400,6 +441,93 @@ export default async function TicketAccessPage({
             <Button asChild className="w-full">
               <Link href="/services">Start new request</Link>
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {isReviewFirstPending && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Review Providers First
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              View matching providers, shortlist 1 to 3, then send your request only to those providers.
+            </p>
+            {reviewCandidates == null ? (
+              <p className="text-muted-foreground">We&apos;re finding matching providers for your request.</p>
+            ) : reviewCandidates.candidates.length > 0 ? (
+              <div className="space-y-2">
+                {reviewCandidates.candidates.map((candidate) => (
+                  <Card key={candidate.providerId}>
+                    <CardContent className="space-y-2 px-4 py-3 text-sm">
+                      <p className="font-medium">{candidate.name}</p>
+                      <p className="text-muted-foreground">
+                        {(candidate.skills[0] ?? jobRequest.category)} · {candidate.serviceAreas[0] ?? 'Your area'}
+                      </p>
+                      {candidate.callOutFee != null && (
+                        <p className="text-muted-foreground">Call-out fee: R{Math.round(candidate.callOutFee)}</p>
+                      )}
+                      {candidate.experience && (
+                        <p className="text-muted-foreground">Experience: {candidate.experience}</p>
+                      )}
+                      <p className="text-muted-foreground">Why matched: {candidate.whyMatched}</p>
+                      {candidate.profileUrl ? (
+                        <Button asChild variant="outline" className="w-full">
+                          <Link href={candidate.profileUrl}>View profile & shortlist</Link>
+                        </Button>
+                      ) : (
+                        <Button variant="outline" className="w-full" disabled>
+                          Profile unavailable
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">
+                We couldn&apos;t find matching providers in your area right now.
+              </p>
+            )}
+            {reviewShortlist && (
+              <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+                <CardContent className="space-y-2 px-4 py-3 text-sm text-[var(--tone-warning-fg)]">
+                  <p className="font-medium">Your shortlist</p>
+                  {reviewShortlist.providers.length === 0 ? (
+                    <p>Please shortlist at least one provider first.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {reviewShortlist.providers.map((provider, idx) => (
+                        <p key={provider.providerId}>{idx + 1}. {provider.name}</p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {reviewCandidates?.hasMore ? (
+                      <Button asChild variant="outline" className="w-full">
+                        <Link href={`/requests/access/${encodeURIComponent(token)}?view=request_submitted&batch=${reviewBatch + 1}`}>
+                          Show 3 more
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button variant="outline" className="w-full" disabled>
+                        Show 3 more
+                      </Button>
+                    )}
+                    <form action={sendReviewShortlistFromToken}>
+                      <input type="hidden" name="token" value={token} />
+                      <input type="hidden" name="requestId" value={jobRequest.id} />
+                      <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
+                        Send request
+                      </Button>
+                    </form>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </CardContent>
         </Card>
       )}
