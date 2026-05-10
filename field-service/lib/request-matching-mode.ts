@@ -70,6 +70,7 @@ export async function selectCustomerRequestMatchingMode(params: {
     )
   }
   let nextStatus = request.status
+  let quickMatchResult: Awaited<ReturnType<typeof orchestrateMatch>> | null = null
 
   if (params.mode === 'review_first') {
     if (request.status === 'PENDING_VALIDATION' || request.status === 'OPEN') {
@@ -111,19 +112,23 @@ export async function selectCustomerRequestMatchingMode(params: {
       })
     })
   } else if (nextStatus === 'OPEN') {
-    await orchestrateMatch(request.id, { triggeredBy: 'manual' }).catch((error) => {
+    quickMatchResult = await orchestrateMatch(request.id, { triggeredBy: 'manual' }).catch((error) => {
       console.error('[request-matching-mode] matching trigger failed', {
         requestId: request.id,
         mode: params.mode,
         error: error instanceof Error ? error.message : String(error),
       })
+      return null
     })
   }
 
   if (request.customer?.phone) {
-    const text = params.mode === 'quick_match'
-      ? `Quick Match started.\n\nWe're checking with one suitable provider now.\nIf they don't respond, we'll try the next provider.`
-      : `Review Providers First started.\n\nWe're collecting suitable provider responses so you can compare options before choosing.`
+    const text =
+      params.mode === 'quick_match'
+        ? quickMatchResult?.status === 'NO_MATCH'
+          ? `Quick Match started.\n\nNo providers in your area are available right now.\n\nWe'll keep trying and notify you the moment one becomes available.`
+          : `Quick Match started.\n\nWe're checking with one suitable provider now.\nIf they don't respond, we'll try the next provider.`
+        : `Review Providers First started.\n\nWe're collecting suitable provider responses so you can compare options before choosing.`
     await sendText(
       request.customer.phone,
       text,

@@ -127,4 +127,21 @@ describe('selectCustomerRequestMatchingMode', () => {
       selectCustomerRequestMatchingMode({ requestId: 'jr-1', customerId: 'cust-1', mode: 'quick_match' }),
     ).rejects.toThrow(RequestMatchingModeError)
   })
+
+  it('sends explicit no-provider copy when quick_match returns NO_MATCH', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockOrchestrateMatch.mockResolvedValue({ status: 'NO_MATCH', filteredOut: [], consideredCount: 0 })
+
+    const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
+    const result = await selectCustomerRequestMatchingMode({
+      requestId: 'jr-1',
+      customerId: 'cust-1',
+      mode: 'quick_match',
+    })
+
+    expect(result.status).toBe('matching_started')
+    const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
+    expect(outbound).toContain('No providers in your area are available right now')
+    expect(outbound).toContain("We'll keep trying and notify you")
+  })
 })
