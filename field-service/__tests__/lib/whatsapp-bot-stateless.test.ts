@@ -498,6 +498,73 @@ describe('processInboundMessage stateless notification replies', () => {
     )
   })
 
+  it('routes matching-mode buttons to status flow even when the previous session is idle/expired', async () => {
+    ;(handleStatusFlow as ReturnType<typeof vi.fn>).mockResolvedValue({ nextStep: 'done' })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(buttonMessage('status_mode_quick_jr_123'))
+
+    expect(handleStatusFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flow: 'status',
+        step: 'status_show',
+        reply: expect.objectContaining({ id: 'status_mode_quick_jr_123' }),
+      }),
+    )
+    expect(showMainMenu).not.toHaveBeenCalled()
+  })
+
+  it('routes status refresh buttons to status flow when tapped directly', async () => {
+    ;(handleStatusFlow as ReturnType<typeof vi.fn>).mockResolvedValue({ nextStep: 'done' })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(buttonMessage('status_refresh_jr_123'))
+
+    expect(handleStatusFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flow: 'status',
+        step: 'status_show',
+        reply: expect.objectContaining({ id: 'status_refresh_jr_123' }),
+      }),
+    )
+    expect(showMainMenu).not.toHaveBeenCalled()
+  })
+
+  it('bypasses the active-flow guard and routes matching-mode buttons to status flow even when a job_request flow is in progress', async () => {
+    ;(handleStatusFlow as ReturnType<typeof vi.fn>).mockResolvedValue({ nextStep: 'done' })
+    mockDb.conversation.upsert.mockResolvedValueOnce({
+      phone: PHONE,
+      flow: 'job_request',
+      step: 'confirm_details',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(buttonMessage('status_mode_review_jr_456'))
+
+    expect(handleStatusFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flow: 'status',
+        step: 'status_show',
+        reply: expect.objectContaining({ id: 'status_mode_review_jr_456' }),
+      }),
+    )
+    // Must not show "Continue / Cancel" prompt
+    expect(showMainMenu).not.toHaveBeenCalled()
+  })
+
   it('blocks generic Hi from resetting an active customer request flow to the main menu', async () => {
     mockDb.conversation.upsert.mockResolvedValue({
       phone: PHONE,
