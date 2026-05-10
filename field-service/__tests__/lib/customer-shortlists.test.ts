@@ -5,6 +5,7 @@ import {
   generateCustomerShortlistForRequest,
   getCustomerShortlistForRequest,
   requestMoreShortlistOptions,
+  selectProviderForCustomerRequest,
   selectShortlistedProviderForRequest,
 } from '../../lib/customer-shortlists'
 
@@ -27,9 +28,14 @@ const { mockDb, state, mockOrchestrateMatch } = vi.hoisted(() => {
     },
     providerShortlistItem: {
       findUnique: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    matchAttempt: {
+      findFirst: vi.fn(),
     },
     lead: {
       findUnique: vi.fn(),
+      upsert: vi.fn(),
     },
     $transaction: vi.fn(),
   }
@@ -37,15 +43,23 @@ const { mockDb, state, mockOrchestrateMatch } = vi.hoisted(() => {
 })
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/provider-wallet', () => ({
-  getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({ totalCreditBalance: 3 }),
+  getProviderWalletBalanceReadOnly: vi
+    .fn()
+    .mockResolvedValue({ totalCreditBalance: 3 }),
 }))
 vi.mock('../../lib/provider-lead-access', () => ({
-  getProviderLeadAccessUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.test/leads/access/token'),
+  getProviderLeadAccessUrlByLeadId: vi
+    .fn()
+    .mockResolvedValue('https://app.plugapro.test/leads/access/token'),
 }))
 vi.mock('../../lib/job-request-access', () => ({
-  getJobRequestAccessUrl: vi.fn().mockImplementation((_id: string, view?: string) =>
-    Promise.resolve(`https://app.plugapro.test/requests/access/customer-token${view ? `?view=${view}` : ''}`),
-  ),
+  getJobRequestAccessUrl: vi
+    .fn()
+    .mockImplementation((_id: string, view?: string) =>
+      Promise.resolve(
+        `https://app.plugapro.test/requests/access/customer-token${view ? `?view=${view}` : ''}`,
+      ),
+    ),
 }))
 vi.mock('../../lib/whatsapp', () => ({
   sendText: vi.fn().mockResolvedValue('wamid-1'),
@@ -81,6 +95,41 @@ function makeInterestedResponse(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function makeRequestForProviderSelection(
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: 'request-1',
+    customerId: 'customer-1',
+    category: 'plumbing',
+    status: 'SHORTLIST_READY',
+    latestDispatchDecisionId: 'dispatch-1',
+    selectedProviderId: null,
+    selectedLeadInviteId: null,
+    address: { suburb: 'Ruimsig' },
+    leads: [
+      {
+        id: 'lead-1',
+        status: 'VIEWED',
+        dispatchDecisionId: 'dispatch-1',
+        matchAttemptId: 'match-1',
+        matchScore: 0.71,
+        rankingPosition: 1,
+        customerSelectedAt: null,
+        provider: {
+          id: 'provider-1',
+          active: true,
+          status: 'ACTIVE',
+          verified: true,
+          name: 'Alice Plumbing',
+          phone: '+27111111111',
+        },
+      },
+    ],
+    ...overrides,
+  }
+}
+
 describe('customer shortlists', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -95,33 +144,75 @@ describe('customer shortlists', () => {
       customer: { phone: '+27222222222' },
       address: { suburb: 'Ruimsig', city: 'Johannesburg' },
     })
-    mockDb.providerLeadResponse.findMany.mockResolvedValue([makeInterestedResponse()])
+    mockDb.matchAttempt.findFirst.mockResolvedValue(null)
+    mockDb.lead.upsert.mockResolvedValue({
+      id: 'lead-upserted',
+      status: 'VIEWED',
+      providerId: 'provider-1',
+      matchScore: 0.71,
+      rankingPosition: 1,
+      dispatchDecisionId: 'dispatch-1',
+      matchAttemptId: 'match-1',
+      customerSelectedAt: null,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    mockDb.providerLeadResponse.findMany.mockResolvedValue([
+      makeInterestedResponse(),
+    ])
     state.tx = {
       providerShortlist: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-        create: vi.fn().mockResolvedValue({ id: 'shortlist-1', items: [{ id: 'item-1' }] }),
+        create: vi
+          .fn()
+          .mockResolvedValue({ id: 'shortlist-1', items: [{ id: 'item-1' }] }),
       },
       jobRequest: {
         update: vi.fn().mockResolvedValue({ id: 'request-1' }),
+        findUnique: vi
+          .fn()
+          .mockResolvedValue(makeRequestForProviderSelection()),
       },
       lead: {
         update: vi.fn().mockResolvedValue({ id: 'lead-1' }),
+        upsert: vi.fn().mockResolvedValue({
+          id: 'lead-1',
+          status: 'VIEWED',
+          providerId: 'provider-1',
+        }),
       },
       providerShortlistItem: {
         update: vi.fn().mockResolvedValue({ id: 'item-1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       auditLog: {
         create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
       },
     }
-    mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
     state.shortlistItem = {
       id: 'item-1',
       shortlistId: 'shortlist-1',
       leadInviteId: 'lead-1',
       providerId: 'provider-1',
-      shortlist: { id: 'shortlist-1', requestId: 'request-1', status: 'PUBLISHED' },
-      provider: { id: 'provider-1', name: 'Alice Plumbing', phone: '+27111111111' },
+      shortlist: {
+        id: 'shortlist-1',
+        requestId: 'request-1',
+        status: 'PUBLISHED',
+      },
+      provider: {
+        id: 'provider-1',
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
       leadInvite: {
         id: 'lead-1',
         status: 'VIEWED',
@@ -133,29 +224,33 @@ describe('customer shortlists', () => {
         provider: { id: 'provider-1' },
       },
     }
-    mockDb.providerShortlistItem.findUnique.mockResolvedValue(state.shortlistItem)
+    mockDb.providerShortlistItem.findUnique.mockResolvedValue(
+      state.shortlistItem,
+    )
   })
 
   it('generates a shortlist from interested provider responses only', async () => {
     const shortlist = await generateCustomerShortlistForRequest('request-1')
 
     expect(shortlist).toMatchObject({ id: 'shortlist-1' })
-    expect(mockDb.providerLeadResponse.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        response: 'INTERESTED',
-        callOutFee: { not: null },
-        estimatedArrivalAt: { not: null },
-        leadInvite: expect.objectContaining({
-          jobRequestId: 'request-1',
-          status: { in: ['SENT', 'VIEWED'] },
-        }),
-        provider: expect.objectContaining({
-          active: true,
-          status: 'ACTIVE',
-          verified: true,
+    expect(mockDb.providerLeadResponse.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          response: 'INTERESTED',
+          callOutFee: { not: null },
+          estimatedArrivalAt: { not: null },
+          leadInvite: expect.objectContaining({
+            jobRequestId: 'request-1',
+            status: { in: ['SENT', 'VIEWED'] },
+          }),
+          provider: expect.objectContaining({
+            active: true,
+            status: 'ACTIVE',
+            verified: true,
+          }),
         }),
       }),
-    }))
+    )
     expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
       where: { id: 'request-1' },
       data: { status: 'SHORTLIST_READY' },
@@ -168,38 +263,42 @@ describe('customer shortlists', () => {
       requestId: 'request-1',
       status: 'PUBLISHED',
       publishedAt: new Date('2026-05-02T11:00:00.000Z'),
-      items: [{
-        id: 'item-1',
-        rank: 1,
-        leadInviteId: 'lead-1',
-        providerId: 'provider-1',
-        customerSelectedAt: null,
-        displayCallOutFee: 250,
-        displayArrivalTime: new Date('2026-05-02T12:00:00.000Z'),
-        leadInvite: {
-          providerResponses: [{
-            callOutFee: 250,
-            estimatedArrivalAt: new Date('2026-05-02T12:00:00.000Z'),
-            rateType: 'hourly',
-            rateAmount: 400,
-            negotiable: false,
-            providerNote: 'Can arrive after lunch',
-          }],
+      items: [
+        {
+          id: 'item-1',
+          rank: 1,
+          leadInviteId: 'lead-1',
+          providerId: 'provider-1',
+          customerSelectedAt: null,
+          displayCallOutFee: 250,
+          displayArrivalTime: new Date('2026-05-02T12:00:00.000Z'),
+          leadInvite: {
+            providerResponses: [
+              {
+                callOutFee: 250,
+                estimatedArrivalAt: new Date('2026-05-02T12:00:00.000Z'),
+                rateType: 'hourly',
+                rateAmount: 400,
+                negotiable: false,
+                providerNote: 'Can arrive after lunch',
+              },
+            ],
+          },
+          provider: {
+            id: 'provider-1',
+            name: 'Alice Plumbing',
+            skills: ['plumbing'],
+            bio: 'Leaks and geysers',
+            experience: '5+ years',
+            evidenceNote: null,
+            portfolioUrls: ['https://example.com/work'],
+            avatarUrl: null,
+            verified: true,
+            averageRating: 4.8,
+            completedJobsCount: 12,
+          },
         },
-        provider: {
-          id: 'provider-1',
-          name: 'Alice Plumbing',
-          skills: ['plumbing'],
-          bio: 'Leaks and geysers',
-          experience: '5+ years',
-          evidenceNote: null,
-          portfolioUrls: ['https://example.com/work'],
-          avatarUrl: null,
-          verified: true,
-          averageRating: 4.8,
-          completedJobsCount: 12,
-        },
-      }],
+      ],
     })
 
     const shortlist = await getCustomerShortlistForRequest('request-1')
@@ -216,7 +315,8 @@ describe('customer shortlists', () => {
   })
 
   it('selects a provider without deducting credits and notifies the provider with confirm buttons', async () => {
-    const { sendButtons, sendCtaUrl } = await import('../../lib/whatsapp-interactive')
+    const { sendButtons, sendCtaUrl } =
+      await import('../../lib/whatsapp-interactive')
     const result = await selectShortlistedProviderForRequest({
       requestId: 'request-1',
       shortlistItemId: 'item-1',
@@ -268,11 +368,13 @@ describe('customer shortlists', () => {
       items: [{ id: 'item-1' }, { id: 'item-2' }],
     })
     await generateCustomerShortlistForRequest('request-1')
-    expect(sendText).toHaveBeenCalledWith(expect.objectContaining({
-      to: '+27222222222',
-      text: expect.stringContaining('shortlist is ready'),
-      templateName: 'interactive:client_shortlist_ready',
-    }))
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '+27222222222',
+        text: expect.stringContaining('shortlist is ready'),
+        templateName: 'interactive:client_shortlist_ready',
+      }),
+    )
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27222222222',
       expect.stringContaining('Provider selection is available below.'),
@@ -319,7 +421,9 @@ describe('customer shortlists', () => {
         create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
       },
     }
-    mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
 
     const result = await cancelRequestFromShortlist({ requestId: 'request-1' })
     expect(result).toEqual({ ok: true })
@@ -373,9 +477,13 @@ describe('customer shortlists', () => {
         create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
       },
     }
-    mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
 
-    const result = await requestMoreShortlistOptions({ requestId: 'request-1' })
+    const result = await requestMoreShortlistOptions({
+      requestId: 'request-1',
+    })
     expect(result).toEqual({ ok: true })
     expect(state.tx.providerShortlist.updateMany).toHaveBeenCalledWith({
       where: { requestId: 'request-1', status: 'PUBLISHED' },
@@ -429,13 +537,19 @@ describe('customer shortlists', () => {
         create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
       },
     }
-    mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
 
     const result = await declineSelectedProviderJob({
       leadId: 'lead-1',
       providerId: 'provider-1',
     })
-    expect(result).toEqual({ ok: true, leadId: 'lead-1', jobRequestId: 'request-1' })
+    expect(result).toEqual({
+      ok: true,
+      leadId: 'lead-1',
+      jobRequestId: 'request-1',
+    })
     expect(state.tx.lead.update).toHaveBeenCalledWith({
       where: { id: 'lead-1' },
       data: expect.objectContaining({ status: 'DECLINED' }),
@@ -453,15 +567,218 @@ describe('customer shortlists', () => {
   it('shortlist generation excludes suspended providers via the provider filter', async () => {
     // Suspended providers are filtered at the DB query level; assert that the
     // findMany call requires status: ACTIVE and active: true.
-    await generateCustomerShortlistForRequest('request-1').catch(() => undefined)
-    expect(mockDb.providerLeadResponse.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        provider: expect.objectContaining({
-          active: true,
-          status: 'ACTIVE',
-          verified: true,
+    await generateCustomerShortlistForRequest('request-1').catch(
+      () => undefined,
+    )
+    expect(mockDb.providerLeadResponse.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          provider: expect.objectContaining({
+            active: true,
+            status: 'ACTIVE',
+            verified: true,
+          }),
         }),
       }),
-    }))
+    )
+  })
+
+  it('selects a matched provider by provider id and advances request to provider confirmation', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce(
+      makeRequestForProviderSelection(),
+    )
+    mockDb.lead.upsert.mockResolvedValueOnce({
+      id: 'lead-1',
+      status: 'VIEWED',
+      providerId: 'provider-1',
+      matchScore: 0.71,
+      rankingPosition: 1,
+      dispatchDecisionId: 'dispatch-1',
+      matchAttemptId: 'match-1',
+      customerSelectedAt: null,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    const result = await selectProviderForCustomerRequest({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result).toMatchObject({
+      requestId: 'request-1',
+      providerId: 'provider-1',
+      leadId: expect.any(String),
+      alreadySelected: false,
+    })
+    expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
+      where: { id: 'request-1' },
+      data: {
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+    expect(state.tx.lead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: {
+        customerSelectedAt: expect.any(Date),
+      },
+    })
+  })
+
+  it('rejects provider selection when provider is not in current matches', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      id: 'request-1',
+      customerId: 'customer-1',
+      category: 'plumbing',
+      status: 'SHORTLIST_READY',
+      latestDispatchDecisionId: 'dispatch-1',
+      selectedProviderId: null,
+      selectedLeadInviteId: null,
+      address: { suburb: 'Ruimsig' },
+      leads: [],
+    })
+    mockDb.matchAttempt.findFirst.mockResolvedValueOnce(null)
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-unknown',
+      }),
+    ).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND' })
+  })
+
+  it('rejects inactive provider selection', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({
+        leads: [
+          {
+            id: 'lead-1',
+            status: 'VIEWED',
+            dispatchDecisionId: 'dispatch-1',
+            matchAttemptId: 'match-1',
+            matchScore: 0.71,
+            rankingPosition: 1,
+            customerSelectedAt: null,
+            provider: {
+              id: 'provider-1',
+              active: false,
+              status: 'ACTIVE',
+              verified: true,
+              name: 'Alice Plumbing',
+              phone: '+27111111111',
+            },
+          },
+        ],
+      }),
+    })
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
+  })
+
+  it('rejects unauthorized customer selection', async () => {
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'other-customer',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
+  })
+
+  it('rejects selection for non-open/closed states', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      status: 'CANCELLED',
+    })
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
+  })
+
+  it('rejects selection when request is already accepted/locked', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      status: 'MATCHED',
+    })
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
+  })
+
+  it('treats duplicate selection for same provider as idempotent', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      status: 'PROVIDER_CONFIRMATION_PENDING',
+      selectedProviderId: 'provider-1',
+      selectedLeadInviteId: 'lead-1',
+    })
+
+    const result = await selectProviderForCustomerRequest({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result.alreadySelected).toBe(true)
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('blocks switching provider after confirmation is pending', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      status: 'PROVIDER_CONFIRMATION_PENDING',
+      selectedProviderId: 'provider-1',
+      selectedLeadInviteId: 'lead-1',
+      leads: [
+        {
+          id: 'lead-1',
+          status: 'SENT',
+          dispatchDecisionId: 'dispatch-1',
+          matchAttemptId: 'match-1',
+          matchScore: 0.71,
+          rankingPosition: 1,
+          customerSelectedAt: new Date(),
+          provider: {
+            id: 'provider-1',
+            active: true,
+            status: 'ACTIVE',
+            verified: true,
+            name: 'Alice Plumbing',
+            phone: '+27111111111',
+          },
+        },
+      ],
+    })
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-2',
+      }),
+    ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
   })
 })

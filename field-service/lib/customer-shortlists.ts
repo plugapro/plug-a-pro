@@ -16,6 +16,9 @@ export class CustomerShortlistError extends Error {
       | 'SHORTLIST_NOT_FOUND'
       | 'ITEM_NOT_FOUND'
       | 'ITEM_NOT_SELECTABLE'
+      | 'FORBIDDEN'
+      | 'INVALID_REQUEST_STATUS'
+      | 'INVALID_PROVIDER_SELECTION'
       | 'REQUEST_NOT_AWAITING_SELECTION',
     message: string,
   ) {
@@ -24,7 +27,48 @@ export class CustomerShortlistError extends Error {
   }
 }
 
-function decimalToNumber(value: Prisma.Decimal | number | string | null | undefined) {
+function requestCanAcceptSelection(
+  status: string,
+): status is 'SHORTLIST_READY' | 'PENDING_VALIDATION' {
+  return status === 'SHORTLIST_READY' || status === 'PENDING_VALIDATION'
+}
+
+type ProviderSelectionLead = {
+  id: string
+  status: string
+  dispatchDecisionId: string | null
+  matchAttemptId: string | null
+  matchScore: number | Prisma.Decimal | null
+  rankingPosition: number | null
+  customerSelectedAt: Date | null
+  provider: {
+    id: string
+    active: boolean
+    status: string
+    verified: boolean
+    name: string
+    phone: string | null
+  }
+}
+
+function isLeadSelectableForFinalSelection(leadStatus: string) {
+  return [
+    'SHORTLISTED',
+    'SENT',
+    'VIEWED',
+    'INTERESTED',
+    'CUSTOMER_SELECTED',
+    'ACCEPTED',
+  ].includes(leadStatus)
+}
+
+function throwDuplicateSelectionError(message: string) {
+  throw new CustomerShortlistError('REQUEST_NOT_AWAITING_SELECTION', message)
+}
+
+function decimalToNumber(
+  value: Prisma.Decimal | number | string | null | undefined,
+) {
   if (value == null) return null
   return Number(value)
 }
@@ -33,7 +77,11 @@ function formatCredits(value: number) {
   return `${value} credit${value === 1 ? '' : 's'}`
 }
 
-export async function generateCustomerShortlistForRequest(requestId: string, limit = 5, options?: { quickMatch?: boolean }) {
+export async function generateCustomerShortlistForRequest(
+  requestId: string,
+  limit = 5,
+  options?: { quickMatch?: boolean },
+) {
   const request = await db.jobRequest.findUnique({
     where: { id: requestId },
     select: {
@@ -44,7 +92,10 @@ export async function generateCustomerShortlistForRequest(requestId: string, lim
     },
   })
   if (!request) {
-    throw new CustomerShortlistError('REQUEST_NOT_FOUND', 'Job request not found.')
+    throw new CustomerShortlistError(
+      'REQUEST_NOT_FOUND',
+      'Job request not found.',
+    )
   }
 
   const responses = await db.providerLeadResponse.findMany({
@@ -76,7 +127,10 @@ export async function generateCustomerShortlistForRequest(requestId: string, lim
   })
 
   if (responses.length === 0) {
-    throw new CustomerShortlistError('SHORTLIST_EMPTY', 'No interested providers are ready for shortlist.')
+    throw new CustomerShortlistError(
+      'SHORTLIST_EMPTY',
+      'No interested providers are ready for shortlist.',
+    )
   }
 
   const shortlist = await db.$transaction(async (tx) => {
@@ -122,7 +176,10 @@ export async function generateCustomerShortlistForRequest(requestId: string, lim
       callOutFee: top.callOutFee,
       estimatedArrivalAt: top.estimatedArrivalAt,
     }).catch((error) => {
-      console.error('[customer-shortlists] quick-match available notification failed', { requestId, error })
+      console.error(
+        '[customer-shortlists] quick-match available notification failed',
+        { requestId, error },
+      )
     })
   } else {
     await notifyCustomerShortlistReady({
@@ -133,7 +190,10 @@ export async function generateCustomerShortlistForRequest(requestId: string, lim
       city: request.address?.city ?? null,
       optionCount: shortlist.items.length,
     }).catch((error) => {
-      console.error('[customer-shortlists] shortlist-ready notification failed', { requestId, error })
+      console.error(
+        '[customer-shortlists] shortlist-ready notification failed',
+        { requestId, error },
+      )
     })
   }
 
@@ -148,15 +208,27 @@ async function notifyCustomerQuickMatchProviderAvailable(params: {
   callOutFee: Parameters<typeof decimalToNumber>[0]
   estimatedArrivalAt: Date | null
 }) {
-  if (!params.customerPhone) return { sent: false as const, reason: 'no_customer_phone' }
-  const rawUrl = await getJobRequestAccessUrl(params.requestId).catch(() => null)
+  if (!params.customerPhone)
+    return { sent: false as const, reason: 'no_customer_phone' }
+  const rawUrl = await getJobRequestAccessUrl(params.requestId).catch(
+    () => null,
+  )
   const safeTicketUrl = rawUrl?.startsWith('https://') ? rawUrl : null
   if (!safeTicketUrl && rawUrl) {
-    console.warn('[customer-shortlists] dropped CTA URL — non-https ticket url', { requestId: params.requestId })
+    console.warn(
+      '[customer-shortlists] dropped CTA URL — non-https ticket url',
+      { requestId: params.requestId },
+    )
   }
-  const feeDisplay = params.callOutFee != null ? `R${decimalToNumber(params.callOutFee)}` : 'To be confirmed'
+  const feeDisplay =
+    params.callOutFee != null
+      ? `R${decimalToNumber(params.callOutFee)}`
+      : 'To be confirmed'
   const etaDisplay = params.estimatedArrivalAt
-    ? params.estimatedArrivalAt.toLocaleString('en-ZA', { timeStyle: 'short', dateStyle: 'medium' })
+    ? params.estimatedArrivalAt.toLocaleString('en-ZA', {
+        timeStyle: 'short',
+        dateStyle: 'medium',
+      })
     : 'To be confirmed'
   await sendText({
     to: params.customerPhone,
@@ -176,7 +248,10 @@ async function notifyCustomerQuickMatchProviderAvailable(params: {
       ctaLabelFor('generic_details'),
       safeTicketUrl,
       undefined,
-      { templateName: 'interactive:client_quick_match_available_cta', metadata: { requestId: params.requestId } },
+      {
+        templateName: 'interactive:client_quick_match_available_cta',
+        metadata: { requestId: params.requestId },
+      },
     )
   }
   return { sent: true as const }
@@ -190,11 +265,18 @@ async function notifyCustomerShortlistReady(params: {
   city: string | null
   optionCount: number
 }) {
-  if (!params.customerPhone) return { sent: false as const, reason: 'no_customer_phone' }
-  const rawUrl = await getJobRequestAccessUrl(params.requestId, 'shortlist').catch(() => null)
+  if (!params.customerPhone)
+    return { sent: false as const, reason: 'no_customer_phone' }
+  const rawUrl = await getJobRequestAccessUrl(
+    params.requestId,
+    'shortlist',
+  ).catch(() => null)
   const safeTicketUrl = rawUrl?.startsWith('https://') ? rawUrl : null
   if (!safeTicketUrl && rawUrl) {
-    console.warn('[customer-shortlists] dropped CTA URL — non-https ticket url', { requestId: params.requestId })
+    console.warn(
+      '[customer-shortlists] dropped CTA URL — non-https ticket url',
+      { requestId: params.requestId },
+    )
   }
   const area = [params.suburb, params.city].filter(Boolean).join(', ')
   await sendText({
@@ -215,7 +297,10 @@ async function notifyCustomerShortlistReady(params: {
       ctaLabelFor('generic_details'),
       safeTicketUrl,
       undefined,
-      { templateName: 'interactive:client_shortlist_ready_cta', metadata: { requestId: params.requestId } },
+      {
+        templateName: 'interactive:client_shortlist_ready_cta',
+        metadata: { requestId: params.requestId },
+      },
     )
   }
   return { sent: true as const }
@@ -274,8 +359,11 @@ export async function getCustomerShortlistForRequest(requestId: string) {
         leadInviteId: item.leadInviteId,
         providerId: item.providerId,
         customerSelectedAt: item.customerSelectedAt,
-        callOutFee: decimalToNumber(item.displayCallOutFee ?? response?.callOutFee),
-        estimatedArrivalAt: item.displayArrivalTime ?? response?.estimatedArrivalAt ?? null,
+        callOutFee: decimalToNumber(
+          item.displayCallOutFee ?? response?.callOutFee,
+        ),
+        estimatedArrivalAt:
+          item.displayArrivalTime ?? response?.estimatedArrivalAt ?? null,
         rateType: response?.rateType ?? null,
         rateAmount: decimalToNumber(response?.rateAmount),
         negotiable: response?.negotiable ?? true,
@@ -307,10 +395,19 @@ export async function selectShortlistedProviderForRequest(params: {
   })
 
   if (!item || item.shortlist.requestId !== params.requestId) {
-    throw new CustomerShortlistError('ITEM_NOT_FOUND', 'Shortlist provider was not found.')
+    throw new CustomerShortlistError(
+      'ITEM_NOT_FOUND',
+      'Shortlist provider was not found.',
+    )
   }
-  if (item.shortlist.status !== 'PUBLISHED' || item.leadInvite.status === 'EXPIRED') {
-    throw new CustomerShortlistError('ITEM_NOT_SELECTABLE', 'This provider is no longer selectable.')
+  if (
+    item.shortlist.status !== 'PUBLISHED' ||
+    item.leadInvite.status === 'EXPIRED'
+  ) {
+    throw new CustomerShortlistError(
+      'ITEM_NOT_SELECTABLE',
+      'This provider is no longer selectable.',
+    )
   }
 
   // Selection is only allowed while the request is awaiting customer selection.
@@ -324,7 +421,10 @@ export async function selectShortlistedProviderForRequest(params: {
     select: { status: true },
   })
   if (!requestStatus) {
-    throw new CustomerShortlistError('ITEM_NOT_FOUND', 'Shortlist provider was not found.')
+    throw new CustomerShortlistError(
+      'ITEM_NOT_FOUND',
+      'Shortlist provider was not found.',
+    )
   }
   if (requestStatus.status !== 'SHORTLIST_READY') {
     throw new CustomerShortlistError(
@@ -354,20 +454,22 @@ export async function selectShortlistedProviderForRequest(params: {
       data: { customerSelectedAt: selectedAt },
     })
 
-    await tx.auditLog.create({
-      data: {
-        actorId: 'customer-access-link',
-        actorRole: 'customer',
-        action: 'shortlist.provider_selected',
-        entityType: 'JobRequest',
-        entityId: params.requestId,
-        after: {
-          providerId: item.providerId,
-          leadInviteId: item.leadInviteId,
-          shortlistItemId: item.id,
-        } as Prisma.InputJsonValue,
-      },
-    }).catch(() => undefined)
+    await tx.auditLog
+      .create({
+        data: {
+          actorId: 'customer-access-link',
+          actorRole: 'customer',
+          action: 'shortlist.provider_selected',
+          entityType: 'JobRequest',
+          entityId: params.requestId,
+          after: {
+            providerId: item.providerId,
+            leadInviteId: item.leadInviteId,
+            shortlistItemId: item.id,
+          } as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined)
 
     return selectedItem
   })
@@ -395,13 +497,18 @@ export async function selectShortlistedProviderForRequest(params: {
  * superseded, and any pending lead invites are marked CANCELLED. Providers
  * will see "no longer needed" via the existing pending-lead lifecycle.
  */
-export async function cancelRequestFromShortlist(params: { requestId: string }) {
+export async function cancelRequestFromShortlist(params: {
+  requestId: string
+}) {
   const request = await db.jobRequest.findUnique({
     where: { id: params.requestId },
     select: { id: true, status: true },
   })
   if (!request) {
-    throw new CustomerShortlistError('REQUEST_NOT_FOUND', 'Job request not found.')
+    throw new CustomerShortlistError(
+      'REQUEST_NOT_FOUND',
+      'Job request not found.',
+    )
   }
   // Only allow cancellation while the request is awaiting customer action.
   // Once a provider has accepted, the customer must use the standard
@@ -427,7 +534,11 @@ export async function cancelRequestFromShortlist(params: { requestId: string }) 
         jobRequestId: params.requestId,
         status: { in: ['SENT', 'VIEWED'] },
       },
-      data: { status: 'EXPIRED', cancelledAt: new Date(), respondedAt: new Date() },
+      data: {
+        status: 'EXPIRED',
+        cancelledAt: new Date(),
+        respondedAt: new Date(),
+      },
     })
     await tx.jobRequest.update({
       where: { id: params.requestId },
@@ -437,16 +548,18 @@ export async function cancelRequestFromShortlist(params: { requestId: string }) 
         selectedLeadInviteId: null,
       },
     })
-    await tx.auditLog.create({
-      data: {
-        actorId: 'customer-access-link',
-        actorRole: 'customer',
-        action: 'shortlist.request_cancelled',
-        entityType: 'JobRequest',
-        entityId: params.requestId,
-        after: {} as Prisma.InputJsonValue,
-      },
-    }).catch(() => undefined)
+    await tx.auditLog
+      .create({
+        data: {
+          actorId: 'customer-access-link',
+          actorRole: 'customer',
+          action: 'shortlist.request_cancelled',
+          entityType: 'JobRequest',
+          entityId: params.requestId,
+          after: {} as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined)
   })
 
   return { ok: true as const }
@@ -458,7 +571,9 @@ export async function cancelRequestFromShortlist(params: { requestId: string }) 
  * match pass. Existing interested responses remain valid and will be
  * re-included in the next shortlist generation.
  */
-export async function requestMoreShortlistOptions(params: { requestId: string }) {
+export async function requestMoreShortlistOptions(params: {
+  requestId: string
+}) {
   const request = await db.jobRequest.findUnique({
     where: { id: params.requestId },
     select: {
@@ -468,7 +583,10 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
     },
   })
   if (!request) {
-    throw new CustomerShortlistError('REQUEST_NOT_FOUND', 'Job request not found.')
+    throw new CustomerShortlistError(
+      'REQUEST_NOT_FOUND',
+      'Job request not found.',
+    )
   }
   if (request.status !== 'SHORTLIST_READY') {
     throw new CustomerShortlistError(
@@ -477,19 +595,20 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
     )
   }
 
-  const activeLeadOffers = typeof (db as any).lead?.findMany === 'function'
-    ? await db.lead.findMany({
-        where: {
-          jobRequestId: params.requestId,
-          status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
-          assignmentHold: { status: 'ACTIVE' },
-        },
-        select: {
-          id: true,
-          providerId: true,
-        },
-      })
-    : []
+  const activeLeadOffers =
+    typeof (db as any).lead?.findMany === 'function'
+      ? await db.lead.findMany({
+          where: {
+            jobRequestId: params.requestId,
+            status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
+            assignmentHold: { status: 'ACTIVE' },
+          },
+          select: {
+            id: true,
+            providerId: true,
+          },
+        })
+      : []
 
   await db.$transaction(async (tx) => {
     await tx.providerShortlist.updateMany({
@@ -500,16 +619,18 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
       where: { id: params.requestId },
       data: { status: 'OPEN' },
     })
-    await tx.auditLog.create({
-      data: {
-        actorId: 'customer-access-link',
-        actorRole: 'customer',
-        action: 'shortlist.more_options_requested',
-        entityType: 'JobRequest',
-        entityId: params.requestId,
-        after: {} as Prisma.InputJsonValue,
-      },
-    }).catch(() => undefined)
+    await tx.auditLog
+      .create({
+        data: {
+          actorId: 'customer-access-link',
+          actorRole: 'customer',
+          action: 'shortlist.more_options_requested',
+          entityType: 'JobRequest',
+          entityId: params.requestId,
+          after: {} as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined)
   })
 
   if (activeLeadOffers.length > 0) {
@@ -520,12 +641,15 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
         providerId: lead.providerId,
         reasonCode: 'CUSTOMER_REQUESTED_NEXT_PROVIDER',
       }).catch((error) => {
-        console.error('[customer-shortlists] failed to release active lead while requesting more options', {
-          requestId: params.requestId,
-          leadId: lead.id,
-          providerId: lead.providerId,
-          error,
-        })
+        console.error(
+          '[customer-shortlists] failed to release active lead while requesting more options',
+          {
+            requestId: params.requestId,
+            leadId: lead.id,
+            providerId: lead.providerId,
+            error,
+          },
+        )
       })
     }
   } else {
@@ -533,7 +657,10 @@ export async function requestMoreShortlistOptions(params: { requestId: string })
     try {
       await orchestrateMatch(params.requestId, { triggeredBy: 'rematch' })
     } catch (error) {
-      console.error('[customer-shortlists] rematch orchestration failed:', error)
+      console.error(
+        '[customer-shortlists] rematch orchestration failed:',
+        error,
+      )
     }
   }
 
@@ -567,7 +694,12 @@ export async function declineSelectedProviderJob(params: {
       providerId: true,
       jobRequestId: true,
       jobRequest: {
-        select: { id: true, status: true, selectedProviderId: true, selectedLeadInviteId: true },
+        select: {
+          id: true,
+          status: true,
+          selectedProviderId: true,
+          selectedLeadInviteId: true,
+        },
       },
     },
   })
@@ -576,8 +708,10 @@ export async function declineSelectedProviderJob(params: {
   if (lead.providerId !== params.providerId) {
     return { ok: false as const, reason: 'FORBIDDEN' as const }
   }
-  if (lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING'
-      || lead.jobRequest.selectedLeadInviteId !== lead.id) {
+  if (
+    lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING' ||
+    lead.jobRequest.selectedLeadInviteId !== lead.id
+  ) {
     return { ok: false as const, reason: 'NOT_AWAITING_CONFIRMATION' as const }
   }
 
@@ -606,19 +740,25 @@ export async function declineSelectedProviderJob(params: {
       },
     })
 
-    await tx.auditLog.create({
-      data: {
-        actorId: params.providerId,
-        actorRole: 'provider',
-        action: 'shortlist.selected_provider_declined',
-        entityType: 'Lead',
-        entityId: lead.id,
-        after: { jobRequestId: lead.jobRequestId } as Prisma.InputJsonValue,
-      },
-    }).catch(() => undefined)
+    await tx.auditLog
+      .create({
+        data: {
+          actorId: params.providerId,
+          actorRole: 'provider',
+          action: 'shortlist.selected_provider_declined',
+          entityType: 'Lead',
+          entityId: lead.id,
+          after: { jobRequestId: lead.jobRequestId } as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined)
   })
 
-  return { ok: true as const, leadId: lead.id, jobRequestId: lead.jobRequestId }
+  return {
+    ok: true as const,
+    leadId: lead.id,
+    jobRequestId: lead.jobRequestId,
+  }
 }
 
 async function notifySelectedProvider(params: {
@@ -677,21 +817,379 @@ async function notifySelectedProvider(params: {
           },
         },
       ).catch((ctaError) => {
-        console.warn('[customer-shortlists] CTA URL message failed (non-fatal)', {
-          leadId: params.leadId,
-          providerId: params.providerId,
-          error: ctaError,
-        })
+        console.warn(
+          '[customer-shortlists] CTA URL message failed (non-fatal)',
+          {
+            leadId: params.leadId,
+            providerId: params.providerId,
+            error: ctaError,
+          },
+        )
       })
     }
 
     return { sent: true as const }
   } catch (error) {
-    console.error('[customer-shortlists] selected provider notification failed', {
-      leadId: params.leadId,
-      providerId: params.providerId,
-      error,
-    })
+    console.error(
+      '[customer-shortlists] selected provider notification failed',
+      {
+        leadId: params.leadId,
+        providerId: params.providerId,
+        error,
+      },
+    )
     return { sent: false as const }
   }
+}
+
+export async function selectProviderForCustomerRequest(params: {
+  requestId: string
+  customerId: string
+  providerId: string
+}) {
+  console.info('[customer-shortlists.selection] attempt', {
+    requestId: params.requestId,
+    customerId: params.customerId,
+    providerId: params.providerId,
+  })
+
+  const request = await db.jobRequest.findUnique({
+    where: { id: params.requestId },
+    select: {
+      id: true,
+      customerId: true,
+      category: true,
+      status: true,
+      latestDispatchDecisionId: true,
+      selectedProviderId: true,
+      selectedLeadInviteId: true,
+      address: { select: { suburb: true } },
+      leads: {
+        where: { providerId: params.providerId },
+        select: {
+          id: true,
+          status: true,
+          dispatchDecisionId: true,
+          matchAttemptId: true,
+          matchScore: true,
+          rankingPosition: true,
+          customerSelectedAt: true,
+          provider: {
+            select: {
+              id: true,
+              active: true,
+              status: true,
+              verified: true,
+              name: true,
+              phone: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!request) {
+    throw new CustomerShortlistError(
+      'REQUEST_NOT_FOUND',
+      'Job request not found.',
+    )
+  }
+  if (request.customerId !== params.customerId) {
+    throw new CustomerShortlistError(
+      'FORBIDDEN',
+      'Not allowed to select a provider for this request.',
+    )
+  }
+
+  // Idempotent path: same request/provider already selected for this request.
+  if (
+    request.status === 'PROVIDER_CONFIRMATION_PENDING' &&
+    request.selectedProviderId === params.providerId &&
+    request.selectedLeadInviteId
+  ) {
+    return {
+      requestId: request.id,
+      providerId: params.providerId,
+      leadId: request.selectedLeadInviteId,
+      alreadySelected: true,
+    }
+  }
+
+  if (!requestCanAcceptSelection(request.status)) {
+    throw new CustomerShortlistError(
+      'REQUEST_NOT_AWAITING_SELECTION',
+      'This request is no longer awaiting selection.',
+    )
+  }
+
+  // Prefer an existing selectable lead for this provider; older or completed
+  // leads are ignored so we do not resurrect stale state when the customer
+  // re-opens this flow.
+  let selectedLead: ProviderSelectionLead | null =
+    request.leads
+      .filter((lead) => isLeadSelectableForFinalSelection(lead.status))
+      .map((lead) => ({
+        ...lead,
+        provider: {
+          id: lead.provider.id,
+          active: lead.provider.active,
+          status: lead.provider.status,
+          verified: lead.provider.verified,
+          name: lead.provider.name ?? 'Provider',
+          phone: lead.provider.phone,
+        },
+      }))[0] ?? null
+
+  // If we already have a lead for this provider, use that path first.
+  // If there is no lead row yet, ensure the provider is in ranked matches and
+  // create a lightweight lead row so acceptance can proceed through the existing
+  // workflow without changing downstream event handlers.
+  if (!selectedLead && request.latestDispatchDecisionId) {
+    const rankedMatch = await db.matchAttempt.findFirst({
+      where: {
+        dispatchDecisionId: request.latestDispatchDecisionId,
+        providerId: params.providerId,
+        stage: 'RANKED',
+      },
+      include: {
+        provider: {
+          select: {
+            active: true,
+            status: true,
+            id: true,
+            verified: true,
+            name: true,
+            phone: true,
+          },
+        },
+      },
+    })
+
+    if (!rankedMatch) {
+      throw new CustomerShortlistError(
+        'ITEM_NOT_FOUND',
+        'This provider is not in current matches for this request.',
+      )
+    }
+
+    if (
+      !rankedMatch.provider?.active ||
+      rankedMatch.provider.status !== 'ACTIVE'
+    ) {
+      throw new CustomerShortlistError(
+        'INVALID_PROVIDER_SELECTION',
+        'This provider is no longer available.',
+      )
+    }
+
+    const now = new Date()
+    const upserted = await db.lead.upsert({
+      where: {
+        jobRequestId_providerId: {
+          jobRequestId: request.id,
+          providerId: params.providerId,
+        },
+      },
+      create: {
+        jobRequestId: request.id,
+        providerId: params.providerId,
+        dispatchDecisionId: request.latestDispatchDecisionId,
+        matchAttemptId: rankedMatch.id,
+        status: 'VIEWED',
+        sentAt: now,
+        viewedAt: now,
+        matchScore: rankedMatch.score,
+        rankingPosition: rankedMatch.rankedPosition,
+        expiresAt: null,
+      },
+      update: {
+        dispatchDecisionId: request.latestDispatchDecisionId,
+        matchAttemptId: rankedMatch.id,
+        status: 'VIEWED',
+        viewedAt: now,
+        matchScore: rankedMatch.score,
+        rankingPosition: rankedMatch.rankedPosition,
+      },
+    })
+
+    const rankedProvider = rankedMatch.provider
+    if (!rankedProvider) {
+      throw new CustomerShortlistError(
+        'ITEM_NOT_FOUND',
+        'Could not resolve selected provider profile.',
+      )
+    }
+
+    selectedLead = {
+      id: upserted.id,
+      status: upserted.status,
+      dispatchDecisionId: upserted.dispatchDecisionId,
+      matchAttemptId: upserted.matchAttemptId,
+      matchScore: upserted.matchScore,
+      rankingPosition: upserted.rankingPosition,
+      customerSelectedAt: upserted.customerSelectedAt,
+      provider: {
+        id: rankedProvider.id,
+        active: rankedProvider.active,
+        status: rankedProvider.status,
+        verified: rankedProvider.verified ?? true,
+        name: rankedProvider.name ?? 'Provider',
+        phone: rankedProvider.phone,
+      },
+    }
+  }
+
+  if (!selectedLead || !selectedLead.provider) {
+    throw new CustomerShortlistError(
+      'ITEM_NOT_FOUND',
+      'Could not resolve a selected provider lead.',
+    )
+  }
+
+  if (
+    !selectedLead.provider.active ||
+    selectedLead.provider.status !== 'ACTIVE'
+  ) {
+    throw new CustomerShortlistError(
+      'INVALID_PROVIDER_SELECTION',
+      'This provider is no longer active.',
+    )
+  }
+
+  const selectedAt = new Date()
+  const requestStatus = request.status as string
+
+  if (requestStatus === 'PROVIDER_CONFIRMATION_PENDING') {
+    if (request.selectedProviderId !== params.providerId) {
+      throwDuplicateSelectionError(
+        'A provider has already been selected for this request.',
+      )
+    }
+    if (!request.selectedLeadInviteId || !selectedLead) {
+      throwDuplicateSelectionError('Provider selection state is inconsistent.')
+    }
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    const reloaded = await tx.jobRequest.findUnique({
+      where: { id: request.id },
+      select: {
+        status: true,
+        selectedProviderId: true,
+        selectedLeadInviteId: true,
+      },
+    })
+
+    if (!reloaded) {
+      throw new CustomerShortlistError(
+        'REQUEST_NOT_FOUND',
+        'Job request not found while confirming selection.',
+      )
+    }
+
+    if (reloaded.status === 'PROVIDER_CONFIRMATION_PENDING') {
+      if (
+        reloaded.selectedProviderId !== params.providerId ||
+        reloaded.selectedLeadInviteId !== selectedLead!.id
+      ) {
+        throwDuplicateSelectionError(
+          'A provider has already been selected for this request.',
+        )
+      }
+      return {
+        requestId: request.id,
+        providerId: params.providerId,
+        leadId: selectedLead!.id,
+        alreadySelected: true,
+      }
+    }
+
+    if (!requestCanAcceptSelection(reloaded.status)) {
+      throwDuplicateSelectionError(
+        'This request is no longer awaiting customer selection.',
+      )
+    }
+
+    await tx.jobRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedProviderId: params.providerId,
+        selectedLeadInviteId: selectedLead!.id,
+      },
+    })
+
+    await tx.lead.update({
+      where: { id: selectedLead!.id },
+      data: {
+        customerSelectedAt: selectedAt,
+      },
+    })
+
+    await tx.providerShortlistItem.updateMany({
+      where: {
+        shortlist: { requestId: request.id, status: 'PUBLISHED' },
+        providerId: params.providerId,
+      },
+      data: { customerSelectedAt: selectedAt },
+    })
+
+    await tx.auditLog
+      .create({
+        data: {
+          actorId: params.customerId,
+          actorRole: 'customer',
+          action: 'shortlist.provider_selected',
+          entityType: 'JobRequest',
+          entityId: request.id,
+          after: {
+            providerId: params.providerId,
+            leadInviteId: selectedLead!.id,
+            selectedAt: selectedAt.toISOString(),
+          } as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined)
+
+    return {
+      requestId: request.id,
+      providerId: params.providerId,
+      leadId: selectedLead!.id,
+      alreadySelected: false,
+    }
+  })
+
+  if (result.alreadySelected) {
+    console.info('[customer-shortlists.selection] already_selected', {
+      requestId: result.requestId,
+      providerId: result.providerId,
+      leadId: result.leadId,
+    })
+    return result
+  }
+
+  if (!selectedLead?.provider.phone) {
+    throw new CustomerShortlistError(
+      'INVALID_PROVIDER_SELECTION',
+      'Selected provider has no phone number on record.',
+    )
+  }
+
+  await notifySelectedProvider({
+    leadId: result.leadId,
+    providerId: params.providerId,
+    providerPhone: selectedLead.provider.phone,
+    providerName: selectedLead.provider.name,
+    category: request.category,
+    suburb: request.address?.suburb ?? null,
+  })
+
+  console.info('[customer-shortlists.selection] success', {
+    requestId: result.requestId,
+    providerId: result.providerId,
+    leadId: result.leadId,
+  })
+
+  return result
 }

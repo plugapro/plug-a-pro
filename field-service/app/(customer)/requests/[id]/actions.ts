@@ -8,10 +8,14 @@ import { processQuoteDecision } from '@/lib/quotes'
 import {
   cancelRequestFromShortlist,
   requestMoreShortlistOptions,
+  selectProviderForCustomerRequest,
   selectShortlistedProviderForRequest,
   CustomerShortlistError,
 } from '@/lib/customer-shortlists'
-import { selectCustomerRequestMatchingMode, type CustomerMatchingMode } from '@/lib/request-matching-mode'
+import {
+  selectCustomerRequestMatchingMode,
+  type CustomerMatchingMode,
+} from '@/lib/request-matching-mode'
 import {
   ReviewFirstError,
   shortlistProviderForCustomerReview,
@@ -29,7 +33,9 @@ async function resolveCustomerPhone(): Promise<string | null> {
  * Verify the authenticated session owns the given request.
  * Returns the customer id if access is allowed, null otherwise.
  */
-async function resolveCustomerIdForRequest(requestId: string): Promise<string | null> {
+async function resolveCustomerIdForRequest(
+  requestId: string,
+): Promise<string | null> {
   const session = await getSession()
   if (!session || session.role !== 'customer') return null
   const customer = await resolveCustomerForSession(db, session)
@@ -52,6 +58,28 @@ export async function selectShortlistProviderAction(
 
   try {
     await selectShortlistedProviderForRequest({ requestId, shortlistItemId })
+  } catch (err) {
+    if (err instanceof CustomerShortlistError) throw err
+    throw new Error('Selection could not be completed. Please try again.')
+  }
+
+  revalidatePath(`/requests/${requestId}`)
+}
+
+export async function selectMatchedProviderAction(
+  requestId: string,
+  providerId: string,
+  _formData: FormData,
+): Promise<void> {
+  const customerId = await resolveCustomerIdForRequest(requestId)
+  if (!customerId) throw new Error('Not authenticated')
+
+  try {
+    await selectProviderForCustomerRequest({
+      requestId,
+      customerId,
+      providerId,
+    })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
     throw new Error('Selection could not be completed. Please try again.')
@@ -115,7 +143,11 @@ export async function shortlistReviewProviderAction(
   const customerId = await resolveCustomerIdForRequest(requestId)
   if (!customerId) throw new Error('Not authenticated')
   try {
-    await shortlistProviderForCustomerReview({ requestId, customerId, providerId })
+    await shortlistProviderForCustomerReview({
+      requestId,
+      customerId,
+      providerId,
+    })
   } catch (error) {
     if (error instanceof ReviewFirstError) throw error
     throw new Error('Could not shortlist provider right now.')
