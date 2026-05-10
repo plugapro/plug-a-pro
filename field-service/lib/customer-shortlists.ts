@@ -8,6 +8,9 @@ import { sendText } from './whatsapp'
 import { sendButtons, sendCtaUrl } from './whatsapp-interactive'
 import { ctaLabelFor } from './whatsapp-copy'
 
+// How long the provider has to accept/decline after customer selection.
+const PROVIDER_CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000
+
 export class CustomerShortlistError extends Error {
   constructor(
     public readonly code:
@@ -592,7 +595,9 @@ export async function cancelRequestFromShortlist(params: {
     await tx.lead.updateMany({
       where: {
         jobRequestId: params.requestId,
-        status: { in: ['SENT', 'VIEWED'] },
+        // Include INTERESTED so providers who already responded are also notified
+        // that the request has been cancelled, not just those still in preview.
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
       },
       data: {
         status: 'EXPIRED',
@@ -1083,9 +1088,12 @@ export async function selectProviderForCustomerRequest(params: {
     )
   }
 
-  // Idempotent path: same request/provider already selected for this request.
+  // Idempotent path: the same provider is already selected for this request.
+  // Covers both PROVIDER_CONFIRMATION_PENDING (normal flow) and PENDING_VALIDATION
+  // (admin review hold) to prevent re-triggering provider notification on a repeat tap.
   if (
-    request.status === 'PROVIDER_CONFIRMATION_PENDING' &&
+    (request.status === 'PROVIDER_CONFIRMATION_PENDING' ||
+      request.status === 'PENDING_VALIDATION') &&
     request.selectedProviderId === params.providerId &&
     request.selectedLeadInviteId
   ) {
@@ -1234,6 +1242,15 @@ export async function selectProviderForCustomerRequest(params: {
     }
 
     if (!selectedLead && reloaded.latestDispatchDecisionId && rankedMatch) {
+      // Guard provider presence before the write to avoid a wasted upsert
+      // that would immediately roll back.
+      if (!rankedMatch.provider) {
+        throw new CustomerShortlistError(
+          'ITEM_NOT_FOUND',
+          'Could not resolve selected provider profile.',
+        )
+      }
+
       const now = new Date()
       const upserted = await tx.lead.upsert({
         where: {
@@ -1252,7 +1269,8 @@ export async function selectProviderForCustomerRequest(params: {
           viewedAt: now,
           matchScore: rankedMatch.score,
           rankingPosition: rankedMatch.rankedPosition,
-          expiresAt: null,
+          // Give the provider a concrete window to accept/decline.
+          expiresAt: new Date(now.getTime() + PROVIDER_CONFIRMATION_WINDOW_MS),
         },
         update: {
           dispatchDecisionId: reloaded.latestDispatchDecisionId,
@@ -1261,15 +1279,9 @@ export async function selectProviderForCustomerRequest(params: {
           viewedAt: now,
           matchScore: rankedMatch.score,
           rankingPosition: rankedMatch.rankedPosition,
+          // Preserve existing expiresAt on update; the provider already has a window.
         },
       })
-
-      if (!rankedMatch.provider) {
-        throw new CustomerShortlistError(
-          'ITEM_NOT_FOUND',
-          'Could not resolve selected provider profile.',
-        )
-      }
 
       selectedLead = {
         id: upserted.id,
@@ -1296,17 +1308,27 @@ export async function selectProviderForCustomerRequest(params: {
       })
     }
 
+    // If latestDispatchDecisionId was cleared between the outer fetch and the
+    // in-transaction re-read, selectedLead may still be null. Throw a typed
+    // error rather than letting the ! assertions below produce a cryptic TypeError.
+    if (!selectedLead) {
+      throw new CustomerShortlistError(
+        'ITEM_NOT_FOUND',
+        'Could not resolve a lead for the selected provider after concurrent update.',
+      )
+    }
+
     await tx.jobRequest.update({
       where: { id: request.id },
       data: {
         status: 'PROVIDER_CONFIRMATION_PENDING',
         selectedProviderId: params.providerId,
-        selectedLeadInviteId: selectedLead!.id,
+        selectedLeadInviteId: selectedLead.id,
       },
     })
 
     await tx.lead.update({
-      where: { id: selectedLead!.id },
+      where: { id: selectedLead.id },
       data: {
         customerSelectedAt: selectedAt,
       },
@@ -1330,7 +1352,7 @@ export async function selectProviderForCustomerRequest(params: {
           entityId: request.id,
           after: {
             providerId: params.providerId,
-            leadInviteId: selectedLead!.id,
+            leadInviteId: selectedLead.id,
             selectedAt: selectedAt.toISOString(),
           } as Prisma.InputJsonValue,
         },

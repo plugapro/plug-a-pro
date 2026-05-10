@@ -674,7 +674,7 @@ describe('customer shortlists', () => {
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
       where: {
         jobRequestId: 'request-1',
-        status: { in: ['SENT', 'VIEWED'] },
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
       },
       data: {
         status: 'EXPIRED',
@@ -1195,5 +1195,83 @@ describe('customer shortlists', () => {
     expect(result.leadId).toBe('lead-concurrent')
     // No jobRequest.update should happen — idempotent path
     expect(state.tx.jobRequest.update).not.toHaveBeenCalled()
+  })
+
+  it('throws ITEM_NOT_FOUND when latestDispatchDecisionId is cleared between outer fetch and transaction re-read', async () => {
+    // Outer fetch: latestDispatchDecisionId is set, no existing lead → rankedMatch path
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection({ leads: [] }),
+      latestDispatchDecisionId: 'dispatch-1',
+      status: 'SHORTLIST_READY',
+    })
+    mockDb.matchAttempt.findFirst.mockResolvedValueOnce({
+      id: 'match-1',
+      score: 0.8,
+      rankedPosition: 1,
+      provider: {
+        id: 'provider-1',
+        active: true,
+        status: 'ACTIVE',
+        verified: true,
+        name: 'Alice Plumbing',
+        phone: '+27111111111',
+      },
+    })
+    // In-transaction re-read: latestDispatchDecisionId was concurrently cleared
+    state.tx.jobRequest.findUnique.mockResolvedValueOnce({
+      status: 'SHORTLIST_READY',
+      selectedProviderId: null,
+      selectedLeadInviteId: null,
+      latestDispatchDecisionId: null,
+    })
+
+    await expect(
+      selectProviderForCustomerRequest({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      }),
+    ).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND' })
+  })
+
+  it('cancels INTERESTED leads when request is cancelled from shortlist', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      id: 'request-1',
+      status: 'SHORTLIST_READY',
+    })
+    state.tx = {
+      ...state.tx,
+      providerShortlist: { ...state.tx.providerShortlist, updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      lead: { ...state.tx.lead, updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      jobRequest: { ...state.tx.jobRequest, update: vi.fn().mockResolvedValue({ id: 'request-1' }) },
+      auditLog: { ...state.tx.auditLog, create: vi.fn().mockResolvedValue({ id: 'audit-cancel' }) },
+    }
+
+    await cancelRequestFromShortlist({ requestId: 'request-1' })
+
+    const leadUpdateCall = state.tx.lead.updateMany.mock.calls[0]?.[0]
+    expect(leadUpdateCall?.where?.status?.in).toContain('INTERESTED')
+    expect(leadUpdateCall?.where?.status?.in).toContain('SENT')
+    expect(leadUpdateCall?.where?.status?.in).toContain('VIEWED')
+    expect(leadUpdateCall?.data?.status).toBe('EXPIRED')
+  })
+
+  it('returns idempotently for PENDING_VALIDATION request with same provider already selected', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+      ...makeRequestForProviderSelection(),
+      status: 'PENDING_VALIDATION',
+      selectedProviderId: 'provider-1',
+      selectedLeadInviteId: 'lead-1',
+    })
+
+    const result = await selectProviderForCustomerRequest({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result.alreadySelected).toBe(true)
+    expect(result.leadId).toBe('lead-1')
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 })
