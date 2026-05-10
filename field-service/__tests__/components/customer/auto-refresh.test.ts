@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { POLL_INTERVAL_MS } from '@/components/customer/AutoRefresh'
 
 // ─── AutoRefresh timer/visibility logic ─────────────────────────────────────
 //
@@ -9,8 +10,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // Because vitest runs in a node environment (no DOM / no React renderer),
 // we extract the logic under test as pure functions and test them directly.
 // This mirrors the pattern used by other component tests in this directory.
-
-const POLL_INTERVAL_MS = 15_000
 
 /**
  * Simulates the AutoRefresh effect:
