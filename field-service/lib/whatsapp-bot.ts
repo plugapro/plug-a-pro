@@ -297,6 +297,9 @@ function isStatelessNotificationReply(
     id.startsWith('post_match_contact:') ||
     id.startsWith('rebook_confirm:') ||
     id === 'rebook_cancel' ||
+    id.startsWith('status_mode_quick_') ||
+    id.startsWith('status_mode_review_') ||
+    id.startsWith('status_refresh_') ||
     (!id && rawText === 'accept')
   )
 }
@@ -1391,6 +1394,14 @@ async function processInboundMessageUnlocked(
     } else if (reply.id === 'status' || reply.id === 'my_booking') {
       flow = 'status'
       step = 'status_show'
+    } else if (
+      reply.id?.startsWith('status_mode_quick_') ||
+      reply.id?.startsWith('status_mode_review_') ||
+      reply.id?.startsWith('status_refresh_') ||
+      reply.id?.startsWith('status_req_')
+    ) {
+      flow = 'status'
+      step = reply.id.startsWith('status_req_') ? 'status_pick' : 'status_show'
     } else if (reply.id?.startsWith('view_job_') || reply.id?.startsWith('accept_job_') || reply.id?.startsWith('decline_job_')) {
       // Provider job management
       const jobId = reply.id.replace(/^(view_job_|accept_job_|decline_job_)/, '')
