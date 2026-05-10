@@ -63,6 +63,7 @@ export default async function RequestJobPage({
     ? await db.customerAddress.findMany({
         where: { customerId: customer.id },
         orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        include: { locationNode: { select: { regionKey: true } } },
       })
     : []
 

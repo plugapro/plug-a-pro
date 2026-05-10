@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { recordAuditLog } from '@/lib/audit'
+import { resolveSuburbNodeId } from '@/lib/location-nodes'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 
@@ -34,6 +35,9 @@ export async function createCustomerSiteAction(data: SiteInput) {
   const { customer, session } = await requireCustomer()
   const parsed = siteSchema.parse(data)
 
+  // Resolve locationNodeId so the booking flow validator can skip the manual region check
+  const locationNodeId = await resolveSuburbNodeId(parsed.suburb, parsed.city).catch(() => null)
+
   // First site becomes the default automatically
   const existingCount = await db.customerAddress.count({
     where: { customerId: customer.id },
@@ -44,6 +48,7 @@ export async function createCustomerSiteAction(data: SiteInput) {
     data: {
       customerId: customer.id,
       ...parsed,
+      locationNodeId: locationNodeId ?? null,
       isDefault,
     },
   })

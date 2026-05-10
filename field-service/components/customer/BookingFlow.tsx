@@ -52,6 +52,7 @@ interface SavedSite {
   province: string
   postalCode: string | null
   locationNodeId: string | null
+  locationNode?: { regionKey: string | null } | null
 }
 
 interface BookingFlowProps {
@@ -378,7 +379,7 @@ export function BookingFlow({
       addressLine2: '',
       complexName: '',
       unitNumber: '',
-      region: '',
+      region: site.locationNode?.regionKey ?? '',
     }))
     setLocationNodeId(site.locationNodeId ?? null)
     setLocationDetectedLabel(null)
