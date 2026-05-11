@@ -389,4 +389,23 @@ describe('selected provider final acceptance', () => {
     expect(mockApplyProviderCredit).not.toHaveBeenCalled()
     expect(mockLockAcceptedLead).not.toHaveBeenCalled()
   })
+
+  it('blocks a competing provider accept after the request is accepted locked', async () => {
+    state.lead = makeLead({
+      id: 'lead-2',
+      providerId: 'provider-2',
+      status: 'CUSTOMER_SELECTED',
+      jobRequest: {
+        ...makeLead().jobRequest,
+        status: 'ACCEPTED_LOCKED',
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-2', providerId: 'provider-2' }))
+      .resolves.toEqual({ ok: false, reason: 'PROVIDER_NOT_SELECTED' })
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
+  })
 })

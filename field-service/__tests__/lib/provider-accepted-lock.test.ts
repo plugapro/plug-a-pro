@@ -11,6 +11,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     providerId: 'provider-lock-1',
     status: 'CREDIT_APPLIED',
     cancelledAt: null,
+    expiresAt: new Date(Date.now() + 60_000),
     providerAcceptedAt: new Date('2026-05-10T08:00:00.000Z'),
     isTestLead: false,
     cohortName: null,
@@ -32,6 +33,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
       description: 'Kitchen leak',
       requestedWindowStart: new Date('2026-05-10T10:00:00.000Z'),
       requestedWindowEnd: new Date('2026-05-10T12:00:00.000Z'),
+      expiresAt: new Date(Date.now() + 60_000),
       isTestRequest: false,
       cohortName: null,
       customer: { name: 'Thandi Customer', phone: '+27220000000' },
@@ -158,6 +160,14 @@ describe('provider accepted lock', () => {
       where: { id: 'lead-lock-1', status: 'CREDIT_APPLIED', providerId: 'provider-lock-1' },
       data: expect.objectContaining({ status: 'ACCEPTED_LOCKED' }),
     })
+    expect(tx.lead.updateMany).toHaveBeenCalledWith({
+      where: {
+        jobRequestId: 'request-lock-1',
+        id: { not: 'lead-lock-1' },
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'SHORTLISTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
+      },
+      data: expect.objectContaining({ status: 'EXPIRED' }),
+    })
     expect(tx.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         action: 'lead.provider_accepted_locked',
@@ -170,6 +180,21 @@ describe('provider accepted lock', () => {
     expect(tx.job.create).not.toHaveBeenCalled()
     expect(state.lead.status).toBe('ACCEPTED_LOCKED')
     expect(state.lead.jobRequest.status).toBe('ACCEPTED_LOCKED')
+  })
+
+  it('blocks when the lead is missing', async () => {
+    state.lead = null
+
+    await expect(
+      lockAcceptedLeadAfterCreditInTransaction(tx as any, {
+        leadId: 'missing-lead',
+        providerId: 'provider-lock-1',
+      }),
+    ).rejects.toMatchObject({
+      name: 'AcceptedLeadLockError',
+      code: 'NOT_FOUND',
+    } satisfies Partial<AcceptedLeadLockError>)
+    expect(tx.jobRequest.updateMany).not.toHaveBeenCalled()
   })
 
   it('replays duplicate lock calls idempotently', async () => {
@@ -197,6 +222,27 @@ describe('provider accepted lock', () => {
     expect(tx.jobRequest.updateMany).not.toHaveBeenCalled()
     expect(tx.lead.updateMany).not.toHaveBeenCalled()
     expect(tx.auditLog.create).not.toHaveBeenCalled()
+  })
+
+  it('blocks inconsistent partial accepted-lock state instead of replaying it', async () => {
+    state.lead = makeLead({
+      status: 'ACCEPTED_LOCKED',
+      jobRequest: {
+        ...makeLead().jobRequest,
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+      },
+    })
+
+    await expect(
+      lockAcceptedLeadAfterCreditInTransaction(tx as any, {
+        leadId: 'lead-lock-1',
+        providerId: 'provider-lock-1',
+      }),
+    ).rejects.toMatchObject({
+      name: 'AcceptedLeadLockError',
+      code: 'ACCEPTED_LOCK_FAILED',
+    } satisfies Partial<AcceptedLeadLockError>)
+    expect(tx.jobRequest.updateMany).not.toHaveBeenCalled()
   })
 
   it('blocks lock attempts before the credit transaction has been applied', async () => {
@@ -266,6 +312,23 @@ describe('provider accepted lock', () => {
     expect(tx.jobRequest.updateMany).not.toHaveBeenCalled()
   })
 
+  it('blocks lock when the request expiry has passed', async () => {
+    state.lead = makeLead({
+      jobRequest: {
+        ...makeLead().jobRequest,
+        expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      },
+    })
+
+    await expect(
+      lockAcceptedLeadAfterCreditInTransaction(tx as any, {
+        leadId: 'lead-lock-1',
+        providerId: 'provider-lock-1',
+      }),
+    ).rejects.toMatchObject({ code: 'LEAD_EXPIRED' })
+    expect(tx.jobRequest.updateMany).not.toHaveBeenCalled()
+  })
+
   it('blocks lock when the request is already locked to a different provider', async () => {
     state.lead = makeLead({
       jobRequest: {
@@ -292,6 +355,21 @@ describe('provider accepted lock', () => {
         providerId: 'provider-lock-1',
       }),
     ).rejects.toMatchObject({ code: 'ACCEPTED_LOCK_FAILED' })
+  })
+
+  it('throws ACCEPTED_LOCK_FAILED on concurrent lead race after request update', async () => {
+    tx.lead.updateMany = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValue({ count: 1 })
+
+    await expect(
+      lockAcceptedLeadAfterCreditInTransaction(tx as any, {
+        leadId: 'lead-lock-1',
+        providerId: 'provider-lock-1',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCEPTED_LOCK_FAILED' })
+    expect(tx.auditLog.create).not.toHaveBeenCalled()
   })
 
   it('keeps customer phone and address isolated in notificationPayload, not in root result', async () => {

@@ -1821,14 +1821,22 @@ export async function selectProviderForCustomerRequest(params: {
       )
     }
 
-    await tx.jobRequest.update({
-      where: { id: request.id },
+    const requestUpdated = await tx.jobRequest.updateMany({
+      where: {
+        id: request.id,
+        status: { in: ['SHORTLIST_READY', 'PENDING_VALIDATION'] },
+      },
       data: {
         status: 'PROVIDER_CONFIRMATION_PENDING',
         selectedProviderId: providerId,
         selectedLeadInviteId: selectedLead.id,
       },
     })
+    if (requestUpdated.count !== 1) {
+      throwDuplicateSelectionError(
+        'This request is no longer awaiting customer selection.',
+      )
+    }
 
     await tx.lead.update({
       where: { id: selectedLead.id },
