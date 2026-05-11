@@ -51,6 +51,8 @@ describe('journey status vocabulary mapping', () => {
     expect(mapLeadStatusToBlueprintState('SENT')).toBe('invited')
     expect(mapLeadStatusToBlueprintState('INTERESTED')).toBe('responded_available')
     expect(mapLeadStatusToBlueprintState('CUSTOMER_SELECTED')).toBe('customer_selected')
+    expect(mapLeadStatusToBlueprintState('PROVIDER_ACCEPTED')).toBe('accepted')
+    expect(mapLeadStatusToBlueprintState('CREDIT_REQUIRED')).toBe('credit_required')
     expect(mapLeadStatusToBlueprintState('ACCEPTED')).toBe('accepted')
     expect(mapLeadStatusToBlueprintState('EXPIRED')).toBe('expired')
   })

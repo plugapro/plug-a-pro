@@ -952,7 +952,7 @@ async function processInboundMessageUnlocked(
         const selectedLead = await db.lead.findFirst({
           where: {
             providerId: providerForAccept.id,
-            status: 'CUSTOMER_SELECTED',
+            status: { in: ['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] },
             expiresAt: { gt: new Date() },
             jobRequest: {
               status: 'PROVIDER_CONFIRMATION_PENDING',
@@ -3091,16 +3091,6 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       traceId,
     })
     if (!result.ok) {
-      if (result.reason === 'INSUFFICIENT_CREDITS') {
-        const creditUrl = getWorkerPortalUrl('/provider/credits')
-        const body = buildInsufficientCreditsMessage({ availableCredits: result.currentCreditBalance ?? 0 })
-        if (creditUrl) {
-          await sendCtaUrl(phone, body, ctaLabelFor('credit_history'), creditUrl)
-        } else {
-          await sendText(phone, body)
-        }
-        return
-      }
       if (result.reason === 'PROVIDER_NOT_SELECTED') {
         await sendText(phone, '⚠️ This job was offered to a different provider. No credits used.')
         return
@@ -3147,14 +3137,34 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       })
       return
     }
-    if (result.alreadyUnlocked) {
-      await sendText(phone, 'This job is already assigned to you. No additional credit was deducted. Reply *my jobs* to manage it.')
+
+    if (!result.creditCheck.ok) {
+      if (
+        result.creditCheck.reason === 'INSUFFICIENT_CREDITS' ||
+        result.creditCheck.reason === 'WALLET_MISSING' ||
+        result.creditCheck.reason === 'CORRUPT_CREDIT_BALANCE' ||
+        result.creditCheck.reason === 'WALLET_NOT_ACTIVE'
+      ) {
+        const creditUrl = getWorkerPortalUrl('/provider/credits')
+        const body = result.creditCheck.providerMessage || buildInsufficientCreditsMessage({
+          availableCredits: result.creditCheck.currentCreditBalance ?? 0,
+          creditsRequired: result.creditCheck.requiredCredits,
+        })
+        if (creditUrl) {
+          await sendCtaUrl(phone, body, ctaLabelFor('credit_history'), creditUrl)
+        } else {
+          await sendText(phone, body)
+        }
+        return
+      }
+
+      await sendText(phone, `${result.creditCheck.providerMessage}\n\nNo credit was deducted and customer direct contact details remain locked.`)
       return
     }
     if (!result.notificationSent) {
       await sendText(
         phone,
-        '✅ You have accepted this job and a credit was used. The customer has been notified.\n\nReply *my jobs* to manage your assignments.',
+        `${result.creditCheck.providerMessage}\n\nReply *credits* to view your balance.`,
       )
     }
     return

@@ -159,13 +159,19 @@ export function mapLeadInviteToQualifiedState(invite: LeadInviteStateInput | nul
   if (invite.supersededAt) return 'superseded'
   if (invite.providerAcceptedAt) return 'provider_accepted'
   if (invite.customerSelectedAt) return 'customer_selected'
-  if (invite.expiresAt && invite.expiresAt <= new Date() && invite.status !== 'ACCEPTED') return 'expired'
+  if (
+    invite.expiresAt &&
+    invite.expiresAt <= new Date() &&
+    !['ACCEPTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'].includes(invite.status)
+  ) return 'expired'
 
   if (invite.status === 'SENT') return 'sent'
   if (invite.status === 'VIEWED') return 'viewed'
   if (invite.status === 'INTERESTED') return 'interested'
   if (invite.status === 'SHORTLISTED') return 'shortlisted'
   if (invite.status === 'CUSTOMER_SELECTED') return 'customer_selected'
+  if (invite.status === 'PROVIDER_ACCEPTED') return 'provider_accepted'
+  if (invite.status === 'CREDIT_REQUIRED') return 'provider_accepted'
   if (invite.status === 'SUPERSEDED') return 'superseded'
   if (invite.status === 'CANCELLED') return 'cancelled'
   if (invite.status === 'DECLINED') return 'not_interested'

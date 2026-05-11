@@ -90,7 +90,7 @@ describe('credit rules copy — must be present in all relevant messages', () =>
   it('insufficient credits message clearly states no credit was deducted', () => {
     const msg = buildInsufficientCreditsMessage({ availableCredits: 0 })
     expect(msg).toContain('No credit was deducted')
-    expect(msg).toContain('You need 1 credit to accept this job')
+    expect(msg).toContain('You need 1 credit to continue with this job')
   })
 
   it('job unavailable message confirms no credits were used', () => {

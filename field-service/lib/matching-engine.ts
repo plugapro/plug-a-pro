@@ -30,10 +30,17 @@ export interface DispatchResult {
 type LeadAccepted = {
   ok: true
   leadId: string
-  matchId: string
+  matchId?: string
   creditTransactionId?: string | null
   currentCreditBalance?: number
-  alreadyUnlocked?: boolean
+  alreadyAccepted?: boolean
+  creditCheck?: {
+    ok: boolean
+    reason?: string
+    requiredCredits?: number
+    currentCreditBalance?: number
+    providerMessage?: string
+  }
   inspectionNeeded: boolean
   notificationSent: boolean
 }
@@ -191,13 +198,6 @@ export async function acceptLead(params: {
   })
 
   if (!selectedResult.ok) {
-    if (selectedResult.reason === 'INSUFFICIENT_CREDITS') {
-      return {
-        ok: false,
-        reason: 'INSUFFICIENT_CREDITS',
-        currentCreditBalance: selectedResult.currentCreditBalance,
-      }
-    }
     if (
       selectedResult.reason === 'PROVIDER_NOT_SELECTED' ||
       selectedResult.reason === 'LEAD_INVITE_NOT_SELECTED'
@@ -219,10 +219,17 @@ export async function acceptLead(params: {
   return {
     ok: true,
     leadId: selectedResult.leadId,
-    matchId: selectedResult.matchId,
-    creditTransactionId: selectedResult.creditTransactionId,
+    matchId: undefined,
+    creditTransactionId: null,
     currentCreditBalance: selectedResult.currentCreditBalance,
-    alreadyUnlocked: selectedResult.alreadyUnlocked,
+    alreadyAccepted: selectedResult.alreadyAccepted,
+    creditCheck: {
+      ok: selectedResult.creditCheck.ok,
+      reason: selectedResult.creditCheck.ok ? undefined : selectedResult.creditCheck.reason,
+      requiredCredits: selectedResult.creditCheck.requiredCredits,
+      currentCreditBalance: selectedResult.creditCheck.currentCreditBalance,
+      providerMessage: selectedResult.creditCheck.providerMessage,
+    },
     inspectionNeeded: false,
     notificationSent: selectedResult.notificationSent,
   }

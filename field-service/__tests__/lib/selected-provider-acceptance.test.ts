@@ -2,46 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { acceptSelectedProviderJob } from '../../lib/selected-provider-acceptance'
 
 const { mockDb, state } = vi.hoisted(() => {
-  const state: { tx: any; lead: any } = { tx: null, lead: null }
-  const mockDb = {
-    $transaction: vi.fn(),
-  }
+  const state: { tx: any; lead: any; wallet: any } = { tx: null, lead: null, wallet: null }
+  const mockDb = { $transaction: vi.fn() }
   return { mockDb, state }
 })
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
-vi.mock('../../lib/lead-unlocks', async () => {
-  class LeadUnlockError extends Error {
-    constructor(
-      public readonly code: string,
-      message: string,
-      public readonly currentCreditBalance?: number,
-    ) {
-      super(message)
-    }
-  }
-  return {
-    LEAD_UNLOCK_COST_CREDITS: 1,
-    LeadUnlockError,
-    unlockLeadForProviderInTransaction: vi.fn().mockResolvedValue({
-      unlock: { id: 'unlock-1' },
-      ledgerEntries: [{ id: 'ledger-1', balanceAfterPaidCredits: 2, balanceAfterPromoCredits: 0 }],
-      alreadyUnlocked: false,
-    }),
-  }
-})
-vi.mock('../../lib/provider-lead-access', () => ({
-  getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.test/jobs/token'),
-}))
-vi.mock('../../lib/job-request-access', () => ({
-  getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.plugapro.test/requests/access/token'),
-}))
-vi.mock('../../lib/whatsapp', () => ({
-  sendText: vi.fn().mockResolvedValue('wamid-1'),
-}))
-vi.mock('../../lib/whatsapp-interactive', () => ({
-  sendCtaUrl: vi.fn().mockResolvedValue('wamid-cta'),
-}))
+vi.mock('../../lib/lead-unlocks', () => ({ LEAD_UNLOCK_COST_CREDITS: 1 }))
 
 function makeLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -49,50 +16,44 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     jobRequestId: 'request-1',
     providerId: 'provider-1',
     status: 'CUSTOMER_SELECTED',
-    isTestLead: false,
-    cohortName: null,
     expiresAt: new Date(Date.now() + 60_000),
+    cancelledAt: null,
     customerSelectedAt: new Date('2026-05-02T10:00:00.000Z'),
     unlock: null,
-    provider: {
-      id: 'provider-1',
-      name: 'Alice Plumbing',
-      phone: '+27111111111',
-      active: true,
-      verified: true,
-      status: 'ACTIVE',
-    },
-    providerResponses: [{
-      callOutFee: 250,
-      estimatedArrivalAt: new Date('2026-05-02T12:00:00.000Z'),
-    }],
     jobRequest: {
-      id: 'request-1',
-      category: 'plumbing',
       status: 'PROVIDER_CONFIRMATION_PENDING',
       selectedProviderId: 'provider-1',
       selectedLeadInviteId: 'lead-1',
-      description: 'Replace burst geyser valve and check pressure.',
-      requestedWindowStart: new Date('2026-05-02T14:00:00.000Z'),
-      requestedWindowEnd: new Date('2026-05-02T16:00:00.000Z'),
-      isTestRequest: false,
-      cohortName: null,
-      customer: { name: 'Acme Customer', phone: '+27222222222' },
-      attachments: [{ id: 'photo-1' }, { id: 'photo-2' }],
-      address: {
-        street: '12 Hill Crescent',
-        addressLine1: null,
-        addressLine2: null,
-        complexName: 'Ruimsig Heights',
-        unitNumber: 'Unit 4',
-        suburb: 'Ruimsig',
-        city: 'Johannesburg',
-        province: 'Gauteng',
-        accessNotes: 'Gate code 1234, beware of dog',
-      },
-      match: null,
     },
     ...overrides,
+  }
+}
+
+function makeTx() {
+  return {
+    lead: {
+      findUnique: vi.fn().mockImplementation(async () => state.lead),
+      updateMany: vi.fn().mockImplementation(async (args: any) => {
+        if (args?.where?.status === state.lead.status && args?.data?.status) {
+          state.lead = { ...state.lead, status: args.data.status }
+        } else if (args?.where?.status?.in?.includes(state.lead.status) && args?.data?.status) {
+          state.lead = { ...state.lead, status: args.data.status }
+        }
+        return { count: 1 }
+      }),
+    },
+    providerWallet: {
+      findUnique: vi.fn().mockImplementation(async () => state.wallet),
+    },
+    auditLog: {
+      create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+    },
+    match: { create: vi.fn() },
+    quote: { create: vi.fn() },
+    booking: { create: vi.fn() },
+    job: { create: vi.fn() },
+    jobRequest: { update: vi.fn() },
+    leadUnlock: { update: vi.fn() },
   }
 }
 
@@ -100,48 +61,12 @@ describe('selected provider final acceptance', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     state.lead = makeLead()
-    state.tx = {
-      lead: {
-        findUnique: vi.fn().mockResolvedValue(state.lead),
-        update: vi.fn().mockResolvedValue({ id: 'lead-1' }),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
-      },
-      providerWallet: {
-        findUnique: vi.fn().mockResolvedValue({ paidCreditBalance: 2, promoCreditBalance: 1 }),
-      },
-      match: {
-        create: vi.fn().mockResolvedValue({ id: 'match-1' }),
-      },
-      leadUnlock: {
-        update: vi.fn().mockResolvedValue({ id: 'unlock-1' }),
-      },
-      quote: {
-        create: vi.fn().mockResolvedValue({ id: 'quote-1' }),
-      },
-      booking: {
-        create: vi.fn().mockResolvedValue({ id: 'booking-1' }),
-      },
-      job: {
-        create: vi.fn().mockResolvedValue({ id: 'job-1' }),
-      },
-      jobRequest: {
-        update: vi.fn().mockResolvedValue({ id: 'request-1' }),
-      },
-      jobStatusEvent: {
-        create: vi.fn().mockResolvedValue({ id: 'event-1' }),
-      },
-      auditLog: {
-        create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
-      },
-    }
+    state.wallet = { paidCreditBalance: 2, promoCreditBalance: 0, status: 'ACTIVE' }
+    state.tx = makeTx()
     mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
   })
 
-  it('accepts selected provider, debits once through unlock, assigns job, and notifies both parties', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-    const { sendText } = await import('../../lib/whatsapp')
-    const { sendCtaUrl } = await import('../../lib/whatsapp-interactive')
-
+  it('records provider acceptance, runs credit check, and does not unlock or expose contact details', async () => {
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-1',
       providerId: 'provider-1',
@@ -150,207 +75,79 @@ describe('selected provider final acceptance', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      matchId: 'match-1',
-      jobId: 'job-1',
-      bookingId: 'booking-1',
-      creditTransactionId: 'ledger-1',
+      leadId: 'lead-1',
       currentCreditBalance: 2,
+      creditCheck: {
+        ok: true,
+        result: 'SUFFICIENT_CREDITS',
+        requiredCredits: 1,
+      },
+      notificationSent: false,
     })
-    expect(unlockLeadForProviderInTransaction).toHaveBeenCalledOnce()
-    expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
-      where: { id: 'request-1' },
-      data: { status: 'MATCHED' },
-    })
-    expect(state.tx.lead.update).toHaveBeenCalledWith({
-      where: { id: 'lead-1' },
+    expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
+      where: { id: 'lead-1', status: 'CUSTOMER_SELECTED' },
       data: expect.objectContaining({
-        status: 'ACCEPTED',
+        status: 'PROVIDER_ACCEPTED',
         providerAcceptedAt: expect.any(Date),
+        respondedAt: expect.any(Date),
       }),
     })
-    expect(sendText).toHaveBeenCalledTimes(2)
-
-    // Provider WhatsApp-complete: full customer details must arrive inline,
-    // not only as a "view in PWA" link.
-    const providerSend = (sendText as any).mock.calls.find(
-      (call: any[]) => call[0]?.to === '+27111111111',
-    )?.[0]
-    expect(providerSend).toBeDefined()
-    // Blueprint-spec header: "✅ Job accepted"
-    expect(providerSend.text).toContain('✅ Job accepted')
-    // Blueprint-spec credit line: "You used 1 credit."
-    expect(providerSend.text).toContain('You used 1 credit')
-    expect(providerSend.text).toContain('Available balance:')
-    // Blueprint-spec unlock confirmation
-    expect(providerSend.text).toContain('Full customer details are now unlocked')
-    expect(providerSend.text).toContain('+27222222222')
-    expect(providerSend.text).toContain('12 Hill Crescent')
-    expect(providerSend.text).toContain('Ruimsig Heights')
-    expect(providerSend.text).toContain('Unit 4')
-    expect(providerSend.text).toContain('Gate code 1234')
-    expect(providerSend.text).toContain('Reference: LEAD-1')
-    expect(providerSend.text).toContain('Preferred time:')
-    expect(providerSend.text).toContain('Replace burst geyser valve')
-    expect(providerSend.text).toContain('Photos: 2 available')
-    expect(providerSend.text).toContain('Example: 14:00')
-    expect(providerSend.text).not.toContain('https://')
-
-    // Customer WhatsApp body must not embed raw URLs — URL travels via CTA only.
-    const customerSend = (sendText as any).mock.calls.find(
-      (call: any[]) => call[0]?.to === '+27222222222',
-    )?.[0]
-    expect(customerSend).toBeDefined()
-    expect(customerSend.text).toContain('✅ Your provider accepted the job')
-    expect(customerSend.text).not.toContain('https://')
-    expect(customerSend.text).not.toContain('http://')
-
-    expect(sendCtaUrl).toHaveBeenCalledWith(
-      '+27111111111',
-      expect.stringContaining('Job details and photos'),
-      'View job',
-      'https://app.plugapro.test/jobs/token',
-      undefined,
-      expect.any(Object),
-    )
-    expect(sendCtaUrl).toHaveBeenCalledWith(
-      '+27222222222',
-      expect.stringContaining('Your request'),
-      'View details',
-      'https://app.plugapro.test/requests/access/token',
-      undefined,
-      expect.any(Object),
-    )
-  })
-
-  it('blocks non-selected provider before credit deduction', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
-      providerId: 'provider-2',
-      jobRequest: {
-        ...state.lead.jobRequest,
-        selectedProviderId: 'provider-1',
-      },
-    }))
-
-    const result = await acceptSelectedProviderJob({
-      leadId: 'lead-1',
-      providerId: 'provider-2',
-      source: 'api',
-    })
-
-    expect(result).toEqual({ ok: false, reason: 'PROVIDER_NOT_SELECTED' })
-    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
-  })
-
-  it('maps insufficient credits without creating assignment records', async () => {
-    const leadUnlocks = await import('../../lib/lead-unlocks')
-    ;(leadUnlocks.unlockLeadForProviderInTransaction as any).mockRejectedValueOnce(
-      new leadUnlocks.LeadUnlockError('INSUFFICIENT_CREDITS', 'No credits', 0),
-    )
-
-    const result = await acceptSelectedProviderJob({
-      leadId: 'lead-1',
-      providerId: 'provider-1',
-      source: 'whatsapp',
-    })
-
-    expect(result).toEqual({ ok: false, reason: 'INSUFFICIENT_CREDITS', currentCreditBalance: 0 })
     expect(state.tx.match.create).not.toHaveBeenCalled()
     expect(state.tx.job.create).not.toHaveBeenCalled()
+    expect(state.tx.leadUnlock.update).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('customer')
+    expect(JSON.stringify(result)).not.toContain('phone')
   })
 
-  it('blocks acceptance when the notified lead response window has elapsed', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
-      expiresAt: new Date(Date.now() - 60_000),
-      customerSelectedAt: new Date(),
-      status: 'CUSTOMER_SELECTED',
-    }))
+  it('sets CREDIT_REQUIRED when accepted provider has no credits', async () => {
+    state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
-    const result = await acceptSelectedProviderJob({
-      leadId: 'lead-1',
-      providerId: 'provider-1',
-      source: 'whatsapp',
-    })
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' })
 
-    expect(result).toEqual({ ok: false, reason: 'LEAD_EXPIRED' })
-    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
-  })
-
-  it('rejects acceptance when the lead is explicitly EXPIRED', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
-      status: 'EXPIRED',
-    }))
-
-    const result = await acceptSelectedProviderJob({
-      leadId: 'lead-1',
-      providerId: 'provider-1',
-      source: 'whatsapp',
-    })
-
-    expect(result).toEqual({ ok: false, reason: 'LEAD_EXPIRED' })
-    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
-  })
-
-  it('does not double-deduct when the same provider re-accepts an already-accepted lead', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
-      status: 'ACCEPTED',
-      jobRequest: {
-        ...makeLead().jobRequest,
-        status: 'MATCHED',
-        match: {
-          id: 'match-1',
-          providerId: 'provider-1',
-          booking: { id: 'booking-1', job: { id: 'job-1' } },
-        },
+    expect(result).toMatchObject({
+      ok: true,
+      creditCheck: {
+        ok: false,
+        reason: 'INSUFFICIENT_CREDITS',
+        leadStatus: 'CREDIT_REQUIRED',
+        currentCreditBalance: 0,
       },
-    }))
-
-    const result = await acceptSelectedProviderJob({
-      leadId: 'lead-1',
-      providerId: 'provider-1',
-      source: 'whatsapp',
     })
-
-    expect(result).toMatchObject({ ok: true, alreadyUnlocked: true })
-    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
-    expect(state.tx.match.create).not.toHaveBeenCalled()
+    expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
+      where: { id: 'lead-1', status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] } },
+      data: { status: 'CREDIT_REQUIRED' },
+    })
   })
 
-  it('blocks cancelled requests before credit deduction', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
-      jobRequest: {
-        ...state.lead.jobRequest,
-        status: 'CANCELLED',
-      },
-    }))
+  it('is idempotent for duplicate accept after provider accepted', async () => {
+    state.lead = makeLead({ status: 'PROVIDER_ACCEPTED' })
 
-    const result = await acceptSelectedProviderJob({
-      leadId: 'lead-1',
-      providerId: 'provider-1',
-      source: 'whatsapp',
+    const result = await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(result).toMatchObject({
+      ok: true,
+      alreadyAccepted: true,
+      creditCheck: { ok: true },
     })
-
-    expect(result).toEqual({ ok: false, reason: 'REQUEST_CANCELLED' })
-    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'lead-1', status: 'CUSTOMER_SELECTED' } }),
+    )
   })
 
-  it('blocks accept after provider already declined', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
-      status: 'DECLINED',
-    }))
+  it('blocks wrong provider, expired lead, cancelled request, and accept after decline', async () => {
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-2' }))
+      .resolves.toEqual({ ok: false, reason: 'PROVIDER_NOT_SELECTED' })
 
-    const result = await acceptSelectedProviderJob({
-      leadId: 'lead-1',
-      providerId: 'provider-1',
-      source: 'whatsapp',
-    })
+    state.lead = makeLead({ expiresAt: new Date(Date.now() - 60_000) })
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
+      .resolves.toEqual({ ok: false, reason: 'LEAD_EXPIRED' })
 
-    expect(result).toEqual({ ok: false, reason: 'LEAD_DECLINED' })
-    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
+    state.lead = makeLead({ cancelledAt: new Date(), jobRequest: { ...makeLead().jobRequest, status: 'CANCELLED' } })
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
+      .resolves.toEqual({ ok: false, reason: 'REQUEST_CANCELLED' })
+
+    state.lead = makeLead({ status: 'DECLINED' })
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
+      .resolves.toEqual({ ok: false, reason: 'LEAD_DECLINED' })
   })
 })

@@ -17,24 +17,26 @@ describe('signed provider lead page copy', () => {
   })
 
   it('uses the accept-or-decline journey with confirmation and protected details', () => {
-    expect(source).toContain('Accept job — uses')
+    expect(source).toContain('Accept job')
     expect(source).toContain('Confirm lead acceptance')
-    expect(source).toContain('Full customer details will be released only after acceptance succeeds.')
+    expect(source).toContain('Full customer details stay locked until credit is applied.')
     expect(source).toContain('hasAcceptedDetails && customer')
   })
 
   it('only renders offer countdown and response actions for active lead offers', () => {
     expect(source).toContain("const isExpired = lead.status === 'EXPIRED'")
-    expect(source).toContain("const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED'")
+    expect(source).toContain("const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'")
     expect(source).toContain('const canRespondToLead = isOpenOffer && !isExpired')
     expect(source).toContain('const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)')
     expect(source).toContain('{showExpiryCountdown && lead.expiresAt && (')
     expect(source).not.toContain('{lead.expiresAt && !isAccepted && (')
-    expect(source).toContain('canRespondToLead && confirmingAccept && hasEnoughCredits')
+    expect(source).toContain('canRespondToLead && confirmingAccept')
   })
 
   it('lead detail page no longer renders expiry countdown once a lead is accepted', () => {
-    expect(authenticatedSource).toContain("const isAcceptedLead = lead.status === 'ACCEPTED'")
+    expect(authenticatedSource).toContain('const isAcceptedLead =')
+    expect(authenticatedSource).toContain("lead.status === 'PROVIDER_ACCEPTED'")
+    expect(authenticatedSource).toContain("lead.status === 'CREDIT_REQUIRED'")
     expect(authenticatedSource).toContain('lead.expiresAt && !isAcceptedLead && (')
   })
 

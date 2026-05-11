@@ -69,7 +69,11 @@ vi.mock('@/lib/whatsapp-flows/provider-journey', () => ({
 }))
 vi.mock('@/lib/matching-engine', () => ({ acceptLead: vi.fn(), declineLead: vi.fn() }))
 vi.mock('@/lib/selected-provider-acceptance', () => ({
-  acceptSelectedProviderJob: vi.fn().mockResolvedValue({ ok: true, alreadyUnlocked: false }),
+  acceptSelectedProviderJob: vi.fn().mockResolvedValue({
+    ok: true,
+    creditCheck: { ok: true, providerMessage: 'Accepted. Credit check passed.' },
+    notificationSent: false,
+  }),
 }))
 vi.mock('@/lib/customer-shortlists', () => ({
   declineSelectedProviderJob: vi.fn().mockResolvedValue({ ok: true }),

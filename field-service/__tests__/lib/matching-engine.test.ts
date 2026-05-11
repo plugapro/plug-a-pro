@@ -125,11 +125,15 @@ describe('matching-engine compatibility wrappers', () => {
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
       leadId: 'lead-1',
-      matchId: 'match-1',
-      creditTransactionId: null,
       currentCreditBalance: 4,
-      alreadyUnlocked: false,
-      duplicateAcceptIgnored: false,
+      alreadyAccepted: false,
+      creditCheck: {
+        ok: true,
+        result: 'SUFFICIENT_CREDITS',
+        requiredCredits: 1,
+        currentCreditBalance: 4,
+        providerMessage: 'Accepted. Credit check passed.',
+      },
       notificationSent: true,
     })
 
@@ -138,10 +142,17 @@ describe('matching-engine compatibility wrappers', () => {
     expect(result).toEqual({
       ok: true,
       leadId: 'lead-1',
-      matchId: 'match-1',
+      matchId: undefined,
       creditTransactionId: null,
       currentCreditBalance: 4,
-      alreadyUnlocked: false,
+      alreadyAccepted: false,
+      creditCheck: {
+        ok: true,
+        reason: undefined,
+        requiredCredits: 1,
+        currentCreditBalance: 4,
+        providerMessage: 'Accepted. Credit check passed.',
+      },
       inspectionNeeded: false,
       notificationSent: true,
     })
@@ -153,7 +164,7 @@ describe('matching-engine compatibility wrappers', () => {
     expect(mockAcceptAssignmentOffer).not.toHaveBeenCalled()
   })
 
-  it('acceptLead returns insufficient credits from selected-provider acceptance path', async () => {
+  it('acceptLead returns accepted with CREDIT_REQUIRED from selected-provider acceptance path', async () => {
     mockDb.lead.findUnique.mockResolvedValue({
       id: 'lead-1',
       customerSelectedAt: new Date('2026-05-10T08:00:00.000Z'),
@@ -164,17 +175,37 @@ describe('matching-engine compatibility wrappers', () => {
       },
     })
     mockAcceptSelectedProviderJob.mockResolvedValue({
-      ok: false,
-      reason: 'INSUFFICIENT_CREDITS',
+      ok: true,
+      leadId: 'lead-1',
       currentCreditBalance: 0,
+      creditCheck: {
+        ok: false,
+        reason: 'INSUFFICIENT_CREDITS',
+        requiredCredits: 1,
+        currentCreditBalance: 0,
+        providerMessage: 'Not enough credits.',
+      },
+      notificationSent: false,
     })
 
     const result = await acceptLead({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
 
     expect(result).toEqual({
-      ok: false,
-      reason: 'INSUFFICIENT_CREDITS',
+      ok: true,
+      leadId: 'lead-1',
+      matchId: undefined,
+      creditTransactionId: null,
       currentCreditBalance: 0,
+      alreadyAccepted: undefined,
+      creditCheck: {
+        ok: false,
+        reason: 'INSUFFICIENT_CREDITS',
+        requiredCredits: 1,
+        currentCreditBalance: 0,
+        providerMessage: 'Not enough credits.',
+      },
+      inspectionNeeded: false,
+      notificationSent: false,
     })
     expect(mockAcceptSelectedProviderJob).toHaveBeenCalledWith({
       leadId: 'lead-1',

@@ -902,7 +902,7 @@ export async function shortlistProviderForCustomerReview(params: {
     throw new ReviewFirstError('PROVIDER_NOT_ELIGIBLE', 'Provider is not eligible for this request.')
   }
 
-  const shortlistLeadStatuses: LeadStatus[] = ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED']
+  const shortlistLeadStatuses: LeadStatus[] = ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED']
   const shortlistCount = await db.lead.count({
     where: {
       jobRequestId: request.id,
@@ -1009,7 +1009,7 @@ export async function getCustomerReviewShortlist(params: { requestId: string; cu
     where: {
       jobRequestId: params.requestId,
       status: {
-        in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'ACCEPTED'],
+        in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'ACCEPTED'],
       },
     },
     orderBy: [{ rankingPosition: 'asc' }, { sentAt: 'asc' }],
@@ -1236,7 +1236,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
       customer: { select: { phone: true } },
       leads: {
         where: {
-          status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'DECLINED', 'EXPIRED', 'CUSTOMER_SELECTED', 'ACCEPTED'] },
+          status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'DECLINED', 'EXPIRED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'ACCEPTED'] },
         },
         select: {
           id: true,

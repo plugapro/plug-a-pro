@@ -410,9 +410,10 @@ export function buildInsufficientCreditsMessage(params: {
   return [
     'Not enough credits.',
     '',
-    `You need ${creditCountLabel(required)} to accept this job.`,
+    `You need ${creditCountLabel(required)} to continue with this job.`,
     `Your current balance is ${creditCountLabel(params.availableCredits)}.`,
     'No credit was deducted.',
+    'Customer direct contact details remain locked.',
     '',
     'Please top up in the Worker Portal. The top-up link is available below.',
   ].join('\n')

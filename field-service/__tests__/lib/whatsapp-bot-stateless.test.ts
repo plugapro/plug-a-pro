@@ -180,7 +180,14 @@ describe('processInboundMessage stateless notification replies', () => {
     mockSendButtons.mockResolvedValue('msg-buttons')
     mockSendCtaUrl.mockResolvedValue('msg-cta')
     mockSendJourneyRecovery.mockResolvedValue(undefined)
-    mockAcceptSelectedProviderJob.mockResolvedValue({ ok: true, alreadyUnlocked: false })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: true,
+      creditCheck: {
+        ok: true,
+        providerMessage: 'Accepted. Credit check passed.',
+      },
+      notificationSent: false,
+    })
     mockDeclineSelectedProviderJob.mockResolvedValue({ ok: true })
     mockDb.lead.findFirst.mockReset()
     mockDb.lead.findFirst.mockResolvedValue(null)
@@ -273,7 +280,7 @@ describe('processInboundMessage stateless notification replies', () => {
     })
     expect(mockSendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('You need 1 credit to accept this job'),
+      expect.stringContaining('You need 1 credit to continue with this job'),
       expect.arrayContaining([
         expect.objectContaining({ id: 'provider_top_up_credits', title: 'Top up credits' }),
         expect.objectContaining({ id: 'match_inspect_lead-1', title: 'View Lead' }),
@@ -367,7 +374,10 @@ describe('processInboundMessage stateless notification replies', () => {
     mockDb.lead.findFirst.mockResolvedValueOnce({ id: 'lead-selected-1' })
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
-      alreadyUnlocked: false,
+      creditCheck: {
+        ok: true,
+        providerMessage: 'Accepted. Credit check passed.',
+      },
       notificationSent: true,
     })
 
@@ -377,7 +387,7 @@ describe('processInboundMessage stateless notification replies', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           providerId: 'provider-1',
-          status: 'CUSTOMER_SELECTED',
+          status: { in: ['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] },
           jobRequest: expect.objectContaining({
             status: 'PROVIDER_CONFIRMATION_PENDING',
             selectedProviderId: 'provider-1',
@@ -488,9 +498,16 @@ describe('processInboundMessage stateless notification replies', () => {
   it('sends insufficient-credits message with no-deduction confirmation on confirm_accept', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
     mockAcceptSelectedProviderJob.mockResolvedValue({
-      ok: false,
-      reason: 'INSUFFICIENT_CREDITS',
+      ok: true,
+      creditCheck: {
+        ok: false,
+        reason: 'INSUFFICIENT_CREDITS',
+        providerMessage: 'Not enough credits.\n\nNo credit was deducted.',
+        requiredCredits: 1,
+        currentCreditBalance: 0,
+      },
       currentCreditBalance: 0,
+      notificationSent: false,
     })
 
     await processInboundMessage(buttonMessage('confirm_accept:lead-short-4'))

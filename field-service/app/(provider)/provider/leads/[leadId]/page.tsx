@@ -57,7 +57,23 @@ async function acceptLead(formData: FormData) {
     redirect(`/provider/leads/${leadId}?acceptError=unavailable`)
   }
 
-  const query = new URLSearchParams({ accepted: '1' })
+  if (result.creditCheck && !result.creditCheck.ok) {
+    if (
+      result.creditCheck.reason === 'INSUFFICIENT_CREDITS' ||
+      result.creditCheck.reason === 'WALLET_MISSING' ||
+      result.creditCheck.reason === 'CORRUPT_CREDIT_BALANCE' ||
+      result.creditCheck.reason === 'WALLET_NOT_ACTIVE'
+    ) {
+      const query = new URLSearchParams({ acceptError: 'credits' })
+      if (result.creditCheck.currentCreditBalance != null) {
+        query.set('remainingBalance', String(result.creditCheck.currentCreditBalance))
+      }
+      redirect(`/provider/leads/${leadId}?${query.toString()}`)
+    }
+    redirect(`/provider/leads/${leadId}?acceptError=unavailable`)
+  }
+
+  const query = new URLSearchParams({ accepted: '1', creditCheck: 'passed' })
   if (result.currentCreditBalance != null) {
     query.set('remainingBalance', String(result.currentCreditBalance))
   }
@@ -135,7 +151,7 @@ export default async function LeadDetailPage({
   searchParams,
 }: {
   params: Promise<{ leadId: string }>
-  searchParams?: Promise<{ acceptError?: string; accepted?: string; remainingBalance?: string; confirmAccept?: string; dispute?: string; declined?: string; declineError?: string; traceId?: string }>
+  searchParams?: Promise<{ acceptError?: string; accepted?: string; creditCheck?: string; remainingBalance?: string; confirmAccept?: string; dispute?: string; declined?: string; declineError?: string; traceId?: string }>
 }) {
   const session = await requireProvider()
   const { leadId } = await params
@@ -176,7 +192,10 @@ export default async function LeadDetailPage({
   const isUnlocked = lead.isUnlocked
   const unlockDispute = lead.unlock?.dispute ?? null
   const termsUrl = getProviderTermsUrl()
-  const isAcceptedLead = lead.status === 'ACCEPTED'
+  const isAcceptedLead =
+    lead.status === 'ACCEPTED' ||
+    lead.status === 'PROVIDER_ACCEPTED' ||
+    lead.status === 'CREDIT_REQUIRED'
   const canDisputeUnlock = Boolean(
     lead.unlock &&
     lead.unlock.status === 'UNLOCKED' &&
@@ -184,14 +203,17 @@ export default async function LeadDetailPage({
   )
   const totalCreditBalance = lead.wallet.totalCredits
   const hasEnoughCredits = totalCreditBalance >= lead.unlockCostCredits
-  const remainingCreditBalanceAfterAccept = totalCreditBalance - lead.unlockCostCredits
   const acceptedRemainingBalance =
     resolvedSearchParams.remainingBalance != null && Number.isFinite(Number(resolvedSearchParams.remainingBalance))
       ? Number(resolvedSearchParams.remainingBalance)
       : totalCreditBalance
 
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
-  const isResponded = lead.status === 'ACCEPTED' || lead.status === 'DECLINED'
+  const isResponded =
+    lead.status === 'ACCEPTED' ||
+    lead.status === 'PROVIDER_ACCEPTED' ||
+    lead.status === 'CREDIT_REQUIRED' ||
+    lead.status === 'DECLINED'
   const canAct = !isExpired && !isResponded
   const confirmingAccept = resolvedSearchParams.confirmAccept === '1' && canAct
   const unlockedDetails = lead.unlockedDetails
@@ -218,7 +240,7 @@ export default async function LeadDetailPage({
 
       {isResponded && (
         <AlertCallout tone="neutral">
-          You have already {lead.status === 'ACCEPTED' ? 'accepted' : 'declined'} this lead.
+          You have already {lead.status === 'DECLINED' ? 'declined' : 'accepted'} this lead.
         </AlertCallout>
       )}
 
@@ -260,8 +282,9 @@ export default async function LeadDetailPage({
 
       {resolvedSearchParams.accepted && (
         <AlertCallout tone="success" title="Lead accepted">
-          {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} used. Balance remaining: {acceptedRemainingBalance}.
-          Full customer and job details are now available below.
+          Credit check passed. {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} will be applied in the next step.
+          No credit has been deducted yet. Customer direct contact details remain locked.
+          Current balance: {acceptedRemainingBalance}.
         </AlertCallout>
       )}
 
@@ -274,8 +297,9 @@ export default async function LeadDetailPage({
             </Button>
           }
         >
-          You need {lead.unlockCostCredits} Plug A Pro provider credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
-          Your current credits balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
+          Your acceptance was recorded, but you need {lead.unlockCostCredits} Plug A Pro provider credit{lead.unlockCostCredits === 1 ? '' : 's'} before this job can continue.
+          Your current credits balance is {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
+          Customer direct contact details remain locked and no credit was deducted.
         </AlertCallout>
       )}
 
@@ -316,8 +340,8 @@ export default async function LeadDetailPage({
             Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
           </p>
           <p>
-            Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
-            Your current balance is {totalCreditBalance} credit{totalCreditBalance === 1 ? '' : 's'}.
+            Accepting this lead checks for {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
+            Credit is applied only in the next step.
           </p>
         </div>
       )}
@@ -327,10 +351,10 @@ export default async function LeadDetailPage({
           {hasEnoughCredits ? (
             <>
               <p>
-                Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
-                Your current credits balance is {totalCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
+                Accepting this lead checks for {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
+                Your current credits balance is {totalCreditBalance}. The next step will apply credit before customer details are released.
               </p>
-              <p className="mt-1">Full customer details will be released only after acceptance succeeds.</p>
+              <p className="mt-1">Full customer details stay locked until credit is applied.</p>
             </>
           ) : (
             <>
@@ -523,30 +547,26 @@ export default async function LeadDetailPage({
             <>
               <Button asChild size="lg" className="w-full">
                 <Link href={`/provider/leads/${leadId}?confirmAccept=1`}>
-                  Accept job — uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}
+                  Accept job
                 </Link>
               </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Credits balance: {totalCreditBalance} Plug A Pro provider credits · Cost: {lead.unlockCostCredits}
+                Credits balance: {totalCreditBalance} Plug A Pro provider credits · Required: {lead.unlockCostCredits}
               </p>
             </>
-          ) : hasEnoughCredits ? (
+          ) : (
             <form action={acceptLead} className="space-y-2">
               <input type="hidden" name="leadId" value={leadId} />
               <input type="hidden" name="inspectionNeeded" value="false" />
               <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting lead...">
-                Confirm accept — use {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}
+                Confirm accept
               </LeadActionSubmitButton>
+              {!hasEnoughCredits ? (
+                <p className="text-center text-xs text-muted-foreground">
+                  If credits are still insufficient, this lead will stay locked until you top up.
+                </p>
+              ) : null}
             </form>
-          ) : (
-            <>
-              <Button asChild size="lg" className="w-full">
-                <Link href="/provider/credits">Top up credits</Link>
-              </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
-              </p>
-            </>
           )}
 
           {confirmingAccept && (

@@ -189,11 +189,37 @@ async function acceptLeadWithToken(formData: FormData) {
     })
   }
 
-  const query = new URLSearchParams({ accepted: '1', actionTraceId: traceId })
+  if (result.creditCheck && !result.creditCheck.ok) {
+    if (
+      result.creditCheck.reason === 'INSUFFICIENT_CREDITS' ||
+      result.creditCheck.reason === 'WALLET_MISSING' ||
+      result.creditCheck.reason === 'CORRUPT_CREDIT_BALANCE' ||
+      result.creditCheck.reason === 'WALLET_NOT_ACTIVE'
+    ) {
+      redirectLeadActionError(token, {
+        error: 'credits',
+        errorCode: result.creditCheck.reason,
+        action: 'accept',
+        traceId,
+        message: result.creditCheck.providerMessage,
+        creditDeducted: false,
+      })
+    }
+    redirectLeadActionError(token, {
+      error: 'unavailable',
+      errorCode: result.creditCheck.reason ?? 'CREDIT_CHECK_FAILED',
+      action: 'accept',
+      traceId,
+      message: result.creditCheck.providerMessage ?? 'Credit check could not be completed.',
+      creditDeducted: false,
+    })
+  }
+
+  const query = new URLSearchParams({ accepted: '1', actionTraceId: traceId, creditCheck: 'passed' })
   if (result.currentCreditBalance != null) {
     query.set('remainingBalance', String(result.currentCreditBalance))
   }
-  if (result.alreadyUnlocked) {
+  if (result.alreadyAccepted) {
     query.set('alreadyAccepted', '1')
   }
   redirect(`/leads/access/${encodeURIComponent(token)}?${query.toString()}`)
@@ -486,6 +512,7 @@ export default async function ProviderLeadAccessPage({
     creditDeducted?: string
     accepted?: string
     alreadyAccepted?: string
+    creditCheck?: string
     remainingBalance?: string
     confirmAccept?: string
     declined?: string
@@ -620,16 +647,18 @@ export default async function ProviderLeadAccessPage({
   const addr = jr.address
   const customer = jr.customer
   const isAccepted = lead.status === 'ACCEPTED'
+  const isProviderAcceptedPending = lead.status === 'PROVIDER_ACCEPTED'
+  const isCreditRequired = lead.status === 'CREDIT_REQUIRED'
   const isDeclined = lead.status === 'DECLINED'
   const isExpired = lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false)
-  const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED'
+  const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'
   const canRespondToLead = isOpenOffer && !isExpired
   const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)
   const hasAcceptedDetails = isAccepted && Boolean(lead.unlock)
   const leadRef = lead.id.slice(-8).toUpperCase()
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
 
-  if (((isExpired && !isAccepted) || isDeclined) && !resolvedSearchParams.declined) {
+  if (((isExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired) || isDeclined) && !resolvedSearchParams.declined) {
     const code: DiagnosticCode = isExpired ? 'JOB_LINK_EXPIRED' : 'JOB_ACCESS_DENIED'
     console.warn('[leads/access] signed lead link closed', {
       traceId,
@@ -734,7 +763,6 @@ export default async function ProviderLeadAccessPage({
   const providerCreditBalance = (providerWallet?.paidCreditBalance ?? 0) + (providerWallet?.promoCreditBalance ?? 0)
   const walletMissing = !providerWallet
   const termsUrl = getProviderTermsUrl()
-  const remainingCreditBalanceAfterAccept = providerCreditBalance - LEAD_UNLOCK_COST_CREDITS
   const hasEnoughCredits = providerCreditBalance >= LEAD_UNLOCK_COST_CREDITS
   const acceptedRemainingBalance =
     resolvedSearchParams.remainingBalance != null && Number.isFinite(Number(resolvedSearchParams.remainingBalance))
@@ -788,10 +816,11 @@ export default async function ProviderLeadAccessPage({
               <p className="mt-1">You had already accepted this lead — no credit was used on this action.</p>
             ) : (
               <p className="mt-1">
-                1 credit used. Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
+                Credit check passed. {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} will be applied in the next step.
+                Current balance: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
               </p>
             )}
-            <p className="mt-1">Full customer and job details are now available.</p>
+            <p className="mt-1">No credit has been deducted yet. Customer direct contact details remain locked.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
@@ -876,11 +905,11 @@ export default async function ProviderLeadAccessPage({
 
         {resolvedSearchParams.error === 'credits' && (
           <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
-            <p className="font-medium">You need 1 Plug A Pro provider credit to accept this customer-selected job.</p>
+            <p className="font-medium">You need 1 Plug A Pro provider credit to continue with this customer-selected job.</p>
             <p className="mt-1">
               Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
-            <p className="mt-1">Please top up in the Worker Portal to continue. Customer contact and exact address details remain hidden.</p>
+            <p className="mt-1">Your acceptance was recorded. Please top up in the Worker Portal to continue. Customer contact and exact address details remain hidden.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs">Error code: INSUFFICIENT_CREDITS · Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : (
@@ -939,7 +968,7 @@ export default async function ProviderLeadAccessPage({
               Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
             </p>
             <p className="mt-2">
-              Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
+              Accepting this customer-selected job checks for {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
               Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
           </div>
@@ -961,11 +990,11 @@ export default async function ProviderLeadAccessPage({
             {hasEnoughCredits ? (
               <>
                 <p className="mt-1">
-                  Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
-                  Your current credits balance is {providerCreditBalance}. After accepting, your balance will be {remainingCreditBalanceAfterAccept}.
+                  Accepting this customer-selected job checks for {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
+                  Your current credits balance is {providerCreditBalance}. Credit will be applied before customer details are released.
                 </p>
                 <p className="mt-1">
-                  Full customer details will be released only after acceptance succeeds. Credits use follows the{' '}
+                  Full customer details stay locked until credit is applied. Credits use follows the{' '}
                   <Link href={termsUrl} className="font-medium underline underline-offset-4">
                     provider credits terms and rules
                   </Link>
@@ -975,10 +1004,10 @@ export default async function ProviderLeadAccessPage({
             ) : (
               <>
                 <p className="mt-1">
-                  You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this customer-selected job.
+                  You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to continue with this customer-selected job.
                   Your current credits balance is {providerCreditBalance}.
                 </p>
-                <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
+                <p className="mt-1">You can still record your acceptance. Customer direct contact details remain locked until credits are available.</p>
               </>
             )}
           </div>
@@ -1286,27 +1315,23 @@ export default async function ProviderLeadAccessPage({
             <>
               <Button asChild size="lg" className="w-full">
                 <Link href={`/leads/access/${encodeURIComponent(token)}?confirmAccept=1`}>
-                  Accept job — uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}
+                  Accept job
                 </Link>
               </Button>
             </>
-          ) : canRespondToLead && confirmingAccept && hasEnoughCredits ? (
+          ) : canRespondToLead && confirmingAccept ? (
             <form action={acceptLeadWithToken}>
               <input type="hidden" name="token" value={token} />
               <input type="hidden" name="inspectionNeeded" value="false" />
               <LeadActionSubmitButton size="lg" className="w-full" pendingLabel="Accepting lead...">
-                Confirm accept — use {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}
+                Confirm accept
               </LeadActionSubmitButton>
+              {!hasEnoughCredits ? (
+                <p className="mt-2 text-center text-xs text-muted-foreground">
+                  If credits are still insufficient, this lead will stay locked until you top up.
+                </p>
+              ) : null}
             </form>
-          ) : canRespondToLead && confirmingAccept ? (
-            <>
-              <Button asChild size="lg" className="w-full">
-                <Link href="/provider/credits">Top up credits</Link>
-              </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                You need {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} to accept this customer-selected job.
-              </p>
-            </>
           ) : null}
 
           {canRespondToLead && (

@@ -250,7 +250,7 @@ describe('provider credit copy', () => {
     })
 
     expect(message).toContain('Not enough credits.')
-    expect(message).toContain('You need 1 credit to accept this job')
+    expect(message).toContain('You need 1 credit to continue with this job')
     expect(message).toContain('Your current balance is 0 credits')
     expect(message).toContain('No credit was deducted')
     expect(message).toContain('top-up link is available below')
