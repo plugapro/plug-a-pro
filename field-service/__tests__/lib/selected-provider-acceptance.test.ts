@@ -48,7 +48,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     id: 'lead-1',
     jobRequestId: 'request-1',
     providerId: 'provider-1',
-    status: 'VIEWED',
+    status: 'CUSTOMER_SELECTED',
     isTestLead: false,
     cohortName: null,
     expiresAt: new Date(Date.now() + 60_000),
@@ -259,14 +259,12 @@ describe('selected provider final acceptance', () => {
     expect(state.tx.job.create).not.toHaveBeenCalled()
   })
 
-  it('still accepts when the original 15-min preview window has elapsed but the customer has selected', async () => {
+  it('blocks acceptance when the notified lead response window has elapsed', async () => {
     const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
     state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
-      // Original 15-min preview window has long passed.
       expiresAt: new Date(Date.now() - 60_000),
-      // But the customer selected this provider afterwards.
       customerSelectedAt: new Date(),
-      status: 'VIEWED',
+      status: 'CUSTOMER_SELECTED',
     }))
 
     const result = await acceptSelectedProviderJob({
@@ -275,8 +273,8 @@ describe('selected provider final acceptance', () => {
       source: 'whatsapp',
     })
 
-    expect(result).toMatchObject({ ok: true })
-    expect(unlockLeadForProviderInTransaction).toHaveBeenCalledOnce()
+    expect(result).toEqual({ ok: false, reason: 'LEAD_EXPIRED' })
+    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
   })
 
   it('rejects acceptance when the lead is explicitly EXPIRED', async () => {
@@ -319,5 +317,40 @@ describe('selected provider final acceptance', () => {
     expect(result).toMatchObject({ ok: true, alreadyUnlocked: true })
     expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
     expect(state.tx.match.create).not.toHaveBeenCalled()
+  })
+
+  it('blocks cancelled requests before credit deduction', async () => {
+    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
+    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
+      jobRequest: {
+        ...state.lead.jobRequest,
+        status: 'CANCELLED',
+      },
+    }))
+
+    const result = await acceptSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      source: 'whatsapp',
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'REQUEST_CANCELLED' })
+    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
+  })
+
+  it('blocks accept after provider already declined', async () => {
+    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
+    state.tx.lead.findUnique.mockResolvedValueOnce(makeLead({
+      status: 'DECLINED',
+    }))
+
+    const result = await acceptSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      source: 'whatsapp',
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'LEAD_DECLINED' })
+    expect(unlockLeadForProviderInTransaction).not.toHaveBeenCalled()
   })
 })

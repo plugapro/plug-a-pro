@@ -301,7 +301,7 @@ function isStatelessNotificationReply(
     id.startsWith('status_mode_review_') ||
     id.startsWith('status_refresh_') ||
     id.startsWith('status_req_') ||
-    (!id && rawText === 'accept')
+    (!id && (rawText === 'accept' || rawText === 'decline'))
   )
 }
 
@@ -943,11 +943,43 @@ async function processInboundMessageUnlocked(
       return
     }
 
-    if (!reply.id && rawText === 'accept') {
-      // ── Provider typed "accept" as text instead of tapping the button ─────────
-      // Find the most recent pending (SENT/VIEWED) lead for this provider and accept it.
+    if (!reply.id && (rawText === 'accept' || rawText === 'decline')) {
+      // ── Provider typed "accept"/"decline" instead of tapping the button ──────
+      // Prefer the current selected-provider confirmation workflow because it is
+      // the notified-lead flow and carries the guarded credit handoff.
       const providerForAccept = await findProviderByWhatsAppPhone(phone, { id: true })
       if (providerForAccept) {
+        const selectedLead = await db.lead.findFirst({
+          where: {
+            providerId: providerForAccept.id,
+            status: 'CUSTOMER_SELECTED',
+            expiresAt: { gt: new Date() },
+            jobRequest: {
+              status: 'PROVIDER_CONFIRMATION_PENDING',
+              selectedProviderId: providerForAccept.id,
+            },
+          },
+          orderBy: [{ notifiedAt: 'desc' }, { sentAt: 'desc' }],
+          select: { id: true },
+        })
+        if (selectedLead) {
+          await handleSelectedProviderConfirmation(
+            phone,
+            `${rawText === 'accept' ? 'confirm_accept' : 'confirm_decline'}:${selectedLead.id}`,
+          )
+          return
+        }
+
+        if (rawText === 'decline') {
+          await sendText(
+            phone,
+            'No current notified lead found to decline. Please use the latest lead message or reply *menu*.',
+          )
+          return
+        }
+
+        // Legacy preview path: find the most recent pending (SENT/VIEWED) lead
+        // for this provider and accept it only when shortlist dispatch is off.
         const activeLead = await db.lead.findFirst({
           where: {
             providerId: providerForAccept.id,
@@ -973,6 +1005,9 @@ async function processInboundMessageUnlocked(
             return
           }
         }
+      } else {
+        await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+        return
       }
       // No active lead — fall through to main menu
     }
@@ -2484,13 +2519,14 @@ async function handleProviderJobFlow(
 
     // Update the Lead record so dispatch knows this provider passed
     const jobRequestId = job.booking.match.jobRequest.id
+    const declinedAt = new Date()
     await db.lead.updateMany({
       where: {
         jobRequestId,
         providerId: job.providerId,
         status: { in: ['SENT', 'VIEWED'] },
       },
-      data: { status: 'DECLINED', respondedAt: new Date() },
+      data: { status: 'DECLINED', respondedAt: declinedAt, declinedAt },
     })
 
     // Log decline reason on the job for admin visibility
@@ -3077,6 +3113,22 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         await sendText(phone, 'This job is no longer available. No credit was deducted.')
         return
       }
+      if (result.reason === 'REQUEST_CANCELLED') {
+        await sendText(phone, 'This request was cancelled. No credit was deducted.')
+        return
+      }
+      if (result.reason === 'LEAD_DECLINED') {
+        await sendText(phone, 'You have already declined this job. No credit was deducted.')
+        return
+      }
+      if (result.reason === 'LEAD_ALREADY_ACCEPTED') {
+        await sendText(phone, 'This job has already been accepted. No additional credit was deducted.')
+        return
+      }
+      if (result.reason === 'LEAD_NOT_PROVIDER_NOTIFIED') {
+        await sendText(phone, 'This lead is not currently awaiting your acceptance. No credit was deducted.')
+        return
+      }
       if (result.reason === 'REQUEST_NOT_AWAITING_CONFIRMATION') {
         await sendText(phone, 'This job is no longer available. No credit was deducted.')
         return
@@ -3120,12 +3172,26 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       await sendText(phone, '⚠️ This job was offered to a different provider.')
       return
     }
+    if (declineResult.reason === 'LEAD_ALREADY_ACCEPTED') {
+      await sendText(phone, 'This job has already been accepted and can no longer be declined.')
+      return
+    }
+    if (declineResult.reason === 'REQUEST_CANCELLED') {
+      await sendText(phone, 'This request was cancelled, so no decline action is needed.')
+      return
+    }
+    if (declineResult.reason === 'LEAD_EXPIRED') {
+      await sendText(phone, 'This job is no longer available, so no decline action is needed.')
+      return
+    }
     await sendText(phone, '⚠️ This job is no longer awaiting your confirmation.')
     return
   }
   await sendText(
     phone,
-    'No problem — we have let the customer know. They can pick another provider from the shortlist.',
+    declineResult.alreadyDeclined
+      ? 'You already declined this job. No further action was taken.'
+      : 'No problem — we have let the customer know. They can pick another provider from the shortlist.',
   )
 }
 

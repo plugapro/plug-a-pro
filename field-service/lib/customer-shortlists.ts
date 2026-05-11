@@ -805,16 +805,28 @@ export async function declineSelectedProviderJob(params: {
   leadId: string
   providerId: string
 }) {
+  console.info('[provider-lead-action]', {
+    leadId: params.leadId,
+    providerId: params.providerId,
+    action: 'decline',
+    result: 'attempt',
+    source: 'provider_confirmation',
+  })
+
   const lead = await db.lead.findUnique({
     where: { id: params.leadId },
     select: {
       id: true,
       providerId: true,
       jobRequestId: true,
+      status: true,
+      expiresAt: true,
+      cancelledAt: true,
       jobRequest: {
         select: {
           id: true,
           status: true,
+          expiresAt: true,
           selectedProviderId: true,
           selectedLeadInviteId: true,
         },
@@ -822,21 +834,116 @@ export async function declineSelectedProviderJob(params: {
     },
   })
 
-  if (!lead) return { ok: false as const, reason: 'NOT_FOUND' as const }
+  if (!lead) {
+    console.info('[provider-lead-action]', {
+      leadId: params.leadId,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'blocked',
+      reason: 'NOT_FOUND',
+      source: 'provider_confirmation',
+    })
+    return { ok: false as const, reason: 'NOT_FOUND' as const }
+  }
   if (lead.providerId !== params.providerId) {
+    console.info('[provider-lead-action]', {
+      leadId: params.leadId,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'blocked',
+      reason: 'FORBIDDEN',
+      source: 'provider_confirmation',
+    })
     return { ok: false as const, reason: 'FORBIDDEN' as const }
+  }
+  if (lead.status === 'DECLINED') {
+    console.info('[provider-lead-action]', {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'idempotent',
+      reason: 'ALREADY_DECLINED',
+      source: 'provider_confirmation',
+    })
+    return {
+      ok: true as const,
+      alreadyDeclined: true as const,
+      leadId: lead.id,
+      jobRequestId: lead.jobRequestId,
+    }
+  }
+  if (lead.status === 'ACCEPTED') {
+    console.info('[provider-lead-action]', {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'blocked',
+      reason: 'LEAD_ALREADY_ACCEPTED',
+      source: 'provider_confirmation',
+    })
+    return { ok: false as const, reason: 'LEAD_ALREADY_ACCEPTED' as const }
+  }
+  if (
+    lead.status === 'CANCELLED' ||
+    lead.cancelledAt ||
+    lead.jobRequest.status === 'CANCELLED'
+  ) {
+    console.info('[provider-lead-action]', {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'blocked',
+      reason: 'REQUEST_CANCELLED',
+      source: 'provider_confirmation',
+    })
+    return { ok: false as const, reason: 'REQUEST_CANCELLED' as const }
+  }
+  if (
+    lead.status === 'EXPIRED' ||
+    (lead.expiresAt && lead.expiresAt <= new Date()) ||
+    (lead.jobRequest.expiresAt && lead.jobRequest.expiresAt <= new Date())
+  ) {
+    console.info('[provider-lead-action]', {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'blocked',
+      reason: 'LEAD_EXPIRED',
+      source: 'provider_confirmation',
+    })
+    return { ok: false as const, reason: 'LEAD_EXPIRED' as const }
+  }
+  if (lead.status !== 'CUSTOMER_SELECTED') {
+    console.info('[provider-lead-action]', {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'blocked',
+      reason: 'LEAD_NOT_PROVIDER_NOTIFIED',
+      source: 'provider_confirmation',
+    })
+    return { ok: false as const, reason: 'LEAD_NOT_PROVIDER_NOTIFIED' as const }
   }
   if (
     lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING' ||
     lead.jobRequest.selectedLeadInviteId !== lead.id
   ) {
+    console.info('[provider-lead-action]', {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'decline',
+      result: 'blocked',
+      reason: 'NOT_AWAITING_CONFIRMATION',
+      source: 'provider_confirmation',
+    })
     return { ok: false as const, reason: 'NOT_AWAITING_CONFIRMATION' as const }
   }
 
   await db.$transaction(async (tx) => {
+    const declinedAt = new Date()
     await tx.lead.update({
       where: { id: lead.id },
-      data: { status: 'DECLINED', respondedAt: new Date() },
+      data: { status: 'DECLINED', respondedAt: declinedAt, declinedAt },
     })
 
     // Mark the corresponding shortlist item as superseded by clearing the
@@ -870,6 +977,14 @@ export async function declineSelectedProviderJob(params: {
         },
       })
       .catch(() => undefined)
+  })
+
+  console.info('[provider-lead-action]', {
+    leadId: lead.id,
+    providerId: params.providerId,
+    action: 'decline',
+    result: 'declined',
+    source: 'provider_confirmation',
   })
 
   return {

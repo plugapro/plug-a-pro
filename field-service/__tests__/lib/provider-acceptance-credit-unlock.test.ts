@@ -89,7 +89,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     id: 'lead-c13',
     jobRequestId: 'request-c13',
     providerId: 'provider-c13',
-    status: 'VIEWED',
+    status: 'CUSTOMER_SELECTED',
     isTestLead: false,
     cohortName: null,
     expiresAt: new Date(Date.now() + 60_000),

@@ -231,7 +231,45 @@ export async function acceptLead(params: {
 export async function declineLead(params: {
   leadId: string
   providerId: string
-}): Promise<{ ok: true; alreadyClosed?: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
+}): Promise<{ ok: true; alreadyClosed?: true; alreadyDeclined?: true } | { ok: false; reason: 'NOT_FOUND' | 'FORBIDDEN' }> {
+  const selectedLead = await db.lead.findUnique({
+    where: { id: params.leadId },
+    select: {
+      id: true,
+      status: true,
+      providerId: true,
+      jobRequest: {
+        select: {
+          status: true,
+          selectedLeadInviteId: true,
+        },
+      },
+    },
+  })
+
+  if (!selectedLead) return { ok: false, reason: 'NOT_FOUND' }
+  if (selectedLead.providerId !== params.providerId) return { ok: false, reason: 'FORBIDDEN' }
+
+  if (
+    selectedLead.status === 'CUSTOMER_SELECTED' ||
+    selectedLead.status === 'DECLINED' ||
+    selectedLead.status === 'ACCEPTED' ||
+    selectedLead.jobRequest.selectedLeadInviteId === selectedLead.id ||
+    selectedLead.jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING'
+  ) {
+    const { declineSelectedProviderJob } = await import('./customer-shortlists')
+    const selectedResult = await declineSelectedProviderJob(params)
+    if (selectedResult.ok) {
+      return 'alreadyDeclined' in selectedResult && selectedResult.alreadyDeclined
+        ? { ok: true, alreadyDeclined: true }
+        : { ok: true }
+    }
+    if (selectedResult.reason === 'NOT_FOUND' || selectedResult.reason === 'FORBIDDEN') {
+      return { ok: false, reason: selectedResult.reason }
+    }
+    return { ok: true, alreadyClosed: true }
+  }
+
   const result = await rejectAssignmentOffer(params)
   if (!result.ok) {
     if (result.reason === 'EXPIRED' || result.reason === 'TAKEN') return { ok: true, alreadyClosed: true }

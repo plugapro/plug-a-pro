@@ -29,8 +29,11 @@ export type SelectedProviderAcceptanceResult =
         | 'LEAD_INVITE_NOT_SELECTED'
         | 'PROVIDER_NOT_SELECTED'
         | 'REQUEST_NOT_AWAITING_CONFIRMATION'
+        | 'REQUEST_CANCELLED'
+        | 'LEAD_NOT_PROVIDER_NOTIFIED'
         | 'LEAD_EXPIRED'
         | 'LEAD_ALREADY_ACCEPTED'
+        | 'LEAD_DECLINED'
         | 'DUPLICATE_ACCEPT_IGNORED'
         | 'CREDIT_DEDUCTION_FAILED'
         | 'JOB_ASSIGNMENT_FAILED'
@@ -83,6 +86,26 @@ function formatPreferredTime(start: Date | null | undefined, end: Date | null | 
   return end ? `${startText} - ${end.toLocaleString('en-ZA')}` : startText
 }
 
+function logProviderLeadAction(params: {
+  leadId: string
+  providerId: string
+  action: 'accept' | 'decline'
+  result: string
+  source?: string
+  traceId?: string
+  reason?: string
+}) {
+  console.info('[provider-lead-action]', {
+    leadId: params.leadId,
+    providerId: params.providerId,
+    action: params.action,
+    result: params.result,
+    source: params.source ?? 'api',
+    traceId: params.traceId ?? null,
+    reason: params.reason ?? null,
+  })
+}
+
 export async function acceptSelectedProviderJob(params: {
   leadId: string
   providerId: string
@@ -90,6 +113,15 @@ export async function acceptSelectedProviderJob(params: {
   idempotencyKey?: string
   traceId?: string
 }): Promise<SelectedProviderAcceptanceResult> {
+  logProviderLeadAction({
+    leadId: params.leadId,
+    providerId: params.providerId,
+    action: 'accept',
+    result: 'attempt',
+    source: params.source,
+    traceId: params.traceId,
+  })
+
   let notificationPayload: {
     leadId: string
     providerId: string
@@ -170,14 +202,7 @@ export async function acceptSelectedProviderJob(params: {
       if (lead.jobRequest.selectedLeadInviteId !== lead.id || !lead.customerSelectedAt) {
         return { ok: false as const, reason: 'LEAD_INVITE_NOT_SELECTED' as const }
       }
-      // The original lead.expiresAt is the *provider preview* response window
-      // (typically 15 min). Once the customer has selected this provider, that
-      // window no longer governs final acceptance — the customer has already
-      // committed to this choice. Only treat the invite as expired if it was
-      // explicitly marked EXPIRED before customer selection took effect.
-      if (lead.status === 'EXPIRED') {
-        return { ok: false as const, reason: 'LEAD_EXPIRED' as const }
-      }
+
       const walletBefore = await tx.providerWallet.findUnique({
         where: { providerId: params.providerId },
         select: { paidCreditBalance: true, promoCreditBalance: true },
@@ -196,6 +221,25 @@ export async function acceptSelectedProviderJob(params: {
           alreadyUnlocked: true,
           duplicateAcceptIgnored: true,
         }
+      }
+      if (lead.status === 'ACCEPTED' || lead.unlock) {
+        return { ok: false as const, reason: 'LEAD_ALREADY_ACCEPTED' as const }
+      }
+      if (lead.status === 'DECLINED') {
+        return { ok: false as const, reason: 'LEAD_DECLINED' as const }
+      }
+      if (
+        lead.status === 'CANCELLED' ||
+        lead.cancelledAt ||
+        lead.jobRequest.status === 'CANCELLED'
+      ) {
+        return { ok: false as const, reason: 'REQUEST_CANCELLED' as const }
+      }
+      if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date())) {
+        return { ok: false as const, reason: 'LEAD_EXPIRED' as const }
+      }
+      if (lead.status !== 'CUSTOMER_SELECTED') {
+        return { ok: false as const, reason: 'LEAD_NOT_PROVIDER_NOTIFIED' as const }
       }
       if (lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING') {
         return { ok: false as const, reason: 'REQUEST_NOT_AWAITING_CONFIRMATION' as const }
@@ -361,11 +405,31 @@ export async function acceptSelectedProviderJob(params: {
       }
     })
 
-    if (!result.ok) return result
+    if (!result.ok) {
+      logProviderLeadAction({
+        leadId: params.leadId,
+        providerId: params.providerId,
+        action: 'accept',
+        result: 'blocked',
+        source: params.source,
+        traceId: params.traceId,
+        reason: result.reason,
+      })
+      return result
+    }
 
     const notificationSent = notificationPayload
       ? await notifySelectedAcceptanceCommitted(notificationPayload)
       : false
+
+    logProviderLeadAction({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      action: 'accept',
+      result: result.alreadyUnlocked ? 'idempotent' : 'accepted',
+      source: params.source,
+      traceId: params.traceId,
+    })
 
     return { ...result, notificationSent }
   } catch (error) {
@@ -380,6 +444,10 @@ export async function acceptSelectedProviderJob(params: {
     console.error('[selected-provider-acceptance] acceptance failed', {
       leadId: params.leadId,
       providerId: params.providerId,
+      action: 'accept',
+      result: 'error',
+      source: params.source ?? 'api',
+      traceId: params.traceId ?? null,
       error,
     })
     return { ok: false, reason: 'JOB_ASSIGNMENT_FAILED' }

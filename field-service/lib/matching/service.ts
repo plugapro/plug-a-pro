@@ -2435,16 +2435,17 @@ export async function rejectAssignmentOffer(params: {
   }
 
   await db.$transaction(async (tx) => {
+    const declinedAt = new Date()
     await tx.lead.update({
       where: { id: lead.id },
-      data: { status: 'DECLINED', respondedAt: new Date() },
+      data: { status: 'DECLINED', respondedAt: declinedAt, declinedAt },
     })
     await tx.assignmentHold.update({
       where: { id: lead.assignmentHold!.id },
       data: {
         status: 'REJECTED',
-        respondedAt: new Date(),
-        releasedAt: new Date(),
+        respondedAt: declinedAt,
+        releasedAt: declinedAt,
         outcomeReasonCode: params.reasonCode ?? 'TECHNICIAN_REJECTED_OFFER',
       },
     })

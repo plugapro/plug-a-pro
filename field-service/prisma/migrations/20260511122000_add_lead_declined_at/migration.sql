@@ -1,0 +1,2 @@
+ALTER TABLE "leads"
+ADD COLUMN "declinedAt" TIMESTAMP(3);

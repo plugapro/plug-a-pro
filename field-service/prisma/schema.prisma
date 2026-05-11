@@ -476,6 +476,7 @@ model Lead {
   respondedAt  DateTime?
   customerSelectedAt DateTime?
   providerAcceptedAt DateTime?
+  declinedAt   DateTime?
   expiredAt    DateTime?
   cancelledAt  DateTime?
   expiresAt    DateTime?  // provider must respond within this window

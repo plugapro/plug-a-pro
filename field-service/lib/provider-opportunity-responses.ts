@@ -226,7 +226,7 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
     const updatedLead = await tx.lead.update({
       where: { id: input.leadId },
       data: input.response === 'NOT_INTERESTED'
-        ? { status: 'DECLINED', respondedAt: now }
+        ? { status: 'DECLINED', respondedAt: now, declinedAt: now }
         : { status: 'VIEWED', viewedAt: now, respondedAt: now },
       select: { jobRequestId: true },
     })

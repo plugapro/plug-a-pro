@@ -12,6 +12,7 @@ const {
   mockRunAssignmentForJobRequest,
   mockAcceptAssignmentOffer,
   mockAcceptSelectedProviderJob,
+  mockDeclineSelectedProviderJob,
   mockRejectAssignmentOffer,
   mockProcessPendingAssignmentWorkflows,
   mockNotifyProviderNewJob,
@@ -28,6 +29,7 @@ const {
   mockRunAssignmentForJobRequest: vi.fn(),
   mockAcceptAssignmentOffer: vi.fn(),
   mockAcceptSelectedProviderJob: vi.fn(),
+  mockDeclineSelectedProviderJob: vi.fn(),
   mockRejectAssignmentOffer: vi.fn(),
   mockProcessPendingAssignmentWorkflows: vi.fn(),
   mockNotifyProviderNewJob: vi.fn(),
@@ -51,6 +53,10 @@ vi.mock('../../lib/selected-provider-acceptance', () => ({
   acceptSelectedProviderJob: mockAcceptSelectedProviderJob,
 }))
 
+vi.mock('../../lib/customer-shortlists', () => ({
+  declineSelectedProviderJob: mockDeclineSelectedProviderJob,
+}))
+
 vi.mock('../../lib/whatsapp-bot', () => ({
   notifyProviderNewJob: mockNotifyProviderNewJob,
 }))
@@ -72,6 +78,15 @@ describe('matching-engine compatibility wrappers', () => {
     vi.clearAllMocks()
     mockReconcileProviderRecordsFromApplications.mockResolvedValue({ reconciled: 0 })
     mockGetProviderLeadAccessUrl.mockResolvedValue('https://app.plugapro.co.za/leads/access/signed.token')
+    mockDb.lead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      status: 'SENT',
+      providerId: 'provider-1',
+      jobRequest: {
+        status: 'MATCHING',
+        selectedLeadInviteId: null,
+      },
+    })
   })
 
   it('dispatchLeads returns an offered hold for the top ranked technician', async () => {
@@ -223,6 +238,7 @@ describe('matching-engine compatibility wrappers', () => {
   })
 
   it('declineLead returns NOT_FOUND when the lead does not belong to this provider', async () => {
+    mockDb.lead.findUnique.mockResolvedValueOnce(null)
     mockRejectAssignmentOffer.mockResolvedValue({ ok: false, reason: 'NOT_FOUND' })
 
     const result = await declineLead({ leadId: 'lead-missing', providerId: 'provider-1' })
@@ -236,6 +252,28 @@ describe('matching-engine compatibility wrappers', () => {
     const result = await declineLead({ leadId: 'lead-1', providerId: 'provider-other' })
 
     expect(result).toEqual({ ok: false, reason: 'FORBIDDEN' })
+  })
+
+  it('declineLead uses selected-provider decline for notified leads', async () => {
+    mockDb.lead.findUnique.mockResolvedValueOnce({
+      id: 'lead-1',
+      status: 'CUSTOMER_SELECTED',
+      providerId: 'provider-1',
+      jobRequest: {
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+    mockDeclineSelectedProviderJob.mockResolvedValueOnce({ ok: true, alreadyDeclined: true })
+
+    const result = await declineLead({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(result).toEqual({ ok: true, alreadyDeclined: true })
+    expect(mockDeclineSelectedProviderJob).toHaveBeenCalledWith({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+    })
+    expect(mockRejectAssignmentOffer).not.toHaveBeenCalled()
   })
 
   it('expireStaleLeads expires all active assignment holds that timed out', async () => {

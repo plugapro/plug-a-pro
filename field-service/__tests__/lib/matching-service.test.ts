@@ -608,7 +608,7 @@ describe('matching service', () => {
     })
     expect(mockDb.lead.update).toHaveBeenCalledWith({
       where: { id: 'lead-1' },
-      data: { status: 'DECLINED', respondedAt: expect.any(Date) },
+      data: { status: 'DECLINED', respondedAt: expect.any(Date), declinedAt: expect.any(Date) },
     })
     expect(mockDb.assignmentHold.update).toHaveBeenCalledWith({
       where: { id: 'hold-1' },

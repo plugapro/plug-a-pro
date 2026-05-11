@@ -944,9 +944,13 @@ describe('customer shortlists', () => {
       id: 'lead-1',
       providerId: 'provider-1',
       jobRequestId: 'request-1',
+      status: 'CUSTOMER_SELECTED',
+      expiresAt: new Date(Date.now() + 60_000),
+      cancelledAt: null,
       jobRequest: {
         id: 'request-1',
         status: 'PROVIDER_CONFIRMATION_PENDING',
+        expiresAt: new Date(Date.now() + 60_000),
         selectedProviderId: 'provider-1',
         selectedLeadInviteId: 'lead-1',
       },
@@ -990,6 +994,89 @@ describe('customer shortlists', () => {
         selectedLeadInviteId: null,
       }),
     })
+  })
+
+  it('treats duplicate selected-provider decline as idempotent without another audit event', async () => {
+    mockDb.lead.findUnique.mockResolvedValueOnce({
+      id: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'request-1',
+      status: 'DECLINED',
+      expiresAt: new Date(Date.now() + 60_000),
+      cancelledAt: null,
+      jobRequest: {
+        id: 'request-1',
+        status: 'SHORTLIST_READY',
+        expiresAt: new Date(Date.now() + 60_000),
+        selectedProviderId: null,
+        selectedLeadInviteId: null,
+      },
+    })
+
+    const result = await declineSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      alreadyDeclined: true,
+      leadId: 'lead-1',
+      jobRequestId: 'request-1',
+    })
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('blocks decline after selected-provider acceptance', async () => {
+    mockDb.lead.findUnique.mockResolvedValueOnce({
+      id: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'request-1',
+      status: 'ACCEPTED',
+      expiresAt: new Date(Date.now() + 60_000),
+      cancelledAt: null,
+      jobRequest: {
+        id: 'request-1',
+        status: 'MATCHED',
+        expiresAt: new Date(Date.now() + 60_000),
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+
+    const result = await declineSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'LEAD_ALREADY_ACCEPTED' })
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('blocks selected-provider decline when the request is cancelled', async () => {
+    mockDb.lead.findUnique.mockResolvedValueOnce({
+      id: 'lead-1',
+      providerId: 'provider-1',
+      jobRequestId: 'request-1',
+      status: 'CUSTOMER_SELECTED',
+      expiresAt: new Date(Date.now() + 60_000),
+      cancelledAt: null,
+      jobRequest: {
+        id: 'request-1',
+        status: 'CANCELLED',
+        expiresAt: new Date(Date.now() + 60_000),
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
+    })
+
+    const result = await declineSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'REQUEST_CANCELLED' })
+    expect(mockDb.$transaction).not.toHaveBeenCalled()
   })
 
   it('shortlist generation excludes suspended providers via the provider filter', async () => {

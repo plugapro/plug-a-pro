@@ -182,6 +182,8 @@ describe('processInboundMessage stateless notification replies', () => {
     mockSendJourneyRecovery.mockResolvedValue(undefined)
     mockAcceptSelectedProviderJob.mockResolvedValue({ ok: true, alreadyUnlocked: false })
     mockDeclineSelectedProviderJob.mockResolvedValue({ ok: true })
+    mockDb.lead.findFirst.mockReset()
+    mockDb.lead.findFirst.mockResolvedValue(null)
     mockDb.providerApplication.findFirst.mockResolvedValue(null)
     mockDb.providerApplication.findUnique.mockResolvedValue(null)
     mockDb.providerApplication.update.mockResolvedValue({})
@@ -357,6 +359,66 @@ describe('processInboundMessage stateless notification replies', () => {
         failureType: 'dependency_failure',
         requestId: 'lead-short-1',
       }),
+    )
+  })
+
+  it('routes typed accept to the latest notified selected-provider lead', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findFirst.mockResolvedValueOnce({ id: 'lead-selected-1' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: true,
+      alreadyUnlocked: false,
+      notificationSent: true,
+    })
+
+    await processInboundMessage(textMessage('wamid.typed-accept', 'accept'))
+
+    expect(mockDb.lead.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          providerId: 'provider-1',
+          status: 'CUSTOMER_SELECTED',
+          jobRequest: expect.objectContaining({
+            status: 'PROVIDER_CONFIRMATION_PENDING',
+            selectedProviderId: 'provider-1',
+          }),
+        }),
+      }),
+    )
+    expect(mockAcceptSelectedProviderJob).toHaveBeenCalledWith({
+      leadId: 'lead-selected-1',
+      providerId: 'provider-1',
+      source: 'whatsapp',
+      traceId: expect.any(String),
+    })
+  })
+
+  it('routes typed decline to the latest notified selected-provider lead', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findFirst.mockResolvedValueOnce({ id: 'lead-selected-2' })
+
+    await processInboundMessage(textMessage('wamid.typed-decline', 'decline'))
+
+    expect(mockDeclineSelectedProviderJob).toHaveBeenCalledWith({
+      leadId: 'lead-selected-2',
+      providerId: 'provider-1',
+    })
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('No problem'),
+    )
+  })
+
+  it('rejects typed accept when the WhatsApp number is not a provider', async () => {
+    mockDb.provider.findUnique.mockResolvedValue(null)
+    ;(mockDb.provider as any).findFirst = vi.fn().mockResolvedValue(null)
+
+    await processInboundMessage(textMessage('wamid.unknown-provider-accept', 'accept'))
+
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find your provider profile"),
     )
   })
 
