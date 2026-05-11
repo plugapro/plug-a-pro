@@ -23,7 +23,7 @@ export type SelectedProviderAcceptanceResult =
       leadId: string
       creditCheck: ProviderLeadCreditCheckResult
       creditApplication?: ProviderCreditApplicationResult
-      acceptedLock?: AcceptedLeadLockResult
+      acceptedLock?: Omit<AcceptedLeadLockResult, 'notificationPayload'>
       currentCreditBalance?: number
       alreadyAccepted?: boolean
       alreadyUnlocked?: boolean
@@ -132,10 +132,21 @@ export async function acceptSelectedProviderJob(params: {
       }
       if (
         lead.status === 'EXPIRED' ||
+        lead.jobRequest.status === 'EXPIRED' ||
         (lead.expiresAt && lead.expiresAt <= new Date()) ||
         (lead.jobRequest.expiresAt && lead.jobRequest.expiresAt <= new Date())
       ) {
         return { ok: false as const, reason: 'LEAD_EXPIRED' as const }
+      }
+      if (lead.status === 'CREDIT_APPLIED' && !lead.unlock) {
+        // Inconsistent state: credit was applied (status updated) but no LeadUnlock record
+        // exists. This should not occur because both happen in the same transaction.
+        // Routing to credit application could cause a double deduction — surface the error instead.
+        console.error('[selected-provider-acceptance] inconsistent state: CREDIT_APPLIED with no LeadUnlock', {
+          leadId: lead.id,
+          providerId: params.providerId,
+        })
+        return { ok: false as const, reason: 'CREDIT_APPLICATION_FAILED' as const }
       }
       if (lead.status === 'CREDIT_APPLIED' || lead.unlock) {
         const creditApplication = await applyProviderCreditForAcceptedLeadInTransaction(tx, {
@@ -154,7 +165,8 @@ export async function acceptSelectedProviderJob(params: {
           paidCreditBalance: creditApplication.paidCreditBalance,
           promoCreditBalance: creditApplication.promoCreditBalance,
         })
-        notificationPayload = acceptedLock.notificationPayload
+        const { notificationPayload: lockPayload, ...acceptedLockPublic } = acceptedLock
+        notificationPayload = lockPayload ? { leadId: lockPayload.leadId, providerId: lockPayload.providerId } : null
         return {
           ok: true as const,
           leadId: lead.id,
@@ -171,10 +183,10 @@ export async function acceptSelectedProviderJob(params: {
             providerMessage: creditApplication.providerMessage,
           },
           creditApplication,
-          acceptedLock,
+          acceptedLock: acceptedLockPublic,
           currentCreditBalance: creditApplication.currentCreditBalance,
           alreadyAccepted: true,
-          alreadyUnlocked: acceptedLock.alreadyLocked,
+          alreadyUnlocked: acceptedLockPublic.alreadyLocked,
           creditApplied: true,
           matchId: null,
           jobId: null,
@@ -282,17 +294,18 @@ export async function acceptSelectedProviderJob(params: {
         paidCreditBalance: creditApplication.paidCreditBalance,
         promoCreditBalance: creditApplication.promoCreditBalance,
       })
-      notificationPayload = acceptedLock.notificationPayload
+      const { notificationPayload: lockPayload, ...acceptedLockPublic } = acceptedLock
+      notificationPayload = lockPayload ? { leadId: lockPayload.leadId, providerId: lockPayload.providerId } : null
 
       return {
         ok: true as const,
         leadId: lead.id,
         creditCheck,
         creditApplication,
-        acceptedLock,
+        acceptedLock: acceptedLockPublic,
         currentCreditBalance: creditApplication.currentCreditBalance,
         alreadyAccepted,
-        alreadyUnlocked: acceptedLock.alreadyLocked,
+        alreadyUnlocked: acceptedLockPublic.alreadyLocked,
         creditApplied: true,
         matchId: null,
         jobId: null,

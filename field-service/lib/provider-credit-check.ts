@@ -239,6 +239,7 @@ export async function checkProviderLeadCreditBalanceInTransaction(
 
   if (
     lead.status === 'EXPIRED' ||
+    lead.jobRequest.status === 'EXPIRED' ||
     (lead.expiresAt && lead.expiresAt <= new Date()) ||
     (lead.jobRequest.expiresAt && lead.jobRequest.expiresAt <= new Date())
   ) {
