@@ -816,11 +816,11 @@ export default async function ProviderLeadAccessPage({
               <p className="mt-1">You had already accepted this lead — no credit was used on this action.</p>
             ) : (
               <p className="mt-1">
-                Credit check passed. {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} will be applied in the next step.
-                Current balance: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
+                {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} applied.
+                Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
               </p>
             )}
-            <p className="mt-1">No credit has been deducted yet. Customer direct contact details remain locked.</p>
+            <p className="mt-1">Full customer and job details are now available.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
@@ -968,7 +968,7 @@ export default async function ProviderLeadAccessPage({
               Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
             </p>
             <p className="mt-2">
-              Accepting this customer-selected job checks for {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
+              Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R50).
               Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
           </div>
@@ -990,11 +990,11 @@ export default async function ProviderLeadAccessPage({
             {hasEnoughCredits ? (
               <>
                 <p className="mt-1">
-                  Accepting this customer-selected job checks for {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} (1 credit = R50).
-                  Your current credits balance is {providerCreditBalance}. Credit will be applied before customer details are released.
+                  Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R50).
+                  Your current credits balance is {providerCreditBalance}. After acceptance, your balance will be {providerCreditBalance - LEAD_UNLOCK_COST_CREDITS}.
                 </p>
                 <p className="mt-1">
-                  Full customer details stay locked until credit is applied. Credits use follows the{' '}
+                  Full customer details are released only after credit is applied. Credits use follows the{' '}
                   <Link href={termsUrl} className="font-medium underline underline-offset-4">
                     provider credits terms and rules
                   </Link>

@@ -64,7 +64,7 @@ function assertLeadAvailable(lead: {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead is no longer available.')
   }
 
-  if (!['SENT', 'VIEWED', 'ACCEPTED'].includes(lead.status)) {
+  if (!['SENT', 'VIEWED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'ACCEPTED'].includes(lead.status)) {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead cannot be unlocked.')
   }
 

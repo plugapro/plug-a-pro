@@ -8,7 +8,43 @@ const { mockDb, state } = vi.hoisted(() => {
 })
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
-vi.mock('../../lib/lead-unlocks', () => ({ LEAD_UNLOCK_COST_CREDITS: 1 }))
+vi.mock('../../lib/lead-unlocks', () => {
+  class LeadUnlockError extends Error {
+    constructor(
+      public readonly code: string,
+      message: string,
+      public readonly currentCreditBalance?: number,
+    ) {
+      super(message)
+      this.name = 'LeadUnlockError'
+    }
+  }
+
+  return {
+    LEAD_UNLOCK_COST_CREDITS: 1,
+    LeadUnlockError,
+    unlockLeadForProviderInTransaction: vi.fn().mockResolvedValue({
+      unlock: { id: 'unlock-1' },
+      ledgerEntries: [{ id: 'ledger-1', balanceAfterPaidCredits: 1, balanceAfterPromoCredits: 0 }],
+      alreadyUnlocked: false,
+    }),
+  }
+})
+vi.mock('../../lib/provider-lead-access', () => ({
+  getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/jobs/signed-token'),
+}))
+vi.mock('../../lib/job-request-access', () => ({
+  getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/request/signed-token'),
+}))
+vi.mock('../../lib/whatsapp', () => ({
+  sendText: vi.fn().mockResolvedValue('wamid-text'),
+}))
+vi.mock('../../lib/whatsapp-interactive', () => ({
+  sendCtaUrl: vi.fn().mockResolvedValue('wamid-cta'),
+}))
+vi.mock('../../lib/whatsapp-copy', () => ({
+  ctaLabelFor: vi.fn((key: string) => (key === 'job_detail' ? 'View job' : 'View details')),
+}))
 
 function makeLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -19,11 +55,46 @@ function makeLead(overrides: Record<string, unknown> = {}) {
     expiresAt: new Date(Date.now() + 60_000),
     cancelledAt: null,
     customerSelectedAt: new Date('2026-05-02T10:00:00.000Z'),
+    providerAcceptedAt: null,
+    isTestLead: false,
+    cohortName: null,
     unlock: null,
+    provider: {
+      id: 'provider-1',
+      name: 'Alice Plumbing',
+      phone: '+27111111111',
+    },
+    providerResponses: [
+      {
+        callOutFee: 250,
+        estimatedArrivalAt: new Date('2026-05-02T12:00:00.000Z'),
+      },
+    ],
     jobRequest: {
+      id: 'request-1',
+      category: 'plumbing',
+      description: 'Burst pipe under the kitchen sink',
+      requestedWindowStart: new Date('2026-05-02T12:00:00.000Z'),
+      requestedWindowEnd: new Date('2026-05-02T14:00:00.000Z'),
+      isTestRequest: false,
+      cohortName: null,
       status: 'PROVIDER_CONFIRMATION_PENDING',
       selectedProviderId: 'provider-1',
       selectedLeadInviteId: 'lead-1',
+      customer: { name: 'Thandi Customer', phone: '+27222222222' },
+      attachments: [],
+      address: {
+        street: '1 Oak Avenue',
+        addressLine1: null,
+        addressLine2: null,
+        complexName: null,
+        unitNumber: null,
+        suburb: 'Sunnyside',
+        city: 'Pretoria',
+        province: 'Gauteng',
+        accessNotes: null,
+      },
+      match: null,
     },
     ...overrides,
   }
@@ -33,6 +104,10 @@ function makeTx() {
   return {
     lead: {
       findUnique: vi.fn().mockImplementation(async () => state.lead),
+      update: vi.fn().mockImplementation(async (args: any) => {
+        if (args?.data?.status) state.lead = { ...state.lead, status: args.data.status }
+        return state.lead
+      }),
       updateMany: vi.fn().mockImplementation(async (args: any) => {
         if (args?.where?.status === state.lead.status && args?.data?.status) {
           state.lead = { ...state.lead, status: args.data.status }
@@ -48,12 +123,13 @@ function makeTx() {
     auditLog: {
       create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
     },
-    match: { create: vi.fn() },
-    quote: { create: vi.fn() },
-    booking: { create: vi.fn() },
-    job: { create: vi.fn() },
-    jobRequest: { update: vi.fn() },
-    leadUnlock: { update: vi.fn() },
+    match: { create: vi.fn().mockResolvedValue({ id: 'match-1' }) },
+    quote: { create: vi.fn().mockResolvedValue({ id: 'quote-1' }) },
+    booking: { create: vi.fn().mockResolvedValue({ id: 'booking-1' }) },
+    job: { create: vi.fn().mockResolvedValue({ id: 'job-1' }) },
+    jobRequest: { update: vi.fn().mockResolvedValue({ id: 'request-1' }) },
+    leadUnlock: { update: vi.fn().mockResolvedValue({ id: 'unlock-1' }) },
+    jobStatusEvent: { create: vi.fn().mockResolvedValue({ id: 'status-event-1' }) },
   }
 }
 
@@ -66,7 +142,9 @@ describe('selected provider final acceptance', () => {
     mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
   })
 
-  it('records provider acceptance, runs credit check, and does not unlock or expose contact details', async () => {
+  it('records provider acceptance, checks credits, applies credit, and unlocks details', async () => {
+    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
+
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-1',
       providerId: 'provider-1',
@@ -76,13 +154,18 @@ describe('selected provider final acceptance', () => {
     expect(result).toMatchObject({
       ok: true,
       leadId: 'lead-1',
-      currentCreditBalance: 2,
+      currentCreditBalance: 1,
       creditCheck: {
         ok: true,
         result: 'SUFFICIENT_CREDITS',
         requiredCredits: 1,
       },
-      notificationSent: false,
+      creditApplied: true,
+      matchId: 'match-1',
+      jobId: 'job-1',
+      bookingId: 'booking-1',
+      creditTransactionId: 'ledger-1',
+      notificationSent: true,
     })
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
       where: { id: 'lead-1', status: 'CUSTOMER_SELECTED' },
@@ -92,9 +175,33 @@ describe('selected provider final acceptance', () => {
         respondedAt: expect.any(Date),
       }),
     })
-    expect(state.tx.match.create).not.toHaveBeenCalled()
-    expect(state.tx.job.create).not.toHaveBeenCalled()
-    expect(state.tx.leadUnlock.update).not.toHaveBeenCalled()
+    expect(unlockLeadForProviderInTransaction).toHaveBeenCalledWith(
+      state.tx,
+      'lead-1',
+      'provider-1',
+      expect.objectContaining({
+        source: 'pwa',
+      }),
+    )
+    expect(state.tx.match.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        jobRequestId: 'request-1',
+        providerId: 'provider-1',
+        status: 'QUOTE_APPROVED',
+      }),
+    })
+    expect(state.tx.job.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        bookingId: 'booking-1',
+        providerId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+        status: 'SCHEDULED',
+      }),
+    })
+    expect(state.tx.leadUnlock.update).toHaveBeenCalledWith({
+      where: { id: 'unlock-1' },
+      data: { matchId: 'match-1' },
+    })
     expect(JSON.stringify(result)).not.toContain('customer')
     expect(JSON.stringify(result)).not.toContain('phone')
   })
@@ -128,6 +235,8 @@ describe('selected provider final acceptance', () => {
       ok: true,
       alreadyAccepted: true,
       creditCheck: { ok: true },
+      creditApplied: true,
+      matchId: 'match-1',
     })
     expect(state.tx.lead.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'lead-1', status: 'CUSTOMER_SELECTED' } }),

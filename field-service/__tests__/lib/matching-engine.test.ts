@@ -125,8 +125,14 @@ describe('matching-engine compatibility wrappers', () => {
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
       leadId: 'lead-1',
+      matchId: 'match-1',
+      jobId: 'job-1',
+      bookingId: 'booking-1',
+      creditTransactionId: 'ledger-1',
       currentCreditBalance: 4,
       alreadyAccepted: false,
+      alreadyUnlocked: false,
+      creditApplied: true,
       creditCheck: {
         ok: true,
         result: 'SUFFICIENT_CREDITS',
@@ -142,10 +148,12 @@ describe('matching-engine compatibility wrappers', () => {
     expect(result).toEqual({
       ok: true,
       leadId: 'lead-1',
-      matchId: undefined,
-      creditTransactionId: null,
+      matchId: 'match-1',
+      creditTransactionId: 'ledger-1',
       currentCreditBalance: 4,
       alreadyAccepted: false,
+      alreadyUnlocked: false,
+      creditApplied: true,
       creditCheck: {
         ok: true,
         reason: undefined,
@@ -177,7 +185,10 @@ describe('matching-engine compatibility wrappers', () => {
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
       leadId: 'lead-1',
+      creditTransactionId: null,
       currentCreditBalance: 0,
+      alreadyUnlocked: false,
+      creditApplied: false,
       creditCheck: {
         ok: false,
         reason: 'INSUFFICIENT_CREDITS',
@@ -197,6 +208,8 @@ describe('matching-engine compatibility wrappers', () => {
       creditTransactionId: null,
       currentCreditBalance: 0,
       alreadyAccepted: undefined,
+      alreadyUnlocked: false,
+      creditApplied: false,
       creditCheck: {
         ok: false,
         reason: 'INSUFFICIENT_CREDITS',

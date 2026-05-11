@@ -282,9 +282,8 @@ export default async function LeadDetailPage({
 
       {resolvedSearchParams.accepted && (
         <AlertCallout tone="success" title="Lead accepted">
-          Credit check passed. {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} will be applied in the next step.
-          No credit has been deducted yet. Customer direct contact details remain locked.
-          Current balance: {acceptedRemainingBalance}.
+          {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} applied. Balance remaining: {acceptedRemainingBalance}.
+          Full customer and job details are now available below.
         </AlertCallout>
       )}
 
@@ -340,8 +339,7 @@ export default async function LeadDetailPage({
             Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
           </p>
           <p>
-            Accepting this lead checks for {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
-            Credit is applied only in the next step.
+            Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
           </p>
         </div>
       )}
@@ -351,10 +349,10 @@ export default async function LeadDetailPage({
           {hasEnoughCredits ? (
             <>
               <p>
-                Accepting this lead checks for {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
-                Your current credits balance is {totalCreditBalance}. The next step will apply credit before customer details are released.
+                Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
+                Your current credits balance is {totalCreditBalance}. After acceptance, your balance will be {totalCreditBalance - lead.unlockCostCredits}.
               </p>
-              <p className="mt-1">Full customer details stay locked until credit is applied.</p>
+              <p className="mt-1">Full customer details are released only after credit is applied.</p>
             </>
           ) : (
             <>

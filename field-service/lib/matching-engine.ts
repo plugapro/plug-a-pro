@@ -34,6 +34,8 @@ type LeadAccepted = {
   creditTransactionId?: string | null
   currentCreditBalance?: number
   alreadyAccepted?: boolean
+  alreadyUnlocked?: boolean
+  creditApplied?: boolean
   creditCheck?: {
     ok: boolean
     reason?: string
@@ -219,10 +221,12 @@ export async function acceptLead(params: {
   return {
     ok: true,
     leadId: selectedResult.leadId,
-    matchId: undefined,
-    creditTransactionId: null,
+    matchId: selectedResult.matchId,
+    creditTransactionId: selectedResult.creditTransactionId,
     currentCreditBalance: selectedResult.currentCreditBalance,
     alreadyAccepted: selectedResult.alreadyAccepted,
+    alreadyUnlocked: selectedResult.alreadyUnlocked,
+    creditApplied: selectedResult.creditApplied,
     creditCheck: {
       ok: selectedResult.creditCheck.ok,
       reason: selectedResult.creditCheck.ok ? undefined : selectedResult.creditCheck.reason,

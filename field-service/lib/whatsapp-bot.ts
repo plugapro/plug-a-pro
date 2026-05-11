@@ -3162,10 +3162,17 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       return
     }
     if (!result.notificationSent) {
-      await sendText(
-        phone,
-        `${result.creditCheck.providerMessage}\n\nReply *credits* to view your balance.`,
-      )
+      if (result.creditApplied || result.alreadyUnlocked) {
+        await sendText(
+          phone,
+          '✅ Job accepted\n\nCredit was applied and customer details are unlocked in your job link. Reply *my jobs* to manage your assignments.',
+        )
+      } else {
+        await sendText(
+          phone,
+          `${result.creditCheck.providerMessage}\n\nReply *credits* to view your balance.`,
+        )
+      }
     }
     return
   }
