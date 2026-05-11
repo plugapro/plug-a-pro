@@ -6,6 +6,7 @@ vi.mock('@/lib/db', () => ({
     jobRequest: { findMany: vi.fn(), findUnique: vi.fn() },
     extraWork:  { findFirst: vi.fn() },
     lead:       { findMany: vi.fn() },
+    matchAttempt: { count: vi.fn() },
     providerShortlist: { findFirst: vi.fn() },
     dispatchDecision: { findFirst: vi.fn() },
   },
@@ -86,6 +87,7 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_APP_URL = APP_URL
   mockSelectCustomerRequestMatchingMode.mockResolvedValue({ status: 'matching_started' })
   vi.mocked(db.lead.findMany).mockResolvedValue([])
+  vi.mocked(db.matchAttempt.count).mockResolvedValue(0)
   vi.mocked(db.providerShortlist.findFirst).mockResolvedValue(null)
   vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue(null)
 })
@@ -270,14 +272,45 @@ describe('handleStatusFlow — single active request (no job)', () => {
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
     vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue({ status: 'RANKED' } as never)
+    vi.mocked(db.matchAttempt.count).mockResolvedValue(2)
 
     const result = await handleStatusFlow(makeCtx())
 
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining('Review Providers First is ready'),
+      expect.stringContaining('We found 2 matching providers'),
       'View providers',
       `${APP_URL}/requests/access/jr_abc123`,
+    )
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('does not show Review First ready CTA when ranked decision has no provider candidates', async () => {
+    const jr = makeJobRequest({
+      status: 'PENDING_VALIDATION',
+      assignmentMode: 'OPS_REVIEW',
+      latestDispatchDecisionId: 'dd_empty_ranked',
+    })
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue({ status: 'RANKED' } as never)
+    vi.mocked(db.matchAttempt.count).mockResolvedValue(0)
+
+    const result = await handleStatusFlow(makeCtx())
+
+    expect(wa.sendCtaUrl).not.toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Review Providers First is ready'),
+      'View providers',
+      expect.any(String),
+    )
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find matching providers"),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'status_mode_quick_jr_abc123', title: 'Quick Match' }),
+      ]),
     )
     expect(result.nextStep).toBe('done')
   })

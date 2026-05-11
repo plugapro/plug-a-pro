@@ -510,6 +510,10 @@ async function showRequestStatus(
       loadDispatchDecisionSafe(jr.id),
       loadShortlistSafe(jr.id),
     ])
+    const reviewRankedCandidateCount =
+      jr.assignmentMode === 'OPS_REVIEW'
+        ? await loadReviewRankedCandidateCountSafe(jr.latestDispatchDecisionId)
+        : 0
 
     let statusLabel = jobStatus
       ? JOB_STATUS_LABELS[jobStatus] ?? jobStatus
@@ -608,19 +612,22 @@ async function showRequestStatus(
       requestStatus === 'PENDING_VALIDATION' &&
       jr.assignmentMode === 'OPS_REVIEW' &&
       Boolean(jr.latestDispatchDecisionId) &&
-      latestDispatchStatus === 'RANKED'
+      latestDispatchStatus === 'RANKED' &&
+      reviewRankedCandidateCount > 0
 
     const reviewFirstNoCandidates =
       requestStatus === 'PENDING_VALIDATION' &&
       jr.assignmentMode === 'OPS_REVIEW' &&
       Boolean(jr.latestDispatchDecisionId) &&
-      latestDispatchStatus === 'NO_MATCH'
+      (latestDispatchStatus === 'NO_MATCH' ||
+        (latestDispatchStatus === 'RANKED' && reviewRankedCandidateCount === 0))
 
     if (reviewFirstOptionsReady) {
       const trackingUrl = await safeTrackingUrl(jr.id)
       const body =
         `📋 *Request ${requestReference(jr)}*\n\n` +
         `Review Providers First is ready.\n\n` +
+        `We found ${reviewRankedCandidateCount} matching provider${reviewRankedCandidateCount === 1 ? '' : 's'}.\n\n` +
         `Open your request to view matching provider profiles, shortlist 1 to 3 providers, and send your request only to the providers you choose.`
 
       if (trackingUrl) {
@@ -885,6 +892,21 @@ async function loadLatestDispatchDecisionStatus(jobRequestId: string): Promise<D
   })
 
   return decision ? normalizeDispatchDecisionStatus(decision.status) : null
+}
+
+async function loadReviewRankedCandidateCountSafe(dispatchDecisionId: string | null | undefined) {
+  if (!dispatchDecisionId) return 0
+  try {
+    return await db.matchAttempt.count({
+      where: { dispatchDecisionId, stage: 'RANKED' },
+    })
+  } catch (error) {
+    console.warn('[status-flow] review-first ranked candidate count failed', {
+      dispatchDecisionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return 0
+  }
 }
 
 function normalizeDispatchDecisionStatus(

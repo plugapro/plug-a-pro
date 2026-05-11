@@ -36,16 +36,22 @@ async function resolveCustomerPhone(): Promise<string | null> {
 async function resolveCustomerIdForRequest(
   requestId: string,
 ): Promise<string | null> {
+  const normalizedRequestId = requestId?.trim()
+  if (!normalizedRequestId) return null
   const session = await getSession()
   if (!session || session.role !== 'customer') return null
   const customer = await resolveCustomerForSession(db, session)
   if (!customer) return null
   const request = await db.jobRequest.findUnique({
-    where: { id: requestId },
+    where: { id: normalizedRequestId },
     select: { customerId: true },
   })
   if (!request || request.customerId !== customer.id) return null
   return customer.id
+}
+
+function normalizeActionInput(value: string | undefined | null) {
+  return value?.trim()
 }
 
 export async function selectShortlistProviderAction(
@@ -53,17 +59,26 @@ export async function selectShortlistProviderAction(
   shortlistItemId: string,
   _formData: FormData,
 ): Promise<void> {
-  const customerId = await resolveCustomerIdForRequest(requestId)
+  const normalizedRequestId = requestId?.trim()
+  const normalizedShortlistItemId = shortlistItemId?.trim()
+  if (!normalizedRequestId || !normalizedShortlistItemId) {
+    throw new Error('Invalid selection request')
+  }
+
+  const customerId = await resolveCustomerIdForRequest(normalizedRequestId)
   if (!customerId) throw new Error('Not authenticated')
 
   try {
-    await selectShortlistedProviderForRequest({ requestId, shortlistItemId })
+    await selectShortlistedProviderForRequest({
+      requestId: normalizedRequestId,
+      shortlistItemId: normalizedShortlistItemId,
+    })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
     throw new Error('Selection could not be completed. Please try again.')
   }
 
-  revalidatePath(`/requests/${requestId}`)
+  revalidatePath(`/requests/${normalizedRequestId}`)
 }
 
 export async function selectMatchedProviderAction(
@@ -71,55 +86,67 @@ export async function selectMatchedProviderAction(
   providerId: string,
   _formData: FormData,
 ): Promise<void> {
-  const customerId = await resolveCustomerIdForRequest(requestId)
+  const normalizedRequestId = requestId?.trim()
+  const normalizedProviderId = providerId?.trim()
+  if (!normalizedRequestId || !normalizedProviderId) {
+    throw new Error('Invalid selection request')
+  }
+
+  const customerId = await resolveCustomerIdForRequest(normalizedRequestId)
   if (!customerId) throw new Error('Not authenticated')
 
   try {
     await selectProviderForCustomerRequest({
-      requestId,
+      requestId: normalizedRequestId,
       customerId,
-      providerId,
+      providerId: normalizedProviderId,
     })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
     throw new Error('Selection could not be completed. Please try again.')
   }
 
-  revalidatePath(`/requests/${requestId}`)
+  revalidatePath(`/requests/${normalizedRequestId}`)
 }
 
 export async function requestMoreShortlistOptionsAction(
   requestId: string,
   _formData: FormData,
 ): Promise<void> {
-  const customerId = await resolveCustomerIdForRequest(requestId)
+  const normalizedRequestId = normalizeActionInput(requestId)
+  if (!normalizedRequestId) throw new Error('Invalid request')
+
+  const customerId = await resolveCustomerIdForRequest(normalizedRequestId)
   if (!customerId) throw new Error('Not authenticated')
 
   try {
-    await requestMoreShortlistOptions({ requestId })
+    await requestMoreShortlistOptions({ requestId: normalizedRequestId })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
     throw new Error('Could not request more options. Please try again.')
   }
 
-  revalidatePath(`/requests/${requestId}`)
+  revalidatePath(`/requests/${normalizedRequestId}`)
 }
 
 export async function cancelRequestFromShortlistAction(
   requestId: string,
   _formData: FormData,
 ): Promise<void> {
-  const customerId = await resolveCustomerIdForRequest(requestId)
+  const normalizedRequestId = normalizeActionInput(requestId)
+  if (!normalizedRequestId) throw new Error('Invalid request')
+
+  const customerId = await resolveCustomerIdForRequest(normalizedRequestId)
   if (!customerId) throw new Error('Not authenticated')
 
   try {
-    await cancelRequestFromShortlist({ requestId })
+    await cancelRequestFromShortlist({ requestId: normalizedRequestId })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
     throw new Error('Could not cancel the request. Please try again.')
   }
 
-  revalidatePath(`/requests/${requestId}`)
+  revalidatePath(`/requests/${normalizedRequestId}`)
   revalidatePath('/bookings')
 }
 
@@ -128,10 +155,13 @@ export async function chooseMatchingModeAction(
   mode: CustomerMatchingMode,
   _formData: FormData,
 ): Promise<void> {
-  const customerId = await resolveCustomerIdForRequest(requestId)
+  const normalizedRequestId = normalizeActionInput(requestId)
+  if (!normalizedRequestId) throw new Error('Invalid request')
+
+  const customerId = await resolveCustomerIdForRequest(normalizedRequestId)
   if (!customerId) throw new Error('Not authenticated')
-  await selectCustomerRequestMatchingMode({ requestId, customerId, mode })
-  revalidatePath(`/requests/${requestId}`)
+  await selectCustomerRequestMatchingMode({ requestId: normalizedRequestId, customerId, mode })
+  revalidatePath(`/requests/${normalizedRequestId}`)
   revalidatePath('/bookings')
 }
 
@@ -140,34 +170,43 @@ export async function shortlistReviewProviderAction(
   providerId: string,
   _formData: FormData,
 ): Promise<void> {
-  const customerId = await resolveCustomerIdForRequest(requestId)
+  const normalizedRequestId = normalizeActionInput(requestId)
+  const normalizedProviderId = normalizeActionInput(providerId)
+  if (!normalizedRequestId || !normalizedProviderId) {
+    throw new Error('Invalid shortlist request')
+  }
+
+  const customerId = await resolveCustomerIdForRequest(normalizedRequestId)
   if (!customerId) throw new Error('Not authenticated')
   try {
     await shortlistProviderForCustomerReview({
-      requestId,
+      requestId: normalizedRequestId,
       customerId,
-      providerId,
+      providerId: normalizedProviderId,
     })
   } catch (error) {
     if (error instanceof ReviewFirstError) throw error
     throw new Error('Could not shortlist provider right now.')
   }
-  revalidatePath(`/requests/${requestId}`)
+  revalidatePath(`/requests/${normalizedRequestId}`)
 }
 
 export async function sendReviewShortlistAction(
   requestId: string,
   _formData: FormData,
 ): Promise<void> {
-  const customerId = await resolveCustomerIdForRequest(requestId)
+  const normalizedRequestId = normalizeActionInput(requestId)
+  if (!normalizedRequestId) throw new Error('Invalid request')
+
+  const customerId = await resolveCustomerIdForRequest(normalizedRequestId)
   if (!customerId) throw new Error('Not authenticated')
   try {
-    await sendRequestToShortlistedProviders({ requestId, customerId })
+    await sendRequestToShortlistedProviders({ requestId: normalizedRequestId, customerId })
   } catch (error) {
     if (error instanceof ReviewFirstError) throw error
     throw new Error('Could not send request to shortlisted providers.')
   }
-  revalidatePath(`/requests/${requestId}`)
+  revalidatePath(`/requests/${normalizedRequestId}`)
   revalidatePath('/bookings')
 }
 
@@ -184,7 +223,10 @@ export async function approveQuoteAction(
 
   if ('error' in result) return { error: result.error }
 
-  revalidatePath(`/requests/${requestId}`)
+  const normalizedRequestId = normalizeActionInput(requestId)
+  if (!normalizedRequestId) return { error: 'Invalid request' }
+
+  revalidatePath(`/requests/${normalizedRequestId}`)
   revalidatePath('/bookings')
   return {}
 }
@@ -202,7 +244,10 @@ export async function declineQuoteAction(
 
   if ('error' in result) return { error: result.error }
 
-  revalidatePath(`/requests/${requestId}`)
+  const normalizedRequestId = normalizeActionInput(requestId)
+  if (!normalizedRequestId) return { error: 'Invalid request' }
+
+  revalidatePath(`/requests/${normalizedRequestId}`)
   revalidatePath('/bookings')
   return {}
 }

@@ -23,6 +23,7 @@ const { mockDb, mockGetSession, mockResolveCustomerForSession } = vi.hoisted(() 
 
 const {
   mockSelectShortlistedProviderForRequest,
+  mockSelectProviderForCustomerRequest,
   mockRequestMoreShortlistOptions,
   mockCancelRequestFromShortlist,
   MockCustomerShortlistError,
@@ -34,9 +35,10 @@ const {
       this.code = code
       this.name = 'CustomerShortlistError'
     }
-  }
+    }
   return {
     mockSelectShortlistedProviderForRequest: vi.fn(),
+    mockSelectProviderForCustomerRequest: vi.fn(),
     mockRequestMoreShortlistOptions: vi.fn(),
     mockCancelRequestFromShortlist: vi.fn(),
     MockCustomerShortlistError,
@@ -50,6 +52,7 @@ vi.mock('@/lib/customer-session', () => ({
 }))
 vi.mock('@/lib/customer-shortlists', () => ({
   selectShortlistedProviderForRequest: mockSelectShortlistedProviderForRequest,
+  selectProviderForCustomerRequest: mockSelectProviderForCustomerRequest,
   requestMoreShortlistOptions: mockRequestMoreShortlistOptions,
   cancelRequestFromShortlist: mockCancelRequestFromShortlist,
   CustomerShortlistError: MockCustomerShortlistError,
@@ -75,6 +78,12 @@ describe('authenticated request shortlist actions', () => {
     mockResolveCustomerForSession.mockResolvedValue(makeCustomer())
     mockDb.jobRequest.findUnique.mockResolvedValue(makeJobRequest())
     mockSelectShortlistedProviderForRequest.mockResolvedValue({ selectedItem: { id: 'item-1' }, provider: {}, notification: { sent: true } })
+    mockSelectProviderForCustomerRequest.mockResolvedValue({
+      requestId: 'request-1',
+      providerId: 'provider-1',
+      leadId: 'lead-1',
+      alreadySelected: false,
+    })
     mockRequestMoreShortlistOptions.mockResolvedValue({ ok: true })
     mockCancelRequestFromShortlist.mockResolvedValue({ ok: true })
   })
@@ -91,6 +100,19 @@ describe('authenticated request shortlist actions', () => {
         requestId: 'request-1',
         shortlistItemId: 'item-1',
       })
+    })
+
+    it('throws on empty request or shortlist identifiers', async () => {
+      const { selectShortlistProviderAction } = await import(
+        '@/app/(customer)/requests/[id]/actions'
+      )
+      await expect(
+        selectShortlistProviderAction('  ', 'item-1', new FormData()),
+      ).rejects.toThrow('Invalid selection request')
+      await expect(
+        selectShortlistProviderAction('request-1', '  ', new FormData()),
+      ).rejects.toThrow('Invalid selection request')
+      expect(mockSelectShortlistedProviderForRequest).not.toHaveBeenCalled()
     })
 
     it('throws when the session is missing', async () => {
@@ -160,6 +182,76 @@ describe('authenticated request shortlist actions', () => {
       await expect(
         requestMoreShortlistOptionsAction('request-1', new FormData()),
       ).rejects.toThrow('More options can only be requested while the shortlist is awaiting selection.')
+    })
+  })
+
+  describe('selectMatchedProviderAction', () => {
+    it('resolves without error and delegates to selectProviderForCustomerRequest', async () => {
+      const { selectMatchedProviderAction } = await import(
+        '@/app/(customer)/requests/[id]/actions'
+      )
+      await expect(
+        selectMatchedProviderAction(' request-1 ', ' provider-1 ', new FormData()),
+      ).resolves.toBeUndefined()
+      expect(mockSelectProviderForCustomerRequest).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        customerId: 'customer-1',
+        providerId: 'provider-1',
+      })
+      expect(mockSelectShortlistedProviderForRequest).not.toHaveBeenCalled()
+    })
+
+    it('throws on empty request or provider identifiers', async () => {
+      const { selectMatchedProviderAction } = await import(
+        '@/app/(customer)/requests/[id]/actions'
+      )
+      await expect(
+        selectMatchedProviderAction('  ', 'provider-1', new FormData()),
+      ).rejects.toThrow('Invalid selection request')
+      await expect(
+        selectMatchedProviderAction('request-1', '  ', new FormData()),
+      ).rejects.toThrow('Invalid selection request')
+      expect(mockSelectShortlistedProviderForRequest).not.toHaveBeenCalled()
+      expect(mockSelectProviderForCustomerRequest).not.toHaveBeenCalled()
+    })
+
+    it('throws when session is missing', async () => {
+      mockGetSession.mockResolvedValueOnce(null)
+      const { selectMatchedProviderAction } = await import(
+        '@/app/(customer)/requests/[id]/actions'
+      )
+      await expect(
+        selectMatchedProviderAction('request-1', 'provider-1', new FormData()),
+      ).rejects.toThrow()
+      expect(mockSelectProviderForCustomerRequest).not.toHaveBeenCalled()
+    })
+
+    it('throws when the customer does not own the request', async () => {
+      mockDb.jobRequest.findUnique.mockResolvedValueOnce({
+        customerId: 'different-customer',
+      })
+      const { selectMatchedProviderAction } = await import(
+        '@/app/(customer)/requests/[id]/actions'
+      )
+      await expect(
+        selectMatchedProviderAction('request-1', 'provider-1', new FormData()),
+      ).rejects.toThrow()
+      expect(mockSelectProviderForCustomerRequest).not.toHaveBeenCalled()
+    })
+
+    it('re-throws CustomerShortlistError to caller', async () => {
+      mockSelectProviderForCustomerRequest.mockRejectedValueOnce(
+        new MockCustomerShortlistError(
+          'REQUEST_NOT_AWAITING_SELECTION',
+          'This request is no longer awaiting selection.',
+        ),
+      )
+      const { selectMatchedProviderAction } = await import(
+        '@/app/(customer)/requests/[id]/actions'
+      )
+      await expect(
+        selectMatchedProviderAction('request-1', 'provider-1', new FormData()),
+      ).rejects.toThrow('This request is no longer awaiting selection.')
     })
   })
 

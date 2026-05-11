@@ -1061,7 +1061,9 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
       requestId: lead.jobRequest.id,
     }
 
-    if (lead.notifiedAt !== null || lead.status === 'CUSTOMER_SELECTED') {
+    // Guard only on notifiedAt — status is CUSTOMER_SELECTED immediately after selection,
+    // so checking status here would suppress every notification send.
+    if (lead.notifiedAt !== null) {
       console.info('[customer-shortlists.notification] already_notified', {
         leadId: lead.id,
         requestId: lead.jobRequest.id,

@@ -20,15 +20,29 @@ export async function GET(req: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
   }
 
-  const { id } = await context.params
+  const { id: rawRequestId } = await context.params
+  const requestId = rawRequestId?.trim()
   const batchParam = req.nextUrl.searchParams.get('batch')
-  const batch = batchParam ? Number.parseInt(batchParam, 10) : 1
+  const batch = batchParam ? Number(batchParam) : 1
+  if (!requestId) {
+    return NextResponse.json({ error: 'Invalid request id' }, { status: 400 })
+  }
+  const customerReference = customer.id
 
   try {
     const matches = await getMatchedProvidersForCustomerRequest({
-      requestId: id,
-      customerId: customer.id,
+      requestId,
+      customerId: customerReference,
       batch,
+    })
+
+    console.info('[api/customer/requests/matched-providers] retrieval_success', {
+      requestId,
+      customerReference,
+      batch,
+      matchCount: matches.providers.length,
+      totalEligibleCount: matches.totalEligibleCount,
+      hasMore: matches.hasMore,
     })
 
     // Safe customer-facing fields only.
@@ -66,14 +80,16 @@ export async function GET(req: NextRequest, context: RouteContext) {
       if (error.code === 'INVALID_BATCH') {
         return NextResponse.json({ error: error.code }, { status: 400 })
       }
+      if (error.code === 'REQUEST_NOT_MATCHABLE') {
+        return NextResponse.json({ error: error.code, reason: error.message }, { status: 409 })
+      }
       return NextResponse.json({ error: error.code }, { status: 409 })
     }
     console.error('[api/customer/requests/matched-providers] unexpected failure', {
-      requestId: id,
+      requestId,
       customerId: customer.id,
       error: error instanceof Error ? error.message : String(error),
     })
     return NextResponse.json({ error: 'Failed to load matched providers' }, { status: 500 })
   }
 }
-

@@ -40,7 +40,9 @@ describe('fast match regression sweep', () => {
     mockJobRequest.update.mockResolvedValue({})
     mockOrchestrateMatch.mockResolvedValue(undefined)
     mockSendText.mockResolvedValue(undefined)
-    mockGetProviderCandidates.mockResolvedValue(undefined)
+    mockGetProviderCandidates.mockResolvedValue({
+      candidates: [{ providerId: 'provider-1', name: 'Lovemore' }],
+    })
     mockAssignmentHold.findFirst.mockResolvedValue(null)
   })
 

@@ -40,7 +40,9 @@ describe('selectCustomerRequestMatchingMode', () => {
     mockJobRequest.update.mockResolvedValue({})
     mockOrchestrateMatch.mockResolvedValue(undefined)
     mockSendText.mockResolvedValue(undefined)
-    mockGetProviderCandidates.mockResolvedValue(undefined)
+    mockGetProviderCandidates.mockResolvedValue({
+      candidates: [{ providerId: 'provider-1', name: 'Lovemore' }],
+    })
     mockAssignmentHold.findFirst.mockResolvedValue(null)
   })
 
@@ -143,5 +145,63 @@ describe('selectCustomerRequestMatchingMode', () => {
     const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
     expect(outbound).toContain('No providers in your area are available right now')
     expect(outbound).toContain("We'll keep trying and notify you")
+  })
+
+  it('selecting review_first returns ready only after candidates are generated', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockGetProviderCandidates.mockResolvedValue({
+      candidates: [
+        { providerId: 'provider-1', name: 'Lovemore' },
+        { providerId: 'provider-2', name: 'Jacob' },
+      ],
+    })
+
+    const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
+    const result = await selectCustomerRequestMatchingMode({
+      requestId: 'jr-1',
+      customerId: 'cust-1',
+      mode: 'review_first',
+    })
+
+    expect(result.status).toBe('review_options_ready')
+    expect(mockGetProviderCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'jr-1', customerId: 'cust-1', batch: 1 }),
+    )
+    const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
+    expect(outbound).toContain('We found 2 matching providers')
+  })
+
+  it('selecting review_first does not claim ready when no candidates exist', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockGetProviderCandidates.mockResolvedValue({ candidates: [] })
+
+    const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
+    const result = await selectCustomerRequestMatchingMode({
+      requestId: 'jr-1',
+      customerId: 'cust-1',
+      mode: 'review_first',
+    })
+
+    expect(result.status).toBe('review_no_candidates')
+    const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
+    expect(outbound).toContain('could not find matching providers yet')
+    expect(outbound).not.toContain('is ready')
+  })
+
+  it('selecting review_first exposes matching failure instead of false ready', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockGetProviderCandidates.mockRejectedValue(new Error('candidate index unavailable'))
+
+    const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
+    const result = await selectCustomerRequestMatchingMode({
+      requestId: 'jr-1',
+      customerId: 'cust-1',
+      mode: 'review_first',
+    })
+
+    expect(result.status).toBe('review_matching_failed')
+    const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
+    expect(outbound).toContain('could not be prepared yet')
+    expect(outbound).not.toContain('is ready')
   })
 })

@@ -38,6 +38,10 @@ export async function ensureJobRequestAccessToken(jobRequestId: string) {
     existing.customerAccessTokenExpiresAt > now
 
   if (isUsable) {
+    console.info('[job-request-access] existing ticket token reused', {
+      jobRequestId,
+      expiresAt: existing.customerAccessTokenExpiresAt,
+    })
     return {
       token: existing.customerAccessToken!,
       expiresAt: existing.customerAccessTokenExpiresAt!,
@@ -56,6 +60,11 @@ export async function ensureJobRequestAccessToken(jobRequestId: string) {
     },
   })
 
+  console.info('[job-request-access] ticket token generated', {
+    jobRequestId,
+    expiresAt,
+  })
+
   return { token, expiresAt }
 }
 
@@ -64,6 +73,10 @@ export async function getJobRequestAccessUrl(jobRequestId: string, view?: string
   if (!appUrl) return null
   const { token } = await ensureJobRequestAccessToken(jobRequestId)
   const query = view ? `?view=${encodeURIComponent(view)}` : ''
+  console.info('[job-request-access] ticket url generated', {
+    jobRequestId,
+    view: view ?? null,
+  })
   return `${appUrl}/requests/access/${token}${query}`
 }
 

@@ -253,7 +253,6 @@ export async function declineLead(params: {
   if (
     selectedLead.status === 'CUSTOMER_SELECTED' ||
     selectedLead.status === 'DECLINED' ||
-    selectedLead.status === 'ACCEPTED' ||
     selectedLead.jobRequest.selectedLeadInviteId === selectedLead.id ||
     selectedLead.jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING'
   ) {

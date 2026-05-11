@@ -71,6 +71,8 @@ export async function selectCustomerRequestMatchingMode(params: {
   }
   let nextStatus = request.status
   let quickMatchResult: Awaited<ReturnType<typeof orchestrateMatch>> | null = null
+  let reviewCandidateCount = 0
+  let reviewFailed = false
 
   if (params.mode === 'review_first') {
     if (request.status === 'PENDING_VALIDATION' || request.status === 'OPEN') {
@@ -101,16 +103,26 @@ export async function selectCustomerRequestMatchingMode(params: {
   }
 
   if (params.mode === 'review_first') {
-    await getProviderCandidatesForCustomerReview({
-      requestId: request.id,
-      customerId: params.customerId,
-      batch: 1,
-    }).catch((error) => {
+    try {
+      const candidates = await getProviderCandidatesForCustomerReview({
+        requestId: request.id,
+        customerId: params.customerId,
+        batch: 1,
+      })
+
+      reviewCandidateCount = candidates?.candidates?.length ?? 0
+      console.info('[request-matching-mode] review-first candidates generated', {
+        requestId: request.id,
+        candidateCount: reviewCandidateCount,
+      })
+    } catch (error) {
+      reviewFailed = true
       console.error('[request-matching-mode] review-first candidate generation failed', {
         requestId: request.id,
+        customerId: params.customerId,
         error: error instanceof Error ? error.message : String(error),
       })
-    })
+    }
   } else if (nextStatus === 'OPEN') {
     quickMatchResult = await orchestrateMatch(request.id, { triggeredBy: 'manual' }).catch((error) => {
       console.error('[request-matching-mode] matching trigger failed', {
@@ -123,12 +135,22 @@ export async function selectCustomerRequestMatchingMode(params: {
   }
 
   if (request.customer?.phone) {
-    const text =
-      params.mode === 'quick_match'
-        ? quickMatchResult?.status === 'NO_MATCH'
+    let text = ''
+    if (params.mode === 'quick_match') {
+      text =
+        quickMatchResult?.status === 'NO_MATCH'
           ? `Quick Match started.\n\nNo providers in your area are available right now.\n\nWe'll keep trying and notify you the moment one becomes available.`
           : `Quick Match started.\n\nWe're checking with one suitable provider now.\nIf they don't respond, we'll try the next provider.`
-        : `Review Providers First started.\n\nWe're collecting suitable provider responses so you can compare options before choosing.`
+    } else if (reviewFailed) {
+      // Review-first mode requires an attempt to build provider options before the
+      // customer is told they can shortlist providers.
+      text = 'Review Providers First could not be prepared yet.\n\nPlease refresh your request status and try again.'
+    } else if (reviewCandidateCount > 0) {
+      text = `Review Providers First is ready.\n\nWe found ${reviewCandidateCount} matching provider${reviewCandidateCount === 1 ? '' : 's'} for your request.\nOpen the request from your latest update to shortlist providers.`
+    } else {
+      text = 'Review Providers First was started, but we could not find matching providers yet.\n\nYou can switch to Quick Match or refresh your request status.'
+    }
+
     await sendText(
       request.customer.phone,
       text,
@@ -137,12 +159,14 @@ export async function selectCustomerRequestMatchingMode(params: {
         metadata: {
           requestId: request.id,
           mode: params.mode,
+          reviewCandidateCount,
         },
       },
     ).catch((error) => {
       console.warn('[request-matching-mode] customer matching mode notification failed', {
         requestId: request.id,
         mode: params.mode,
+        reviewCandidateCount,
         error: error instanceof Error ? error.message : String(error),
       })
     })
@@ -153,7 +177,11 @@ export async function selectCustomerRequestMatchingMode(params: {
     mode: params.mode,
     status:
       params.mode === 'review_first'
-        ? 'review_options_ready'
+        ? reviewFailed
+          ? 'review_matching_failed'
+          : reviewCandidateCount > 0
+            ? 'review_options_ready'
+            : 'review_no_candidates'
         : nextStatus === 'OPEN'
           ? 'matching_started'
           : 'already_in_progress',

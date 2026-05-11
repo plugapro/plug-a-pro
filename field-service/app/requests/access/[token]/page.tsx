@@ -20,7 +20,10 @@ import {
   requestMoreShortlistOptions,
   selectShortlistedProviderForRequest,
 } from '@/lib/customer-shortlists'
-import { sendRequestToShortlistedProviders } from '@/lib/review-first'
+import {
+  sendRequestToShortlistedProviders,
+  shortlistProviderForCustomerReview,
+} from '@/lib/review-first'
 
 export const metadata = buildMetadata({ title: 'Ticket Details', noIndex: true })
 
@@ -102,6 +105,30 @@ async function sendReviewShortlistFromToken(formData: FormData) {
   }
 
   redirect(`/requests/access/${encodeURIComponent(token)}?selection=sent-to-shortlist`)
+}
+
+async function shortlistReviewProviderFromToken(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const requestId = String(formData.get('requestId') ?? '')
+  const providerId = String(formData.get('providerId') ?? '')
+  const resolved = await resolveJobRequestAccessToken(token)
+
+  if (resolved.status !== 'active' || resolved.jobRequest?.id !== requestId || !providerId) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
+  }
+
+  try {
+    await shortlistProviderForCustomerReview({
+      requestId,
+      customerId: resolved.jobRequest.customerId,
+      providerId,
+    })
+  } catch {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=shortlist-failed`)
+  }
+
+  redirect(`/requests/access/${encodeURIComponent(token)}?selection=shortlisted`)
 }
 
 function formatCurrency(amount: number | null) {
@@ -398,6 +425,24 @@ export default async function TicketAccessPage({
         </Card>
       )}
 
+      {resolvedSearchParams.selection === 'shortlisted' && (
+        <Card className="border-[var(--tone-success-border)] bg-[var(--tone-success-bg)]">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-success-fg)]">
+            <p className="font-medium">Provider added to your shortlist</p>
+            <p>Add up to 3 providers, then send your request to your shortlist.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {resolvedSearchParams.selection === 'shortlist-failed' && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-destructive">
+            <p className="font-medium">We could not update your shortlist</p>
+            <p>Please refresh this link or ask Plug A Pro for help in WhatsApp.</p>
+          </CardContent>
+        </Card>
+      )}
+
       {resolvedSearchParams.selection === 'more-options' && (
         <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
           <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
@@ -474,15 +519,25 @@ export default async function TicketAccessPage({
                         <p className="text-muted-foreground">Experience: {candidate.experience}</p>
                       )}
                       <p className="text-muted-foreground">Why matched: {candidate.whyMatched}</p>
-                      {candidate.profileUrl ? (
-                        <Button asChild variant="outline" className="w-full">
-                          <Link href={candidate.profileUrl}>View profile & shortlist</Link>
-                        </Button>
-                      ) : (
-                        <Button variant="outline" className="w-full" disabled>
-                          Profile unavailable
-                        </Button>
-                      )}
+                      <div className="grid grid-cols-2 gap-2">
+                        {candidate.profileUrl ? (
+                          <Button asChild variant="outline" className="w-full">
+                            <Link href={candidate.profileUrl}>View profile</Link>
+                          </Button>
+                        ) : (
+                          <Button variant="outline" className="w-full" disabled>
+                            Profile unavailable
+                          </Button>
+                        )}
+                        <form action={shortlistReviewProviderFromToken}>
+                          <input type="hidden" name="token" value={token} />
+                          <input type="hidden" name="requestId" value={jobRequest.id} />
+                          <input type="hidden" name="providerId" value={candidate.providerId} />
+                          <Button type="submit" className="w-full">
+                            Shortlist
+                          </Button>
+                        </form>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}

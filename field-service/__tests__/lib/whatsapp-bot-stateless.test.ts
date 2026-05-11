@@ -422,6 +422,31 @@ describe('processInboundMessage stateless notification replies', () => {
     )
   })
 
+  // Scenario 10: unknown provider phone sends confirm_accept button
+  it('sends provider-not-found message when confirm_accept button comes from an unknown WhatsApp number', async () => {
+    mockDb.provider.findUnique.mockResolvedValue(null)
+    ;(mockDb.provider as any).findFirst = vi.fn().mockResolvedValue(null)
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-scenario-10'))
+
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find your provider profile"),
+    )
+  })
+
+  // Scenario 11: confirm_accept button arrives with an empty lead ID
+  it('sends cannot-read-selection message when confirm_accept button has an empty lead ID', async () => {
+    await processInboundMessage(buttonMessage('confirm_accept:'))
+
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't read that selection"),
+    )
+  })
+
   it('sends job-unavailable message with no-deduction confirmation when LEAD_EXPIRED on confirm_accept', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
     mockAcceptSelectedProviderJob.mockResolvedValue({

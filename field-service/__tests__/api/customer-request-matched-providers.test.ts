@@ -108,6 +108,23 @@ describe('GET /api/customer/requests/[id]/matched-providers', () => {
     expect(body.providers[0]).not.toHaveProperty('hourlyRate')
   })
 
+  it('returns 409 when request is no longer matchable for customer view', async () => {
+    mockGetSession.mockResolvedValue({ id: 'user-1', role: 'customer' })
+    mockResolveCustomerForSession.mockResolvedValue({ id: 'cust-1' })
+    const { ReviewFirstError } = await import('@/lib/review-first')
+    mockGetMatchedProvidersForCustomerRequest.mockRejectedValue(
+      new ReviewFirstError('REQUEST_NOT_MATCHABLE', 'Request is no longer available for matching.'),
+    )
+
+    const { GET } = await import('@/app/api/customer/requests/[id]/matched-providers/route')
+    const req = new NextRequest('http://localhost/api/customer/requests/jr-1/matched-providers')
+    const res = await GET(req, { params: Promise.resolve({ id: 'jr-1' }) })
+    const body = await res.json()
+
+    expect(res.status).toBe(409)
+    expect(body.error).toBe('REQUEST_NOT_MATCHABLE')
+  })
+
   it('returns useful empty state when no matches exist', async () => {
     mockGetSession.mockResolvedValue({ id: 'user-1', role: 'customer' })
     mockResolveCustomerForSession.mockResolvedValue({ id: 'cust-1' })
@@ -155,6 +172,17 @@ describe('GET /api/customer/requests/[id]/matched-providers', () => {
     const { GET } = await import('@/app/api/customer/requests/[id]/matched-providers/route')
     const req = new NextRequest('http://localhost/api/customer/requests/jr-1/matched-providers?batch=abc')
     const res = await GET(req, { params: Promise.resolve({ id: 'jr-1' }) })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when request id is missing/blank', async () => {
+    mockGetSession.mockResolvedValue({ id: 'user-1', role: 'customer' })
+    mockResolveCustomerForSession.mockResolvedValue({ id: 'cust-1' })
+
+    const { GET } = await import('@/app/api/customer/requests/[id]/matched-providers/route')
+    const req = new NextRequest('http://localhost/api/customer/requests/%20/matched-providers')
+    const res = await GET(req, { params: Promise.resolve({ id: '   ' }) })
 
     expect(res.status).toBe(400)
   })
