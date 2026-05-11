@@ -93,7 +93,7 @@ export default function SignUpPage() {
       <div className="space-y-1 text-center">
         <p className="app-kicker">Customer Access</p>
         <h1 className="text-2xl font-semibold text-foreground">Create your account</h1>
-        <p className="text-sm text-muted-foreground">We'll match you to nearby service providers</p>
+        <p className="text-sm text-muted-foreground">We&apos;ll match you to nearby service providers</p>
       </div>
 
       {/* Form */}
