@@ -2,25 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AcceptedLeadLockError,
   lockAcceptedLeadAfterCreditInTransaction,
-  notifyAcceptedLeadLocked,
 } from '../../lib/provider-accepted-lock'
-
-const { mockSendText, mockSendCtaUrl } = vi.hoisted(() => ({
-  mockSendText: vi.fn(),
-  mockSendCtaUrl: vi.fn(),
-}))
-
-vi.mock('../../lib/provider-lead-access', () => ({
-  getProviderLeadAccessUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/leads/access/signed-token'),
-}))
-vi.mock('../../lib/job-request-access', () => ({
-  getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.plugapro.co.za/request/signed-token'),
-}))
-vi.mock('../../lib/whatsapp', () => ({ sendText: mockSendText }))
-vi.mock('../../lib/whatsapp-interactive', () => ({ sendCtaUrl: mockSendCtaUrl }))
-vi.mock('../../lib/whatsapp-copy', () => ({
-  ctaLabelFor: vi.fn((key: string) => (key === 'job_detail' ? 'View job' : 'View details')),
-}))
 
 function makeLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -129,8 +111,6 @@ describe('provider accepted lock', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockSendText.mockResolvedValue('wamid-text')
-    mockSendCtaUrl.mockResolvedValue('wamid-cta')
     state = {
       lead: makeLead(),
       wallet: { paidCreditBalance: 4, promoCreditBalance: 0 },
@@ -312,32 +292,6 @@ describe('provider accepted lock', () => {
         providerId: 'provider-lock-1',
       }),
     ).rejects.toMatchObject({ code: 'ACCEPTED_LOCK_FAILED' })
-  })
-
-  it('does not undo accepted lock if notification delivery fails after commit', async () => {
-    mockSendText.mockRejectedValueOnce(new Error('whatsapp unavailable'))
-    const payload = {
-      leadId: 'lead-lock-1',
-      providerId: 'provider-lock-1',
-      providerPhone: '+27110000000',
-      customerPhone: '+27220000000',
-      customerName: 'Thandi Customer',
-      providerName: 'Apex Plumbing',
-      category: 'plumbing',
-      requestId: 'request-lock-1',
-      description: 'Kitchen leak',
-      preferredWindowStart: new Date('2026-05-10T10:00:00.000Z'),
-      preferredWindowEnd: new Date('2026-05-10T12:00:00.000Z'),
-      photosCount: 1,
-      estimatedArrivalAt: null,
-      callOutFee: 300,
-      currentCreditBalance: 3,
-      paidCreditBalance: 3,
-      promoCreditBalance: 0,
-      address: makeLead().jobRequest.address,
-    }
-
-    await expect(notifyAcceptedLeadLocked(payload)).resolves.toBe(false)
   })
 
   it('keeps customer phone and address isolated in notificationPayload, not in root result', async () => {

@@ -1,16 +1,15 @@
 import { Prisma } from '@prisma/client'
-import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
-import { getJobRequestAccessUrl } from './job-request-access'
-import { getProviderLeadAccessUrl } from './provider-lead-access'
-import { PROVIDER_CREDITS_PRICE_LINE } from './provider-credit-copy'
-import { ctaLabelFor } from './whatsapp-copy'
+import { db } from './db'
+import { hasSuccessfulMessageForRecipient } from './message-events'
 import { sendText } from './whatsapp'
-import { sendCtaUrl } from './whatsapp-interactive'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
   'test_selected_lead_credit_application',
 ] as const
+
+const ACCEPTED_LOCK_CUSTOMER_TEMPLATE = 'mvp1_accepted_lock_customer_confirmation'
+const ACCEPTED_LOCK_PROVIDER_TEMPLATE = 'mvp1_accepted_lock_provider_confirmation'
 
 type AcceptedLockErrorCode =
   | 'NOT_FOUND'
@@ -44,6 +43,32 @@ export type AcceptedLeadLockResult = {
   notificationPayload: AcceptedLeadLockNotificationPayload | null
 }
 
+type AcceptedLockConfirmationDelivery = {
+  sent: boolean
+  skipped?: 'duplicate'
+  failureReason?: string
+}
+
+export type AcceptedLockConfirmationResult =
+  | {
+      ok: true
+      leadId: string
+      providerId: string
+      serviceRequestId: string
+      customer: AcceptedLockConfirmationDelivery
+      provider: AcceptedLockConfirmationDelivery
+    }
+  | {
+      ok: false
+      reason:
+        | 'NOT_FOUND'
+        | 'PROVIDER_NOT_SELECTED'
+        | 'LEAD_NOT_LOCKED'
+        | 'REQUEST_NOT_LOCKED'
+      customer?: AcceptedLockConfirmationDelivery
+      provider?: AcceptedLockConfirmationDelivery
+    }
+
 type AcceptedLeadLockNotificationPayload = {
   leadId: string
   providerId: string
@@ -76,41 +101,6 @@ type AcceptedLeadLockNotificationPayload = {
 }
 
 type AcceptedLockTx = Prisma.TransactionClient
-
-function formatRand(amount: number | Prisma.Decimal | null | undefined) {
-  if (amount == null) return 'Not provided'
-  return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(amount))
-}
-
-function formatProviderHandoffAddress(address: {
-  street: string
-  addressLine1: string | null
-  addressLine2: string | null
-  complexName: string | null
-  unitNumber: string | null
-  suburb: string
-  city: string
-  province: string
-} | null) {
-  if (!address) return 'Address pending - contact customer'
-  return [
-    address.unitNumber,
-    address.complexName,
-    address.street,
-    address.addressLine1,
-    address.addressLine2,
-    address.suburb,
-    address.city,
-    address.province,
-  ].filter(Boolean).join(', ')
-}
-
-function formatPreferredTime(start: Date | null | undefined, end: Date | null | undefined) {
-  if (!start) return 'To be confirmed'
-  const startText = start.toLocaleString('en-ZA')
-  return end ? `${startText} - ${end.toLocaleString('en-ZA')}` : startText
-}
-
 function logAcceptedLock(params: {
   leadId: string
   providerId: string
@@ -128,6 +118,28 @@ function logAcceptedLock(params: {
     action: 'accepted_lock',
     result: params.result,
     source: params.source ?? 'api',
+    traceId: params.traceId ?? null,
+    reason: params.reason ?? null,
+    error: params.error instanceof Error ? params.error.message : params.error ? String(params.error) : null,
+  })
+}
+
+function logAcceptedLockConfirmation(params: {
+  leadId: string
+  providerId: string
+  serviceRequestId?: string | null
+  recipientRole: 'customer' | 'provider'
+  result: string
+  traceId?: string
+  reason?: string
+  error?: unknown
+}) {
+  console.info('[provider-accepted-lock-confirmation]', {
+    leadId: params.leadId,
+    providerId: params.providerId,
+    serviceRequestId: params.serviceRequestId ?? null,
+    recipientRole: params.recipientRole,
+    result: params.result,
     traceId: params.traceId ?? null,
     reason: params.reason ?? null,
     error: params.error instanceof Error ? params.error.message : params.error ? String(params.error) : null,
@@ -367,86 +379,246 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
 }
 
 export async function notifyAcceptedLeadLocked(params: AcceptedLeadLockNotificationPayload) {
-  try {
-    const [providerLeadUrl, ticketUrl] = await Promise.all([
-      getProviderLeadAccessUrl({
+  const result = await sendAcceptedLockConfirmations({
+    leadId: params.leadId,
+    providerId: params.providerId,
+  })
+  if (!result.ok) return false
+  return !result.customer.failureReason && !result.provider.failureReason
+}
+
+async function hasAcceptedLockConfirmationSent(params: {
+  to: string
+  templateName: string
+  idempotencyKey: string
+}) {
+  return hasSuccessfulMessageForRecipient({
+    to: params.to,
+    templateName: params.templateName,
+    metadataPath: ['idempotencyKey'],
+    metadataEquals: params.idempotencyKey,
+  })
+}
+
+async function recordAcceptedLockConfirmationFailure(params: {
+  to: string
+  templateName: string
+  body: string
+  leadId: string
+  providerId: string
+  serviceRequestId: string
+  recipientRole: 'customer' | 'provider'
+  idempotencyKey: string
+  failureReason: string
+}) {
+  await db.messageEvent.create({
+    data: {
+      channel: 'WHATSAPP',
+      direction: 'OUTBOUND',
+      templateName: params.templateName,
+      body: params.body,
+      to: params.to,
+      status: 'FAILED',
+      sentAt: new Date(),
+      failureReason: params.failureReason,
+      metadata: {
         leadId: params.leadId,
         providerId: params.providerId,
-        jobRequestId: params.requestId,
-        providerPhone: params.providerPhone,
-      }),
-      getJobRequestAccessUrl(params.requestId, 'job_tracking'),
-    ])
-
-    const fullAddress = formatProviderHandoffAddress(params.address)
-    const accessLine = params.address?.accessNotes ? `\nAccess notes: ${params.address.accessNotes}` : ''
-    const descriptionLine = params.description?.trim() ? `Job description: ${params.description.trim()}\n` : ''
-    const photosLine = params.photosCount > 0
-      ? `Photos: ${params.photosCount} available in the lead link\n`
-      : 'Photos: None uploaded\n'
-    const jobReference = params.leadId.slice(-8).toUpperCase()
-
-    await sendText({
-      to: params.providerPhone,
-      text:
-        `✅ Job accepted and locked\n\n` +
-        `Credit applied: ${LEAD_UNLOCK_COST_CREDITS}. ${PROVIDER_CREDITS_PRICE_LINE}\n` +
-        `Available balance: ${params.currentCreditBalance} credits\n` +
-        `Starter/onboarding: ${params.promoCreditBalance}\n` +
-        `Purchased: ${params.paidCreditBalance}\n\n` +
-        `Customer details:\n` +
-        `Name: ${params.customerName}\n` +
-        `Phone: ${params.customerPhone}\n` +
-        `Address: ${fullAddress}${accessLine}\n\n` +
-        `Request details:\n` +
-        `Reference: ${jobReference}\n` +
-        `Preferred time: ${formatPreferredTime(params.preferredWindowStart, params.preferredWindowEnd)}\n` +
-        descriptionLine +
-        photosLine +
-        `\nMVP1 is complete for this request. Use the lead link for the accepted details.`,
-      templateName: 'interactive:selected_job_accepted_provider',
-      metadata: { leadId: params.leadId, providerId: params.providerId },
-    })
-    if (providerLeadUrl) {
-      await sendCtaUrl(
-        params.providerPhone,
-        'Accepted lead details are available below.',
-        ctaLabelFor('generic_details'),
-        providerLeadUrl,
-        undefined,
-        { templateName: 'interactive:selected_job_accepted_provider_cta', metadata: { leadId: params.leadId, providerId: params.providerId } },
-      )
-    }
-
-    await sendText({
-      to: params.customerPhone,
-      text:
-        `✅ Your provider accepted the request\n\n` +
-        `Provider: ${params.providerName}\n` +
-        `Expected arrival: ${params.estimatedArrivalAt?.toLocaleString('en-ZA') ?? 'To be confirmed'}\n` +
-        `Call-out fee: ${formatRand(params.callOutFee)}` +
-        (ticketUrl ? `\n\nYour request details are available below.` : ''),
-      templateName: 'interactive:selected_job_accepted_customer',
-      metadata: { leadId: params.leadId, providerId: params.providerId },
-    })
-    if (ticketUrl) {
-      await sendCtaUrl(
-        params.customerPhone,
-        'Your request is available below.',
-        ctaLabelFor('generic_details'),
-        ticketUrl,
-        undefined,
-        { templateName: 'interactive:selected_job_accepted_customer_cta', metadata: { leadId: params.leadId, providerId: params.providerId } },
-      )
-    }
-
-    return true
-  } catch (error) {
-    console.error('[provider-accepted-lock] notification failed', {
+        jobRequestId: params.serviceRequestId,
+        recipientRole: params.recipientRole,
+        idempotencyKey: params.idempotencyKey,
+        source: 'accepted_lock_confirmation',
+      } as Prisma.InputJsonValue,
+    },
+  }).catch((error) => {
+    console.warn('[provider-accepted-lock-confirmation] failed to record failure MessageEvent', {
       leadId: params.leadId,
       providerId: params.providerId,
+      serviceRequestId: params.serviceRequestId,
+      recipientRole: params.recipientRole,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  })
+}
+
+async function sendAcceptedLockConfirmation(params: {
+  to: string | null | undefined
+  templateName: string
+  body: string
+  leadId: string
+  providerId: string
+  serviceRequestId: string
+  recipientRole: 'customer' | 'provider'
+  idempotencyKey: string
+  traceId?: string
+}): Promise<AcceptedLockConfirmationDelivery> {
+  const to = params.to?.trim()
+  if (!to) {
+    await recordAcceptedLockConfirmationFailure({
+      ...params,
+      to: `missing:${params.recipientRole}:${params.leadId}`,
+      failureReason: 'WHATSAPP_PHONE_MISSING',
+    })
+    logAcceptedLockConfirmation({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      serviceRequestId: params.serviceRequestId,
+      recipientRole: params.recipientRole,
+      result: 'failed',
+      traceId: params.traceId,
+      reason: 'WHATSAPP_PHONE_MISSING',
+    })
+    return { sent: false, failureReason: 'WHATSAPP_PHONE_MISSING' }
+  }
+
+  if (await hasAcceptedLockConfirmationSent({
+    to,
+    templateName: params.templateName,
+    idempotencyKey: params.idempotencyKey,
+  })) {
+    logAcceptedLockConfirmation({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      serviceRequestId: params.serviceRequestId,
+      recipientRole: params.recipientRole,
+      result: 'duplicate',
+      traceId: params.traceId,
+    })
+    return { sent: false, skipped: 'duplicate' }
+  }
+
+  logAcceptedLockConfirmation({
+    leadId: params.leadId,
+    providerId: params.providerId,
+    serviceRequestId: params.serviceRequestId,
+    recipientRole: params.recipientRole,
+    result: 'attempt',
+    traceId: params.traceId,
+  })
+
+  try {
+    await sendText({
+      to,
+      text: params.body,
+      templateName: params.templateName,
+      metadata: {
+        leadId: params.leadId,
+        providerId: params.providerId,
+        jobRequestId: params.serviceRequestId,
+        recipientRole: params.recipientRole,
+        idempotencyKey: params.idempotencyKey,
+        source: 'accepted_lock_confirmation',
+        ...(params.traceId ? { traceId: params.traceId } : {}),
+      },
+    })
+    logAcceptedLockConfirmation({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      serviceRequestId: params.serviceRequestId,
+      recipientRole: params.recipientRole,
+      result: 'sent',
+      traceId: params.traceId,
+    })
+    return { sent: true }
+  } catch (error) {
+    const failureReason = error instanceof Error ? error.message : String(error)
+    await recordAcceptedLockConfirmationFailure({
+      ...params,
+      to,
+      failureReason,
+    })
+    logAcceptedLockConfirmation({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      serviceRequestId: params.serviceRequestId,
+      recipientRole: params.recipientRole,
+      result: 'failed',
+      traceId: params.traceId,
       error,
     })
-    return false
+    return { sent: false, failureReason }
+  }
+}
+
+export async function sendAcceptedLockConfirmations(params: {
+  leadId: string
+  providerId: string
+  traceId?: string
+}): Promise<AcceptedLockConfirmationResult> {
+  const lead = await db.lead.findUnique({
+    where: { id: params.leadId },
+    select: {
+      id: true,
+      providerId: true,
+      status: true,
+      jobRequestId: true,
+      provider: { select: { phone: true } },
+      jobRequest: {
+        select: {
+          id: true,
+          status: true,
+          selectedProviderId: true,
+          selectedLeadInviteId: true,
+          customer: { select: { phone: true } },
+        },
+      },
+    },
+  })
+
+  if (!lead) return { ok: false, reason: 'NOT_FOUND' }
+  if (
+    lead.providerId !== params.providerId ||
+    lead.jobRequest.selectedProviderId !== params.providerId ||
+    lead.jobRequest.selectedLeadInviteId !== lead.id
+  ) {
+    return { ok: false, reason: 'PROVIDER_NOT_SELECTED' }
+  }
+  if (lead.status !== 'ACCEPTED_LOCKED') {
+    return { ok: false, reason: 'LEAD_NOT_LOCKED' }
+  }
+  if (lead.jobRequest.status !== 'ACCEPTED_LOCKED') {
+    return { ok: false, reason: 'REQUEST_NOT_LOCKED' }
+  }
+
+  const serviceRequestId = lead.jobRequestId
+  const customerIdempotencyKey = `accepted_lock_confirmation:customer:${lead.id}:${params.providerId}`
+  const providerIdempotencyKey = `accepted_lock_confirmation:provider:${lead.id}:${params.providerId}`
+  const customerBody =
+    'Good news. Your selected Plug A Pro provider has accepted your request. Your request is now confirmed at MVP1 level. Next steps will be handled through the current pilot process.'
+  const providerBody =
+    'You have accepted this Plug A Pro lead. Your credit has been applied. MVP1 flow is complete; follow the current pilot operating process for next steps.'
+
+  const [customer, provider] = await Promise.all([
+    sendAcceptedLockConfirmation({
+      to: lead.jobRequest.customer.phone,
+      templateName: ACCEPTED_LOCK_CUSTOMER_TEMPLATE,
+      body: customerBody,
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId,
+      recipientRole: 'customer',
+      idempotencyKey: customerIdempotencyKey,
+      traceId: params.traceId,
+    }),
+    sendAcceptedLockConfirmation({
+      to: lead.provider.phone,
+      templateName: ACCEPTED_LOCK_PROVIDER_TEMPLATE,
+      body: providerBody,
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId,
+      recipientRole: 'provider',
+      idempotencyKey: providerIdempotencyKey,
+      traceId: params.traceId,
+    }),
+  ])
+
+  return {
+    ok: true,
+    leadId: lead.id,
+    providerId: params.providerId,
+    serviceRequestId,
+    customer,
+    provider,
   }
 }
