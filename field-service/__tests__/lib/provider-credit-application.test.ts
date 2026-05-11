@@ -12,6 +12,7 @@ const { mockDb, state } = vi.hoisted(() => {
     unlock: any
     ledgerEntries: any[]
     failLeadStatusUpdate: boolean
+    failLedgerCreate: boolean
     preserveConcurrentCommit: boolean
   } = {
     lead: null,
@@ -19,6 +20,7 @@ const { mockDb, state } = vi.hoisted(() => {
     unlock: null,
     ledgerEntries: [],
     failLeadStatusUpdate: false,
+    failLedgerCreate: false,
     preserveConcurrentCommit: false,
   }
 
@@ -68,6 +70,7 @@ function makeLead(overrides: Record<string, unknown> = {}) {
       selectedLeadInviteId: 'lead-1',
       isTestRequest: false,
       cohortName: null,
+      expiresAt: new Date(Date.now() + 60_000),
       match: null,
     },
     ...overrides,
@@ -117,13 +120,17 @@ describe('provider credit application', () => {
     state.wallet = makeWallet()
     state.ledgerEntries = []
     state.failLeadStatusUpdate = false
+    state.failLedgerCreate = false
     state.preserveConcurrentCommit = false
     setupTransactionMock()
 
-    mockDb.lead.findUnique.mockImplementation(async () => ({
-      ...state.lead,
-      unlock: state.unlock,
-    }))
+    mockDb.lead.findUnique.mockImplementation(async () => {
+      if (!state.lead) return null
+      return {
+        ...state.lead,
+        unlock: state.unlock,
+      }
+    })
 
     mockDb.providerWallet.findUnique.mockImplementation(async () => state.wallet)
     mockDb.providerWallet.upsert.mockImplementation(async () => state.wallet)
@@ -173,6 +180,9 @@ describe('provider credit application', () => {
     })
 
     mockDb.walletLedgerEntry.create.mockImplementation(async (args: any) => {
+      if (state.failLedgerCreate) {
+        throw new Error('ledger write failed')
+      }
       const entry = {
         id: `ledger-${state.ledgerEntries.length + 1}`,
         createdAt: new Date(),
@@ -242,6 +252,24 @@ describe('provider credit application', () => {
       traceId: 'trace-1',
       source: 'whatsapp',
     })
+    expect(state.ledgerEntries[0].metadata).toMatchObject({
+      leadId: 'lead-1',
+      jobRequestId: 'request-1',
+      leadUnlockId: 'unlock-1',
+      action: 'selected_provider_credit_application',
+    })
+  })
+
+  it('blocks a missing lead before touching the wallet', async () => {
+    state.lead = null
+
+    await expect(
+      applyProviderCreditForAcceptedLead({ leadId: 'missing-lead', providerId: 'provider-1' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' } satisfies Partial<ProviderCreditApplicationError>)
+
+    expect(mockDb.providerWallet.findUnique).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(state.ledgerEntries).toHaveLength(0)
   })
 
   it('returns idempotent success for duplicate calls without a second deduction', async () => {
@@ -302,12 +330,36 @@ describe('provider credit application', () => {
     expect(state.ledgerEntries).toHaveLength(0)
   })
 
+  it('blocks negative wallet balances without changing lead status', async () => {
+    state.wallet = makeWallet({ paidCreditBalance: 2, promoCreditBalance: -1 })
+
+    await expect(
+      applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-1' }),
+    ).rejects.toMatchObject({ code: 'CORRUPT_CREDIT_BALANCE' } satisfies Partial<ProviderCreditApplicationError>)
+
+    expect(state.lead.status).toBe('PROVIDER_ACCEPTED')
+    expect(state.unlock).toBeNull()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(state.ledgerEntries).toHaveLength(0)
+  })
+
   it('blocks the wrong provider', async () => {
     await expect(
       applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-2' }),
     ).rejects.toMatchObject({ code: 'PROVIDER_NOT_SELECTED' } satisfies Partial<ProviderCreditApplicationError>)
 
     expect(state.wallet).toMatchObject({ paidCreditBalance: 2, promoCreditBalance: 0 })
+    expect(state.ledgerEntries).toHaveLength(0)
+  })
+
+  it('blocks leads that have not been provider accepted', async () => {
+    state.lead = makeLead({ status: 'CUSTOMER_SELECTED' })
+
+    await expect(
+      applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-1' }),
+    ).rejects.toMatchObject({ code: 'LEAD_NOT_ACCEPTED' } satisfies Partial<ProviderCreditApplicationError>)
+
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
     expect(state.ledgerEntries).toHaveLength(0)
   })
 
@@ -323,6 +375,61 @@ describe('provider credit application', () => {
     ).rejects.toMatchObject({ code: 'REQUEST_CANCELLED' } satisfies Partial<ProviderCreditApplicationError>)
 
     expect(state.ledgerEntries).toHaveLength(0)
+  })
+
+  it('blocks request expiry and accepted-locked requests before deduction', async () => {
+    state.lead = makeLead({
+      jobRequest: {
+        ...makeLead().jobRequest,
+        expiresAt: new Date(Date.now() - 1_000),
+      },
+    })
+
+    await expect(
+      applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-1' }),
+    ).rejects.toMatchObject({ code: 'LEAD_EXPIRED' } satisfies Partial<ProviderCreditApplicationError>)
+
+    state.lead = makeLead({
+      jobRequest: {
+        ...makeLead().jobRequest,
+        status: 'ACCEPTED_LOCKED',
+      },
+    })
+
+    await expect(
+      applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-1' }),
+    ).rejects.toMatchObject({ code: 'LEAD_ALREADY_LOCKED' } satisfies Partial<ProviderCreditApplicationError>)
+
+    expect(state.ledgerEntries).toHaveLength(0)
+  })
+
+  it('returns an existing application transaction without deducting again when the unlock marker is missing', async () => {
+    state.ledgerEntries = [{
+      id: 'ledger-existing-no-unlock',
+      providerId: 'provider-1',
+      entryType: 'LEAD_UNLOCK_DEBIT',
+      creditType: 'PAID',
+      amountCredits: 1,
+      referenceType: 'selected_lead_credit_application',
+      referenceId: 'lead-1',
+      balanceAfterPaidCredits: 1,
+      balanceAfterPromoCredits: 0,
+      createdAt: new Date(),
+    }]
+    state.wallet = makeWallet({ paidCreditBalance: 1, promoCreditBalance: 0 })
+
+    const result = await applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(result).toMatchObject({
+      alreadyApplied: true,
+      creditTransactionId: 'ledger-existing-no-unlock',
+      leadUnlockId: 'unlock-1',
+      currentCreditBalance: 1,
+    })
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+    expect(state.ledgerEntries).toHaveLength(1)
+    expect(state.lead.status).toBe('CREDIT_APPLIED')
   })
 
   it('handles a concurrent duplicate marker as an idempotent replay', async () => {
@@ -364,6 +471,41 @@ describe('provider credit application', () => {
       currentCreditBalance: 1,
     })
     expect(state.ledgerEntries).toHaveLength(1)
+  })
+
+  it('rolls back the wallet debit and unlock marker if ledger creation fails', async () => {
+    state.failLedgerCreate = true
+
+    await expect(
+      applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-1' }),
+    ).rejects.toThrow('ledger write failed')
+
+    expect(state.wallet).toMatchObject({ paidCreditBalance: 2, promoCreditBalance: 0 })
+    expect(state.lead.status).toBe('PROVIDER_ACCEPTED')
+    expect(state.unlock).toBeNull()
+    expect(state.ledgerEntries).toHaveLength(0)
+  })
+
+  it('rolls back and reports a failed replay when an idempotency key collides without an existing lead transaction', async () => {
+    mockDb.walletLedgerEntry.create.mockImplementationOnce(async () => {
+      throw new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`idempotencyKey`)',
+        { code: 'P2002', clientVersion: 'test' },
+      )
+    })
+
+    await expect(
+      applyProviderCreditForAcceptedLead({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+        idempotencyKey: 'colliding-key',
+      }),
+    ).rejects.toMatchObject({ code: 'CONCURRENT_DEDUCTION' } satisfies Partial<ProviderCreditApplicationError>)
+
+    expect(state.wallet).toMatchObject({ paidCreditBalance: 2, promoCreditBalance: 0 })
+    expect(state.lead.status).toBe('PROVIDER_ACCEPTED')
+    expect(state.unlock).toBeNull()
+    expect(state.ledgerEntries).toHaveLength(0)
   })
 
   it('rolls back the deduction and transaction if the lead status update fails', async () => {

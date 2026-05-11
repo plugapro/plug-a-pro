@@ -251,6 +251,13 @@ export async function debitCreditsForLeadUnlockInTransaction(
   const wallet = await getOrCreateProviderWalletInTx(tx, providerId)
   assertWalletActive(wallet)
 
+  if (wallet.paidCreditBalance < 0 || wallet.promoCreditBalance < 0) {
+    throw new ProviderWalletError(
+      'INSUFFICIENT_FUNDS',
+      'Provider wallet has a corrupt credit balance.',
+    )
+  }
+
   const totalAvailableCredits = wallet.paidCreditBalance + wallet.promoCreditBalance
   if (totalAvailableCredits < amountCredits) {
     throw new ProviderWalletError(

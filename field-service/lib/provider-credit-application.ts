@@ -4,7 +4,6 @@ import { LEAD_UNLOCK_COST_CREDITS } from './lead-unlocks'
 import {
   ProviderWalletError,
   debitCreditsForLeadUnlockInTransaction,
-  type WalletMutationResult,
 } from './provider-wallet'
 
 const CREDIT_APPLICATION_REFERENCE_TYPE = 'selected_lead_credit_application'
@@ -103,7 +102,7 @@ function logCreditApplication(params: {
   reason?: string
   error?: unknown
 }) {
-  console.info('[provider-credit-application]', {
+  const payload = {
     leadId: params.leadId,
     providerId: params.providerId,
     action: 'credit_application',
@@ -113,7 +112,14 @@ function logCreditApplication(params: {
     creditTransactionId: params.creditTransactionId ?? null,
     reason: params.reason ?? null,
     error: params.error instanceof Error ? params.error.message : params.error ? String(params.error) : null,
-  })
+  }
+
+  if (params.result === 'error') {
+    console.error('[provider-credit-application]', payload)
+    return
+  }
+
+  console.info('[provider-credit-application]', payload)
 }
 
 function mapWalletError(error: unknown, currentCreditBalance?: number): never {
@@ -197,6 +203,58 @@ async function buildAlreadyAppliedResult(
   }
 }
 
+async function createRecoveredUnlockForExistingTransaction(
+  tx: CreditApplicationTx,
+  params: {
+    lead: {
+      id: string
+      providerId: string
+      jobRequestId: string
+      status: string
+      jobRequest: {
+        cohortName: string | null
+        isTestRequest: boolean
+      }
+      provider: {
+        isTestUser: boolean
+      }
+    }
+    ledgerEntry: WalletLedgerEntry
+  },
+) {
+  const isTestApplication = params.lead.jobRequest.isTestRequest || params.lead.provider.isTestUser
+  const unlock = await tx.leadUnlock.create({
+    data: {
+      leadId: params.lead.id,
+      providerId: params.lead.providerId,
+      matchId: null,
+      creditsCharged: LEAD_UNLOCK_COST_CREDITS,
+      creditTypeBreakdown: toJson({ [params.ledgerEntry.creditType.toLowerCase()]: params.ledgerEntry.amountCredits }),
+      isTestUnlock: isTestApplication,
+      cohortName: params.lead.jobRequest.cohortName,
+      status: 'UNLOCKED',
+    },
+  })
+
+  const updated = await tx.lead.updateMany({
+    where: {
+      id: params.lead.id,
+      status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
+    },
+    data: { status: 'CREDIT_APPLIED', respondedAt: new Date() },
+  })
+
+  if (updated.count !== 1 && params.lead.status !== 'CREDIT_APPLIED') {
+    throw new ProviderCreditApplicationError(
+      'CONCURRENT_DEDUCTION',
+      'Lead changed while replaying an existing provider credit transaction.',
+      Math.max(0, params.ledgerEntry.balanceAfterPaidCredits + params.ledgerEntry.balanceAfterPromoCredits),
+    )
+  }
+
+  return unlock
+}
+
 export async function applyProviderCreditForAcceptedLead(params: {
   leadId: string
   providerId: string
@@ -208,8 +266,30 @@ export async function applyProviderCreditForAcceptedLead(params: {
     return await db.$transaction((tx) => applyProviderCreditForAcceptedLeadInTransaction(tx, params))
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      return db.$transaction((tx) => replayExistingCreditApplication(tx, params))
+      try {
+        return await db.$transaction((tx) => replayExistingCreditApplication(tx, params))
+      } catch (replayError) {
+        logCreditApplication({
+          leadId: params.leadId,
+          providerId: params.providerId,
+          result: 'error',
+          source: params.source,
+          traceId: params.traceId,
+          reason: replayError instanceof ProviderCreditApplicationError ? replayError.code : 'IDEMPOTENT_REPLAY_FAILED',
+          error: replayError,
+        })
+        throw replayError
+      }
     }
+    logCreditApplication({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      result: 'error',
+      source: params.source,
+      traceId: params.traceId,
+      reason: error instanceof ProviderCreditApplicationError ? error.code : 'TRANSACTION_FAILED',
+      error,
+    })
     throw error
   }
 }
@@ -253,6 +333,7 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
           selectedLeadInviteId: true,
           isTestRequest: true,
           cohortName: true,
+          expiresAt: true,
           match: { select: { id: true } },
         },
       },
@@ -306,12 +387,22 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
     throw new ProviderCreditApplicationError('LEAD_ALREADY_LOCKED', 'This request is already locked.')
   }
 
+  if (lead.jobRequest.status === 'ACCEPTED_LOCKED' || lead.jobRequest.status === 'MATCHED') {
+    logCreditApplication({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'LEAD_ALREADY_LOCKED' })
+    throw new ProviderCreditApplicationError('LEAD_ALREADY_LOCKED', 'This request is already locked.')
+  }
+
   if (lead.status === 'CANCELLED' || lead.cancelledAt || lead.jobRequest.status === 'CANCELLED') {
     logCreditApplication({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'REQUEST_CANCELLED' })
     throw new ProviderCreditApplicationError('REQUEST_CANCELLED', 'This request was cancelled.')
   }
 
-  if (lead.status === 'EXPIRED' || lead.jobRequest.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date())) {
+  if (
+    lead.status === 'EXPIRED' ||
+    lead.jobRequest.status === 'EXPIRED' ||
+    (lead.expiresAt && lead.expiresAt <= new Date()) ||
+    (lead.jobRequest.expiresAt && lead.jobRequest.expiresAt <= new Date())
+  ) {
     logCreditApplication({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'LEAD_EXPIRED' })
     throw new ProviderCreditApplicationError('LEAD_EXPIRED', 'This lead has expired.')
   }
@@ -319,6 +410,33 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
   if (lead.status !== 'PROVIDER_ACCEPTED' && lead.status !== 'CREDIT_REQUIRED') {
     logCreditApplication({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'LEAD_NOT_ACCEPTED' })
     throw new ProviderCreditApplicationError('LEAD_NOT_ACCEPTED', 'This lead is not ready for credit application.')
+  }
+
+  const existingApplicationTransaction = await findExistingApplicationTransaction(tx, {
+    leadId: lead.id,
+    providerId: params.providerId,
+  })
+
+  if (existingApplicationTransaction) {
+    const recoveredUnlock = await createRecoveredUnlockForExistingTransaction(tx, {
+      lead,
+      ledgerEntry: existingApplicationTransaction,
+    })
+    const result = await buildAlreadyAppliedResult(tx, {
+      leadId: lead.id,
+      providerId: params.providerId,
+      leadUnlock: recoveredUnlock,
+    })
+    logCreditApplication({
+      leadId: lead.id,
+      providerId: params.providerId,
+      result: 'idempotent_replay',
+      source: params.source,
+      traceId: params.traceId,
+      creditTransactionId: result.creditTransactionId,
+      reason: 'EXISTING_CREDIT_TRANSACTION',
+    })
+    return result
   }
 
   const wallet = await tx.providerWallet.findUnique({
