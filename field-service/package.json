@@ -27,6 +27,7 @@
     "seed:test-leads:requests-only": "ALLOW_TEST_DATA_IMPORT=true tsx --env-file=.env.local scripts/seed-west-rand-test-leads.ts --commit --requests-only",
     "ops:fast-match:kpi-report": "tsx scripts/report-fast-match-kpis.ts",
     "ops:whatsapp:live-harness": "tsx scripts/run-live-whatsapp-harness.ts",
+    "cleanup:legacy-matching-backlog": "tsx scripts/cleanup-ops-review-backlog.ts",
     "db:studio": "prisma studio",
     "db:wallet-schema-drift": "tsx scripts/wallet-schema-drift-repair.ts",
     "whatsapp:templates:audit": "node scripts/register-whatsapp-templates.mjs --audit-coverage",
