@@ -24,6 +24,7 @@ export type ProviderLeadCreditCheckResult =
       providerId: string
       reason:
         | 'NOT_FOUND'
+        | 'PROVIDER_NOT_FOUND'
         | 'PROVIDER_NOT_SELECTED'
         | 'LEAD_NOT_ACCEPTED'
         | 'REQUEST_CANCELLED'
@@ -33,6 +34,7 @@ export type ProviderLeadCreditCheckResult =
         | 'WALLET_NOT_ACTIVE'
         | 'INSUFFICIENT_CREDITS'
         | 'CORRUPT_CREDIT_BALANCE'
+        | 'WALLET_QUERY_FAILED'
       requiredCredits?: number
       currentCreditBalance?: number
       paidCreditBalance?: number
@@ -50,8 +52,10 @@ function logCreditCheck(params: {
   source?: string
   traceId?: string
   reason?: string
+  error?: unknown
 }) {
-  console.info('[provider-credit-check]', {
+  const logger = params.result === 'error' ? console.warn : console.info
+  logger('[provider-credit-check]', {
     leadId: params.leadId,
     providerId: params.providerId,
     action: 'credit_check',
@@ -59,6 +63,7 @@ function logCreditCheck(params: {
     source: params.source ?? 'api',
     traceId: params.traceId ?? null,
     reason: params.reason ?? null,
+    error: params.error instanceof Error ? params.error.message : params.error ? String(params.error) : null,
   })
 }
 
@@ -78,6 +83,8 @@ function blockedMessage(reason: string) {
       return 'This lead could not be found.'
     case 'PROVIDER_NOT_SELECTED':
       return 'This job was offered to a different provider.'
+    case 'PROVIDER_NOT_FOUND':
+      return 'We could not find this provider profile.'
     case 'LEAD_NOT_ACCEPTED':
       return 'This lead has not been accepted yet.'
     case 'REQUEST_CANCELLED':
@@ -88,6 +95,8 @@ function blockedMessage(reason: string) {
       return 'This lead is already locked.'
     case 'WALLET_NOT_ACTIVE':
       return 'Your provider wallet is not active. Please contact support before continuing.'
+    case 'WALLET_QUERY_FAILED':
+      return 'We could not check your credit balance right now. Please try again.'
     default:
       return 'Credit check could not be completed.'
   }
@@ -159,9 +168,11 @@ export async function checkProviderLeadCreditBalanceInTransaction(
       expiresAt: true,
       cancelledAt: true,
       unlock: { select: { id: true } },
+      provider: { select: { id: true } },
       jobRequest: {
         select: {
           status: true,
+          expiresAt: true,
           selectedProviderId: true,
           selectedLeadInviteId: true,
         },
@@ -172,6 +183,18 @@ export async function checkProviderLeadCreditBalanceInTransaction(
   if (!lead) {
     logCreditCheck({ leadId: params.leadId, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'NOT_FOUND' })
     return { ok: false, providerId: params.providerId, reason: 'NOT_FOUND', providerMessage: blockedMessage('NOT_FOUND') }
+  }
+
+  if (!lead.provider) {
+    logCreditCheck({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'PROVIDER_NOT_FOUND' })
+    return {
+      ok: false,
+      leadId: lead.id,
+      providerId: params.providerId,
+      reason: 'PROVIDER_NOT_FOUND',
+      leadStatus: lead.status,
+      providerMessage: blockedMessage('PROVIDER_NOT_FOUND'),
+    }
   }
 
   if (
@@ -214,7 +237,11 @@ export async function checkProviderLeadCreditBalanceInTransaction(
     }
   }
 
-  if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date())) {
+  if (
+    lead.status === 'EXPIRED' ||
+    (lead.expiresAt && lead.expiresAt <= new Date()) ||
+    (lead.jobRequest.expiresAt && lead.jobRequest.expiresAt <= new Date())
+  ) {
     logCreditCheck({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'LEAD_EXPIRED' })
     return {
       ok: false,
@@ -238,15 +265,56 @@ export async function checkProviderLeadCreditBalanceInTransaction(
     }
   }
 
-  const requiredCredits = LEAD_UNLOCK_COST_CREDITS
-  const wallet = await tx.providerWallet.findUnique({
-    where: { providerId: params.providerId },
-    select: {
-      paidCreditBalance: true,
-      promoCreditBalance: true,
-      status: true,
-    },
-  })
+  const requiredCredits =
+    Number.isFinite(LEAD_UNLOCK_COST_CREDITS) && LEAD_UNLOCK_COST_CREDITS > 0
+      ? LEAD_UNLOCK_COST_CREDITS
+      : 1
+  if (requiredCredits !== LEAD_UNLOCK_COST_CREDITS) {
+    console.warn('[provider-credit-check]', {
+      leadId: lead.id,
+      providerId: params.providerId,
+      action: 'credit_check',
+      result: 'config_defaulted',
+      source: params.source ?? 'api',
+      traceId: params.traceId ?? null,
+      reason: 'CREDIT_REQUIREMENT_INVALID',
+    })
+  }
+
+  let wallet: {
+    paidCreditBalance: number
+    promoCreditBalance: number
+    status: string
+  } | null
+  try {
+    wallet = await tx.providerWallet.findUnique({
+      where: { providerId: params.providerId },
+      select: {
+        paidCreditBalance: true,
+        promoCreditBalance: true,
+        status: true,
+      },
+    })
+  } catch (error) {
+    logCreditCheck({
+      leadId: lead.id,
+      providerId: params.providerId,
+      result: 'error',
+      source: params.source,
+      traceId: params.traceId,
+      reason: 'WALLET_QUERY_FAILED',
+      error,
+    })
+    return {
+      ok: false,
+      leadId: lead.id,
+      providerId: params.providerId,
+      reason: 'WALLET_QUERY_FAILED',
+      requiredCredits,
+      leadStatus: lead.status,
+      providerMessage: blockedMessage('WALLET_QUERY_FAILED'),
+    }
+  }
 
   const applyCreditRequired = async (
     reason: 'WALLET_MISSING' | 'WALLET_NOT_ACTIVE' | 'INSUFFICIENT_CREDITS' | 'CORRUPT_CREDIT_BALANCE',
@@ -325,9 +393,9 @@ export async function checkProviderLeadCreditBalanceInTransaction(
   const currentCreditBalance = Math.max(0, wallet.paidCreditBalance + wallet.promoCreditBalance)
   if (balanceIsCorrupt) {
     return applyCreditRequired('CORRUPT_CREDIT_BALANCE', {
-      currentCreditBalance,
-      paidCreditBalance: wallet.paidCreditBalance,
-      promoCreditBalance: wallet.promoCreditBalance,
+      currentCreditBalance: 0,
+      paidCreditBalance: 0,
+      promoCreditBalance: 0,
     })
   }
 
