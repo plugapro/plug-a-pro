@@ -158,6 +158,7 @@ export async function sendText(params: {
   templateName?: string
   metadata?: Record<string, unknown>
   allowTestCohortOverride?: boolean
+  recordMessageEvent?: boolean
 }): Promise<string> {
   const { accessToken, phoneNumberId } = getConfig()
   assertCohortSendAllowed(params.to, {
@@ -193,14 +194,16 @@ export async function sendText(params: {
   const data = await response.json()
   const externalId = data.messages?.[0]?.id ?? ''
 
-  await logOutboundMessage({
-    bookingId: params.bookingId,
-    to: params.to,
-    templateName: params.templateName ?? 'freeform:text',
-    body: params.text,
-    externalId,
-    metadata: params.metadata,
-  }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
+  if (params.recordMessageEvent !== false) {
+    await logOutboundMessage({
+      bookingId: params.bookingId,
+      to: params.to,
+      templateName: params.templateName ?? 'freeform:text',
+      body: params.text,
+      externalId,
+      metadata: params.metadata,
+    }).catch((err: unknown) => { console.error('[whatsapp] message log failed', err) })
+  }
 
   return externalId
 }

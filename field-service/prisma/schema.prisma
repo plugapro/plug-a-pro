@@ -1347,6 +1347,7 @@ model MessageEvent {
   body          String?
   to            String         // phone number or email
   externalId    String?        // WhatsApp message ID (WAMID)
+  idempotencyKey String?
   status        MessageStatus  @default(QUEUED)
   sentAt        DateTime?
   deliveredAt   DateTime?
@@ -1360,6 +1361,7 @@ model MessageEvent {
   customer Customer? @relation(fields: [customerId], references: [id])
   booking  Booking?  @relation(fields: [bookingId], references: [id])
 
+  @@index([idempotencyKey])
   @@map("message_events")
 }
 

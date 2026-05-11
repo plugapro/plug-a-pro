@@ -20,6 +20,10 @@ export async function logOutboundMessage(params: {
   }).catch(() => null)
 
   const metadata = params.metadata ?? {}
+  const idempotencyKey =
+    typeof metadata.idempotencyKey === 'string'
+      ? metadata.idempotencyKey
+      : undefined
   const hasExplicitCohortMarker =
     'isTestEvent' in metadata ||
     'isTestRequest' in metadata ||
@@ -56,6 +60,7 @@ export async function logOutboundMessage(params: {
         body: params.body ?? undefined,
         to: params.to,
         status: 'FAILED',
+        idempotencyKey,
         failureReason: 'NOTIFICATION_BLOCKED_TEST_COHORT_MISMATCH',
         metadata: {
           ...metadata,
@@ -85,6 +90,7 @@ export async function logOutboundMessage(params: {
       body: params.body ?? undefined,
       to: params.to,
       externalId: params.externalId ?? undefined,
+      idempotencyKey,
       status: 'SENT',
       sentAt: new Date(),
       metadata: metadata as Prisma.InputJsonValue,

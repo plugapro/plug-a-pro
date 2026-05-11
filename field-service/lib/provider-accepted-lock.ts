@@ -562,12 +562,23 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
 }
 
 export async function notifyAcceptedLeadLocked(params: { leadId: string; providerId: string }) {
-  const result = await sendAcceptedLockConfirmations({
-    leadId: params.leadId,
-    providerId: params.providerId,
-  })
-  if (!result.ok) return false
-  return !result.customer.failureReason && !result.provider.failureReason
+  try {
+    const result = await sendAcceptedLockConfirmations({
+      leadId: params.leadId,
+      providerId: params.providerId,
+    })
+    if (!result.ok) return false
+    return !result.customer.failureReason && !result.provider.failureReason
+  } catch (error) {
+    console.error('[provider-accepted-lock-confirmation]', {
+      leadId: params.leadId,
+      providerId: params.providerId,
+      result: 'failed',
+      reason: 'CONFIRMATION_TRIGGER_FAILED',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return false
+  }
 }
 
 async function hasAcceptedLockConfirmationSent(params: {
@@ -575,11 +586,97 @@ async function hasAcceptedLockConfirmationSent(params: {
   templateName: string
   idempotencyKey: string
 }) {
+  const existingByKey = await db.messageEvent.findFirst({
+    where: {
+      idempotencyKey: params.idempotencyKey,
+      status: { in: ['SENT', 'DELIVERED', 'READ'] },
+    },
+    select: { id: true },
+  })
+
+  if (existingByKey) return true
+
   return hasSuccessfulMessageForRecipient({
     to: params.to,
     templateName: params.templateName,
     metadataPath: ['idempotencyKey'],
     metadataEquals: params.idempotencyKey,
+  })
+}
+
+async function reserveAcceptedLockConfirmation(params: {
+  to: string
+  templateName: string
+  body: string
+  leadId: string
+  providerId: string
+  serviceRequestId: string
+  recipientRole: 'customer' | 'provider'
+  idempotencyKey: string
+  traceId?: string
+}) {
+  try {
+    return await db.messageEvent.create({
+      data: {
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        templateName: params.templateName,
+        body: params.body,
+        to: params.to,
+        status: 'QUEUED',
+        idempotencyKey: params.idempotencyKey,
+        metadata: {
+          leadId: params.leadId,
+          providerId: params.providerId,
+          jobRequestId: params.serviceRequestId,
+          recipientRole: params.recipientRole,
+          idempotencyKey: params.idempotencyKey,
+          source: 'accepted_lock_confirmation',
+          ...(params.traceId ? { traceId: params.traceId } : {}),
+        } as Prisma.InputJsonValue,
+      },
+      select: { id: true },
+    })
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return null
+    }
+    throw error
+  }
+}
+
+async function markAcceptedLockConfirmationSent(params: {
+  messageEventId: string
+  externalId: string
+}) {
+  await db.messageEvent.updateMany({
+    where: {
+      id: params.messageEventId,
+      status: 'QUEUED',
+    },
+    data: {
+      status: 'SENT',
+      externalId: params.externalId,
+      sentAt: new Date(),
+      failureReason: null,
+    },
+  })
+}
+
+async function markAcceptedLockConfirmationFailed(params: {
+  messageEventId: string
+  failureReason: string
+}) {
+  await db.messageEvent.updateMany({
+    where: {
+      id: params.messageEventId,
+      status: 'QUEUED',
+    },
+    data: {
+      status: 'FAILED',
+      failureReason: params.failureReason,
+      sentAt: new Date(),
+    },
   })
 }
 
@@ -670,6 +767,42 @@ async function sendAcceptedLockConfirmation(params: {
     return { sent: false, skipped: 'duplicate' }
   }
 
+  let reservation: { id: string } | null
+  try {
+    reservation = await reserveAcceptedLockConfirmation({
+      ...params,
+      to,
+    })
+  } catch (error) {
+    logAcceptedLockConfirmation({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      serviceRequestId: params.serviceRequestId,
+      recipientRole: params.recipientRole,
+      result: 'failed',
+      traceId: params.traceId,
+      reason: 'RESERVATION_FAILED',
+      error,
+    })
+    return {
+      sent: false,
+      failureReason: error instanceof Error ? error.message : String(error),
+    }
+  }
+
+  if (!reservation) {
+    logAcceptedLockConfirmation({
+      leadId: params.leadId,
+      providerId: params.providerId,
+      serviceRequestId: params.serviceRequestId,
+      recipientRole: params.recipientRole,
+      result: 'duplicate',
+      traceId: params.traceId,
+      reason: 'IDEMPOTENCY_RESERVED',
+    })
+    return { sent: false, skipped: 'duplicate' }
+  }
+
   logAcceptedLockConfirmation({
     leadId: params.leadId,
     providerId: params.providerId,
@@ -680,7 +813,7 @@ async function sendAcceptedLockConfirmation(params: {
   })
 
   try {
-    await sendText({
+    const externalId = await sendText({
       to,
       text: params.body,
       templateName: params.templateName,
@@ -693,6 +826,11 @@ async function sendAcceptedLockConfirmation(params: {
         source: 'accepted_lock_confirmation',
         ...(params.traceId ? { traceId: params.traceId } : {}),
       },
+      recordMessageEvent: false,
+    })
+    await markAcceptedLockConfirmationSent({
+      messageEventId: reservation.id,
+      externalId,
     })
     logAcceptedLockConfirmation({
       leadId: params.leadId,
@@ -705,10 +843,15 @@ async function sendAcceptedLockConfirmation(params: {
     return { sent: true }
   } catch (error) {
     const failureReason = error instanceof Error ? error.message : String(error)
-    await recordAcceptedLockConfirmationFailure({
-      ...params,
-      to,
+    await markAcceptedLockConfirmationFailed({
+      messageEventId: reservation.id,
       failureReason,
+    }).catch(async () => {
+      await recordAcceptedLockConfirmationFailure({
+        ...params,
+        to,
+        failureReason,
+      })
     })
     logAcceptedLockConfirmation({
       leadId: params.leadId,

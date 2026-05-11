@@ -26,6 +26,7 @@ const { mockDb, mockSendText, state } = vi.hoisted(() => {
       messageEvent: {
         findFirst: vi.fn(),
         create: vi.fn(),
+        updateMany: vi.fn(),
       },
     },
   }
@@ -205,7 +206,8 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
     mockDb.lead.findUnique.mockImplementation(async () => state.lead)
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
-    mockDb.messageEvent.create.mockResolvedValue({ id: 'message-failure-1' })
+    mockDb.messageEvent.create.mockImplementation(async () => ({ id: `message-e2e-${mockDb.messageEvent.create.mock.calls.length}` }))
+    mockDb.messageEvent.updateMany.mockResolvedValue({ count: 1 })
     mockSendText.mockResolvedValue('wamid-e2e')
   })
 
