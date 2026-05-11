@@ -446,6 +446,19 @@ describe('processInboundMessage stateless notification replies', () => {
     )
   })
 
+  it('sends provider-not-found message when confirm_decline button comes from an unknown WhatsApp number', async () => {
+    mockDb.provider.findUnique.mockResolvedValue(null)
+    ;(mockDb.provider as any).findFirst = vi.fn().mockResolvedValue(null)
+
+    await processInboundMessage(buttonMessage('confirm_decline:lead-scenario-10'))
+
+    expect(mockDeclineSelectedProviderJob).not.toHaveBeenCalled()
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("couldn't find your provider profile"),
+    )
+  })
+
   // Scenario 11: confirm_accept button arrives with an empty lead ID
   it('sends cannot-read-selection message when confirm_accept button has an empty lead ID', async () => {
     await processInboundMessage(buttonMessage('confirm_accept:'))
@@ -455,6 +468,42 @@ describe('processInboundMessage stateless notification replies', () => {
       PHONE,
       expect.stringContaining("couldn't read that selection"),
     )
+  })
+
+  it('sends a useful response for an invalid provider WhatsApp command', async () => {
+    vi.mocked(resolveWhatsAppUserContext).mockResolvedValueOnce({
+      role: 'provider',
+      normalizedPhone: '+27821234567',
+      phoneVariants: ['+27821234567'],
+      customerId: undefined,
+      providerId: 'provider-1',
+      applicationId: undefined,
+      displayName: 'Sipho',
+      firstName: 'Sipho',
+      savedAddresses: [],
+      providerStatus: 'ACTIVE',
+      applicationStatus: undefined,
+      activeJobCount: 0,
+      isPaused: false,
+      conflict: false,
+      traceId: 'provider-trace',
+    })
+    mockDb.conversation.upsert.mockResolvedValue({
+      phone: PHONE,
+      flow: 'idle',
+      step: 'welcome',
+      data: {},
+      expiresAt: new Date(Date.now() + 120_000),
+    })
+
+    await processInboundMessage(textMessage('wamid.invalid-provider-command', 'banana'))
+
+    expect(mockSendText).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining("Sorry, I didn't understand"),
+    )
+    expect(mockAcceptSelectedProviderJob).not.toHaveBeenCalled()
+    expect(mockDeclineSelectedProviderJob).not.toHaveBeenCalled()
   })
 
   it('sends job-unavailable message with no-deduction confirmation when LEAD_EXPIRED on confirm_accept', async () => {

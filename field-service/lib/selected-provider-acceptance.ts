@@ -108,6 +108,7 @@ export async function acceptSelectedProviderJob(params: {
           jobRequest: {
             select: {
               status: true,
+              expiresAt: true,
               selectedProviderId: true,
               selectedLeadInviteId: true,
             },
@@ -121,6 +122,20 @@ export async function acceptSelectedProviderJob(params: {
       }
       if (lead.jobRequest.selectedLeadInviteId !== lead.id || !lead.customerSelectedAt) {
         return { ok: false as const, reason: 'LEAD_INVITE_NOT_SELECTED' as const }
+      }
+      if (
+        lead.status === 'CANCELLED' ||
+        lead.cancelledAt ||
+        lead.jobRequest.status === 'CANCELLED'
+      ) {
+        return { ok: false as const, reason: 'REQUEST_CANCELLED' as const }
+      }
+      if (
+        lead.status === 'EXPIRED' ||
+        (lead.expiresAt && lead.expiresAt <= new Date()) ||
+        (lead.jobRequest.expiresAt && lead.jobRequest.expiresAt <= new Date())
+      ) {
+        return { ok: false as const, reason: 'LEAD_EXPIRED' as const }
       }
       if (lead.status === 'CREDIT_APPLIED' || lead.unlock) {
         const creditApplication = await applyProviderCreditForAcceptedLeadInTransaction(tx, {
@@ -168,18 +183,11 @@ export async function acceptSelectedProviderJob(params: {
           notificationSent: false,
         }
       }
-      if (
-        lead.status === 'CANCELLED' ||
-        lead.cancelledAt ||
-        lead.jobRequest.status === 'CANCELLED'
-      ) {
-        return { ok: false as const, reason: 'REQUEST_CANCELLED' as const }
-      }
-      if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date())) {
-        return { ok: false as const, reason: 'LEAD_EXPIRED' as const }
-      }
       if (lead.status === 'DECLINED') {
         return { ok: false as const, reason: 'LEAD_DECLINED' as const }
+      }
+      if (lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {
+        return { ok: false as const, reason: 'LEAD_ALREADY_ACCEPTED' as const }
       }
       if (lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING') {
         return { ok: false as const, reason: 'REQUEST_NOT_AWAITING_CONFIRMATION' as const }
@@ -198,23 +206,42 @@ export async function acceptSelectedProviderJob(params: {
         })
 
         if (updated.count === 0) {
-          return { ok: false as const, reason: 'DUPLICATE_ACCEPT_IGNORED' as const }
+          const currentLead = await tx.lead.findUnique({
+            where: { id: lead.id },
+            select: { status: true },
+          })
+          if (currentLead?.status === 'DECLINED') {
+            return { ok: false as const, reason: 'LEAD_DECLINED' as const }
+          }
+          if (
+            currentLead?.status === 'PROVIDER_ACCEPTED' ||
+            currentLead?.status === 'CREDIT_REQUIRED' ||
+            currentLead?.status === 'CREDIT_APPLIED' ||
+            currentLead?.status === 'ACCEPTED' ||
+            currentLead?.status === 'ACCEPTED_LOCKED'
+          ) {
+            alreadyAccepted = true
+          } else {
+            return { ok: false as const, reason: 'DUPLICATE_ACCEPT_IGNORED' as const }
+          }
         }
 
-        await tx.auditLog.create({
-          data: {
-            actorId: params.providerId,
-            actorRole: 'provider',
-            action: 'shortlist.selected_provider_accept',
-            entityType: 'Lead',
-            entityId: lead.id,
-            before: { status: 'CUSTOMER_SELECTED' } as Prisma.InputJsonValue,
-            after: {
-              status: 'PROVIDER_ACCEPTED',
-              source: params.source ?? 'api',
-            } as Prisma.InputJsonValue,
-          },
-        })
+        if (!alreadyAccepted) {
+          await tx.auditLog.create({
+            data: {
+              actorId: params.providerId,
+              actorRole: 'provider',
+              action: 'shortlist.selected_provider_accept',
+              entityType: 'Lead',
+              entityId: lead.id,
+              before: { status: 'CUSTOMER_SELECTED' } as Prisma.InputJsonValue,
+              after: {
+                status: 'PROVIDER_ACCEPTED',
+                source: params.source ?? 'api',
+              } as Prisma.InputJsonValue,
+            },
+          })
+        }
       } else if (lead.status === 'PROVIDER_ACCEPTED' || lead.status === 'CREDIT_REQUIRED') {
         alreadyAccepted = true
       } else {

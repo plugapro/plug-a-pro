@@ -194,7 +194,13 @@ describe('provider credit application', () => {
 
     mockDb.lead.updateMany.mockImplementation(async (args: any) => {
       if (state.failLeadStatusUpdate) return { count: 0 }
-      if (args.where.status && state.lead.status !== args.where.status) return { count: 0 }
+      if (args.where.status) {
+        const filter = args.where.status
+        const matched = typeof filter === 'string'
+          ? state.lead.status === filter
+          : Array.isArray(filter.in) && filter.in.includes(state.lead.status)
+        if (!matched) return { count: 0 }
+      }
       state.lead = { ...state.lead, ...args.data }
       return { count: 1 }
     })

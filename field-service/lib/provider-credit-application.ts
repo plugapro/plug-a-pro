@@ -316,7 +316,7 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
     throw new ProviderCreditApplicationError('LEAD_EXPIRED', 'This lead has expired.')
   }
 
-  if (lead.status !== 'PROVIDER_ACCEPTED') {
+  if (lead.status !== 'PROVIDER_ACCEPTED' && lead.status !== 'CREDIT_REQUIRED') {
     logCreditApplication({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'LEAD_NOT_ACCEPTED' })
     throw new ProviderCreditApplicationError('LEAD_NOT_ACCEPTED', 'This lead is not ready for credit application.')
   }
@@ -388,38 +388,33 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
     },
   })
 
-  let debitResult: WalletMutationResult
-  try {
-    debitResult = await debitCreditsForLeadUnlockInTransaction(
-      tx,
-      params.providerId,
-      LEAD_UNLOCK_COST_CREDITS,
-      {
-        referenceType,
-        referenceId: lead.id,
-        description: `${isTestApplication ? 'Test selected lead credit application' : 'Selected lead credit application'} ${lead.id.slice(-8).toUpperCase()}`,
-        idempotencyKey: params.idempotencyKey ?? `${referenceType}:${params.providerId}:${lead.id}`,
-        traceId,
+  const debitResult = await debitCreditsForLeadUnlockInTransaction(
+    tx,
+    params.providerId,
+    LEAD_UNLOCK_COST_CREDITS,
+    {
+      referenceType,
+      referenceId: lead.id,
+      description: `${isTestApplication ? 'Test selected lead credit application' : 'Selected lead credit application'} ${lead.id.slice(-8).toUpperCase()}`,
+      idempotencyKey: params.idempotencyKey ?? `${referenceType}:${params.providerId}:${lead.id}`,
+      traceId,
+      source: params.source ?? 'api',
+      metadata: {
+        leadId: lead.id,
+        leadRef: lead.id.slice(-8).toUpperCase(),
+        jobRequestId: lead.jobRequestId,
+        leadUnlockId: unlock.id,
+        action: 'selected_provider_credit_application',
         source: params.source ?? 'api',
-        metadata: {
-          leadId: lead.id,
-          leadRef: lead.id.slice(-8).toUpperCase(),
-          jobRequestId: lead.jobRequestId,
-          leadUnlockId: unlock.id,
-          action: 'selected_provider_credit_application',
-          source: params.source ?? 'api',
-          traceId,
-          ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
-          ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
-        },
-        createdBy: params.providerId,
-        isTestTransaction: isTestApplication,
-        cohortName: lead.jobRequest.cohortName,
+        traceId,
+        ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
+        ...(lead.jobRequest.cohortName ? { testCohort: lead.jobRequest.cohortName } : {}),
       },
-    )
-  } catch (error) {
-    mapWalletError(error, currentCreditBalance)
-  }
+      createdBy: params.providerId,
+      isTestTransaction: isTestApplication,
+      cohortName: lead.jobRequest.cohortName,
+    },
+  ).catch((error: unknown) => mapWalletError(error, currentCreditBalance))
 
   const updatedUnlock = await tx.leadUnlock.update({
     where: { id: unlock.id },
@@ -429,7 +424,7 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
   })
 
   const leadUpdated = await tx.lead.updateMany({
-    where: { id: lead.id, status: 'PROVIDER_ACCEPTED' },
+    where: { id: lead.id, status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] } },
     data: { status: 'CREDIT_APPLIED', respondedAt: new Date() },
   })
   if (leadUpdated.count !== 1) {

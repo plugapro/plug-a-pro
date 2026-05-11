@@ -34,6 +34,13 @@ export class CustomerShortlistError extends Error {
   }
 }
 
+class SelectedProviderDeclineStateChangedError extends Error {
+  constructor() {
+    super('Selected provider decline lost a state race.')
+    this.name = 'SelectedProviderDeclineStateChangedError'
+  }
+}
+
 function requestCanAcceptSelection(
   status: string,
 ): status is 'SHORTLIST_READY' | 'PENDING_VALIDATION' {
@@ -926,6 +933,7 @@ export async function declineSelectedProviderJob(params: {
   }
   if (
     lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING' ||
+    lead.jobRequest.selectedProviderId !== params.providerId ||
     lead.jobRequest.selectedLeadInviteId !== lead.id
   ) {
     console.info('[provider-lead-action]', {
@@ -939,45 +947,112 @@ export async function declineSelectedProviderJob(params: {
     return { ok: false as const, reason: 'NOT_AWAITING_CONFIRMATION' as const }
   }
 
-  await db.$transaction(async (tx) => {
-    const declinedAt = new Date()
-    await tx.lead.update({
-      where: { id: lead.id },
-      data: { status: 'DECLINED', respondedAt: declinedAt, declinedAt },
-    })
+  try {
+    const transition = await db.$transaction(async (tx) => {
+      const declinedAt = new Date()
+      const leadUpdate = await tx.lead.updateMany({
+        where: {
+          id: lead.id,
+          providerId: params.providerId,
+          status: 'CUSTOMER_SELECTED',
+        },
+        data: { status: 'DECLINED', respondedAt: declinedAt, declinedAt },
+      })
 
-    // Mark the corresponding shortlist item as superseded by clearing the
-    // customer-selected timestamp so the customer can pick again. We do not
-    // delete the shortlist itself.
-    await tx.providerShortlistItem.updateMany({
-      where: { leadInviteId: lead.id },
-      data: { customerSelectedAt: null },
-    })
+      if (leadUpdate.count === 0) {
+        return { ok: false as const, reason: 'STATE_CHANGED' as const }
+      }
 
-    // Reset request state. selectedLeadInviteId/selectedProviderId are cleared
-    // so the customer can re-select another provider from the same shortlist.
-    await tx.jobRequest.update({
-      where: { id: lead.jobRequestId },
-      data: {
-        status: 'SHORTLIST_READY',
-        selectedProviderId: null,
-        selectedLeadInviteId: null,
-      },
-    })
+      // Mark the corresponding shortlist item as superseded by clearing the
+      // customer-selected timestamp so the customer can pick again. We do not
+      // delete the shortlist itself.
+      await tx.providerShortlistItem.updateMany({
+        where: { leadInviteId: lead.id },
+        data: { customerSelectedAt: null },
+      })
 
-    await tx.auditLog
-      .create({
+      // Reset request state only if it is still waiting for this provider. The
+      // guarded update prevents a stale duplicate decline from reopening a
+      // request that another path has already accepted or locked.
+      const requestUpdate = await tx.jobRequest.updateMany({
+        where: {
+          id: lead.jobRequestId,
+          status: 'PROVIDER_CONFIRMATION_PENDING',
+          selectedProviderId: params.providerId,
+          selectedLeadInviteId: lead.id,
+        },
         data: {
-          actorId: params.providerId,
-          actorRole: 'provider',
-          action: 'shortlist.selected_provider_declined',
-          entityType: 'Lead',
-          entityId: lead.id,
-          after: { jobRequestId: lead.jobRequestId } as Prisma.InputJsonValue,
+          status: 'SHORTLIST_READY',
+          selectedProviderId: null,
+          selectedLeadInviteId: null,
         },
       })
-      .catch(() => undefined)
-  })
+
+      if (requestUpdate.count === 0) {
+        throw new SelectedProviderDeclineStateChangedError()
+      }
+
+      await tx.auditLog
+        .create({
+          data: {
+            actorId: params.providerId,
+            actorRole: 'provider',
+            action: 'shortlist.selected_provider_declined',
+            entityType: 'Lead',
+            entityId: lead.id,
+            after: { jobRequestId: lead.jobRequestId } as Prisma.InputJsonValue,
+          },
+        })
+        .catch(() => undefined)
+
+      return { ok: true as const }
+    })
+
+    if (!transition.ok) {
+      const currentLead = await db.lead.findUnique({
+        where: { id: lead.id },
+        select: { status: true },
+      })
+      if (currentLead?.status === 'DECLINED') {
+        console.info('[provider-lead-action]', {
+          leadId: lead.id,
+          providerId: params.providerId,
+          action: 'decline',
+          result: 'idempotent',
+          reason: 'ALREADY_DECLINED',
+          source: 'provider_confirmation',
+        })
+        return {
+          ok: true as const,
+          alreadyDeclined: true as const,
+          leadId: lead.id,
+          jobRequestId: lead.jobRequestId,
+        }
+      }
+      console.info('[provider-lead-action]', {
+        leadId: lead.id,
+        providerId: params.providerId,
+        action: 'decline',
+        result: 'blocked',
+        reason: 'LEAD_ALREADY_ACCEPTED',
+        source: 'provider_confirmation',
+      })
+      return { ok: false as const, reason: 'LEAD_ALREADY_ACCEPTED' as const }
+    }
+  } catch (error) {
+    if (error instanceof SelectedProviderDeclineStateChangedError) {
+      console.info('[provider-lead-action]', {
+        leadId: lead.id,
+        providerId: params.providerId,
+        action: 'decline',
+        result: 'blocked',
+        reason: 'NOT_AWAITING_CONFIRMATION',
+        source: 'provider_confirmation',
+      })
+      return { ok: false as const, reason: 'NOT_AWAITING_CONFIRMATION' as const }
+    }
+    throw error
+  }
 
   console.info('[provider-lead-action]', {
     leadId: lead.id,

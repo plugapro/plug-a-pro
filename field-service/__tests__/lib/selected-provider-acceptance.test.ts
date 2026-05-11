@@ -353,4 +353,40 @@ describe('selected provider final acceptance', () => {
     await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
       .resolves.toEqual({ ok: false, reason: 'LEAD_DECLINED' })
   })
+
+  it('blocks accept when the service request expiry has passed', async () => {
+    state.lead = makeLead({
+      jobRequest: {
+        ...makeLead().jobRequest,
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+    })
+
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
+      .resolves.toEqual({ ok: false, reason: 'LEAD_EXPIRED' })
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
+  })
+
+  it('does not create an accept audit event when a conflicting decline wins first', async () => {
+    state.tx.lead.updateMany.mockResolvedValueOnce({ count: 0 })
+    state.tx.lead.findUnique = vi
+      .fn()
+      .mockResolvedValueOnce(makeLead())
+      .mockResolvedValueOnce({ status: 'DECLINED' })
+
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
+      .resolves.toEqual({ ok: false, reason: 'LEAD_DECLINED' })
+    expect(state.tx.auditLog.create).not.toHaveBeenCalled()
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+  })
+
+  it('blocks accept when the lead is already locked without reprocessing workflow 6', async () => {
+    state.lead = makeLead({ status: 'ACCEPTED_LOCKED' })
+
+    await expect(acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1' }))
+      .resolves.toEqual({ ok: false, reason: 'LEAD_ALREADY_ACCEPTED' })
+    expect(mockApplyProviderCredit).not.toHaveBeenCalled()
+    expect(mockLockAcceptedLead).not.toHaveBeenCalled()
+  })
 })

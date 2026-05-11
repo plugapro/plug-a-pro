@@ -957,13 +957,13 @@ describe('customer shortlists', () => {
     })
     state.tx = {
       lead: {
-        update: vi.fn().mockResolvedValue({ id: 'lead-1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       providerShortlistItem: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       jobRequest: {
-        update: vi.fn().mockResolvedValue({ id: 'request-1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       auditLog: {
         create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -982,12 +982,17 @@ describe('customer shortlists', () => {
       leadId: 'lead-1',
       jobRequestId: 'request-1',
     })
-    expect(state.tx.lead.update).toHaveBeenCalledWith({
-      where: { id: 'lead-1' },
+    expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
+      where: { id: 'lead-1', providerId: 'provider-1', status: 'CUSTOMER_SELECTED' },
       data: expect.objectContaining({ status: 'DECLINED' }),
     })
-    expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
-      where: { id: 'request-1' },
+    expect(state.tx.jobRequest.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'request-1',
+        status: 'PROVIDER_CONFIRMATION_PENDING',
+        selectedProviderId: 'provider-1',
+        selectedLeadInviteId: 'lead-1',
+      },
       data: expect.objectContaining({
         status: 'SHORTLIST_READY',
         selectedProviderId: null,
@@ -1025,6 +1030,105 @@ describe('customer shortlists', () => {
       jobRequestId: 'request-1',
     })
     expect(mockDb.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('treats a concurrent duplicate selected-provider decline as idempotent', async () => {
+    mockDb.lead.findUnique
+      .mockResolvedValueOnce({
+        id: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'request-1',
+        status: 'CUSTOMER_SELECTED',
+        expiresAt: new Date(Date.now() + 60_000),
+        cancelledAt: null,
+        jobRequest: {
+          id: 'request-1',
+          status: 'PROVIDER_CONFIRMATION_PENDING',
+          expiresAt: new Date(Date.now() + 60_000),
+          selectedProviderId: 'provider-1',
+          selectedLeadInviteId: 'lead-1',
+        },
+      })
+      .mockResolvedValueOnce({ status: 'DECLINED' })
+    state.tx = {
+      lead: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      providerShortlistItem: {
+        updateMany: vi.fn(),
+      },
+      jobRequest: {
+        updateMany: vi.fn(),
+      },
+      auditLog: {
+        create: vi.fn(),
+      },
+    }
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
+
+    const result = await declineSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      alreadyDeclined: true,
+      leadId: 'lead-1',
+      jobRequestId: 'request-1',
+    })
+    expect(state.tx.providerShortlistItem.updateMany).not.toHaveBeenCalled()
+    expect(state.tx.jobRequest.updateMany).not.toHaveBeenCalled()
+    expect(state.tx.auditLog.create).not.toHaveBeenCalled()
+  })
+
+  it('blocks decline when a conflicting accept wins first', async () => {
+    mockDb.lead.findUnique
+      .mockResolvedValueOnce({
+        id: 'lead-1',
+        providerId: 'provider-1',
+        jobRequestId: 'request-1',
+        status: 'CUSTOMER_SELECTED',
+        expiresAt: new Date(Date.now() + 60_000),
+        cancelledAt: null,
+        jobRequest: {
+          id: 'request-1',
+          status: 'PROVIDER_CONFIRMATION_PENDING',
+          expiresAt: new Date(Date.now() + 60_000),
+          selectedProviderId: 'provider-1',
+          selectedLeadInviteId: 'lead-1',
+        },
+      })
+      .mockResolvedValueOnce({ status: 'PROVIDER_ACCEPTED' })
+    state.tx = {
+      lead: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      providerShortlistItem: {
+        updateMany: vi.fn(),
+      },
+      jobRequest: {
+        updateMany: vi.fn(),
+      },
+      auditLog: {
+        create: vi.fn(),
+      },
+    }
+    mockDb.$transaction.mockImplementation(
+      async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
+    )
+
+    const result = await declineSelectedProviderJob({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'LEAD_ALREADY_ACCEPTED' })
+    expect(state.tx.providerShortlistItem.updateMany).not.toHaveBeenCalled()
+    expect(state.tx.jobRequest.updateMany).not.toHaveBeenCalled()
+    expect(state.tx.auditLog.create).not.toHaveBeenCalled()
   })
 
   it('blocks decline after selected-provider acceptance', async () => {
