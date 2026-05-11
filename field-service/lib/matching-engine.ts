@@ -221,6 +221,7 @@ export async function acceptLead(params: {
   return {
     ok: true,
     leadId: selectedResult.leadId,
+    matchId: selectedResult.matchId,
     creditTransactionId: selectedResult.creditTransactionId,
     currentCreditBalance: selectedResult.currentCreditBalance,
     alreadyAccepted: selectedResult.alreadyAccepted,

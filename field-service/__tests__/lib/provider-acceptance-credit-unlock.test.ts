@@ -7,6 +7,8 @@ const { mockDb, state } = vi.hoisted(() => {
   return { mockDb, state }
 })
 const mockApplyProviderCredit = vi.hoisted(() => vi.fn())
+const mockLockAcceptedLead = vi.hoisted(() => vi.fn())
+const mockNotifyAcceptedLeadLocked = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/lead-unlocks', () => ({
@@ -39,6 +41,19 @@ vi.mock('../../lib/provider-credit-application', () => ({
     }
   },
   applyProviderCreditForAcceptedLeadInTransaction: mockApplyProviderCredit,
+}))
+vi.mock('../../lib/provider-accepted-lock', () => ({
+  AcceptedLeadLockError: class AcceptedLeadLockError extends Error {
+    constructor(
+      public readonly code: string,
+      message: string,
+    ) {
+      super(message)
+      this.name = 'AcceptedLeadLockError'
+    }
+  },
+  lockAcceptedLeadAfterCreditInTransaction: mockLockAcceptedLead,
+  notifyAcceptedLeadLocked: mockNotifyAcceptedLeadLocked,
 }))
 vi.mock('../../lib/provider-lead-access', () => ({
   getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/jobs/signed-token'),
@@ -163,9 +178,23 @@ describe('provider final acceptance credit application', () => {
         providerMessage: 'Credit applied.',
       }
     })
+    mockLockAcceptedLead.mockImplementation(async () => {
+      state.lead = { ...state.lead, status: 'ACCEPTED' }
+      return {
+        ok: true,
+        leadId: 'lead-c13',
+        providerId: 'provider-c13',
+        matchId: 'match-c13',
+        bookingId: 'booking-c13',
+        jobId: 'job-c13',
+        alreadyLocked: false,
+        notificationPayload: { leadId: 'lead-c13', providerId: 'provider-c13' },
+      }
+    })
+    mockNotifyAcceptedLeadLocked.mockResolvedValue(true)
   })
 
-  it('records PROVIDER_ACCEPTED, applies credit, and leaves job locking for the next workflow', async () => {
+  it('records PROVIDER_ACCEPTED, applies credit, and locks the selected job', async () => {
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-c13',
       providerId: 'provider-c13',
@@ -179,9 +208,19 @@ describe('provider final acceptance credit application', () => {
       creditCheck: { ok: true, result: 'SUFFICIENT_CREDITS' },
       creditApplied: true,
       creditTransactionId: 'ledger-c13',
+      matchId: 'match-c13',
+      bookingId: 'booking-c13',
+      jobId: 'job-c13',
+      notificationSent: true,
       creditApplication: {
         leadStatus: 'CREDIT_APPLIED',
         leadUnlockId: 'unlock-c13',
+      },
+      acceptedLock: {
+        leadId: 'lead-c13',
+        matchId: 'match-c13',
+        bookingId: 'booking-c13',
+        jobId: 'job-c13',
       },
     })
     expect(mockApplyProviderCredit).toHaveBeenCalledWith(
@@ -193,10 +232,18 @@ describe('provider final acceptance credit application', () => {
         traceId: 'trace-c13',
       }),
     )
-    expect(state.tx.match.create).not.toHaveBeenCalled()
-    expect(state.tx.job.create).not.toHaveBeenCalled()
-    expect(state.tx.jobRequest.update).not.toHaveBeenCalled()
-    expect(state.lead.status).toBe('CREDIT_APPLIED')
+    expect(mockLockAcceptedLead).toHaveBeenCalledWith(
+      state.tx,
+      expect.objectContaining({
+        leadId: 'lead-c13',
+        providerId: 'provider-c13',
+        source: 'whatsapp',
+        traceId: 'trace-c13',
+        currentCreditBalance: 0,
+      }),
+    )
+    expect(mockNotifyAcceptedLeadLocked).toHaveBeenCalledWith({ leadId: 'lead-c13', providerId: 'provider-c13' })
+    expect(state.lead.status).toBe('ACCEPTED')
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
       where: { id: 'lead-c13', status: 'CUSTOMER_SELECTED' },
       data: expect.objectContaining({ status: 'PROVIDER_ACCEPTED' }),

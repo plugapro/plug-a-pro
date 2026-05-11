@@ -285,7 +285,7 @@ export default async function LeadDetailPage({
       {resolvedSearchParams.accepted && (
         <AlertCallout tone="success" title="Lead accepted">
           {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} applied. Balance remaining: {acceptedRemainingBalance}.
-          Customer direct contact details remain locked until final assignment is complete.
+          Full customer and job details are now available below.
         </AlertCallout>
       )}
 
@@ -354,7 +354,7 @@ export default async function LeadDetailPage({
                 Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
                 Your current credits balance is {totalCreditBalance}. After acceptance, your balance will be {totalCreditBalance - lead.unlockCostCredits}.
               </p>
-              <p className="mt-1">Customer contact details stay locked after this credit step until final assignment is complete.</p>
+              <p className="mt-1">Full customer details are released only after credit is applied and the job is assigned.</p>
             </>
           ) : (
             <>

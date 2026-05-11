@@ -3123,6 +3123,20 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         await sendText(phone, 'This job is no longer available. No credit was deducted.')
         return
       }
+      if (result.reason === 'DUPLICATE_ACCEPT_IGNORED') {
+        await sendText(phone, 'Your acceptance is already being processed. Please wait a moment.')
+        return
+      }
+      if (result.reason === 'INSUFFICIENT_CREDITS') {
+        const creditUrl = getWorkerPortalUrl('/provider/credits')
+        const body = buildInsufficientCreditsMessage({ availableCredits: result.currentCreditBalance ?? 0 })
+        if (creditUrl) {
+          await sendCtaUrl(phone, body, ctaLabelFor('credit_history'), creditUrl)
+        } else {
+          await sendText(phone, body)
+        }
+        return
+      }
       console.error('[whatsapp-bot] confirm_accept failed', { traceId, leadId, reason: result.reason })
       await sendWhatsAppJourneyRecovery(phone, {
         userRole: 'provider',
@@ -3165,7 +3179,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       if (result.creditApplied || result.alreadyUnlocked) {
         await sendText(
           phone,
-          `${result.creditApplication?.providerMessage ?? '✅ Job accepted\n\nCredit was applied once for this job.'}\n\nCustomer contact details remain locked until final assignment is complete.`,
+          '✅ Job accepted\n\nCredit was applied and customer details are unlocked in your job link. Reply *my jobs* to manage your assignments.',
         )
       } else {
         await sendText(

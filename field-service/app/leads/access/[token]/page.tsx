@@ -821,7 +821,7 @@ export default async function ProviderLeadAccessPage({
                 Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
               </p>
             )}
-            <p className="mt-1">Customer direct contact details remain locked until final assignment is complete.</p>
+            <p className="mt-1">Full customer and job details are now available.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
@@ -995,7 +995,7 @@ export default async function ProviderLeadAccessPage({
                   Your current credits balance is {providerCreditBalance}. After acceptance, your balance will be {providerCreditBalance - LEAD_UNLOCK_COST_CREDITS}.
                 </p>
                 <p className="mt-1">
-                  Customer contact details stay locked after this credit step until final assignment is complete. Credits use follows the{' '}
+                  Full customer details are released only after credit is applied and the job is assigned. Credits use follows the{' '}
                   <Link href={termsUrl} className="font-medium underline underline-offset-4">
                     provider credits terms and rules
                   </Link>

@@ -17,6 +17,7 @@ type ProviderCreditApplicationErrorCode =
   | 'REQUEST_CANCELLED'
   | 'LEAD_EXPIRED'
   | 'LEAD_ALREADY_LOCKED'
+  | 'WALLET_MISSING'
   | 'INSUFFICIENT_CREDITS'
   | 'WALLET_NOT_ACTIVE'
   | 'CORRUPT_CREDIT_BALANCE'
@@ -331,10 +332,19 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
   })
   const currentCreditBalance = (wallet?.paidCreditBalance ?? 0) + (wallet?.promoCreditBalance ?? 0)
 
-  if (!wallet || wallet.status !== 'ACTIVE') {
+  if (!wallet) {
+    // Belt-and-suspenders: credit check should have caught this in the same tx.
+    // Treat as a data integrity failure — caller should surface as CREDIT_APPLICATION_FAILED.
     throw new ProviderCreditApplicationError(
-      wallet ? 'WALLET_NOT_ACTIVE' : 'INSUFFICIENT_CREDITS',
-      wallet ? 'Provider wallet is not active.' : 'Provider wallet does not exist.',
+      'WALLET_MISSING',
+      'Provider wallet does not exist.',
+      0,
+    )
+  }
+  if (wallet.status !== 'ACTIVE') {
+    throw new ProviderCreditApplicationError(
+      'WALLET_NOT_ACTIVE',
+      'Provider wallet is not active.',
       currentCreditBalance,
     )
   }

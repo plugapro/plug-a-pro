@@ -7,6 +7,12 @@ import {
 } from './provider-credit-application'
 import type { ProviderCreditApplicationResult } from './provider-credit-application'
 import {
+  AcceptedLeadLockError,
+  lockAcceptedLeadAfterCreditInTransaction,
+  notifyAcceptedLeadLocked,
+} from './provider-accepted-lock'
+import type { AcceptedLeadLockResult } from './provider-accepted-lock'
+import {
   ProviderLeadCreditCheckResult,
   checkProviderLeadCreditBalanceInTransaction,
 } from './provider-credit-check'
@@ -17,10 +23,14 @@ export type SelectedProviderAcceptanceResult =
       leadId: string
       creditCheck: ProviderLeadCreditCheckResult
       creditApplication?: ProviderCreditApplicationResult
+      acceptedLock?: AcceptedLeadLockResult
       currentCreditBalance?: number
       alreadyAccepted?: boolean
       alreadyUnlocked?: boolean
       creditApplied?: boolean
+      matchId?: string
+      jobId?: string
+      bookingId?: string
       creditTransactionId?: string | null
       notificationSent: boolean
     }
@@ -81,6 +91,8 @@ export async function acceptSelectedProviderJob(params: {
   })
 
   try {
+    let notificationPayload: Parameters<typeof notifyAcceptedLeadLocked>[0] | null = null
+
     const result = await db.$transaction(async (tx) => {
       const lead = await tx.lead.findUnique({
         where: { id: params.leadId },
@@ -118,6 +130,16 @@ export async function acceptSelectedProviderJob(params: {
           idempotencyKey: params.idempotencyKey,
           traceId: params.traceId,
         })
+        const acceptedLock = await lockAcceptedLeadAfterCreditInTransaction(tx, {
+          leadId: lead.id,
+          providerId: params.providerId,
+          source: params.source,
+          traceId: params.traceId,
+          currentCreditBalance: creditApplication.currentCreditBalance,
+          paidCreditBalance: creditApplication.paidCreditBalance,
+          promoCreditBalance: creditApplication.promoCreditBalance,
+        })
+        notificationPayload = acceptedLock.notificationPayload
         return {
           ok: true as const,
           leadId: lead.id,
@@ -134,10 +156,14 @@ export async function acceptSelectedProviderJob(params: {
             providerMessage: creditApplication.providerMessage,
           },
           creditApplication,
+          acceptedLock,
           currentCreditBalance: creditApplication.currentCreditBalance,
           alreadyAccepted: true,
-          alreadyUnlocked: true,
+          alreadyUnlocked: acceptedLock.alreadyLocked,
           creditApplied: true,
+          matchId: acceptedLock.matchId,
+          jobId: acceptedLock.jobId,
+          bookingId: acceptedLock.bookingId,
           creditTransactionId: creditApplication.creditTransactionId,
           notificationSent: false,
         }
@@ -220,16 +246,30 @@ export async function acceptSelectedProviderJob(params: {
         idempotencyKey: params.idempotencyKey,
         traceId: params.traceId,
       })
+      const acceptedLock = await lockAcceptedLeadAfterCreditInTransaction(tx, {
+        leadId: lead.id,
+        providerId: params.providerId,
+        source: params.source,
+        traceId: params.traceId,
+        currentCreditBalance: creditApplication.currentCreditBalance,
+        paidCreditBalance: creditApplication.paidCreditBalance,
+        promoCreditBalance: creditApplication.promoCreditBalance,
+      })
+      notificationPayload = acceptedLock.notificationPayload
 
       return {
         ok: true as const,
         leadId: lead.id,
         creditCheck,
         creditApplication,
+        acceptedLock,
         currentCreditBalance: creditApplication.currentCreditBalance,
         alreadyAccepted,
-        alreadyUnlocked: creditApplication.alreadyApplied,
+        alreadyUnlocked: acceptedLock.alreadyLocked,
         creditApplied: true,
+        matchId: acceptedLock.matchId,
+        jobId: acceptedLock.jobId,
+        bookingId: acceptedLock.bookingId,
         creditTransactionId: creditApplication.creditTransactionId,
         notificationSent: false,
       }
@@ -248,21 +288,30 @@ export async function acceptSelectedProviderJob(params: {
       return result
     }
 
+    const notificationSent = notificationPayload
+      ? await notifyAcceptedLeadLocked(notificationPayload)
+      : false
+
     logProviderLeadAction({
       leadId: params.leadId,
       providerId: params.providerId,
       action: 'accept',
-      result: result.creditApplication?.alreadyApplied ? 'idempotent' : result.creditApplied ? 'credit_applied' : result.alreadyAccepted ? 'idempotent' : 'accepted',
+      result: result.acceptedLock?.alreadyLocked ? 'idempotent' : result.creditApplied ? 'accepted_locked' : result.alreadyAccepted ? 'idempotent' : 'accepted',
       source: params.source,
       traceId: params.traceId,
       reason: result.creditCheck.ok ? undefined : result.creditCheck.reason,
     })
 
-    return result
+    return { ...result, notificationSent }
   } catch (error) {
     if (error instanceof ProviderCreditApplicationError) {
       if (error.code === 'INSUFFICIENT_CREDITS') {
         return { ok: false, reason: 'INSUFFICIENT_CREDITS', currentCreditBalance: error.currentCreditBalance }
+      }
+      if (error.code === 'WALLET_MISSING' || error.code === 'WALLET_NOT_ACTIVE') {
+        // Wallet disappeared or was suspended between credit check and application.
+        // This is a data integrity issue — do not show "top up" message.
+        return { ok: false, reason: 'CREDIT_APPLICATION_FAILED' }
       }
       if (error.code === 'LEAD_EXPIRED') {
         return { ok: false, reason: 'LEAD_EXPIRED' }
@@ -275,6 +324,20 @@ export async function acceptSelectedProviderJob(params: {
       }
       if (error.code === 'LEAD_NOT_ACCEPTED') {
         return { ok: false, reason: 'LEAD_NOT_PROVIDER_NOTIFIED' }
+      }
+    }
+    if (error instanceof AcceptedLeadLockError) {
+      if (error.code === 'REQUEST_CANCELLED') {
+        return { ok: false, reason: 'REQUEST_CANCELLED' }
+      }
+      if (error.code === 'LEAD_EXPIRED') {
+        return { ok: false, reason: 'LEAD_EXPIRED' }
+      }
+      if (error.code === 'PROVIDER_NOT_SELECTED') {
+        return { ok: false, reason: 'PROVIDER_NOT_SELECTED' }
+      }
+      if (error.code === 'LEAD_ALREADY_LOCKED') {
+        return { ok: false, reason: 'LEAD_ALREADY_ACCEPTED' }
       }
     }
     console.error('[selected-provider-acceptance] acceptance failed', {
