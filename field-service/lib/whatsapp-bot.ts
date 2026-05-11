@@ -3179,7 +3179,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       if (result.creditApplied || result.alreadyUnlocked) {
         await sendText(
           phone,
-          '✅ Job accepted\n\nCredit was applied and customer details are unlocked in your job link. Reply *my jobs* to manage your assignments.',
+          '✅ Lead accepted\n\nYour credit has been applied and this MVP1 flow is complete. Next steps will be handled through the current pilot operating process.',
         )
       } else {
         await sendText(

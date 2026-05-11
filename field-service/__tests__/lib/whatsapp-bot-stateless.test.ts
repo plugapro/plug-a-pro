@@ -576,6 +576,31 @@ describe('processInboundMessage stateless notification replies', () => {
     expect(allBodies.some((b) => b.includes('No credit was deducted'))).toBe(true)
   })
 
+  it('uses MVP1 pilot-complete fallback copy when accepted-lock confirmation send fails', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: true,
+      creditApplied: true,
+      creditCheck: {
+        ok: true,
+        providerMessage: 'Accepted. Credit check passed.',
+      },
+      notificationSent: false,
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-short-5'))
+
+    const sentBodies = mockSendText.mock.calls
+      .filter(([phone]) => phone === PHONE)
+      .map(([, body]) => body as string)
+      .join('\n')
+    expect(sentBodies).toContain('MVP1 flow is complete')
+    expect(sentBodies).toContain('current pilot operating process')
+    expect(sentBodies).not.toContain('customer details')
+    expect(sentBodies).not.toContain('my jobs')
+    expect(sentBodies).not.toContain('manage your assignments')
+  })
+
   it('uses status-aware recovery when status flow throws before rendering', async () => {
     mockDb.conversation.upsert.mockResolvedValue({
       phone: PHONE,

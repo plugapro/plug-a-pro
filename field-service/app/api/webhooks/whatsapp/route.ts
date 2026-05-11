@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
                     })
                     .catch(() => {})
                   console.warn(
-                    `[webhook/whatsapp:${reqId}] Duplicate WAMID ${message.id} from ${message.from} — skipping`
+                    `[webhook/whatsapp:${reqId}] Duplicate WAMID ${message.id} — skipping`
                   )
                   return
                 }
