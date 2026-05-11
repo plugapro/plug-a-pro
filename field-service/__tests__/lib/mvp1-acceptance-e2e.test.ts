@@ -296,4 +296,41 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     expect(state.ledgerEntries).toHaveLength(1)
     expect(mockSendText).toHaveBeenCalledTimes(2)
   })
+
+  it('completes the full lock when the provider retries after topping up from CREDIT_REQUIRED', async () => {
+    state.lead = makeLead({
+      status: 'CREDIT_REQUIRED',
+      providerAcceptedAt: new Date('2026-05-11T10:30:00.000Z'),
+    })
+
+    const result = await acceptSelectedProviderJob({
+      leadId: 'lead-e2e-1',
+      providerId: 'provider-e2e-1',
+      source: 'whatsapp',
+      traceId: 'trace-e2e-retry',
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      leadId: 'lead-e2e-1',
+      alreadyAccepted: true,
+      creditApplied: true,
+      acceptedLock: {
+        leadStatus: 'ACCEPTED_LOCKED',
+        serviceRequestStatus: 'ACCEPTED_LOCKED',
+        alreadyLocked: false,
+      },
+      notificationSent: true,
+    })
+    expect(state.lead.status).toBe('ACCEPTED_LOCKED')
+    expect(state.lead.jobRequest.status).toBe('ACCEPTED_LOCKED')
+    expect(state.wallet.paidCreditBalance).toBe(1)
+    expect(state.ledgerEntries).toHaveLength(1)
+    expect(state.auditLogs.map((log: { action: string }) => log.action)).toEqual([
+      'lead.provider_credit_check_passed',
+      'lead.provider_credit_applied',
+      'lead.provider_accepted_locked',
+    ])
+    expect(mockSendText).toHaveBeenCalledTimes(2)
+  })
 })

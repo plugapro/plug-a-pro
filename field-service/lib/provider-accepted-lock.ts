@@ -111,7 +111,7 @@ function logAcceptedLock(params: {
   reason?: string
   error?: unknown
 }) {
-  console.info('[provider-accepted-lock]', {
+  const payload = {
     leadId: params.leadId,
     providerId: params.providerId,
     serviceRequestId: params.serviceRequestId ?? null,
@@ -121,7 +121,19 @@ function logAcceptedLock(params: {
     traceId: params.traceId ?? null,
     reason: params.reason ?? null,
     error: params.error instanceof Error ? params.error.message : params.error ? String(params.error) : null,
-  })
+  }
+
+  if (params.result === 'error' || params.result === 'inconsistent_state') {
+    console.error('[provider-accepted-lock]', payload)
+    return
+  }
+
+  if (params.result === 'blocked') {
+    console.warn('[provider-accepted-lock]', payload)
+    return
+  }
+
+  console.info('[provider-accepted-lock]', payload)
 }
 
 function logAcceptedLockConfirmation(params: {
@@ -144,6 +156,28 @@ function logAcceptedLockConfirmation(params: {
     reason: params.reason ?? null,
     error: params.error instanceof Error ? params.error.message : params.error ? String(params.error) : null,
   })
+}
+
+function failAcceptedLock(params: {
+  code: AcceptedLockErrorCode
+  message: string
+  leadId: string
+  providerId: string
+  serviceRequestId?: string | null
+  source?: 'whatsapp' | 'pwa' | 'api'
+  traceId?: string
+  result?: 'blocked' | 'inconsistent_state'
+}): never {
+  logAcceptedLock({
+    leadId: params.leadId,
+    providerId: params.providerId,
+    serviceRequestId: params.serviceRequestId,
+    result: params.result ?? 'blocked',
+    source: params.source,
+    traceId: params.traceId,
+    reason: params.code,
+  })
+  throw new AcceptedLeadLockError(params.code, params.message)
 }
 
 export async function lockAcceptedLeadAfterCreditInTransaction(
@@ -187,22 +221,71 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     },
   })
 
-  if (!lead) throw new AcceptedLeadLockError('NOT_FOUND', 'Lead not found.')
+  if (!lead) {
+    failAcceptedLock({
+      code: 'NOT_FOUND',
+      message: 'Lead not found.',
+      leadId: params.leadId,
+      providerId: params.providerId,
+      source: params.source,
+      traceId: params.traceId,
+    })
+  }
+
+  if (lead.providerId !== params.providerId) {
+    failAcceptedLock({
+      code: 'PROVIDER_NOT_SELECTED',
+      message: 'This lead belongs to another provider.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
+  }
+
+  const requestLockedByDifferentLead =
+    ['ACCEPTED_LOCKED', 'MATCHED'].includes(lead.jobRequest.status) &&
+    (lead.jobRequest.selectedProviderId !== params.providerId ||
+      lead.jobRequest.selectedLeadInviteId !== lead.id)
+
+  if (requestLockedByDifferentLead) {
+    failAcceptedLock({
+      code: 'LEAD_ALREADY_LOCKED',
+      message: 'This request is already locked to another lead.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
+  }
+
   if (
-    lead.providerId !== params.providerId ||
     lead.jobRequest.selectedProviderId !== params.providerId ||
     lead.jobRequest.selectedLeadInviteId !== lead.id
   ) {
-    throw new AcceptedLeadLockError('PROVIDER_NOT_SELECTED', 'This lead belongs to another provider.')
+    failAcceptedLock({
+      code: 'PROVIDER_NOT_SELECTED',
+      message: 'This lead is not selected for this provider.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
   }
-  if (lead.jobRequest.status === 'CANCELLED' || lead.cancelledAt || lead.status === 'CANCELLED') {
-    throw new AcceptedLeadLockError('REQUEST_CANCELLED', 'This request was cancelled.')
-  }
-  if (lead.status === 'EXPIRED' || lead.jobRequest.status === 'EXPIRED') {
-    throw new AcceptedLeadLockError('LEAD_EXPIRED', 'This lead has expired.')
-  }
+
   if (lead.jobRequest.match && lead.jobRequest.match.providerId !== params.providerId) {
-    throw new AcceptedLeadLockError('LEAD_ALREADY_LOCKED', 'This request is already locked to another provider.')
+    failAcceptedLock({
+      code: 'LEAD_ALREADY_LOCKED',
+      message: 'This request is already locked to another provider.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
   }
 
   const creditTransaction = await tx.walletLedgerEntry.findFirst({
@@ -215,16 +298,46 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     orderBy: { createdAt: 'desc' },
   })
 
-  const isAlreadyLocked =
-    lead.status === 'ACCEPTED_LOCKED' ||
-    (lead.status === 'ACCEPTED' && ['ACCEPTED_LOCKED', 'MATCHED'].includes(lead.jobRequest.status))
+  const leadAlreadyLocked = lead.status === 'ACCEPTED_LOCKED'
+  const requestAlreadyLocked = lead.jobRequest.status === 'ACCEPTED_LOCKED'
 
-  if (isAlreadyLocked) {
+  if (leadAlreadyLocked !== requestAlreadyLocked) {
+    failAcceptedLock({
+      code: 'ACCEPTED_LOCK_FAILED',
+      message: 'Accepted lock state is inconsistent between lead and request.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+      result: 'inconsistent_state',
+    })
+  }
+
+  if (leadAlreadyLocked && requestAlreadyLocked) {
     if (!lead.unlock || lead.unlock.providerId !== params.providerId) {
-      throw new AcceptedLeadLockError('CREDIT_NOT_APPLIED', 'Accepted lock is missing the provider credit marker.')
+      failAcceptedLock({
+        code: 'CREDIT_NOT_APPLIED',
+        message: 'Accepted lock is missing the provider credit marker.',
+        leadId: lead.id,
+        providerId: params.providerId,
+        serviceRequestId: lead.jobRequestId,
+        source: params.source,
+        traceId: params.traceId,
+        result: 'inconsistent_state',
+      })
     }
     if (!creditTransaction) {
-      throw new AcceptedLeadLockError('CREDIT_TRANSACTION_MISSING', 'Accepted lock is missing the credit transaction.')
+      failAcceptedLock({
+        code: 'CREDIT_TRANSACTION_MISSING',
+        message: 'Accepted lock is missing the credit transaction.',
+        leadId: lead.id,
+        providerId: params.providerId,
+        serviceRequestId: lead.jobRequestId,
+        source: params.source,
+        traceId: params.traceId,
+        result: 'inconsistent_state',
+      })
     }
     logAcceptedLock({
       leadId: lead.id,
@@ -247,14 +360,66 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     }
   }
 
+  if (lead.jobRequest.status === 'CANCELLED' || lead.cancelledAt || lead.status === 'CANCELLED') {
+    failAcceptedLock({
+      code: 'REQUEST_CANCELLED',
+      message: 'This request was cancelled.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
+  }
+  if (
+    lead.status === 'EXPIRED' ||
+    lead.jobRequest.status === 'EXPIRED' ||
+    (lead.expiresAt && lead.expiresAt <= new Date()) ||
+    (lead.jobRequest.expiresAt && lead.jobRequest.expiresAt <= new Date())
+  ) {
+    failAcceptedLock({
+      code: 'LEAD_EXPIRED',
+      message: 'This lead has expired.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
+  }
+
   if (lead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING') {
-    throw new AcceptedLeadLockError('LEAD_ALREADY_LOCKED', 'This request is no longer awaiting provider acceptance.')
+    failAcceptedLock({
+      code: 'LEAD_ALREADY_LOCKED',
+      message: 'This request is no longer awaiting provider acceptance.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
   }
   if (!lead.unlock || lead.unlock.providerId !== params.providerId || lead.status !== 'CREDIT_APPLIED') {
-    throw new AcceptedLeadLockError('CREDIT_NOT_APPLIED', 'Provider credit must be applied before accepted lock.')
+    failAcceptedLock({
+      code: 'CREDIT_NOT_APPLIED',
+      message: 'Provider credit must be applied before accepted lock.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
   }
   if (!creditTransaction) {
-    throw new AcceptedLeadLockError('CREDIT_TRANSACTION_MISSING', 'Provider credit transaction is required before accepted lock.')
+    failAcceptedLock({
+      code: 'CREDIT_TRANSACTION_MISSING',
+      message: 'Provider credit transaction is required before accepted lock.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+    })
   }
 
   const wallet = await tx.providerWallet.findUnique({
@@ -280,7 +445,16 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     data: { status: 'ACCEPTED_LOCKED' },
   })
   if (requestUpdated.count !== 1) {
-    throw new AcceptedLeadLockError('ACCEPTED_LOCK_FAILED', 'Request changed while applying accepted lock.')
+    failAcceptedLock({
+      code: 'ACCEPTED_LOCK_FAILED',
+      message: 'Request changed while applying accepted lock.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+      result: 'inconsistent_state',
+    })
   }
 
   const leadUpdated = await tx.lead.updateMany({
@@ -292,7 +466,16 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     },
   })
   if (leadUpdated.count !== 1) {
-    throw new AcceptedLeadLockError('ACCEPTED_LOCK_FAILED', 'Lead changed while applying accepted lock.')
+    failAcceptedLock({
+      code: 'ACCEPTED_LOCK_FAILED',
+      message: 'Lead changed while applying accepted lock.',
+      leadId: lead.id,
+      providerId: params.providerId,
+      serviceRequestId: lead.jobRequestId,
+      source: params.source,
+      traceId: params.traceId,
+      result: 'inconsistent_state',
+    })
   }
 
   await tx.lead.updateMany({
@@ -378,7 +561,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
   }
 }
 
-export async function notifyAcceptedLeadLocked(params: AcceptedLeadLockNotificationPayload) {
+export async function notifyAcceptedLeadLocked(params: { leadId: string; providerId: string }) {
   const result = await sendAcceptedLockConfirmations({
     leadId: params.leadId,
     providerId: params.providerId,

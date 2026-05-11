@@ -163,7 +163,7 @@ export function mapLeadInviteToQualifiedState(invite: LeadInviteStateInput | nul
   if (
     invite.expiresAt &&
     invite.expiresAt <= new Date() &&
-    !['ACCEPTED', 'ACCEPTED_LOCKED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'].includes(invite.status)
+    !['ACCEPTED', 'ACCEPTED_LOCKED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'].includes(invite.status)
   ) return 'expired'
 
   if (invite.status === 'SENT') return 'sent'
