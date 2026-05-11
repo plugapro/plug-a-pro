@@ -376,6 +376,26 @@ export const TEMPLATES = {
       'Hi {{1}}, {{2}} has submitted a quote for your {{3}} job. Amount: {{4}}. Estimated time: {{5}} hours. Valid until: {{6}}. Details: {{7}}. Please accept or decline below.',
   },
 
+  // ─── MVP1 pilot — accepted lock confirmations ────────────────────────────
+
+  mvp1_accepted_lock_customer_confirmation: {
+    name: 'mvp1_accepted_lock_customer_confirmation',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to the customer when their selected provider accepts the job (MVP1 pilot flow)',
+    example:
+      'Good news. Your selected Plug A Pro provider has accepted your request. Your request is now confirmed at MVP1 level. Next steps will be handled through the current pilot process.',
+  },
+
+  mvp1_accepted_lock_provider_confirmation: {
+    name: 'mvp1_accepted_lock_provider_confirmation',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to the provider when they accept a customer-selected job (MVP1 pilot flow)',
+    example:
+      'You have accepted this Plug A Pro lead. Your credit has been applied. MVP1 flow is complete; follow the current pilot operating process for next steps.',
+  },
+
 } as const
 
 export type TemplateName = keyof typeof TEMPLATES

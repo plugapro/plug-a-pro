@@ -1,7 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { db } from './db'
 import { hasSuccessfulMessageForRecipient } from './message-events'
-import { sendText } from './whatsapp'
+import type { TemplateName } from './messaging-templates'
+import { sendTemplate } from './whatsapp'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
@@ -588,6 +589,7 @@ async function hasAcceptedLockConfirmationSent(params: {
 }) {
   const existingByKey = await db.messageEvent.findFirst({
     where: {
+      to: params.to,
       idempotencyKey: params.idempotencyKey,
       status: { in: ['SENT', 'DELIVERED', 'READ'] },
     },
@@ -813,10 +815,10 @@ async function sendAcceptedLockConfirmation(params: {
   })
 
   try {
-    const externalId = await sendText({
+    const externalId = await sendTemplate({
       to,
-      text: params.body,
-      templateName: params.templateName,
+      template: params.templateName as TemplateName,
+      components: [],
       metadata: {
         leadId: params.leadId,
         providerId: params.providerId,
@@ -826,7 +828,6 @@ async function sendAcceptedLockConfirmation(params: {
         source: 'accepted_lock_confirmation',
         ...(params.traceId ? { traceId: params.traceId } : {}),
       },
-      recordMessageEvent: false,
     })
     await markAcceptedLockConfirmationSent({
       messageEventId: reservation.id,

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Prisma } from '@prisma/client'
 import { sendAcceptedLockConfirmations } from '../../lib/provider-accepted-lock'
 
-const { mockDb, mockSendText } = vi.hoisted(() => ({
+const { mockDb, mockSendTemplate } = vi.hoisted(() => ({
   mockDb: {
     lead: {
       findUnique: vi.fn(),
@@ -14,11 +14,11 @@ const { mockDb, mockSendText } = vi.hoisted(() => ({
       updateMany: vi.fn(),
     },
   },
-  mockSendText: vi.fn(),
+  mockSendTemplate: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
-vi.mock('../../lib/whatsapp', () => ({ sendText: mockSendText }))
+vi.mock('../../lib/whatsapp', () => ({ sendTemplate: mockSendTemplate }))
 
 function makeLockedLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -45,7 +45,7 @@ describe('accepted lock confirmations', () => {
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.messageEvent.create.mockImplementation(async () => ({ id: `message-${mockDb.messageEvent.create.mock.calls.length}` }))
     mockDb.messageEvent.updateMany.mockResolvedValue({ count: 1 })
-    mockSendText.mockResolvedValue('wamid-confirmation')
+    mockSendTemplate.mockResolvedValue('wamid-confirmation')
   })
 
   it('sends the customer confirmation after accepted lock', async () => {
@@ -60,10 +60,10 @@ describe('accepted lock confirmations', () => {
       customer: { sent: true },
       provider: { sent: true },
     })
-    expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
       to: '+27220000000',
-      templateName: 'mvp1_accepted_lock_customer_confirmation',
-      text: expect.stringContaining('Your request is now confirmed at MVP1 level'),
+      template: 'mvp1_accepted_lock_customer_confirmation',
+      components: [],
       metadata: expect.objectContaining({
         leadId: 'lead-lock-1',
         providerId: 'provider-lock-1',
@@ -73,7 +73,6 @@ describe('accepted lock confirmations', () => {
         source: 'accepted_lock_confirmation',
         traceId: 'trace-lock-1',
       }),
-      recordMessageEvent: false,
     }))
     expect(mockDb.messageEvent.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -102,10 +101,10 @@ describe('accepted lock confirmations', () => {
       providerId: 'provider-lock-1',
     })
 
-    expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
       to: '+27110000000',
-      templateName: 'mvp1_accepted_lock_provider_confirmation',
-      text: expect.stringContaining('Your credit has been applied'),
+      template: 'mvp1_accepted_lock_provider_confirmation',
+      components: [],
       metadata: expect.objectContaining({
         leadId: 'lead-lock-1',
         providerId: 'provider-lock-1',
@@ -114,7 +113,6 @@ describe('accepted lock confirmations', () => {
         idempotencyKey: 'accepted_lock_confirmation:provider:lead-lock-1:provider-lock-1',
         source: 'accepted_lock_confirmation',
       }),
-      recordMessageEvent: false,
     }))
   })
 
@@ -131,7 +129,7 @@ describe('accepted lock confirmations', () => {
       customer: { sent: false, skipped: 'duplicate' },
       provider: { sent: false, skipped: 'duplicate' },
     })
-    expect(mockSendText).not.toHaveBeenCalled()
+    expect(mockSendTemplate).not.toHaveBeenCalled()
   })
 
   it('treats an in-flight confirmation reservation as duplicate to prevent retry spam', async () => {
@@ -153,11 +151,11 @@ describe('accepted lock confirmations', () => {
       customer: { sent: false, skipped: 'duplicate' },
       provider: { sent: false, skipped: 'duplicate' },
     })
-    expect(mockSendText).not.toHaveBeenCalled()
+    expect(mockSendTemplate).not.toHaveBeenCalled()
   })
 
   it('records notification failure without changing accepted lock state', async () => {
-    mockSendText
+    mockSendTemplate
       .mockRejectedValueOnce(new Error('whatsapp unavailable'))
       .mockResolvedValueOnce('wamid-provider-confirmation')
 
@@ -179,6 +177,34 @@ describe('accepted lock confirmations', () => {
       }),
     })
     expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('retries only the failed recipient on partial failure replay without re-sending to succeeded recipient', async () => {
+    // Simulate state after a first call where provider send succeeded but customer failed.
+    // hasAcceptedLockConfirmationSent returns true only for the provider idempotency key.
+    mockDb.messageEvent.findFirst.mockImplementation(async (args: any) => {
+      const key = args?.where?.idempotencyKey
+      if (key === 'accepted_lock_confirmation:provider:lead-lock-1:provider-lock-1') {
+        return { id: 'message-provider-sent' }
+      }
+      return null
+    })
+
+    const result = await sendAcceptedLockConfirmations({
+      leadId: 'lead-lock-1',
+      providerId: 'provider-lock-1',
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      customer: { sent: true },
+      provider: { sent: false, skipped: 'duplicate' },
+    })
+    expect(mockSendTemplate).toHaveBeenCalledTimes(1)
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27220000000',
+      template: 'mvp1_accepted_lock_customer_confirmation',
+    }))
   })
 
   it('treats reservation database failure as non-destructive notification failure', async () => {
@@ -269,7 +295,7 @@ describe('accepted lock confirmations', () => {
     })
 
     expect(result).toEqual({ ok: false, reason: 'LEAD_NOT_LOCKED' })
-    expect(mockSendText).not.toHaveBeenCalled()
+    expect(mockSendTemplate).not.toHaveBeenCalled()
   })
 
   it('blocks confirmation when the request is not accepted locked', async () => {
@@ -286,7 +312,7 @@ describe('accepted lock confirmations', () => {
     })
 
     expect(result).toEqual({ ok: false, reason: 'REQUEST_NOT_LOCKED' })
-    expect(mockSendText).not.toHaveBeenCalled()
+    expect(mockSendTemplate).not.toHaveBeenCalled()
   })
 
   it('does not send confirmations before credit is applied and accepted lock completes', async () => {
@@ -304,7 +330,7 @@ describe('accepted lock confirmations', () => {
     })
 
     expect(result).toEqual({ ok: false, reason: 'LEAD_NOT_LOCKED' })
-    expect(mockSendText).not.toHaveBeenCalled()
+    expect(mockSendTemplate).not.toHaveBeenCalled()
     expect(mockDb.messageEvent.create).not.toHaveBeenCalled()
   })
 
@@ -314,12 +340,22 @@ describe('accepted lock confirmations', () => {
       providerId: 'provider-lock-1',
     })
 
-    const sentTexts = mockSendText.mock.calls.map(([payload]) => payload.text).join('\n')
-    expect(sentTexts).not.toContain('+27220000000')
-    expect(sentTexts).not.toContain('+27110000000')
-    expect(sentTexts).not.toContain('Gate')
-    expect(sentTexts).not.toContain('address')
-    expect(sentTexts).not.toContain('booking')
-    expect(sentTexts).not.toContain('job management')
+    const reservedBodies = (mockDb.messageEvent.create.mock.calls as any[][])
+      .map((args) => args[0]?.data?.body ?? '')
+      .join('\n')
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      template: 'mvp1_accepted_lock_customer_confirmation',
+      components: [],
+    }))
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      template: 'mvp1_accepted_lock_provider_confirmation',
+      components: [],
+    }))
+    expect(reservedBodies).not.toContain('+27220000000')
+    expect(reservedBodies).not.toContain('+27110000000')
+    expect(reservedBodies).not.toContain('Gate')
+    expect(reservedBodies).not.toContain('address')
+    expect(reservedBodies).not.toContain('booking')
+    expect(reservedBodies).not.toContain('job management')
   })
 })

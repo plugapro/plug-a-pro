@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { acceptSelectedProviderJob } from '../../lib/selected-provider-acceptance'
 
-const { mockDb, mockSendText, state } = vi.hoisted(() => {
+const { mockDb, mockSendTemplate, state } = vi.hoisted(() => {
   const state: {
     lead: any
     wallet: any
@@ -19,7 +19,7 @@ const { mockDb, mockSendText, state } = vi.hoisted(() => {
   }
   return {
     state,
-    mockSendText: vi.fn(),
+    mockSendTemplate: vi.fn(),
     mockDb: {
       $transaction: vi.fn(),
       lead: { findUnique: vi.fn() },
@@ -33,7 +33,7 @@ const { mockDb, mockSendText, state } = vi.hoisted(() => {
 })
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
-vi.mock('../../lib/whatsapp', () => ({ sendText: mockSendText }))
+vi.mock('../../lib/whatsapp', () => ({ sendTemplate: mockSendTemplate }))
 
 function makeLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -208,7 +208,7 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.messageEvent.create.mockImplementation(async () => ({ id: `message-e2e-${mockDb.messageEvent.create.mock.calls.length}` }))
     mockDb.messageEvent.updateMany.mockResolvedValue({ count: 1 })
-    mockSendText.mockResolvedValue('wamid-e2e')
+    mockSendTemplate.mockResolvedValue('wamid-e2e')
   })
 
   it('accepts, checks credit, deducts exactly once, locks MVP1 state, and sends basic confirmations', async () => {
@@ -263,14 +263,14 @@ describe('MVP1 selected-provider acceptance end to end', () => {
       'lead.provider_credit_applied',
       'lead.provider_accepted_locked',
     ])
-    expect(mockSendText).toHaveBeenCalledTimes(2)
-    expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockSendTemplate).toHaveBeenCalledTimes(2)
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
       to: '+27220000000',
-      templateName: 'mvp1_accepted_lock_customer_confirmation',
+      template: 'mvp1_accepted_lock_customer_confirmation',
     }))
-    expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
       to: '+27110000000',
-      templateName: 'mvp1_accepted_lock_provider_confirmation',
+      template: 'mvp1_accepted_lock_provider_confirmation',
     }))
   })
 
@@ -296,7 +296,7 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     })
     expect(state.wallet.paidCreditBalance).toBe(1)
     expect(state.ledgerEntries).toHaveLength(1)
-    expect(mockSendText).toHaveBeenCalledTimes(2)
+    expect(mockSendTemplate).toHaveBeenCalledTimes(2)
   })
 
   it('completes the full lock when the provider retries after topping up from CREDIT_REQUIRED', async () => {
@@ -333,6 +333,6 @@ describe('MVP1 selected-provider acceptance end to end', () => {
       'lead.provider_credit_applied',
       'lead.provider_accepted_locked',
     ])
-    expect(mockSendText).toHaveBeenCalledTimes(2)
+    expect(mockSendTemplate).toHaveBeenCalledTimes(2)
   })
 })
