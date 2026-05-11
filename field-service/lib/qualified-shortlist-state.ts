@@ -142,6 +142,7 @@ export function mapRequestToQualifiedState(request: RequestStateInput | null | u
   if (request.status === 'MATCHING') return 'awaiting_provider_responses'
   if (request.status === 'SHORTLIST_READY') return 'shortlist_ready'
   if (request.status === 'PROVIDER_CONFIRMATION_PENDING') return 'provider_confirmation_pending'
+  if (request.status === 'ACCEPTED_LOCKED') return 'assigned'
   if (request.status === 'MATCHED') {
     if (request.match?.status === 'QUOTE_APPROVED') return 'scheduled'
     if (request.match?.status === 'CANCELLED') return 'cancelled'
@@ -162,7 +163,7 @@ export function mapLeadInviteToQualifiedState(invite: LeadInviteStateInput | nul
   if (
     invite.expiresAt &&
     invite.expiresAt <= new Date() &&
-    !['ACCEPTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'].includes(invite.status)
+    !['ACCEPTED', 'ACCEPTED_LOCKED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'].includes(invite.status)
   ) return 'expired'
 
   if (invite.status === 'SENT') return 'sent'
@@ -176,6 +177,7 @@ export function mapLeadInviteToQualifiedState(invite: LeadInviteStateInput | nul
   if (invite.status === 'CANCELLED') return 'cancelled'
   if (invite.status === 'DECLINED') return 'not_interested'
   if (invite.status === 'EXPIRED') return 'expired'
+  if (invite.status === 'ACCEPTED_LOCKED') return 'provider_accepted'
   if (invite.status === 'ACCEPTED') return 'provider_accepted'
   if (invite.shortlistItem) return 'shortlisted'
 

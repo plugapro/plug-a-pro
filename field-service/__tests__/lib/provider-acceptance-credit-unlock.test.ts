@@ -179,14 +179,15 @@ describe('provider final acceptance credit application', () => {
       }
     })
     mockLockAcceptedLead.mockImplementation(async () => {
-      state.lead = { ...state.lead, status: 'ACCEPTED' }
+      state.lead = { ...state.lead, status: 'ACCEPTED_LOCKED' }
       return {
         ok: true,
         leadId: 'lead-c13',
         providerId: 'provider-c13',
-        matchId: 'match-c13',
-        bookingId: 'booking-c13',
-        jobId: 'job-c13',
+        serviceRequestId: 'request-c13',
+        leadStatus: 'ACCEPTED_LOCKED',
+        serviceRequestStatus: 'ACCEPTED_LOCKED',
+        creditTransactionId: 'ledger-c13',
         alreadyLocked: false,
         notificationPayload: { leadId: 'lead-c13', providerId: 'provider-c13' },
       }
@@ -208,9 +209,9 @@ describe('provider final acceptance credit application', () => {
       creditCheck: { ok: true, result: 'SUFFICIENT_CREDITS' },
       creditApplied: true,
       creditTransactionId: 'ledger-c13',
-      matchId: 'match-c13',
-      bookingId: 'booking-c13',
-      jobId: 'job-c13',
+      matchId: null,
+      bookingId: null,
+      jobId: null,
       notificationSent: true,
       creditApplication: {
         leadStatus: 'CREDIT_APPLIED',
@@ -218,9 +219,9 @@ describe('provider final acceptance credit application', () => {
       },
       acceptedLock: {
         leadId: 'lead-c13',
-        matchId: 'match-c13',
-        bookingId: 'booking-c13',
-        jobId: 'job-c13',
+        leadStatus: 'ACCEPTED_LOCKED',
+        serviceRequestStatus: 'ACCEPTED_LOCKED',
+        creditTransactionId: 'ledger-c13',
       },
     })
     expect(mockApplyProviderCredit).toHaveBeenCalledWith(
@@ -243,7 +244,7 @@ describe('provider final acceptance credit application', () => {
       }),
     )
     expect(mockNotifyAcceptedLeadLocked).toHaveBeenCalledWith({ leadId: 'lead-c13', providerId: 'provider-c13' })
-    expect(state.lead.status).toBe('ACCEPTED')
+    expect(state.lead.status).toBe('ACCEPTED_LOCKED')
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
       where: { id: 'lead-c13', status: 'CUSTOMER_SELECTED' },
       data: expect.objectContaining({ status: 'PROVIDER_ACCEPTED' }),

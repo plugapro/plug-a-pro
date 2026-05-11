@@ -1478,6 +1478,7 @@ enum JobRequestStatus {
   MATCHING           // at least one lead sent, awaiting acceptance
   SHORTLIST_READY     // interested providers are ready for customer comparison
   PROVIDER_CONFIRMATION_PENDING // customer selected a provider, awaiting provider final acceptance
+  ACCEPTED_LOCKED     // selected provider accepted after credit was applied; MVP1 final state
   MATCHED            // a provider accepted — Match created
   EXPIRED            // no provider accepted within the window
   CANCELLED          // customer cancelled before match
@@ -1492,6 +1493,7 @@ enum LeadStatus {
   PROVIDER_ACCEPTED // selected provider accepted; awaiting credit application/unlock
   CREDIT_REQUIRED   // selected provider accepted but does not currently have enough credits
   CREDIT_APPLIED    // selected provider credit has been deducted; awaiting accepted lock
+  ACCEPTED_LOCKED   // credit applied and selected lead/request are locked; MVP1 final state
   SUPERSEDED        // Qualified Shortlist: customer chose another shortlisted provider
   ACCEPTED  // provider accepted — triggers Match creation
   DECLINED  // provider passed on this job

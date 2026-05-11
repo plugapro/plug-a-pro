@@ -28,9 +28,9 @@ export type SelectedProviderAcceptanceResult =
       alreadyAccepted?: boolean
       alreadyUnlocked?: boolean
       creditApplied?: boolean
-      matchId?: string
-      jobId?: string
-      bookingId?: string
+      matchId?: string | null
+      jobId?: string | null
+      bookingId?: string | null
       creditTransactionId?: string | null
       notificationSent: boolean
     }
@@ -161,9 +161,9 @@ export async function acceptSelectedProviderJob(params: {
           alreadyAccepted: true,
           alreadyUnlocked: acceptedLock.alreadyLocked,
           creditApplied: true,
-          matchId: acceptedLock.matchId,
-          jobId: acceptedLock.jobId,
-          bookingId: acceptedLock.bookingId,
+          matchId: null,
+          jobId: null,
+          bookingId: null,
           creditTransactionId: creditApplication.creditTransactionId,
           notificationSent: false,
         }
@@ -267,9 +267,9 @@ export async function acceptSelectedProviderJob(params: {
         alreadyAccepted,
         alreadyUnlocked: acceptedLock.alreadyLocked,
         creditApplied: true,
-        matchId: acceptedLock.matchId,
-        jobId: acceptedLock.jobId,
-        bookingId: acceptedLock.bookingId,
+        matchId: null,
+        jobId: null,
+        bookingId: null,
         creditTransactionId: creditApplication.creditTransactionId,
         notificationSent: false,
       }
@@ -338,6 +338,12 @@ export async function acceptSelectedProviderJob(params: {
       }
       if (error.code === 'LEAD_ALREADY_LOCKED') {
         return { ok: false, reason: 'LEAD_ALREADY_ACCEPTED' }
+      }
+      if (error.code === 'CREDIT_NOT_APPLIED' || error.code === 'CREDIT_TRANSACTION_MISSING') {
+        return { ok: false, reason: 'CREDIT_APPLICATION_FAILED' }
+      }
+      if (error.code === 'ACCEPTED_LOCK_FAILED') {
+        return { ok: false, reason: 'JOB_ASSIGNMENT_FAILED' }
       }
     }
     console.error('[selected-provider-acceptance] acceptance failed', {

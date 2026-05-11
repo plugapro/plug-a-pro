@@ -52,6 +52,7 @@ export function mapRequestStatusToBlueprintState(params: {
   }
   if (status === 'SHORTLIST_READY') return 'provider_responses_received'
   if (status === 'PROVIDER_CONFIRMATION_PENDING') return 'provider_final_acceptance_pending'
+  if (status === 'ACCEPTED_LOCKED') return 'provider_confirmed'
   if (status === 'MATCHED') return 'provider_confirmed'
   if (status === 'EXPIRED') return 'no_provider_available'
   if (status === 'CANCELLED') return 'cancelled'
@@ -69,6 +70,7 @@ export function mapLeadStatusToBlueprintState(status: LeadStatus): BlueprintLead
   if (status === 'PROVIDER_ACCEPTED') return 'accepted'
   if (status === 'CREDIT_REQUIRED') return 'credit_required'
   if (status === 'CREDIT_APPLIED') return 'credit_applied'
+  if (status === 'ACCEPTED_LOCKED') return 'accepted'
   if (status === 'ACCEPTED') return 'accepted'
   if (status === 'SUPERSEDED') return 'superseded'
   if (status === 'CANCELLED') return 'cancelled'
@@ -98,6 +100,10 @@ export const REQUEST_STATUS_VOCABULARY_MATRIX: Record<JobRequestStatus, {
   PROVIDER_CONFIRMATION_PENDING: {
     AUTO_ASSIGN: 'provider_final_acceptance_pending',
     OPS_REVIEW: 'provider_final_acceptance_pending',
+  },
+  ACCEPTED_LOCKED: {
+    AUTO_ASSIGN: 'provider_confirmed',
+    OPS_REVIEW: 'provider_confirmed',
   },
   MATCHED: {
     AUTO_ASSIGN: 'provider_confirmed',

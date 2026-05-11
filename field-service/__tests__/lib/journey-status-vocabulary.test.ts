@@ -53,6 +53,7 @@ describe('journey status vocabulary mapping', () => {
     expect(mapLeadStatusToBlueprintState('CUSTOMER_SELECTED')).toBe('customer_selected')
     expect(mapLeadStatusToBlueprintState('PROVIDER_ACCEPTED')).toBe('accepted')
     expect(mapLeadStatusToBlueprintState('CREDIT_REQUIRED')).toBe('credit_required')
+    expect(mapLeadStatusToBlueprintState('ACCEPTED_LOCKED')).toBe('accepted')
     expect(mapLeadStatusToBlueprintState('ACCEPTED')).toBe('accepted')
     expect(mapLeadStatusToBlueprintState('EXPIRED')).toBe('expired')
   })
@@ -61,6 +62,7 @@ describe('journey status vocabulary mapping', () => {
     // The matrix must be explicit for every persisted request status so no UI
     // or release-gate reporting path can silently fall through.
     expect(Object.keys(REQUEST_STATUS_VOCABULARY_MATRIX).sort()).toEqual([
+      'ACCEPTED_LOCKED',
       'CANCELLED',
       'EXPIRED',
       'MATCHED',

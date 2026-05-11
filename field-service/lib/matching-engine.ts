@@ -30,7 +30,7 @@ export interface DispatchResult {
 type LeadAccepted = {
   ok: true
   leadId: string
-  matchId?: string
+  matchId?: string | null
   creditTransactionId?: string | null
   currentCreditBalance?: number
   alreadyAccepted?: boolean

@@ -64,11 +64,11 @@ function assertLeadAvailable(lead: {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead is no longer available.')
   }
 
-  if (!['SENT', 'VIEWED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'ACCEPTED'].includes(lead.status)) {
+  if (!['SENT', 'VIEWED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'ACCEPTED', 'ACCEPTED_LOCKED'].includes(lead.status)) {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead cannot be unlocked.')
   }
 
-  if (lead.status !== 'ACCEPTED' && lead.expiresAt && lead.expiresAt < new Date()) {
+  if (!['ACCEPTED', 'ACCEPTED_LOCKED'].includes(lead.status) && lead.expiresAt && lead.expiresAt < new Date()) {
     throw new LeadUnlockError('LEAD_NOT_AVAILABLE', 'This lead has expired.')
   }
 }

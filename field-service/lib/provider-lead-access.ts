@@ -453,7 +453,9 @@ export async function resolveProviderLeadAccessToken(
     }
   }
 
-  const hasAcceptedUnlock = lead.status === 'ACCEPTED' && lead.unlock?.providerId === lead.providerId
+  const hasAcceptedUnlock =
+    (lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') &&
+    lead.unlock?.providerId === lead.providerId
   const scopedLead = {
     ...lead,
     jobRequest: {
@@ -510,7 +512,7 @@ export async function resolveProviderLeadAttachmentScope(token: string) {
   // uses this to decide whether to enforce safeForPreview on request-level
   // attachments. After acceptance, the provider may view all request attachments.
   const hasAcceptedUnlock =
-    resolved.lead.status === 'ACCEPTED' &&
+    (resolved.lead.status === 'ACCEPTED' || resolved.lead.status === 'ACCEPTED_LOCKED') &&
     resolved.lead.unlock?.providerId === resolved.lead.providerId
 
   return {

@@ -190,7 +190,7 @@ export async function checkProviderLeadCreditBalanceInTransaction(
     }
   }
 
-  if (lead.unlock || lead.status === 'ACCEPTED') {
+  if (lead.unlock || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {
     logCreditCheck({ leadId: lead.id, providerId: params.providerId, result: 'blocked', source: params.source, traceId: params.traceId, reason: 'LEAD_ALREADY_LOCKED' })
     return {
       ok: false,

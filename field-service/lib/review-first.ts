@@ -1009,7 +1009,7 @@ export async function getCustomerReviewShortlist(params: { requestId: string; cu
     where: {
       jobRequestId: params.requestId,
       status: {
-        in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED'],
+        in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'],
       },
     },
     orderBy: [{ rankingPosition: 'asc' }, { sentAt: 'asc' }],
@@ -1236,7 +1236,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
       customer: { select: { phone: true } },
       leads: {
         where: {
-          status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'DECLINED', 'EXPIRED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED'] },
+          status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'DECLINED', 'EXPIRED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'] },
         },
         select: {
           id: true,

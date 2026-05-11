@@ -115,7 +115,7 @@ async function acceptLeadWithToken(formData: FormData) {
   const lead = resolved.lead
   const leadExpired = lead.status === 'EXPIRED' || Boolean(lead.expiresAt && lead.expiresAt <= new Date())
   const leadDeclined = lead.status === 'DECLINED'
-  const leadAccepted = lead.status === 'ACCEPTED'
+  const leadAccepted = lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED'
   if (leadExpired || leadAccepted || leadDeclined) {
     redirectLeadActionError(token, {
       error: 'closed',
@@ -258,10 +258,10 @@ async function declineLeadWithToken(formData: FormData) {
   if (lead.status === 'DECLINED') {
     redirect(`/leads/access/${encodeURIComponent(token)}?declined=already&actionTraceId=${encodeURIComponent(traceId)}`)
   }
-  if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED') {
+  if (lead.status === 'EXPIRED' || (lead.expiresAt && lead.expiresAt <= new Date()) || lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') {
     redirectLeadActionError(token, {
       error: 'closed',
-      errorCode: lead.status === 'ACCEPTED' ? 'LEAD_ALREADY_ACCEPTED' : 'LEAD_EXPIRED',
+      errorCode: lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED' ? 'LEAD_ALREADY_ACCEPTED' : 'LEAD_EXPIRED',
       action: 'decline',
       traceId,
       message: 'This lead can no longer be declined.',
@@ -646,7 +646,7 @@ export default async function ProviderLeadAccessPage({
   const jr = lead.jobRequest
   const addr = jr.address
   const customer = jr.customer
-  const isAccepted = lead.status === 'ACCEPTED'
+  const isAccepted = lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED'
   const isProviderAcceptedPending = lead.status === 'PROVIDER_ACCEPTED'
   const isCreditRequired = lead.status === 'CREDIT_REQUIRED'
   const isCreditApplied = lead.status === 'CREDIT_APPLIED'
@@ -723,18 +723,19 @@ export default async function ProviderLeadAccessPage({
     ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(jr.customerAcceptedAmount))
     : null
   const attachmentToken = encodeURIComponent(token)
-  const acceptedStage = isAccepted ? deriveAcceptedStage(jr.match) : isCreditApplied ? 'Credit applied' : null
-  const plannedWindow = isAccepted ? formatWindow(jr.match?.plannedArrivalStart, jr.match?.plannedArrivalEnd) : null
+  const hasAcceptedOperationalMatch = isAccepted && Boolean(jr.match)
+  const acceptedStage = isAccepted ? (jr.match ? deriveAcceptedStage(jr.match) : 'Accepted locked') : isCreditApplied ? 'Credit applied' : null
+  const plannedWindow = hasAcceptedOperationalMatch ? formatWindow(jr.match?.plannedArrivalStart, jr.match?.plannedArrivalEnd) : null
   const actionDisabled = Boolean(jr.match?.providerCompletedAt)
-  const hasPlannedArrival = isAccepted && Boolean(jr.match?.plannedArrivalStart)
+  const hasPlannedArrival = hasAcceptedOperationalMatch && Boolean(jr.match?.plannedArrivalStart)
   // Job has progressed past the arrival-scheduling stage — hide the form entirely.
-  const arrivalActionsDone = Boolean(
+  const arrivalActionsDone = hasAcceptedOperationalMatch && Boolean(
     jr.match?.providerOnTheWayAt ||
     jr.match?.providerArrivedAt ||
     jr.match?.providerStartedAt ||
     jr.match?.providerCompletedAt
   )
-  const showArrivalForm = !hasPlannedArrival || resolvedSearchParams.editArrival === '1'
+  const showArrivalForm = hasAcceptedOperationalMatch && (!hasPlannedArrival || resolvedSearchParams.editArrival === '1')
   const customerAvailability = getCustomerAvailabilitySummary({
     requestedWindowStart: jr.requestedWindowStart,
     requestedWindowEnd: jr.requestedWindowEnd,
@@ -806,7 +807,7 @@ export default async function ProviderLeadAccessPage({
             {jr.match?.createdAt && (
               <p>Accepted {format(jr.match.createdAt, 'HH:mm, d MMM yyyy')} · 1 credit used.</p>
             )}
-            <p>Next step: contact the customer and confirm your arrival time below.</p>
+            <p>{jr.match ? 'Next step: contact the customer and confirm your arrival time below.' : 'MVP1 accepted lock is complete for this request.'}</p>
           </div>
         )}
 
@@ -821,7 +822,7 @@ export default async function ProviderLeadAccessPage({
                 Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
               </p>
             )}
-            <p className="mt-1">Full customer and job details are now available.</p>
+            <p className="mt-1">Full customer and request details are now available.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
@@ -995,7 +996,7 @@ export default async function ProviderLeadAccessPage({
                   Your current credits balance is {providerCreditBalance}. After acceptance, your balance will be {providerCreditBalance - LEAD_UNLOCK_COST_CREDITS}.
                 </p>
                 <p className="mt-1">
-                  Full customer details are released only after credit is applied and the job is assigned. Credits use follows the{' '}
+                  Full customer details are released only after credit is applied and the request is locked. Credits use follows the{' '}
                   <Link href={termsUrl} className="font-medium underline underline-offset-4">
                     provider credits terms and rules
                   </Link>
@@ -1226,7 +1227,7 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {isAccepted && (
+        {isAccepted && jr.match && (
           <div className="rounded-lg border bg-card p-4 space-y-3">
             <div>
               <h2 className="text-base font-semibold">Quick job updates</h2>

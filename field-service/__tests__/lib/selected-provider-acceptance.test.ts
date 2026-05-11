@@ -187,14 +187,15 @@ describe('selected provider final acceptance', () => {
       }
     })
     mockLockAcceptedLead.mockImplementation(async () => {
-      state.lead = { ...state.lead, status: 'ACCEPTED' }
+      state.lead = { ...state.lead, status: 'ACCEPTED_LOCKED' }
       return {
         ok: true,
         leadId: state.lead.id,
         providerId: state.lead.providerId,
-        matchId: 'match-1',
-        bookingId: 'booking-1',
-        jobId: 'job-1',
+        serviceRequestId: state.lead.jobRequestId,
+        leadStatus: 'ACCEPTED_LOCKED',
+        serviceRequestStatus: 'ACCEPTED_LOCKED',
+        creditTransactionId: 'ledger-1',
         alreadyLocked: false,
         notificationPayload: { leadId: state.lead.id, providerId: state.lead.providerId },
       }
@@ -220,18 +221,18 @@ describe('selected provider final acceptance', () => {
       },
       creditApplied: true,
       creditTransactionId: 'ledger-1',
-      matchId: 'match-1',
-      bookingId: 'booking-1',
-      jobId: 'job-1',
+      matchId: null,
+      bookingId: null,
+      jobId: null,
       notificationSent: true,
       creditApplication: {
         leadStatus: 'CREDIT_APPLIED',
         leadUnlockId: 'unlock-1',
       },
       acceptedLock: {
-        matchId: 'match-1',
-        bookingId: 'booking-1',
-        jobId: 'job-1',
+        leadStatus: 'ACCEPTED_LOCKED',
+        serviceRequestStatus: 'ACCEPTED_LOCKED',
+        creditTransactionId: 'ledger-1',
       },
     })
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
@@ -260,7 +261,7 @@ describe('selected provider final acceptance', () => {
       }),
     )
     expect(mockNotifyAcceptedLeadLocked).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1' })
-    expect(state.lead.status).toBe('ACCEPTED')
+    expect(state.lead.status).toBe('ACCEPTED_LOCKED')
     expect(JSON.stringify(result)).not.toContain('customer')
     expect(JSON.stringify(result)).not.toContain('phone')
   })
@@ -296,8 +297,8 @@ describe('selected provider final acceptance', () => {
       creditCheck: { ok: true },
       creditApplied: true,
       creditTransactionId: 'ledger-1',
-      matchId: 'match-1',
-      jobId: 'job-1',
+      matchId: null,
+      jobId: null,
     })
     expect(state.tx.lead.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'lead-1', status: 'CUSTOMER_SELECTED' } }),
@@ -306,16 +307,17 @@ describe('selected provider final acceptance', () => {
 
   it('is idempotent for duplicate accept after the job is already locked', async () => {
     state.lead = makeLead({
-      status: 'ACCEPTED',
+      status: 'ACCEPTED_LOCKED',
       unlock: { id: 'unlock-1', providerId: 'provider-1' },
     })
     mockLockAcceptedLead.mockImplementationOnce(async () => ({
       ok: true,
       leadId: 'lead-1',
       providerId: 'provider-1',
-      matchId: 'match-1',
-      bookingId: 'booking-1',
-      jobId: 'job-1',
+      serviceRequestId: 'request-1',
+      leadStatus: 'ACCEPTED_LOCKED',
+      serviceRequestStatus: 'ACCEPTED_LOCKED',
+      creditTransactionId: 'ledger-1',
       alreadyLocked: true,
       notificationPayload: null,
     }))
@@ -327,7 +329,7 @@ describe('selected provider final acceptance', () => {
       alreadyAccepted: true,
       alreadyUnlocked: true,
       creditApplied: true,
-      matchId: 'match-1',
+      matchId: null,
       notificationSent: false,
     })
     expect(mockApplyProviderCredit).toHaveBeenCalledTimes(1)

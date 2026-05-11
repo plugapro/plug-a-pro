@@ -185,7 +185,7 @@ export async function getProviderLeadDetailForProvider(
   }
 
   const providerUnlock = lead.unlock?.providerId === providerId ? lead.unlock : null
-  const isUnlocked = lead.status === 'ACCEPTED' && Boolean(providerUnlock)
+  const isUnlocked = (lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') && Boolean(providerUnlock)
   const paidCredits = provider.wallet?.paidCreditBalance ?? 0
   const promoCredits = provider.wallet?.promoCreditBalance ?? 0
 

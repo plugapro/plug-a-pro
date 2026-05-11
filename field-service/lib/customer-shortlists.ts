@@ -872,7 +872,7 @@ export async function declineSelectedProviderJob(params: {
       jobRequestId: lead.jobRequestId,
     }
   }
-  if (lead.status === 'ACCEPTED' || lead.status === 'PROVIDER_ACCEPTED' || lead.status === 'CREDIT_REQUIRED') {
+  if (lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED' || lead.status === 'PROVIDER_ACCEPTED' || lead.status === 'CREDIT_REQUIRED') {
     console.info('[provider-lead-action]', {
       leadId: lead.id,
       providerId: params.providerId,
@@ -1100,6 +1100,7 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
 
     if (
       lead.status === 'ACCEPTED' ||
+      lead.status === 'ACCEPTED_LOCKED' ||
       lead.status === 'PROVIDER_ACCEPTED' ||
       lead.status === 'CREDIT_REQUIRED' ||
       lead.status === 'DECLINED' ||

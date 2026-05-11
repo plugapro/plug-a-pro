@@ -194,6 +194,7 @@ export default async function LeadDetailPage({
   const termsUrl = getProviderTermsUrl()
   const isAcceptedLead =
     lead.status === 'ACCEPTED' ||
+    lead.status === 'ACCEPTED_LOCKED' ||
     lead.status === 'PROVIDER_ACCEPTED' ||
     lead.status === 'CREDIT_REQUIRED' ||
     lead.status === 'CREDIT_APPLIED'
@@ -212,6 +213,7 @@ export default async function LeadDetailPage({
   const isExpired = lead.expiresAt ? lead.expiresAt < new Date() : false
   const isResponded =
     lead.status === 'ACCEPTED' ||
+    lead.status === 'ACCEPTED_LOCKED' ||
     lead.status === 'PROVIDER_ACCEPTED' ||
     lead.status === 'CREDIT_REQUIRED' ||
     lead.status === 'CREDIT_APPLIED' ||
@@ -285,7 +287,7 @@ export default async function LeadDetailPage({
       {resolvedSearchParams.accepted && (
         <AlertCallout tone="success" title="Lead accepted">
           {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} applied. Balance remaining: {acceptedRemainingBalance}.
-          Full customer and job details are now available below.
+          Full customer and request details are now available below.
         </AlertCallout>
       )}
 
@@ -354,7 +356,7 @@ export default async function LeadDetailPage({
                 Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
                 Your current credits balance is {totalCreditBalance}. After acceptance, your balance will be {totalCreditBalance - lead.unlockCostCredits}.
               </p>
-              <p className="mt-1">Full customer details are released only after credit is applied and the job is assigned.</p>
+              <p className="mt-1">Full customer details are released only after credit is applied and the request is locked.</p>
             </>
           ) : (
             <>

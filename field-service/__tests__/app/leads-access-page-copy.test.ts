@@ -19,7 +19,7 @@ describe('signed provider lead page copy', () => {
   it('uses the accept-or-decline journey with confirmation and protected details', () => {
     expect(source).toContain('Accept job')
     expect(source).toContain('Confirm lead acceptance')
-    expect(source).toContain('Full customer details are released only after credit is applied and the job is assigned.')
+    expect(source).toContain('Full customer details are released only after credit is applied and the request is locked.')
     expect(source).toContain('hasAcceptedDetails && customer')
   })
 
@@ -38,13 +38,15 @@ describe('signed provider lead page copy', () => {
     expect(authenticatedSource).toContain("lead.status === 'PROVIDER_ACCEPTED'")
     expect(authenticatedSource).toContain("lead.status === 'CREDIT_REQUIRED'")
     expect(authenticatedSource).toContain("lead.status === 'CREDIT_APPLIED'")
+    expect(authenticatedSource).toContain("lead.status === 'ACCEPTED_LOCKED'")
     expect(authenticatedSource).toContain('lead.expiresAt && !isAcceptedLead && (')
   })
 
   it('renders arrival scheduling as a completed step after an arrival time is saved', () => {
-    expect(source).toContain('const hasPlannedArrival = isAccepted && Boolean(jr.match?.plannedArrivalStart)')
-    expect(source).toContain('const arrivalActionsDone = Boolean(')
-    expect(source).toContain("const showArrivalForm = !hasPlannedArrival || resolvedSearchParams.editArrival === '1'")
+    expect(source).toContain('const hasAcceptedOperationalMatch = isAccepted && Boolean(jr.match)')
+    expect(source).toContain('const hasPlannedArrival = hasAcceptedOperationalMatch && Boolean(jr.match?.plannedArrivalStart)')
+    expect(source).toContain('const arrivalActionsDone = hasAcceptedOperationalMatch && Boolean(')
+    expect(source).toContain("const showArrivalForm = hasAcceptedOperationalMatch && (!hasPlannedArrival || resolvedSearchParams.editArrival === '1')")
     expect(source).toContain('{isAccepted && hasPlannedArrival && !showArrivalForm && !arrivalActionsDone && (')
     expect(source).toContain('Arrival time confirmed')
     expect(source).toContain('Customer has been notified on WhatsApp.')

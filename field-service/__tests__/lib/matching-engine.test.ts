@@ -125,7 +125,7 @@ describe('matching-engine compatibility wrappers', () => {
     mockAcceptSelectedProviderJob.mockResolvedValue({
       ok: true,
       leadId: 'lead-1',
-      matchId: 'match-1',
+      matchId: null,
       creditTransactionId: 'ledger-1',
       currentCreditBalance: 4,
       alreadyAccepted: false,
@@ -146,7 +146,7 @@ describe('matching-engine compatibility wrappers', () => {
     expect(result).toEqual({
       ok: true,
       leadId: 'lead-1',
-      matchId: 'match-1',
+      matchId: null,
       creditTransactionId: 'ledger-1',
       currentCreditBalance: 4,
       alreadyAccepted: false,

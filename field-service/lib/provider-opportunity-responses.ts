@@ -148,7 +148,7 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
   if (lead.providerId !== input.providerId) {
     throw new ProviderOpportunityResponseError('FORBIDDEN', 'This opportunity belongs to another provider.')
   }
-  if (lead.status === 'ACCEPTED' || lead.unlock) {
+  if (lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED' || lead.unlock) {
     throw new ProviderOpportunityResponseError('ALREADY_ACCEPTED', 'This lead has already been accepted.')
   }
   const now = new Date()
