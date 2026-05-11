@@ -649,6 +649,7 @@ export default async function ProviderLeadAccessPage({
   const isAccepted = lead.status === 'ACCEPTED'
   const isProviderAcceptedPending = lead.status === 'PROVIDER_ACCEPTED'
   const isCreditRequired = lead.status === 'CREDIT_REQUIRED'
+  const isCreditApplied = lead.status === 'CREDIT_APPLIED'
   const isDeclined = lead.status === 'DECLINED'
   const isExpired = lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false)
   const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'
@@ -658,7 +659,7 @@ export default async function ProviderLeadAccessPage({
   const leadRef = lead.id.slice(-8).toUpperCase()
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
 
-  if (((isExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired) || isDeclined) && !resolvedSearchParams.declined) {
+  if (((isExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired && !isCreditApplied) || isDeclined) && !resolvedSearchParams.declined) {
     const code: DiagnosticCode = isExpired ? 'JOB_LINK_EXPIRED' : 'JOB_ACCESS_DENIED'
     console.warn('[leads/access] signed lead link closed', {
       traceId,
@@ -722,7 +723,7 @@ export default async function ProviderLeadAccessPage({
     ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(jr.customerAcceptedAmount))
     : null
   const attachmentToken = encodeURIComponent(token)
-  const acceptedStage = isAccepted ? deriveAcceptedStage(jr.match) : null
+  const acceptedStage = isAccepted ? deriveAcceptedStage(jr.match) : isCreditApplied ? 'Credit applied' : null
   const plannedWindow = isAccepted ? formatWindow(jr.match?.plannedArrivalStart, jr.match?.plannedArrivalEnd) : null
   const actionDisabled = Boolean(jr.match?.providerCompletedAt)
   const hasPlannedArrival = isAccepted && Boolean(jr.match?.plannedArrivalStart)
@@ -820,7 +821,7 @@ export default async function ProviderLeadAccessPage({
                 Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
               </p>
             )}
-            <p className="mt-1">Full customer and job details are now available.</p>
+            <p className="mt-1">Customer direct contact details remain locked until final assignment is complete.</p>
             {resolvedSearchParams.actionTraceId ? (
               <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
             ) : null}
@@ -994,7 +995,7 @@ export default async function ProviderLeadAccessPage({
                   Your current credits balance is {providerCreditBalance}. After acceptance, your balance will be {providerCreditBalance - LEAD_UNLOCK_COST_CREDITS}.
                 </p>
                 <p className="mt-1">
-                  Full customer details are released only after credit is applied. Credits use follows the{' '}
+                  Customer contact details stay locked after this credit step until final assignment is complete. Credits use follows the{' '}
                   <Link href={termsUrl} className="font-medium underline underline-offset-4">
                     provider credits terms and rules
                   </Link>

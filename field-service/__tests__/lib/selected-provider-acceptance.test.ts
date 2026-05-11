@@ -6,6 +6,7 @@ const { mockDb, state } = vi.hoisted(() => {
   const mockDb = { $transaction: vi.fn() }
   return { mockDb, state }
 })
+const mockApplyProviderCredit = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/lead-unlocks', () => {
@@ -30,6 +31,19 @@ vi.mock('../../lib/lead-unlocks', () => {
     }),
   }
 })
+vi.mock('../../lib/provider-credit-application', () => ({
+  ProviderCreditApplicationError: class ProviderCreditApplicationError extends Error {
+    constructor(
+      public readonly code: string,
+      message: string,
+      public readonly currentCreditBalance?: number,
+    ) {
+      super(message)
+      this.name = 'ProviderCreditApplicationError'
+    }
+  },
+  applyProviderCreditForAcceptedLeadInTransaction: mockApplyProviderCredit,
+}))
 vi.mock('../../lib/provider-lead-access', () => ({
   getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/jobs/signed-token'),
 }))
@@ -140,11 +154,26 @@ describe('selected provider final acceptance', () => {
     state.wallet = { paidCreditBalance: 2, promoCreditBalance: 0, status: 'ACTIVE' }
     state.tx = makeTx()
     mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
+    mockApplyProviderCredit.mockImplementation(async () => {
+      state.lead = { ...state.lead, status: 'CREDIT_APPLIED' }
+      return {
+        ok: true,
+        leadId: state.lead.id,
+        providerId: state.lead.providerId,
+        leadStatus: 'CREDIT_APPLIED',
+        requiredCredits: 1,
+        currentCreditBalance: Math.max(0, (state.wallet?.paidCreditBalance ?? 0) + (state.wallet?.promoCreditBalance ?? 0) - 1),
+        paidCreditBalance: Math.max(0, (state.wallet?.paidCreditBalance ?? 0) - 1),
+        promoCreditBalance: state.wallet?.promoCreditBalance ?? 0,
+        creditTransactionId: 'ledger-1',
+        leadUnlockId: 'unlock-1',
+        alreadyApplied: false,
+        providerMessage: 'Credit applied.',
+      }
+    })
   })
 
-  it('records provider acceptance, checks credits, applies credit, and unlocks details', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-
+  it('records provider acceptance, checks credits, and applies credit without locking the job', async () => {
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-1',
       providerId: 'provider-1',
@@ -161,11 +190,12 @@ describe('selected provider final acceptance', () => {
         requiredCredits: 1,
       },
       creditApplied: true,
-      matchId: 'match-1',
-      jobId: 'job-1',
-      bookingId: 'booking-1',
       creditTransactionId: 'ledger-1',
-      notificationSent: true,
+      notificationSent: false,
+      creditApplication: {
+        leadStatus: 'CREDIT_APPLIED',
+        leadUnlockId: 'unlock-1',
+      },
     })
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
       where: { id: 'lead-1', status: 'CUSTOMER_SELECTED' },
@@ -175,33 +205,17 @@ describe('selected provider final acceptance', () => {
         respondedAt: expect.any(Date),
       }),
     })
-    expect(unlockLeadForProviderInTransaction).toHaveBeenCalledWith(
+    expect(mockApplyProviderCredit).toHaveBeenCalledWith(
       state.tx,
-      'lead-1',
-      'provider-1',
       expect.objectContaining({
+        leadId: 'lead-1',
+        providerId: 'provider-1',
         source: 'pwa',
       }),
     )
-    expect(state.tx.match.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        jobRequestId: 'request-1',
-        providerId: 'provider-1',
-        status: 'QUOTE_APPROVED',
-      }),
-    })
-    expect(state.tx.job.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        bookingId: 'booking-1',
-        providerId: 'provider-1',
-        selectedLeadInviteId: 'lead-1',
-        status: 'SCHEDULED',
-      }),
-    })
-    expect(state.tx.leadUnlock.update).toHaveBeenCalledWith({
-      where: { id: 'unlock-1' },
-      data: { matchId: 'match-1' },
-    })
+    expect(state.tx.match.create).not.toHaveBeenCalled()
+    expect(state.tx.job.create).not.toHaveBeenCalled()
+    expect(state.lead.status).toBe('CREDIT_APPLIED')
     expect(JSON.stringify(result)).not.toContain('customer')
     expect(JSON.stringify(result)).not.toContain('phone')
   })
@@ -236,7 +250,7 @@ describe('selected provider final acceptance', () => {
       alreadyAccepted: true,
       creditCheck: { ok: true },
       creditApplied: true,
-      matchId: 'match-1',
+      creditTransactionId: 'ledger-1',
     })
     expect(state.tx.lead.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'lead-1', status: 'CUSTOMER_SELECTED' } }),

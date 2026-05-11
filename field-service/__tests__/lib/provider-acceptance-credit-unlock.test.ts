@@ -6,6 +6,7 @@ const { mockDb, state } = vi.hoisted(() => {
   const mockDb = { $transaction: vi.fn() }
   return { mockDb, state }
 })
+const mockApplyProviderCredit = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/lead-unlocks', () => ({
@@ -25,6 +26,19 @@ vi.mock('../../lib/lead-unlocks', () => ({
     ledgerEntries: [{ id: 'ledger-c13', balanceAfterPaidCredits: 0, balanceAfterPromoCredits: 0 }],
     alreadyUnlocked: false,
   }),
+}))
+vi.mock('../../lib/provider-credit-application', () => ({
+  ProviderCreditApplicationError: class ProviderCreditApplicationError extends Error {
+    constructor(
+      public readonly code: string,
+      message: string,
+      public readonly currentCreditBalance?: number,
+    ) {
+      super(message)
+      this.name = 'ProviderCreditApplicationError'
+    }
+  },
+  applyProviderCreditForAcceptedLeadInTransaction: mockApplyProviderCredit,
 }))
 vi.mock('../../lib/provider-lead-access', () => ({
   getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/jobs/signed-token'),
@@ -132,11 +146,26 @@ describe('provider final acceptance credit application', () => {
     state.wallet = { paidCreditBalance: 1, promoCreditBalance: 0, status: 'ACTIVE' }
     state.tx = makeTx()
     mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
+    mockApplyProviderCredit.mockImplementation(async () => {
+      state.lead = { ...state.lead, status: 'CREDIT_APPLIED' }
+      return {
+        ok: true,
+        leadId: 'lead-c13',
+        providerId: 'provider-c13',
+        leadStatus: 'CREDIT_APPLIED',
+        requiredCredits: 1,
+        currentCreditBalance: 0,
+        paidCreditBalance: 0,
+        promoCreditBalance: 0,
+        creditTransactionId: 'ledger-c13',
+        leadUnlockId: 'unlock-c13',
+        alreadyApplied: false,
+        providerMessage: 'Credit applied.',
+      }
+    })
   })
 
-  it('records PROVIDER_ACCEPTED, applies credit, and locks the selected job', async () => {
-    const { unlockLeadForProviderInTransaction } = await import('../../lib/lead-unlocks')
-
+  it('records PROVIDER_ACCEPTED, applies credit, and leaves job locking for the next workflow', async () => {
     const result = await acceptSelectedProviderJob({
       leadId: 'lead-c13',
       providerId: 'provider-c13',
@@ -149,36 +178,25 @@ describe('provider final acceptance credit application', () => {
       leadId: 'lead-c13',
       creditCheck: { ok: true, result: 'SUFFICIENT_CREDITS' },
       creditApplied: true,
-      matchId: 'match-c13',
-      jobId: 'job-c13',
-      bookingId: 'booking-c13',
       creditTransactionId: 'ledger-c13',
+      creditApplication: {
+        leadStatus: 'CREDIT_APPLIED',
+        leadUnlockId: 'unlock-c13',
+      },
     })
-    expect(unlockLeadForProviderInTransaction).toHaveBeenCalledWith(
+    expect(mockApplyProviderCredit).toHaveBeenCalledWith(
       state.tx,
-      'lead-c13',
-      'provider-c13',
-      expect.objectContaining({ source: 'whatsapp', traceId: 'trace-c13' }),
+      expect.objectContaining({
+        leadId: 'lead-c13',
+        providerId: 'provider-c13',
+        source: 'whatsapp',
+        traceId: 'trace-c13',
+      }),
     )
-    expect(state.tx.match.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        jobRequestId: 'request-c13',
-        providerId: 'provider-c13',
-        status: 'QUOTE_APPROVED',
-      }),
-    })
-    expect(state.tx.job.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        bookingId: 'booking-c13',
-        providerId: 'provider-c13',
-        selectedLeadInviteId: 'lead-c13',
-        status: 'SCHEDULED',
-      }),
-    })
-    expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
-      where: { id: 'request-c13' },
-      data: { status: 'MATCHED' },
-    })
+    expect(state.tx.match.create).not.toHaveBeenCalled()
+    expect(state.tx.job.create).not.toHaveBeenCalled()
+    expect(state.tx.jobRequest.update).not.toHaveBeenCalled()
+    expect(state.lead.status).toBe('CREDIT_APPLIED')
     expect(state.tx.lead.updateMany).toHaveBeenCalledWith({
       where: { id: 'lead-c13', status: 'CUSTOMER_SELECTED' },
       data: expect.objectContaining({ status: 'PROVIDER_ACCEPTED' }),

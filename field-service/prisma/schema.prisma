@@ -1491,6 +1491,7 @@ enum LeadStatus {
   CUSTOMER_SELECTED // Qualified Shortlist: customer selected this provider; awaiting final acceptance
   PROVIDER_ACCEPTED // selected provider accepted; awaiting credit application/unlock
   CREDIT_REQUIRED   // selected provider accepted but does not currently have enough credits
+  CREDIT_APPLIED    // selected provider credit has been deducted; awaiting accepted lock
   SUPERSEDED        // Qualified Shortlist: customer chose another shortlisted provider
   ACCEPTED  // provider accepted — triggers Match creation
   DECLINED  // provider passed on this job

@@ -3165,7 +3165,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
       if (result.creditApplied || result.alreadyUnlocked) {
         await sendText(
           phone,
-          '✅ Job accepted\n\nCredit was applied and customer details are unlocked in your job link. Reply *my jobs* to manage your assignments.',
+          `${result.creditApplication?.providerMessage ?? '✅ Job accepted\n\nCredit was applied once for this job.'}\n\nCustomer contact details remain locked until final assignment is complete.`,
         )
       } else {
         await sendText(

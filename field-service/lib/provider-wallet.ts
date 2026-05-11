@@ -34,6 +34,9 @@ export type WalletReference = {
   referenceId: string
   description?: string
   metadata?: Record<string, unknown>
+  idempotencyKey?: string | null
+  traceId?: string | null
+  source?: string | null
   createdBy?: string | null
   isTestTransaction?: boolean
   cohortName?: string | null
@@ -151,6 +154,9 @@ async function createLedgerEntry(
       referenceType: params.reference.referenceType,
       referenceId: params.reference.referenceId,
       description: params.reference.description,
+      idempotencyKey: params.reference.idempotencyKey ?? undefined,
+      traceId: params.reference.traceId ?? undefined,
+      source: params.reference.source ?? undefined,
       metadata: toJson({
         ...(params.reference.metadata ?? {}),
         balanceBeforePaidCredits: params.balanceBeforePaidCredits,

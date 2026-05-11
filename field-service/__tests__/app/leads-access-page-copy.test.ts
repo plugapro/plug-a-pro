@@ -19,7 +19,7 @@ describe('signed provider lead page copy', () => {
   it('uses the accept-or-decline journey with confirmation and protected details', () => {
     expect(source).toContain('Accept job')
     expect(source).toContain('Confirm lead acceptance')
-    expect(source).toContain('Full customer details are released only after credit is applied.')
+    expect(source).toContain('Customer contact details stay locked after this credit step until final assignment is complete.')
     expect(source).toContain('hasAcceptedDetails && customer')
   })
 
@@ -37,6 +37,7 @@ describe('signed provider lead page copy', () => {
     expect(authenticatedSource).toContain('const isAcceptedLead =')
     expect(authenticatedSource).toContain("lead.status === 'PROVIDER_ACCEPTED'")
     expect(authenticatedSource).toContain("lead.status === 'CREDIT_REQUIRED'")
+    expect(authenticatedSource).toContain("lead.status === 'CREDIT_APPLIED'")
     expect(authenticatedSource).toContain('lead.expiresAt && !isAcceptedLead && (')
   })
 
