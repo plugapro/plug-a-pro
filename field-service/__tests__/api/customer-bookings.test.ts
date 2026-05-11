@@ -96,8 +96,8 @@ describe('POST /api/customer/bookings', () => {
       category: 'plumbing',
       title: 'Fix leaking pipe',
       description: 'Water under the sink',
-      assignmentMode: 'OPS_REVIEW',
-      deferMatchingModeSelection: true,
+      assignmentMode: 'AUTO_ASSIGN',
+      deferMatchingModeSelection: false,
     }))
     expect(mockUploadJobRequestPhoto).toHaveBeenCalledWith(expect.objectContaining({
       jobRequestId: 'jr-1',

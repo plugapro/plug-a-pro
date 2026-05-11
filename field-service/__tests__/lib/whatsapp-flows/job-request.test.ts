@@ -500,8 +500,8 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
         expect.objectContaining({
-          assignmentMode: 'OPS_REVIEW',
-          deferMatchingModeSelection: true,
+          assignmentMode: 'AUTO_ASSIGN',
+          deferMatchingModeSelection: false,
           street: '14 Main Road',
           addressLine1: '14 Main Road',
           suburb: 'Sandton',
@@ -510,7 +510,7 @@ describe('WhatsApp job-request flow — structured address', () => {
           province: 'Gauteng',
           postalCode: '2196',
           locationNodeId: 'sub_sandton',
-        })
+        }),
       )
     })
 
