@@ -50,7 +50,8 @@ export function getQueueHref(queueKey: OpsDashboardQueueKey) {
     case 'quoteApprovals':
       return '/admin/quotes'
     case 'fieldExceptions':
-      return '/admin/field-exceptions'
+      // Route removed; fall back to dispatch where job exception state is visible.
+      return '/admin/dispatch'
     case 'financeFollowUp':
       return '/admin/payments'
     case 'trustRecovery':

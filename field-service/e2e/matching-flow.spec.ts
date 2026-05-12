@@ -68,17 +68,6 @@ test('admin dispatch page shows job list or empty state', async ({ page }) => {
   expect(hasRows + hasEmptyState).toBeGreaterThan(0)
 })
 
-// ─── Matches page ─────────────────────────────────────────────────────────────
-
-test('admin matches page renders without error', async ({ page }) => {
-  await signIn(page)
-
-  const response = await page.goto('/admin/matches')
-  expect(response?.status()).toBeLessThan(400)
-
-  await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
-})
-
 // ─── Provider assignment-offer API endpoints ──────────────────────────────────
 // These tests call the API directly to verify the endpoints exist and return
 // expected status codes without a valid session / provider record.

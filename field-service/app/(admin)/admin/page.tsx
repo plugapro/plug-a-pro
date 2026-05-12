@@ -107,10 +107,6 @@ export default async function AdminDashboardPage({
   const quoteCount = queueData?.cards.find((c) => c.key === 'quoteApprovals')?.health.openCount ?? 0
   const quoteAssignments = queueData?.assignments.quoteApprovals ?? new Map<string, AssignmentRecord>()
 
-  const fieldExceptions = queueData?.previews.fieldExceptions ?? []
-  const fieldExceptionCount = queueData?.cards.find((c) => c.key === 'fieldExceptions')?.health.openCount ?? 0
-  const fieldExceptionAssignments = queueData?.assignments.fieldExceptions ?? new Map<string, AssignmentRecord>()
-
   const financeFollowUp = queueData?.previews.financeFollowUp ?? []
   const paymentExceptionCount = queueData?.cards.find((c) => c.key === 'financeFollowUp')?.health.openCount ?? 0
   const paymentAssignments = queueData?.assignments.financeFollowUp ?? new Map<string, AssignmentRecord>()
@@ -181,12 +177,6 @@ export default async function AdminDashboardPage({
             <Button asChild variant="outline" className="w-full justify-between">
               <Link href="/admin/dispatch">
                 Open dispatch console
-                <span aria-hidden="true">→</span>
-              </Link>
-            </Button>
-            <Button asChild variant="outline" className="w-full justify-between">
-              <Link href="/admin/field-exceptions">
-                Triage field exceptions
                 <span aria-hidden="true">→</span>
               </Link>
             </Button>
@@ -438,64 +428,6 @@ export default async function AdminDashboardPage({
                   <div className="mt-3">
                     <Button asChild variant="outline" size="sm">
                       <Link href="/admin/quotes">Open quote queue</Link>
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-4">
-            <div className="space-y-1">
-              <CardTitle className="text-base">Field exceptions</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Jobs that are blocked, failed, or waiting on human intervention.
-              </p>
-            </div>
-            <Badge variant={slaBadgeClass(fieldExceptionCount > 0 ? 'danger' : 'default')}>
-              {fieldExceptionCount} escalated
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {fieldExceptions.length === 0 ? (
-              <EmptyState
-                title="Field exceptions are clear"
-                message="No field exceptions are open right now."
-                actionHref="/admin/field-exceptions"
-                actionLabel="Open field exceptions queue"
-              />
-            ) : (
-              fieldExceptions.map((job) => (
-                <div key={job.id} className="rounded-xl border p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="font-medium">{job.jobRequestTitle}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {job.providerName} · {job.customerName}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge status={job.status} type="job" />
-                      <Badge variant={assignmentBadgeVariant(fieldExceptionAssignments.get(job.id), admin.id)}>
-                        {ownerLabel(fieldExceptionAssignments.get(job.id), admin.id)}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge variant="outline">
-                      Last update {formatAge(job.updatedAt, now)}
-                    </Badge>
-                    <Badge variant="outline">
-                      {job.scheduledWindow ??
-                        job.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
-                    </Badge>
-                    {job.failureReason ? <Badge variant="outline">{job.failureReason}</Badge> : null}
-                  </div>
-                  <div className="mt-3">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href="/admin/field-exceptions">Open field exceptions queue</Link>
                     </Button>
                   </div>
                 </div>

@@ -13,7 +13,6 @@ const QUEUE_HREFS: Record<string, string> = {
   VALIDATION:        '/admin/validation',
   DISPATCH:          '/admin/dispatch',
   QUOTE_APPROVAL:    '/admin/quotes',
-  FIELD_EXCEPTION:   '/admin/field-exceptions',
   DISPUTE:           '/admin/disputes',
   PAYMENT_FOLLOW_UP: '/admin/payments',
   PROVIDER_ONBOARDING: '/admin/applications',

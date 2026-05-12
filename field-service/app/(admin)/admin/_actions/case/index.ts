@@ -56,7 +56,6 @@ function caseRevalidate() {
   revalidatePath('/admin/dispatch')
   revalidatePath('/admin/validation')
   revalidatePath('/admin/quotes')
-  revalidatePath('/admin/field-exceptions')
   revalidatePath('/admin/payments')
   revalidatePath('/admin/bookings')
   revalidatePath('/admin/disputes')

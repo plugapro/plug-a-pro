@@ -9,7 +9,6 @@ import { requireAdmin } from '@/lib/auth'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -72,9 +71,6 @@ export default async function BookingsPage({
           <h1 className="text-xl font-semibold">Bookings</h1>
           <p className="text-sm text-muted-foreground mt-1">{bookings.length} bookings</p>
         </div>
-        <Button asChild>
-          <Link href="/admin/matches">Matches →</Link>
-        </Button>
       </div>
 
       {/* Status filter tabs */}
