@@ -7,7 +7,6 @@ import { ctaLabelFor } from './whatsapp-copy'
 import { buildProviderLeadActionsMessage, buildProviderLeadPreviewMessage } from './provider-credit-copy'
 import { getProviderLeadAccessUrl } from './provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
-import { normaliseLocationDisplayName } from './location-format'
 
 export const RFP_PROVIDER_RESPONSE_MINUTES = Math.max(
   1,
@@ -790,8 +789,6 @@ async function ensureReviewRankingDecision(params: {
       category: true,
       assignmentMode: true,
       latestDispatchDecisionId: true,
-      customer: { select: { phone: true } },
-      address: { select: { suburb: true, city: true } },
     },
   })
   if (!request) throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
@@ -800,28 +797,15 @@ async function ensureReviewRankingDecision(params: {
     limit: MVP1_MATCH_RESULT_LIMIT,
   })
 
-  if (request.customer?.phone && !matchResult.wasCached) {
-    if (matchResult.providers.length === 0) {
-      await sendText(
-        request.customer.phone,
-        `We couldn't find matching providers in your area right now.\n\nYou can try Quick Match, edit your request, or return to the main menu.`,
-        {
-          templateName: 'interactive:review_first_no_candidates',
-          metadata: { requestId: request.id },
-        },
-      ).catch(() => undefined)
-    } else {
-      const area = [request.address?.suburb, request.address?.city].filter(Boolean).join(', ')
-      await sendText(
-        request.customer.phone,
-        `Here are providers who may match your request.\n\nView their profiles and shortlist the ones you like.${area ? `\n\nArea: ${area}` : ''}`,
-        {
-          templateName: 'interactive:review_first_candidates_ready',
-          metadata: { requestId: request.id, count: matchResult.providers.length },
-        },
-      ).catch(() => undefined)
-    }
-  }
+  console.info('[review-first.decisions] ensured', {
+    requestId: request.id,
+    decisionId: matchResult.decisionId,
+    status: matchResult.status,
+    matchedProviders: matchResult.providers.length,
+    wasCached: matchResult.wasCached,
+    assignmentMode: request.assignmentMode,
+    requestStatus: request.status,
+  })
 
   return matchResult.decisionId
 }

@@ -144,11 +144,11 @@ export async function selectCustomerRequestMatchingMode(params: {
     } else if (reviewFailed) {
       // Review-first mode requires an attempt to build provider options before the
       // customer is told they can shortlist providers.
-      text = 'Review Providers First could not be prepared yet.\n\nPlease refresh your request status and try again.'
+      text = 'Review Providers First could not be prepared right now.\n\nYour request is saved. Please try again from your request link or send *Review Providers First* again.'
     } else if (reviewCandidateCount > 0) {
-      text = `Review Providers First is ready.\n\nWe found ${reviewCandidateCount} matching provider${reviewCandidateCount === 1 ? '' : 's'} for your request.\nOpen the request from your latest update to shortlist providers.`
+      text = `Review Providers First is ready.\n\nWe found ${reviewCandidateCount} matching provider${reviewCandidateCount === 1 ? '' : 's'} for your request.\n\nOpen your request to view matching provider profiles, shortlist 1 to 3 providers, and send your request only to the providers you choose.`
     } else {
-      text = 'Review Providers First was started, but we could not find matching providers yet.\n\nYou can switch to Quick Match or refresh your request status.'
+      text = 'We couldn\'t find matching providers in your area right now.\n\nYou can try Quick Match, edit your request, or return to the main menu.'
     }
 
     await sendText(

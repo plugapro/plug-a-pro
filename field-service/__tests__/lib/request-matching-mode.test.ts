@@ -184,7 +184,7 @@ describe('selectCustomerRequestMatchingMode', () => {
 
     expect(result.status).toBe('review_no_candidates')
     const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
-    expect(outbound).toContain('could not find matching providers yet')
+    expect(outbound).toContain("couldn't find matching providers in your area right now")
     expect(outbound).not.toContain('is ready')
   })
 
@@ -201,7 +201,7 @@ describe('selectCustomerRequestMatchingMode', () => {
 
     expect(result.status).toBe('review_matching_failed')
     const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
-    expect(outbound).toContain('could not be prepared yet')
+    expect(outbound).toContain('could not be prepared right now')
     expect(outbound).not.toContain('is ready')
   })
 })

@@ -239,10 +239,9 @@ export default async function TicketAccessPage({
   const match = jobRequest.match
   const canRequestMoreOptions = destination.allowedActions.includes('request_more_options')
   const canCancelRequest = destination.allowedActions.includes('cancel_request')
-  const isReviewFirstPending =
-    jobRequest.status === 'PENDING_VALIDATION' &&
-    jobRequest.assignmentMode === 'OPS_REVIEW' &&
-    Boolean(jobRequest.latestDispatchDecisionId)
+  const isReviewFirstFlow =
+    jobRequest.status === 'PENDING_VALIDATION' && jobRequest.assignmentMode === 'OPS_REVIEW'
+  const isReviewFirstPending = isReviewFirstFlow && !Boolean(jobRequest.latestDispatchDecisionId)
   const reviewCandidates = ticketVm.reviewCandidates
   const reviewShortlist = ticketVm.reviewShortlist
   const latestQuote = match?.quotes[0] ?? null
@@ -490,7 +489,7 @@ export default async function TicketAccessPage({
         </Card>
       )}
 
-      {isReviewFirstPending && (
+      {isReviewFirstFlow && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -501,8 +500,10 @@ export default async function TicketAccessPage({
             <p className="text-muted-foreground">
               View matching providers, shortlist 1 to 3, then send your request only to those providers.
             </p>
-            {reviewCandidates == null ? (
+            {isReviewFirstPending ? (
               <p className="text-muted-foreground">We&apos;re finding matching providers for your request.</p>
+            ) : reviewCandidates == null ? (
+              <p className="text-muted-foreground">We couldn&apos;t load matching providers just now. Please refresh.</p>
             ) : reviewCandidates.candidates.length > 0 ? (
               <div className="space-y-2">
                 {reviewCandidates.candidates.map((candidate) => (
@@ -575,9 +576,9 @@ export default async function TicketAccessPage({
                     <form action={sendReviewShortlistFromToken}>
                       <input type="hidden" name="token" value={token} />
                       <input type="hidden" name="requestId" value={jobRequest.id} />
-                      <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
-                        Send request
-                      </Button>
+                    <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
+                      Send request
+                    </Button>
                     </form>
                   </div>
                 </CardContent>

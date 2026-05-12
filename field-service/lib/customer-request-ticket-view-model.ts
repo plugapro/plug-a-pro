@@ -101,35 +101,45 @@ export async function buildCustomerRequestTicketViewModel(params: {
   }
 
   const batch = Math.max(1, params.reviewBatch ?? 1)
-  const isReviewFirstPending =
-    destination.request.status === 'PENDING_VALIDATION' &&
-    destination.request.assignmentMode === 'OPS_REVIEW' &&
-    Boolean(destination.request.latestDispatchDecisionId)
+  const isReviewFirstFlow =
+    destination.request.status === 'PENDING_VALIDATION' && destination.request.assignmentMode === 'OPS_REVIEW'
 
   let reviewCandidates: ReviewCandidatesShape = null
   let reviewShortlist: ReviewShortlistShape = null
   const customerId = destination.request.customer?.id
 
-  if (isReviewFirstPending && customerId) {
-    try {
-      reviewCandidates = await getProviderCandidatesForCustomerReview({
-        requestId: destination.request.id,
-        customerId,
-        batch,
-      })
-    } catch (error) {
-      // Candidate rendering should fail closed to a clear empty-state in the
-      // ticket page, not crash the whole public-token flow.
-      console.warn('[ticket-access] review candidates fetch failed (non-fatal)', {
+  if (isReviewFirstFlow && customerId) {
+    if (!destination.request.latestDispatchDecisionId) {
+      console.info('[ticket-access] review-first decision pending', {
         traceId,
         route: '/requests/access/[token]',
         requestId: destination.request.id,
         requestStatus: destination.request.status,
         assignmentMode: destination.request.assignmentMode,
-        batch,
-        error: error instanceof Error ? error.message : String(error),
       })
-      reviewCandidates = null
+    }
+
+    if (destination.request.latestDispatchDecisionId) {
+      try {
+        reviewCandidates = await getProviderCandidatesForCustomerReview({
+          requestId: destination.request.id,
+          customerId,
+          batch,
+        })
+      } catch (error) {
+        // Candidate rendering should fail closed to a clear empty-state in the
+        // ticket page, not crash the whole public-token flow.
+        console.warn('[ticket-access] review candidates fetch failed (non-fatal)', {
+          traceId,
+          route: '/requests/access/[token]',
+          requestId: destination.request.id,
+          requestStatus: destination.request.status,
+          assignmentMode: destination.request.assignmentMode,
+          batch,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        reviewCandidates = null
+      }
     }
 
     try {

@@ -57,6 +57,21 @@ Completed with warnings.
 - `lib/provider-opportunity-responses.ts`
 - `lib/client-pwa-destination.ts`
 
+## Root-cause finding for Sarah flow
+
+For the sequence `Review Providers First` → mixed WhatsApp messages, the cause was a side effect inside the matching read path:
+
+- `getMatchedProvidersForCustomerRequest` could call `ensureReviewRankingDecision()`.
+- `ensureReviewRankingDecision()` not only created/loaded ranking decisions, it also sent WhatsApp messages (`Here are providers...` and `...could not be prepared yet`).
+- Those same read paths were triggered by status refresh / PWA calls, so message ordering became inconsistent with the explicit mode-selection copy.
+
+Fix implemented:
+
+- Made `ensureReviewRankingDecision()` decision-only (no WhatsApp sends).
+- Kept matching-trigger behavior in the explicit review mode selection flow.
+- Added explicit pending/loading copy in the token request page so users can see matching is being prepared when a decision has not yet been created.
+- Switched no-provider copy in review mode selection to clear, actionable messaging.
+
 ## Tests added
 
 - `__tests__/lib/review-provider-profile-access.test.ts`

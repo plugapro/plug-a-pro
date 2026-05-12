@@ -95,18 +95,18 @@ export default async function RequestDetailPage({
     ) ?? null
   const canRequestMoreOptions = jobRequest.status === 'SHORTLIST_READY'
   const canCancelRequest = jobRequest.status === 'SHORTLIST_READY'
-  const isReviewFirstPending =
-    jobRequest.status === 'PENDING_VALIDATION' &&
-    jobRequest.assignmentMode === 'OPS_REVIEW' &&
-    Boolean(jobRequest.latestDispatchDecisionId)
-  const reviewCandidates = isReviewFirstPending
+  const isReviewFirstFlow =
+    jobRequest.status === 'PENDING_VALIDATION' && jobRequest.assignmentMode === 'OPS_REVIEW'
+  const isReviewFirstReady = isReviewFirstFlow && Boolean(jobRequest.latestDispatchDecisionId)
+  const isReviewFirstPending = isReviewFirstFlow && !isReviewFirstReady
+  const reviewCandidates = isReviewFirstReady
     ? await getProviderCandidatesForCustomerReview({
         requestId: jobRequest.id,
         customerId: customer.id,
         batch: reviewBatch,
       }).catch(() => null)
     : null
-  const reviewShortlist = isReviewFirstPending
+  const reviewShortlist = isReviewFirstReady
     ? await getCustomerReviewShortlist({
         requestId: jobRequest.id,
         customerId: customer.id,
@@ -623,7 +623,7 @@ export default async function RequestDetailPage({
           <CardContent className="space-y-3 text-sm">
             {jobRequest.status === 'PENDING_VALIDATION' && (
               <div className="space-y-1">
-                {!isReviewFirstPending ? (
+                {!isReviewFirstFlow ? (
                   <>
                     <p className="font-medium">
                       Choose how to find your provider
@@ -682,7 +682,9 @@ export default async function RequestDetailPage({
                       Shortlist 1 to 3 providers, then send your request only to
                       those providers.
                     </p>
-                    {reviewCandidates?.candidates?.length ? (
+                    {isReviewFirstPending ? (
+                      <p className="text-muted-foreground">We&apos;re finding matching providers for your request.</p>
+                    ) : reviewCandidates?.candidates?.length ? (
                       <div className="space-y-2">
                         {reviewCandidates.candidates.map((candidate) => (
                           <Card key={candidate.providerId}>
