@@ -53,14 +53,24 @@ export default function SignInPage() {
       const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalized.e164 })
 
       if (otpError) {
-        // Map known Supabase infrastructure errors to user-friendly messages
         const msg = otpError.message.toLowerCase()
-        if (msg.includes('unsupported') || msg.includes('provider') || msg.includes('sms') || msg.includes('not enabled') || msg.includes('phone')) {
-          setError('SMS login is temporarily unavailable. Please contact support@plugapro.co.za.')
-        } else if (msg.includes('rate') || msg.includes('limit')) {
+        if (msg.includes('rate') || msg.includes('limit')) {
           setError('Too many attempts. Please wait a few minutes and try again.')
         } else if (msg.includes('invalid') || msg.includes('format')) {
           setError('Invalid phone number format. Please use your full South African number.')
+        } else if (
+          msg.includes('otp_whatsapp_disabled') ||
+          msg.includes('template_not_approved') ||
+          msg.includes('wa_auth_failed') ||
+          msg.includes('wa_transient') ||
+          msg.includes('unsupported') ||
+          msg.includes('provider') ||
+          msg.includes('not enabled') ||
+          msg.includes('phone')
+        ) {
+          setError(
+            "We couldn't deliver your code on WhatsApp. Check the number and try again, or contact support@plugapro.co.za.",
+          )
         } else {
           console.error('[sign-in] Supabase OTP error:', otpError.message)
           setError('Could not send code. Please try again or contact support@plugapro.co.za.')
@@ -84,7 +94,7 @@ export default function SignInPage() {
       <div className="space-y-1 text-center">
         <p className="app-kicker">Customer Access</p>
         <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
-        <p className="text-sm text-muted-foreground">Enter your number to receive a one-time code</p>
+        <p className="text-sm text-muted-foreground">Enter your number to receive a one-time code on WhatsApp</p>
       </div>
 
       {/* Form */}

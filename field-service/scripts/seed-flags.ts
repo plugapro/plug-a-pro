@@ -137,6 +137,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'admin.customers.whatsapp_pref_toggle',
     description: 'Enable admin toggle of customer WhatsApp service and marketing opt-in preferences on the Customer detail admin page.',
   },
+  {
+    key: 'auth.otp.whatsapp',
+    description: 'Deliver Supabase Auth OTPs via WhatsApp template instead of SMS. Real kill switch is the Supabase Send SMS Hook URL in the dashboard; this flag is a code-level safety gate. Default off — enable per env after the Meta otp_login template is approved and the hook is wired.',
+  },
 ]
 
 async function main() {

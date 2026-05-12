@@ -10,6 +10,8 @@ import {
   statusForWorkerVerifyCode,
   workerVerifyMessageForCode,
 } from '@/lib/worker-provider-auth'
+import { checkOtpVerifyLimit } from '@/lib/rate-limit'
+import { recordAuditLog } from '@/lib/audit'
 
 const DEFAULT_SESSION_MAX_AGE = 60 * 60
 const MAX_SESSION_MAX_AGE = 60 * 60 * 24
@@ -66,6 +68,30 @@ export async function POST(request: NextRequest) {
       return jsonError({ code: 'INVALID_OTP', traceId, status: 400 })
     }
 
+    const rateCheck = await checkOtpVerifyLimit({
+      phone,
+      context: { surface: 'provider_verify_code', traceId },
+    })
+    if (!rateCheck.ok) {
+      logWorkerPortalDecision({
+        event: 'verify',
+        traceId,
+        normalizedPhone: phone,
+        authUserId: null,
+        roleCheckResult: 'rate_limited',
+        code: 'RATE_LIMITED',
+      })
+      await recordAuditLog({
+        actorId: 'system',
+        actorRole: 'auth_hook',
+        action: 'auth.otp_verify_failed',
+        entityType: 'phone',
+        entityId: phone,
+        after: { code: 'RATE_LIMITED', traceId } as any,
+      }).catch(() => undefined)
+      return jsonError({ code: 'RATE_LIMITED', traceId, status: 429 })
+    }
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -88,6 +114,14 @@ export async function POST(request: NextRequest) {
         roleCheckResult: 'otp_failed',
         code,
       })
+      await recordAuditLog({
+        actorId: data.user?.id ?? 'system',
+        actorRole: 'auth_hook',
+        action: 'auth.otp_verify_failed',
+        entityType: 'phone',
+        entityId: phone,
+        after: { code, traceId } as any,
+      }).catch(() => undefined)
       return jsonError({ code, traceId })
     }
 
@@ -113,6 +147,19 @@ export async function POST(request: NextRequest) {
     })
 
     if (!resolved.ok) {
+      await recordAuditLog({
+        actorId: data.user.id,
+        actorRole: 'auth_hook',
+        action: 'auth.otp_verify_failed',
+        entityType: 'phone',
+        entityId: resolved.normalizedPhone ?? phone,
+        after: {
+          code: resolved.code,
+          providerId: resolved.provider?.id ?? null,
+          applicationId: resolved.application?.id ?? null,
+          traceId,
+        } as any,
+      }).catch(() => undefined)
       return jsonError({
         code: resolved.code,
         traceId,
@@ -120,6 +167,19 @@ export async function POST(request: NextRequest) {
         applicationId: resolved.application?.id,
       })
     }
+
+    await recordAuditLog({
+      actorId: data.user.id,
+      actorRole: 'auth_hook',
+      action: 'auth.otp_verify_success',
+      entityType: 'phone',
+      entityId: resolved.normalizedPhone ?? phone,
+      after: {
+        providerId: resolved.provider.id,
+        linkedProviderNow: resolved.linkedProviderNow,
+        traceId,
+      } as any,
+    }).catch(() => undefined)
 
     try {
       const serviceClient = createServiceClient()

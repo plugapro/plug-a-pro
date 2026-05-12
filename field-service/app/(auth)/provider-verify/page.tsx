@@ -181,7 +181,7 @@ function ProviderVerifyForm() {
         <p className="app-kicker">Provider Portal</p>
         <h1 className="text-2xl font-semibold text-foreground">Enter your code</h1>
         <p className="text-sm text-muted-foreground">
-          Code sent to <span className="font-medium text-foreground">{formatPhoneForDisplay(phone)}</span>
+          Code sent on WhatsApp to <span className="font-medium text-foreground">{formatPhoneForDisplay(phone)}</span>
         </p>
       </div>
 

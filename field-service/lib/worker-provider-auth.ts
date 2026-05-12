@@ -204,6 +204,8 @@ export function workerVerifyMessageForCode(code: DiagnosticCode | WorkerPortalAc
     case 'OTP_EXPIRED':
     case 'OTP_PROVIDER_REJECTED':
       return 'That code is incorrect or expired. Please try again.'
+    case 'RATE_LIMITED':
+      return 'Too many attempts. Please wait a few minutes and try again.'
     case 'WORKER_NOT_APPROVED':
     case 'PROVIDER_NOT_APPROVED':
       return "Your provider application is still under review. We'll notify you on WhatsApp once it has been approved."
@@ -231,6 +233,8 @@ export function statusForWorkerVerifyCode(code: DiagnosticCode | WorkerPortalAcc
     case 'OTP_EXPIRED':
     case 'OTP_PROVIDER_REJECTED':
       return 401
+    case 'RATE_LIMITED':
+      return 429
     case 'WORKER_NOT_FOUND':
     case 'PROVIDER_NOT_FOUND':
       return 404

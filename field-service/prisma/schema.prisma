@@ -1472,6 +1472,27 @@ model OnboardingIntake {
   @@map("onboarding_intakes")
 }
 
+// OTP delivery telemetry. Supabase Auth still owns OTP generation, storage,
+// and verification — this table only records the delivery wire (WhatsApp
+// template send + outcome). Never store the OTP value itself.
+model OtpDeliveryAttempt {
+  id                String   @id @default(cuid())
+  phoneE164         String
+  userId            String?
+  channel           String
+  status            String
+  whatsappMessageId String?
+  failureCode       String?
+  failureReason     String?
+  templateName      String?
+  hookRequestId     String?
+  createdAt         DateTime @default(now())
+
+  @@index([phoneE164, createdAt])
+  @@index([status, createdAt])
+  @@map("otp_delivery_attempts")
+}
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum JobRequestStatus {
