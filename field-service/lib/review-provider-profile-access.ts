@@ -19,10 +19,11 @@ function getSigningSecret() {
   const secret =
     process.env.REVIEW_PROVIDER_PROFILE_ACCESS_SECRET ||
     process.env.PROVIDER_LEAD_ACCESS_SECRET ||
-    process.env.NEXTAUTH_SECRET
+    process.env.NEXTAUTH_SECRET ||
+    process.env.AUTH_SECRET
 
   if (!secret) {
-    throw new Error('Missing review provider profile signing secret. Set REVIEW_PROVIDER_PROFILE_ACCESS_SECRET.')
+    throw new Error('Missing review provider profile signing secret. Set REVIEW_PROVIDER_PROFILE_ACCESS_SECRET or AUTH_SECRET.')
   }
 
   return secret

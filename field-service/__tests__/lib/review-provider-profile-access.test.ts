@@ -13,6 +13,9 @@ vi.mock('../../lib/db', () => ({ db: mockDb }))
 describe('review provider profile access token', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    delete process.env.AUTH_SECRET
+    delete process.env.NEXTAUTH_SECRET
+    delete process.env.PROVIDER_LEAD_ACCESS_SECRET
     process.env.REVIEW_PROVIDER_PROFILE_ACCESS_SECRET = 'review-profile-test-secret'
   })
 
@@ -50,6 +53,19 @@ describe('review provider profile access token', () => {
     const [encodedPayload] = token.split('.')
     const verified = verifyReviewProviderProfileToken(encodedPayload)
     expect(verified.status).toBe('invalid')
+  })
+
+  it('falls back to AUTH_SECRET when no review-specific signing secret is configured', async () => {
+    delete process.env.REVIEW_PROVIDER_PROFILE_ACCESS_SECRET
+    process.env.AUTH_SECRET = 'auth-secret-fallback'
+
+    const { createReviewProviderProfileToken, verifyReviewProviderProfileToken } = await import('../../lib/review-provider-profile-access')
+    const token = createReviewProviderProfileToken({ requestId: 'req-auth', providerId: 'prov-auth' })
+    const verified = verifyReviewProviderProfileToken(token)
+
+    expect(verified.status).toBe('active')
+    expect(verified.payload?.requestId).toBe('req-auth')
+    expect(verified.payload?.providerId).toBe('prov-auth')
   })
 
   it('resolves active token to safe provider view data', async () => {
