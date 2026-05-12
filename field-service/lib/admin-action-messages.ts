@@ -47,6 +47,18 @@ export function getDispatchAdminMessage(code?: string | null) {
       return { tone: 'success' as const, text: 'Dispatch action completed successfully.' }
     case 'dispatch_failed':
       return { tone: 'error' as const, text: 'Dispatch action could not be completed right now. Refresh the queue and try again.' }
+    case 'override_assigned':
+      return { tone: 'success' as const, text: 'Provider manually assigned. Dispatch case updated.' }
+    case 'dispatch_override_failed':
+      return { tone: 'error' as const, text: 'Override could not be completed. Check provider availability and try again.' }
+    case 'redispatch_triggered':
+      return { tone: 'success' as const, text: 'Re-match triggered. Candidates will be re-evaluated shortly.' }
+    case 'redispatch_failed':
+      return { tone: 'error' as const, text: 'Re-match could not be triggered. Retry or escalate manually.' }
+    case 'escalation_recorded':
+      return { tone: 'success' as const, text: 'Escalation recorded on the dispatch case.' }
+    case 'escalation_failed':
+      return { tone: 'error' as const, text: 'Escalation could not be recorded. Check the dispatch case and try again.' }
     default:
       return null
   }
