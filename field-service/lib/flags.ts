@@ -38,6 +38,12 @@ export const FLAG_KEYS = {
   // If an active membership is found the session resolves to the principal customer
   // account, allowing business team members to book under the company account.
   CUSTOMER_OPERATOR_MEMBER: 'feature.customer.operator_member',
+  // Code-level safety gate for routing Supabase Auth OTPs through WhatsApp.
+  // The real kill switch is the Send SMS Hook URL in the Supabase dashboard —
+  // removing it reverts delivery to Supabase's built-in SMS. This flag exists
+  // so the hook endpoint can refuse to deliver if the rollout needs an
+  // immediate pause without a dashboard round-trip.
+  AUTH_OTP_WHATSAPP: 'auth.otp.whatsapp',
 } as const
 
 export type FlagKey = typeof FLAG_KEYS[keyof typeof FLAG_KEYS]

@@ -15,6 +15,18 @@
 
 export const TEMPLATES = {
 
+  // ─── Authentication ───────────────────────────────────────────────────────
+
+  otp_login: {
+    name: 'otp_login',
+    language: 'en_ZA',
+    category: 'AUTHENTICATION',
+    description: 'Sign-in OTP delivery via WhatsApp (replaces Supabase SMS).',
+    // {{1}} OTP code (6 digits)
+    example:
+      'Your Plug A Pro verification code is {{1}}. It expires in 5 minutes. Do not share it.',
+  },
+
   // ─── Customer journey — booking lifecycle ─────────────────────────────────
 
   booking_confirmation: {

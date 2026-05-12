@@ -15,7 +15,7 @@ export function getOtpVerifyErrorMessage(message?: string | null) {
     normalized.includes('otp') ||
     normalized.includes('code')
   ) {
-    return 'Invalid code. Please check the 6-digit SMS code and try again.'
+    return 'Invalid code. Please check the 6-digit code from WhatsApp and try again.'
   }
 
   if (normalized.includes('rate') || normalized.includes('limit') || normalized.includes('too many')) {

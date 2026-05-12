@@ -60,12 +60,23 @@ export default function SignUpPage() {
 
       if (otpError) {
         const msg = otpError.message.toLowerCase()
-        if (msg.includes('unsupported') || msg.includes('provider') || msg.includes('sms') || msg.includes('not enabled') || msg.includes('phone')) {
-          setError('SMS login is temporarily unavailable. Please contact support@plugapro.co.za.')
-        } else if (msg.includes('rate') || msg.includes('limit')) {
+        if (msg.includes('rate') || msg.includes('limit')) {
           setError('Too many attempts. Please wait a few minutes and try again.')
         } else if (msg.includes('invalid') || msg.includes('format')) {
           setError('Invalid phone number format. Please use your full South African number.')
+        } else if (
+          msg.includes('otp_whatsapp_disabled') ||
+          msg.includes('template_not_approved') ||
+          msg.includes('wa_auth_failed') ||
+          msg.includes('wa_transient') ||
+          msg.includes('unsupported') ||
+          msg.includes('provider') ||
+          msg.includes('not enabled') ||
+          msg.includes('phone')
+        ) {
+          setError(
+            "We couldn't deliver your code on WhatsApp. Check the number and try again, or contact support@plugapro.co.za.",
+          )
         } else {
           console.error('[sign-up] Supabase OTP error:', otpError.message)
           setError('Could not send code. Please try again or contact support@plugapro.co.za.')
@@ -93,7 +104,7 @@ export default function SignUpPage() {
       <div className="space-y-1 text-center">
         <p className="app-kicker">Customer Access</p>
         <h1 className="text-2xl font-semibold text-foreground">Create your account</h1>
-        <p className="text-sm text-muted-foreground">We&apos;ll match you to nearby service providers</p>
+        <p className="text-sm text-muted-foreground">A code will be sent on WhatsApp — we&apos;ll match you to nearby service providers</p>
       </div>
 
       {/* Form */}

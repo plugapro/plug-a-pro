@@ -10,6 +10,7 @@ import {
   type DiagnosticCode,
 } from '@/lib/support-diagnostics'
 import { checkWorkerPortalAccess, findProviderForOtpLogin } from '@/lib/worker-provider-auth'
+import { checkOtpSendLimit } from '@/lib/rate-limit'
 
 const STEP = 'Worker portal send-code'
 const OTP_TIMEOUT_MS = 10_000
@@ -345,6 +346,36 @@ export async function POST(request: NextRequest) {
         countryCode,
         providerId,
         status: 423,
+      })
+    }
+
+    const forwardedFor = request.headers.get('x-forwarded-for')
+    const ip = forwardedFor?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')?.trim()
+      || null
+    const rateCheck = await checkOtpSendLimit({
+      phone,
+      ip,
+      context: { surface: 'provider_send_code', traceId, providerId },
+    })
+    if (!rateCheck.ok) {
+      console.warn('[provider-send-code] rate limited', {
+        trace_id: traceId,
+        rawPhone,
+        normalizedPhone: phone,
+        countryCode,
+        providerId,
+        rateLimitReason: rateCheck.code,
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      return errorPayload({
+        code: 'RATE_LIMITED',
+        traceId,
+        phone,
+        countryCode,
+        providerId,
+        status: statusFor('RATE_LIMITED'),
       })
     }
 
