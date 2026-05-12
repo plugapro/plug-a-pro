@@ -482,7 +482,7 @@ export function CustomerActionsPanel({
         open={archiveDialogOpen}
         onOpenChange={setArchiveDialogOpen}
         title="Archive customer"
-        description={`The customer will be archived and set inactive. Eligible for purge after 30 days. Reason: "${archiveReason}"`}
+        description={`The customer will be archived and set inactive. Eligible for purge after 30 days. Reason: "${archiveReason}". Type the customer name to confirm.`}
         confirmLabel="Archive"
         confirmText={customerName}
         onConfirm={runArchiveConfirmed}
@@ -504,7 +504,7 @@ export function CustomerActionsPanel({
         open={purgeDialogOpen}
         onOpenChange={setPurgeDialogOpen}
         title="Purge customer"
-        description="All personal data will be permanently deleted. This action is irreversible."
+        description="All personal data will be permanently deleted. This action is irreversible. Type the customer name to confirm."
         confirmLabel="Purge permanently"
         confirmText={customerName}
         onConfirm={runPurgeConfirmed}
