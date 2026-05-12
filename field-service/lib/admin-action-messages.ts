@@ -25,6 +25,11 @@ export function getApplicationsAdminMessage(code?: string | null) {
         tone: 'error' as const,
         text: 'Approval blocked because required onboarding fields are missing. Ask the provider for more information and review again.',
       }
+    case 'application_approval_failed':
+      return {
+        tone: 'error' as const,
+        text: 'Approval could not be completed — Supabase user creation failed. Check the auth configuration and retry.',
+      }
     default:
       return null
   }
@@ -36,6 +41,45 @@ export function getBookingAdminMessage(code?: string | null) {
       return { tone: 'success' as const, text: 'Payment status updated successfully.' }
     case 'payment_unavailable':
       return { tone: 'error' as const, text: 'This booking can no longer be marked paid from its current state.' }
+    default:
+      return null
+  }
+}
+
+export function getDisputesAdminMessage(code?: string | null) {
+  switch (code) {
+    case 'dispute_claim_failed':
+      return { tone: 'error' as const, text: 'Could not claim this dispute. Refresh and try again.' }
+    case 'dispute_release_failed':
+      return { tone: 'error' as const, text: 'Could not release this dispute. Refresh and try again.' }
+    case 'dispute_update_failed':
+      return { tone: 'error' as const, text: 'Could not update this dispute. Refresh and try again.' }
+    default:
+      return null
+  }
+}
+
+export function getFieldExceptionsAdminMessage(code?: string | null) {
+  switch (code) {
+    case 'field_exception_claim_failed':
+      return { tone: 'error' as const, text: 'Could not claim this field exception. Refresh and try again.' }
+    case 'field_exception_release_failed':
+      return { tone: 'error' as const, text: 'Could not release this field exception. Refresh and try again.' }
+    default:
+      return null
+  }
+}
+
+export function getValidationAdminMessage(code?: string | null) {
+  switch (code) {
+    case 'validation_claim_failed':
+      return { tone: 'error' as const, text: 'Could not claim this validation request. Refresh and try again.' }
+    case 'validation_release_failed':
+      return { tone: 'error' as const, text: 'Could not release this validation request. Refresh and try again.' }
+    case 'validation_ready_failed':
+      return { tone: 'error' as const, text: 'Could not mark request ready for matching. Refresh and try again.' }
+    case 'validation_cancel_failed':
+      return { tone: 'error' as const, text: 'Could not cancel this request. Refresh and try again.' }
     default:
       return null
   }

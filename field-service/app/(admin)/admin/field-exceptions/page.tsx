@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import type { JobStatus } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/auth'
 import { CrudActionError, crudAction } from '@/lib/crud-action'
@@ -17,10 +18,12 @@ import {
   listOpsQueueAssignments,
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
+import { getFieldExceptionsAdminMessage } from '@/lib/admin-action-messages'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/admin/ui'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
@@ -41,12 +44,18 @@ const FIELD_EXCEPTION_STATUSES: JobStatus[] = [
   'CALLBACK_REQUIRED',
 ]
 
-export default async function AdminFieldExceptionsPage() {
+export default async function AdminFieldExceptionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ message?: string }>
+}) {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
   const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
+  const { message } = await searchParams
+  const banner = getFieldExceptionsAdminMessage(message)
 
   const jobs = await db.job.findMany({
     where: { status: { in: FIELD_EXCEPTION_STATUSES } },
@@ -169,6 +178,9 @@ export default async function AdminFieldExceptionsPage() {
       if (!(error instanceof CrudActionError)) {
         throw error
       }
+      console.error('[admin/field-exceptions] claimFieldException failed:', error)
+      revalidatePath('/admin/field-exceptions')
+      redirect('/admin/field-exceptions?message=field_exception_claim_failed')
     }
 
     revalidatePath('/admin/field-exceptions')
@@ -197,6 +209,9 @@ export default async function AdminFieldExceptionsPage() {
       if (!(error instanceof CrudActionError)) {
         throw error
       }
+      console.error('[admin/field-exceptions] releaseFieldException failed:', error)
+      revalidatePath('/admin/field-exceptions')
+      redirect('/admin/field-exceptions?message=field_exception_release_failed')
     }
 
     revalidatePath('/admin/field-exceptions')
@@ -206,6 +221,11 @@ export default async function AdminFieldExceptionsPage() {
   return (
     <div className="space-y-6">
       {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/field-exceptions" /> : null}
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'tone-success'}`}>
+          {banner.text}
+        </div>
+      ) : null}
       {!crudEnabled ? (
         <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
           Field exception mutations are read-only while <code>{FLAG}</code> is disabled.
@@ -267,16 +287,16 @@ export default async function AdminFieldExceptionsPage() {
                     {!claimedByCurrentUser ? (
                       <form action={claimFieldException}>
                         <input type="hidden" name="jobId" value={job.id} />
-                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
-                        </Button>
+                        </SubmitButton>
                       </form>
                     ) : (
                       <form action={releaseFieldException}>
                         <input type="hidden" name="jobId" value={job.id} />
-                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                           Release
-                        </Button>
+                        </SubmitButton>
                       </form>
                     )}
 

@@ -19,10 +19,12 @@ import {
   listOpsQueueAssignments,
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
+import { getValidationAdminMessage } from '@/lib/admin-action-messages'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/admin/ui'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const metadata = buildMetadata({ title: 'Validation Queue', noIndex: true })
@@ -32,11 +34,17 @@ const QueueSchema = z.object({
   jobRequestId: z.string().min(1),
 })
 
-export default async function AdminValidationQueuePage() {
+export default async function AdminValidationQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ message?: string }>
+}) {
   const admin = await requireAdmin()
   const now = new Date()
   const pageWarnings: string[] = []
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const { message } = await searchParams
+  const banner = getValidationAdminMessage(message)
 
   const requests = await db.jobRequest.findMany({
     where: { status: 'PENDING_VALIDATION' },
@@ -129,6 +137,8 @@ export default async function AdminValidationQueuePage() {
       if (!(error instanceof CrudActionError)) {
         throw error
       }
+      console.error('[admin/validation] claimValidation failed:', error)
+      redirect('/admin/validation?message=validation_claim_failed')
     }
 
     redirect('/admin/validation')
@@ -156,6 +166,8 @@ export default async function AdminValidationQueuePage() {
       if (!(error instanceof CrudActionError)) {
         throw error
       }
+      console.error('[admin/validation] releaseValidation failed:', error)
+      redirect('/admin/validation?message=validation_release_failed')
     }
 
     redirect('/admin/validation')
@@ -207,6 +219,8 @@ export default async function AdminValidationQueuePage() {
       if (!(error instanceof CrudActionError)) {
         throw error
       }
+      console.error('[admin/validation] markReadyForMatching failed:', error)
+      redirect('/admin/validation?message=validation_ready_failed')
     }
 
     // Close VALIDATION case, open DISPATCH case
@@ -261,6 +275,8 @@ export default async function AdminValidationQueuePage() {
       if (!(error instanceof CrudActionError)) {
         throw error
       }
+      console.error('[admin/validation] cancelRequest failed:', error)
+      redirect('/admin/validation?message=validation_cancel_failed')
     }
 
     // Close VALIDATION case on cancel
@@ -277,6 +293,11 @@ export default async function AdminValidationQueuePage() {
   return (
     <div className="space-y-6">
       {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/validation" /> : null}
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'tone-success'}`}>
+          {banner.text}
+        </div>
+      ) : null}
       {!crudEnabled ? (
         <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
           Validation queue mutations are read-only while <code>{FLAG}</code> is disabled.
@@ -344,31 +365,31 @@ export default async function AdminValidationQueuePage() {
                     {!claimedByCurrentUser ? (
                       <form action={claimValidation}>
                         <input type="hidden" name="jobRequestId" value={request.id} />
-                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
-                        </Button>
+                        </SubmitButton>
                       </form>
                     ) : (
                       <form action={releaseValidation}>
                         <input type="hidden" name="jobRequestId" value={request.id} />
-                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                           Release
-                        </Button>
+                        </SubmitButton>
                       </form>
                     )}
 
                     <form action={markReadyForMatching}>
                       <input type="hidden" name="jobRequestId" value={request.id} />
-                      <Button type="submit" size="sm" disabled={!crudEnabled}>
+                      <SubmitButton size="sm" disabled={!crudEnabled}>
                         Mark ready for matching
-                      </Button>
+                      </SubmitButton>
                     </form>
 
                     <form action={cancelRequest}>
                       <input type="hidden" name="jobRequestId" value={request.id} />
-                      <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                      <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                         Cancel request
-                      </Button>
+                      </SubmitButton>
                     </form>
 
                     <Button asChild variant="outline" size="sm">

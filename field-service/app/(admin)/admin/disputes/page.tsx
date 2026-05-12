@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { z } from 'zod'
 import Link from 'next/link'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
 import { crudAction } from '@/lib/crud-action'
@@ -16,9 +17,10 @@ import {
   listOpsQueueAssignments,
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
+import { getDisputesAdminMessage } from '@/lib/admin-action-messages'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/admin/ui'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
@@ -75,35 +77,46 @@ async function updateDisputeAction(formData: FormData) {
   })
   if (!existing) return
 
-  await crudAction({
-    entity: 'Dispute',
-    entityId: disputeId,
-    action: 'dispute.update',
-    requiredRole: [...DISPUTE_ROLES],
-    requiredFlag: FLAG,
-    schema: UpdateDisputeSchema,
-    input: { disputeId, status, resolution },
-    before: existing,
-    run: async (_data, tx) => {
-      await tx.dispute.update({
-        where: { id: disputeId },
-        data: {
-          status: status as 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_CUSTOMER' | 'RESOLVED_PROVIDER' | 'RESOLVED_SPLIT' | 'CLOSED',
-          resolution,
-          resolvedAt: resolvedStatuses.includes(status) ? new Date() : null,
-          resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
-        },
-      })
+  try {
+    await crudAction({
+      entity: 'Dispute',
+      entityId: disputeId,
+      action: 'dispute.update',
+      requiredRole: [...DISPUTE_ROLES],
+      requiredFlag: FLAG,
+      schema: UpdateDisputeSchema,
+      input: { disputeId, status, resolution },
+      before: existing,
+      run: async (_data, tx) => {
+        await tx.dispute.update({
+          where: { id: disputeId },
+          data: {
+            status: status as 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED_CUSTOMER' | 'RESOLVED_PROVIDER' | 'RESOLVED_SPLIT' | 'CLOSED',
+            resolution,
+            resolvedAt: resolvedStatuses.includes(status) ? new Date() : null,
+            resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
+          },
+        })
 
-      return {
-        id: disputeId,
-        status,
-        resolution,
-        resolvedAt: resolvedStatuses.includes(status) ? new Date().toISOString() : null,
-        resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
-      }
-    },
-  })
+        return {
+          id: disputeId,
+          status,
+          resolution,
+          resolvedAt: resolvedStatuses.includes(status) ? new Date().toISOString() : null,
+          resolvedById: resolvedStatuses.includes(status) ? admin.id : null,
+        }
+      },
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/disputes] updateDispute failed:', error)
+    revalidatePath('/admin/disputes')
+    redirect('/admin/disputes?message=dispute_update_failed')
+  }
 
   revalidatePath('/admin/disputes')
   revalidatePath('/admin')
@@ -116,26 +129,37 @@ async function claimDisputeAction(formData: FormData) {
   const disputeId = String(formData.get('disputeId') ?? '')
   if (!disputeId) return
 
-  await crudAction({
-    entity: 'Dispute',
-    entityId: disputeId,
-    action: 'dispute.claim',
-    requiredRole: [...DISPUTE_ROLES],
-    requiredFlag: FLAG,
-    schema: QueueSchema,
-    input: { disputeId },
-    run: async (_input, tx) => {
-      await claimOpsQueueItem(tx, {
-        queueType: OPS_QUEUE_TYPES.DISPUTE,
-        entityId: disputeId,
-        claimedById: admin.id,
-        claimedByRole: admin.adminRole,
-        claimedByLabel: admin.email ?? 'admin',
-      })
+  try {
+    await crudAction({
+      entity: 'Dispute',
+      entityId: disputeId,
+      action: 'dispute.claim',
+      requiredRole: [...DISPUTE_ROLES],
+      requiredFlag: FLAG,
+      schema: QueueSchema,
+      input: { disputeId },
+      run: async (_input, tx) => {
+        await claimOpsQueueItem(tx, {
+          queueType: OPS_QUEUE_TYPES.DISPUTE,
+          entityId: disputeId,
+          claimedById: admin.id,
+          claimedByRole: admin.adminRole,
+          claimedByLabel: admin.email ?? 'admin',
+        })
 
-      return { id: disputeId }
-    },
-  })
+        return { id: disputeId }
+      },
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/disputes] claimDispute failed:', error)
+    revalidatePath('/admin/disputes')
+    redirect('/admin/disputes?message=dispute_claim_failed')
+  }
 
   revalidatePath('/admin/disputes')
   revalidatePath('/admin')
@@ -147,34 +171,51 @@ async function releaseDisputeAction(formData: FormData) {
   const disputeId = String(formData.get('disputeId') ?? '')
   if (!disputeId) return
 
-  await crudAction({
-    entity: 'Dispute',
-    entityId: disputeId,
-    action: 'dispute.release',
-    requiredRole: [...DISPUTE_ROLES],
-    requiredFlag: FLAG,
-    schema: QueueSchema,
-    input: { disputeId },
-    run: async (_input, tx) => {
-      await releaseOpsQueueItem(tx, {
-        queueType: OPS_QUEUE_TYPES.DISPUTE,
-        entityId: disputeId,
-      })
+  try {
+    await crudAction({
+      entity: 'Dispute',
+      entityId: disputeId,
+      action: 'dispute.release',
+      requiredRole: [...DISPUTE_ROLES],
+      requiredFlag: FLAG,
+      schema: QueueSchema,
+      input: { disputeId },
+      run: async (_input, tx) => {
+        await releaseOpsQueueItem(tx, {
+          queueType: OPS_QUEUE_TYPES.DISPUTE,
+          entityId: disputeId,
+        })
 
-      return { id: disputeId }
-    },
-  })
+        return { id: disputeId }
+      },
+    })
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/disputes] releaseDispute failed:', error)
+    revalidatePath('/admin/disputes')
+    redirect('/admin/disputes?message=dispute_release_failed')
+  }
 
   revalidatePath('/admin/disputes')
   revalidatePath('/admin')
 }
 
-export default async function AdminDisputesPage() {
+export default async function AdminDisputesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ message?: string }>
+}) {
   const admin = await requireAdmin()
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
   const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
   const now = new Date()
   const pageWarnings: string[] = []
+  const { message } = await searchParams
+  const banner = getDisputesAdminMessage(message)
 
   const disputes = await db.dispute.findMany({
     orderBy: { createdAt: 'desc' },
@@ -235,6 +276,11 @@ export default async function AdminDisputesPage() {
   return (
     <div className="space-y-6">
       {pageWarnings.length > 0 ? <StaleBanner refreshHref="/admin/disputes" /> : null}
+      {banner ? (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${banner.tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'tone-success'}`}>
+          {banner.text}
+        </div>
+      ) : null}
       <div>
         <h1 className="text-xl font-semibold">Disputes</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -342,16 +388,16 @@ export default async function AdminDisputesPage() {
                   {!claimedByCurrentUser ? (
                     <form action={claimDisputeAction}>
                       <input type="hidden" name="disputeId" value={dispute.id} />
-                      <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                      <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                         {assignment?.claimedById ? 'Take over' : 'Claim'}
-                      </Button>
+                      </SubmitButton>
                     </form>
                   ) : (
                     <form action={releaseDisputeAction}>
                       <input type="hidden" name="disputeId" value={dispute.id} />
-                      <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                      <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                         Release
-                      </Button>
+                      </SubmitButton>
                     </form>
                   )}
                 </div>
@@ -382,12 +428,11 @@ export default async function AdminDisputesPage() {
                       className="min-h-24"
                     />
                   </div>
-                  <Button
-                    type="submit"
+                  <SubmitButton
                     disabled={!crudEnabled}
                   >
                     Save dispute update
-                  </Button>
+                  </SubmitButton>
                 </form>
 
                 {casesEnabled && (() => {

@@ -32,7 +32,7 @@ import {
   releaseOpsQueueItem,
 } from '@/lib/ops-queue'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { SubmitButton } from '@/components/admin/ui'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -187,33 +187,35 @@ async function approveApplication(formData: FormData) {
     redirect('/admin/applications?message=duplicate_active_application')
   }
 
-  const approval = await crudAction({
-    entity: 'ProviderApplication',
-    entityId: app.id,
-    action: 'provider_application.approve',
-    requiredRole: [...APPLICATION_ROLES],
-    requiredFlag: FLAG,
-    schema: ApplicationActionSchema,
-    input: { id },
-    before: {
-      status: app.status,
-      providerId: app.providerId,
-      reviewedById: app.reviewedById,
-    },
-    run: async (_data, tx) => {
-      const supabase = createServiceClient()
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        phone: app.phone,
-        user_metadata: {
-          role: 'provider',
-          name: app.name,
-        },
-        phone_confirm: true,
-      })
+  try {
+    const approval = await crudAction({
+      entity: 'ProviderApplication',
+      entityId: app.id,
+      action: 'provider_application.approve',
+      requiredRole: [...APPLICATION_ROLES],
+      requiredFlag: FLAG,
+      schema: ApplicationActionSchema,
+      input: { id },
+      before: {
+        status: app.status,
+        providerId: app.providerId,
+        reviewedById: app.reviewedById,
+      },
+      run: async (_data, tx) => {
+        const supabase = createServiceClient()
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          phone: app.phone,
+          user_metadata: {
+            role: 'provider',
+            name: app.name,
+          },
+          phone_confirm: true,
+        })
 
-      if (authError || !authData.user) {
-        console.error('[applications] Supabase user create failed:', authError)
-      }
+        if (authError || !authData.user) {
+          console.error('[applications] Supabase user create failed:', authError)
+          throw new Error('Supabase user creation failed')
+        }
 
       // Phase 4 follow-up Task 5 — atomicity invariant:
       //   - syncProviderRecord(verified: true) flips Provider.status -> 'ACTIVE'
@@ -341,6 +343,16 @@ async function approveApplication(formData: FormData) {
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] approveApplication failed:', error)
+    revalidatePath('/admin/applications')
+    redirect('/admin/applications?message=application_approval_failed')
+  }
 }
 
 async function requestMoreInfo(formData: FormData) {
@@ -753,29 +765,28 @@ export default async function ApplicationsPage({
                   {!claimedByCurrentUser ? (
                     <form action={claimApplication}>
                       <input type="hidden" name="id" value={app.id} />
-                      <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
+                      <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
                         {assignment?.claimedById ? 'Take over' : 'Claim'}
-                      </Button>
+                      </SubmitButton>
                     </form>
                   ) : (
                     <form action={releaseApplication}>
                       <input type="hidden" name="id" value={app.id} />
-                      <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
+                      <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
                         Release
-                      </Button>
+                      </SubmitButton>
                     </form>
                   )}
 
                   <form action={approveApplication}>
                     <input type="hidden" name="id" value={app.id} />
-                    <Button
-                      type="submit"
+                    <SubmitButton
                       size="sm"
                       disabled={!crudEnabled || hasConflict || approvalBlockedByCompleteness}
                       className="bg-[var(--tone-success-fg)] text-white hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground"
                     >
                       Approve
-                    </Button>
+                    </SubmitButton>
                   </form>
 
                   <form action={rejectApplication} className="flex gap-2">
@@ -786,9 +797,9 @@ export default async function ApplicationsPage({
                       placeholder="Reason (optional)"
                       className="h-8 w-48 text-sm"
                     />
-                    <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
+                    <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
                       Reject
-                    </Button>
+                    </SubmitButton>
                   </form>
 
                   <form action={requestMoreInfo} className="flex gap-2">
@@ -800,9 +811,9 @@ export default async function ApplicationsPage({
                       className="h-8 w-48 text-sm"
                       required
                     />
-                    <Button type="submit" size="sm" variant="outline" disabled={!crudEnabled}>
+                    <SubmitButton size="sm" variant="outline" disabled={!crudEnabled}>
                       More info
-                    </Button>
+                    </SubmitButton>
                   </form>
                 </div>
               </CardContent>
@@ -872,40 +883,37 @@ export default async function ApplicationsPage({
                                   <input type="hidden" name="id" value={app.id} />
                                   <input type="hidden" name="categorySlug" value={categorySlug} />
                                   <input type="hidden" name="approvalStatus" value="APPROVED" />
-                                  <Button
-                                    type="submit"
+                                  <SubmitButton
                                     size="sm"
                                     variant="outline"
                                     disabled={!crudEnabled}
                                   >
                                     Approve
-                                  </Button>
+                                  </SubmitButton>
                                 </form>
                                 <form action={updateCategoryApproval}>
                                   <input type="hidden" name="id" value={app.id} />
                                   <input type="hidden" name="categorySlug" value={categorySlug} />
                                   <input type="hidden" name="approvalStatus" value="REJECTED" />
-                                  <Button
-                                    type="submit"
+                                  <SubmitButton
                                     size="sm"
                                     variant="outline"
                                     disabled={!crudEnabled}
                                   >
                                     Reject
-                                  </Button>
+                                  </SubmitButton>
                                 </form>
                                 <form action={updateCategoryApproval}>
                                   <input type="hidden" name="id" value={app.id} />
                                   <input type="hidden" name="categorySlug" value={categorySlug} />
                                   <input type="hidden" name="approvalStatus" value="PENDING_REVIEW" />
-                                  <Button
-                                    type="submit"
+                                  <SubmitButton
                                     size="sm"
                                     variant="outline"
                                     disabled={!crudEnabled}
                                   >
                                     Hold
-                                  </Button>
+                                  </SubmitButton>
                                 </form>
                               </div>
                             </div>
