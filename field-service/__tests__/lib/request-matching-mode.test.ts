@@ -5,25 +5,37 @@ const {
   mockAssignmentHold,
   mockOrchestrateMatch,
   mockSendText,
-  mockGetProviderCandidates,
+  mockSendCtaUrl,
+  mockSendButtons,
+  mockMatchEligibleProviders,
+  mockMessageEvent,
 } = vi.hoisted(() => ({
   mockJobRequest: { findUnique: vi.fn(), update: vi.fn() },
   mockAssignmentHold: { findFirst: vi.fn() },
   mockOrchestrateMatch: vi.fn(),
   mockSendText: vi.fn(),
-  mockGetProviderCandidates: vi.fn(),
+  mockSendCtaUrl: vi.fn(),
+  mockSendButtons: vi.fn(),
+  mockMatchEligibleProviders: vi.fn(),
+  mockMessageEvent: { findFirst: vi.fn() },
 }))
 
 vi.mock('@/lib/db', () => ({
   db: {
     jobRequest: mockJobRequest,
     assignmentHold: mockAssignmentHold,
+    messageEvent: mockMessageEvent,
   },
 }))
 vi.mock('@/lib/matching/orchestrator', () => ({ orchestrateMatch: mockOrchestrateMatch }))
 vi.mock('@/lib/whatsapp', () => ({ sendText: mockSendText }))
-vi.mock('@/lib/whatsapp-interactive', () => ({ sendText: mockSendText, sendCtaUrl: vi.fn() }))
-vi.mock('@/lib/review-first', () => ({ getProviderCandidatesForCustomerReview: mockGetProviderCandidates }))
+vi.mock('@/lib/whatsapp-interactive', () => ({
+  sendText: mockSendText,
+  sendCtaUrl: mockSendCtaUrl,
+  sendButtons: mockSendButtons,
+}))
+vi.mock('@/lib/job-request-access', () => ({ getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.test/requests/access/token?view=matching_status') }))
+vi.mock('@/lib/review-first', () => ({ matchEligibleProvidersForServiceRequest: mockMatchEligibleProviders }))
 
 const BASE_REQUEST = {
   id: 'jr-1',
@@ -40,8 +52,14 @@ describe('selectCustomerRequestMatchingMode', () => {
     mockJobRequest.update.mockResolvedValue({})
     mockOrchestrateMatch.mockResolvedValue(undefined)
     mockSendText.mockResolvedValue(undefined)
-    mockGetProviderCandidates.mockResolvedValue({
-      candidates: [{ providerId: 'provider-1', name: 'Lovemore' }],
+    mockSendCtaUrl.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+    mockMessageEvent.findFirst.mockResolvedValue(null)
+    mockMatchEligibleProviders.mockResolvedValue({
+      status: 'MATCHES_FOUND',
+      decisionId: 'dd-1',
+      wasCached: false,
+      providers: [{ providerId: 'provider-1', name: 'Lovemore' }],
     })
     mockAssignmentHold.findFirst.mockResolvedValue(null)
   })
@@ -149,8 +167,11 @@ describe('selectCustomerRequestMatchingMode', () => {
 
   it('selecting review_first returns ready only after candidates are generated', async () => {
     mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
-    mockGetProviderCandidates.mockResolvedValue({
-      candidates: [
+    mockMatchEligibleProviders.mockResolvedValue({
+      status: 'MATCHES_FOUND',
+      decisionId: 'dd-1',
+      wasCached: false,
+      providers: [
         { providerId: 'provider-1', name: 'Lovemore' },
         { providerId: 'provider-2', name: 'Jacob' },
       ],
@@ -164,16 +185,22 @@ describe('selectCustomerRequestMatchingMode', () => {
     })
 
     expect(result.status).toBe('review_options_ready')
-    expect(mockGetProviderCandidates).toHaveBeenCalledWith(
-      expect.objectContaining({ requestId: 'jr-1', customerId: 'cust-1', batch: 1 }),
+    expect(mockMatchEligibleProviders).toHaveBeenCalledWith(
+      expect.objectContaining({ serviceRequestId: 'jr-1' }),
     )
-    const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
+    const outbound = mockSendCtaUrl.mock.calls.at(-1)?.[1] as string
     expect(outbound).toContain('We found 2 matching providers')
+    expect(mockSendCtaUrl.mock.calls.at(-1)?.[2]).toBe('View providers')
   })
 
   it('selecting review_first does not claim ready when no candidates exist', async () => {
     mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
-    mockGetProviderCandidates.mockResolvedValue({ candidates: [] })
+    mockMatchEligibleProviders.mockResolvedValue({
+      status: 'NO_MATCH',
+      decisionId: 'dd-1',
+      wasCached: false,
+      providers: [],
+    })
 
     const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
     const result = await selectCustomerRequestMatchingMode({
@@ -183,14 +210,14 @@ describe('selectCustomerRequestMatchingMode', () => {
     })
 
     expect(result.status).toBe('review_no_candidates')
-    const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
+    const outbound = mockSendButtons.mock.calls.at(-1)?.[1] as string
     expect(outbound).toContain("couldn't find matching providers in your area right now")
     expect(outbound).not.toContain('is ready')
   })
 
   it('selecting review_first exposes matching failure instead of false ready', async () => {
     mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
-    mockGetProviderCandidates.mockRejectedValue(new Error('candidate index unavailable'))
+    mockMatchEligibleProviders.mockRejectedValue(new Error('candidate index unavailable'))
 
     const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
     const result = await selectCustomerRequestMatchingMode({
@@ -200,8 +227,24 @@ describe('selectCustomerRequestMatchingMode', () => {
     })
 
     expect(result.status).toBe('review_matching_failed')
-    const outbound = mockSendText.mock.calls.at(-1)?.[1] as string
+    const outbound = mockSendButtons.mock.calls.at(-1)?.[1] as string
     expect(outbound).toContain('could not be prepared right now')
     expect(outbound).not.toContain('is ready')
+  })
+
+  it('duplicate review_first webhook skips duplicate ready message', async () => {
+    mockJobRequest.findUnique.mockResolvedValue(BASE_REQUEST)
+    mockMessageEvent.findFirst.mockResolvedValue({ id: 'msg-1' })
+
+    const { selectCustomerRequestMatchingMode } = await import('@/lib/request-matching-mode')
+    const result = await selectCustomerRequestMatchingMode({
+      requestId: 'jr-1',
+      customerId: 'cust-1',
+      mode: 'review_first',
+    })
+
+    expect(result.status).toBe('review_options_ready')
+    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+    expect(mockSendButtons).not.toHaveBeenCalled()
   })
 })

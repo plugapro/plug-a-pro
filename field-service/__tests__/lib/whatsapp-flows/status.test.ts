@@ -23,8 +23,9 @@ vi.mock('@/lib/job-request-access', () => ({
   getJobRequestAccessUrl: vi.fn(async (jobRequestId: string) => `https://app.plugapro.co.za/requests/access/${jobRequestId}`),
 }))
 
-const { mockSelectCustomerRequestMatchingMode } = vi.hoisted(() => ({
+const { mockSelectCustomerRequestMatchingMode, mockGetReviewFirstDisplayableCandidateCount } = vi.hoisted(() => ({
   mockSelectCustomerRequestMatchingMode: vi.fn(),
+  mockGetReviewFirstDisplayableCandidateCount: vi.fn(),
 }))
 
 vi.mock('@/lib/request-matching-mode', () => ({
@@ -37,6 +38,10 @@ vi.mock('@/lib/request-matching-mode', () => ({
     }
   },
   selectCustomerRequestMatchingMode: mockSelectCustomerRequestMatchingMode,
+}))
+
+vi.mock('@/lib/review-first', () => ({
+  getReviewFirstDisplayableCandidateCount: mockGetReviewFirstDisplayableCandidateCount,
 }))
 
 import { handleStatusFlow } from '@/lib/whatsapp-flows/status'
@@ -86,6 +91,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env.NEXT_PUBLIC_APP_URL = APP_URL
   mockSelectCustomerRequestMatchingMode.mockResolvedValue({ status: 'matching_started' })
+  mockGetReviewFirstDisplayableCandidateCount.mockResolvedValue(0)
   vi.mocked(db.lead.findMany).mockResolvedValue([])
   vi.mocked(db.matchAttempt.count).mockResolvedValue(0)
   vi.mocked(db.providerShortlist.findFirst).mockResolvedValue(null)
@@ -272,7 +278,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
     vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue({ status: 'RANKED' } as never)
-    vi.mocked(db.matchAttempt.count).mockResolvedValue(2)
+    mockGetReviewFirstDisplayableCandidateCount.mockResolvedValue(2)
 
     const result = await handleStatusFlow(makeCtx())
 
@@ -295,7 +301,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
     vi.mocked(db.dispatchDecision.findFirst).mockResolvedValue({ status: 'RANKED' } as never)
-    vi.mocked(db.matchAttempt.count).mockResolvedValue(0)
+    mockGetReviewFirstDisplayableCandidateCount.mockResolvedValue(0)
 
     const result = await handleStatusFlow(makeCtx())
 

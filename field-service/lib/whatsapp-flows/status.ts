@@ -16,6 +16,7 @@ import {
   selectCustomerRequestMatchingMode,
   type CustomerMatchingMode,
 } from '../request-matching-mode'
+import { getReviewFirstDisplayableCandidateCount } from '../review-first'
 import type { FlowContext, FlowResult } from './types'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
@@ -515,7 +516,7 @@ async function showRequestStatus(
     ])
     const reviewRankedCandidateCount =
       jr.assignmentMode === 'OPS_REVIEW'
-        ? await loadReviewRankedCandidateCountSafe(jr.latestDispatchDecisionId)
+        ? await loadReviewDisplayableCandidateCountSafe(jr.id, jr.latestDispatchDecisionId)
         : 0
 
     let statusLabel = jobStatus
@@ -897,14 +898,16 @@ async function loadLatestDispatchDecisionStatus(jobRequestId: string): Promise<D
   return decision ? normalizeDispatchDecisionStatus(decision.status) : null
 }
 
-async function loadReviewRankedCandidateCountSafe(dispatchDecisionId: string | null | undefined) {
+async function loadReviewDisplayableCandidateCountSafe(jobRequestId: string, dispatchDecisionId: string | null | undefined) {
   if (!dispatchDecisionId) return 0
   try {
-    return await db.matchAttempt.count({
-      where: { dispatchDecisionId, stage: 'RANKED' },
+    return await getReviewFirstDisplayableCandidateCount({
+      requestId: jobRequestId,
+      decisionId: dispatchDecisionId,
     })
   } catch (error) {
-    console.warn('[status-flow] review-first ranked candidate count failed', {
+    console.warn('[status-flow] review-first displayable candidate count failed', {
+      jobRequestId,
       dispatchDecisionId,
       error: error instanceof Error ? error.message : String(error),
     })

@@ -113,6 +113,36 @@ describe('getMatchedProvidersForCustomerRequest', () => {
     expect(result.totalEligibleCount).toBe(0)
   })
 
+  it('does not generate matches from the customer read path when candidates are not ready', async () => {
+    mockJobRequest.findUnique.mockResolvedValue({
+      id: 'jr-1',
+      customerId: 'cust-1',
+      category: 'plumbing',
+      status: 'PENDING_VALIDATION',
+      address: {
+        suburb: 'Bromhof',
+        city: 'Johannesburg',
+        region: 'JHB West',
+        locationNodeId: null,
+        locationNode: { regionKey: 'jhb-west' },
+      },
+      latestDispatchDecisionId: null,
+      leads: [],
+    })
+    mockDispatchDecision.findFirst.mockResolvedValue(null)
+
+    const { getMatchedProvidersForCustomerRequest, ReviewFirstError } = await import('@/lib/review-first')
+    const err = await getMatchedProvidersForCustomerRequest({
+      requestId: 'jr-1',
+      customerId: 'cust-1',
+      batch: 1,
+    }).catch((error) => error)
+
+    expect(err).toBeInstanceOf(ReviewFirstError)
+    expect(err.code).toBe('MATCHES_NOT_READY')
+    expect(mockMatchAttempt.findMany).not.toHaveBeenCalled()
+  })
+
   it('falls back to latest usable OPS_REVIEW decision when latest cached decision is stale', async () => {
     mockJobRequest.findUnique.mockResolvedValue({
       id: 'jr-1',

@@ -1,7 +1,8 @@
 import { db } from './db'
 import { orchestrateMatch } from './matching/orchestrator'
-import { sendText } from './whatsapp-interactive'
-import { getProviderCandidatesForCustomerReview } from './review-first'
+import { getJobRequestAccessUrl } from './job-request-access'
+import { sendButtons, sendCtaUrl, sendText } from './whatsapp-interactive'
+import { matchEligibleProvidersForServiceRequest } from './review-first'
 
 export type CustomerMatchingMode = 'quick_match' | 'review_first'
 
@@ -17,6 +18,148 @@ export class RequestMatchingModeError extends Error {
     super(message)
     this.name = 'RequestMatchingModeError'
   }
+}
+
+const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
+
+async function hasSentCustomerOutcome(params: {
+  to: string
+  requestId: string
+  templateName: string
+}) {
+  try {
+    const existing = await db.messageEvent.findFirst({
+      where: {
+        to: params.to,
+        templateName: params.templateName,
+        status: { in: [...SENT_OR_BETTER] },
+        metadata: {
+          path: ['requestId'],
+          equals: params.requestId,
+        },
+      },
+      select: { id: true },
+    })
+    return Boolean(existing)
+  } catch (error) {
+    console.warn('[request-matching-mode] customer outcome idempotency lookup failed', {
+      requestId: params.requestId,
+      templateName: params.templateName,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return false
+  }
+}
+
+async function sendReviewFirstOutcome(params: {
+  requestId: string
+  phone: string
+  status: 'review_options_ready' | 'review_no_candidates' | 'review_matching_failed'
+  candidateCount: number
+}) {
+  const templateName =
+    params.status === 'review_options_ready'
+      ? 'interactive:client_review_first_ready_cta'
+      : params.status === 'review_no_candidates'
+        ? 'interactive:client_review_first_no_candidates'
+        : 'interactive:client_review_first_failed'
+
+  if (await hasSentCustomerOutcome({ to: params.phone, requestId: params.requestId, templateName })) {
+    console.info('[request-matching-mode] customer review-first outcome skipped_duplicate', {
+      requestId: params.requestId,
+      outcome: params.status,
+      candidateCount: params.candidateCount,
+    })
+    return
+  }
+
+  if (params.status === 'review_options_ready') {
+    const text = `Review Providers First is ready.\n\nWe found ${params.candidateCount} matching provider${params.candidateCount === 1 ? '' : 's'} for your request.\n\nOpen your request to view matching provider profiles, shortlist 1 to 3 providers, and send your request only to the providers you choose.`
+    const url = await getJobRequestAccessUrl(params.requestId, 'matching_status').catch((error) => {
+      console.warn('[request-matching-mode] review-first CTA URL generation failed', {
+        requestId: params.requestId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return null
+    })
+
+    if (url?.startsWith('https://')) {
+      await sendCtaUrl(params.phone, text, 'View providers', url, undefined, {
+        templateName,
+        metadata: {
+          requestId: params.requestId,
+          reviewCandidateCount: params.candidateCount,
+          idempotencyKey: `${templateName}:${params.requestId}`,
+        },
+      })
+      console.info('[request-matching-mode] customer review-first ready CTA sent', {
+        requestId: params.requestId,
+        candidateCount: params.candidateCount,
+      })
+      return
+    }
+
+    await sendButtons(
+      params.phone,
+      `${text}\n\nIf the app link is unavailable, refresh your request status.`,
+      [
+        { id: `status_refresh_${params.requestId}`, title: 'Refresh status' },
+        { id: 'status', title: 'My Requests' },
+        { id: 'back_home', title: 'Main menu' },
+      ],
+      undefined,
+      {
+        templateName,
+        metadata: {
+          requestId: params.requestId,
+          reviewCandidateCount: params.candidateCount,
+          idempotencyKey: `${templateName}:${params.requestId}`,
+        },
+      },
+    )
+    return
+  }
+
+  if (params.status === 'review_no_candidates') {
+    await sendButtons(
+      params.phone,
+      "We couldn't find matching providers in your area right now.\n\nYou can try Quick Match, edit your request, or return to the main menu.",
+      [
+        { id: `status_mode_quick_${params.requestId}`, title: 'Quick Match' },
+        { id: `status_refresh_${params.requestId}`, title: 'Check status' },
+        { id: 'back_home', title: 'Main menu' },
+      ],
+      undefined,
+      {
+        templateName,
+        metadata: {
+          requestId: params.requestId,
+          reviewCandidateCount: params.candidateCount,
+          idempotencyKey: `${templateName}:${params.requestId}`,
+        },
+      },
+    )
+    return
+  }
+
+  await sendButtons(
+    params.phone,
+    'Review Providers First could not be prepared right now.\n\nYour request is saved. Please try again.',
+    [
+      { id: `status_mode_review_${params.requestId}`, title: 'Try again' },
+      { id: `status_mode_quick_${params.requestId}`, title: 'Quick Match' },
+      { id: 'back_home', title: 'Main menu' },
+    ],
+    undefined,
+    {
+      templateName,
+      metadata: {
+        requestId: params.requestId,
+        reviewCandidateCount: params.candidateCount,
+        idempotencyKey: `${templateName}:${params.requestId}`,
+      },
+    },
+  )
 }
 
 export async function selectCustomerRequestMatchingMode(params: {
@@ -104,16 +247,16 @@ export async function selectCustomerRequestMatchingMode(params: {
 
   if (params.mode === 'review_first') {
     try {
-      const candidates = await getProviderCandidatesForCustomerReview({
-        requestId: request.id,
-        customerId: params.customerId,
-        batch: 1,
+      const matchResult = await matchEligibleProvidersForServiceRequest({
+        serviceRequestId: request.id,
       })
 
-      reviewCandidateCount = candidates?.candidates?.length ?? 0
+      reviewCandidateCount = matchResult.providers.length
       console.info('[request-matching-mode] review-first candidates generated', {
         requestId: request.id,
         candidateCount: reviewCandidateCount,
+        matchStatus: matchResult.status,
+        wasCached: matchResult.wasCached,
       })
     } catch (error) {
       reviewFailed = true
@@ -141,35 +284,50 @@ export async function selectCustomerRequestMatchingMode(params: {
         quickMatchResult?.status === 'NO_MATCH'
           ? `Quick Match started.\n\nNo providers in your area are available right now.\n\nWe'll keep trying and notify you the moment one becomes available.`
           : `Quick Match started.\n\nWe're checking with one suitable provider now.\nIf they don't respond, we'll try the next provider.`
-    } else if (reviewFailed) {
-      // Review-first mode requires an attempt to build provider options before the
-      // customer is told they can shortlist providers.
-      text = 'Review Providers First could not be prepared right now.\n\nYour request is saved. Please try again from your request link or send *Review Providers First* again.'
-    } else if (reviewCandidateCount > 0) {
-      text = `Review Providers First is ready.\n\nWe found ${reviewCandidateCount} matching provider${reviewCandidateCount === 1 ? '' : 's'} for your request.\n\nOpen your request to view matching provider profiles, shortlist 1 to 3 providers, and send your request only to the providers you choose.`
-    } else {
-      text = 'We couldn\'t find matching providers in your area right now.\n\nYou can try Quick Match, edit your request, or return to the main menu.'
     }
 
-    await sendText(
-      request.customer.phone,
-      text,
-      {
-        templateName: 'interactive:client_matching_mode_selected',
-        metadata: {
+    if (params.mode === 'review_first') {
+      const outcome = reviewFailed
+        ? 'review_matching_failed'
+        : reviewCandidateCount > 0
+          ? 'review_options_ready'
+          : 'review_no_candidates'
+
+      await sendReviewFirstOutcome({
+        requestId: request.id,
+        phone: request.customer.phone,
+        status: outcome,
+        candidateCount: reviewCandidateCount,
+      }).catch((error) => {
+        console.warn('[request-matching-mode] customer review-first notification failed', {
           requestId: request.id,
           mode: params.mode,
           reviewCandidateCount,
-        },
-      },
-    ).catch((error) => {
-      console.warn('[request-matching-mode] customer matching mode notification failed', {
-        requestId: request.id,
-        mode: params.mode,
-        reviewCandidateCount,
-        error: error instanceof Error ? error.message : String(error),
+          outcome,
+          error: error instanceof Error ? error.message : String(error),
+        })
       })
-    })
+    } else {
+      await sendText(
+        request.customer.phone,
+        text,
+        {
+          templateName: 'interactive:client_matching_mode_selected',
+          metadata: {
+            requestId: request.id,
+            mode: params.mode,
+            reviewCandidateCount,
+          },
+        },
+      ).catch((error) => {
+        console.warn('[request-matching-mode] customer matching mode notification failed', {
+          requestId: request.id,
+          mode: params.mode,
+          reviewCandidateCount,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+    }
   }
 
   return {

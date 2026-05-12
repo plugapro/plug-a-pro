@@ -5,25 +5,37 @@ const {
   mockAssignmentHold,
   mockOrchestrateMatch,
   mockSendText,
-  mockGetProviderCandidates,
+  mockSendCtaUrl,
+  mockSendButtons,
+  mockMatchEligibleProviders,
+  mockMessageEvent,
 } = vi.hoisted(() => ({
   mockJobRequest: { findUnique: vi.fn(), update: vi.fn() },
   mockAssignmentHold: { findFirst: vi.fn() },
   mockOrchestrateMatch: vi.fn(),
   mockSendText: vi.fn(),
-  mockGetProviderCandidates: vi.fn(),
+  mockSendCtaUrl: vi.fn(),
+  mockSendButtons: vi.fn(),
+  mockMatchEligibleProviders: vi.fn(),
+  mockMessageEvent: { findFirst: vi.fn() },
 }))
 
 vi.mock('@/lib/db', () => ({
   db: {
     jobRequest: mockJobRequest,
     assignmentHold: mockAssignmentHold,
+    messageEvent: mockMessageEvent,
   },
 }))
 vi.mock('@/lib/matching/orchestrator', () => ({ orchestrateMatch: mockOrchestrateMatch }))
 vi.mock('@/lib/whatsapp', () => ({ sendText: mockSendText }))
-vi.mock('@/lib/whatsapp-interactive', () => ({ sendText: mockSendText, sendCtaUrl: vi.fn() }))
-vi.mock('@/lib/review-first', () => ({ getProviderCandidatesForCustomerReview: mockGetProviderCandidates }))
+vi.mock('@/lib/whatsapp-interactive', () => ({
+  sendText: mockSendText,
+  sendCtaUrl: mockSendCtaUrl,
+  sendButtons: mockSendButtons,
+}))
+vi.mock('@/lib/job-request-access', () => ({ getJobRequestAccessUrl: vi.fn().mockResolvedValue('https://app.test/requests/access/token?view=matching_status') }))
+vi.mock('@/lib/review-first', () => ({ matchEligibleProvidersForServiceRequest: mockMatchEligibleProviders }))
 
 const BASE_REQUEST = {
   id: 'jr-fast-1',
@@ -40,8 +52,14 @@ describe('fast match regression sweep', () => {
     mockJobRequest.update.mockResolvedValue({})
     mockOrchestrateMatch.mockResolvedValue(undefined)
     mockSendText.mockResolvedValue(undefined)
-    mockGetProviderCandidates.mockResolvedValue({
-      candidates: [{ providerId: 'provider-1', name: 'Lovemore' }],
+    mockSendCtaUrl.mockResolvedValue(undefined)
+    mockSendButtons.mockResolvedValue(undefined)
+    mockMessageEvent.findFirst.mockResolvedValue(null)
+    mockMatchEligibleProviders.mockResolvedValue({
+      status: 'MATCHES_FOUND',
+      decisionId: 'dd-1',
+      wasCached: false,
+      providers: [{ providerId: 'provider-1', name: 'Lovemore' }],
     })
     mockAssignmentHold.findFirst.mockResolvedValue(null)
   })
@@ -94,7 +112,7 @@ describe('fast match regression sweep', () => {
       'jr-fast-1',
       expect.objectContaining({ triggeredBy: 'manual' }),
     )
-    expect(mockGetProviderCandidates).not.toHaveBeenCalled()
+    expect(mockMatchEligibleProviders).not.toHaveBeenCalled()
 
     const outboundMessage = mockSendText.mock.calls.at(-1)?.[1] as string
     expect(outboundMessage).toContain("We're checking with one suitable provider now")
@@ -113,8 +131,8 @@ describe('fast match regression sweep', () => {
 
     expect(result.status).toBe('review_options_ready')
     expect(mockOrchestrateMatch).not.toHaveBeenCalled()
-    expect(mockGetProviderCandidates).toHaveBeenCalledWith(
-      expect.objectContaining({ requestId: 'jr-fast-1', batch: 1 }),
+    expect(mockMatchEligibleProviders).toHaveBeenCalledWith(
+      expect.objectContaining({ serviceRequestId: 'jr-fast-1' }),
     )
   })
 

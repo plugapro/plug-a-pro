@@ -85,6 +85,59 @@ type MatchedProviderDisplay = {
   profileUrl: string | null
 }
 
+type ReviewDisplayRequest = {
+  id: string
+  customerId?: string | null
+  category: string
+  status: string
+  address: {
+    suburb: string
+    city: string
+    region: string | null
+    locationNodeId: string | null
+    locationNode: { regionKey: string | null } | null
+  } | null
+  latestDispatchDecisionId: string | null
+  leads: Array<{ providerId: string; status: string }>
+}
+
+type ReviewDisplayAttempt = {
+  providerId: string
+  rankedPosition: number | null
+  createdAt: Date
+  score: number | null
+  feasibilityNotes: string[]
+  provider: {
+    id: string
+    active: boolean
+    status: string
+    availableNow: boolean
+    name: string
+    bio: string | null
+    experience: string | null
+    skills: string[]
+    serviceAreas: string[]
+    avatarUrl: string | null
+    verified: boolean
+    averageRating: number | null
+    completedJobsCount: number
+    portfolioUrls: string[]
+    technicianServiceAreas: Array<{
+      active: boolean
+      label: string | null
+      city: string | null
+      suburbKey: string | null
+      regionKey: string | null
+      locationNodeId: string | null
+    }>
+    providerRates: Array<{
+      callOutFee: unknown
+      hourlyRate: unknown
+      rateNegotiable: boolean
+    }>
+  }
+}
+
 function isProviderDisplayEligible(provider: {
   active: boolean
   status: string
@@ -127,6 +180,108 @@ function toLabourRateText(callOutFee: number | null, hourlyRate: number | null, 
   if (callOutFee != null) return `call-out from R${Math.round(callOutFee)}`
   if (negotiable) return 'rate negotiable'
   return null
+}
+
+async function resolveUsableReviewDecisionId(params: {
+  requestId: string
+  latestDispatchDecisionId?: string | null
+}) {
+  let decisionId = params.latestDispatchDecisionId ?? null
+  if (decisionId) {
+    const latestDecision = await db.dispatchDecision.findUnique({
+      where: { id: decisionId },
+      select: { id: true, mode: true, status: true },
+    })
+    const hasUsableCachedDecision =
+      latestDecision?.mode === 'OPS_REVIEW' && (latestDecision.status === 'RANKED' || latestDecision.status === 'NO_MATCH')
+
+    if (!hasUsableCachedDecision) {
+      const fallbackDecision = await db.dispatchDecision.findFirst({
+        where: { jobRequestId: params.requestId, mode: 'OPS_REVIEW', status: { in: ['RANKED', 'NO_MATCH'] } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      })
+      decisionId = fallbackDecision?.id ?? null
+    }
+  }
+
+  if (!decisionId) {
+    const fallbackDecision = await db.dispatchDecision.findFirst({
+      where: { jobRequestId: params.requestId, mode: 'OPS_REVIEW', status: { in: ['RANKED', 'NO_MATCH'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    })
+    decisionId = fallbackDecision?.id ?? null
+  }
+
+  return decisionId
+}
+
+async function loadRankedDisplayAttempts(decisionId: string): Promise<ReviewDisplayAttempt[]> {
+  return db.matchAttempt.findMany({
+    where: { dispatchDecisionId: decisionId, stage: 'RANKED' },
+    orderBy: [{ rankedPosition: 'asc' }, { createdAt: 'asc' }],
+    include: {
+      provider: {
+        select: {
+          id: true,
+          active: true,
+          status: true,
+          availableNow: true,
+          name: true,
+          bio: true,
+          experience: true,
+          skills: true,
+          serviceAreas: true,
+          avatarUrl: true,
+          verified: true,
+          averageRating: true,
+          completedJobsCount: true,
+          portfolioUrls: true,
+          technicianServiceAreas: {
+            where: { active: true },
+            select: {
+              active: true,
+              label: true,
+              city: true,
+              suburbKey: true,
+              regionKey: true,
+              locationNodeId: true,
+            },
+          },
+          providerRates: {
+            orderBy: { updatedAt: 'desc' },
+            take: 1,
+            select: {
+              callOutFee: true,
+              hourlyRate: true,
+              rateNegotiable: true,
+            },
+          },
+        },
+      },
+    },
+  }) as Promise<ReviewDisplayAttempt[]>
+}
+
+function filterDisplayableReviewAttempts(
+  rankedAttempts: ReviewDisplayAttempt[],
+  request: ReviewDisplayRequest,
+) {
+  const normalizedRequestCategory = normalize(request.category)
+  const engagedProviderIds = new Set(
+    request.leads
+      .filter((lead) => lead.status === 'SHORTLISTED' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'INTERESTED')
+      .map((lead) => lead.providerId),
+  )
+
+  return rankedAttempts.filter((attempt) => {
+    if (engagedProviderIds.has(attempt.providerId)) return false
+    if (!isProviderDisplayEligible(attempt.provider)) return false
+    if (!providerCoversRequestArea(attempt.provider, { address: request.address })) return false
+    if (!attempt.provider.skills.map((skill) => normalize(skill)).includes(normalizedRequestCategory)) return false
+    return true
+  })
 }
 
 export async function getMatchedProvidersForCustomerRequest(params: {
@@ -208,103 +363,22 @@ export async function getMatchedProvidersForCustomerRequest(params: {
     throw new ReviewFirstError('REQUEST_MISSING_LOCATION', 'Request is missing location details.')
   }
 
-  const normalizedRequestCategory = normalize(request.category)
-
-  let decisionId = request.latestDispatchDecisionId
-  if (decisionId) {
-    const latestDecision = await db.dispatchDecision.findUnique({
-      where: { id: decisionId },
-      select: { id: true, mode: true, status: true },
-    })
-    const hasUsableCachedDecision =
-      latestDecision?.mode === 'OPS_REVIEW' && (latestDecision.status === 'RANKED' || latestDecision.status === 'NO_MATCH')
-
-    if (!hasUsableCachedDecision) {
-      const fallbackDecision = await db.dispatchDecision.findFirst({
-        where: { jobRequestId: request.id, mode: 'OPS_REVIEW', status: { in: ['RANKED', 'NO_MATCH'] } },
-        orderBy: { createdAt: 'desc' },
-        select: { id: true },
-      })
-      decisionId = fallbackDecision?.id ?? null
-    }
-  }
+  const decisionId = await resolveUsableReviewDecisionId({
+    requestId: request.id,
+    latestDispatchDecisionId: request.latestDispatchDecisionId,
+  })
 
   if (!decisionId) {
-    decisionId = await ensureReviewRankingDecision({ requestId: request.id })
+    console.info('[review-first.matches] not_ready', {
+      requestId: params.requestId,
+      customerId: params.customerId,
+      batch,
+    })
+    throw new ReviewFirstError('MATCHES_NOT_READY', 'Provider options are not ready yet.')
   }
 
-  const rankedAttempts = await db.matchAttempt.findMany({
-    where: { dispatchDecisionId: decisionId, stage: 'RANKED' },
-    orderBy: [{ rankedPosition: 'asc' }, { createdAt: 'asc' }],
-    include: {
-      provider: {
-        select: {
-          id: true,
-          active: true,
-          status: true,
-          availableNow: true,
-          name: true,
-          bio: true,
-          experience: true,
-          skills: true,
-          serviceAreas: true,
-          avatarUrl: true,
-          verified: true,
-          averageRating: true,
-          completedJobsCount: true,
-          portfolioUrls: true,
-          technicianServiceAreas: {
-            where: { active: true },
-            select: {
-              active: true,
-              label: true,
-              city: true,
-              suburbKey: true,
-              regionKey: true,
-              locationNodeId: true,
-            },
-          },
-          providerRates: {
-            orderBy: { updatedAt: 'desc' },
-            take: 1,
-            select: {
-              callOutFee: true,
-              hourlyRate: true,
-              rateNegotiable: true,
-            },
-          },
-        },
-      },
-    },
-  })
-
-  const engagedProviderIds = new Set(
-    request.leads
-      .filter((lead) => lead.status === 'SHORTLISTED' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'INTERESTED')
-      .map((lead) => lead.providerId),
-  )
-
-  const eligibleAttempts = rankedAttempts.filter((attempt) => {
-    if (engagedProviderIds.has(attempt.providerId)) return false
-
-    // Exclude providers that no longer satisfy eligibility checks used by
-    // Review-first visibility rules before returning results to the customer.
-    if (!isProviderDisplayEligible(attempt.provider)) return false
-
-    // Enforce area-match defensively at read time in case cached ranking data
-    // drifted or was produced before recent policy changes.
-    if (!providerCoversRequestArea(attempt.provider, { address: request.address })) {
-      return false
-    }
-
-    // Protect against stale ranking rows where request category and provider
-    // skills drift out of sync with current matching policy.
-    if (!attempt.provider.skills.map((skill) => normalize(skill)).includes(normalizedRequestCategory)) {
-      return false
-    }
-
-    return true
-  })
+  const rankedAttempts = await loadRankedDisplayAttempts(decisionId)
+  const eligibleAttempts = filterDisplayableReviewAttempts(rankedAttempts, request)
 
   const offset = (batch - 1) * PROVIDERS_PER_BATCH
   const selected = eligibleAttempts.slice(offset, offset + PROVIDERS_PER_BATCH)
@@ -462,7 +536,7 @@ function providerCoversRequestArea(
  * - MATCHES_FOUND    => JobRequest.SHORTLIST_READY
  *
  * Auth: this function performs DB writes without an ownership check. It is intentionally
- * a system-level service callable only from trusted internal paths (ensureReviewRankingDecision,
+ * a system-level service callable only from trusted internal paths (matching-mode selection,
  * admin actions, background jobs). Never expose it directly to unauthenticated API routes.
  * Customer-facing callers must validate ownership before invoking this.
  */
@@ -562,22 +636,54 @@ export async function matchEligibleProvidersForServiceRequest(params: {
     const cachedAttempts = await db.matchAttempt.findMany({
       where: { dispatchDecisionId: resolvedDecision.id, stage: 'RANKED' },
       orderBy: [{ rankedPosition: 'asc' }, { createdAt: 'asc' }],
-      take: limit,
       include: {
         provider: {
           select: {
             id: true,
+            active: true,
+            status: true,
+            availableNow: true,
             name: true,
             bio: true,
+            experience: true,
             avatarUrl: true,
+            verified: true,
+            averageRating: true,
+            completedJobsCount: true,
+            portfolioUrls: true,
             skills: true,
             serviceAreas: true,
+            technicianServiceAreas: {
+              where: { active: true },
+              select: {
+                active: true,
+                label: true,
+                city: true,
+                suburbKey: true,
+                regionKey: true,
+                locationNodeId: true,
+              },
+            },
+            providerRates: {
+              orderBy: { updatedAt: 'desc' },
+              take: 1,
+              select: {
+                callOutFee: true,
+                hourlyRate: true,
+                rateNegotiable: true,
+              },
+            },
           },
         },
       },
     })
 
-    const cachedProviders: Mvp1MatchProvider[] = cachedAttempts.map((attempt, index) => ({
+    const displayableCachedAttempts = filterDisplayableReviewAttempts(
+      cachedAttempts as ReviewDisplayAttempt[],
+      { ...request, leads: [] },
+    ).slice(0, limit)
+
+    const cachedProviders: Mvp1MatchProvider[] = displayableCachedAttempts.map((attempt, index) => ({
       providerId: attempt.provider.id,
       name: attempt.provider.name,
       bio: attempt.provider.bio,
@@ -778,8 +884,9 @@ export async function matchEligibleProvidersForServiceRequest(params: {
   }
 }
 
-async function ensureReviewRankingDecision(params: {
+export async function getReviewFirstDisplayableCandidateCount(params: {
   requestId: string
+  decisionId?: string | null
 }) {
   const request = await db.jobRequest.findUnique({
     where: { id: params.requestId },
@@ -789,25 +896,49 @@ async function ensureReviewRankingDecision(params: {
       category: true,
       assignmentMode: true,
       latestDispatchDecisionId: true,
+      address: {
+        select: {
+          suburb: true,
+          city: true,
+          region: true,
+          locationNodeId: true,
+          locationNode: { select: { regionKey: true } },
+        },
+      },
+      leads: { select: { providerId: true, status: true } },
     },
   })
-  if (!request) throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
-  const matchResult = await matchEligibleProvidersForServiceRequest({
-    serviceRequestId: request.id,
-    limit: MVP1_MATCH_RESULT_LIMIT,
-  })
+  if (!request) {
+    throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
+  }
 
-  console.info('[review-first.decisions] ensured', {
+  const decisionId = params.decisionId ?? (await resolveUsableReviewDecisionId({
     requestId: request.id,
-    decisionId: matchResult.decisionId,
-    status: matchResult.status,
-    matchedProviders: matchResult.providers.length,
-    wasCached: matchResult.wasCached,
+    latestDispatchDecisionId: request.latestDispatchDecisionId,
+  }))
+
+  if (!decisionId) {
+    console.info('[review-first.matches] displayable_count_not_ready', {
+      requestId: request.id,
+      requestStatus: request.status,
+      assignmentMode: request.assignmentMode,
+    })
+    return 0
+  }
+
+  const rankedAttempts = await loadRankedDisplayAttempts(decisionId)
+  const eligibleAttempts = filterDisplayableReviewAttempts(rankedAttempts, request)
+
+  console.info('[review-first.matches] displayable_count', {
+    requestId: request.id,
+    decisionId,
+    rankedCount: rankedAttempts.length,
+    displayableCount: eligibleAttempts.length,
     assignmentMode: request.assignmentMode,
     requestStatus: request.status,
   })
 
-  return matchResult.decisionId
+  return eligibleAttempts.length
 }
 
 export async function getProviderCandidatesForCustomerReview(params: {
