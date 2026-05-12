@@ -14,18 +14,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ArrowLeft } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import {
-  blockCustomerFromFormAction,
-  addCustomerNoteFromFormAction,
-  archiveCustomerFromFormAction,
-  clearCustomerSuspensionFromFormAction,
-  deactivateCustomerFromFormAction,
-  mergeCustomerFromFormAction,
-  purgeCustomerFromFormAction,
-  suspendCustomerFromFormAction,
-  updateCustomerFromFormAction,
-} from '../actions'
 import {
   Table,
   TableBody,
@@ -34,21 +22,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ActionForm } from '@/components/admin/ui/ActionForm'
+import { SubmitButton } from '@/components/admin/ui/SubmitButton'
+import { CustomerActionsPanel, WhatsAppMarketingToggle } from './_components/CustomerActionsPanel'
+import {
+  updateCustomerFromFormAction,
+  addCustomerNoteFromFormAction,
+} from './actions'
 
 export const metadata = buildMetadata({ title: 'Customer', noIndex: true })
-
-async function adminToggleMarketing(customerId: string, phone: string, value: boolean) {
-  'use server'
-  const admin = await requireAdmin()
-  const { applyOptIn, applyOptOut } = await import('@/lib/whatsapp-policy')
-  if (value) {
-    await applyOptIn(phone, 'admin', { actorId: admin.id, note: 'Admin override from customer detail' })
-  } else {
-    await applyOptOut(phone, 'admin', { actorId: admin.id, note: 'Admin override from customer detail' })
-  }
-  const { redirect } = await import('next/navigation')
-  redirect(`/admin/customers/${customerId}`)
-}
 
 export default async function CustomerDetailPage({
   params,
@@ -146,51 +128,6 @@ export default async function CustomerDetailPage({
   const channel = customer.userId ? 'PWA + WhatsApp' : 'WhatsApp only'
   const isSuspended = Boolean(customer.suspendedUntil && customer.suspendedUntil > new Date())
 
-  async function submitBlockCustomer(formData: FormData) {
-    'use server'
-    await blockCustomerFromFormAction(formData)
-  }
-
-  async function submitDeactivateCustomer(formData: FormData) {
-    'use server'
-    await deactivateCustomerFromFormAction(formData)
-  }
-
-  async function submitAddCustomerNote(formData: FormData) {
-    'use server'
-    await addCustomerNoteFromFormAction(formData)
-  }
-
-  async function submitUpdateCustomer(formData: FormData) {
-    'use server'
-    await updateCustomerFromFormAction(formData)
-  }
-
-  async function submitSuspendCustomer(formData: FormData) {
-    'use server'
-    await suspendCustomerFromFormAction(formData)
-  }
-
-  async function submitClearCustomerSuspension(formData: FormData) {
-    'use server'
-    await clearCustomerSuspensionFromFormAction(formData)
-  }
-
-  async function submitArchiveCustomer(formData: FormData) {
-    'use server'
-    await archiveCustomerFromFormAction(formData)
-  }
-
-  async function submitMergeCustomer(formData: FormData) {
-    'use server'
-    await mergeCustomerFromFormAction(formData)
-  }
-
-  async function submitPurgeCustomer(formData: FormData) {
-    'use server'
-    await purgeCustomerFromFormAction(formData)
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -248,132 +185,19 @@ export default async function CustomerDetailPage({
 
       {/* ── Admin actions ───────────────────────────────────────────────────── */}
       {crudEnabled && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Account Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm">
-            {/* Block / Unblock */}
-            <div className="flex flex-wrap items-start gap-3">
-              {customer.isBlocked ? (
-                <form
-                  action={async () => {
-                    'use server'
-                    const { unblockCustomerAction } = await import('../actions')
-                    await unblockCustomerAction(id)
-                  }}
-                >
-                  <Button type="submit" variant="outline" size="sm">
-                    Unblock customer
-                  </Button>
-                </form>
-              ) : (
-                <form action={submitBlockCustomer} className="flex gap-2 items-center">
-                  <input type="hidden" name="customerId" value={id} />
-                  <input
-                    name="reason"
-                    required
-                    placeholder="Reason for blocking…"
-                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-60"
-                  />
-                  <Button type="submit" variant="destructive" size="sm">
-                    Block
-                  </Button>
-                </form>
-              )}
-
-              {isSuspended ? (
-                <form action={submitClearCustomerSuspension}>
-                  <input type="hidden" name="customerId" value={id} />
-                  <Button type="submit" variant="outline" size="sm">
-                    Clear suspension
-                  </Button>
-                </form>
-              ) : (
-                <form action={submitSuspendCustomer} className="flex gap-2 items-center">
-                  <input type="hidden" name="customerId" value={id} />
-                  <input
-                    type="datetime-local"
-                    name="until"
-                    required
-                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  <input
-                    name="reason"
-                    required
-                    placeholder="Suspension reason…"
-                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-60"
-                  />
-                  <Button type="submit" variant="outline" size="sm">
-                    Suspend
-                  </Button>
-                </form>
-              )}
-
-              {customer.active && (
-                <form action={submitDeactivateCustomer} className="flex gap-2 items-center">
-                  <input type="hidden" name="customerId" value={id} />
-                  <input
-                    name="reason"
-                    required
-                    placeholder="Reason for deactivation…"
-                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-60"
-                  />
-                  <Button type="submit" variant="outline" size="sm" className="text-destructive border-destructive hover:bg-destructive/10">
-                    Deactivate
-                  </Button>
-                </form>
-              )}
-
-              {admin.adminRole === 'ADMIN' || admin.adminRole === 'OWNER' ? (
-                <form action={submitArchiveCustomer} className="flex gap-2 items-center">
-                  <input type="hidden" name="customerId" value={id} />
-                  <input
-                    name="reason"
-                    required
-                    placeholder="Archive reason…"
-                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-60"
-                  />
-                  <Button type="submit" variant="outline" size="sm">
-                    Archive
-                  </Button>
-                </form>
-              ) : null}
-
-              {admin.adminRole === 'OWNER' ? (
-                <form action={submitMergeCustomer} className="flex gap-2 items-center">
-                  <input type="hidden" name="sourceCustomerId" value={id} />
-                  <input
-                    name="targetCustomerId"
-                    required
-                    placeholder="Target customer ID…"
-                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-48"
-                  />
-                  <input
-                    name="reason"
-                    required
-                    placeholder="Merge reason…"
-                    className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-52"
-                  />
-                  <Button type="submit" variant="outline" size="sm">
-                    Merge
-                  </Button>
-                </form>
-              ) : null}
-
-              {admin.adminRole === 'OWNER' && customer.archivedAt && customer.purgeAfter && customer.purgeAfter <= new Date() ? (
-                <form action={submitPurgeCustomer}>
-                  <input type="hidden" name="customerId" value={id} />
-                  <Button type="submit" variant="destructive" size="sm">
-                    Purge
-                  </Button>
-                </form>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
+        <CustomerActionsPanel
+          customerId={customer.id}
+          customerPhone={customer.phone}
+          customerName={customer.name}
+          isBlocked={customer.isBlocked}
+          active={customer.active}
+          isSuspended={isSuspended}
+          archivedAt={customer.archivedAt ?? null}
+          purgeAfter={customer.purgeAfter ?? null}
+          mergedIntoCustomerId={customer.mergedIntoCustomerId ?? null}
+          whatsappMarketingOptIn={customer.whatsappMarketingOptIn}
+          adminRole={admin.adminRole}
+        />
       )}
 
       {crudEnabled && (
@@ -384,7 +208,12 @@ export default async function CustomerDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form action={submitUpdateCustomer} className="grid gap-4 md:grid-cols-2">
+            <ActionForm
+              action={updateCustomerFromFormAction}
+              successMessage="Profile updated"
+              refreshOnSuccess
+              className="grid gap-4 md:grid-cols-2"
+            >
               <input type="hidden" name="customerId" value={id} />
               <label className="grid gap-2 text-sm">
                 <span className="font-medium">Name</span>
@@ -436,11 +265,11 @@ export default async function CustomerDetailPage({
                 />
               </label>
               <div className="md:col-span-2">
-                <Button type="submit" variant="outline" size="sm">
+                <SubmitButton variant="outline" size="sm" pendingLabel="Saving…">
                   Save profile changes
-                </Button>
+                </SubmitButton>
               </div>
-            </form>
+            </ActionForm>
           </CardContent>
         </Card>
       )}
@@ -466,7 +295,13 @@ export default async function CustomerDetailPage({
             </div>
           ))}
           {crudEnabled && (
-            <form action={submitAddCustomerNote} className="flex gap-2 pt-2 border-t">
+            <ActionForm
+              action={addCustomerNoteFromFormAction}
+              successMessage="Note added"
+              resetOnSuccess
+              refreshOnSuccess
+              className="flex gap-2 pt-2 border-t"
+            >
               <input type="hidden" name="customerId" value={id} />
               <input
                 name="body"
@@ -474,8 +309,8 @@ export default async function CustomerDetailPage({
                 placeholder="Add a note…"
                 className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring flex-1"
               />
-              <Button type="submit" variant="outline" size="sm">Add</Button>
-            </form>
+              <SubmitButton variant="outline" size="sm" pendingLabel="Adding…">Add</SubmitButton>
+            </ActionForm>
           )}
         </CardContent>
       </Card>
@@ -605,19 +440,14 @@ export default async function CustomerDetailPage({
             <Row label="Last source">{customer.whatsappMarketingSource}</Row>
           )}
 
-          {/* Admin override form */}
-          <div className="pt-2 border-t">
-            <form
-              action={adminToggleMarketing.bind(null, customer.id, customer.phone, !customer.whatsappMarketingOptIn)}
-            >
-              <button
-                type="submit"
-                className="text-xs text-muted-foreground hover:text-foreground underline"
-              >
-                {customer.whatsappMarketingOptIn ? 'Opt out (admin override)' : 'Opt in (admin override)'}
-              </button>
-            </form>
-          </div>
+          {crudEnabled && (
+            <div className="pt-2 border-t">
+              <WhatsAppMarketingToggle
+                customerId={customer.id}
+                whatsappMarketingOptIn={customer.whatsappMarketingOptIn}
+              />
+            </div>
+          )}
 
           {/* Audit log */}
           {customer.whatsappPreferenceLogs.length > 0 && (
