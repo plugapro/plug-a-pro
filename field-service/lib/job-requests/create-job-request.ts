@@ -396,6 +396,16 @@ export async function createJobRequest(
   openCase({ queueType: 'DISPATCH', entityType: 'JOB_REQUEST', entityId: result.jobRequestId })
     .catch((err) => console.error('[create-job-request] openCase failed:', err))
 
+  console.info('[create-job-request] request submitted', {
+    jobRequestId: result.jobRequestId,
+    requestRef: result.requestRef,
+    source: params.source ?? null,
+    category: params.category,
+    status: params.deferMatchingModeSelection ? 'PENDING_VALIDATION' : 'OPEN',
+    assignmentMode: initialAssignmentMode,
+    matchingDeferred: Boolean(params.deferMatchingModeSelection),
+  })
+
   // Trigger matching via after() so Vercel keeps the function alive until matching completes.
   // after() runs post-response, preventing the Vercel cold-start timeout from killing the match.
   // If after() is unavailable (e.g. called from inside another after() callback such as the

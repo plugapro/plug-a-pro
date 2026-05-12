@@ -65,6 +65,12 @@ describe('deliverOtp', () => {
     expect(sendArg.allowTestCohortOverride).toBe(true)
     expect(sendArg.components).toEqual([
       { type: 'body', parameters: [{ type: 'text', text: TEST_OTP }] },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: 0,
+        parameters: [{ type: 'text', text: TEST_OTP }],
+      },
     ])
 
     expect(db.otpDeliveryAttempt.create).toHaveBeenCalledTimes(1)

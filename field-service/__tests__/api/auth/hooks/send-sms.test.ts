@@ -165,6 +165,12 @@ describe('POST /api/auth/hooks/send-sms', () => {
     expect(sendArg.template).toBe('otp_login')
     expect(sendArg.components).toEqual([
       { type: 'body', parameters: [{ type: 'text', text: TEST_OTP }] },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: 0,
+        parameters: [{ type: 'text', text: TEST_OTP }],
+      },
     ])
 
     for (const spy of [consoleSpies.info, consoleSpies.warn, consoleSpies.error]) {

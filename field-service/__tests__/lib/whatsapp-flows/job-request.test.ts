@@ -27,6 +27,7 @@ vi.mock('@/lib/db', () => {
     },
     jobRequest: {
       findFirst: vi.fn().mockResolvedValue(null), // default: no existing active request
+      findUnique: vi.fn().mockResolvedValue(null),
       update: vi.fn().mockResolvedValue({}),
     },
     attachment: {
@@ -482,6 +483,7 @@ describe('WhatsApp job-request flow — structured address', () => {
       ;(structuredAddress.resolveStructuredAddressCapture as any).mockResolvedValue(resolvedAddr)
       ;(createJobRequestModule.createJobRequest as any).mockResolvedValue({
         jobRequestId: 'jr_test123456',
+        requestRef: 'PAP-TEST123',
         customerId: 'cust_001',
         ticketUrl: null,
       })
@@ -500,8 +502,8 @@ describe('WhatsApp job-request flow — structured address', () => {
 
       expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
         expect.objectContaining({
-          assignmentMode: 'AUTO_ASSIGN',
-          deferMatchingModeSelection: false,
+          assignmentMode: 'OPS_REVIEW',
+          deferMatchingModeSelection: true,
           street: '14 Main Road',
           addressLine1: '14 Main Road',
           suburb: 'Sandton',
@@ -1101,21 +1103,33 @@ describe('WhatsApp job-request flow — structured address', () => {
       )
     })
 
-    it('mentions provider-searching status line for OPEN status', async () => {
+    it('prompts matching mode choice for duplicate OPEN request with no outreach', async () => {
       ;(createJobRequestModule.createJobRequest as any).mockRejectedValue(
         new createJobRequestModule.DuplicateActiveRequestError(
           'jr_abc12345', 'cust_001', 'OPEN', ''
         )
       )
+      ;(db.jobRequest.findUnique as any).mockResolvedValueOnce({
+        id: 'jr_abc12345',
+        status: 'OPEN',
+        assignmentMode: 'AUTO_ASSIGN',
+        latestDispatchDecisionId: null,
+        leads: [],
+      })
 
       await handleJobRequestFlow(
         makeCtx('job_request_submitted', 'confirm_yes', undefined, structuredData)
       )
 
-      expect(wa.sendText).toHaveBeenCalledWith(
+      expect(wa.sendButtons).toHaveBeenCalledWith(
         PHONE,
-        expect.stringContaining('still searching')
+        expect.stringContaining('Please choose how you would like to find a provider'),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'status_mode_quick_jr_abc12345' }),
+          expect.objectContaining({ id: 'status_mode_review_jr_abc12345' }),
+        ]),
       )
+      expect(wa.sendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('still searching'))
     })
 
     it('mentions providers-notified status line for MATCHING status', async () => {

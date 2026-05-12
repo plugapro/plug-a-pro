@@ -612,6 +612,27 @@ async function showRequestStatus(
       return { nextStep: 'done' }
     }
 
+    const legacyOpenWithoutOutreach =
+      requestStatus === 'OPEN' &&
+      jr.assignmentMode === 'AUTO_ASSIGN' &&
+      leadSummary.total === 0 &&
+      !latestDispatchStatus
+
+    if (legacyOpenWithoutOutreach) {
+      log(`legacy OPEN request has no outreach; prompting matching mode choice requestId=${jr.id}`)
+      await sendButtons(
+        phone,
+        `📋 *Request ${requestReference(jr)}*\n\nYour ${jr.category} request is saved.\n\nPlease choose how you would like to find a provider.`,
+        [
+          { id: `status_mode_quick_${jr.id}`, title: 'Quick Match' },
+          { id: `status_mode_review_${jr.id}`, title: 'Review Providers' },
+          { id: 'start_cancel', title: 'Cancel request' },
+        ],
+        { footer: 'Reply "menu" to return to the main menu' },
+      )
+      return { nextStep: 'done' }
+    }
+
     const reviewFirstOptionsReady =
       requestStatus === 'PENDING_VALIDATION' &&
       jr.assignmentMode === 'OPS_REVIEW' &&

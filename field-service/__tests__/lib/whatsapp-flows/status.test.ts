@@ -192,8 +192,8 @@ describe('handleStatusFlow — single active request (no job)', () => {
     )
   })
 
-  it('shows explicit pending matching copy when lead summary is empty', async () => {
-    const jr = makeJobRequest()
+  it('prompts matching-mode choice for OPEN legacy request with no outreach', async () => {
+    const jr = makeJobRequest({ assignmentMode: 'AUTO_ASSIGN' })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
@@ -201,9 +201,36 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     const result = await handleStatusFlow(makeCtx())
 
+    expect(wa.sendButtons).toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('Please choose how you would like to find a provider'),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'status_mode_quick_jr_abc123' }),
+        expect.objectContaining({ id: 'status_mode_review_jr_abc123' }),
+      ]),
+      expect.any(Object),
+    )
+    expect(wa.sendCtaUrl).not.toHaveBeenCalledWith(
+      PHONE,
+      expect.stringContaining('checking with suitable providers one at a time'),
+      expect.any(String),
+      expect.any(String),
+    )
+    expect(result.nextStep).toBe('done')
+  })
+
+  it('shows Quick Match progress only when provider outreach exists', async () => {
+    const jr = makeJobRequest()
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
+    vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
+    vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
+    vi.mocked(db.lead.findMany).mockResolvedValue([{ status: 'SENT' }] as never)
+
+    const result = await handleStatusFlow(makeCtx())
+
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining("checking with suitable providers one at a time"),
+      expect.stringContaining('A provider is reviewing your request now'),
       'Refresh status',
       `${APP_URL}/requests/access/jr_abc123`
     )
@@ -227,8 +254,8 @@ describe('handleStatusFlow — single active request (no job)', () => {
     )
   })
 
-  it('falls back to request-level waiting state if lead summary lookup fails', async () => {
-    const jr = makeJobRequest({ status: 'OPEN' })
+  it('falls back to matching-mode choice if lead summary lookup fails before outreach exists', async () => {
+    const jr = makeJobRequest({ status: 'OPEN', assignmentMode: 'AUTO_ASSIGN' })
     vi.mocked(db.customer.findUnique).mockResolvedValue({ id: 'cust_1', phone: PHONE } as never)
     vi.mocked(db.jobRequest.findMany).mockResolvedValue([jr] as never)
     vi.mocked(db.jobRequest.findUnique).mockResolvedValue(jr as never)
@@ -236,11 +263,11 @@ describe('handleStatusFlow — single active request (no job)', () => {
 
     const result = await handleStatusFlow(makeCtx())
 
-    expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+    expect(wa.sendButtons).toHaveBeenCalledWith(
       PHONE,
-      expect.stringContaining("checking with suitable providers one at a time"),
-      'Refresh status',
-      `${APP_URL}/requests/access/jr_abc123`
+      expect.stringContaining('Please choose how you would like to find a provider'),
+      expect.any(Array),
+      expect.any(Object),
     )
     expect(result.nextStep).toBe('done')
   })

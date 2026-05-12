@@ -1040,6 +1040,41 @@ function buildDescription(issueDescription?: string, availabilityNote?: string):
   return parts.join('\n\n')
 }
 
+async function loadDuplicateRequestMatchingContext(requestId: string) {
+  return db.jobRequest.findUnique({
+    where: { id: requestId },
+    select: {
+      id: true,
+      status: true,
+      assignmentMode: true,
+      latestDispatchDecisionId: true,
+      leads: { select: { id: true }, take: 1 },
+    },
+  }).catch((error) => {
+    console.warn('[job-request-flow] duplicate request context lookup failed', {
+      requestId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  })
+}
+
+function duplicateRequestNeedsMatchingChoice(params: {
+  status: string
+  assignmentMode?: string | null
+  latestDispatchDecisionId?: string | null
+  leadCount: number
+}) {
+  if (params.status === 'PENDING_VALIDATION') return true
+  if (
+    params.status === 'OPEN' &&
+    params.assignmentMode === 'AUTO_ASSIGN' &&
+    params.leadCount === 0 &&
+    !params.latestDispatchDecisionId
+  ) return true
+  return false
+}
+
 // ─── Issue description capture ────────────────────────────────────────────────
 
 /**
@@ -1498,8 +1533,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         source: 'whatsapp',
-        assignmentMode: 'AUTO_ASSIGN',
-        deferMatchingModeSelection: false,
+        assignmentMode: 'OPS_REVIEW',
+        deferMatchingModeSelection: true,
         urgency: ctx.data.urgency ?? null,
         budgetPreference: ctx.data.budgetPreference ?? null,
         providerPreference: ctx.data.providerPreference ?? null,
@@ -1528,8 +1563,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         customerName: ctx.data.customerName ?? 'WhatsApp Customer',
         category,
         source: 'whatsapp',
-        assignmentMode: 'AUTO_ASSIGN',
-        deferMatchingModeSelection: false,
+        assignmentMode: 'OPS_REVIEW',
+        deferMatchingModeSelection: true,
         urgency: ctx.data.urgency ?? null,
         budgetPreference: ctx.data.budgetPreference ?? null,
         providerPreference: ctx.data.providerPreference ?? null,
@@ -1551,8 +1586,8 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       : ''
 
     const successMessage =
-      `🎉 *Request submitted!*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.requestRef}*${photoNote}\n\n` +
-      `Choose how you'd like to find a provider next:\n` +
+      `✅ *Request submitted.*\n\n🔧 ${ctx.data.selectedCategory}\nRef: *${result.requestRef}*${photoNote}\n\n` +
+      `How would you like to find a provider?\n\n` +
       `• Quick Match — we contact one suitable provider at a time.\n` +
       `• Review Providers First — compare providers before sending.\n\n` +
       `Tap a button below to choose your matching mode now. Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.` +
@@ -1605,8 +1640,17 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
     // ── Duplicate active request ───────────────────────────────────────────────
     if (err instanceof DuplicateActiveRequestError) {
       const ref = err.existingId.slice(-8).toUpperCase()
+      const existingContext = await loadDuplicateRequestMatchingContext(err.existingId)
+      const needsMatchingChoice = duplicateRequestNeedsMatchingChoice({
+        status: existingContext?.status ?? err.existingStatus,
+        assignmentMode: existingContext?.assignmentMode ?? null,
+        latestDispatchDecisionId: existingContext?.latestDispatchDecisionId ?? null,
+        leadCount: existingContext?.leads.length ?? 0,
+      })
       const statusLine =
-        err.existingStatus === 'MATCHING'
+        needsMatchingChoice
+          ? 'Your request is saved. Please choose how you would like to find a provider.'
+          : err.existingStatus === 'MATCHING'
           ? "We've notified nearby providers and are waiting for one to accept."
           : "We're still searching for a suitable provider in your area."
 
@@ -1619,10 +1663,29 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
         }).catch((e) => console.error('[job-request-flow] dedup description patch failed:', e))
       }
 
-      await sendText(
-        ctx.phone,
-        `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`,
-      )
+      if (needsMatchingChoice) {
+        console.info('[job-request-flow] duplicate active request needs matching choice', {
+          requestId: err.existingId,
+          requestRef: ref,
+          status: existingContext?.status ?? err.existingStatus,
+          assignmentMode: existingContext?.assignmentMode ?? null,
+          leadCount: existingContext?.leads.length ?? 0,
+        })
+        await sendButtons(
+          ctx.phone,
+          `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}`,
+          [
+            { id: `status_mode_quick_${err.existingId}`, title: 'Quick Match' },
+            { id: `status_mode_review_${err.existingId}`, title: 'Review Providers' },
+            { id: 'start_cancel', title: 'Cancel request' },
+          ],
+        )
+      } else {
+        await sendText(
+          ctx.phone,
+          `ℹ️ *You have an active ${ctx.data.selectedCategory ?? ctx.data.category ?? 'service'} request.*\n\nRef: *${ref}*\n\n${statusLine}\n\nYou'll receive a WhatsApp notification as soon as a provider is confirmed.\n\nReply *Hi* to check status, or *Cancel* if you'd like to start a fresh request. 👍`,
+        )
+      }
       return { nextStep: 'done', nextData: { jobRequestId: err.existingId, customerId: err.customerId } }
     }
 
