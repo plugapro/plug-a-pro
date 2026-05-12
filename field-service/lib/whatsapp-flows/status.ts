@@ -208,7 +208,10 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
         }
         throw error
       }
-      return showRequestStatus(ctx.phone, matchingModeReply.requestId, reqId, customer.id)
+      // The mode selection path already sends a targeted WhatsApp message, so
+      // we avoid an immediate secondary status render that can emit conflicting
+      // ready/failure messaging in the same conversation turn.
+      return { nextStep: 'done' }
     }
 
     if (ctx.step === 'status_show' && conversationPinnedRequestId) {

@@ -354,6 +354,8 @@ describe('handleStatusFlow — single active request (no job)', () => {
       customerId: 'cust_1',
       mode: 'quick_match',
     })
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+    expect(wa.sendCtaUrl).not.toHaveBeenCalled()
     expect(result.nextStep).toBe('done')
   })
 
@@ -374,6 +376,8 @@ describe('handleStatusFlow — single active request (no job)', () => {
       customerId: 'cust_1',
       mode: 'review_first',
     })
+    expect(wa.sendButtons).not.toHaveBeenCalled()
+    expect(wa.sendCtaUrl).not.toHaveBeenCalled()
     expect(result.nextStep).toBe('done')
   })
 
