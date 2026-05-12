@@ -23,6 +23,7 @@ export const AUDIT_ENTITY = {
   FEATURE_FLAG: 'FeatureFlag',
   CASE: 'Case',
   CASE_NOTE: 'CaseNote',
+  INVOICE: 'Invoice',
 } as const
 
 export type AuditEntityType = (typeof AUDIT_ENTITY)[keyof typeof AUDIT_ENTITY]

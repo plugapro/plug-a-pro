@@ -15,12 +15,14 @@ import {
 import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { getPaymentAdminMessage } from '@/lib/admin-action-messages'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
-import { issueRefundAction, claimPaymentAction, releasePaymentAction } from './actions'
+import { claimPaymentAction, releasePaymentAction } from './actions'
+import { ReconcilePaymentButton } from './_components/ReconcilePaymentButton'
+import { WriteOffPaymentButton } from './_components/WriteOffPaymentButton'
+import { RefundPaymentButton } from './_components/RefundPaymentButton'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
@@ -248,29 +250,26 @@ export default async function PaymentsPage({
                         </form>
                       )}
                       {p.status === 'PAID' && (
-                        <form action={issueRefundAction} className="flex items-center gap-1">
-                          <input type="hidden" name="paymentId" value={p.id} />
-                          <Input
-                            type="number"
-                            name="amount"
-                            min="0.01"
-                            max={Number(p.amount)}
-                            step="0.01"
-                            defaultValue={Number(p.amount)}
-                            className="h-8 w-24 rounded-lg text-xs"
-                          />
-                          <Button
-                            type="submit"
-                            variant="outline"
-                            size="sm"
-                            disabled={!crudEnabled}
-                            onClick={(e) => {
-                              if (!confirm('Issue refund for this payment?')) e.preventDefault()
-                            }}
-                          >
-                            Refund
-                          </Button>
-                        </form>
+                        <RefundPaymentButton
+                          paymentId={p.id}
+                          maxAmount={Number(p.amount)}
+                          amountLabel={`R ${Number(p.amount).toFixed(2)}`}
+                          disabled={!crudEnabled}
+                        />
+                      )}
+                      {(p.status === 'PENDING' || p.status === 'AUTHORISED') && (
+                        <ReconcilePaymentButton
+                          paymentId={p.id}
+                          amountLabel={`R ${Number(p.amount).toFixed(2)}`}
+                          disabled={!crudEnabled}
+                        />
+                      )}
+                      {(p.status === 'PENDING' || p.status === 'FAILED') && (
+                        <WriteOffPaymentButton
+                          paymentId={p.id}
+                          amountLabel={`R ${Number(p.amount).toFixed(2)}`}
+                          disabled={!crudEnabled}
+                        />
                       )}
                     </div>
                   </td>

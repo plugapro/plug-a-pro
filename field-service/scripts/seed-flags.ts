@@ -117,6 +117,26 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'customer.realtime.v1',
     description: 'Enable Supabase Realtime subscription for customer request/booking pages (Phase B). Falls back to polling when disabled.',
   },
+  {
+    key: 'admin.quotes.send',
+    description: 'Enable approve, decline, send, and revise admin mutations on the Quote Approvals page (WS-6a hardening). Default off — enable per env after notifyQuoteReady() is wired.',
+  },
+  {
+    key: 'admin.invoices.actions',
+    description: 'Enable generate, send, and void mutations on the Invoices admin page.',
+  },
+  {
+    key: 'admin.messages.outbound',
+    description: 'Enable admin-initiated outbound WhatsApp sends and broadcast queuing. Capped at BROADCAST_MAX_RECIPIENTS (default 50). Default off — enable per env after reviewing recipient safety caps.',
+  },
+  {
+    key: 'admin.payments.retry',
+    description: 'Enable payment PSP checkout retry on the Payments admin page. Reserved — not yet implemented (requires PSP idempotency probe). Default off.',
+  },
+  {
+    key: 'admin.customers.whatsapp_pref_toggle',
+    description: 'Enable admin toggle of customer WhatsApp service and marketing opt-in preferences on the Customer detail admin page.',
+  },
 ]
 
 async function main() {

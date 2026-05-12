@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/admin/ui'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { EmptyState } from '@/components/shared/EmptyState'
 
 export const metadata = buildMetadata({ title: 'Validation Queue', noIndex: true })
 const FLAG = 'admin.crud.validation'
@@ -134,7 +135,11 @@ export default async function AdminValidationQueuePage({
         },
       })
     } catch (error) {
-      if (!(error instanceof CrudActionError)) {
+      if (
+        typeof error === 'object' && error !== null && 'digest' in error &&
+        typeof (error as { digest?: string }).digest === 'string' &&
+        (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      ) {
         throw error
       }
       console.error('[admin/validation] claimValidation failed:', error)
@@ -163,7 +168,11 @@ export default async function AdminValidationQueuePage({
         },
       })
     } catch (error) {
-      if (!(error instanceof CrudActionError)) {
+      if (
+        typeof error === 'object' && error !== null && 'digest' in error &&
+        typeof (error as { digest?: string }).digest === 'string' &&
+        (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      ) {
         throw error
       }
       console.error('[admin/validation] releaseValidation failed:', error)
@@ -216,7 +225,11 @@ export default async function AdminValidationQueuePage({
         })
       })
     } catch (error) {
-      if (!(error instanceof CrudActionError)) {
+      if (
+        typeof error === 'object' && error !== null && 'digest' in error &&
+        typeof (error as { digest?: string }).digest === 'string' &&
+        (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      ) {
         throw error
       }
       console.error('[admin/validation] markReadyForMatching failed:', error)
@@ -272,7 +285,11 @@ export default async function AdminValidationQueuePage({
         },
       })
     } catch (error) {
-      if (!(error instanceof CrudActionError)) {
+      if (
+        typeof error === 'object' && error !== null && 'digest' in error &&
+        typeof (error as { digest?: string }).digest === 'string' &&
+        (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      ) {
         throw error
       }
       console.error('[admin/validation] cancelRequest failed:', error)
@@ -316,9 +333,10 @@ export default async function AdminValidationQueuePage({
       </div>
 
       {requests.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No requests are waiting on validation.
-        </div>
+        <EmptyState
+          title="Queue is clear"
+          description="No job requests are currently waiting on validation."
+        />
       ) : (
         <div className="space-y-4">
           {requests.map((request) => {

@@ -44,14 +44,15 @@ export async function overrideAssignmentAction(formData: FormData) {
         })
         // Non-blocking case event — do not let a case-write failure block the override
         getCaseByEntity('DISPATCH', 'JOB_REQUEST', jrId)
-          .then((dispCase) =>
-            addEvent({
+          .then((dispCase) => {
+            if (dispCase == null) return
+            return addEvent({
               caseId: dispCase.id,
               type: 'OPS_ACTION',
               payload: { action: 'force_assign', providerId: pid, reasonCode: rc },
               actorUserId: activeAdmin.id,
-            }),
-          )
+            })
+          })
           .catch(() => {})
         return { id: jrId, providerId: pid }
       },
@@ -82,14 +83,15 @@ export async function redispatchFromFormAction(formData: FormData) {
 
     // Non-blocking case event
     getCaseByEntity('DISPATCH', 'JOB_REQUEST', jobRequestId)
-      .then((dispCase) =>
-        addEvent({
+      .then((dispCase) => {
+        if (dispCase == null) return
+        return addEvent({
           caseId: dispCase.id,
           type: 'OPS_ACTION',
           payload: { action: 'redispatch_triggered', triggeredBy: activeAdmin.id },
           actorUserId: activeAdmin.id,
-        }),
-      )
+        })
+      })
       .catch(() => {})
 
     revalidatePath('/admin/dispatch')

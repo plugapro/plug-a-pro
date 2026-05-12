@@ -5,13 +5,19 @@ export const dynamic = 'force-dynamic'
 
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { RetryMessageButton } from './_components/RetryMessageButton'
 
 export const metadata = buildMetadata({ title: 'Messages', noIndex: true })
 
+const RETRY_FLAG = 'admin.crud.messages'
+
 export default async function MessagesPage() {
-  await requireAdmin()
+  const admin = await requireAdmin()
+  const retryEnabled = await isEnabled(RETRY_FLAG, { userId: admin.id })
 
   const messages = await db.messageEvent.findMany({
     include: {
@@ -30,15 +36,21 @@ export default async function MessagesPage() {
 
   return (
     <div>
+      {!retryEnabled && (
+        <div className="mb-4 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning-foreground">
+          Message retry mutations are read-only while <code>{RETRY_FLAG}</code> is disabled.
+        </div>
+      )}
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Messages</h1>
         <p className="text-sm text-muted-foreground">Last 100 outbound events</p>
       </div>
 
       {messages.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No messages yet. Events are logged when WhatsApp messages are sent.
-        </div>
+        <EmptyState
+          title="No messages yet"
+          description="Events are logged here when WhatsApp messages are sent."
+        />
       ) : (
         <div className="space-y-2">
           {messages.map((msg) => (
@@ -72,16 +84,24 @@ export default async function MessagesPage() {
                     <p className="text-xs text-red-500 mt-0.5">{msg.failureReason}</p>
                   )}
                 </div>
-                <time className="shrink-0 text-xs text-muted-foreground">
-                  {msg.createdAt.toLocaleDateString('en-ZA', {
-                    day: 'numeric',
-                    month: 'short',
-                  })}{' '}
-                  {msg.createdAt.toLocaleTimeString('en-ZA', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </time>
+                <div className="flex shrink-0 items-center gap-2">
+                  <time className="text-xs text-muted-foreground">
+                    {msg.createdAt.toLocaleDateString('en-ZA', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}{' '}
+                    {msg.createdAt.toLocaleTimeString('en-ZA', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </time>
+                  {msg.status === 'FAILED' && (
+                    <RetryMessageButton
+                      messageId={msg.id}
+                      disabled={!retryEnabled}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           ))}

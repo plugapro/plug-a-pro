@@ -23,8 +23,15 @@ import { SubmitButton } from '@/components/admin/ui/SubmitButton'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
-import { claimQuoteFromFormAction, releaseQuoteFromFormAction } from './actions'
+import {
+  claimQuoteFromFormAction,
+  releaseQuoteFromFormAction,
+  approveQuoteFromFormAction,
+  sendQuoteFromFormAction,
+} from './actions'
 import { VoidQuoteButton } from './_components/VoidQuoteButton'
+import { DeclineQuoteButton } from './_components/DeclineQuoteButton'
+import { EmptyState } from '@/components/shared/EmptyState'
 
 export const metadata = buildMetadata({ title: 'Quote Approvals', noIndex: true })
 
@@ -37,6 +44,7 @@ export default async function AdminQuoteQueuePage() {
   const now = new Date()
   const pageWarnings: string[] = []
   const crudEnabled = await isEnabled(FLAG, { userId: admin.id })
+  const sendEnabled = await isEnabled('admin.quotes.send', { userId: admin.id })
   const casesEnabled = await isEnabled(CASES_FLAG, { userId: admin.id })
 
   const quotes = await db.quote.findMany({
@@ -48,6 +56,7 @@ export default async function AdminQuoteQueuePage() {
       createdAt: true,
       validUntil: true,
       approvalToken: true,
+      approvalWhatsappSentAt: true,
       notes: true,
       description: true,
       match: {
@@ -159,9 +168,10 @@ export default async function AdminQuoteQueuePage() {
       </div>
 
       {quotes.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No quotes are waiting on approval.
-        </div>
+        <EmptyState
+          title="Queue is clear"
+          description="No quotes are currently waiting on customer approval."
+        />
       ) : (
         <div className="space-y-4">
           {quotes.map((quote) => {
@@ -237,6 +247,32 @@ export default async function AdminQuoteQueuePage() {
                       quoteAmount={formatCurrency(Number(quote.amount))}
                       disabled={!crudEnabled}
                     />
+
+                    {(quote.status === 'PENDING' || quote.status === 'REVISED') && (
+                      <ActionForm action={approveQuoteFromFormAction} successMessage="Quote approved" refreshOnSuccess>
+                        <input type="hidden" name="quoteId" value={quote.id} />
+                        <SubmitButton variant="outline" size="sm" disabled={!sendEnabled}>
+                          Approve
+                        </SubmitButton>
+                      </ActionForm>
+                    )}
+
+                    {(quote.status === 'PENDING' || quote.status === 'REVISED') && (
+                      <DeclineQuoteButton
+                        quoteId={quote.id}
+                        quoteAmount={formatCurrency(Number(quote.amount))}
+                        disabled={!sendEnabled}
+                      />
+                    )}
+
+                    {!quote.approvalWhatsappSentAt && (
+                      <ActionForm action={sendQuoteFromFormAction} successMessage="Quote sent to customer" refreshOnSuccess>
+                        <input type="hidden" name="quoteId" value={quote.id} />
+                        <SubmitButton variant="outline" size="sm" disabled={!sendEnabled}>
+                          Send to customer
+                        </SubmitButton>
+                      </ActionForm>
+                    )}
 
                     <Button asChild size="sm">
                       <Link href={quotePageUrl} target="_blank">

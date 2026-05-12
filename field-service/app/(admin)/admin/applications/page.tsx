@@ -187,6 +187,8 @@ async function approveApplication(formData: FormData) {
     redirect('/admin/applications?message=duplicate_active_application')
   }
 
+  let approvedNow = false
+  let approvedProviderId: string | null = null
   try {
     const approval = await crudAction({
       entity: 'ProviderApplication',
@@ -316,9 +318,22 @@ async function approveApplication(formData: FormData) {
       }
     },
   })
+    approvedNow = approval.data?.approvedNow ?? false
+    approvedProviderId = approval.data?.providerId ?? null
+  } catch (error) {
+    if (
+      typeof error === 'object' && error !== null && 'digest' in error &&
+      typeof (error as { digest?: string }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) throw error
+    console.error('[admin/applications] approveApplication failed:', error)
+    revalidatePath('/admin/applications')
+    redirect('/admin/applications?message=application_approval_failed')
+  }
 
-  // WhatsApp notification
-  if (approval.data?.approvedNow) {
+  // Post-approval side effects outside the crudAction try/catch so a dynamic-import
+  // failure or WhatsApp error cannot surface as a false "approval failed" to the admin.
+  if (approvedNow) {
     const { notifyTechnicianApplicationResult } = await import('@/lib/whatsapp-bot')
     await notifyTechnicianApplicationResult({
       applicationId: app.id,
@@ -334,25 +349,15 @@ async function approveApplication(formData: FormData) {
     })
   }
 
-  if (approval.data?.providerId) {
+  if (approvedProviderId) {
     const { checkJobsForNewProviderAvailability } = await import('@/lib/matching/customer-recontact')
-    await checkJobsForNewProviderAvailability(approval.data.providerId).catch((error) => {
+    await checkJobsForNewProviderAvailability(approvedProviderId).catch((error) => {
       console.error('[applications] new-provider availability check failed:', error)
     })
   }
 
   revalidatePath('/admin/applications')
   revalidatePath('/admin')
-  } catch (error) {
-    if (
-      typeof error === 'object' && error !== null && 'digest' in error &&
-      typeof (error as { digest?: string }).digest === 'string' &&
-      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-    ) throw error
-    console.error('[admin/applications] approveApplication failed:', error)
-    revalidatePath('/admin/applications')
-    redirect('/admin/applications?message=application_approval_failed')
-  }
 }
 
 async function requestMoreInfo(formData: FormData) {

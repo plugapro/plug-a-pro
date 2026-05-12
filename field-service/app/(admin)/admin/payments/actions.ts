@@ -280,3 +280,15 @@ export async function releasePaymentAction(formData: FormData) {
     throw err
   }
 }
+
+export async function writeOffPaymentFromFormAction(formData: FormData) {
+  try {
+    return await writeOffPaymentAction({
+      paymentId: formData.get('paymentId') as string,
+      reason: ((formData.get('reason') as string) ?? '').trim(),
+    })
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to write off payment' }
+  }
+}

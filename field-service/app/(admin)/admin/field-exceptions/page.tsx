@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
+import { EmptyState } from '@/components/shared/EmptyState'
 
 export const metadata = buildMetadata({ title: 'Field Exceptions', noIndex: true })
 const FLAG = 'admin.crud.field_exceptions'
@@ -128,7 +129,8 @@ export default async function AdminFieldExceptionsPage({
   ])
 
   // Fetch open cases for each booking (gated by flag)
-  const bookingIds = jobs.map((job) => job.booking.id)
+  // job.booking is optional in schema — filter defensively in case a job somehow lacks one
+  const bookingIds = jobs.flatMap((job) => (job.booking != null ? [job.booking.id] : []))
   const rawCases = casesEnabled
     ? await db.case.findMany({
         where: {
@@ -175,7 +177,11 @@ export default async function AdminFieldExceptionsPage({
         },
       })
     } catch (error) {
-      if (!(error instanceof CrudActionError)) {
+      if (
+        typeof error === 'object' && error !== null && 'digest' in error &&
+        typeof (error as { digest?: string }).digest === 'string' &&
+        (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      ) {
         throw error
       }
       console.error('[admin/field-exceptions] claimFieldException failed:', error)
@@ -206,7 +212,11 @@ export default async function AdminFieldExceptionsPage({
         },
       })
     } catch (error) {
-      if (!(error instanceof CrudActionError)) {
+      if (
+        typeof error === 'object' && error !== null && 'digest' in error &&
+        typeof (error as { digest?: string }).digest === 'string' &&
+        (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      ) {
         throw error
       }
       console.error('[admin/field-exceptions] releaseFieldException failed:', error)
@@ -244,12 +254,14 @@ export default async function AdminFieldExceptionsPage({
       </div>
 
       {jobs.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No field exceptions are open right now.
-        </div>
+        <EmptyState
+          title="No field exceptions"
+          description="No jobs are currently blocked or waiting on manual recovery."
+        />
       ) : (
         <div className="space-y-4">
           {jobs.map((job) => {
+            if (!job.booking) return null
             const assignment = assignments.get(job.id)
             const claimedByCurrentUser = assignment?.claimedById === admin.id
             const request = job.booking.match.jobRequest

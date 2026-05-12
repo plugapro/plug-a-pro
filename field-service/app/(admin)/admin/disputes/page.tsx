@@ -26,6 +26,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
+import { EmptyState } from '@/components/shared/EmptyState'
 
 export const metadata = buildMetadata({ title: 'Disputes', noIndex: true })
 
@@ -60,9 +61,9 @@ async function updateDisputeAction(formData: FormData) {
   const status = String(formData.get('status') ?? '')
   const resolution = String(formData.get('resolution') ?? '').trim() || null
 
-  if (!disputeId) return
+  if (!disputeId) redirect('/admin/disputes?message=dispute_update_failed')
   if (!['OPEN', 'UNDER_REVIEW', 'RESOLVED_CUSTOMER', 'RESOLVED_PROVIDER', 'RESOLVED_SPLIT', 'CLOSED'].includes(status)) {
-    return
+    redirect('/admin/disputes?message=dispute_update_failed')
   }
 
   const resolvedStatuses = ['RESOLVED_CUSTOMER', 'RESOLVED_PROVIDER', 'RESOLVED_SPLIT', 'CLOSED']
@@ -75,7 +76,7 @@ async function updateDisputeAction(formData: FormData) {
       resolvedById: true,
     },
   })
-  if (!existing) return
+  if (!existing) redirect('/admin/disputes?message=dispute_update_failed')
 
   try {
     await crudAction({
@@ -300,9 +301,10 @@ export default async function AdminDisputesPage({
       </div>
 
       {disputes.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No disputes have been raised yet.
-        </div>
+        <EmptyState
+          title="No disputes"
+          description="No disputes have been raised yet. They will appear here when a job triggers a dispute."
+        />
       ) : (
         <div className="space-y-3">
           {disputes.map((dispute) => {
