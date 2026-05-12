@@ -391,7 +391,7 @@ export function CustomerActionsPanel({
                 <button
                   type="button"
                   className="h-8 rounded-md border border-input bg-background px-3 text-xs hover:bg-muted transition-colors disabled:opacity-50"
-                  disabled={!mergeTargetId.trim() || !mergeReason.trim() || mergePending}
+                  disabled={!mergeTargetId.trim() || mergeTargetId.trim().length < 6 || !mergeReason.trim() || mergePending}
                   onClick={() => setMergeDialogOpen(true)}
                 >
                   {mergePending ? 'Merging…' : 'Merge'}
