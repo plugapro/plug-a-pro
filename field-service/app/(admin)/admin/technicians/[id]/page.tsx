@@ -3,10 +3,9 @@
 
 export const dynamic = 'force-dynamic'
 
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth'
-import { crudAction } from '@/lib/crud-action'
 import { isEnabled } from '@/lib/flags'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
@@ -24,21 +23,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ActionForm } from '@/components/admin/ui/ActionForm'
+import { SubmitButton } from '@/components/admin/ui/SubmitButton'
 import { ArrowLeft } from 'lucide-react'
 import { format } from 'date-fns'
 import {
-  addProviderStrikeFromFormAction,
-  deleteCertificationFromFormAction,
-  deleteEquipmentFromFormAction,
-  setProviderStatusFromFormAction,
-  addProviderNoteFromFormAction,
-  reactivateProviderFromFormAction,
-  setProviderKycFromFormAction,
   updateProviderProfileFromFormAction,
+  addProviderNoteFromFormAction,
   upsertCertificationFromFormAction,
-  upsertEquipmentFromFormAction,
   verifyCertificationFromFormAction,
-} from '../../providers/actions'
+  upsertEquipmentFromFormAction,
+} from './actions'
+import {
+  ProviderActionsPanel,
+  CertificationDeleteButton,
+  EquipmentDeleteButton,
+} from './_components/ProviderActionsPanel'
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
@@ -64,29 +64,6 @@ function jobStatusVariant(
 
 function formatJobStatus(status: string): string {
   return status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-// ─── Server action ────────────────────────────────────────────────────────────
-
-async function toggleActive(providerId: string, currentActive: boolean) {
-  'use server'
-  await crudAction({
-    entity: 'Provider',
-    entityId: providerId,
-    action: 'provider.active_toggle',
-    requiredRole: ['ADMIN', 'OWNER'],
-    requiredFlag: 'admin.crud.providers',
-    input: { providerId, currentActive },
-    before: { active: currentActive },
-    run: async (_input, tx) => {
-      await tx.provider.update({
-        where: { id: providerId },
-        data: { active: !currentActive },
-      })
-      return { id: providerId, active: !currentActive }
-    },
-  })
-  redirect(`/admin/providers/${providerId}`)
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -194,8 +171,6 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     take: 20,
   })
 
-  // Fetch evidence attachments from the latest provider application + the
-  // fields the onboarding-completeness validator needs (Phase 4 follow-up).
   const latestApplication = await db.providerApplication.findFirst({
     where: { phone: provider.phone },
     orderBy: { submittedAt: 'desc' },
@@ -224,9 +199,6 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
   )
   const highRiskRequirements = getHighRiskServiceRequirements(latestApplication?.skills ?? provider.skills)
 
-  // Build a ProviderProfileLike for the completeness validator. Provider holds
-  // identity / availability / KYC; the latest application holds rates +
-  // ID/passport (POPIA-protected, not duplicated onto Provider).
   const completeness = evaluateProviderProfileCompleteness({
     name: provider.name,
     phone: provider.phone,
@@ -244,7 +216,6 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
     avatarUrl: provider.avatarUrl,
   })
 
-  // Stats
   const totalJobs = provider._count.jobs
   const completedTotal = await db.job.count({
     where: { providerId: id, status: 'COMPLETED' },
@@ -252,69 +223,11 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
   const completionRate =
     totalJobs > 0 ? Math.round((completedTotal / totalJobs) * 100) : 0
 
-  // Current activity: any non-terminal active job
   const activeJob = provider.jobs.find((j) =>
     ['EN_ROUTE', 'ARRIVED', 'STARTED', 'AWAITING_APPROVAL'].includes(j.status)
   )
 
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-  const toggleActiveForProvider = toggleActive.bind(null, provider.id, provider.active)
-
-  async function submitProviderStatus(formData: FormData) {
-    'use server'
-    await setProviderStatusFromFormAction(formData)
-  }
-
-  async function submitVerifyCertification(formData: FormData) {
-    'use server'
-    await verifyCertificationFromFormAction(formData)
-  }
-
-  async function submitAddProviderNote(formData: FormData) {
-    'use server'
-    await addProviderNoteFromFormAction(formData)
-  }
-
-  async function submitAddProviderStrike(formData: FormData) {
-    'use server'
-    await addProviderStrikeFromFormAction(formData)
-  }
-
-  async function submitReactivateProvider(formData: FormData) {
-    'use server'
-    await reactivateProviderFromFormAction(formData)
-  }
-
-  async function submitUpdateProviderProfile(formData: FormData) {
-    'use server'
-    await updateProviderProfileFromFormAction(formData)
-  }
-
-  async function submitSetProviderKyc(formData: FormData) {
-    'use server'
-    await setProviderKycFromFormAction(formData)
-  }
-
-  async function submitUpsertCertification(formData: FormData) {
-    'use server'
-    await upsertCertificationFromFormAction(formData)
-  }
-
-  async function submitDeleteCertification(formData: FormData) {
-    'use server'
-    await deleteCertificationFromFormAction(formData)
-  }
-
-  async function submitUpsertEquipment(formData: FormData) {
-    'use server'
-    await upsertEquipmentFromFormAction(formData)
-  }
-
-  async function submitDeleteEquipment(formData: FormData) {
-    'use server'
-    await deleteEquipmentFromFormAction(formData)
-  }
 
   return (
     <div className="space-y-6">
@@ -339,17 +252,6 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
           </div>
           <p className="text-sm text-muted-foreground">Provider profile</p>
         </div>
-        {crudEnabled && (
-          <form action={toggleActiveForProvider}>
-            <Button
-              type="submit"
-              variant={provider.active ? 'destructive' : 'default'}
-              size="sm"
-            >
-              {provider.active ? 'Deactivate' : 'Activate'}
-            </Button>
-          </form>
-        )}
       </div>
 
       {query.message && (
@@ -376,7 +278,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
         </div>
       )}
 
-      {/* ── Profile completeness panel (Phase 4 follow-up Task 3) ──────────── */}
+      {/* ── Profile completeness panel ──────────────────────────────────────── */}
       {!completeness.ok && (
         <Card className={
           completeness.canApprove
@@ -441,78 +343,16 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
       )}
 
       {/* ── Admin actions ───────────────────────────────────────────────────── */}
-      {crudEnabled && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Provider Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {/* Verify shortcut */}
-            {!provider.verified && (
-              <form
-                action={async () => {
-                  'use server'
-                  const { verifyProviderAction } = await import('../../providers/actions')
-                  await verifyProviderAction(id)
-                }}
-              >
-                <Button type="submit" variant="default" size="sm">
-                  Verify provider &amp; set ACTIVE
-                </Button>
-              </form>
-            )}
-            {provider.status !== 'ACTIVE' && (
-              <form action={submitReactivateProvider}>
-                <input type="hidden" name="providerId" value={id} />
-                <Button type="submit" variant="outline" size="sm">
-                  Reactivate provider
-                </Button>
-              </form>
-            )}
-            {/* Status change */}
-            <form action={submitProviderStatus} className="flex flex-wrap gap-2 items-center">
-              <input type="hidden" name="providerId" value={id} />
-              <select
-                name="status"
-                defaultValue={provider.status}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="APPLICATION_PENDING">Application Pending</option>
-                <option value="UNDER_REVIEW">Under Review</option>
-                <option value="ACTIVE">Active</option>
-                <option value="SUSPENDED">Suspended</option>
-                <option value="ARCHIVED">Archived</option>
-                <option value="BANNED">Banned</option>
-              </select>
-              <input
-                name="reason"
-                required
-                placeholder="Reason…"
-                className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring w-52"
-              />
-              <Button type="submit" variant="outline" size="sm">Set status</Button>
-            </form>
-            <form action={submitSetProviderKyc} className="flex flex-wrap gap-2 items-center">
-              <input type="hidden" name="providerId" value={id} />
-              <select
-                name="kycStatus"
-                defaultValue={provider.kycStatus}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="NOT_STARTED">Not started</option>
-                <option value="IN_PROGRESS">In progress</option>
-                <option value="SUBMITTED">Submitted</option>
-                <option value="VERIFIED">Verified</option>
-                <option value="REJECTED">Rejected</option>
-                <option value="EXPIRED">Expired</option>
-              </select>
-              <Button type="submit" variant="outline" size="sm">Set KYC</Button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      <ProviderActionsPanel
+        providerId={provider.id}
+        providerName={provider.name}
+        providerPhone={provider.phone}
+        active={provider.active}
+        currentStatus={provider.status}
+        currentKycStatus={provider.kycStatus}
+        isVerified={provider.verified}
+        crudEnabled={crudEnabled}
+      />
 
       <div className="grid gap-6 md:grid-cols-3">
         {/* Profile card */}
@@ -738,7 +578,11 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             {crudEnabled && (
               <>
                 <Separator />
-                <form action={submitUpdateProviderProfile} className="grid gap-3 md:grid-cols-2">
+                <ActionForm
+                  action={updateProviderProfileFromFormAction}
+                  successMessage="Provider profile saved"
+                  className="grid gap-3 md:grid-cols-2"
+                >
                   <input type="hidden" name="providerId" value={id} />
                   <label className="grid gap-1 text-sm">
                     <span className="text-muted-foreground">Name</span>
@@ -790,9 +634,11 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                     />
                   </label>
                   <div className="md:col-span-2">
-                    <Button type="submit" variant="outline" size="sm">Save provider profile</Button>
+                    <SubmitButton type="submit" variant="outline" size="sm">
+                      Save provider profile
+                    </SubmitButton>
                   </div>
-                </form>
+                </ActionForm>
               </>
             )}
           </CardContent>
@@ -897,17 +743,17 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           {!cert.verifiedAt && (
-                            <form action={submitVerifyCertification}>
+                            <ActionForm action={verifyCertificationFromFormAction} successMessage="Certification verified" refreshOnSuccess>
                               <input type="hidden" name="certId" value={cert.id} />
                               <input type="hidden" name="providerId" value={id} />
-                              <Button type="submit" variant="ghost" size="sm" className="text-xs h-7">
+                              <SubmitButton type="submit" variant="ghost" size="sm" className="text-xs h-7">
                                 Verify
-                              </Button>
-                            </form>
+                              </SubmitButton>
+                            </ActionForm>
                           )}
                           <details className="rounded-md border px-2 py-1">
                             <summary className="cursor-pointer text-xs">Edit</summary>
-                            <form action={submitUpsertCertification} className="mt-2 grid gap-2 text-left">
+                            <ActionForm action={upsertCertificationFromFormAction} successMessage="Certification saved" refreshOnSuccess className="mt-2 grid gap-2 text-left">
                               <input type="hidden" name="providerId" value={id} />
                               <input type="hidden" name="certId" value={cert.id} />
                               <input
@@ -943,18 +789,16 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                                 defaultValue={cert.notes ?? ''}
                                 className="rounded-md border border-input bg-background px-2 py-1 text-xs"
                               />
-                              <Button type="submit" variant="outline" size="sm" className="h-7 text-xs">
+                              <SubmitButton type="submit" variant="outline" size="sm" className="h-7 text-xs">
                                 Save
-                              </Button>
-                            </form>
+                              </SubmitButton>
+                            </ActionForm>
                           </details>
-                          <form action={submitDeleteCertification}>
-                            <input type="hidden" name="certId" value={cert.id} />
-                            <input type="hidden" name="providerId" value={id} />
-                            <Button type="submit" variant="ghost" size="sm" className="h-7 text-xs text-destructive">
-                              Delete
-                            </Button>
-                          </form>
+                          <CertificationDeleteButton
+                            providerId={id}
+                            certId={cert.id}
+                            certName={cert.name}
+                          />
                         </div>
                       </TableCell>
                     )}
@@ -966,7 +810,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
         </CardContent>
         {crudEnabled && (
           <CardContent className="border-t pt-4">
-            <form action={submitUpsertCertification} className="grid gap-3 md:grid-cols-2">
+            <ActionForm action={upsertCertificationFromFormAction} successMessage="Certification added" resetOnSuccess refreshOnSuccess className="grid gap-3 md:grid-cols-2">
               <input type="hidden" name="providerId" value={id} />
               <label className="grid gap-1 text-sm">
                 <span className="text-muted-foreground">Certification name</span>
@@ -1015,9 +859,9 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                 />
               </label>
               <div className="md:col-span-2">
-                <Button type="submit" variant="outline" size="sm">Add certification</Button>
+                <SubmitButton type="submit" variant="outline" size="sm">Add certification</SubmitButton>
               </div>
-            </form>
+            </ActionForm>
           </CardContent>
         )}
       </Card>
@@ -1040,7 +884,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                   {crudEnabled && (
                     <details className="rounded-md border px-2 py-1">
                       <summary className="cursor-pointer text-xs">Edit</summary>
-                      <form action={submitUpsertEquipment} className="mt-2 grid gap-2 text-left">
+                      <ActionForm action={upsertEquipmentFromFormAction} successMessage="Equipment saved" refreshOnSuccess className="mt-2 grid gap-2 text-left">
                         <input type="hidden" name="equipmentId" value={eq.id} />
                         <input type="hidden" name="providerId" value={id} />
                         <input
@@ -1058,18 +902,18 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                           defaultValue={eq.serialNumber ?? ''}
                           className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                         />
-                        <Button type="submit" variant="outline" size="sm" className="h-7 text-xs">
+                        <SubmitButton type="submit" variant="outline" size="sm" className="h-7 text-xs">
                           Save
-                        </Button>
-                      </form>
+                        </SubmitButton>
+                      </ActionForm>
                     </details>
                   )}
                   {crudEnabled && (
-                    <form action={submitDeleteEquipment}>
-                      <input type="hidden" name="equipmentId" value={eq.id} />
-                      <input type="hidden" name="providerId" value={id} />
-                      <button type="submit" className="text-destructive">Delete</button>
-                    </form>
+                    <EquipmentDeleteButton
+                      providerId={id}
+                      equipmentId={eq.id}
+                      equipmentLabel={eq.label}
+                    />
                   )}
                 </div>
               ))}
@@ -1078,7 +922,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
         </CardContent>
         {crudEnabled && (
           <CardContent className="border-t pt-4">
-            <form action={submitUpsertEquipment} className="grid gap-3 md:grid-cols-3">
+            <ActionForm action={upsertEquipmentFromFormAction} successMessage="Equipment added" resetOnSuccess refreshOnSuccess className="grid gap-3 md:grid-cols-3">
               <input type="hidden" name="providerId" value={id} />
               <label className="grid gap-1 text-sm">
                 <span className="text-muted-foreground">Label</span>
@@ -1103,9 +947,9 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                 />
               </label>
               <div className="md:col-span-3">
-                <Button type="submit" variant="outline" size="sm">Add equipment</Button>
+                <SubmitButton type="submit" variant="outline" size="sm">Add equipment</SubmitButton>
               </div>
-            </form>
+            </ActionForm>
           </CardContent>
         )}
       </Card>
@@ -1136,7 +980,13 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
           ))}
           {crudEnabled && (
             <div className="grid gap-3 pt-2 border-t">
-              <form action={submitAddProviderNote} className="flex gap-2">
+              <ActionForm
+                action={addProviderNoteFromFormAction}
+                successMessage="Note added"
+                resetOnSuccess
+                refreshOnSuccess
+                className="flex gap-2"
+              >
                 <input type="hidden" name="providerId" value={id} />
                 <input
                   name="body"
@@ -1144,31 +994,8 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                   placeholder="Add a note…"
                   className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring flex-1"
                 />
-                <Button type="submit" variant="outline" size="sm">Add note</Button>
-              </form>
-
-              <form action={submitAddProviderStrike} className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
-                <input type="hidden" name="providerId" value={id} />
-                <select
-                  name="reasonCode"
-                  required
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                  defaultValue="PROVIDER_STRIKE_COMPLAINT"
-                >
-                  <option value="PROVIDER_STRIKE_COMPLAINT">Complaint</option>
-                  <option value="PROVIDER_STRIKE_LATE">Late arrival</option>
-                  <option value="PROVIDER_STRIKE_NO_SHOW">No show</option>
-                  <option value="POLICY_VIOLATION">Policy violation</option>
-                  <option value="ADMIN_CORRECTION">Admin correction</option>
-                </select>
-                <input
-                  name="body"
-                  required
-                  placeholder="Strike note…"
-                  className="h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-                <Button type="submit" variant="destructive" size="sm">Add strike</Button>
-              </form>
+                <SubmitButton type="submit" variant="outline" size="sm">Add note</SubmitButton>
+              </ActionForm>
             </div>
           )}
         </CardContent>
