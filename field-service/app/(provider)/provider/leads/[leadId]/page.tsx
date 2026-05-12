@@ -438,7 +438,7 @@ export default async function LeadDetailPage({
           <div className="px-4 py-3 space-y-1 text-sm">
             <p className="font-medium">Accept cost: {lead.unlockCostCredits} Plug A Pro provider credit</p>
             <p className="text-muted-foreground">
-              Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R50). Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
+              Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R20). Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
               Credits use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider credits terms and rules</Link>.
             </p>
           </div>

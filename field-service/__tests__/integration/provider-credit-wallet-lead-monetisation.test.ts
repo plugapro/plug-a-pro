@@ -487,7 +487,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
     })
     expect(topUp.intent).toMatchObject({
       status: 'PENDING_PAYMENT',
-      creditsToIssue: 2,
+      creditsToIssue: 5,
     })
     expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 6 })
 
@@ -496,13 +496,13 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       adminNote: 'Funds confirmed',
     })
     await creditPaymentIntent('intent-1', 'admin-1', { adminNote: 'Credit approved' })
-    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 2, promoCreditBalance: 8 })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 5, promoCreditBalance: 8 })
 
     // Promo-first debit is intentional. This simulates prior promo exhaustion so
     // the second unlock validates the paid-credit path after the confirmed top-up.
     state.wallets.set('provider-1', { ...wallet('provider-1'), promoCreditBalance: 0 })
     await unlockLeadForProvider('lead-2', 'provider-1')
-    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 1, promoCreditBalance: 0 })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 4, promoCreditBalance: 0 })
     expect(state.ledgerEntries).toContainEqual(expect.objectContaining({
       entryType: 'LEAD_UNLOCK_DEBIT',
       creditType: 'PAID',
@@ -516,7 +516,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       'Number does not connect.',
     )
     await approveLeadUnlockDispute('dispute-1', 'admin-1', 'Invalid number confirmed')
-    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 1, promoCreditBalance: 1 })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 4, promoCreditBalance: 1 })
     expect(state.ledgerEntries).toContainEqual(expect.objectContaining({
       entryType: 'LEAD_REFUND_CREDIT',
       creditType: 'PROMO',

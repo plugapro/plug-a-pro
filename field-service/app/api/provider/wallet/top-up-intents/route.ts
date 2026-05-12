@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import {
   ProviderCreditPaymentIntentError,
+  createPayatTopUpIntent,
   createManualEftTopUpIntent,
   createPayfastTopUpIntent,
   type PayfastTopUpMethod,
@@ -12,7 +13,7 @@ type CreateTopUpIntentBody = {
   amountCents?: unknown
   /** Backward-compatible JSON client path; normalized then validated as cents. */
   amountRand?: unknown
-  /** Optional payment method: "MANUAL_EFT" (default) | "PAYFAST_CARD" | "PAYFAST_EFT" | "PAYFAST_SCODE" */
+  /** Optional payment method: "PAYAT" (default) | "MANUAL_EFT" | "PAYFAST_CARD" | "PAYFAST_EFT" | "PAYFAST_SCODE" */
   paymentMethod?: unknown
   metadata?: unknown
 }
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({})) as CreateTopUpIntentBody
   const amountCents = parseAmountCents(body)
-  const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : 'MANUAL_EFT'
+  const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : 'PAYAT'
 
   try {
     if (PAYFAST_METHODS.has(paymentMethod)) {
@@ -64,8 +65,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 201 })
     }
 
-    // Default: Manual EFT
-    const result = await createManualEftTopUpIntent({
+    if (paymentMethod === 'MANUAL_EFT') {
+      const result = await createManualEftTopUpIntent({
+        providerId: provider.id,
+        amountCents,
+        providerCellphone: session.phone ?? provider.phone,
+        metadata: parseMetadata(body),
+      })
+      return NextResponse.json(result, { status: 201 })
+    }
+
+    // Default: Pay@ retail cash, QR, and hosted payment link.
+    if (paymentMethod !== 'PAYAT') {
+      return NextResponse.json({ error: 'Unsupported payment method' }, { status: 400 })
+    }
+
+    const result = await createPayatTopUpIntent({
       providerId: provider.id,
       amountCents,
       providerCellphone: session.phone ?? provider.phone,

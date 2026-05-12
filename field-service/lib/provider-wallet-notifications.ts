@@ -165,6 +165,20 @@ export function buildPayfastTopUpInitiatedMessage(params: {
   ])
 }
 
+export function buildPayatTopUpInitiatedMessage(params: {
+  amountFormatted: string
+  creditsToIssue: number
+  paymentLink: string
+}) {
+  return compactLines([
+    `Tap here to pay for your Plug-A-Pro wallet top-up: ${params.paymentLink}`,
+    `${params.amountFormatted} = ${params.creditsToIssue} credits.`,
+    'You can pay with Pay@ retail cash, QR, or the hosted payment page.',
+    'Credits will appear in your wallet once Pay@ confirms payment.',
+    `${PROVIDER_CREDITS_PRICE_LINE} 1 credit is used only when a customer selects you and you accept that selected job.`,
+  ])
+}
+
 export function buildLeadUnlockedProviderMessage(params: LeadUnlockNotificationContext) {
   return compactLines([
     `Lead accepted and unlocked: ${params.category}`,
@@ -295,7 +309,7 @@ export async function notifyProviderLowBalance(providerId: string, sourceId?: st
     to: provider.phone,
     templateName: 'wallet:low_balance',
     whatsappTemplate: 'wallet_low_balance',
-    templateParameters: ['1', 'R100', '2'],
+    templateParameters: ['1', 'R100', '5'],
     body: buildLowBalanceWarningMessage(),
     idempotencyKey: `wallet:low_balance:${provider.id}:${balanceVersion}`,
     metadata: {
@@ -417,6 +431,45 @@ export async function notifyProviderPayfastTopUpInitiated(paymentIntentId: strin
       paymentIntentId: intent.id,
       paymentReference: intent.paymentReference,
       paymentMethod: intent.paymentMethod,
+      amountCents: intent.amountCents,
+      creditsToIssue: intent.creditsToIssue,
+    },
+  })
+}
+
+export async function notifyProviderPayatTopUpInitiated(
+  paymentIntentId: string,
+  paymentLink: string,
+) {
+  const intent = await db.paymentIntent.findUnique({
+    where: { id: paymentIntentId },
+    include: { provider: { select: { id: true, phone: true } } },
+  })
+
+  if (!intent) return
+  const phone = intent.providerCellphone ?? intent.provider.phone
+  if (!phone) return
+  if (intent.paymentMethod !== 'PAYAT') return
+
+  const amountFormatted = formatZarFromCents(intent.amountCents)
+
+  await sendNotification({
+    to: phone,
+    templateName: 'wallet:payat_topup_initiated',
+    whatsappTemplate: 'wallet_payat_topup_initiated',
+    templateParameters: [paymentLink, amountFormatted, String(intent.creditsToIssue)],
+    body: buildPayatTopUpInitiatedMessage({
+      amountFormatted,
+      creditsToIssue: intent.creditsToIssue,
+      paymentLink,
+    }),
+    idempotencyKey: `wallet:payat_topup_initiated:${intent.id}`,
+    metadata: {
+      providerId: intent.providerId,
+      paymentIntentId: intent.id,
+      paymentReference: intent.paymentReference,
+      paymentMethod: intent.paymentMethod,
+      paymentLink,
       amountCents: intent.amountCents,
       creditsToIssue: intent.creditsToIssue,
     },

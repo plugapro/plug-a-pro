@@ -17,6 +17,7 @@ import {
   type ProviderTopUpIntentInstructions,
   type ProviderWalletLedgerItem,
 } from './actions'
+import { PayatPackageSelector } from './PayatPackageSelector'
 import { PayfastPackageSelector } from './PayfastPackageSelector'
 
 export const metadata = buildMetadata({ title: 'Provider Credits', noIndex: true })
@@ -204,14 +205,27 @@ export default async function ProviderCreditsPage({
       {/* Manual EFT instructions (if a manual intent was just created) */}
       {instructions ? <EftInstructions instructions={instructions} /> : null}
 
-      {/* Payfast top-up — primary */}
+      {/* Pay@ top-up — primary */}
       <Card>
         <CardHeader>
-          <CardTitle>Top up with Payfast</CardTitle>
+          <CardTitle>Top up with Pay@</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Pay instantly by card, EFT, or scan to pay. 1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}. Credits are issued automatically once your payment is confirmed.
+            Pay with a retail cash reference, QR code, or hosted payment page. 1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}. Credits are issued automatically once Pay@ confirms payment.
+          </p>
+          <PayatPackageSelector />
+        </CardContent>
+      </Card>
+
+      {/* Payfast top-up — secondary */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Pay by card with Payfast</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Use Payfast if you prefer card, instant EFT, or SCode checkout.
           </p>
           <PayfastPackageSelector />
         </CardContent>

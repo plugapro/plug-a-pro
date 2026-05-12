@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { mockGetSession, mockDb, mockCreateManualEftTopUpIntent } = vi.hoisted(() => ({
+const {
+  mockGetSession,
+  mockDb,
+  mockCreateManualEftTopUpIntent,
+  mockCreatePayatTopUpIntent,
+  mockCreatePayfastTopUpIntent,
+} = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockDb: {
     provider: {
@@ -9,6 +15,8 @@ const { mockGetSession, mockDb, mockCreateManualEftTopUpIntent } = vi.hoisted(()
     },
   },
   mockCreateManualEftTopUpIntent: vi.fn(),
+  mockCreatePayatTopUpIntent: vi.fn(),
+  mockCreatePayfastTopUpIntent: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
@@ -21,6 +29,8 @@ vi.mock('@/lib/provider-credit-payment-intents', () => ({
     }
   },
   createManualEftTopUpIntent: mockCreateManualEftTopUpIntent,
+  createPayatTopUpIntent: mockCreatePayatTopUpIntent,
+  createPayfastTopUpIntent: mockCreatePayfastTopUpIntent,
 }))
 
 describe('POST /api/provider/wallet/top-up-intents', () => {
@@ -39,9 +49,21 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
       intent: { id: 'intent-1', status: 'PENDING_PAYMENT' },
       instructions: { amountCents: 10_000 },
     })
+    mockCreatePayatTopUpIntent.mockResolvedValue({
+      intent: { id: 'intent-payat-1', status: 'PENDING_PAYMENT' },
+      payment: {
+        reference: 'intent-payat-1',
+        qrCodeUrl: 'https://go.payat.co.za/qr/intent-payat-1',
+        paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
+      },
+    })
+    mockCreatePayfastTopUpIntent.mockResolvedValue({
+      intent: { id: 'intent-payfast-1', status: 'PENDING_PAYMENT' },
+      checkout: { action: 'https://sandbox.payfast.co.za/eng/process', fields: {} },
+    })
   })
 
-  it('creates a top-up intent with server-derived provider identity and amountCents', async () => {
+  it('defaults to Pay@ and creates a top-up intent with server-derived provider identity', async () => {
     const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
     const response = await POST(
       new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
@@ -55,12 +77,13 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
       where: { userId: 'user-1' },
       select: { id: true, phone: true, name: true, email: true },
     })
-    expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith({
+    expect(mockCreatePayatTopUpIntent).toHaveBeenCalledWith({
       providerId: 'provider-1',
       amountCents: 10_000,
       providerCellphone: '+27821234567',
       metadata: undefined,
     })
+    expect(mockCreateManualEftTopUpIntent).not.toHaveBeenCalled()
   })
 
   it('keeps the documented amountRand compatibility path behind the same validation seam', async () => {
@@ -73,10 +96,56 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockCreatePayatTopUpIntent).toHaveBeenCalledWith(expect.objectContaining({
       providerId: 'provider-1',
       amountCents: 10_000,
     }))
+  })
+
+  it('keeps manual EFT available as an explicit secondary provider path', async () => {
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000, paymentMethod: 'MANUAL_EFT' }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockCreateManualEftTopUpIntent).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      providerCellphone: '+27821234567',
+      metadata: undefined,
+    })
+  })
+
+  it('keeps Payfast available as an explicit secondary provider path', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({
+      id: 'provider-1',
+      phone: '+27820000000',
+      name: 'Provider One',
+      email: 'provider@example.com',
+    })
+
+    const { POST } = await import('@/app/api/provider/wallet/top-up-intents/route')
+    const response = await POST(
+      new NextRequest('http://localhost/api/provider/wallet/top-up-intents', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: 10_000, paymentMethod: 'PAYFAST_CARD' }),
+      }),
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockCreatePayfastTopUpIntent).toHaveBeenCalledWith({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      paymentMethod: 'PAYFAST_CARD',
+      providerName: 'Provider One',
+      providerEmail: 'provider@example.com',
+      providerCellphone: '+27821234567',
+      metadata: undefined,
+    })
   })
 
   it('rejects non-provider sessions before provider lookup', async () => {
@@ -93,5 +162,6 @@ describe('POST /api/provider/wallet/top-up-intents', () => {
     expect(response.status).toBe(401)
     expect(mockDb.provider.findUnique).not.toHaveBeenCalled()
     expect(mockCreateManualEftTopUpIntent).not.toHaveBeenCalled()
+    expect(mockCreatePayatTopUpIntent).not.toHaveBeenCalled()
   })
 })

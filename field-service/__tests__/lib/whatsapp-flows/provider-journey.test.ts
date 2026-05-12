@@ -41,9 +41,9 @@ vi.mock('@/lib/provider-lead-access', () => ({
 }))
 
 vi.mock('@/lib/provider-wallet', () => ({
-  PROVIDER_CREDIT_PRICE_ZAR: 50,
-  PROVIDER_CREDIT_PRICE_CENTS: 5_000,
-  PLUG_A_PRO_CREDIT_VALUE_CENTS: 5_000,
+  PROVIDER_CREDIT_PRICE_ZAR: 20,
+  PROVIDER_CREDIT_PRICE_CENTS: 2_000,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS: 2_000,
   getProviderWalletBalanceReadOnly: vi.fn().mockResolvedValue({
     providerId: 'prov_1',
     paidCreditBalance: 2,

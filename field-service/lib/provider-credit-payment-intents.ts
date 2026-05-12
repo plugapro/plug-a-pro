@@ -7,13 +7,17 @@ import {
   getPayfastConfig,
   type PayfastCheckoutPayload,
 } from './payfast'
+import {
+  createPayatPaymentRequest,
+  PAYAT_ALLOWED_AMOUNTS_CENTS,
+  type PayatPaymentResponse,
+} from './payat'
 
 export const MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000
 export const MANUAL_EFT_REFERENCE_ATTEMPTS = 10
 
-// ─── Payfast-allowed top-up package amounts ───────────────────────────────────
-// The single-credit R50 package is intentionally excluded from the default pilot UI.
-// Do not add R50 to this set without explicit product approval.
+// ─── Gateway-allowed top-up package amounts ───────────────────────────────────
+// Pay@ and Payfast both expose the approved R100/R200/R500 packages.
 export const PAYFAST_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
 
 type PaymentIntentErrorCode =
@@ -250,6 +254,84 @@ export type CreatePayfastTopUpIntentInput = {
 export type CreatePayfastTopUpIntentResult = {
   intent: PaymentIntent
   checkout: PayfastCheckoutPayload
+}
+
+export type CreatePayatTopUpIntentInput = {
+  providerId: string
+  amountCents: number
+  providerCellphone?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export type CreatePayatTopUpIntentResult = {
+  intent: PaymentIntent
+  payat: PayatPaymentResponse
+}
+
+// ─── Pay@ payment request intent ─────────────────────────────────────────────
+
+export async function createPayatTopUpIntent(
+  input: CreatePayatTopUpIntentInput,
+): Promise<CreatePayatTopUpIntentResult> {
+  if (!PAYAT_ALLOWED_AMOUNTS_CENTS.has(input.amountCents)) {
+    throw new ProviderCreditPaymentIntentError(
+      'INVALID_AMOUNT',
+      'Top-up amount must be one of the approved credits packages: R100, R200, or R500.',
+    )
+  }
+
+  const creditsToIssue = creditsForAmount(input.amountCents)
+
+  const intent = await db.$transaction(async (tx) => {
+    const provider = await tx.provider.findUnique({
+      where: { id: input.providerId },
+      select: { id: true, phone: true },
+    })
+
+    if (!provider) {
+      throw new ProviderCreditPaymentIntentError(
+        'PROVIDER_NOT_FOUND',
+        'Provider account not found.',
+      )
+    }
+
+    const paymentReference = await createUniquePaymentReference(
+      tx,
+      () => `PAT-${randomBytes(6).toString('hex').toUpperCase()}`,
+    )
+
+    // The PaymentIntent is created before Pay@ is called so webhook references
+    // can use the immutable intent ID and remain idempotent under retries.
+    return tx.paymentIntent.create({
+      data: {
+        providerId: provider.id,
+        amountCents: input.amountCents,
+        currency: 'ZAR',
+        creditsToIssue,
+        paymentMethod: 'PAYAT',
+        paymentReference,
+        status: 'PENDING_PAYMENT',
+        providerCellphone: input.providerCellphone ?? provider.phone,
+        metadata: toJson(input.metadata),
+      },
+    })
+  })
+
+  const payat = await createPayatPaymentRequest({
+    topupId: intent.id,
+    amountCents: intent.amountCents,
+    description: `Plug A Pro wallet top-up R${Math.round(intent.amountCents / 100)}`,
+  })
+
+  const { notifyProviderPayatTopUpInitiated } = await import('./provider-wallet-notifications')
+  notifyProviderPayatTopUpInitiated(intent.id, payat.paymentLink).catch((error: unknown) => {
+    console.error('[provider-credit-payment-intents] Pay@ topup initiated WhatsApp notification failed', {
+      intentId: intent.id,
+      error,
+    })
+  })
+
+  return { intent, payat }
 }
 
 /**

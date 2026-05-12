@@ -1,11 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ProviderCreditPaymentIntentError,
+  createPayatTopUpIntent,
   createManualEftTopUpIntent,
   generateManualEftPaymentReference,
 } from '../../lib/provider-credit-payment-intents'
 
-const { mockDb, mockNotifyPaymentIntentCreated, state } = vi.hoisted(() => {
+const {
+  mockDb,
+  mockNotifyPaymentIntentCreated,
+  mockNotifyProviderPayatTopUpInitiated,
+  mockCreatePayatPaymentRequest,
+  state,
+} = vi.hoisted(() => {
   const state: {
     provider: { id: string; phone: string | null } | null
     existingReferences: Set<string>
@@ -35,8 +42,16 @@ const { mockDb, mockNotifyPaymentIntentCreated, state } = vi.hoisted(() => {
   }
 
   const mockNotifyPaymentIntentCreated = vi.fn()
+  const mockNotifyProviderPayatTopUpInitiated = vi.fn()
+  const mockCreatePayatPaymentRequest = vi.fn()
 
-  return { mockDb, mockNotifyPaymentIntentCreated, state }
+  return {
+    mockDb,
+    mockNotifyPaymentIntentCreated,
+    mockNotifyProviderPayatTopUpInitiated,
+    mockCreatePayatPaymentRequest,
+    state,
+  }
 })
 
 vi.mock('../../lib/db', () => ({
@@ -45,6 +60,12 @@ vi.mock('../../lib/db', () => ({
 
 vi.mock('../../lib/provider-wallet-notifications', () => ({
   notifyProviderPaymentIntentCreated: mockNotifyPaymentIntentCreated,
+  notifyProviderPayatTopUpInitiated: mockNotifyProviderPayatTopUpInitiated,
+}))
+
+vi.mock('../../lib/payat/payment', () => ({
+  PAYAT_ALLOWED_AMOUNTS_CENTS: new Set([10_000, 20_000, 50_000]),
+  createPayatPaymentRequest: mockCreatePayatPaymentRequest,
 }))
 
 describe('provider credit payment intents', () => {
@@ -61,6 +82,12 @@ describe('provider credit payment intents', () => {
     state.existingReferences = new Set()
     state.intents = []
     mockNotifyPaymentIntentCreated.mockResolvedValue(undefined)
+    mockNotifyProviderPayatTopUpInitiated.mockResolvedValue(undefined)
+    mockCreatePayatPaymentRequest.mockResolvedValue({
+      reference: 'intent-1',
+      qrCodeUrl: 'https://go.payat.co.za/qr/intent-1',
+      paymentLink: 'https://go.payat.co.za/pay/intent-1',
+    })
 
     mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) =>
       callback(mockDb as any)
@@ -91,7 +118,7 @@ describe('provider credit payment intents', () => {
     })
   })
 
-  it('rejects a R50 top-up', async () => {
+  it('rejects an amount below the R100 minimum top-up', async () => {
     await expect(
       createManualEftTopUpIntent({
         providerId: 'provider-1',
@@ -105,9 +132,9 @@ describe('provider credit payment intents', () => {
   })
 
   it.each([
-    [10_000, 2],
-    [20_000, 4],
-    [50_000, 10],
+    [10_000, 5],
+    [20_000, 10],
+    [50_000, 25],
   ])('creates %i cents as %i credits', async (amountCents, creditsToIssue) => {
     const result = await createManualEftTopUpIntent({
       providerId: 'provider-1',
@@ -187,5 +214,44 @@ describe('provider credit payment intents', () => {
 
     expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
     expect(state.intents).toHaveLength(0)
+  })
+
+  it('creates a Pay@ intent before requesting Pay@ QR and payment links', async () => {
+    const result = await createPayatTopUpIntent({
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      providerCellphone: '+27821234567',
+    })
+
+    expect(result.intent).toMatchObject({
+      id: 'intent-1',
+      providerId: 'provider-1',
+      amountCents: 10_000,
+      creditsToIssue: 5,
+      paymentMethod: 'PAYAT',
+      status: 'PENDING_PAYMENT',
+      providerCellphone: '+27821234567',
+    })
+    expect(mockCreatePayatPaymentRequest).toHaveBeenCalledWith({
+      topupId: 'intent-1',
+      amountCents: 10_000,
+      description: 'Plug A Pro wallet top-up R100',
+    })
+    expect(result.payat).toEqual({
+      reference: 'intent-1',
+      qrCodeUrl: 'https://go.payat.co.za/qr/intent-1',
+      paymentLink: 'https://go.payat.co.za/pay/intent-1',
+    })
+  })
+
+  it('does not mutate wallet balances or ledger entries when creating a Pay@ intent', async () => {
+    await createPayatTopUpIntent({
+      providerId: 'provider-1',
+      amountCents: 20_000,
+    })
+
+    expect(mockDb.providerWallet.update).not.toHaveBeenCalled()
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
   })
 })

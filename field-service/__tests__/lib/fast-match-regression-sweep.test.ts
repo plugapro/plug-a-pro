@@ -156,7 +156,7 @@ describe('fast match regression sweep', () => {
     })
 
     expect(message).toContain('Previewing and responding is free')
-    expect(message).toContain('1 credit = R50')
+    expect(message).toContain('1 credit = R20')
     expect(message).toContain('customer selects you and you accept the selected job')
     expect(message).toContain('You have *10 minutes* to respond')
     expect(message).toContain('Matching preference: *Best value*')

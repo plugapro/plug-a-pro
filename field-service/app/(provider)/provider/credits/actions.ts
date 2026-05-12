@@ -10,6 +10,7 @@ import {
   getProviderWalletLedgerEntries,
 } from '@/lib/provider-wallet'
 import {
+  createPayatTopUpIntent,
   createManualEftTopUpIntent,
   createPayfastTopUpIntent,
   getManualEftBankAccountInstructions,
@@ -225,6 +226,36 @@ export async function createProviderTopUpIntent(
 export type ProviderPayfastCheckoutResult = {
   intentId: string
   checkout: import('@/lib/payfast').PayfastCheckoutPayload
+}
+
+export type ProviderPayatTopUpResult = {
+  intentId: string
+  amountCents: number
+  creditsToIssue: number
+  reference: string
+  qrCodeUrl: string
+  paymentLink: string
+}
+
+export async function createProviderPayatTopUpIntent(
+  amountCents: number,
+): Promise<ProviderPayatTopUpResult> {
+  const provider = await getAuthenticatedProvider()
+  const result = await createPayatTopUpIntent({
+    providerId: provider.id,
+    amountCents,
+    providerCellphone: provider.phone,
+  })
+
+  revalidatePath('/provider/credits')
+  return {
+    intentId: result.intent.id,
+    amountCents: result.intent.amountCents,
+    creditsToIssue: result.intent.creditsToIssue,
+    reference: result.payat.reference,
+    qrCodeUrl: result.payat.qrCodeUrl,
+    paymentLink: result.payat.paymentLink,
+  }
 }
 
 /**

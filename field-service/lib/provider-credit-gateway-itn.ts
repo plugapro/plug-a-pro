@@ -30,6 +30,11 @@ type CreditFromItnResult =
   | { credited: true; ledgerEntryId: string }
   | { credited: false; reason: string }
 
+type GatewayCreditSource = {
+  gatewayLabel: 'Payfast' | 'Pay@'
+  createdBy: 'payfast-itn' | 'payat-webhook'
+}
+
 /**
  * Credit a provider's wallet from a verified Payfast ITN.
  *
@@ -37,8 +42,9 @@ type CreditFromItnResult =
  * when the intent is not found, already credited, or in a non-creditable state.
  * Never throws — callers (the ITN handler) log failures and return HTTP 200.
  */
-export async function creditProviderWalletFromGatewayItn(
+async function creditProviderWalletFromGatewayIntent(
   intentId: string,
+  source: GatewayCreditSource,
 ): Promise<CreditFromItnResult> {
   // Pre-transaction idempotency guard — avoids opening a transaction for
   // the common case where the intent is already credited.
@@ -98,14 +104,14 @@ export async function creditProviderWalletFromGatewayItn(
         {
           referenceType: 'payment_intent',
           referenceId: intent.id,
-          description: `Top-up via Payfast — ${intent.creditsToIssue} Plug A Pro provider credits (${amountFormatted})`,
+          description: `Top-up via ${source.gatewayLabel} — ${intent.creditsToIssue} Plug A Pro provider credits (${amountFormatted})`,
           metadata: {
             paymentReference: intent.paymentReference,
             amountCents: intent.amountCents,
             creditsToIssue: intent.creditsToIssue,
             itnPaymentStatus: intent.itnPaymentStatus,
           },
-          createdBy: 'payfast-itn',
+          createdBy: source.createdBy,
           isTestTransaction: intent.provider.isTestUser,
           cohortName: intent.provider.cohortName,
         },
@@ -125,7 +131,7 @@ export async function creditProviderWalletFromGatewayItn(
         tx,
         intent.providerId,
         intent.id,
-        'payfast-itn',
+        source.createdBy,
       )
 
       return { ledgerEntryId: ledgerEntry.id }
@@ -150,6 +156,26 @@ export async function creditProviderWalletFromGatewayItn(
   })
 
   return { credited: true, ledgerEntryId }
+}
+
+export async function creditProviderWalletFromGatewayItn(
+  intentId: string,
+): Promise<CreditFromItnResult> {
+  // Payfast ITNs use the shared gateway crediting path after adapter validation.
+  return creditProviderWalletFromGatewayIntent(intentId, {
+    gatewayLabel: 'Payfast',
+    createdBy: 'payfast-itn',
+  })
+}
+
+export async function creditProviderWalletFromPayatWebhook(
+  intentId: string,
+): Promise<CreditFromItnResult> {
+  // Pay@ webhooks use the same ledger-first crediting path after HMAC validation.
+  return creditProviderWalletFromGatewayIntent(intentId, {
+    gatewayLabel: 'Pay@',
+    createdBy: 'payat-webhook',
+  })
 }
 
 class AlreadyCreditedError extends Error {

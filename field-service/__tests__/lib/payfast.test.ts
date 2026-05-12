@@ -28,7 +28,7 @@ function makeIntent() {
   return {
     id: 'clxintent0001',
     amountCents: 10_000,
-    creditsToIssue: 2,
+    creditsToIssue: 5,
     paymentMethod: 'PAYFAST_CARD',
   }
 }

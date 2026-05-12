@@ -19,7 +19,7 @@ describe('provider wallet notification message builders', () => {
     const message = buildLowBalanceWarningMessage()
 
     expect(message).toContain('You have 1 Plug A Pro provider credit left')
-    expect(message).toContain('1 credit = R50')
+    expect(message).toContain('1 credit = R20')
     expect(message).toContain('No credits are used for previewing or saying you are interested')
     expect(message).toContain('1 credit is used only when a customer selects you')
     expect(message).toContain('You can continue here on WhatsApp')
@@ -48,7 +48,7 @@ describe('provider wallet notification message builders', () => {
   it('builds manual EFT top-up instructions with bank details and reference', () => {
     const message = buildPaymentIntentCreatedMessage({
       amountFormatted: 'R 100,00',
-      creditsToIssue: 2,
+      creditsToIssue: 5,
       paymentReference: 'PAP-7842-9F3K',
       bankAccount: {
         accountName: 'Plug A Pro provider credits',
@@ -59,8 +59,8 @@ describe('provider wallet notification message builders', () => {
       },
     })
 
-    expect(message).toContain('R 100,00 = 2 credits')
-    expect(message).toContain('1 credit = R50')
+    expect(message).toContain('R 100,00 = 5 credits')
+    expect(message).toContain('1 credit = R20')
     expect(message).toContain('No credits are used for previewing or saying you are interested')
     expect(message).toContain('1 credit is used only when a customer selects you')
     expect(message).toContain('Test Bank')
@@ -109,16 +109,16 @@ describe('provider wallet notification message builders', () => {
     it('includes the formatted amount and credit count', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 100,00',
-        creditsToIssue: 2,
+        creditsToIssue: 5,
       })
       expect(message).toContain('R 100,00')
-      expect(message).toContain('2 credits')
+      expect(message).toContain('5 credits')
     })
 
     it('includes the checkout instruction', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 200,00',
-        creditsToIssue: 4,
+        creditsToIssue: 25,
       })
       expect(message).toContain('Complete your payment on the checkout page')
     })
@@ -126,7 +126,7 @@ describe('provider wallet notification message builders', () => {
     it('includes the pending confirmation note', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 500,00',
-        creditsToIssue: 10,
+        creditsToIssue: 25,
       })
       expect(message).toContain('Credits will appear in your wallet once Payfast confirms payment')
       expect(message).toContain('1 credit is used only when a customer selects you')
@@ -151,7 +151,7 @@ describe('provider wallet notification message builders', () => {
     it('does not contain bank account details', () => {
       const message = buildPayfastTopUpInitiatedMessage({
         amountFormatted: 'R 100,00',
-        creditsToIssue: 2,
+        creditsToIssue: 5,
       })
       expect(message).not.toContain('Account name')
       expect(message).not.toContain('Branch code')

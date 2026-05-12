@@ -970,7 +970,7 @@ export default async function ProviderLeadAccessPage({
               Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
             </p>
             <p className="mt-2">
-              Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R50).
+              Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R20).
               Your current credits balance is {providerCreditBalance} credit{providerCreditBalance === 1 ? '' : 's'}.
             </p>
           </div>
@@ -992,7 +992,7 @@ export default async function ProviderLeadAccessPage({
             {hasEnoughCredits ? (
               <>
                 <p className="mt-1">
-                  Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R50).
+                  Accepting this customer-selected job uses {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} after the server confirms your balance (1 credit = R20).
                   Your current credits balance is {providerCreditBalance}. After acceptance, your balance will be {providerCreditBalance - LEAD_UNLOCK_COST_CREDITS}.
                 </p>
                 <p className="mt-1">
@@ -1114,7 +1114,7 @@ export default async function ProviderLeadAccessPage({
           )}
           {!hasAcceptedDetails && (
             <div className="px-4 py-3 text-sm text-muted-foreground">
-              Accept this customer-selected job for {LEAD_UNLOCK_COST_CREDITS} Plug A Pro provider credit (1 credit = R50) to view customer contact details, exact address, and access instructions.
+              Accept this customer-selected job for {LEAD_UNLOCK_COST_CREDITS} Plug A Pro provider credit (1 credit = R20) to view customer contact details, exact address, and access instructions.
             </div>
           )}
           <div className="px-4 py-3 space-y-0.5">
