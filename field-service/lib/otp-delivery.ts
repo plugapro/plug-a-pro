@@ -54,7 +54,7 @@ export async function deliverOtp(params: {
   if (!normalized.ok) {
     const code: OtpDeliveryErrorCode = normalized.errorCode
     await writeAttempt({
-      phoneE164: normalized.ok ? normalized.e164 : params.phone,
+      phoneE164: params.phone,
       userId,
       status: 'failed',
       failureCode: code,
@@ -67,7 +67,7 @@ export async function deliverOtp(params: {
       actorRole: 'auth_hook',
       action: 'auth.otp_send_failed',
       entityType: 'phone',
-      entityId: normalized.ok ? normalized.e164 : params.phone,
+      entityId: params.phone,
       after: {
         channel: 'whatsapp',
         failureCode: code,
