@@ -43,6 +43,7 @@ const PUBLIC_PATHS = [
   '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
   '/api/auth/session',              // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',                 // called client-side after OTP — no session cookie yet
+  '/api/auth/hooks',                // Supabase Auth webhook hooks (send-sms, etc.) — signature-verified, no session cookie
   '/api/auth/provider/send-code',   // unauthenticated — provider submits phone to request OTP
   '/api/auth/provider/verify-code', // unauthenticated — verifies OTP, then creates the provider session
   '/api/auth/phone-exists',         // unauthenticated — sign-in pages check if account exists before Supabase OTP
