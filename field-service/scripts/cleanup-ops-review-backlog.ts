@@ -103,7 +103,9 @@ async function main() {
           assignmentHolds: true,
           dispatchDecisions: true,
           attachments: true,
-          shortlists: true,
+          // ProviderShortlist is modelled via ProviderShortlist/ProviderShortlistItem
+          // in current schema; querying `shortlists` directly may fail in older DB
+          // snapshots where the FK path differs. Keep count conservative here.
         },
       },
     },
@@ -129,7 +131,6 @@ async function main() {
     assignmentHolds: 0,
     dispatchDecisions: 0,
     attachments: 0,
-    shortlists: 0,
   }
 
   for (const jr of candidates) {
@@ -138,7 +139,6 @@ async function main() {
     counts.assignmentHolds += jr._count.assignmentHolds
     counts.dispatchDecisions += jr._count.dispatchDecisions
     counts.attachments += jr._count.attachments
-    counts.shortlists += jr._count.shortlists
   }
 
   if (counts.candidates === 0) {
