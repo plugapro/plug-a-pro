@@ -1154,6 +1154,10 @@ export async function getCustomerReviewShortlist(params: { requestId: string; cu
         name: lead.provider.name,
         verified: lead.provider.verified,
         status: lead.status,
+        profileUrl: getReviewProviderProfileUrl({
+          requestId: params.requestId,
+          providerId: lead.providerId,
+        }),
         callOutFee: response?.callOutFee ? Number(response.callOutFee) : null,
         estimatedArrivalAt: response?.estimatedArrivalAt ?? null,
         providerNote: response?.providerNote ?? null,

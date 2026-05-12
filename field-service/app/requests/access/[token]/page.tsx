@@ -636,7 +636,14 @@ export default async function TicketAccessPage({
                   ) : (
                     <div className="space-y-1">
                       {reviewShortlist.providers.map((provider, idx) => (
-                        <p key={provider.providerId}>{idx + 1}. {provider.name}</p>
+                        <div key={provider.providerId} className="flex items-center justify-between gap-3">
+                          <p>{idx + 1}. {provider.name}</p>
+                          {provider.profileUrl && (
+                            <Link href={provider.profileUrl} className="text-xs font-medium text-primary underline">
+                              View profile
+                            </Link>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
