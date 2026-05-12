@@ -74,8 +74,13 @@ function assertCohortSendAllowed(
 // Meta Business Suite and point WHATSAPP_PHONE_NUMBER_ID at it. Do NOT rely
 // solely on the cohort gate as the isolation boundary.
 function getConfig() {
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
+  // Defensive trim — past incident where a value was pasted into Vercel with
+  // a trailing literal "\n" (backslash-n, not a real newline). That breaks
+  // the Authorization header and Meta rejects every send with code 190
+  // "Malformed access token". Strip surrounding whitespace and a stray
+  // trailing literal-backslash-n so a copy-paste mishap can't take auth out.
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim().replace(/\\n$/, '')
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim()
 
   if (!accessToken || !phoneNumberId) {
     throw new Error(
