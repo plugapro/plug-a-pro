@@ -83,10 +83,15 @@ export async function resolveCategoryRequirements(
       ]),
     }
   } catch (error) {
-    if (isSchemaCompatError(error)) {
-      return mergeCategoryRequirements(params)
+    // Same defensive policy as listCategoriesForAdmin: any DB-side issue with
+    // the Category tables falls through to the static policy file rather than
+    // breaking matching. Schema-compat errors (P2021/P2022) used to be the
+    // only handled case; broaden to all errors so transient blips don't fail
+    // the customer-facing booking flow.
+    if (!isSchemaCompatError(error)) {
+      console.error('[category-config] resolveCategoryRequirements failed, using policy fallback', error)
     }
-    throw error
+    return mergeCategoryRequirements(params)
   }
 }
 
@@ -111,7 +116,12 @@ export async function listCategoriesForAdmin(): Promise<CategoryAdminRecord[]> {
 
     if (categories) return categories
   } catch (error) {
-    if (!isSchemaCompatError(error)) throw error
+    // Never let a Category-table problem crash the admin page. Schema-compat
+    // errors (P2021/P2022) already fall through to the legacy policy fallback;
+    // anything else (connection blip, missing related-row table, transient
+    // Prisma error) is logged and we still render the policy fallback so the
+    // operator can read the current effective config and recover.
+    console.error('[category-config] listCategoriesForAdmin failed, using policy fallback', error)
   }
 
   return listCategoryPolicies().map((policy, index) => ({
