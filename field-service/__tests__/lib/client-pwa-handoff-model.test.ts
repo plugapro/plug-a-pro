@@ -210,6 +210,12 @@ describe('allowedActionsForClientPwaScreen — defined for all screens', () => {
     expect(actions).toContain('request_more_options')
   })
 
+  it('request_submitted includes choose_matching_mode before matching starts', () => {
+    const actions = allowedActionsForClientPwaScreen('request_submitted')
+    expect(actions).toContain('choose_matching_mode')
+    expect(actions).toContain('cancel_request')
+  })
+
   it('job_tracking returns only track_job', () => {
     expect(allowedActionsForClientPwaScreen('job_tracking')).toEqual(['track_job'])
   })

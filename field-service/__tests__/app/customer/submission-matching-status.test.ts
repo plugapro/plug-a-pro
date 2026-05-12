@@ -8,6 +8,8 @@
  *  4. Token page screens: request_submitted, matching_progress, providers_reviewing
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // ── Notification mocks ─────────────────────────────────────────────────────────
 const { mockSendText, mockSendCtaUrl } = vi.hoisted(() => ({
@@ -53,9 +55,10 @@ describe('CLIENT-06: status screen resolution', () => {
     expect(result.screen).toBe('shortlist')
   })
 
-  it('allowed actions for request_submitted include view_matching_status and cancel_request', async () => {
+  it('allowed actions for request_submitted include matching-mode choice and cancel_request', async () => {
     const { allowedActionsForClientPwaScreen } = await import('../../../lib/client-pwa-state')
     const actions = allowedActionsForClientPwaScreen('request_submitted')
+    expect(actions).toContain('choose_matching_mode')
     expect(actions).toContain('view_matching_status')
     expect(actions).toContain('cancel_request')
   })
@@ -71,6 +74,20 @@ describe('CLIENT-06: status screen resolution', () => {
     const actions = allowedActionsForClientPwaScreen('providers_reviewing')
     expect(actions).toContain('cancel_request')
     expect(actions).not.toContain('select_provider')
+  })
+})
+
+describe('CLIENT-06: token request-submitted page', () => {
+  it('offers matching-mode actions instead of passive provider search copy', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'app/requests/access/[token]/page.tsx'),
+      'utf8',
+    )
+    expect(source).toContain('chooseMatchingModeFromToken')
+    expect(source).toContain('name="mode" value="quick_match"')
+    expect(source).toContain('name="mode" value="review_first"')
+    expect(source).toContain('Choose how you&apos;d like to find a provider.')
+    expect(source).not.toContain('We&apos;re checking suitable providers in your area.</p>')
   })
 })
 

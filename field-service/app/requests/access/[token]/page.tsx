@@ -24,6 +24,10 @@ import {
   sendRequestToShortlistedProviders,
   shortlistProviderForCustomerReview,
 } from '@/lib/review-first'
+import {
+  selectCustomerRequestMatchingMode,
+  type CustomerMatchingMode,
+} from '@/lib/request-matching-mode'
 
 export const metadata = buildMetadata({ title: 'Ticket Details', noIndex: true })
 
@@ -105,6 +109,34 @@ async function sendReviewShortlistFromToken(formData: FormData) {
   }
 
   redirect(`/requests/access/${encodeURIComponent(token)}?selection=sent-to-shortlist`)
+}
+
+async function chooseMatchingModeFromToken(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const requestId = String(formData.get('requestId') ?? '')
+  const mode = String(formData.get('mode') ?? '') as CustomerMatchingMode
+  const resolved = await resolveJobRequestAccessToken(token)
+
+  if (
+    resolved.status !== 'active' ||
+    resolved.jobRequest?.id !== requestId ||
+    (mode !== 'quick_match' && mode !== 'review_first')
+  ) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
+  }
+
+  try {
+    await selectCustomerRequestMatchingMode({
+      requestId,
+      customerId: resolved.jobRequest.customerId,
+      mode,
+    })
+  } catch {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=matching-mode-failed`)
+  }
+
+  redirect(`/requests/access/${encodeURIComponent(token)}?view=request_submitted`)
 }
 
 async function shortlistReviewProviderFromToken(formData: FormData) {
@@ -240,7 +272,9 @@ export default async function TicketAccessPage({
   const canRequestMoreOptions = destination.allowedActions.includes('request_more_options')
   const canCancelRequest = destination.allowedActions.includes('cancel_request')
   const isReviewFirstFlow =
-    jobRequest.status === 'PENDING_VALIDATION' && jobRequest.assignmentMode === 'OPS_REVIEW'
+    jobRequest.status === 'PENDING_VALIDATION' &&
+    jobRequest.assignmentMode === 'OPS_REVIEW' &&
+    Boolean(jobRequest.latestDispatchDecisionId)
   const isReviewFirstPending = isReviewFirstFlow && !Boolean(jobRequest.latestDispatchDecisionId)
   const reviewCandidates = ticketVm.reviewCandidates
   const reviewShortlist = ticketVm.reviewShortlist
@@ -339,7 +373,30 @@ export default async function TicketAccessPage({
                   We&apos;ve received your {jobRequest.category} request
                   {jobRequest.address ? ` in ${normaliseLocationDisplayName(jobRequest.address.suburb)}, ${normaliseLocationDisplayName(jobRequest.address.city)}` : ''}.
                 </p>
-                <p className="text-muted-foreground">We&apos;re checking suitable providers in your area.</p>
+                <p className="text-muted-foreground">
+                  Choose how you&apos;d like to find a provider.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <form action={chooseMatchingModeFromToken}>
+                    <input type="hidden" name="token" value={token} />
+                    <input type="hidden" name="requestId" value={jobRequest.id} />
+                    <input type="hidden" name="mode" value="quick_match" />
+                    <Button type="submit" className="w-full">
+                      Quick Match
+                    </Button>
+                  </form>
+                  <form action={chooseMatchingModeFromToken}>
+                    <input type="hidden" name="token" value={token} />
+                    <input type="hidden" name="requestId" value={jobRequest.id} />
+                    <input type="hidden" name="mode" value="review_first" />
+                    <Button type="submit" variant="outline" className="w-full">
+                      Review Providers First
+                    </Button>
+                  </form>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Quick Match asks one suitable provider at a time. Review Providers First lets you compare profiles before sending your request.
+                </p>
               </>
             )}
             {destination.screen === 'matching_progress' && (
@@ -403,7 +460,8 @@ export default async function TicketAccessPage({
       {(resolvedSearchParams.selection === 'invalid' ||
         resolvedSearchParams.selection === 'more-options-failed' ||
         resolvedSearchParams.selection === 'cancel-failed' ||
-        resolvedSearchParams.selection === 'send-shortlist-failed') && (
+        resolvedSearchParams.selection === 'send-shortlist-failed' ||
+        resolvedSearchParams.selection === 'matching-mode-failed') && (
         <Card className="border-destructive/30 bg-destructive/5">
           <CardContent className="space-y-2 px-4 py-4 text-sm text-destructive">
             <p className="font-medium">We could not complete that action</p>

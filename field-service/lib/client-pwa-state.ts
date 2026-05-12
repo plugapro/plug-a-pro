@@ -19,6 +19,7 @@ export type ClientPwaAllowedAction =
   | 'start_request'
   | 'resume_request'
   | 'upload_photos'
+  | 'choose_matching_mode'
   | 'view_matching_status'
   | 'view_shortlist'
   | 'select_provider'
@@ -105,6 +106,7 @@ export function allowedActionsForClientPwaScreen(screen: ClientPwaScreen): Clien
     case 'request_form':
       return ['resume_request', 'upload_photos', 'cancel_request']
     case 'request_submitted':
+      return ['choose_matching_mode', 'view_matching_status', 'upload_photos', 'cancel_request']
     case 'matching_progress':
       return ['view_matching_status', 'upload_photos', 'cancel_request']
     case 'providers_reviewing':

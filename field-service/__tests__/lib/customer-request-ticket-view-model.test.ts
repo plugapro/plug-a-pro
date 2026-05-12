@@ -106,6 +106,8 @@ describe('buildCustomerRequestTicketViewModel', () => {
       expect(result.destination.request?.id).toBe('jr-2')
       expect(result.reviewCandidates).toBeNull()
       expect(result.reviewShortlist).toBeNull()
+      expect(mockGetProviderCandidatesForCustomerReview).not.toHaveBeenCalled()
+      expect(mockGetCustomerReviewShortlist).not.toHaveBeenCalled()
     }
   })
 

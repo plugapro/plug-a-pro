@@ -96,7 +96,9 @@ export default async function RequestDetailPage({
   const canRequestMoreOptions = jobRequest.status === 'SHORTLIST_READY'
   const canCancelRequest = jobRequest.status === 'SHORTLIST_READY'
   const isReviewFirstFlow =
-    jobRequest.status === 'PENDING_VALIDATION' && jobRequest.assignmentMode === 'OPS_REVIEW'
+    jobRequest.status === 'PENDING_VALIDATION' &&
+    jobRequest.assignmentMode === 'OPS_REVIEW' &&
+    Boolean(jobRequest.latestDispatchDecisionId)
   const isReviewFirstReady = isReviewFirstFlow && Boolean(jobRequest.latestDispatchDecisionId)
   const isReviewFirstPending = isReviewFirstFlow && !isReviewFirstReady
   const reviewCandidates = isReviewFirstReady
