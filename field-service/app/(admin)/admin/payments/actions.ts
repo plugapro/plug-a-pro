@@ -186,6 +186,16 @@ export async function issueRefundAction(formData: FormData) {
     })
     redirect('/admin/payments?message=refund_issued')
   } catch (err) {
+    // redirect() throws a NEXT_REDIRECT sentinel — must re-throw before other checks
+    if (
+      typeof err === 'object' &&
+      err !== null &&
+      'digest' in err &&
+      typeof (err as { digest?: string }).digest === 'string' &&
+      (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) {
+      throw err
+    }
     if (err instanceof CrudActionError) {
       if (err.code === 'FLAG_DISABLED') {
         redirect('/admin/payments')
