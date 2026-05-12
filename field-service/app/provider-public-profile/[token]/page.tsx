@@ -40,6 +40,18 @@ export default async function ProviderPublicProfilePage({
 
   const provider = resolved.provider
   const categoryRates = provider.rates[0] ?? null
+  const alreadyShortlisted = [
+    'SHORTLISTED',
+    'SENT',
+    'VIEWED',
+    'INTERESTED',
+    'CUSTOMER_SELECTED',
+    'PROVIDER_ACCEPTED',
+    'CREDIT_REQUIRED',
+    'CREDIT_APPLIED',
+    'ACCEPTED_LOCKED',
+    'ACCEPTED',
+  ].includes(provider.leadStatus ?? '')
   const profileMessage = resolvedSearchParams.shortlisted === '1'
     ? 'Provider added to shortlist.'
     : null
@@ -95,10 +107,16 @@ export default async function ProviderPublicProfilePage({
         </Card>
       )}
 
-      <form method="post" action="/api/review-first/provider-profile/shortlist" className="space-y-2">
-        <input type="hidden" name="token" value={token} />
-        <Button type="submit" className="w-full">Shortlist this provider</Button>
-      </form>
+      {alreadyShortlisted ? (
+        <Button type="button" className="w-full" disabled>
+          Shortlisted
+        </Button>
+      ) : (
+        <form method="post" action="/api/review-first/provider-profile/shortlist" className="space-y-2">
+          <input type="hidden" name="token" value={token} />
+          <Button type="submit" className="w-full">Shortlist this provider</Button>
+        </form>
+      )}
       <Button asChild variant="outline" className="w-full">
         <Link href={requestAccessUrl ?? `/requests/${resolved.request.id}`}>Back to request</Link>
       </Button>

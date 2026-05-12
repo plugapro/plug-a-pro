@@ -24,4 +24,20 @@ describe('qualified shortlist schema foundation', () => {
     expect(migration).not.toMatch(/\bDELETE\s+FROM\b/i)
     expect(migration).not.toMatch(/\bTRUNCATE\b/i)
   })
+
+  it('includes an idempotent repair for interim shortlist column names', () => {
+    const repair = readFileSync(
+      join(projectRoot, 'prisma/migrations/20260512143000_repair_provider_shortlist_request_column/migration.sql'),
+      'utf8',
+    )
+
+    expect(repair).toContain('RENAME COLUMN "jobRequestId" TO "requestId"')
+    expect(repair).toContain('RENAME COLUMN "leadId" TO "leadInviteId"')
+    expect(repair).toContain('RENAME COLUMN "status" TO "response"')
+    expect(repair).toContain('RENAME COLUMN "score" TO "matchScore"')
+    expect(repair).toContain('RENAME COLUMN "addedAt" TO "createdAt"')
+    expect(repair).toContain('ADD COLUMN IF NOT EXISTS "publishedAt"')
+    expect(repair).toContain('provider_shortlist_items_shortlistId_leadInviteId_key')
+    expect(repair).toContain('provider_lead_responses_leadInviteId_createdAt_idx')
+  })
 })
