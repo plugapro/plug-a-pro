@@ -18,13 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  inviteAdminFromFormAction,
-  changeRoleFromFormAction,
-  deactivateAdminFromFormAction,
-  reactivateAdminFromFormAction,
-  revokeAdminFromFormAction,
-} from './actions'
+import { ActionForm } from '@/components/admin/ui/ActionForm'
+import { SubmitButton } from '@/components/admin/ui/SubmitButton'
+import { inviteAdminFromFormAction } from './actions'
+import { TeamActionsRow } from './_components/TeamActionsRow'
 
 export const metadata = buildMetadata({ title: 'Team', noIndex: true })
 
@@ -63,43 +60,6 @@ export default async function TeamPage() {
     },
   })
 
-  async function submitInvite(formData: FormData) {
-    'use server'
-    await inviteAdminFromFormAction(formData)
-  }
-
-  async function submitChangeRole(formData: FormData) {
-    'use server'
-    await changeRoleFromFormAction(formData)
-  }
-
-  async function submitDeactivateAdmin(formData: FormData) {
-    'use server'
-    const adminUserId = formData.get('adminUserId')
-    if (typeof adminUserId !== 'string' || !adminUserId) {
-      return
-    }
-    await deactivateAdminFromFormAction(adminUserId)
-  }
-
-  async function submitReactivateAdmin(formData: FormData) {
-    'use server'
-    const adminUserId = formData.get('adminUserId')
-    if (typeof adminUserId !== 'string' || !adminUserId) {
-      return
-    }
-    await reactivateAdminFromFormAction(adminUserId)
-  }
-
-  async function submitRevokeAdmin(formData: FormData) {
-    'use server'
-    const adminUserId = formData.get('adminUserId')
-    if (typeof adminUserId !== 'string' || !adminUserId) {
-      return
-    }
-    await revokeAdminFromFormAction(adminUserId)
-  }
-
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -132,7 +92,13 @@ export default async function TeamPage() {
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium bg-muted/30 hover:bg-muted/50 select-none">
             Invite admin
           </summary>
-          <form action={submitInvite} className="p-4 grid gap-3 sm:grid-cols-3">
+          <ActionForm
+            action={inviteAdminFromFormAction}
+            resetOnSuccess={true}
+            refreshOnSuccess={true}
+            successMessage="Invite sent"
+            className="p-4 grid gap-3 sm:grid-cols-3"
+          >
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground font-medium" htmlFor="invite-name">Name</label>
               <input
@@ -171,9 +137,11 @@ export default async function TeamPage() {
               </select>
             </div>
             <div className="sm:col-span-3 flex justify-end">
-              <Button type="submit" size="sm">Send invite</Button>
+              <SubmitButton type="submit" size="sm" pendingLabel="Sending…">
+                Send invite
+              </SubmitButton>
             </div>
-          </form>
+          </ActionForm>
         </details>
       )}
 
@@ -227,66 +195,12 @@ export default async function TeamPage() {
                 </TableCell>
                 {crudEnabled && (
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      {/* Role change — OWNER only (enforced server-side) */}
-                      <form action={submitChangeRole} className="flex items-center gap-1">
-                        <input type="hidden" name="adminUserId" value={admin.id} />
-                        <select
-                          name="role"
-                          defaultValue={admin.role}
-                          disabled={!admin.active}
-                          className="h-7 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-                        >
-                          <option value="OPS">Ops</option>
-                          <option value="FINANCE">Finance</option>
-                          <option value="TRUST">Trust</option>
-                          <option value="ADMIN">Admin</option>
-                          <option value="OWNER">Owner</option>
-                        </select>
-                        <Button type="submit" variant="ghost" size="sm" disabled={!admin.active} className="h-7 px-2 text-xs">
-                          Set
-                        </Button>
-                      </form>
-                      {admin.active && admin.acceptedAt && admin.userId !== actor.id && admin.id !== actor.adminUserId && (
-                        <form action={submitDeactivateAdmin}>
-                          <input type="hidden" name="adminUserId" value={admin.id} />
-                          <Button
-                            type="submit"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-destructive hover:text-destructive/80"
-                          >
-                            Deactivate
-                          </Button>
-                        </form>
-                      )}
-                      {!admin.active && (
-                        <form action={submitReactivateAdmin}>
-                          <input type="hidden" name="adminUserId" value={admin.id} />
-                          <Button
-                            type="submit"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-emerald-700 hover:text-emerald-800"
-                          >
-                            Reactivate
-                          </Button>
-                        </form>
-                      )}
-                      {admin.active && !admin.acceptedAt && admin.userId !== actor.id && admin.id !== actor.adminUserId && (
-                        <form action={submitRevokeAdmin}>
-                          <input type="hidden" name="adminUserId" value={admin.id} />
-                          <Button
-                            type="submit"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-destructive hover:text-destructive/80"
-                          >
-                            Revoke
-                          </Button>
-                        </form>
-                      )}
-                    </div>
+                    <TeamActionsRow
+                      admin={admin}
+                      actorId={actor.id}
+                      actorAdminUserId={actor.adminUserId ?? null}
+                      crudEnabled={crudEnabled}
+                    />
                   </TableCell>
                 )}
               </TableRow>

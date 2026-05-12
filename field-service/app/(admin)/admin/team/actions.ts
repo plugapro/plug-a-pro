@@ -90,19 +90,25 @@ export async function inviteAdminAction(input: InviteInput) {
 
   // Send Supabase invite email outside the transaction (non-atomic by design —
   // the AdminUser row is the source of truth; email delivery is best-effort)
+  let inviteEmailSent = true
+  let inviteEmailError: string | undefined
   try {
     const supabase = createServiceClient()
     await supabase.auth.admin.inviteUserByEmail(input.email, {
       data: { role: 'admin', name: input.name },
     })
   } catch (emailErr) {
-    // Log but don't fail — the admin row exists; the invite can be resent
+    inviteEmailSent = false
+    inviteEmailError = emailErr instanceof Error ? emailErr.message : 'Unknown error'
     console.error('[inviteAdmin] Supabase invite email failed:', emailErr)
   }
 
   revalidatePath('/admin/team')
   revalidatePath('/admin/team/permissions')
-  return result
+  return {
+    ...result,
+    data: { ...result.data, inviteEmailSent, inviteEmailError },
+  }
 }
 
 // ─── changeRole ───────────────────────────────────────────────────────────────
@@ -274,14 +280,23 @@ export async function revokeAdminAction(input: RevokeInput) {
 
 export async function inviteAdminFromFormAction(formData: FormData) {
   try {
-    return await inviteAdminAction({
+    const result = await inviteAdminAction({
       email: (formData.get('email') as string ?? '').trim(),
       name: (formData.get('name') as string ?? '').trim(),
       role: formData.get('role') as InviteInput['role'],
     })
+    if (!result.ok) return result
+    if (result.data && !result.data.inviteEmailSent) {
+      return {
+        ok: true as const,
+        data: result.data,
+        warning: `Admin row created for ${result.data.email} but invite email failed — use "Resend invite" to retry.`,
+      }
+    }
+    return { ok: true as const, data: result.data, message: `Invite sent to ${result.data.email}` }
   } catch (err) {
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
-    return { ok: false as const, error: 'Failed to send invite' }
+    return { ok: false as const, error: 'Failed to invite admin' }
   }
 }
 
@@ -297,8 +312,10 @@ export async function changeRoleFromFormAction(formData: FormData) {
   }
 }
 
-export async function deactivateAdminFromFormAction(adminUserId: string) {
+export async function deactivateAdminFromFormAction(formData: FormData) {
   try {
+    const adminUserId = formData.get('adminUserId') as string
+    if (!adminUserId) return { ok: false as const, error: 'Invalid admin user ID' }
     return await deactivateAdminAction({ adminUserId })
   } catch (err) {
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
@@ -306,8 +323,10 @@ export async function deactivateAdminFromFormAction(adminUserId: string) {
   }
 }
 
-export async function reactivateAdminFromFormAction(adminUserId: string) {
+export async function reactivateAdminFromFormAction(formData: FormData) {
   try {
+    const adminUserId = formData.get('adminUserId') as string
+    if (!adminUserId) return { ok: false as const, error: 'Invalid admin user ID' }
     return await reactivateAdminAction({ adminUserId })
   } catch (err) {
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
@@ -315,11 +334,42 @@ export async function reactivateAdminFromFormAction(adminUserId: string) {
   }
 }
 
-export async function revokeAdminFromFormAction(adminUserId: string) {
+export async function revokeAdminFromFormAction(formData: FormData) {
   try {
+    const adminUserId = formData.get('adminUserId') as string
+    if (!adminUserId) return { ok: false as const, error: 'Invalid admin user ID' }
     return await revokeAdminAction({ adminUserId })
   } catch (err) {
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
     return { ok: false as const, error: 'Failed to revoke admin' }
+  }
+}
+
+export async function resendInviteFromFormAction(formData: FormData) {
+  try {
+    await requireRole(['OWNER'])
+    const adminUserId = formData.get('adminUserId')
+    if (typeof adminUserId !== 'string' || !adminUserId) {
+      return { ok: false as const, error: 'Invalid admin user ID' }
+    }
+    const { db } = await import('@/lib/db')
+    const adminUser = await db.adminUser.findUnique({
+      where: { id: adminUserId },
+      select: { id: true, email: true, name: true, active: true, acceptedAt: true },
+    })
+    if (!adminUser) return { ok: false as const, error: 'Admin user not found' }
+    if (!adminUser.active) return { ok: false as const, error: 'Admin account is not active' }
+    if (adminUser.acceptedAt) return { ok: false as const, error: 'Admin has already accepted the invite' }
+
+    const supabase = createServiceClient()
+    await supabase.auth.admin.inviteUserByEmail(adminUser.email, {
+      data: { role: 'admin', name: adminUser.name },
+    })
+    revalidatePath('/admin/team')
+    return { ok: true as const, message: `Invite re-sent to ${adminUser.email}` }
+  } catch (err) {
+    console.error('[resendInvite]', err)
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to resend invite' }
   }
 }
