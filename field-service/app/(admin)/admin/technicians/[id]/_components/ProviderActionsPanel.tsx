@@ -20,6 +20,7 @@ import {
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function phoneLast4(phone: string): string {
+  if (!phone || phone.length < 4) return phone || '????'
   return phone.slice(-4)
 }
 
@@ -47,6 +48,9 @@ export function ProviderActionsPanel({
   crudEnabled,
 }: ProviderActionsPanelProps) {
   const confirmToken = phoneLast4(providerPhone)
+
+  // ── KYC status ───────────────────────────────────────────────────────────
+  const [kycStatus, setKycStatus] = React.useState(currentKycStatus)
 
   // ── Status change ────────────────────────────────────────────────────────
   const [selectedStatus, setSelectedStatus] = React.useState(currentStatus)
@@ -86,13 +90,13 @@ export function ProviderActionsPanel({
   }
 
   function runSetStatusConfirmed() {
+    setStatusDialogOpen(false)
     const fd = new FormData()
     fd.set('providerId', providerId)
     fd.set('status', selectedStatus)
     fd.set('reason', reason)
     startStatusTransition(async () => {
       const result = await setProviderStatusFromFormAction(fd)
-      setStatusDialogOpen(false)
       const { notify } = await import('@/components/admin/ui/ActionToast')
       if (!result.ok) {
         notify.userError(result.error ?? 'Failed to update status')
@@ -104,13 +108,13 @@ export function ProviderActionsPanel({
   }
 
   function runAddStrikeConfirmed() {
+    setStrikeDialogOpen(false)
     const fd = new FormData()
     fd.set('providerId', providerId)
     fd.set('body', strikeBody)
     fd.set('reasonCode', strikeReasonCode)
     startStrikeTransition(async () => {
       const result = await addProviderStrikeFromFormAction(fd)
-      setStrikeDialogOpen(false)
       const { notify } = await import('@/components/admin/ui/ActionToast')
       if (!result.ok) {
         notify.userError(result.error ?? 'Failed to add strike')
@@ -225,7 +229,8 @@ export function ProviderActionsPanel({
             <input type="hidden" name="providerId" value={providerId} />
             <select
               name="kycStatus"
-              defaultValue={currentKycStatus}
+              value={kycStatus}
+              onChange={(e) => setKycStatus(e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
             >
               <option value="NOT_STARTED">Not started</option>

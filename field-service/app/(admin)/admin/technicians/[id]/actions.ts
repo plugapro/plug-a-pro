@@ -39,6 +39,10 @@ export async function toggleActiveFromFormAction(formData: FormData) {
     }
     const provider = await db.provider.findUnique({ where: { id: providerId }, select: { active: true } })
     if (!provider) return { ok: false as const, error: 'Provider not found' }
+    // crudAction always returns { ok: true, data } on success and throws a
+    // CrudActionError on any failure (auth, role, flag, validation, DB). It
+    // never silently returns { ok: false }, so no return-value check is needed
+    // here — the catch block below handles all error paths.
     await crudAction({
       entity: 'Provider',
       entityId: providerId,
