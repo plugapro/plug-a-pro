@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useFormStatus } from 'react-dom'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useActionFormContext } from './ActionForm'
 
 type ButtonProps = React.ComponentProps<typeof Button>
 
@@ -20,7 +21,8 @@ export function SubmitButton({
   ...props
 }: SubmitButtonProps) {
   const { pending } = useFormStatus()
-  const isWorking = loading || pending
+  const { isPending: formPending } = useActionFormContext()
+  const isWorking = loading || pending || formPending
 
   const label = isWorking
     ? (pendingLabel ?? (children ? `${children}…` : 'Working…'))

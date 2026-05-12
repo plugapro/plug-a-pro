@@ -5,9 +5,13 @@ export const notify = {
     toast.success(text)
   },
 
-  error(err: unknown, fallback?: string) {
-    const message =
-      err instanceof Error ? err.message : (fallback ?? 'Something went wrong')
+  error(err: unknown, fallback = 'Something went wrong') {
+    console.error('[action error]', err)
+    toast.error(fallback)
+  },
+
+  /** Use for pre-formatted user-safe messages from server action result.error fields. */
+  userError(message: string) {
     toast.error(message)
   },
 

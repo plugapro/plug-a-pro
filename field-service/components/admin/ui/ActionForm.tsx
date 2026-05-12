@@ -49,7 +49,7 @@ export function ActionForm<T = unknown>({
   children,
   className,
   resetOnSuccess = false,
-  refreshOnSuccess = true,
+  refreshOnSuccess = false,
 }: ActionFormProps<T>) {
   const router = useRouter()
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -77,7 +77,7 @@ export function ActionForm<T = unknown>({
 
           onSuccess?.(result.data)
         } else {
-          notify.error(result.error ?? errorFallback ?? 'Something went wrong')
+          notify.userError(result.error ?? errorFallback ?? 'Something went wrong')
         }
       } catch (err) {
         notify.error(err, errorFallback ?? 'Something went wrong')
