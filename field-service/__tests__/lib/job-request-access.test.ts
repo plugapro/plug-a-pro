@@ -86,6 +86,8 @@ describe('resolveJobRequestAccessToken — safeForPreview enforcement', () => {
       expect.objectContaining({
         where: { customerAccessToken: 'some-token' },
         select: expect.objectContaining({
+          assignmentMode: true,
+          latestDispatchDecisionId: true,
           attachments: expect.objectContaining({
             where: expect.objectContaining({
               safeForPreview: true,

@@ -120,6 +120,8 @@ export async function resolveJobRequestAccessToken(token: string) {
       title: true,
       description: true,
       status: true,
+      assignmentMode: true,
+      latestDispatchDecisionId: true,
       expiresAt: true,
       createdAt: true,
       updatedAt: true,
