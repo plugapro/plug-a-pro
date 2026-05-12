@@ -183,6 +183,26 @@ describe('proxy admin access', () => {
     expect(mockGetUser).not.toHaveBeenCalled()
   })
 
+  it('allows signed review-first provider profiles without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/provider-public-profile/signed-profile-token'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
+  it('allows signed review-first shortlist action without an OTP session', async () => {
+    const { proxy } = await import('../proxy')
+
+    const res = await proxy(new NextRequest('http://localhost/api/review-first/provider-profile/shortlist'))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+    expect(mockGetUser).not.toHaveBeenCalled()
+  })
+
   it('allows provider verify-code API without an existing session cookie', async () => {
     const { proxy } = await import('../proxy')
 

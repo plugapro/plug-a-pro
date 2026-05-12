@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
@@ -308,7 +309,11 @@ export default async function TicketAccessPage({
           <h1 className="mt-1 text-xl font-semibold">Request #{jobRequest.id.slice(-8).toUpperCase()}</h1>
           <p className="text-sm capitalize text-muted-foreground">{jobRequest.category}</p>
         </div>
-        <StatusBadge status={jobRequest.status} type="jobRequest" />
+        {isReviewFirstFlow ? (
+          <Badge variant="brand">Review providers</Badge>
+        ) : (
+          <StatusBadge status={jobRequest.status} type="jobRequest" />
+        )}
       </div>
 
       <Card>
@@ -361,7 +366,7 @@ export default async function TicketAccessPage({
         </CardContent>
       </Card>
 
-      {(destination.screen === 'request_submitted' ||
+      {((destination.screen === 'request_submitted' && !isReviewFirstFlow) ||
         destination.screen === 'matching_progress' ||
         destination.screen === 'providers_reviewing') && (
         <Card>

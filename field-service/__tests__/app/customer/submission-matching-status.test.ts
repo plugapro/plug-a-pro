@@ -89,6 +89,15 @@ describe('CLIENT-06: token request-submitted page', () => {
     expect(source).toContain('Choose how you&apos;d like to find a provider.')
     expect(source).not.toContain('We&apos;re checking suitable providers in your area.</p>')
   })
+
+  it('hides matching-mode choices once Review Providers First has candidates', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'app/requests/access/[token]/page.tsx'),
+      'utf8',
+    )
+    expect(source).toContain("destination.screen === 'request_submitted' && !isReviewFirstFlow")
+    expect(source).toContain('<Badge variant="brand">Review providers</Badge>')
+  })
 })
 
 // ── Submission notification ───────────────────────────────────────────────────

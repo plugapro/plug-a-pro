@@ -29,6 +29,7 @@ const PUBLIC_PATHS = [
   '/provider-sign-in',     // provider phone OTP entry
   '/provider-verify',      // provider OTP verification
   '/provider/terms',       // provider credit rules are linked before login/application
+  '/provider-public-profile', // signed Review Providers First profile links are read-only and public
   '/technician-sign-in',   // legacy — server-redirects to /provider-sign-in
   '/technician-verify',    // legacy — server-redirects to /provider-verify
   '/providers',
@@ -40,6 +41,7 @@ const PUBLIC_PATHS = [
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET
   '/api/internal',         // internal service-to-service calls; handlers enforce CRON_SECRET
   '/api/webhooks',
+  '/api/review-first/provider-profile/shortlist', // signed profile-token shortlist action
   '/api/attachments',      // protected image proxy; handler enforces signed ticket/lead token or session ownership
   '/api/auth/session',              // called client-side after sign-in to persist the HttpOnly session cookie
   '/api/auth/link',                 // called client-side after OTP — no session cookie yet
