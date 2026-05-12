@@ -19,10 +19,12 @@ import {
 } from '@/components/ui/table'
 import {
   createLocationNodeFromFormAction,
-  deactivateLocationNodeAction,
   deleteLocationNodeAction,
   updateLabelFromFormAction,
 } from './actions'
+import { ActionForm } from '@/components/admin/ui/ActionForm'
+import { SubmitButton } from '@/components/admin/ui/SubmitButton'
+import { DeactivateLocationButton } from './_components/DeactivateLocationButton'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'Location Taxonomy', noIndex: true })
@@ -37,16 +39,6 @@ const TYPE_LABELS: Record<string, string> = {
 export default async function LocationsPage() {
   const session = await requireAdmin()
   const crudEnabled = await isEnabled('admin.crud.locations', { userId: session?.id })
-
-  async function submitCreateLocationNode(formData: FormData) {
-    'use server'
-    await createLocationNodeFromFormAction(formData)
-  }
-
-  async function submitLocationLabelUpdate(formData: FormData) {
-    'use server'
-    await updateLabelFromFormAction(formData)
-  }
 
   const nodes = await db.locationNode.findMany({
     orderBy: [{ nodeType: 'asc' }, { label: 'asc' }],
@@ -112,7 +104,7 @@ export default async function LocationsPage() {
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium bg-muted/30 hover:bg-muted/50 select-none">
           Add node
         </summary>
-        <form action={submitCreateLocationNode} className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ActionForm action={createLocationNodeFromFormAction} successMessage="Location node created" resetOnSuccess refreshOnSuccess className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground font-medium" htmlFor="create-nodeType">Type</label>
             <select id="create-nodeType" name="nodeType" required
@@ -157,9 +149,9 @@ export default async function LocationsPage() {
               className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
           <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
-            <Button type="submit" size="sm">Add node</Button>
+            <SubmitButton size="sm">Add node</SubmitButton>
           </div>
-        </form>
+        </ActionForm>
       </details>
       )}
 
@@ -205,7 +197,7 @@ export default async function LocationsPage() {
                     return (
                       <TableRow key={node.id}>
                         <TableCell>
-                          <form action={submitLocationLabelUpdate} className="flex items-center gap-1">
+                          <ActionForm action={updateLabelFromFormAction} successMessage="Label updated" refreshOnSuccess className="flex items-center gap-1">
                             <input type="hidden" name="id" value={node.id} />
                             <input
                               name="label"
@@ -213,7 +205,7 @@ export default async function LocationsPage() {
                               className="font-medium bg-transparent border-b border-transparent hover:border-input focus:border-ring focus:outline-none text-sm w-full min-w-0"
                             />
                             <button type="submit" className="shrink-0 text-xs text-muted-foreground hover:text-foreground px-1">✓</button>
-                          </form>
+                          </ActionForm>
                           <p className="text-xs text-muted-foreground font-mono mt-0.5">{node.id.slice(0, 8)}&hellip;</p>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell text-muted-foreground font-mono text-xs">
@@ -255,23 +247,12 @@ export default async function LocationsPage() {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             {crudEnabled && (
-                            <form
-                              action={
-                                deactivateLocationNodeAction.bind(null, node.id) as unknown as (
-                                  fd: FormData,
-                                ) => Promise<void>
-                              }
-                            >
-                              <Button
-                                type="submit"
-                                variant="ghost"
-                                size="sm"
-                                disabled={!node.active}
-                                className="text-orange-600 hover:text-orange-700"
-                              >
-                                Deactivate
-                              </Button>
-                            </form>
+                              <DeactivateLocationButton
+                                nodeId={node.id}
+                                nodeSlug={node.slug}
+                                nodeLabel={node.label}
+                                isActive={node.active}
+                              />
                             )}
                             {crudEnabled && (
                             <form

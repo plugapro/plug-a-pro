@@ -1,41 +1,36 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
-import { revalidatePath } from 'next/cache'
-import { z } from 'zod'
 import type { QuoteStatus } from '@prisma/client'
 import { requireAdmin } from '@/lib/auth'
 import { AUDIT_ENTITY } from '@/lib/audit-entities'
-import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { getQueueAgeTone } from '@/lib/ops-dashboard/alerts'
 import {
   OPS_QUEUE_TYPES,
-  claimOpsQueueItem,
   formatOpsQueueOwnerLabel,
   listOpsQueueAssignments,
-  releaseOpsQueueItem,
 } from '@/lib/ops-queue'
 import { StaleBanner } from '@/components/admin/dashboard/StaleBanner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ActionForm } from '@/components/admin/ui/ActionForm'
+import { SubmitButton } from '@/components/admin/ui/SubmitButton'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
+import { claimQuoteFromFormAction, releaseQuoteFromFormAction } from './actions'
+import { VoidQuoteButton } from './_components/VoidQuoteButton'
 
 export const metadata = buildMetadata({ title: 'Quote Approvals', noIndex: true })
 
 const QUOTE_QUEUE_STATUSES: QuoteStatus[] = ['PENDING', 'REVISED']
 const FLAG = 'admin.crud.quotes'
 const CASES_FLAG = 'ops.v2.cases'
-const QUOTE_ROLES = ['OPS', 'ADMIN', 'OWNER'] as const
-const QueueSchema = z.object({
-  quoteId: z.string().min(1),
-})
 
 export default async function AdminQuoteQueuePage() {
   const admin = await requireAdmin()
@@ -140,66 +135,6 @@ export default async function AdminQuoteQueuePage() {
     : []
   const caseByQuote = new Map(rawQuoteCases.map((c) => [c.entityId, c]))
 
-  async function claimQuote(formData: FormData) {
-    'use server'
-    const activeAdmin = await requireAdmin()
-    try {
-      await crudAction({
-        entity: 'Quote',
-        action: 'quote.claim',
-        requiredRole: [...QUOTE_ROLES],
-        requiredFlag: FLAG,
-        schema: QueueSchema,
-        input: { quoteId: String(formData.get('quoteId') ?? '') },
-        run: async ({ quoteId }, tx) => {
-          await claimOpsQueueItem(tx, {
-            queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
-            entityId: quoteId,
-            claimedById: activeAdmin.id,
-            claimedByRole: activeAdmin.adminRole,
-            claimedByLabel: activeAdmin.email ?? 'admin',
-          })
-          return { id: quoteId, claimedById: activeAdmin.id }
-        },
-      })
-    } catch (error) {
-      if (!(error instanceof CrudActionError)) {
-        throw error
-      }
-    }
-
-    revalidatePath('/admin/quotes')
-    revalidatePath('/admin')
-  }
-
-  async function releaseQuote(formData: FormData) {
-    'use server'
-    try {
-      await crudAction({
-        entity: 'Quote',
-        action: 'quote.release',
-        requiredRole: [...QUOTE_ROLES],
-        requiredFlag: FLAG,
-        schema: QueueSchema,
-        input: { quoteId: String(formData.get('quoteId') ?? '') },
-        run: async ({ quoteId }, tx) => {
-          await releaseOpsQueueItem(tx, {
-            queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
-            entityId: quoteId,
-          })
-          return { id: quoteId, released: true }
-        },
-      })
-    } catch (error) {
-      if (!(error instanceof CrudActionError)) {
-        throw error
-      }
-    }
-
-    revalidatePath('/admin/quotes')
-    revalidatePath('/admin')
-  }
-
   const expiredCount = quotes.filter((quote) => quote.validUntil && quote.validUntil < now).length
 
   return (
@@ -282,20 +217,26 @@ export default async function AdminQuoteQueuePage() {
 
                   <div className="flex flex-wrap gap-2">
                     {!claimedByCurrentUser ? (
-                      <form action={claimQuote}>
+                      <ActionForm action={claimQuoteFromFormAction} successMessage="Quote claimed" refreshOnSuccess>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                           {assignment?.claimedById ? 'Take over' : 'Claim'}
-                        </Button>
-                      </form>
+                        </SubmitButton>
+                      </ActionForm>
                     ) : (
-                      <form action={releaseQuote}>
+                      <ActionForm action={releaseQuoteFromFormAction} successMessage="Quote released" refreshOnSuccess>
                         <input type="hidden" name="quoteId" value={quote.id} />
-                        <Button type="submit" variant="outline" size="sm" disabled={!crudEnabled}>
+                        <SubmitButton variant="outline" size="sm" disabled={!crudEnabled}>
                           Release
-                        </Button>
-                      </form>
+                        </SubmitButton>
+                      </ActionForm>
                     )}
+
+                    <VoidQuoteButton
+                      quoteId={quote.id}
+                      quoteAmount={formatCurrency(Number(quote.amount))}
+                      disabled={!crudEnabled}
+                    />
 
                     <Button asChild size="sm">
                       <Link href={quotePageUrl} target="_blank">

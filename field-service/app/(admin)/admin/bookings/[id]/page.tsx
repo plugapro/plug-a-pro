@@ -4,18 +4,14 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
-import { notFound, redirect } from 'next/navigation'
-import { z } from 'zod'
+import { notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
-import { cancelBookingLifecycle } from '@/lib/bookings'
 import { getBookingAdminMessage } from '@/lib/admin-action-messages'
-import { CrudActionError, crudAction } from '@/lib/crud-action'
 import { isEnabled } from '@/lib/flags'
 import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -23,14 +19,10 @@ import type { Metadata } from 'next'
 import { CaseActivityTimeline } from '../../_components/case-activity-timeline'
 import { CaseNotes } from '../../_components/case-notes'
 import { ResolveCaseDialog } from '../../_components/resolve-case-dialog'
+import { BookingActionsPanel } from './_components/BookingActionsPanel'
 
 const FLAG = 'admin.crud.bookings'
 const CASES_FLAG = 'ops.v2.cases'
-const CANCEL_ROLES = ['ADMIN', 'OWNER'] as const
-const PAYMENT_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
-const BookingActionSchema = z.object({
-  bookingId: z.string().min(1),
-})
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
@@ -92,109 +84,9 @@ export default async function BookingDetailPage({
   }
 
   const ref = booking.id.slice(-8).toUpperCase()
-  const canCancel =
-    booking.status !== 'COMPLETED' && booking.status !== 'CANCELLED'
-  const bookingStatusBefore = booking.status
-  const bookingCancelReasonBefore = booking.cancelReason ?? null
-  const paymentStatusBefore = booking.payment?.status ?? null
-
-  // ─── Server actions ──────────────────────────────────────────────────────────
-
-  async function cancelBooking() {
-    'use server'
-    const activeAdmin = await requireAdmin()
-    try {
-      await crudAction({
-        entity: 'Booking',
-        entityId: id,
-        action: 'booking.cancel',
-        requiredRole: [...CANCEL_ROLES],
-        requiredFlag: FLAG,
-        schema: BookingActionSchema,
-        input: { bookingId: id },
-        before: { status: bookingStatusBefore, cancelReason: bookingCancelReasonBefore },
-        run: async () => {
-          await cancelBookingLifecycle({
-            bookingId: id,
-            actorId: activeAdmin.id,
-            actorRole: 'admin',
-            reason: 'Cancelled by admin from booking detail',
-          })
-          return {
-            id,
-            status: 'CANCELLED',
-            cancelReason: 'Cancelled by admin from booking detail',
-          }
-        },
-      })
-      redirect('/admin/bookings')
-    } catch (error) {
-      if (!(error instanceof CrudActionError)) {
-        throw error
-      }
-      redirect(`/admin/bookings/${id}?message=booking_cancel_failed`)
-    }
-  }
-
-  async function markPaid() {
-    'use server'
-    try {
-      const result = await crudAction({
-        entity: 'Booking',
-        entityId: id,
-        action: 'payment.mark_paid',
-        requiredRole: [...PAYMENT_ROLES],
-        requiredFlag: FLAG,
-        schema: BookingActionSchema,
-        input: { bookingId: id },
-        before: {
-          bookingStatus: bookingStatusBefore,
-          paymentStatus: paymentStatusBefore,
-        },
-        run: async (_, tx) => {
-          const freshBooking = await tx.booking.findUnique({
-            where: { id },
-            select: {
-              status: true,
-              quote: { select: { amount: true } },
-              payment: { select: { status: true } },
-            },
-          })
-          if (
-            !freshBooking ||
-            freshBooking.status !== 'SCHEDULED' ||
-            freshBooking.payment?.status === 'PAID'
-          ) {
-            throw new CrudActionError('CONFLICT', 'Payment cannot be marked as paid for this booking.')
-          }
-          const amount = freshBooking.quote?.amount ?? 0
-          const paidAt = new Date()
-          await tx.payment.upsert({
-            where: { bookingId: id },
-            create: {
-              bookingId: id,
-              amount,
-              status: 'PAID',
-              paidAt,
-            },
-            update: { status: 'PAID', paidAt },
-          })
-          await tx.booking.update({ where: { id }, data: { status: 'SCHEDULED' } })
-          return {
-            id,
-            bookingStatus: 'SCHEDULED',
-            paymentStatus: 'PAID',
-          }
-        },
-      })
-      redirect(`/admin/bookings/${result.data.id}?message=payment_marked`)
-    } catch (error) {
-      if (!(error instanceof CrudActionError)) {
-        throw error
-      }
-      redirect(`/admin/bookings/${id}?message=payment_unavailable`)
-    }
-  }
+  const bookingShortRef = id.slice(-6)
+  const canMarkPaid = booking.status === 'SCHEDULED' && booking.payment?.status !== 'PAID'
+  const canCancel = !['CANCELLED', 'COMPLETED'].includes(booking.status)
 
   // ─── Case (ops.v2.cases flag) ─────────────────────────────────────────────────
 
@@ -564,32 +456,13 @@ export default async function BookingDetailPage({
               <CardTitle className="text-base">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Mark as paid */}
-              {booking.status === 'SCHEDULED' && (
-                <form action={markPaid}>
-                  <Button type="submit" className="w-full" variant="default" disabled={!crudEnabled}>
-                    Mark as Paid
-                  </Button>
-                </form>
-              )}
-
-              {/* Cancel booking */}
-              {canCancel && (
-                <form action={cancelBooking}>
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    variant="destructive"
-                    disabled={!crudEnabled}
-                  >
-                    Cancel Booking
-                  </Button>
-                </form>
-              )}
-
-              {!booking.job && !canCancel && (
-                <p className="text-xs text-muted-foreground text-center">No actions available</p>
-              )}
+              <BookingActionsPanel
+                bookingId={id}
+                bookingShortRef={bookingShortRef}
+                canMarkPaid={canMarkPaid}
+                canCancel={canCancel}
+                crudEnabled={crudEnabled}
+              />
             </CardContent>
           </Card>
 

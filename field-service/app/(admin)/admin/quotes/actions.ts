@@ -102,3 +102,70 @@ export async function voidQuoteFromFormAction(formData: FormData) {
     return { ok: false as const, error: 'Failed to void quote' }
   }
 }
+
+export async function claimQuoteFromFormAction(formData: FormData) {
+  try {
+    const { requireAdmin } = await import('@/lib/auth')
+    const activeAdmin = await requireAdmin()
+    const quoteId = formData.get('quoteId')
+    if (typeof quoteId !== 'string' || !quoteId) {
+      return { ok: false as const, error: 'Invalid quote ID' }
+    }
+    await crudAction({
+      entity: AUDIT_ENTITY.QUOTE,
+      action: 'quote.claim',
+      requiredRole: ['OPS', 'ADMIN', 'OWNER'],
+      requiredFlag: FLAG,
+      schema: z.object({ quoteId: z.string().min(1) }),
+      input: { quoteId },
+      run: async ({ quoteId: qId }, tx) => {
+        const { claimOpsQueueItem, OPS_QUEUE_TYPES } = await import('@/lib/ops-queue')
+        await claimOpsQueueItem(tx, {
+          queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
+          entityId: qId,
+          claimedById: activeAdmin.id,
+          claimedByRole: activeAdmin.adminRole,
+          claimedByLabel: activeAdmin.email ?? 'admin',
+        })
+        return { id: qId, claimedById: activeAdmin.id }
+      },
+    })
+    revalidatePath('/admin/quotes')
+    revalidatePath('/admin')
+    return { ok: true as const, message: 'Quote claimed' }
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to claim quote' }
+  }
+}
+
+export async function releaseQuoteFromFormAction(formData: FormData) {
+  try {
+    const quoteId = formData.get('quoteId')
+    if (typeof quoteId !== 'string' || !quoteId) {
+      return { ok: false as const, error: 'Invalid quote ID' }
+    }
+    await crudAction({
+      entity: AUDIT_ENTITY.QUOTE,
+      action: 'quote.release',
+      requiredRole: ['OPS', 'ADMIN', 'OWNER'],
+      requiredFlag: FLAG,
+      schema: z.object({ quoteId: z.string().min(1) }),
+      input: { quoteId },
+      run: async ({ quoteId: qId }, tx) => {
+        const { releaseOpsQueueItem, OPS_QUEUE_TYPES } = await import('@/lib/ops-queue')
+        await releaseOpsQueueItem(tx, {
+          queueType: OPS_QUEUE_TYPES.QUOTE_APPROVAL,
+          entityId: qId,
+        })
+        return { id: qId, released: true }
+      },
+    })
+    revalidatePath('/admin/quotes')
+    revalidatePath('/admin')
+    return { ok: true as const, message: 'Quote released' }
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to release quote' }
+  }
+}

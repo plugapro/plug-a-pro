@@ -3,20 +3,14 @@
 
 export const dynamic = 'force-dynamic'
 
-import { z } from 'zod'
-import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { isEnabled } from '@/lib/flags'
-import { crudAction, CrudActionError } from '@/lib/crud-action'
 import { buildMetadata } from '@/lib/metadata'
 import {
   OPS_QUEUE_TYPES,
-  claimOpsQueueItem,
   formatOpsQueueOwnerLabel,
   listOpsQueueAssignments,
-  releaseOpsQueueItem,
 } from '@/lib/ops-queue'
 import type { PaymentCollectionMode, PaymentStatus } from '@prisma/client'
 import { Badge } from '@/components/ui/badge'
@@ -26,158 +20,12 @@ import { getPaymentAdminMessage } from '@/lib/admin-action-messages'
 import { CaseActivityTimeline } from '../_components/case-activity-timeline'
 import { CaseNotes } from '../_components/case-notes'
 import { ResolveCaseDialog } from '../_components/resolve-case-dialog'
+import { issueRefundAction, claimPaymentAction, releasePaymentAction } from './actions'
 
 export const metadata = buildMetadata({ title: 'Payments', noIndex: true })
 
 const FLAG = 'admin.crud.payments'
 const CASES_FLAG = 'ops.v2.cases'
-const REFUND_ROLES = ['FINANCE', 'ADMIN', 'OWNER'] as const
-const CLAIM_ROLES = ['OPS', 'FINANCE', 'ADMIN', 'OWNER'] as const
-
-const RefundSchema = z.object({
-  paymentId: z.string().min(1),
-  amount: z.number().positive(),
-})
-
-const QueueSchema = z.object({
-  paymentId: z.string().min(1),
-})
-
-// ─── Server Action ────────────────────────────────────────────────────────────
-
-async function issueRefundAction(formData: FormData) {
-  'use server'
-  const admin = await requireAdmin()
-  const paymentId = formData.get('paymentId') as string
-  const amount    = Number(formData.get('amount'))
-
-  // Look up the payment to get the bookingId for the lib function
-  const payment = await db.payment.findUnique({
-    where: { id: paymentId },
-    select: {
-      amount: true,
-      bookingId: true,
-      status: true,
-      refundedAmount: true,
-      refundedAt: true,
-    },
-  })
-  if (!payment) {
-    redirect('/admin/payments?message=refund_unavailable')
-  }
-
-  const refundedAmount = Number(payment.refundedAmount ?? 0)
-  const totalAmount = Number(payment.amount)
-  const remainingRefundable = Math.max(0, totalAmount - refundedAmount)
-
-  if (
-    !Number.isFinite(amount) ||
-    amount <= 0 ||
-    remainingRefundable <= 0 ||
-    amount > remainingRefundable ||
-    !['PAID', 'PARTIALLY_REFUNDED'].includes(payment.status)
-  ) {
-    redirect('/admin/payments?message=invalid_refund_amount')
-  }
-
-  const { issueRefund } = await import('@/lib/payments')
-  try {
-    await crudAction({
-      entity: 'Payment',
-      entityId: paymentId,
-      action: 'payment.refund',
-      requiredRole: [...REFUND_ROLES],
-      requiredFlag: FLAG,
-      schema: RefundSchema,
-      input: { paymentId, amount },
-      before: payment,
-      run: async () => {
-        await issueRefund({
-          bookingId: payment.bookingId,
-          amountCents: Math.round(amount * 100),
-        })
-
-        return {
-          id: paymentId,
-          requestedAmount: amount,
-        }
-      },
-    })
-    redirect('/admin/payments?message=refund_issued')
-  } catch (err) {
-    if (err instanceof CrudActionError) {
-      if (err.code === 'FLAG_DISABLED') {
-        redirect('/admin/payments')
-      }
-      if (err.code === 'VALIDATION' || err.code === 'CONFLICT') {
-        redirect('/admin/payments?message=invalid_refund_amount')
-      }
-      if (err.code === 'NOT_FOUND') {
-        redirect('/admin/payments?message=refund_unavailable')
-      }
-    }
-    console.error('[admin/payments] Refund failed:', err)
-    redirect('/admin/payments?message=refund_failed')
-  }
-}
-
-async function claimPaymentAction(formData: FormData) {
-  'use server'
-  const admin = await requireAdmin()
-  const paymentId = String(formData.get('paymentId') ?? '')
-  if (!paymentId) return
-
-  await crudAction({
-    entity: 'Payment',
-    entityId: paymentId,
-    action: 'payment.claim_follow_up',
-    requiredRole: [...CLAIM_ROLES],
-    requiredFlag: FLAG,
-    schema: QueueSchema,
-    input: { paymentId },
-    run: async (_input, tx) => {
-      await claimOpsQueueItem(tx, {
-        queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
-        entityId: paymentId,
-        claimedById: admin.id,
-        claimedByRole: admin.adminRole,
-        claimedByLabel: admin.email ?? 'admin',
-      })
-
-      return { id: paymentId }
-    },
-  })
-
-  revalidatePath('/admin/payments')
-  revalidatePath('/admin')
-}
-
-async function releasePaymentAction(formData: FormData) {
-  'use server'
-  const paymentId = String(formData.get('paymentId') ?? '')
-  if (!paymentId) return
-
-  await crudAction({
-    entity: 'Payment',
-    entityId: paymentId,
-    action: 'payment.release_follow_up',
-    requiredRole: [...CLAIM_ROLES],
-    requiredFlag: FLAG,
-    schema: QueueSchema,
-    input: { paymentId },
-    run: async (_input, tx) => {
-      await releaseOpsQueueItem(tx, {
-        queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
-        entityId: paymentId,
-      })
-
-      return { id: paymentId }
-    },
-  })
-
-  revalidatePath('/admin/payments')
-  revalidatePath('/admin')
-}
 
 // ─── Status badge styling ─────────────────────────────────────────────────────
 

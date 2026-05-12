@@ -112,3 +112,84 @@ export async function rescheduleBookingFromFormAction(formData: FormData) {
     return { ok: false as const, error: 'Failed to reschedule booking' }
   }
 }
+
+export async function cancelBookingFromFormAction(formData: FormData) {
+  try {
+    const { requireAdmin } = await import('@/lib/auth')
+    const activeAdmin = await requireAdmin()
+    const bookingId = formData.get('bookingId')
+    if (typeof bookingId !== 'string' || !bookingId) {
+      return { ok: false as const, error: 'Invalid booking ID' }
+    }
+    const { cancelBookingLifecycle } = await import('@/lib/bookings')
+    const result = await crudAction({
+      entity: 'Booking',
+      entityId: bookingId,
+      action: 'booking.cancel',
+      requiredRole: ['OPS', 'ADMIN', 'OWNER'],
+      requiredFlag: FLAG,
+      schema: z.object({ bookingId: z.string().min(1) }),
+      input: { bookingId },
+      run: async () => {
+        await cancelBookingLifecycle({
+          bookingId,
+          actorId: activeAdmin.id,
+          actorRole: 'admin',
+          reason: 'Cancelled by admin from booking detail',
+        })
+        return { id: bookingId, status: 'CANCELLED' }
+      },
+    })
+    revalidatePath(`/admin/bookings/${bookingId}`)
+    revalidatePath('/admin/bookings')
+    return { ok: true as const, data: result.data }
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to cancel booking' }
+  }
+}
+
+export async function markPaidFromFormAction(formData: FormData) {
+  try {
+    const bookingId = formData.get('bookingId')
+    if (typeof bookingId !== 'string' || !bookingId) {
+      return { ok: false as const, error: 'Invalid booking ID' }
+    }
+    const result = await crudAction({
+      entity: 'Booking',
+      entityId: bookingId,
+      action: 'payment.mark_paid',
+      requiredRole: ['OPS', 'FINANCE', 'ADMIN', 'OWNER'],
+      requiredFlag: FLAG,
+      schema: z.object({ bookingId: z.string().min(1) }),
+      input: { bookingId },
+      run: async (_, tx) => {
+        const freshBooking = await tx.booking.findUnique({
+          where: { id: bookingId },
+          select: {
+            status: true,
+            quote: { select: { amount: true } },
+            payment: { select: { status: true } },
+          },
+        })
+        if (!freshBooking || freshBooking.status !== 'SCHEDULED' || freshBooking.payment?.status === 'PAID') {
+          throw new CrudActionError('CONFLICT', 'Payment cannot be marked as paid for this booking.')
+        }
+        const amount = freshBooking.quote?.amount ?? 0
+        const paidAt = new Date()
+        await tx.payment.upsert({
+          where: { bookingId },
+          create: { bookingId, amount, status: 'PAID', paidAt },
+          update: { status: 'PAID', paidAt },
+        })
+        await tx.booking.update({ where: { id: bookingId }, data: { status: 'SCHEDULED' } })
+        return { id: bookingId, bookingStatus: 'SCHEDULED', paymentStatus: 'PAID' }
+      },
+    })
+    revalidatePath(`/admin/bookings/${bookingId}`)
+    return { ok: true as const, data: result.data }
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to mark payment as paid' }
+  }
+}
