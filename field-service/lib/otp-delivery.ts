@@ -87,9 +87,20 @@ export async function deliverOtp(params: {
     const whatsappMessageId = await sendTemplate({
       to: phoneE164,
       template: OTP_TEMPLATE_NAME as any,
+      // Meta's authentication-category templates (otp_login here) include a
+      // "Copy code" URL button. Per WhatsApp Cloud API, the button's URL
+      // parameter must be supplied at send time — omitting it returns
+      // (#131008) Required parameter is missing. The button parameter must
+      // be the same OTP code as the body parameter.
       components: [
         {
           type: 'body',
+          parameters: [{ type: 'text', text: params.code }],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: 0,
           parameters: [{ type: 'text', text: params.code }],
         },
       ] as any,
