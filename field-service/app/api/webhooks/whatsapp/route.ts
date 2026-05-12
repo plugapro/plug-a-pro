@@ -137,6 +137,24 @@ export async function POST(request: NextRequest) {
               },
             }).catch(() => {})
           )
+          // Mirror delivery state onto OtpDeliveryAttempt so the auth OTP
+          // surface has end-to-end visibility instead of only knowing whether
+          // Meta initially accepted the send. Different table from
+          // MessageEvent because OTP sends bypass that wrapper to keep code
+          // values out of message_events.body. Best-effort: failure to update
+          // never blocks the webhook 200 response Meta requires.
+          if (status.status === 'delivered' || status.status === 'failed') {
+            after(
+              db.otpDeliveryAttempt.updateMany({
+                where: { whatsappMessageId: status.id },
+                data: {
+                  status: status.status === 'delivered' ? 'delivered' : 'failed',
+                  failureCode: status.status === 'failed' ? (status.errors?.[0]?.code ? String(status.errors[0].code) : 'WA_DELIVERY_FAILED') : undefined,
+                  failureReason: status.status === 'failed' ? status.errors?.[0]?.message : undefined,
+                },
+              }).catch(() => {})
+            )
+          }
         }
       }
     }

@@ -141,6 +141,20 @@ export async function deliverOtp(params: {
     return { ok: true, whatsappMessageId, phoneE164 }
   } catch (err) {
     const classified = classifyWhatsAppError(err)
+    // Log the raw Meta error before classification so future delivery failures
+    // can be diagnosed from a single log line. The classifier collapses every
+    // unmatched error into WA_TRANSIENT, which previously hid a missing
+    // URL-button parameter (#131008) behind a generic "WhatsApp delivery
+    // failed; please retry." — easy to mis-diagnose as a transient blip.
+    // Safe to log: this is the upstream error message, never the OTP code or
+    // tokens (sendTemplate redacts those before throwing).
+    console.error('[otp-delivery] WhatsApp send failed', {
+      hookRequestId,
+      traceId: traceIdForSend,
+      templateName: OTP_TEMPLATE_NAME,
+      classifiedCode: classified.code,
+      rawError: err instanceof Error ? err.message : String(err),
+    })
     await writeAttempt({
       phoneE164,
       userId,
