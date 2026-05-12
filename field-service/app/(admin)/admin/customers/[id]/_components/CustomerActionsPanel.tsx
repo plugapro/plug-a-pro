@@ -139,6 +139,7 @@ export function CustomerActionsPanel({
       if (!result.ok) {
         notify.userError(result.error ?? 'Failed to block customer')
       } else {
+        setBlockReason('')
         notify.success('Customer blocked')
       }
     })
@@ -171,6 +172,8 @@ export function CustomerActionsPanel({
       if (!result.ok) {
         notify.userError(result.error ?? 'Failed to suspend customer')
       } else {
+        setSuspendReason('')
+        setSuspendUntil('')
         notify.success('Customer suspended')
       }
     })
@@ -202,6 +205,7 @@ export function CustomerActionsPanel({
       if (!result.ok) {
         notify.userError(result.error ?? 'Failed to deactivate customer')
       } else {
+        setDeactivateReason('')
         notify.success('Customer deactivated')
       }
     })
@@ -218,6 +222,7 @@ export function CustomerActionsPanel({
       if (!result.ok) {
         notify.userError(result.error ?? 'Failed to archive customer')
       } else {
+        setArchiveReason('')
         notify.success('Customer archived')
       }
     })
@@ -235,6 +240,8 @@ export function CustomerActionsPanel({
       if (!result.ok) {
         notify.userError(result.error ?? 'Failed to merge customer')
       } else {
+        setMergeTargetId('')
+        setMergeReason('')
         notify.success('Customer merged')
       }
     })
@@ -486,9 +493,9 @@ export function CustomerActionsPanel({
         open={mergeDialogOpen}
         onOpenChange={setMergeDialogOpen}
         title="Merge customer"
-        description={`All data from this customer will be moved to ${mergeTargetId}. This cannot be undone.`}
+        description="This merges the current customer record into the target. The source account will be deactivated. Type the customer name to confirm."
         confirmLabel="Merge"
-        confirmText={mergeTargetId.slice(-6)}
+        confirmText={customerName}
         onConfirm={runMergeConfirmed}
         loading={mergePending}
       />

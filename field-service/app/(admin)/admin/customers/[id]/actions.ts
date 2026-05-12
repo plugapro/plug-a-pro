@@ -16,7 +16,10 @@ export async function unblockCustomerFromFormAction(formData: FormData) {
   const { unblockCustomerAction } = await import('../actions')
   const { CrudActionError } = await import('@/lib/crud-action')
   try {
-    const customerId = formData.get('customerId') as string
+    const customerId = formData.get('customerId')
+    if (typeof customerId !== 'string' || !customerId) {
+      return { ok: false as const, error: 'Invalid customer ID' }
+    }
     return await unblockCustomerAction(customerId)
   } catch (err) {
     if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
@@ -28,7 +31,10 @@ export async function toggleWhatsappMarketingFromFormAction(formData: FormData) 
   try {
     const { requireAdmin } = await import('@/lib/auth')
     const admin = await requireAdmin()
-    const customerId = formData.get('customerId') as string
+    const customerId = formData.get('customerId')
+    if (typeof customerId !== 'string' || !customerId) {
+      return { ok: false as const, error: 'Invalid customer ID' }
+    }
     const value = formData.get('value') === 'true'
     const { db } = await import('@/lib/db')
     const customer = await db.customer.findUnique({ where: { id: customerId }, select: { phone: true } })
