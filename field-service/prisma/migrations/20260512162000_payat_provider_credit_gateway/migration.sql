@@ -5,6 +5,17 @@
 
 ALTER TYPE "PaymentIntentMethod" ADD VALUE IF NOT EXISTS 'PAYAT';
 
-CREATE INDEX IF NOT EXISTS "payment_intents_payat_status_idx"
-  ON "payment_intents" ("status", "createdAt")
-  WHERE "paymentMethod" = 'PAYAT';
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'payment_intents'
+      AND column_name = 'paymentMethod'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS "payment_intents_payat_status_idx"
+      ON "payment_intents" ("status", "createdAt")
+      WHERE "paymentMethod" = 'PAYAT';
+  END IF;
+END $$;
