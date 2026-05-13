@@ -197,9 +197,10 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'MARKETING',
     description: 'Sent to a provider when a new matched lead is available to preview and accept',
-    // {{1}} tech first name, {{2}} service, {{3}} area, {{4}} date/window; job URL is a button
+    // {{1}} tech first name, {{2}} service, {{3}} area, {{4}} date/window, {{5}} signed job URL.
+    // Current approved WABA body includes the URL as a body variable, not a URL button.
     example:
-      'Hi {{1}}, new lead: {{2}} in {{3}} on {{4}}. Preview using the button below. Accepting uses 1 credit and unlocks full customer details.',
+      'Hi {{1}}, new job: {{2}} in {{3}} on {{4}}. Tap to accept — {{5}} — good luck!',
   },
 
   technician_job_reminder: {

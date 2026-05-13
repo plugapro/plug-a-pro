@@ -218,6 +218,10 @@ function assertTemplateBodyComponentsDoNotContainRawUrls(templateName: string, c
     if (component.type !== 'body' && component.type !== 'header') continue
     component.parameters.forEach((parameter, index) => {
       if (parameter.type !== 'text') return
+      // The currently approved Meta `job_offer` template includes the signed
+      // provider lead URL as body variable {{5}} and has no URL-button
+      // component. Keep this exception narrow and template-specific.
+      if (templateName === 'job_offer' && component.type === 'body' && index === 4) return
       assertNoRawUrlsInWhatsAppBody(parameter.text, `${templateName}:${component.type}:${index}`)
     })
   }
@@ -813,9 +817,9 @@ export async function sendJobOffer(params: {
           { type: 'text', text: params.serviceName },
           { type: 'text', text: normaliseLocationDisplayName(params.area) },
           { type: 'text', text: params.scheduledWindow },
+          { type: 'text', text: params.jobUrl },
         ],
       },
-      urlButtonComponent(0, params.jobUrl),
     ],
   })
   await logOutboundMessage({

@@ -42,4 +42,33 @@ describe('central WhatsApp send raw URL guard', () => {
 
     expect(global.fetch).toHaveBeenCalledOnce()
   })
+
+  it('sends job_offer using the currently approved body URL variable shape', async () => {
+    const { sendJobOffer } = await import('@/lib/whatsapp')
+
+    await sendJobOffer({
+      providerPhone: '+27711111111',
+      providerFirstName: 'Lovemore',
+      serviceName: 'DIY & Assembly',
+      area: 'Bromhof, Johannesburg',
+      scheduledWindow: 'This week',
+      jobUrl: 'https://app.plugapro.co.za/leads/access/signed-token',
+    })
+
+    expect(global.fetch).toHaveBeenCalledOnce()
+    const body = JSON.parse(String((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body))
+    expect(body.template.name).toBe('job_offer')
+    expect(body.template.components).toEqual([
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: 'Lovemore' },
+          { type: 'text', text: 'DIY & Assembly' },
+          { type: 'text', text: 'Bromhof, Johannesburg' },
+          { type: 'text', text: 'This week' },
+          { type: 'text', text: 'https://app.plugapro.co.za/leads/access/signed-token' },
+        ],
+      },
+    ])
+  })
 })
