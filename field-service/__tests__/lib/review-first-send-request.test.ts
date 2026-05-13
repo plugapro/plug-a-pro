@@ -124,7 +124,7 @@ describe('sendRequestToShortlistedProviders', () => {
     mockGetProviderLeadAccessUrl.mockResolvedValue('https://app.plugapro.co.za/leads/access/signed-token')
     mockGetJobRequestAccessUrl.mockResolvedValue('https://app.plugapro.co.za/requests/access/token?view=matching_status')
     mockHasSuccessfulMessageForRecipient.mockResolvedValue(false)
-    mockSendJobOffer.mockResolvedValue(undefined)
+    mockSendJobOffer.mockResolvedValue('wamid.provider')
     mockSendText.mockResolvedValue('customer-message-id')
     mockSendCtaUrl.mockResolvedValue('customer-failure-message-id')
   })
@@ -163,6 +163,7 @@ describe('sendRequestToShortlistedProviders', () => {
       data: expect.objectContaining({
         status: 'SENT',
         sentAt: expect.any(Date),
+        expiresAt: expect.any(Date),
       }),
     }))
     expect(mockLead.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -178,6 +179,49 @@ describe('sendRequestToShortlistedProviders', () => {
       expect.objectContaining({
         templateName: 'interactive:rfp_sent_to_shortlist',
       }),
+    )
+  })
+
+  it('marks failed provider sends as send_failed and does not tell the customer a response timer started', async () => {
+    mockSendJobOffer.mockRejectedValue(new Error('WhatsApp send failed: {"error":{"code":131042,"message":"Business eligibility payment issue"}}'))
+    const { sendRequestToShortlistedProviders } = await import('@/lib/review-first')
+
+    await expect(sendRequestToShortlistedProviders({
+      requestId: 'request-1',
+      customerId: 'customer-1',
+    })).rejects.toMatchObject({ code: 'PROVIDER_NOTIFICATION_FAILED' })
+
+    expect(mockLead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: expect.objectContaining({
+        status: 'SEND_PENDING',
+        expiresAt: null,
+        notifiedAt: null,
+      }),
+    })
+    expect(mockLead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: {
+        status: 'SEND_FAILED',
+        expiresAt: null,
+        expiredAt: null,
+        respondedAt: null,
+        viewedAt: null,
+        notifiedAt: null,
+        notificationAttemptedAt: null,
+      },
+    })
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27820000000',
+      expect.stringContaining("couldn't notify Lovemore Sibanda right now"),
+      expect.objectContaining({
+        templateName: 'interactive:rfp_send_failed',
+      }),
+    )
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      '+27820000000',
+      expect.stringContaining('They have 15 minutes to respond'),
+      expect.any(Object),
     )
   })
 
@@ -251,7 +295,7 @@ describe('sendRequestToShortlistedProviders', () => {
     expect(mockLead.update).toHaveBeenCalledWith({
       where: { id: 'lead-1' },
       data: {
-        status: 'SHORTLISTED',
+        status: 'SEND_FAILED',
         expiresAt: null,
         expiredAt: null,
         respondedAt: null,

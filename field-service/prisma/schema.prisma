@@ -1508,6 +1508,8 @@ enum JobRequestStatus {
 }
 
 enum LeadStatus {
+  SEND_PENDING // customer selected provider; WhatsApp send is being attempted
+  SEND_FAILED  // customer selected provider; WhatsApp send failed and can be retried
   SENT      // sent to provider, awaiting response
   VIEWED    // provider opened the lead
   INTERESTED        // Qualified Shortlist: provider expressed free interest with rate/arrival

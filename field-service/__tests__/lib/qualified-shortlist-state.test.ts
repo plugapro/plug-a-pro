@@ -54,9 +54,12 @@ describe('qualified shortlist state helpers', () => {
     const future = new Date(Date.now() + 60_000)
     const past = new Date(Date.now() - 60_000)
 
+    expect(mapLeadInviteToQualifiedState({ status: 'SEND_PENDING', expiresAt: null })).toBe('send_pending')
+    expect(mapLeadInviteToQualifiedState({ status: 'SEND_FAILED', expiresAt: null })).toBe('send_failed')
     expect(mapLeadInviteToQualifiedState({ status: 'SENT', expiresAt: future })).toBe('sent')
     expect(mapLeadInviteToQualifiedState({ status: 'VIEWED', expiresAt: future })).toBe('viewed')
     expect(mapLeadInviteToQualifiedState({ status: 'SENT', expiresAt: past })).toBe('expired')
+    expect(canLeadInviteReceiveProviderResponse({ status: 'SEND_FAILED', expiresAt: null })).toBe(false)
     expect(canLeadInviteReceiveProviderResponse({ status: 'VIEWED', expiresAt: future })).toBe(true)
     expect(canLeadInviteReceiveProviderResponse({ status: 'EXPIRED', expiresAt: past })).toBe(false)
     expect(canShowExpiryCountdown({ status: 'SENT', expiresAt: future })).toBe(true)

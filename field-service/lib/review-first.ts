@@ -7,6 +7,7 @@ import { sendJobOffer } from './whatsapp'
 import { getProviderLeadAccessUrl } from './provider-lead-access'
 import { getJobRequestAccessUrl } from './job-request-access'
 import { hasSuccessfulMessageForRecipient } from './message-events'
+import { maskPhone } from './support-diagnostics'
 
 export const RFP_PROVIDER_RESPONSE_MINUTES = Math.max(
   1,
@@ -31,6 +32,20 @@ const MVP1_MATCH_RESULT_LIMIT = Math.min(
 )
 const REVIEW_FIRST_PROVIDER_NOTIFICATION_SOURCE = 'review_first_send_request'
 const REVIEW_FIRST_PROVIDER_NOTIFICATION_FAILED_TEMPLATE = 'interactive:rfp_provider_notification_failed'
+
+type ProviderRfpSendResult =
+  | {
+      ok: true
+      provider: 'whatsapp_cloud'
+      messageId: string | null
+    }
+  | {
+      ok: false
+      provider: 'whatsapp_cloud'
+      errorCode: string
+      errorMessage: string
+      retryable: boolean
+    }
 
 export class ReviewFirstError extends Error {
   constructor(
@@ -274,7 +289,7 @@ function filterDisplayableReviewAttempts(
   const normalizedRequestCategory = normalize(request.category)
   const engagedProviderIds = new Set(
     request.leads
-      .filter((lead) => lead.status === 'SHORTLISTED' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'INTERESTED')
+      .filter((lead) => ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED'].includes(lead.status))
       .map((lead) => lead.providerId),
   )
 
@@ -1020,7 +1035,7 @@ export async function shortlistProviderForCustomerReview(params: {
     throw new ReviewFirstError('PROVIDER_NOT_ELIGIBLE', 'Provider is not eligible for this request.')
   }
 
-  const shortlistLeadStatuses: LeadStatus[] = ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED']
+  const shortlistLeadStatuses: LeadStatus[] = ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED']
   const shortlistCount = await db.lead.count({
     where: {
       jobRequestId: request.id,
@@ -1063,7 +1078,7 @@ export async function shortlistProviderForCustomerReview(params: {
       expiresAt: null,
     },
     update: {
-      status: existingLead?.status === 'SHORTLISTED' || existingLead?.status === 'SENT' || existingLead?.status === 'VIEWED' || existingLead?.status === 'INTERESTED'
+      status: existingLead?.status === 'SHORTLISTED' || existingLead?.status === 'SEND_PENDING' || existingLead?.status === 'SEND_FAILED' || existingLead?.status === 'SENT' || existingLead?.status === 'VIEWED' || existingLead?.status === 'INTERESTED'
         ? existingLead.status
         : 'SHORTLISTED',
       dispatchDecisionId: request.latestDispatchDecisionId,
@@ -1127,7 +1142,7 @@ export async function getCustomerReviewShortlist(params: { requestId: string; cu
     where: {
       jobRequestId: params.requestId,
       status: {
-        in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'],
+        in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'],
       },
     },
     orderBy: [{ rankingPosition: 'asc' }, { sentAt: 'asc' }],
@@ -1192,7 +1207,7 @@ export async function sendRequestToShortlistedProviders(params: {
       customer: { select: { phone: true } },
       leads: {
         where: {
-          status: { in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED'] },
+          status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED'] },
         },
         include: {
           provider: { select: { id: true, phone: true, name: true } },
@@ -1205,17 +1220,29 @@ export async function sendRequestToShortlistedProviders(params: {
   if (request.customerId !== params.customerId) throw new ReviewFirstError('FORBIDDEN', 'Not allowed for this request.')
 
   const shortlisted = request.leads.filter((lead) => lead.status === 'SHORTLISTED')
+  const failed = request.leads.filter((lead) => lead.status === 'SEND_FAILED')
+  const pending = request.leads.filter((lead) => lead.status === 'SEND_PENDING')
   const alreadySent = request.leads.filter((lead) => lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'INTERESTED')
-  const activeTargets = shortlisted.length > 0 ? shortlisted : alreadySent
+  const activeTargets = shortlisted.length > 0 ? shortlisted : failed
 
   if (activeTargets.length < MIN_SHORTLISTED_PROVIDERS) {
+    if (pending.length > 0) {
+      throw new ReviewFirstError('PROVIDER_NOTIFICATION_FAILED', 'We are still sending your request. Please check again shortly.')
+    }
+    if (alreadySent.length >= MIN_SHORTLISTED_PROVIDERS) {
+      return {
+        requestId: request.id,
+        invitedCount: alreadySent.length,
+        failedCount: 0,
+        expiresAt: alreadySent[0]?.expiresAt ?? null,
+      }
+    }
     throw new ReviewFirstError('SHORTLIST_EMPTY', `Please shortlist at least ${MIN_SHORTLISTED_PROVIDERS} provider first.`)
   }
   if (activeTargets.length > MAX_SHORTLISTED_PROVIDERS) {
     throw new ReviewFirstError('SHORTLIST_LIMIT_REACHED', `You can shortlist up to ${MAX_SHORTLISTED_PROVIDERS} providers.`)
   }
 
-  const expiresAt = new Date(Date.now() + RFP_PROVIDER_RESPONSE_MINUTES * 60_000)
   const preferredTime = request.requestedWindowStart
     ? request.requestedWindowStart.toLocaleString('en-ZA', {
         weekday: 'short',
@@ -1239,6 +1266,8 @@ export async function sendRequestToShortlistedProviders(params: {
   const area = [request.address?.suburb, request.address?.city].filter(Boolean).join(', ')
 
   let notifiedCount = 0
+  let failedCount = 0
+  let firstExpiresAt: Date | null = null
 
   for (const lead of activeTargets) {
     const leadUrl = await getProviderLeadAccessUrl({
@@ -1247,31 +1276,47 @@ export async function sendRequestToShortlistedProviders(params: {
     })
 
     if (leadUrl) {
+      const notificationAttemptStartedAt = new Date()
+      await db.lead.update({
+        where: { id: lead.id },
+        data: {
+          status: 'SEND_PENDING',
+          notificationAttemptedAt: notificationAttemptStartedAt,
+          expiresAt: null,
+          expiredAt: null,
+          respondedAt: null,
+          viewedAt: null,
+          notifiedAt: null,
+        },
+      })
       // Provider selection can originate from the customer PWA long after the
       // provider last messaged us. Freeform WhatsApp text/buttons may be
       // accepted initially and then fail asynchronously as "Re-engagement
       // message". Start this provider contact with an approved template so the
       // selected provider reliably receives the signed lead URL.
-      try {
-        await sendJobOffer({
-          providerPhone: lead.provider.phone,
-          providerFirstName: lead.provider.name.split(' ')[0] ?? lead.provider.name,
-          serviceName: request.category,
-          area: area || 'your area',
-          scheduledWindow: preferredTime,
-          jobUrl: leadUrl,
-          metadata: {
-            requestId: request.id,
-            leadId: lead.id,
-            providerId: lead.provider.id,
-            source: 'review_first_send_request',
-          },
-        })
+      const sendResult = await attemptProviderRfpWhatsAppNotification({
+        providerPhone: lead.provider.phone,
+        providerFirstName: lead.provider.name.split(' ')[0] ?? lead.provider.name,
+        serviceName: request.category,
+        area: area || 'your area',
+        scheduledWindow: preferredTime,
+        jobUrl: leadUrl,
+        metadata: {
+          requestId: request.id,
+          leadId: lead.id,
+          providerId: lead.provider.id,
+          source: REVIEW_FIRST_PROVIDER_NOTIFICATION_SOURCE,
+        },
+      })
+
+      if (sendResult.ok) {
+        const sentAt = new Date()
+        const expiresAt = new Date(sentAt.getTime() + RFP_PROVIDER_RESPONSE_MINUTES * 60_000)
         await db.lead.update({
           where: { id: lead.id },
           data: {
             status: 'SENT',
-            sentAt: new Date(),
+            sentAt,
             expiresAt,
             respondedAt: null,
             viewedAt: null,
@@ -1280,25 +1325,64 @@ export async function sendRequestToShortlistedProviders(params: {
             // cannot turn an undelivered provider notification into a false
             // "provider did not respond" customer outcome.
             notifiedAt: null,
-            notificationAttemptedAt: new Date(),
+            notificationAttemptedAt: notificationAttemptStartedAt,
           },
         })
+        firstExpiresAt ??= expiresAt
         notifiedCount += 1
-      } catch (error) {
-        await db.lead.update({
-          where: { id: lead.id },
-          data: { notificationAttemptedAt: new Date() },
-        }).catch(() => undefined)
-        console.error('[review-first.send] provider_template_failed', {
+        console.info('[review-first.send] provider_whatsapp_accepted', {
           requestId: request.id,
+          requestRef: request.requestRef,
           leadId: lead.id,
           providerId: lead.provider.id,
-          error: error instanceof Error ? error.message : String(error),
+          messageId: sendResult.messageId,
+          statusBefore: lead.status,
+          statusAfter: 'SENT',
+        })
+      } else {
+        await db.lead.update({
+          where: { id: lead.id },
+          data: {
+            status: 'SEND_FAILED',
+            expiresAt: null,
+            expiredAt: null,
+            respondedAt: null,
+            viewedAt: null,
+            notifiedAt: null,
+            notificationAttemptedAt: null,
+          },
+        }).catch(() => undefined)
+        failedCount += 1
+        console.error('[review-first.send] provider_whatsapp_failed', {
+          requestId: request.id,
+          requestRef: request.requestRef,
+          leadId: lead.id,
+          providerId: lead.provider.id,
+          providerPhone: maskPhone(lead.provider.phone),
+          errorCode: sendResult.errorCode,
+          errorMessage: sendResult.errorMessage,
+          retryable: sendResult.retryable,
+          statusBefore: lead.status,
+          statusAfter: 'SEND_FAILED',
         })
       }
     } else {
+      await db.lead.update({
+        where: { id: lead.id },
+        data: {
+          status: 'SEND_FAILED',
+          expiresAt: null,
+          expiredAt: null,
+          respondedAt: null,
+          viewedAt: null,
+          notifiedAt: null,
+          notificationAttemptedAt: null,
+        },
+      }).catch(() => undefined)
+      failedCount += 1
       console.error('[review-first.send] provider_lead_url_missing', {
         requestId: request.id,
+        requestRef: request.requestRef,
         leadId: lead.id,
         providerId: lead.provider.id,
       })
@@ -1306,6 +1390,18 @@ export async function sendRequestToShortlistedProviders(params: {
   }
 
   if (notifiedCount < MIN_SHORTLISTED_PROVIDERS) {
+    if (request.customer?.phone) {
+      await sendText(
+        request.customer.phone,
+        activeTargets.length === 1
+          ? `We couldn't notify ${activeTargets[0]?.provider.name ?? 'your selected provider'} right now.\n\nYour request is saved. Open your provider review to retry sending or choose another provider.`
+          : `We couldn't notify the selected providers right now.\n\nYour request is saved. Open your provider review to retry sending or choose another provider.`,
+        {
+          templateName: 'interactive:rfp_send_failed',
+          metadata: { requestId: request.id, failedCount },
+        },
+      ).catch(() => undefined)
+    }
     throw new ReviewFirstError(
       'PROVIDER_NOTIFICATION_FAILED',
       'We could not notify your shortlisted provider. Please try again.',
@@ -1321,12 +1417,15 @@ export async function sendRequestToShortlistedProviders(params: {
   })
 
   if (request.customer?.phone) {
+    const customerText = failedCount > 0
+      ? `Your request was sent to ${notifiedCount} of ${activeTargets.length} selected provider${activeTargets.length === 1 ? '' : 's'}.\n\nWe couldn't notify ${failedCount} provider${failedCount === 1 ? '' : 's'}. Open your request to retry failed sends or choose another provider.`
+      : `Your request has been sent to ${notifiedCount} selected provider${notifiedCount === 1 ? '' : 's'}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you as responses come in.`
     await sendText(
       request.customer.phone,
-      `Your request has been sent to ${notifiedCount} selected provider${notifiedCount === 1 ? '' : 's'}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you as responses come in.`,
+      customerText,
       {
         templateName: 'interactive:rfp_sent_to_shortlist',
-        metadata: { requestId: request.id, count: notifiedCount },
+        metadata: { requestId: request.id, count: notifiedCount, failedCount },
       },
     ).catch(() => undefined)
   }
@@ -1334,7 +1433,8 @@ export async function sendRequestToShortlistedProviders(params: {
   return {
     requestId: request.id,
     invitedCount: notifiedCount,
-    expiresAt,
+    failedCount,
+    expiresAt: firstExpiresAt,
   }
 }
 
@@ -1342,6 +1442,68 @@ function metadataString(metadata: unknown, key: string) {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
   const value = (metadata as Record<string, unknown>)[key]
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function normaliseWhatsAppPhone(phone: string | null | undefined) {
+  const digits = phone?.replace(/[^\d+]/g, '') ?? ''
+  if (!digits) return null
+  if (digits.startsWith('+')) return digits
+  if (digits.startsWith('0')) return `+27${digits.slice(1)}`
+  if (digits.startsWith('27')) return `+${digits}`
+  return digits
+}
+
+function extractWhatsAppErrorCode(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  const codeMatch = message.match(/"code"\s*:\s*([0-9]+)/)
+  return codeMatch?.[1] ?? 'WHATSAPP_SEND_FAILED'
+}
+
+async function attemptProviderRfpWhatsAppNotification(params: {
+  providerPhone: string | null
+  providerFirstName: string
+  serviceName: string
+  area: string
+  scheduledWindow: string
+  jobUrl: string
+  metadata: Record<string, unknown>
+}): Promise<ProviderRfpSendResult> {
+  const normalizedPhone = normaliseWhatsAppPhone(params.providerPhone)
+  if (!normalizedPhone) {
+    return {
+      ok: false,
+      provider: 'whatsapp_cloud',
+      errorCode: 'PROVIDER_PHONE_MISSING',
+      errorMessage: 'Provider WhatsApp phone is missing.',
+      retryable: false,
+    }
+  }
+
+  try {
+    const messageId = await sendJobOffer({
+      providerPhone: normalizedPhone,
+      providerFirstName: params.providerFirstName,
+      serviceName: params.serviceName,
+      area: params.area,
+      scheduledWindow: params.scheduledWindow,
+      jobUrl: params.jobUrl,
+      metadata: params.metadata,
+    })
+    return {
+      ok: true,
+      provider: 'whatsapp_cloud',
+      messageId: messageId || null,
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return {
+      ok: false,
+      provider: 'whatsapp_cloud',
+      errorCode: extractWhatsAppErrorCode(error),
+      errorMessage,
+      retryable: true,
+    }
+  }
 }
 
 export async function handleReviewFirstProviderNotificationStatus(params: {
@@ -1428,14 +1590,14 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
       return { repaired: false as const, reason: 'lead_not_found_or_mismatch' }
     }
 
-    if (!['SENT', 'VIEWED', 'EXPIRED'].includes(lead.status)) {
+    if (!['SEND_PENDING', 'SENT', 'VIEWED', 'EXPIRED'].includes(lead.status)) {
       return { repaired: false as const, reason: 'lead_not_repairable', status: lead.status }
     }
 
     await tx.lead.update({
       where: { id: lead.id },
       data: {
-        status: 'SHORTLISTED',
+        status: 'SEND_FAILED',
         expiresAt: null,
         expiredAt: null,
         respondedAt: null,
@@ -1449,7 +1611,7 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
       where: {
         jobRequestId: requestId,
         id: { not: lead.id },
-        status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'] },
+        status: { in: ['SEND_PENDING', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'] },
       },
     })
 
@@ -1476,7 +1638,7 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
           notifiedAt: lead.notifiedAt?.toISOString() ?? null,
         },
         after: {
-          status: 'SHORTLISTED',
+          status: 'SEND_FAILED',
           requestStatus: activeLeadCount === 0 ? 'PENDING_VALIDATION' : lead.jobRequest.status,
         },
         reason: params.failureReason ?? 'WhatsApp provider notification failed after API accept.',

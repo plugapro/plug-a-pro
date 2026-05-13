@@ -276,12 +276,17 @@ export default async function TicketAccessPage({
     (jobRequest.status === 'PENDING_VALIDATION' || jobRequest.status === 'MATCHING') &&
     jobRequest.assignmentMode === 'OPS_REVIEW' &&
     Boolean(jobRequest.latestDispatchDecisionId)
-  const isReviewFirstSent = isReviewFirstFlow && jobRequest.status === 'MATCHING'
   const isReviewFirstPending = isReviewFirstFlow && !Boolean(jobRequest.latestDispatchDecisionId)
   const reviewCandidates = ticketVm.reviewCandidates
   const reviewShortlist = ticketVm.reviewShortlist
+  const reviewShortlistProviders = reviewShortlist?.providers ?? []
+  const isReviewFirstSent = reviewShortlistProviders.some((provider) =>
+    ['SENT', 'VIEWED', 'INTERESTED'].includes(provider.status),
+  )
+  const isReviewFirstSending = reviewShortlistProviders.some((provider) => provider.status === 'SEND_PENDING')
+  const hasReviewFirstSendFailure = reviewShortlistProviders.some((provider) => provider.status === 'SEND_FAILED')
   const reviewShortlistedProviderIds = new Set(
-    reviewShortlist?.providers.map((provider) => provider.providerId) ?? [],
+    reviewShortlistProviders.map((provider) => provider.providerId),
   )
   const latestQuote = match?.quotes[0] ?? null
   const booking = match?.booking ?? null
@@ -567,12 +572,20 @@ export default async function TicketAccessPage({
             <p className="text-muted-foreground">
               {isReviewFirstSent
                 ? 'Your request has been sent to your shortlisted provider. They can open the signed lead link and respond from there.'
+                : hasReviewFirstSendFailure
+                  ? "We couldn't notify one or more shortlisted providers. Retry sending or choose another provider."
+                  : isReviewFirstSending
+                    ? "We're sending your request to your selected provider now."
                 : 'View matching providers, shortlist 1 to 3, then send your request only to those providers.'}
             </p>
             {isReviewFirstSent ? (
               <p className="text-muted-foreground">
                 We&apos;re waiting for your shortlisted provider to respond.
               </p>
+            ) : hasReviewFirstSendFailure ? (
+              <p className="text-muted-foreground">No response timer is running for failed sends.</p>
+            ) : isReviewFirstSending ? (
+              <p className="text-muted-foreground">Please wait a moment, then refresh this request.</p>
             ) : isReviewFirstPending ? (
               <p className="text-muted-foreground">We&apos;re finding matching providers for your request.</p>
             ) : reviewCandidates == null ? (
@@ -644,12 +657,36 @@ export default async function TicketAccessPage({
                     <div className="space-y-1">
                       {reviewShortlist.providers.map((provider, idx) => (
                         <div key={provider.providerId} className="flex items-center justify-between gap-3">
-                          <p>{idx + 1}. {provider.name}</p>
-                          {provider.profileUrl && (
-                            <Link href={provider.profileUrl} className="text-xs font-medium text-primary underline">
-                              View profile
-                            </Link>
-                          )}
+                          <div>
+                            <p>{idx + 1}. {provider.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {provider.status === 'SEND_PENDING'
+                                ? 'Sending'
+                                : provider.status === 'SEND_FAILED'
+                                  ? "Couldn't notify provider"
+                                  : provider.status === 'SENT'
+                                    ? 'Sent'
+                                    : provider.status === 'VIEWED'
+                                      ? 'Viewed'
+                                      : provider.status === 'INTERESTED'
+                                        ? 'Responded'
+                                        : provider.status === 'DECLINED'
+                                          ? 'Declined'
+                                          : provider.status === 'EXPIRED'
+                                            ? 'Expired'
+                                            : 'Not sent yet'}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {provider.status === 'SEND_FAILED' && (
+                              <Badge variant="destructive">Send failed</Badge>
+                            )}
+                            {provider.profileUrl && (
+                              <Link href={provider.profileUrl} className="text-xs font-medium text-primary underline">
+                                View profile
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -666,7 +703,11 @@ export default async function TicketAccessPage({
                         Show 3 more
                       </Button>
                     )}
-                    {isReviewFirstSent ? (
+                    {isReviewFirstSending ? (
+                      <Button type="button" className="w-full" disabled>
+                        Sending
+                      </Button>
+                    ) : isReviewFirstSent && !hasReviewFirstSendFailure ? (
                       <Button type="button" className="w-full" disabled>
                         Sent
                       </Button>
@@ -675,7 +716,7 @@ export default async function TicketAccessPage({
                         <input type="hidden" name="token" value={token} />
                         <input type="hidden" name="requestId" value={jobRequest.id} />
                         <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
-                          Send request
+                          {hasReviewFirstSendFailure ? 'Retry sending' : 'Send request'}
                         </Button>
                       </form>
                     )}

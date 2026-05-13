@@ -809,7 +809,7 @@ export async function sendJobOffer(params: {
   jobUrl: string
   bookingId?: string   // not yet available at lead-dispatch time — optional for logging
   metadata?: Record<string, unknown>
-}): Promise<void> {
+}): Promise<string> {
   // The WABA currently has `job_offer` approved as MARKETING, but Meta may
   // asynchronously fail MARKETING sends when business payment eligibility is
   // not active. Use the approved UTILITY provider job reminder template for
@@ -839,6 +839,7 @@ export async function sendJobOffer(params: {
     externalId,
     metadata: params.metadata,
   })
+  return externalId
 }
 
 export async function sendProviderJobReminder(params: {

@@ -34,6 +34,8 @@ export type QualifiedRequestState =
 
 export type QualifiedLeadInviteState =
   | 'created'
+  | 'send_pending'
+  | 'send_failed'
   | 'sent'
   | 'viewed'
   | 'interested'
@@ -166,6 +168,8 @@ export function mapLeadInviteToQualifiedState(invite: LeadInviteStateInput | nul
     !['ACCEPTED', 'ACCEPTED_LOCKED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'].includes(invite.status)
   ) return 'expired'
 
+  if (invite.status === 'SEND_PENDING') return 'send_pending'
+  if (invite.status === 'SEND_FAILED') return 'send_failed'
   if (invite.status === 'SENT') return 'sent'
   if (invite.status === 'VIEWED') return 'viewed'
   if (invite.status === 'INTERESTED') return 'interested'
