@@ -71,7 +71,7 @@ describe('Pay@ provider credit payment intents', () => {
       data: expect.objectContaining({
         providerId: 'provider-1',
         amountCents: 10_000,
-        creditsToIssue: 5,
+        creditsToIssue: 2,
         paymentMethod: 'PAYAT',
         status: 'PENDING_PAYMENT',
         providerCellphone: '+27821234567',

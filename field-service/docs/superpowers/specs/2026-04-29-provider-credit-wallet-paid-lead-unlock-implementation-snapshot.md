@@ -101,7 +101,7 @@ Notable implementation choices:
 
 ## Business Rules
 
-- 1 credit = R20.
+- 1 credit = R50.
 - Minimum manual EFT top-up = R100.
 - Lead unlock cost = 1 credit.
 - Provider top-up intents do not mutate wallets.

@@ -132,9 +132,9 @@ describe('provider credit payment intents', () => {
   })
 
   it.each([
-    [10_000, 5],
-    [20_000, 10],
-    [50_000, 25],
+    [10_000, 2],
+    [20_000, 4],
+    [50_000, 10],
   ])('creates %i cents as %i credits', async (amountCents, creditsToIssue) => {
     const result = await createManualEftTopUpIntent({
       providerId: 'provider-1',
@@ -227,7 +227,7 @@ describe('provider credit payment intents', () => {
       id: 'intent-1',
       providerId: 'provider-1',
       amountCents: 10_000,
-      creditsToIssue: 5,
+      creditsToIssue: 2,
       paymentMethod: 'PAYAT',
       status: 'PENDING_PAYMENT',
       providerCellphone: '+27821234567',

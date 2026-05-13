@@ -59,7 +59,7 @@ describe('provider wallet notification delivery', () => {
       id: 'intent-1',
       providerId: 'provider-1',
       status: 'CREDITED',
-      creditsToIssue: 5,
+      creditsToIssue: 2,
       amountCents: 10_000,
       paymentReference: 'PAP-1000-ABCD',
       providerCellphone: null,
@@ -122,14 +122,14 @@ describe('provider wallet notification delivery', () => {
       components: [
         {
           type: 'body',
-          parameters: [{ type: 'text', text: '5' }],
+          parameters: [{ type: 'text', text: '2' }],
         },
       ],
     })
     expect(state.createdMessages[0]).toMatchObject({
       channel: 'WHATSAPP',
       templateName: 'wallet:payment_credited',
-      body: 'Payment received. Your wallet has been credited with 5 Plug A Pro provider credits. 1 credit = R20. 1 credit is used only when a customer selects you and you accept that selected job.',
+      body: 'Payment received. Your wallet has been credited with 2 Plug A Pro provider credits. 1 credit = R50. 1 credit is used only when a customer selects you and you accept that selected job.',
       to: '+27821234567',
       status: 'SENT',
       metadata: expect.objectContaining({
@@ -176,7 +176,7 @@ describe('provider wallet notification delivery', () => {
           parameters: [
             { type: 'text', text: '1' },
             { type: 'text', text: 'R100' },
-            { type: 'text', text: '5' },
+            { type: 'text', text: '2' },
           ],
         },
       ],

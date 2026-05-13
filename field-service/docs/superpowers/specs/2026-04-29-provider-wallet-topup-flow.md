@@ -41,11 +41,11 @@ Server creates PaymentIntent (status: PENDING_PAYMENT)
 
 | Package | Price (ZAR) | Credits | Effective rate |
 |---|---|---|---|
-| Starter | R100 | 5 | R20 / credit |
-| Growth | R200 | 10 | R20 / credit |
-| Pro | R500 | 25 | R20 / credit |
+| Starter | R100 | 2 | R50 / credit |
+| Growth | R200 | 4 | R50 / credit |
+| Pro | R500 | 10 | R50 / credit |
 
-**Credit pricing constant:** `CREDIT_VALUE_CENTS = 2000` (R20 per credit). Defined in `lib/provider-credit-payment-intents.ts`. Update this constant to change credit pricing without a schema change.
+**Credit pricing constant:** `PROVIDER_CREDIT_PRICE_CENTS = 5000` (R50 per credit). Defined in `lib/provider-wallet.ts`. Update this constant to change credit pricing without a schema change.
 
 **Pilot restriction:** R50 (1 credit) is not exposed in the default UI. The service-layer validation (`PAYFAST_ALLOWED_AMOUNTS_CENTS`) enforces the allowed set at the server; the UI only renders the three approved packages.
 

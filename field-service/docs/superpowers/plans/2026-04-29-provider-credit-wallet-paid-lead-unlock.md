@@ -38,7 +38,7 @@
 
 ## Canonical Business Rules
 
-- 1 Plug-A-Pro Credit = R20 via `PLUG_A_PRO_CREDIT_VALUE_CENTS = 2_000`.
+- 1 Plug-A-Pro Credit = R50 via `PLUG_A_PRO_CREDIT_VALUE_CENTS = 5_000`.
 - Minimum manual EFT top-up is R100 via `MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000`.
 - Lead unlock cost is fixed at 1 credit via `LEAD_UNLOCK_COST_CREDITS = 1`.
 - Manual EFT intent creation never credits the wallet.

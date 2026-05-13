@@ -963,7 +963,7 @@ model PaymentIntent {
 // ─── Provider credit wallet ──────────────────────────────────────────────────
 // Credits are the provider-facing paid-lead currency. Rand values are kept out
 // of wallet balances; current product pricing is defined in code as
-// 1 Plug-A-Pro Credit = R20. Immutable ledger rows are the accounting source of
+// 1 Plug-A-Pro Credit = R50. Immutable ledger rows are the accounting source of
 // truth. Cached balances exist only to make gating and display fast.
 
 model ProviderWallet {

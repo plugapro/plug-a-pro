@@ -41,9 +41,9 @@ vi.mock('@/lib/provider-wallet-notifications', () => ({
 
 vi.mock('@/lib/provider-wallet', () => ({
   debitCreditsForLeadUnlockInTransaction: mockDebitCredits,
-  PROVIDER_CREDIT_PRICE_ZAR: 20,
-  PROVIDER_CREDIT_PRICE_CENTS: 2000,
-  PLUG_A_PRO_CREDIT_VALUE_CENTS: 2000,
+  PROVIDER_CREDIT_PRICE_ZAR: 50,
+  PROVIDER_CREDIT_PRICE_CENTS: 5000,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS: 5000,
   ProviderWalletError: class ProviderWalletError extends Error {
     constructor(public code: string, message: string) { super(message) }
   },

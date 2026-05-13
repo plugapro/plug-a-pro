@@ -276,7 +276,7 @@ export const TEMPLATES = {
     description: 'Sent when a provider wallet reaches one remaining credit',
     // {{1}} remaining credits, {{2}} top-up amount, {{3}} credits issued
     example:
-      'You have {{1}} Plug A Pro provider credit left. 1 credit = R20. Each customer-selected job you accept uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
+      'You have {{1}} Plug A Pro provider credit left. 1 credit = R50. Each customer-selected job you accept uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
   },
 
   wallet_zero_balance_lead: {
@@ -286,7 +286,7 @@ export const TEMPLATES = {
     description: 'Sent when a matched lead is available but the provider wallet has no credits',
     // {{1}} current credits, {{2}} minimum top-up amount
     example:
-      'New matched lead available, but your wallet has {{1}} credits. 1 credit = R20. You need 1 credit only if the customer selects you and you accept that selected job. Top up {{2}}.',
+      'New matched lead available, but your wallet has {{1}} credits. 1 credit = R50. You need 1 credit only if the customer selects you and you accept that selected job. Top up {{2}}.',
   },
 
   wallet_payment_intent_created: {
@@ -307,7 +307,7 @@ export const TEMPLATES = {
     description: 'Sent after admin reconciliation credits a provider wallet top-up',
     // {{1}} credits issued
     example:
-      'Payment received. Your wallet has been credited with {{1}} Plug A Pro provider credits. 1 credit = R20. Each customer-selected job you accept uses 1 credit.',
+      'Payment received. Your wallet has been credited with {{1}} Plug A Pro provider credits. 1 credit = R50. Each customer-selected job you accept uses 1 credit.',
   },
 
   wallet_payfast_topup_initiated: {

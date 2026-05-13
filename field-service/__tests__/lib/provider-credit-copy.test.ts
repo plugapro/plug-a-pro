@@ -115,7 +115,7 @@ describe('provider credit copy', () => {
   })
 
   it('documents the provider credits business price without financial-credit wording', () => {
-    expect(PROVIDER_CREDITS_PRICE_LINE).toBe('1 credit = R20.')
+    expect(PROVIDER_CREDITS_PRICE_LINE).toBe('1 credit = R50.')
   })
 
   it('builds a configurable provider terms URL', () => {
@@ -170,7 +170,7 @@ describe('provider credit copy', () => {
     expect(message).toContain('We review your application using the information you provide')
     expect(message).toContain('starter credits')
     expect(message).toContain('Credits are prepaid platform units, not cash, loans, or financial credit')
-    expect(message).toContain('1 credit = R20')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('Previewing and showing interest in jobs is free')
     expect(message).toContain('You spend 1 credit only when a customer selects you')
     expect(message).toContain('Full customer and job details unlock after selected-job acceptance')
@@ -238,7 +238,7 @@ describe('provider credit copy', () => {
     expect(message).toContain('Photos: *2 available*')
     expect(message).toContain('Shower drain is blocked.')
     expect(message).toContain('Previewing and responding is free')
-    expect(message).toContain('1 credit = R20')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('You spend 1 credit only if the customer selects you')
     expect(message).toContain('Full customer contact and exact address stay locked')
     expect(message).toContain('Available credits: 2 credits')
@@ -298,7 +298,7 @@ describe('provider credit copy', () => {
 
     expect(message).toContain('Your credits')
     expect(message).toContain('Credits are prepaid platform units, not cash, loans, or financial credit')
-    expect(message).toContain('1 credit = R20')
+    expect(message).toContain('1 credit = R50')
     expect(message).toContain('Available: 5')
     expect(message).toContain('Starter/onboarding: 3')
     expect(message).toContain('Purchased: 2')

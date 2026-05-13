@@ -35,7 +35,7 @@ Reserved balances remain intentionally out of scope until unlocks need hold-and-
 Provider credit top-up intents now exist as a separate finance record from booking payments:
 
 - `PaymentIntent` tracks provider top-up requests, credits to issue, method/status, unique EFT reference, proof/payment reconciliation fields, and gateway placeholders.
-- Manual EFT top-up creation validates R100 minimums and R20-per-credit divisibility.
+- Manual EFT top-up creation validates R100 minimums and R50-per-credit divisibility.
 - Intent creation returns bank instruction data and starts in `PENDING_PAYMENT`.
 - Intent creation does not call wallet mutation functions; wallet credits remain reserved for admin/system reconciliation after funds are confirmed.
 - Provider entry points are `app/api/provider/wallet/top-up-intents/route.ts` and `app/(provider)/provider/credits/actions.ts`.
@@ -1046,7 +1046,7 @@ Pre-unlock provider preview includes service category, suburb/city, preferred ti
 
 ### Product and Accounting Summary
 
-Plug-A-Pro now uses provider-facing **Plug-A-Pro Credits** for paid lead monetisation. The product term is credits, not tokens, because the unit represents a business-priced lead access credit rather than a transferable or speculative token. The current pricing rule is fixed in code as `PLUG_A_PRO_CREDIT_VALUE_CENTS = 2000`, so 1 credit equals R20.
+Plug-A-Pro now uses provider-facing **Plug-A-Pro Credits** for paid lead monetisation. The product term is credits, not tokens, because the unit represents a business-priced lead access credit rather than a transferable or speculative token. The current pricing rule is fixed in code as `PLUG_A_PRO_CREDIT_VALUE_CENTS = 5000`, so 1 credit equals R50.
 
 Wallet balances are stored as credits, not Rand values. `ProviderWallet` caches separate `paidCreditBalance` and `promoCreditBalance` values, while immutable `WalletLedgerEntry` rows remain the accounting source of truth. Wallet status supports `ACTIVE`, `SUSPENDED`, and `CLOSED`; suspension blocks lead unlock debits without erasing balances.
 
@@ -1064,7 +1064,7 @@ Implemented model and service references:
 ### Current Business Rules
 
 - Minimum manual EFT top-up is R100.
-- R100 issues 5 credits, R200 issues 10 credits, and R500 issues 25 credits.
+- R100 issues 2 credits, R200 issues 4 credits, and R500 issues 10 credits.
 - Manual EFT intent creation never credits a wallet automatically.
 - Admin reconciliation credits only after funds are confirmed and the `PaymentIntent` is valid.
 - Active lead unlock costs 1 Plug-A-Pro Credit through `LEAD_UNLOCK_COST_CREDITS`.

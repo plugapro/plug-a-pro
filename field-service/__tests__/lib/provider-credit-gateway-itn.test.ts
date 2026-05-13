@@ -87,7 +87,7 @@ function makeIntent(overrides: Record<string, unknown> = {}) {
     id: 'intent-1',
     providerId: 'provider-1',
     amountCents: 10_000,
-    creditsToIssue: 5,
+    creditsToIssue: 2,
     paymentReference: 'PF-AABBCC',
     status: 'ITN_RECEIVED',
     creditedAt: null,
@@ -151,7 +151,7 @@ describe('creditProviderWalletFromGatewayItn', () => {
     const result = await creditProviderWalletFromGatewayItn('intent-1')
 
     expect(result).toMatchObject({ credited: true })
-    expect(walletState.wallet!.paidCreditBalance).toBe(5)
+    expect(walletState.wallet!.paidCreditBalance).toBe(2)
   })
 
   it('creates a ledger entry with correct fields', async () => {
@@ -164,8 +164,8 @@ describe('creditProviderWalletFromGatewayItn', () => {
     expect(walletState.ledgerEntries[0]).toMatchObject({
       entryType: 'TOPUP_CREDIT',
       creditType: 'PAID',
-      amountCredits: 5,
-      balanceAfterPaidCredits: 5,
+      amountCredits: 2,
+      balanceAfterPaidCredits: 2,
     })
   })
 
@@ -205,8 +205,8 @@ describe('creditProviderWalletFromGatewayItn', () => {
     // Now intent is CREDITED — second call should be no-op.
     const second = await creditProviderWalletFromGatewayItn('intent-1')
     expect(second).toMatchObject({ credited: false })
-    // Balance still 5, not 10.
-    expect(walletState.wallet!.paidCreditBalance).toBe(5)
+    // Balance still 2, not 4.
+    expect(walletState.wallet!.paidCreditBalance).toBe(2)
   })
 
   it('emits a WhatsApp notification after successful credit', async () => {

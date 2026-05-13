@@ -319,7 +319,7 @@ export async function notifyProviderLowBalance(providerId: string, sourceId?: st
     to: provider.phone,
     templateName: 'wallet:low_balance',
     whatsappTemplate: 'wallet_low_balance',
-    templateParameters: ['1', 'R100', '5'],
+    templateParameters: ['1', 'R100', '2'],
     body: buildLowBalanceWarningMessage(),
     idempotencyKey: `wallet:low_balance:${provider.id}:${balanceVersion}`,
     metadata: {

@@ -48,9 +48,9 @@ vi.mock('../../lib/job-request-access', () => ({
 vi.mock('../../lib/matching/orchestrator', () => ({ orchestrateMatch: mockOrchestrateMatch }))
 vi.mock('../../lib/matching-engine', () => ({ dispatchLeads: mockDispatchLeads }))
 vi.mock('@/lib/provider-wallet', () => ({
-  PROVIDER_CREDIT_PRICE_ZAR: 20,
-  PROVIDER_CREDIT_PRICE_CENTS: 2_000,
-  PLUG_A_PRO_CREDIT_VALUE_CENTS: 2_000,
+  PROVIDER_CREDIT_PRICE_ZAR: 50,
+  PROVIDER_CREDIT_PRICE_CENTS: 5_000,
+  PLUG_A_PRO_CREDIT_VALUE_CENTS: 5_000,
   getProviderWalletBalanceReadOnly: mockGetWalletBalance,
 }))
 vi.mock('@/lib/provider-lead-access', () => ({ getProviderLeadAccessUrl: mockGetProviderLeadAccessUrl }))

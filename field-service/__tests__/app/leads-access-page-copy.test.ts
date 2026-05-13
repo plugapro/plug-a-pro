@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 describe('signed provider lead page copy', () => {
   const source = readFileSync(join(process.cwd(), 'app/leads/access/[token]/page.tsx'), 'utf8')
   const authenticatedSource = readFileSync(join(process.cwd(), 'app/(provider)/provider/leads/[leadId]/page.tsx'), 'utf8')
+  const creditsSource = readFileSync(join(process.cwd(), 'app/(provider)/provider/credits/page.tsx'), 'utf8')
 
   it('does not expose the old unlock-only or inspection-first actions', () => {
     expect(source).not.toContain('Unlock to view details first')
@@ -21,6 +22,15 @@ describe('signed provider lead page copy', () => {
     expect(source).toContain('Confirm lead acceptance')
     expect(source).toContain('Full customer details are released only after credit is applied and the request is locked.')
     expect(source).toContain('hasAcceptedDetails && customer')
+  })
+
+  it('renders credit pricing from the central R50 provider-wallet constant', () => {
+    expect(source).toContain('PROVIDER_CREDIT_PRICE_ZAR')
+    expect(authenticatedSource).toContain('PROVIDER_CREDIT_PRICE_ZAR')
+    expect(creditsSource).toContain('PROVIDER_CREDIT_PRICE_ZAR')
+    expect(source).not.toContain('1 credit = R20')
+    expect(authenticatedSource).not.toContain('1 credit = R20')
+    expect(creditsSource).not.toContain('1 credit = R20')
   })
 
   it('only renders offer countdown and response actions for active lead offers', () => {
