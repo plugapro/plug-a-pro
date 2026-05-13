@@ -25,7 +25,7 @@ describe('signed provider lead page copy', () => {
 
   it('only renders offer countdown and response actions for active lead offers', () => {
     expect(source).toContain("const isExpired = lead.status === 'EXPIRED'")
-    expect(source).toContain("const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'")
+    expect(source).toContain("const isOpenOffer = lead.status === 'SEND_PENDING' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'")
     expect(source).toContain('const canRespondToLead = isOpenOffer && !isExpired')
     expect(source).toContain('const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)')
     expect(source).toContain('{showExpiryCountdown && lead.expiresAt && (')

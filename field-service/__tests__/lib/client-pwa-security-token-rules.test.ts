@@ -17,6 +17,7 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     jobRequest: { findUnique: vi.fn() },
     lead: { findUnique: vi.fn() },
+    leadUnlock: { findUnique: vi.fn() },
     providerShortlist: { findFirst: vi.fn() },
   },
 }))
@@ -260,6 +261,7 @@ describe('provider preview — protected customer fields absent before acceptanc
     vi.clearAllMocks()
     vi.resetModules()
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-client10-secret'
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
   })
 
   it('safe preview does not expose customer phone, street, or access notes', async () => {
@@ -293,6 +295,11 @@ describe('provider preview — protected customer fields absent before acceptanc
           },
         },
       })
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-1',
+      providerId: 'prov-1',
+      unlockedAt: new Date('2026-05-01T09:00:00.000Z'),
+    })
 
     const { createProviderLeadAccessToken, resolveProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'prov-1' })
@@ -310,6 +317,7 @@ describe('resolveProviderLeadAttachmentScope — isAccepted blocks non-preview a
     vi.clearAllMocks()
     vi.resetModules()
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-client10-secret'
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
   })
 
   it('returns isAccepted=false for a SENT lead — non-preview attachment access denied', async () => {
@@ -334,6 +342,11 @@ describe('resolveProviderLeadAttachmentScope — isAccepted blocks non-preview a
           },
         },
       })
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-1',
+      providerId: 'prov-1',
+      unlockedAt: new Date('2026-05-01T09:00:00.000Z'),
+    })
 
     const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'prov-1' })
@@ -347,6 +360,11 @@ describe('resolveProviderLeadAttachmentScope — isAccepted blocks non-preview a
     mockDb.lead.findUnique.mockResolvedValueOnce(
       makeProviderLead({ status: 'ACCEPTED', unlock: { id: 'u-x', providerId: 'other-prov' } }),
     )
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-x',
+      providerId: 'other-prov',
+      unlockedAt: new Date('2026-05-01T09:00:00.000Z'),
+    })
     const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'prov-1' })
 
