@@ -110,6 +110,7 @@ describe('sendRequestToShortlistedProviders', () => {
       ],
     })
     mockJobRequest.update.mockResolvedValue({})
+    mockJobRequest.updateMany.mockResolvedValue({ count: 1 })
     mockLead.update.mockResolvedValue({})
     mockLead.updateMany.mockResolvedValue({ count: 1 })
     mockLead.findMany.mockResolvedValue([])
@@ -129,7 +130,7 @@ describe('sendRequestToShortlistedProviders', () => {
     mockSendCtaUrl.mockResolvedValue('customer-failure-message-id')
   })
 
-  it('uses the approved job_offer template to notify shortlisted providers', async () => {
+  it('uses the approved job_offer template and waits for WhatsApp status before marking sent', async () => {
     const { sendRequestToShortlistedProviders } = await import('@/lib/review-first')
 
     const result = await sendRequestToShortlistedProviders({
@@ -137,14 +138,9 @@ describe('sendRequestToShortlistedProviders', () => {
       customerId: 'customer-1',
     })
 
-    expect(result.invitedCount).toBe(1)
-    expect(mockJobRequest.update).toHaveBeenCalledWith({
-      where: { id: 'request-1' },
-      data: {
-        status: 'MATCHING',
-        assignmentMode: 'OPS_REVIEW',
-      },
-    })
+    expect(result.invitedCount).toBe(0)
+    expect(result.pendingCount).toBe(1)
+    expect(mockJobRequest.update).not.toHaveBeenCalled()
     expect(mockSendJobOffer).toHaveBeenCalledWith(expect.objectContaining({
       providerPhone: '+27821111111',
       providerFirstName: 'Lovemore',
@@ -161,9 +157,8 @@ describe('sendRequestToShortlistedProviders', () => {
     expect(mockLead.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'lead-1' },
       data: expect.objectContaining({
-        status: 'SENT',
-        sentAt: expect.any(Date),
-        expiresAt: expect.any(Date),
+        status: 'SEND_PENDING',
+        expiresAt: null,
       }),
     }))
     expect(mockLead.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -175,7 +170,7 @@ describe('sendRequestToShortlistedProviders', () => {
     }))
     expect(mockSendText).toHaveBeenCalledWith(
       '+27820000000',
-      expect.stringContaining('Your request has been sent to 1 selected provider'),
+      expect.stringContaining("We're sending your request to your selected provider now"),
       expect.objectContaining({
         templateName: 'interactive:rfp_sent_to_shortlist',
       }),
@@ -236,6 +231,12 @@ describe('sendRequestToShortlistedProviders', () => {
         providerId: 'provider-1',
       },
     })
+    mockLead.findUnique.mockResolvedValue({
+      provider: { name: 'Lovemore Sibanda' },
+      jobRequest: {
+        customer: { phone: '+27820000000' },
+      },
+    })
     const { handleReviewFirstProviderNotificationStatus } = await import('@/lib/review-first')
 
     const result = await handleReviewFirstProviderNotificationStatus({
@@ -249,14 +250,31 @@ describe('sendRequestToShortlistedProviders', () => {
         id: 'lead-1',
         jobRequestId: 'request-1',
         providerId: 'provider-1',
-        status: { in: ['SENT', 'VIEWED'] },
-        notifiedAt: null,
+        status: 'SEND_PENDING',
       },
       data: {
+        status: 'SENT',
+        sentAt: expect.any(Date),
+        expiresAt: expect.any(Date),
         notifiedAt: expect.any(Date),
         notificationAttemptedAt: null,
       },
     })
+    expect(mockJobRequest.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'request-1',
+        assignmentMode: 'OPS_REVIEW',
+        status: 'PENDING_VALIDATION',
+      },
+      data: { status: 'MATCHING' },
+    })
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27820000000',
+      expect.stringContaining('Your request was sent to'),
+      expect.objectContaining({
+        templateName: 'interactive:rfp_provider_notification_accepted',
+      }),
+    )
   })
 
   it('repairs a failed provider notification so the lead can be retried instead of expiring as no response', async () => {

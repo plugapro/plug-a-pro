@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
                 },
               })
 
-              if (status.status === 'delivered' || status.status === 'read' || status.status === 'failed') {
+              if (status.status === 'sent' || status.status === 'delivered' || status.status === 'read' || status.status === 'failed') {
                 await handleReviewFirstProviderNotificationStatus({
                   externalId: status.id,
                   status: status.status,

@@ -32,6 +32,7 @@ const MVP1_MATCH_RESULT_LIMIT = Math.min(
 )
 const REVIEW_FIRST_PROVIDER_NOTIFICATION_SOURCE = 'review_first_send_request'
 const REVIEW_FIRST_PROVIDER_NOTIFICATION_FAILED_TEMPLATE = 'interactive:rfp_provider_notification_failed'
+const REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE = 'interactive:rfp_provider_notification_accepted'
 
 type ProviderRfpSendResult =
   | {
@@ -1233,6 +1234,7 @@ export async function sendRequestToShortlistedProviders(params: {
       return {
         requestId: request.id,
         invitedCount: alreadySent.length,
+        pendingCount: 0,
         failedCount: 0,
         expiresAt: alreadySent[0]?.expiresAt ?? null,
       }
@@ -1266,6 +1268,7 @@ export async function sendRequestToShortlistedProviders(params: {
   const area = [request.address?.suburb, request.address?.city].filter(Boolean).join(', ')
 
   let notifiedCount = 0
+  let pendingCount = 0
   let failedCount = 0
   let firstExpiresAt: Date | null = null
 
@@ -1310,14 +1313,11 @@ export async function sendRequestToShortlistedProviders(params: {
       })
 
       if (sendResult.ok) {
-        const sentAt = new Date()
-        const expiresAt = new Date(sentAt.getTime() + RFP_PROVIDER_RESPONSE_MINUTES * 60_000)
         await db.lead.update({
           where: { id: lead.id },
           data: {
-            status: 'SENT',
-            sentAt,
-            expiresAt,
+            status: 'SEND_PENDING',
+            expiresAt: null,
             respondedAt: null,
             viewedAt: null,
             // Meta can accept the send and later fail delivery asynchronously.
@@ -1328,8 +1328,7 @@ export async function sendRequestToShortlistedProviders(params: {
             notificationAttemptedAt: notificationAttemptStartedAt,
           },
         })
-        firstExpiresAt ??= expiresAt
-        notifiedCount += 1
+        pendingCount += 1
         console.info('[review-first.send] provider_whatsapp_accepted', {
           requestId: request.id,
           requestRef: request.requestRef,
@@ -1337,7 +1336,7 @@ export async function sendRequestToShortlistedProviders(params: {
           providerId: lead.provider.id,
           messageId: sendResult.messageId,
           statusBefore: lead.status,
-          statusAfter: 'SENT',
+          statusAfter: 'SEND_PENDING',
         })
       } else {
         await db.lead.update({
@@ -1389,7 +1388,7 @@ export async function sendRequestToShortlistedProviders(params: {
     }
   }
 
-  if (notifiedCount < MIN_SHORTLISTED_PROVIDERS) {
+  if (notifiedCount + pendingCount < MIN_SHORTLISTED_PROVIDERS) {
     if (request.customer?.phone) {
       await sendText(
         request.customer.phone,
@@ -1408,16 +1407,20 @@ export async function sendRequestToShortlistedProviders(params: {
     )
   }
 
-  await db.jobRequest.update({
-    where: { id: request.id },
-    data: {
-      status: 'MATCHING',
-      assignmentMode: 'OPS_REVIEW',
-    },
-  })
+  if (notifiedCount > 0) {
+    await db.jobRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'MATCHING',
+        assignmentMode: 'OPS_REVIEW',
+      },
+    })
+  }
 
   if (request.customer?.phone) {
-    const customerText = failedCount > 0
+    const customerText = pendingCount > 0
+      ? `We're sending your request to your selected provider now.\n\nWe'll update you here once WhatsApp confirms the send.`
+      : failedCount > 0
       ? `Your request was sent to ${notifiedCount} of ${activeTargets.length} selected provider${activeTargets.length === 1 ? '' : 's'}.\n\nWe couldn't notify ${failedCount} provider${failedCount === 1 ? '' : 's'}. Open your request to retry failed sends or choose another provider.`
       : `Your request has been sent to ${notifiedCount} selected provider${notifiedCount === 1 ? '' : 's'}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you as responses come in.`
     await sendText(
@@ -1425,7 +1428,7 @@ export async function sendRequestToShortlistedProviders(params: {
       customerText,
       {
         templateName: 'interactive:rfp_sent_to_shortlist',
-        metadata: { requestId: request.id, count: notifiedCount, failedCount },
+        metadata: { requestId: request.id, count: notifiedCount, pendingCount, failedCount },
       },
     ).catch(() => undefined)
   }
@@ -1433,6 +1436,7 @@ export async function sendRequestToShortlistedProviders(params: {
   return {
     requestId: request.id,
     invitedCount: notifiedCount,
+    pendingCount,
     failedCount,
     expiresAt: firstExpiresAt,
   }
@@ -1489,10 +1493,19 @@ async function attemptProviderRfpWhatsAppNotification(params: {
       jobUrl: params.jobUrl,
       metadata: params.metadata,
     })
+    if (!messageId) {
+      return {
+        ok: false,
+        provider: 'whatsapp_cloud',
+        errorCode: 'WHATSAPP_MESSAGE_ID_MISSING',
+        errorMessage: 'WhatsApp accepted request without a message id.',
+        retryable: true,
+      }
+    }
     return {
       ok: true,
       provider: 'whatsapp_cloud',
-      messageId: messageId || null,
+      messageId,
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
@@ -1537,20 +1550,79 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
     return { handled: false as const, reason: 'metadata_missing' }
   }
 
-  if (params.status === 'delivered' || params.status === 'read') {
+  if (params.status === 'sent' || params.status === 'delivered' || params.status === 'read') {
+    const sentAt = new Date()
+    const expiresAt = new Date(sentAt.getTime() + RFP_PROVIDER_RESPONSE_MINUTES * 60_000)
     const updated = await db.lead.updateMany({
       where: {
         id: leadId,
         jobRequestId: requestId,
         providerId,
-        status: { in: ['SENT', 'VIEWED'] },
-        notifiedAt: null,
+        status: 'SEND_PENDING',
       },
       data: {
-        notifiedAt: new Date(),
+        status: 'SENT',
+        sentAt,
+        expiresAt,
+        notifiedAt: sentAt,
         notificationAttemptedAt: null,
       },
     })
+
+    if (updated.count > 0) {
+      await db.jobRequest.updateMany({
+        where: {
+          id: requestId,
+          assignmentMode: 'OPS_REVIEW',
+          status: 'PENDING_VALIDATION',
+        },
+        data: { status: 'MATCHING' },
+      }).catch(() => undefined)
+
+      const lead = await db.lead.findUnique({
+        where: { id: leadId },
+        select: {
+          provider: { select: { name: true } },
+          jobRequest: {
+            select: {
+              customer: { select: { phone: true } },
+            },
+          },
+        },
+      }).catch(() => null)
+
+      if (lead?.jobRequest.customer?.phone) {
+        const alreadySent = await hasSuccessfulMessageForRecipient({
+          to: lead.jobRequest.customer.phone,
+          templateName: REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE,
+          metadataPath: ['leadId'],
+          metadataEquals: leadId,
+        }).catch(() => false)
+
+        if (!alreadySent) {
+          await sendText(
+            lead.jobRequest.customer.phone,
+            `Your request was sent to ${lead.provider.name}. They have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond.`,
+            {
+              templateName: REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE,
+              metadata: {
+                requestId,
+                leadId,
+                providerId,
+                idempotencyKey: `${REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE}:${leadId}`,
+              },
+            },
+          ).catch((error) => {
+            console.warn('[review-first.provider-notification] customer_success_notice_failed', {
+              requestId,
+              leadId,
+              providerId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          })
+        }
+      }
+    }
 
     console.info('[review-first.provider-notification] delivered', {
       requestId,

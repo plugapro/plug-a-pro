@@ -100,16 +100,20 @@ async function sendReviewShortlistFromToken(formData: FormData) {
     redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
   }
 
+  let redirectSelection = 'sent-to-shortlist'
   try {
-    await sendRequestToShortlistedProviders({
+    const result = await sendRequestToShortlistedProviders({
       requestId,
       customerId: resolved.jobRequest.customerId,
     })
+    if (result.pendingCount > 0) {
+      redirectSelection = 'sending-to-shortlist'
+    }
   } catch {
     redirect(`/requests/access/${encodeURIComponent(token)}?selection=send-shortlist-failed`)
   }
 
-  redirect(`/requests/access/${encodeURIComponent(token)}?selection=sent-to-shortlist`)
+  redirect(`/requests/access/${encodeURIComponent(token)}?selection=${redirectSelection}`)
 }
 
 async function chooseMatchingModeFromToken(formData: FormData) {
@@ -492,6 +496,15 @@ export default async function TicketAccessPage({
           <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-success-fg)]">
             <p className="font-medium">Request sent to shortlisted providers</p>
             <p>We notified your selected providers on WhatsApp. We&apos;ll keep updating your request status here.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {resolvedSearchParams.selection === 'sending-to-shortlist' && (
+        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
+          <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
+            <p className="font-medium">Sending request</p>
+            <p>We&apos;re sending your request to your selected provider now. We&apos;ll update this page once WhatsApp confirms the send.</p>
           </CardContent>
         </Card>
       )}
