@@ -160,6 +160,7 @@ export async function acceptLead(params: {
   providerId: string
   inspectionNeeded?: boolean
   source?: 'whatsapp' | 'pwa' | 'api'
+  traceId?: string
 }): Promise<LeadAcceptanceResult> {
   const selectedLead = await db.lead.findUnique({
     where: { id: params.leadId },
@@ -198,6 +199,7 @@ export async function acceptLead(params: {
     leadId: params.leadId,
     providerId: params.providerId,
     source: params.source,
+    traceId: params.traceId,
   })
 
   if (!selectedResult.ok) {

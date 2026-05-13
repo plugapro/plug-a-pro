@@ -135,7 +135,7 @@ async function acceptLeadWithToken(formData: FormData) {
   const { acceptLead } = await import('@/lib/matching-engine')
   let result
   try {
-    result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa' })
+    result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa', traceId })
   } catch (error) {
     if (isRedirectError(error)) throw error
     console.error('[leads/access] accept lead action failed', {
@@ -160,6 +160,17 @@ async function acceptLeadWithToken(formData: FormData) {
   }
 
   if (!result.ok) {
+    console.warn('[leads/access] accept lead blocked', {
+      trace_id: traceId,
+      lead_id: lead.id,
+      lead_ref: lead.id.slice(-8).toUpperCase(),
+      job_ref: lead.jobRequestId.slice(-8).toUpperCase(),
+      provider_id: lead.providerId,
+      source: 'pwa_signed_link',
+      action: 'accept',
+      error_code: acceptErrorCode(result.reason),
+      reason: result.reason,
+    })
     if (result.reason === 'INSUFFICIENT_CREDITS') {
       redirectLeadActionError(token, {
         error: 'credits',
