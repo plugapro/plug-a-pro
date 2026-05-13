@@ -218,10 +218,14 @@ function assertTemplateBodyComponentsDoNotContainRawUrls(templateName: string, c
     if (component.type !== 'body' && component.type !== 'header') continue
     component.parameters.forEach((parameter, index) => {
       if (parameter.type !== 'text') return
-      // The currently approved Meta `job_offer` template includes the signed
-      // provider lead URL as body variable {{5}} and has no URL-button
-      // component. Keep this exception narrow and template-specific.
-      if (templateName === 'job_offer' && component.type === 'body' && index === 4) return
+      // Current approved provider lead templates include the signed provider
+      // lead URL as body variable {{5}} and have no URL-button component.
+      // Keep this exception narrow and template-specific.
+      if (
+        (templateName === 'job_offer' || templateName === 'technician_job_reminder') &&
+        component.type === 'body' &&
+        index === 4
+      ) return
       assertNoRawUrlsInWhatsAppBody(parameter.text, `${templateName}:${component.type}:${index}`)
     })
   }
@@ -806,9 +810,15 @@ export async function sendJobOffer(params: {
   bookingId?: string   // not yet available at lead-dispatch time — optional for logging
   metadata?: Record<string, unknown>
 }): Promise<void> {
+  // The WABA currently has `job_offer` approved as MARKETING, but Meta may
+  // asynchronously fail MARKETING sends when business payment eligibility is
+  // not active. Use the approved UTILITY provider job reminder template for
+  // selected-provider lead notifications until a utility job-offer template is
+  // approved.
+  const templateName = 'technician_job_reminder'
   const externalId = await sendTemplate({
     to: params.providerPhone,
-    template: 'job_offer',
+    template: templateName,
     components: [
       {
         type: 'body',
@@ -825,7 +835,7 @@ export async function sendJobOffer(params: {
   await logOutboundMessage({
     bookingId: params.bookingId,
     to: params.providerPhone,
-    templateName: 'job_offer',
+    templateName,
     externalId,
     metadata: params.metadata,
   })
@@ -851,9 +861,9 @@ export async function sendProviderJobReminder(params: {
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.address },
           { type: 'text', text: params.scheduledWindow },
+          { type: 'text', text: params.jobUrl },
         ],
       },
-      urlButtonComponent(0, params.jobUrl),
     ],
   })
   await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'technician_job_reminder', externalId })

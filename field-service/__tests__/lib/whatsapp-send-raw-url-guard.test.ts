@@ -43,7 +43,7 @@ describe('central WhatsApp send raw URL guard', () => {
     expect(global.fetch).toHaveBeenCalledOnce()
   })
 
-  it('sends job_offer using the currently approved body URL variable shape', async () => {
+  it('sends provider lead offers with an approved utility template body URL variable shape', async () => {
     const { sendJobOffer } = await import('@/lib/whatsapp')
 
     await sendJobOffer({
@@ -57,7 +57,7 @@ describe('central WhatsApp send raw URL guard', () => {
 
     expect(global.fetch).toHaveBeenCalledOnce()
     const body = JSON.parse(String((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body))
-    expect(body.template.name).toBe('job_offer')
+    expect(body.template.name).toBe('technician_job_reminder')
     expect(body.template.components).toEqual([
       {
         type: 'body',
