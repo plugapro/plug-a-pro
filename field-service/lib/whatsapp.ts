@@ -800,6 +800,7 @@ export async function sendJobOffer(params: {
   scheduledWindow: string
   jobUrl: string
   bookingId?: string   // not yet available at lead-dispatch time — optional for logging
+  metadata?: Record<string, unknown>
 }): Promise<void> {
   const externalId = await sendTemplate({
     to: params.providerPhone,
@@ -817,7 +818,13 @@ export async function sendJobOffer(params: {
       urlButtonComponent(0, params.jobUrl),
     ],
   })
-  await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'job_offer', externalId })
+  await logOutboundMessage({
+    bookingId: params.bookingId,
+    to: params.providerPhone,
+    templateName: 'job_offer',
+    externalId,
+    metadata: params.metadata,
+  })
 }
 
 export async function sendProviderJobReminder(params: {

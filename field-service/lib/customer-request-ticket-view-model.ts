@@ -102,7 +102,7 @@ export async function buildCustomerRequestTicketViewModel(params: {
 
   const batch = Math.max(1, params.reviewBatch ?? 1)
   const isReviewFirstFlow =
-    destination.request.status === 'PENDING_VALIDATION' &&
+    (destination.request.status === 'PENDING_VALIDATION' || destination.request.status === 'MATCHING') &&
     destination.request.assignmentMode === 'OPS_REVIEW' &&
     Boolean(destination.request.latestDispatchDecisionId)
 

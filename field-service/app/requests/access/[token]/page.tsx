@@ -273,9 +273,10 @@ export default async function TicketAccessPage({
   const canRequestMoreOptions = destination.allowedActions.includes('request_more_options')
   const canCancelRequest = destination.allowedActions.includes('cancel_request')
   const isReviewFirstFlow =
-    jobRequest.status === 'PENDING_VALIDATION' &&
+    (jobRequest.status === 'PENDING_VALIDATION' || jobRequest.status === 'MATCHING') &&
     jobRequest.assignmentMode === 'OPS_REVIEW' &&
     Boolean(jobRequest.latestDispatchDecisionId)
+  const isReviewFirstSent = isReviewFirstFlow && jobRequest.status === 'MATCHING'
   const isReviewFirstPending = isReviewFirstFlow && !Boolean(jobRequest.latestDispatchDecisionId)
   const reviewCandidates = ticketVm.reviewCandidates
   const reviewShortlist = ticketVm.reviewShortlist
@@ -564,9 +565,15 @@ export default async function TicketAccessPage({
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p className="text-muted-foreground">
-              View matching providers, shortlist 1 to 3, then send your request only to those providers.
+              {isReviewFirstSent
+                ? 'Your request has been sent to your shortlisted provider. They can open the signed lead link and respond from there.'
+                : 'View matching providers, shortlist 1 to 3, then send your request only to those providers.'}
             </p>
-            {isReviewFirstPending ? (
+            {isReviewFirstSent ? (
+              <p className="text-muted-foreground">
+                We&apos;re waiting for your shortlisted provider to respond.
+              </p>
+            ) : isReviewFirstPending ? (
               <p className="text-muted-foreground">We&apos;re finding matching providers for your request.</p>
             ) : reviewCandidates == null ? (
               <p className="text-muted-foreground">We couldn&apos;t load matching providers just now. Please refresh.</p>
@@ -659,13 +666,19 @@ export default async function TicketAccessPage({
                         Show 3 more
                       </Button>
                     )}
-                    <form action={sendReviewShortlistFromToken}>
-                      <input type="hidden" name="token" value={token} />
-                      <input type="hidden" name="requestId" value={jobRequest.id} />
-                      <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
-                        Send request
+                    {isReviewFirstSent ? (
+                      <Button type="button" className="w-full" disabled>
+                        Sent
                       </Button>
-                    </form>
+                    ) : (
+                      <form action={sendReviewShortlistFromToken}>
+                        <input type="hidden" name="token" value={token} />
+                        <input type="hidden" name="requestId" value={jobRequest.id} />
+                        <Button type="submit" className="w-full" disabled={reviewShortlist.providers.length < 1}>
+                          Send request
+                        </Button>
+                      </form>
+                    )}
                   </div>
                 </CardContent>
               </Card>

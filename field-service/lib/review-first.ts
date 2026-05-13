@@ -2,11 +2,9 @@ import { db } from './db'
 import type { LeadStatus } from '@prisma/client'
 import { rankCandidatesForJobRequest } from './matching/service'
 import { getReviewProviderProfileUrl } from './review-provider-profile-access'
-import { sendButtons, sendCtaUrl, sendText } from './whatsapp-interactive'
-import { ctaLabelFor } from './whatsapp-copy'
-import { buildProviderLeadActionsMessage, buildProviderLeadPreviewMessage } from './provider-credit-copy'
+import { sendText } from './whatsapp-interactive'
+import { sendJobOffer } from './whatsapp'
 import { getProviderLeadAccessUrl } from './provider-lead-access'
-import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 
 export const RFP_PROVIDER_RESPONSE_MINUTES = Math.max(
   1,
@@ -42,6 +40,7 @@ export class ReviewFirstError extends Error {
       | 'MATCHES_NOT_READY'
       | 'NO_CANDIDATES'
       | 'PROVIDER_NOT_ELIGIBLE'
+      | 'PROVIDER_NOTIFICATION_FAILED'
       | 'SHORTLIST_LIMIT_REACHED'
       | 'SHORTLIST_EMPTY'
       | 'REQUEST_NOT_READY'
@@ -1213,11 +1212,6 @@ export async function sendRequestToShortlistedProviders(params: {
   }
 
   const expiresAt = new Date(Date.now() + RFP_PROVIDER_RESPONSE_MINUTES * 60_000)
-  const deadlineTime = expiresAt.toLocaleTimeString('en-ZA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Africa/Johannesburg',
-  })
   const preferredTime = request.requestedWindowStart
     ? request.requestedWindowStart.toLocaleString('en-ZA', {
         weekday: 'short',
@@ -1240,6 +1234,76 @@ export async function sendRequestToShortlistedProviders(params: {
 
   const area = [request.address?.suburb, request.address?.city].filter(Boolean).join(', ')
 
+  let notifiedCount = 0
+
+  for (const lead of activeTargets) {
+    const leadUrl = await getProviderLeadAccessUrl({
+      leadId: lead.id,
+      providerId: lead.provider.id,
+    })
+
+    if (leadUrl) {
+      // Provider selection can originate from the customer PWA long after the
+      // provider last messaged us. Freeform WhatsApp text/buttons may be
+      // accepted initially and then fail asynchronously as "Re-engagement
+      // message". Start this provider contact with an approved template so the
+      // selected provider reliably receives the signed lead URL.
+      try {
+        await sendJobOffer({
+          providerPhone: lead.provider.phone,
+          providerFirstName: lead.provider.name.split(' ')[0] ?? lead.provider.name,
+          serviceName: request.category,
+          area: area || 'your area',
+          scheduledWindow: preferredTime,
+          jobUrl: leadUrl,
+          metadata: {
+            requestId: request.id,
+            leadId: lead.id,
+            providerId: lead.provider.id,
+            source: 'review_first_send_request',
+          },
+        })
+        await db.lead.update({
+          where: { id: lead.id },
+          data: {
+            status: 'SENT',
+            sentAt: new Date(),
+            expiresAt,
+            respondedAt: null,
+            viewedAt: null,
+            notifiedAt: new Date(),
+            notificationAttemptedAt: new Date(),
+          },
+        })
+        notifiedCount += 1
+      } catch (error) {
+        await db.lead.update({
+          where: { id: lead.id },
+          data: { notificationAttemptedAt: new Date() },
+        }).catch(() => undefined)
+        console.error('[review-first.send] provider_template_failed', {
+          requestId: request.id,
+          leadId: lead.id,
+          providerId: lead.provider.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    } else {
+      console.error('[review-first.send] provider_lead_url_missing', {
+        requestId: request.id,
+        leadId: lead.id,
+        providerId: lead.provider.id,
+      })
+    }
+  }
+
+  if (notifiedCount < MIN_SHORTLISTED_PROVIDERS) {
+    throw new ReviewFirstError(
+      'PROVIDER_NOTIFICATION_FAILED',
+      'We could not notify your shortlisted provider. Please try again.',
+    )
+  }
+
   await db.jobRequest.update({
     where: { id: request.id },
     data: {
@@ -1248,101 +1312,20 @@ export async function sendRequestToShortlistedProviders(params: {
     },
   })
 
-  for (const lead of activeTargets) {
-    await db.lead.update({
-      where: { id: lead.id },
-      data: {
-        status: 'SENT',
-        sentAt: new Date(),
-        expiresAt,
-        respondedAt: null,
-        viewedAt: null,
-      },
-    })
-
-    const balance = await getProviderWalletBalanceReadOnly(lead.provider.id).catch(() => ({
-      totalCreditBalance: 0,
-      paidCreditBalance: 0,
-      promoCreditBalance: 0,
-    }))
-    const body = buildProviderLeadPreviewMessage({
-      category: request.category,
-      area: area || 'your area',
-      city: request.address?.city ?? null,
-      province: request.address?.province ?? null,
-      preferredTime,
-      deadlineTime,
-      responseWindowMinutes: RFP_PROVIDER_RESPONSE_MINUTES,
-      balance,
-      title: request.title,
-      description: request.description,
-      subcategory: request.subcategory,
-      urgency: request.urgency,
-      matchingPreference: request.providerPreference ?? request.budgetPreference,
-    })
-    const actionsBody = buildProviderLeadActionsMessage({
-      category: request.category,
-      area: area || 'your area',
-      balance,
-    })
-
-    await sendText(
-      lead.provider.phone,
-      `You've been selected to respond to a customer request.\n\nRef: ${request.requestRef ?? request.id.slice(-8).toUpperCase()}`,
-      {
-        templateName: 'interactive:rfp_provider_selected',
-        metadata: { requestId: request.id, leadId: lead.id },
-      },
-    ).catch(() => undefined)
-
-    const leadUrl = await getProviderLeadAccessUrl({
-      leadId: lead.id,
-      providerId: lead.provider.id,
-    })
-
-    if (leadUrl) {
-      await sendCtaUrl(
-        lead.provider.phone,
-        body,
-        ctaLabelFor('generic_details'),
-        leadUrl,
-        undefined,
-        {
-          templateName: 'interactive:rfp_provider_preview_cta',
-          metadata: { requestId: request.id, leadId: lead.id, providerId: lead.provider.id },
-        },
-      ).catch(() => undefined)
-    }
-
-    await sendButtons(
-      lead.provider.phone,
-      actionsBody,
-      [
-        { id: `interested:${lead.id}`, title: "I'm available" },
-        { id: `not_interested:${lead.id}`, title: 'Not available' },
-      ],
-      undefined,
-      {
-        templateName: 'interactive:rfp_provider_response_buttons',
-        metadata: { requestId: request.id, leadId: lead.id, providerId: lead.provider.id },
-      },
-    ).catch(() => undefined)
-  }
-
   if (request.customer?.phone) {
     await sendText(
       request.customer.phone,
-      `Your request has been sent to ${activeTargets.length} selected provider${activeTargets.length === 1 ? '' : 's'}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you as responses come in.`,
+      `Your request has been sent to ${notifiedCount} selected provider${notifiedCount === 1 ? '' : 's'}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you as responses come in.`,
       {
         templateName: 'interactive:rfp_sent_to_shortlist',
-        metadata: { requestId: request.id, count: activeTargets.length },
+        metadata: { requestId: request.id, count: notifiedCount },
       },
     ).catch(() => undefined)
   }
 
   return {
     requestId: request.id,
-    invitedCount: activeTargets.length,
+    invitedCount: notifiedCount,
     expiresAt,
   }
 }

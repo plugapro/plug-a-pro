@@ -165,4 +165,50 @@ describe('buildCustomerRequestTicketViewModel', () => {
       })
     }
   })
+
+  it('keeps loading review-first shortlist after the customer sends it to providers', async () => {
+    mockResolveClientPwaDestination.mockResolvedValue({
+      accessLevel: 'public_token',
+      screen: 'providers_reviewing',
+      request: {
+        id: 'jr-review-sent',
+        status: 'MATCHING',
+        assignmentMode: 'OPS_REVIEW',
+        latestDispatchDecisionId: 'dd-1',
+        customer: { id: 'cust-1' },
+      },
+      reason: 'providers_reviewing_request',
+      route: '/requests/access/tok-review-sent',
+      allowedActions: ['view_matching_status'],
+      job: null,
+    })
+    mockGetCustomerShortlistForRequest.mockResolvedValue(null)
+    mockGetProviderCandidatesForCustomerReview.mockResolvedValue({
+      requestId: 'jr-review-sent',
+      batch: 1,
+      hasMore: false,
+      candidates: [],
+    })
+    mockGetCustomerReviewShortlist.mockResolvedValue({
+      requestId: 'jr-review-sent',
+      providers: [{ providerId: 'prov-1', name: 'Lovemore', status: 'SENT' }],
+    })
+
+    const { buildCustomerRequestTicketViewModel } = await import('../../lib/customer-request-ticket-view-model')
+    const result = await buildCustomerRequestTicketViewModel({
+      token: 'tok-review-sent',
+      reviewBatch: 1,
+    })
+
+    expect(result.kind).toBe('ready')
+    if (result.kind === 'ready') {
+      expect(mockGetCustomerReviewShortlist).toHaveBeenCalledWith({
+        requestId: 'jr-review-sent',
+        customerId: 'cust-1',
+      })
+      expect(result.reviewShortlist).toMatchObject({
+        providers: [{ providerId: 'prov-1', status: 'SENT' }],
+      })
+    }
+  })
 })
