@@ -12,6 +12,18 @@
 // ─── CTA link types ──────────────────────────────────────────────────────────
 
 export type WhatsAppCtaPurpose =
+  | 'view_lead'
+  | 'view_job'
+  | 'view_request'
+  | 'view_provider'
+  | 'accept_job'
+  | 'check_status'
+  | 'worker_portal'
+  | 'credits_rules'
+  | 'credits_history'
+  | 'provider_status'
+  | 'support'
+  | 'generic_details'
   | 'credit_history'
   | 'credits_terms'
   | 'buy_credits'
@@ -28,8 +40,6 @@ export type WhatsAppCtaPurpose =
   | 'payment'
   | 'invoice_view'
   | 'receipt_view'
-  | 'support'
-  | 'generic_details'
 
 export type WhatsAppCtaLink = {
   id: string
@@ -39,13 +49,24 @@ export type WhatsAppCtaLink = {
 }
 
 const CTA_LABELS: Record<WhatsAppCtaPurpose, string> = {
+  view_lead: 'View lead',
+  view_job: 'View job',
+  view_request: 'View request',
+  view_provider: 'View provider',
+  accept_job: 'Accept job',
+  check_status: 'Check status',
+  worker_portal: 'Open Worker Portal',
+  credits_rules: 'View credits rules',
+  credits_history: 'View credits history',
+  provider_status: 'View status',
+  support: 'Contact support',
+  generic_details: 'View details',
   credit_history: 'View credits history',
   credits_terms: 'View credits rules',
   buy_credits: 'Buy credits',
   top_up_credits: 'Top up credits',
   provider_terms: 'View terms',
   application_status: 'Check status',
-  worker_portal: 'Open Worker Portal',
   provider_profile: 'Complete profile',
   identity_verification: 'Complete verification',
   job_detail: 'View job',
@@ -55,8 +76,6 @@ const CTA_LABELS: Record<WhatsAppCtaPurpose, string> = {
   payment: 'Make payment',
   invoice_view: 'View invoice',
   receipt_view: 'View receipt',
-  support: 'Contact support',
-  generic_details: 'View details',
 }
 
 export function ctaLabelFor(purpose: WhatsAppCtaPurpose): string {
@@ -110,6 +129,12 @@ const RAW_URL_PATTERNS: ReadonlyArray<RegExp> = [
   /https?:\/\//i,
   /\bwww\./i,
   /app\.plugapro\.co\.za/i,
+  /\/leads\/access\//i,
+  /\/requests\/access\//i,
+  /\/tickets\/access\//i,
+  /\/access\/[A-Za-z0-9._~%-]{8,}/i,
+  /\beyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_-]{6,}){1,2}\b/,
+  /\b(?:token|jwt|access_token)=\S{12,}/i,
 ]
 
 export function bodyContainsRawUrl(body: string): false | { match: string; pattern: string } {

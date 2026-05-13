@@ -42,8 +42,8 @@ describe('client PWA submission notifications', () => {
     expect(mockSendText.mock.calls[0][0].text).not.toContain('https://')
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       '+27821234567',
-      expect.stringContaining('request tracker'),
-      'View details',
+      'Your request tracker is available below.',
+      'View request',
       'https://app.plugapro.co.za/requests/access/token',
       undefined,
       expect.any(Object),

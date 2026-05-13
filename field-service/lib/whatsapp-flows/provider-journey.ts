@@ -1306,7 +1306,7 @@ async function handleAcceptedLeadDetail(ctx: FlowContext, leadId: string): Promi
     await sendCtaUrl(
       ctx.phone,
       body,
-      'View Job',
+      ctaLabelFor('view_job'),
       leadUrl,
       { footer: 'Secure link for this accepted job only' },
     )

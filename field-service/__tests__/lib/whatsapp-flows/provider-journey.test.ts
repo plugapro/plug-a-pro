@@ -408,7 +408,7 @@ describe('handleProviderJourneyFlow', () => {
       expect(wa.sendCtaUrl).toHaveBeenCalledWith(
         '+27711111111',
         expect.stringContaining('Next step: *Confirm arrival time*'),
-        'View Job',
+        'View job',
         'https://app.plugapro.co.za/provider/jobs/job-request-1/handover?token=token',
         expect.any(Object),
       )

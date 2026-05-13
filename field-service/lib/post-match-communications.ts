@@ -12,6 +12,7 @@ import { getProviderWalletBalanceReadOnly } from './provider-wallet'
 import { normaliseLocationDisplayName } from './location-format'
 import { buildLeadAcceptedCreditLine } from './provider-credit-copy'
 import { testEventFields } from './internal-test-cohort'
+import { ctaLabelFor } from './whatsapp-copy'
 
 const SENT_OR_BETTER = ['SENT', 'DELIVERED', 'READ'] as const
 
@@ -316,7 +317,7 @@ export async function notifyPostMatchAcceptance(params: {
         await sendCtaUrl(
           provider.phone,
           body,
-          'View Job',
+          ctaLabelFor('view_job'),
           leadUrl,
           { footer: 'Secure link for this accepted job only.' },
           providerContext,

@@ -549,14 +549,15 @@ export default async function ProviderLeadAccessPage({
       trace_id: traceId,
       token_hash: tokenHash,
       route: '/leads/access/[token]',
+      internal_reason: 'lead_access_resolution_exception',
       error: safeErrorMessage(error),
     })
     return (
       <ClosedLeadMessage
         title="We couldn't load this lead right now."
-        reason="Your provider account is active, but this lead could not be loaded right now. Please try again from the latest WhatsApp message."
+        reason="This lead could not be loaded right now. Please try again from the latest WhatsApp message."
         diagnostics={{
-          code: 'JOB_ACCESS_DENIED',
+          code: 'JOB_TEMPORARY_UNAVAILABLE',
           action: 'View Lead',
           traceId,
         }}
@@ -652,7 +653,7 @@ export default async function ProviderLeadAccessPage({
   const isCreditApplied = lead.status === 'CREDIT_APPLIED'
   const isDeclined = lead.status === 'DECLINED'
   const isExpired = lead.status === 'EXPIRED' || (lead.expiresAt ? lead.expiresAt < new Date() : false)
-  const isOpenOffer = lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'
+  const isOpenOffer = lead.status === 'SEND_PENDING' || lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'CUSTOMER_SELECTED'
   const canRespondToLead = isOpenOffer && !isExpired
   const showExpiryCountdown = Boolean(lead.expiresAt && canRespondToLead)
   const hasAcceptedDetails = isAccepted && Boolean(lead.unlock)
@@ -660,13 +661,14 @@ export default async function ProviderLeadAccessPage({
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
 
   if (((isExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired && !isCreditApplied) || isDeclined) && !resolvedSearchParams.declined) {
-    const code: DiagnosticCode = isExpired ? 'JOB_LINK_EXPIRED' : 'JOB_ACCESS_DENIED'
+    const code: DiagnosticCode = isExpired ? 'JOB_LINK_EXPIRED' : 'JOB_LINK_INVALID'
     console.warn('[leads/access] signed lead link closed', {
       traceId,
       leadId: lead.id,
       providerId: lead.providerId,
       leadStatus: lead.status,
       expiresAt: lead.expiresAt,
+      internal_reason: isExpired ? 'lead_expired' : 'lead_already_responded',
       action: 'View Lead',
     })
     return (

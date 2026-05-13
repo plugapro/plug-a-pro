@@ -32,6 +32,19 @@ describe('WHATSAPP_COPY constants', () => {
 
 describe('ctaLabelFor / ctaLink', () => {
   it('returns short, action-based labels for each documented purpose', () => {
+    expect(ctaLabelFor('view_lead')).toBe('View lead')
+    expect(ctaLabelFor('view_job')).toBe('View job')
+    expect(ctaLabelFor('view_request')).toBe('View request')
+    expect(ctaLabelFor('view_provider')).toBe('View provider')
+    expect(ctaLabelFor('accept_job')).toBe('Accept job')
+    expect(ctaLabelFor('check_status')).toBe('Check status')
+    expect(ctaLabelFor('worker_portal')).toBe('Open Worker Portal')
+    expect(ctaLabelFor('credits_rules')).toBe('View credits rules')
+    expect(ctaLabelFor('credits_history')).toBe('View credits history')
+    expect(ctaLabelFor('provider_status')).toBe('View status')
+    expect(ctaLabelFor('support')).toBe('Contact support')
+    expect(ctaLabelFor('generic_details')).toBe('View details')
+
     expect(ctaLabelFor('credit_history')).toBe('View credits history')
     expect(ctaLabelFor('credits_terms')).toBe('View credits rules')
     expect(ctaLabelFor('buy_credits')).toBe('Buy credits')
@@ -74,6 +87,13 @@ describe('bodyContainsRawUrl / assertNoRawUrlsInWhatsAppBody', () => {
     expect(bodyContainsRawUrl('http://example.com')).toBeTruthy()
     expect(bodyContainsRawUrl('Visit www.plugapro.co.za')).toBeTruthy()
     expect(bodyContainsRawUrl('app.plugapro.co.za is the host')).toBeTruthy()
+  })
+
+  it('detects tokenized access paths and JWT-looking tokens even without a scheme', () => {
+    expect(bodyContainsRawUrl('View job details — app.plugapro.co.za/leads/access/signed-token')).toBeTruthy()
+    expect(bodyContainsRawUrl('Open /leads/access/signed-token from your browser')).toBeTruthy()
+    expect(bodyContainsRawUrl('Token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature')).toBeTruthy()
+    expect(bodyContainsRawUrl('Open app.plugapro.co.za/access/abcdefghijklmnopqrstuvwxyz1234567890')).toBeTruthy()
   })
 
   it('does not flag clean copy', () => {

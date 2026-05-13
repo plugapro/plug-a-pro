@@ -149,7 +149,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Request PAP-ABC123'),
-      'Refresh status',
+      'Check status',
       `${APP_URL}/requests/access/jr_abc123`
     )
     expect(result.nextStep).toBe('done')
@@ -231,7 +231,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('A provider is reviewing your request now'),
-      'Refresh status',
+      'Check status',
       `${APP_URL}/requests/access/jr_abc123`
     )
     expect(result.nextStep).toBe('done')
@@ -249,7 +249,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining("haven't confirmed a provider yet"),
-      'Refresh status',
+      'Check status',
       `${APP_URL}/requests/access/jr_abc123`
     )
   })
@@ -312,7 +312,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('We found 2 matching providers'),
-      'View providers',
+      'View request',
       `${APP_URL}/requests/access/jr_abc123`,
     )
     expect(result.nextStep).toBe('done')
@@ -335,7 +335,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(wa.sendCtaUrl).not.toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Review Providers First is ready'),
-      'View providers',
+      'View request',
       expect.any(String),
     )
     expect(wa.sendButtons).toHaveBeenCalledWith(
@@ -440,7 +440,7 @@ describe('handleStatusFlow — single active request (no job)', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Request PAP-LATEST'),
-      'Refresh status',
+      'Check status',
       `${APP_URL}/requests/access/jr_latest`
     )
   })
@@ -635,7 +635,7 @@ describe('handleStatusFlow — status_pick step', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Request PAP-ELEC2'),
-      'Refresh status',
+      'Check status',
       `${APP_URL}/requests/access/jr_2`
     )
     expect(result.nextStep).toBe('done')
@@ -651,7 +651,7 @@ describe('handleStatusFlow — refresh status', () => {
 
     const result = await handleStatusFlow(
       makeCtx({
-        reply: { type: 'button_reply' as const, id: 'status_refresh_jr_refresh', text: 'Refresh status' },
+        reply: { type: 'button_reply' as const, id: 'status_refresh_jr_refresh', text: 'Check status' },
       })
     )
 
@@ -661,7 +661,7 @@ describe('handleStatusFlow — refresh status', () => {
     expect(wa.sendCtaUrl).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Request PAP-REFRESH'),
-      'Refresh status',
+      'Check status',
       `${APP_URL}/requests/access/jr_refresh`
     )
     expect(result.nextStep).toBe('done')

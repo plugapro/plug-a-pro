@@ -12,7 +12,7 @@ import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
 import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './location-format'
 import { getPublicAppUrl } from './provider-credit-copy'
 import { maskPhone } from './support-diagnostics'
-import { assertNoRawUrlsInWhatsAppBody } from './whatsapp-copy'
+import { assertNoRawUrlsInWhatsAppBody, ctaLabelFor } from './whatsapp-copy'
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
@@ -218,14 +218,6 @@ function assertTemplateBodyComponentsDoNotContainRawUrls(templateName: string, c
     if (component.type !== 'body' && component.type !== 'header') continue
     component.parameters.forEach((parameter, index) => {
       if (parameter.type !== 'text') return
-      // Current approved provider lead templates include the signed provider
-      // lead URL as body variable {{5}} and have no URL-button component.
-      // Keep this exception narrow and template-specific.
-      if (
-        (templateName === 'job_offer' || templateName === 'technician_job_reminder') &&
-        component.type === 'body' &&
-        index === 4
-      ) return
       assertNoRawUrlsInWhatsAppBody(parameter.text, `${templateName}:${component.type}:${index}`)
     })
   }
@@ -238,6 +230,18 @@ function urlButtonComponent(index: number, url: string): WhatsAppComponent {
     index,
     parameters: [{ type: 'text', text: url }],
   }
+}
+
+function providerLeadAccessButtonComponent(index: number, jobUrl: string): WhatsAppComponent {
+  try {
+    const url = new URL(jobUrl)
+    const match = url.pathname.match(/\/leads\/access\/([^/?#]+)/)
+    if (match?.[1]) return urlButtonComponent(index, match[1])
+  } catch {
+    // Fall through to the raw-url guard below. A malformed URL must never be
+    // sent as visible text, but surfacing the context helps find bad callers.
+  }
+  throw new Error('Invalid provider lead access URL for WhatsApp template button')
 }
 
 // ─── High-level messaging functions ──────────────────────────────────────────
@@ -810,12 +814,10 @@ export async function sendJobOffer(params: {
   bookingId?: string   // not yet available at lead-dispatch time — optional for logging
   metadata?: Record<string, unknown>
 }): Promise<string> {
-  // The WABA currently has `job_offer` approved as MARKETING, but Meta may
-  // asynchronously fail MARKETING sends when business payment eligibility is
-  // not active. Use the approved UTILITY provider job reminder template for
-  // selected-provider lead notifications until a utility job-offer template is
-  // approved.
-  const templateName = 'technician_job_reminder'
+  // Provider job-offer links must travel as a URL button parameter only. Never
+  // add the signed lead URL as a body variable; the token would be visible in
+  // the WhatsApp chat transcript.
+  const templateName = 'provider_lead_offer'
   const externalId = await sendTemplate({
     to: params.providerPhone,
     template: templateName,
@@ -827,9 +829,9 @@ export async function sendJobOffer(params: {
           { type: 'text', text: params.serviceName },
           { type: 'text', text: normaliseLocationDisplayName(params.area) },
           { type: 'text', text: params.scheduledWindow },
-          { type: 'text', text: params.jobUrl },
         ],
       },
+      providerLeadAccessButtonComponent(0, params.jobUrl),
     ],
   })
   await logOutboundMessage({
@@ -862,9 +864,9 @@ export async function sendProviderJobReminder(params: {
           { type: 'text', text: params.serviceName },
           { type: 'text', text: params.address },
           { type: 'text', text: params.scheduledWindow },
-          { type: 'text', text: params.jobUrl },
         ],
       },
+      urlButtonComponent(0, params.jobUrl),
     ],
   })
   await logOutboundMessage({ bookingId: params.bookingId, to: params.providerPhone, templateName: 'technician_job_reminder', externalId })
@@ -1323,9 +1325,16 @@ export async function sendAdminNoMatch(params: {
   const appUrl = getPublicAppUrl()
   if (!appUrl) return
 
-  await sendText({
-    to: adminPhone,
-    text: `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${normaliseLocationDisplayName(params.area)}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed:\n${appUrl}/admin/dispatch`,
+  const { sendCtaUrl } = await import('./whatsapp-interactive')
+  await sendCtaUrl(
+    adminPhone,
+    `⚠️ *No Provider Match*\n\nJob: ${params.category}\nArea: ${normaliseLocationDisplayName(params.area)}\nCustomer: ${params.customerName}\nRef: ${params.jobRequestId.slice(-8).toUpperCase()}\n\nManual assignment needed.`,
+    ctaLabelFor('generic_details'),
+    `${appUrl}/admin/dispatch`,
+    undefined,
+    { templateName: 'admin:no_provider_match' },
+  ).catch((error: unknown) => {
+    console.error('[whatsapp] admin no-match CTA send failed', error)
   })
 }
 
@@ -1339,9 +1348,16 @@ export async function sendAdminProviderDropped(params: {
   const appUrl = getPublicAppUrl()
   if (!appUrl) return
 
-  await sendText({
-    to: adminPhone,
-    text: `🚨 *Provider Dropped Job*\n\nProvider: ${params.providerName}\nJob: ${params.category}\nRef: ${params.jobId.slice(-8).toUpperCase()}\n\nReassignment needed:\n${appUrl}/admin/bookings`,
+  const { sendCtaUrl } = await import('./whatsapp-interactive')
+  await sendCtaUrl(
+    adminPhone,
+    `🚨 *Provider Dropped Job*\n\nProvider: ${params.providerName}\nJob: ${params.category}\nRef: ${params.jobId.slice(-8).toUpperCase()}\n\nReassignment needed.`,
+    ctaLabelFor('generic_details'),
+    `${appUrl}/admin/bookings`,
+    undefined,
+    { templateName: 'admin:provider_dropped_job' },
+  ).catch((error: unknown) => {
+    console.error('[whatsapp] admin provider-dropped CTA send failed', error)
   })
 }
 

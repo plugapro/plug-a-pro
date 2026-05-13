@@ -14,6 +14,7 @@ type NotificationPayload = {
   templateName: string
   whatsappTemplate: TemplateName
   templateParameters: string[]
+  templateComponents?: WhatsAppComponent[]
   body: string
   idempotencyKey: string
   metadata: Record<string, unknown>
@@ -168,10 +169,10 @@ export function buildPayfastTopUpInitiatedMessage(params: {
 export function buildPayatTopUpInitiatedMessage(params: {
   amountFormatted: string
   creditsToIssue: number
-  paymentLink: string
+  paymentLink?: string
 }) {
   return compactLines([
-    `Tap here to pay for your Plug-A-Pro wallet top-up: ${params.paymentLink}`,
+    'Tap the button below to pay for your Plug-A-Pro wallet top-up.',
     `${params.amountFormatted} = ${params.creditsToIssue} credits.`,
     'You can pay with Pay@ retail cash, QR, or the hosted payment page.',
     'Credits will appear in your wallet once Pay@ confirms payment.',
@@ -204,6 +205,15 @@ function templateBodyComponents(parameters: string[]): WhatsAppComponent[] {
       parameters: parameters.map((text) => ({ type: 'text', text })),
     },
   ]
+}
+
+function templateUrlButtonComponent(index: number, url: string): WhatsAppComponent {
+  return {
+    type: 'button',
+    sub_type: 'url',
+    index,
+    parameters: [{ type: 'text', text: url }],
+  }
 }
 
 function noExtraNotes(description?: string | null) {
@@ -254,7 +264,7 @@ async function sendNotification(payload: NotificationPayload) {
     const externalId = await sendTemplate({
       to: payload.to,
       template: payload.whatsappTemplate,
-      components: templateBodyComponents(payload.templateParameters),
+      components: payload.templateComponents ?? templateBodyComponents(payload.templateParameters),
     })
 
     await db.messageEvent.create({
@@ -457,11 +467,14 @@ export async function notifyProviderPayatTopUpInitiated(
     to: phone,
     templateName: 'wallet:payat_topup_initiated',
     whatsappTemplate: 'wallet_payat_topup_initiated',
-    templateParameters: [paymentLink, amountFormatted, String(intent.creditsToIssue)],
+    templateParameters: [amountFormatted, String(intent.creditsToIssue)],
+    templateComponents: [
+      ...templateBodyComponents([amountFormatted, String(intent.creditsToIssue)]),
+      templateUrlButtonComponent(0, paymentLink),
+    ],
     body: buildPayatTopUpInitiatedMessage({
       amountFormatted,
       creditsToIssue: intent.creditsToIssue,
-      paymentLink,
     }),
     idempotencyKey: `wallet:payat_topup_initiated:${intent.id}`,
     metadata: {

@@ -346,7 +346,7 @@ describe('accepted job actions', () => {
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
       expect.stringContaining('fresh secure link'),
-      'View Job',
+      'View job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=fresh-token',
       expect.any(Object),
       expect.objectContaining({

@@ -333,7 +333,7 @@ describe('sendRequestToShortlistedProviders', () => {
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       '+27820000000',
       expect.stringContaining("couldn't complete the WhatsApp notification"),
-      'View providers',
+      'View request',
       'https://app.plugapro.co.za/requests/access/token?view=matching_status',
       undefined,
       expect.objectContaining({

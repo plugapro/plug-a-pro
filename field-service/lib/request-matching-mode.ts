@@ -3,6 +3,7 @@ import { orchestrateMatch } from './matching/orchestrator'
 import { getJobRequestAccessUrl } from './job-request-access'
 import { sendButtons, sendCtaUrl, sendText } from './whatsapp-interactive'
 import { matchEligibleProvidersForServiceRequest } from './review-first'
+import { ctaLabelFor } from './whatsapp-copy'
 
 export type CustomerMatchingMode = 'quick_match' | 'review_first'
 
@@ -84,7 +85,7 @@ async function sendReviewFirstOutcome(params: {
     })
 
     if (url?.startsWith('https://')) {
-      await sendCtaUrl(params.phone, text, 'View providers', url, undefined, {
+      await sendCtaUrl(params.phone, text, ctaLabelFor('view_request'), url, undefined, {
         templateName,
         metadata: {
           requestId: params.requestId,
@@ -103,7 +104,7 @@ async function sendReviewFirstOutcome(params: {
       params.phone,
       `${text}\n\nIf the app link is unavailable, refresh your request status.`,
       [
-        { id: `status_refresh_${params.requestId}`, title: 'Refresh status' },
+        { id: `status_refresh_${params.requestId}`, title: ctaLabelFor('check_status') },
         { id: 'status', title: 'My Requests' },
         { id: 'back_home', title: 'Main menu' },
       ],

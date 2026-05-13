@@ -39,7 +39,7 @@ export async function notifyCustomerPwaRequestSubmitted(params: {
     await sendCtaUrl(
       params.customerPhone,
       'Your request tracker is available below.',
-      ctaLabelFor('generic_details'),
+      ctaLabelFor('view_request'),
       params.ticketUrl,
       undefined,
       { templateName: 'interactive:client_pwa_request_tracker_cta', metadata: { requestId: params.requestId } },
@@ -128,7 +128,7 @@ export async function notifyCustomerReviewRequested(params: {
       await sendCtaUrl(
         params.customerPhone,
         'You can leave a review below.',
-        ctaLabelFor('generic_details'),
+        ctaLabelFor('view_request'),
         params.reviewUrl,
         undefined,
         { templateName: 'interactive:client_review_requested_cta', metadata: { requestId: params.requestId } },

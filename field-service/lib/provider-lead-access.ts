@@ -5,6 +5,7 @@ import { getProviderLeadPublicAppUrl } from './provider-credit-copy'
 import { maskPhone } from './support-diagnostics'
 
 const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
+const DEFAULT_LEAD_UNLOCK_COST_CREDITS = 1
 
 export const PROVIDER_LEAD_SCOPES = [
   'view_lead',
@@ -60,6 +61,12 @@ type ProviderLeadAccessInvalidReason =
   | 'PROVIDER_PHONE_MISMATCH'
   | 'SENDER_PHONE_MISMATCH'
   | 'MATCH_CANCELLED'
+
+const SAFE_LEAD_UNLOCK_SELECT = {
+  id: true,
+  providerId: true,
+  unlockedAt: true,
+} as const
 
 function base64url(input: Buffer | string) {
   return Buffer.from(input).toString('base64url')
@@ -282,7 +289,6 @@ export async function resolveProviderLeadAccessToken(
       sentAt: true,
       expiresAt: true,
       provider: { select: { id: true, name: true, phone: true, active: true, status: true } },
-      unlock: true,
       jobRequest: {
         select: {
           id: true,
@@ -454,11 +460,33 @@ export async function resolveProviderLeadAccessToken(
     }
   }
 
+  const acceptedState = lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED'
+  const leadUnlock = acceptedState
+    ? await db.leadUnlock.findUnique({
+        where: { leadId: lead.id },
+        select: SAFE_LEAD_UNLOCK_SELECT,
+      }).catch((error: unknown) => {
+        console.warn('[provider-lead-access] accepted lead unlock lookup failed', {
+          traceId,
+          leadId: lead.id,
+          providerId: lead.providerId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return null
+      })
+    : null
+
   const hasAcceptedUnlock =
-    (lead.status === 'ACCEPTED' || lead.status === 'ACCEPTED_LOCKED') &&
-    lead.unlock?.providerId === lead.providerId
+    acceptedState &&
+    leadUnlock?.providerId === lead.providerId
   const scopedLead = {
     ...lead,
+    unlock: hasAcceptedUnlock && leadUnlock
+      ? {
+          ...leadUnlock,
+          creditsCharged: DEFAULT_LEAD_UNLOCK_COST_CREDITS,
+        }
+      : null,
     jobRequest: {
       ...lead.jobRequest,
       description: hasAcceptedUnlock

@@ -41,7 +41,7 @@ describe('journey recovery resolver', () => {
 
     expect(plan.message).toContain('latest status')
     expect(plan.actions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'status', title: 'Refresh status' }),
+      expect.objectContaining({ id: 'status', title: 'Check status' }),
     ]))
   })
 

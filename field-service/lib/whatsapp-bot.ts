@@ -173,7 +173,7 @@ async function sendAcceptedLeadFallbackConfirmation(params: {
 
   try {
     if (jobUrl) {
-      await sendCtaUrl(params.phone, body, 'View Job', jobUrl, undefined, fallbackContext)
+      await sendCtaUrl(params.phone, body, ctaLabelFor('view_job'), jobUrl, undefined, fallbackContext)
     } else {
       await sendText(params.phone, body, fallbackContext)
     }
@@ -903,7 +903,7 @@ async function processInboundMessageUnlocked(
       await sendCtaUrl(
         phone,
         'Top up your Plug A Pro provider credits before accepting customer-selected jobs.',
-        ctaLabelFor('credit_history'),
+        ctaLabelFor('credits_history'),
         getWorkerPortalUrl('/provider/credits'),
       )
       return
@@ -1942,7 +1942,7 @@ export async function notifyProviderNewJob(params: {
   await sendCtaUrl(
     params.providerPhone,
     `🔔 *New Job Opportunity*\n\n${previewLines}\n\nRef: ${ref} · Expires in ${expiryLabel}\n\nThe customer is comparing suitable providers.\n\n${creditLine}\n\nReply with the buttons sent below, or tap to view photos/full preview.`,
-    'View Lead',
+    ctaLabelFor('view_lead'),
     leadUrl,
     { footer: 'Safe preview only. Exact address stays locked.' },
     {
@@ -1993,7 +1993,7 @@ Log in to complete your profile, set your schedule, and start responding to matc
     await sendCtaUrl(
       params.phone,
       `🎉 *Congratulations, ${params.name}!*\n\nYour application to join Plug A Pro has been reviewed and you can now receive job leads on the platform.\n\nLog in to complete your profile, set your schedule, and start responding to matching requests.`,
-      'Open Provider Portal',
+      ctaLabelFor('worker_portal'),
       portalUrl,
       { footer: 'Welcome to the Plug A Pro network! 👋' }
     )
@@ -2322,7 +2322,7 @@ async function handleMatchLeadResponse(phone: string, buttonId: string): Promise
     await sendCtaUrl(
       phone,
       `🔍 *View Lead Preview*\n\nOpen the link below to review the lead preview, then choose to accept or decline.`,
-      'View Lead',
+      ctaLabelFor('view_lead'),
       leadUrl,
       { footer: 'Tap to open your provider app' }
     )
@@ -2501,7 +2501,7 @@ async function handleProviderJobFlow(
     await sendCtaUrl(
       ctx.phone,
       `✅ *Job Confirmed!*\n\nYou can manage this job from the link below. No login is needed when a secure job link is available.`,
-      'Open Job',
+      ctaLabelFor('view_job'),
       jobUrl,
       { footer: acceptedLeadId ? 'Secure link for this accepted job only.' : 'Sign in may be required for this booking.' }
     )
@@ -2636,7 +2636,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
     await sendCtaUrl(
       result.provider.phone,
       `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
-      'View Job',
+      ctaLabelFor('view_job'),
       getPublicAppUrl('/technician')
     ).catch(() => {})
     const { sendProviderAssigned } = await import('./whatsapp')
@@ -2958,7 +2958,7 @@ async function sendLeadInsufficientCreditsMessage(
     }),
     [
       { id: 'provider_top_up_credits', title: 'Top up credits' },
-      { id: `match_inspect_${leadId}`, title: 'View Lead' },
+      { id: `match_inspect_${leadId}`, title: ctaLabelFor('view_lead') },
       { id: 'back_home', title: 'Main Menu' },
     ],
   )
@@ -2967,7 +2967,7 @@ async function sendLeadInsufficientCreditsMessage(
     await sendCtaUrl(
       phone,
       'Credit top-up and history are available below.',
-      ctaLabelFor('credit_history'),
+      ctaLabelFor('credits_history'),
       creditUrl,
     )
   }
@@ -3131,7 +3131,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         const creditUrl = getWorkerPortalUrl('/provider/credits')
         const body = buildInsufficientCreditsMessage({ availableCredits: result.currentCreditBalance ?? 0 })
         if (creditUrl) {
-          await sendCtaUrl(phone, body, ctaLabelFor('credit_history'), creditUrl)
+          await sendCtaUrl(phone, body, ctaLabelFor('credits_history'), creditUrl)
         } else {
           await sendText(phone, body)
         }
@@ -3165,7 +3165,7 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
           creditsRequired: result.creditCheck.requiredCredits,
         })
         if (creditUrl) {
-          await sendCtaUrl(phone, body, ctaLabelFor('credit_history'), creditUrl)
+          await sendCtaUrl(phone, body, ctaLabelFor('credits_history'), creditUrl)
         } else {
           await sendText(phone, body)
         }

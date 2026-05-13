@@ -6,6 +6,7 @@ import { createTraceId, maskPhone, safeErrorMessage } from './support-diagnostic
 import type { QuickReply } from './whatsapp-interactive'
 import { sendButtons, sendText } from './whatsapp-interactive'
 import type { FlowName, FlowStep } from './whatsapp-flows/types'
+import { ctaLabelFor } from './whatsapp-copy'
 
 export type JourneyUserRole = 'customer' | 'provider' | 'technician' | 'admin' | 'unknown'
 
@@ -133,7 +134,7 @@ function actionsFor(recoveryClass: JourneyRecoveryClass, flowName: string): Jour
   }
   if (recoveryClass === 'show_status') {
     return [
-      { id: 'status', title: 'Refresh status' },
+      { id: 'status', title: ctaLabelFor('check_status') },
       { id: 'back_home', title: 'Main menu' },
     ]
   }

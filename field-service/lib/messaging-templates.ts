@@ -197,10 +197,21 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'MARKETING',
     description: 'Sent to a provider when a new matched lead is available to preview and accept',
-    // {{1}} tech first name, {{2}} service, {{3}} area, {{4}} date/window, {{5}} signed job URL.
-    // Current approved WABA body includes the URL as a body variable, not a URL button.
+    // {{1}} tech first name, {{2}} service, {{3}} area, {{4}} date/window;
+    // signed lead URL is a template URL button parameter, never a body variable.
     example:
-      'Hi {{1}}, new job: {{2}} in {{3}} on {{4}}. Tap to accept — {{5}} — good luck!',
+      'Hi {{1}}, new job: {{2}} in {{3}} on {{4}}. Tap the button below to view the lead.',
+  },
+
+  provider_lead_offer: {
+    name: 'provider_lead_offer',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Safe provider lead notification with signed lead URL only in a template URL button',
+    // {{1}} provider first name, {{2}} service, {{3}} area, {{4}} date/window;
+    // button (url, index 0): {{1}} signed lead access token suffix appended to /leads/access/
+    example:
+      'Hi {{1}}, a customer selected you for a {{2}} job in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
   },
 
   technician_job_reminder: {
@@ -208,9 +219,10 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent to technician the evening before a confirmed job',
-    // {{1}} tech first name, {{2}} service, {{3}} address, {{4}} time window; job URL is a button
+    // {{1}} tech first name, {{2}} service, {{3}} address, {{4}} time window;
+    // job URL is a template URL button parameter, never a body variable.
     example:
-      'Hi {{1}}, tomorrow: {{2}} job at {{3}} ({{4}}). View job details using the button below. See you on site!',
+      'Hi {{1}}, {{4}}: {{2}} job at {{3}}.',
   },
 
   technician_payment_released: {
@@ -314,10 +326,11 @@ export const TEMPLATES = {
     language: 'en_ZA',
     category: 'UTILITY',
     description: 'Sent after a provider initiates a Pay@ wallet top-up',
-    // {{1}} payment link, {{2}} amount formatted, {{3}} credits to issue
+    // body: {{1}} amount formatted, {{2}} credits to issue
+    // button (url, index 0): Pay@ payment URL
     // NOTE: WhatsApp template approval required before live sends succeed.
     example:
-      'Tap here to pay for your Plug-A-Pro wallet top-up: {{1}}. {{2}} = {{3}} credits. Credits will appear in your wallet once Pay@ confirms payment.',
+      'Tap the button below to pay for your Plug-A-Pro wallet top-up. {{1}} = {{2}} credits. Credits will appear in your wallet once Pay@ confirms payment.',
   },
 
   lead_unlock_provider: {

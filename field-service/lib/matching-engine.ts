@@ -4,6 +4,7 @@
 // production matcher domain in ./matching/service.
 
 import { db } from './db'
+import { ctaLabelFor } from './whatsapp-copy'
 import { MATCHING_CONFIG } from './matching/config'
 import {
   processPendingAssignmentWorkflows,
@@ -366,7 +367,7 @@ export async function sendLeadReminders(): Promise<number> {
       await sendCtaUrl(
         lead.provider.phone,
         `${reminderTitle}\n\n*${lead.jobRequest.category}* · ${area}\nRef: ${ref}${expiryNote}\n\nThis lead hasn't had a response yet. Tap to view and decide.`,
-        'View Lead',
+        ctaLabelFor('view_lead'),
         leadUrl,
         { footer: 'View the lead preview. Accepting uses 1 credit.' },
       )

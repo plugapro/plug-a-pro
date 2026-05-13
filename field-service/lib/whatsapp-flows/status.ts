@@ -11,6 +11,7 @@ import { db } from '../db'
 import { getJobRequestAccessUrl } from '../job-request-access'
 import { getPublicAppUrl } from '../provider-credit-copy'
 import { maskPhone } from '../support-diagnostics'
+import { ctaLabelFor } from '../whatsapp-copy'
 import {
   RequestMatchingModeError,
   selectCustomerRequestMatchingMode,
@@ -201,7 +202,7 @@ export async function handleStatusFlow(ctx: FlowContext): Promise<FlowResult> {
             ctx.phone,
             `⚠️ ${reason}\n\nPlease refresh your request status.`,
             [
-              { id: `status_refresh_${matchingModeReply.requestId}`, title: 'Refresh status' },
+              { id: `status_refresh_${matchingModeReply.requestId}`, title: ctaLabelFor('check_status') },
               { id: 'status', title: 'My Requests' },
             ],
           )
@@ -592,7 +593,7 @@ async function showRequestStatus(
         phone,
         `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${statusLabel}${selectedLine}\n\nWe'll notify you when they confirm so we can unlock full details.`,
         [
-          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: `status_refresh_${jr.id}`, title: ctaLabelFor('check_status') },
           { id: 'back_home', title: 'Main menu' },
         ],
       )
@@ -605,7 +606,7 @@ async function showRequestStatus(
         phone,
         body,
         [
-          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: `status_refresh_${jr.id}`, title: ctaLabelFor('check_status') },
           { id: 'back_home', title: 'Main menu' },
         ],
       )
@@ -657,7 +658,7 @@ async function showRequestStatus(
 
       if (trackingUrl) {
         try {
-          await sendCtaUrl(phone, body, 'View providers', trackingUrl)
+          await sendCtaUrl(phone, body, ctaLabelFor('view_request'), trackingUrl)
           return { nextStep: 'done' }
         } catch (error) {
           log(`WARN: review-first CTA send failed — falling back to buttons. error=${error instanceof Error ? error.message : String(error)}`)
@@ -668,7 +669,7 @@ async function showRequestStatus(
         phone,
         `${body}\n\nIf the app link is unavailable, you can switch to Quick Match.`,
         [
-          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: `status_refresh_${jr.id}`, title: ctaLabelFor('check_status') },
           { id: `status_mode_quick_${jr.id}`, title: 'Quick Match' },
           { id: 'back_home', title: 'Main menu' },
         ],
@@ -682,7 +683,7 @@ async function showRequestStatus(
         `📋 *Request ${requestReference(jr)}*\n\nWe couldn't find matching providers for Review Providers First right now.\n\nYou can switch to Quick Match so we can try one suitable provider at a time.`,
         [
           { id: `status_mode_quick_${jr.id}`, title: 'Quick Match' },
-          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: `status_refresh_${jr.id}`, title: ctaLabelFor('check_status') },
           { id: 'back_home', title: 'Main menu' },
         ],
       )
@@ -704,7 +705,7 @@ async function showRequestStatus(
         [
           { id: `status_mode_quick_${jr.id}`, title: 'Quick Match' },
           { id: `status_mode_review_${jr.id}`, title: 'Review Providers' },
-          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: `status_refresh_${jr.id}`, title: ctaLabelFor('check_status') },
         ],
         { footer: 'Reply "menu" to return to the main menu' },
       )
@@ -729,10 +730,10 @@ async function showRequestStatus(
           await sendCtaUrl(
             phone,
             body,
-            'Refresh status',
+            ctaLabelFor('check_status'),
             trackingUrl,
           )
-          log(`INFO: request status CTA sent. requestId=${jr.id} label=Refresh status`)
+          log(`INFO: request status CTA sent. requestId=${jr.id} label=Check status`)
         } catch (error) {
           log(`WARN: status CTA send failed — falling back to text. error=${error instanceof Error ? error.message : String(error)}`)
           await sendText(phone, `${body}\n\nTap Track My Request to refresh.`)
@@ -740,9 +741,9 @@ async function showRequestStatus(
       } else {
         await sendButtons(
           phone,
-          `${body}\n\nTap Refresh status to check for provider responses.`,
+          `${body}\n\nTap Check status to check for provider responses.`,
           [
-            { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+            { id: `status_refresh_${jr.id}`, title: ctaLabelFor('check_status') },
             { id: 'back_home', title: 'Main menu' },
           ],
           { footer: 'Reply "menu" to return to the main menu' },
@@ -757,7 +758,7 @@ async function showRequestStatus(
       await sendCtaUrl(
         phone,
         `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${statusLabel}\n\nTap below to view your request.`,
-        'View request',
+        ctaLabelFor('view_request'),
         trackingUrl,
       )
       log(`INFO: request ticket CTA sent. requestId=${jr.id} label=View request`)
@@ -766,7 +767,7 @@ async function showRequestStatus(
         phone,
         `📋 *Request ${requestReference(jr)}*\n\nService: ${jr.category}\nStatus: ${statusLabel}`,
         [
-          { id: `status_refresh_${jr.id}`, title: 'Refresh status' },
+          { id: `status_refresh_${jr.id}`, title: ctaLabelFor('check_status') },
           { id: 'back_home', title: 'Main menu' },
         ],
         { footer: 'Reply "menu" to return to the main menu' },
@@ -824,7 +825,7 @@ function requestStatusBody(
     return `${statusLabel}\n\nWe're rotating through suitable providers and will update you here after each response.`
   }
 
-  return `${categoryLine}\n${statusLabel}\n\nTap Refresh status to check for the latest update.`
+  return `${categoryLine}\n${statusLabel}\n\nTap Check status to check for the latest update.`
 }
 
 function formatShortlistBody(
@@ -833,7 +834,7 @@ function formatShortlistBody(
   statusLabel: string,
 ) {
   if (!shortlist || shortlist.length === 0) {
-    return `${categoryLine}\n${statusLabel}\n\nNo ready provider options are available yet. Tap Refresh status to check again.`
+    return `${categoryLine}\n${statusLabel}\n\nNo ready provider options are available yet. Tap Check status to check again.`
   }
 
   const options = shortlist.map((item, index) => {

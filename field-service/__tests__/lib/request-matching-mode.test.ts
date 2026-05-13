@@ -190,7 +190,7 @@ describe('selectCustomerRequestMatchingMode', () => {
     )
     const outbound = mockSendCtaUrl.mock.calls.at(-1)?.[1] as string
     expect(outbound).toContain('We found 2 matching providers')
-    expect(mockSendCtaUrl.mock.calls.at(-1)?.[2]).toBe('View providers')
+    expect(mockSendCtaUrl.mock.calls.at(-1)?.[2]).toBe('View request')
   })
 
   it('selecting review_first does not claim ready when no candidates exist', async () => {

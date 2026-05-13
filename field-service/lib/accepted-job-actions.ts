@@ -14,6 +14,7 @@ import {
   LEAD_RESPONSE_SCOPES,
   type ProviderLeadAccessScope,
 } from './provider-lead-access'
+import { ctaLabelFor } from './whatsapp-copy'
 
 type AcceptedLeadAction = 'customer_contacted' | 'on_the_way' | 'arrived' | 'started' | 'completed'
 type SaveArrivalErrorCode =
@@ -506,7 +507,7 @@ export async function sendFreshAcceptedJobLink(params: { token: string }) {
   await sendCtaUrl(
     lead.provider.phone,
     `Here's a fresh secure link for your accepted ${lead.jobRequest.category} job with ${firstName(lead.jobRequest.customer.name)}.`,
-    'View Job',
+    ctaLabelFor('view_job'),
     url,
     { footer: 'This link is scoped to this accepted job only.' },
     {

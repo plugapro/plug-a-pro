@@ -6,6 +6,7 @@ import {
   buildPayfastTopUpInitiatedMessage,
   buildPaymentCreditedMessage,
   buildPaymentIntentCreatedMessage,
+  buildPayatTopUpInitiatedMessage,
   buildZeroBalanceLeadAvailableMessage,
 } from '../../lib/provider-wallet-notifications'
 
@@ -156,6 +157,23 @@ describe('provider wallet notification message builders', () => {
       expect(message).not.toContain('Account name')
       expect(message).not.toContain('Branch code')
       expect(message).not.toContain('Use exact reference')
+    })
+  })
+
+  describe('buildPayatTopUpInitiatedMessage', () => {
+    it('does not expose the Pay@ payment URL in visible WhatsApp copy', () => {
+      const message = buildPayatTopUpInitiatedMessage({
+        amountFormatted: 'R 100,00',
+        creditsToIssue: 5,
+        paymentLink: 'https://go.payat.co.za/pay/tokenized-reference',
+      })
+
+      expect(message).toContain('Pay@')
+      expect(message).toContain('R 100,00 = 5 credits')
+      expect(message).toContain('Tap the button below to pay')
+      expect(message).not.toContain('https://')
+      expect(message).not.toContain('go.payat.co.za')
+      expect(message).not.toContain('tokenized-reference')
     })
   })
 })

@@ -15,6 +15,7 @@ import {
   buildProviderLeadPreviewMessage,
 } from '@/lib/provider-credit-copy'
 import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
+import { ctaLabelFor } from '@/lib/whatsapp-copy'
 import { MATCHING_CONFIG } from './config'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
@@ -172,7 +173,7 @@ export async function dispatchMatchLead(params: {
     await sendCtaUrl(
       provider.phone,
       body,
-      'View Lead',
+      ctaLabelFor('view_lead'),
       leadUrl,
       { footer: 'Preview first. Acceptance uses 1 credit.' },
       { templateName: 'dispatch:job_lead', metadata: msgMeta }

@@ -105,7 +105,7 @@ describe('post-match communications', () => {
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
       expect.stringContaining('1 credit used.'),
-      'View Job',
+      'View job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),
       expect.objectContaining({
@@ -116,7 +116,7 @@ describe('post-match communications', () => {
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
       expect.stringContaining('Remaining credits: 3 credits (Starter/onboarding: 1 · Purchased: 2).'),
-      'View Job',
+      'View job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),
       expect.any(Object),
@@ -124,7 +124,7 @@ describe('post-match communications', () => {
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
       expect.stringContaining('Customer contact:\nStephanie Nkosi\n+27820000001'),
-      'View Job',
+      'View job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),
       expect.any(Object),
@@ -242,7 +242,7 @@ describe('post-match communications', () => {
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27770000001',
       expect.stringContaining('Lead accepted'),
-      'View Job',
+      'View job',
       'https://app.plugapro.co.za/provider/jobs/jr-12345678/handover?token=signed-token',
       expect.any(Object),
       expect.objectContaining({ templateName: 'post_match_provider_job_accepted' }),

@@ -43,7 +43,7 @@ describe('central WhatsApp send raw URL guard', () => {
     expect(global.fetch).toHaveBeenCalledOnce()
   })
 
-  it('sends provider lead offers with an approved utility template body URL variable shape', async () => {
+  it('sends provider lead offers with the signed URL only in a CTA button payload', async () => {
     const { sendJobOffer } = await import('@/lib/whatsapp')
 
     await sendJobOffer({
@@ -57,18 +57,24 @@ describe('central WhatsApp send raw URL guard', () => {
 
     expect(global.fetch).toHaveBeenCalledOnce()
     const body = JSON.parse(String((global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body))
-    expect(body.template.name).toBe('technician_job_reminder')
-    expect(body.template.components).toEqual([
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: 'Lovemore' },
-          { type: 'text', text: 'DIY & Assembly' },
-          { type: 'text', text: 'Bromhof, Johannesburg' },
-          { type: 'text', text: 'This week' },
-          { type: 'text', text: 'https://app.plugapro.co.za/leads/access/signed-token' },
-        ],
-      },
+    expect(body.template.name).toBe('provider_lead_offer')
+    const bodyComponent = body.template.components.find((component: { type: string }) => component.type === 'body')
+    const buttonComponent = body.template.components.find((component: { type: string; sub_type?: string }) =>
+      component.type === 'button' && component.sub_type === 'url'
+    )
+    const bodyText = JSON.stringify(bodyComponent)
+
+    expect(bodyText).not.toContain('https://')
+    expect(bodyText).not.toContain('app.plugapro.co.za')
+    expect(bodyText).not.toContain('/leads/access')
+    expect(bodyComponent.parameters).toEqual([
+      { type: 'text', text: 'Lovemore' },
+      { type: 'text', text: 'DIY & Assembly' },
+      { type: 'text', text: 'Bromhof, Johannesburg' },
+      { type: 'text', text: 'This week' },
+    ])
+    expect(buttonComponent.parameters).toEqual([
+      { type: 'text', text: 'signed-token' },
     ])
   })
 })

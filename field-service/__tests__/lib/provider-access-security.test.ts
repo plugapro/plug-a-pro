@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     lead: { findUnique: vi.fn() },
+    leadUnlock: { findUnique: vi.fn() },
   },
 }))
 
@@ -53,6 +54,8 @@ describe('secure token scope — cross-provider access prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
+    mockDb.leadUnlock.findUnique.mockReset()
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-pla-secret-step14'
     process.env.PROVIDER_LEAD_APP_URL = 'https://app.plugapro.co.za'
   })
@@ -135,6 +138,8 @@ describe('customer PII gating — pre/post acceptance', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
+    mockDb.leadUnlock.findUnique.mockReset()
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-pla-secret-step14'
   })
 
@@ -160,7 +165,7 @@ describe('customer PII gating — pre/post acceptance', () => {
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
     mockDb.lead.findUnique
       .mockResolvedValueOnce(
-        makeLead({ status: 'ACCEPTED', unlock: { id: 'u-1', providerId: 'provider-1' } }),
+        makeLead({ status: 'ACCEPTED' }),
       )
       .mockResolvedValueOnce({
         jobRequest: {
@@ -178,6 +183,11 @@ describe('customer PII gating — pre/post acceptance', () => {
           },
         },
       })
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-1',
+      providerId: 'provider-1',
+      unlockedAt: new Date('2026-05-01T10:15:00.000Z'),
+    })
 
     const resolved = await resolveProviderLeadAccessToken(token)
     expect(resolved.status).toBe('active')
@@ -196,10 +206,13 @@ describe('customer PII gating — pre/post acceptance', () => {
         providerId: 'provider-2',
         status: 'ACCEPTED',
         provider: { id: 'provider-2', name: 'Other Pro', phone: '+27829000000', active: true, status: 'ACTIVE' },
-        // Unlock belongs to a DIFFERENT provider
-        unlock: { id: 'u-1', providerId: 'provider-1' },
       }),
     )
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-1',
+      providerId: 'provider-1',
+      unlockedAt: new Date('2026-05-01T10:15:00.000Z'),
+    })
 
     const resolved = await resolveProviderLeadAccessToken(token)
 
@@ -231,6 +244,8 @@ describe('expired and superseded token revocation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
+    mockDb.leadUnlock.findUnique.mockReset()
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-pla-secret-step14'
   })
 
@@ -251,7 +266,6 @@ describe('expired and superseded token revocation', () => {
     mockDb.lead.findUnique.mockResolvedValueOnce(
       makeLead({
         status: 'ACCEPTED',
-        unlock: { id: 'u-1', providerId: 'provider-1' },
         jobRequest: {
           id: 'jr-1',
           category: 'Plumbing',
@@ -267,6 +281,11 @@ describe('expired and superseded token revocation', () => {
         },
       }),
     )
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-1',
+      providerId: 'provider-1',
+      unlockedAt: new Date('2026-05-01T10:15:00.000Z'),
+    })
 
     const resolved = await resolveProviderLeadAccessToken(token)
 
@@ -281,13 +300,15 @@ describe('resolveProviderLeadAttachmentScope — isAccepted flag for safeForPrev
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
+    mockDb.leadUnlock.findUnique.mockReset()
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-pla-secret-step15'
   })
 
   it('returns isAccepted=false for a SENT lead (preview context)', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
-    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({ status: 'SENT', unlock: null }))
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({ status: 'SENT' }))
 
     const scope = await resolveProviderLeadAttachmentScope(token)
 
@@ -301,7 +322,7 @@ describe('resolveProviderLeadAttachmentScope — isAccepted flag for safeForPrev
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
     mockDb.lead.findUnique
       .mockResolvedValueOnce(
-        makeLead({ status: 'ACCEPTED', unlock: { id: 'u-1', providerId: 'provider-1' } }),
+        makeLead({ status: 'ACCEPTED' }),
       )
       // Second call for the sensitive data fetch — return minimal shape
       .mockResolvedValueOnce({
@@ -320,6 +341,11 @@ describe('resolveProviderLeadAttachmentScope — isAccepted flag for safeForPrev
           },
         },
       })
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-1',
+      providerId: 'provider-1',
+      unlockedAt: new Date('2026-05-01T10:15:00.000Z'),
+    })
 
     const scope = await resolveProviderLeadAttachmentScope(token)
 
@@ -330,10 +356,13 @@ describe('resolveProviderLeadAttachmentScope — isAccepted flag for safeForPrev
   it('returns isAccepted=false when the unlock belongs to a different provider', async () => {
     const { createProviderLeadAccessToken, resolveProviderLeadAttachmentScope } = await import('@/lib/provider-lead-access')
     const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+    mockDb.lead.findUnique.mockResolvedValueOnce(makeLead({ status: 'ACCEPTED' }))
     // Unlock is by provider-99, not provider-1
-    mockDb.lead.findUnique.mockResolvedValueOnce(
-      makeLead({ status: 'ACCEPTED', unlock: { id: 'u-x', providerId: 'provider-99' } }),
-    )
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'u-x',
+      providerId: 'provider-99',
+      unlockedAt: new Date('2026-05-01T10:15:00.000Z'),
+    })
 
     const scope = await resolveProviderLeadAttachmentScope(token)
 

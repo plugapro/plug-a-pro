@@ -101,6 +101,7 @@ async function notifyAfterDecision(result: {
   jobRequestId?: string
 }) {
   const { sendText, sendCtaUrl } = await import('@/lib/whatsapp-interactive')
+  const { ctaLabelFor } = await import('@/lib/whatsapp-copy')
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const providerPhone = result.provider.phone
   const customerPhone = result.customer.phone
@@ -143,7 +144,7 @@ async function notifyAfterDecision(result: {
     await sendCtaUrl(
       providerPhone,
       `✅ *Quote Approved!*\n\n${category} job confirmed for ${dateStr}.\n\nOpen the job to view full details and update your status:`,
-      'View Job',
+      ctaLabelFor('view_job'),
       jobUrl ?? `${appUrl}/provider`,
       {
         footer: jobUrl

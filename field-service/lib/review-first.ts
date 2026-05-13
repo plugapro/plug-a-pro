@@ -8,6 +8,7 @@ import { getProviderLeadAccessUrl } from './provider-lead-access'
 import { getJobRequestAccessUrl } from './job-request-access'
 import { hasSuccessfulMessageForRecipient } from './message-events'
 import { maskPhone } from './support-diagnostics'
+import { ctaLabelFor } from './whatsapp-copy'
 
 export const RFP_PROVIDER_RESPONSE_MINUTES = Math.max(
   1,
@@ -1747,7 +1748,7 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
         await sendCtaUrl(
           repair.customerPhone,
           `We couldn't complete the WhatsApp notification to your selected provider.\n\nYour request is still saved. Open your provider review to retry sending the request or choose another provider.`,
-          'View providers',
+          ctaLabelFor('view_request'),
           url,
           undefined,
           {

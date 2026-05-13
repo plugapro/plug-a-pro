@@ -107,6 +107,20 @@ const TEMPLATES = [
     examples: ['Sipho', 'Electrical Installation', 'Sandton, Gauteng', 'Mon 14 Apr, 8–10am', 'https://app.plugapro.co.za/jobs/J001'],
   },
   {
+    name: 'provider_lead_offer',
+    category: 'UTILITY',
+    body: 'Hi {{1}}, a customer selected you for a {{2}} job in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
+    examples: ['Lovemore', 'DIY & Assembly', 'Bromhof, Johannesburg', 'Flexible'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'View lead',
+        url: 'https://app.plugapro.co.za/leads/access/{{1}}',
+        example: ['demo-lead-access-token'],
+      },
+    ],
+  },
+  {
     name: 'technician_job_reminder',
     category: 'UTILITY',
     // {{1}} tech name, {{2}} service, {{3}} address, {{4}} time, {{5}} job URL
@@ -181,10 +195,17 @@ async function deleteTemplate(id) {
 }
 
 async function registerTemplate(tpl) {
-  const component = {
+  const components = [{
     type: 'BODY',
     text: tpl.body,
     example: { body_text: [tpl.examples] },
+  }]
+
+  if (tpl.buttons?.length) {
+    components.push({
+      type: 'BUTTONS',
+      buttons: tpl.buttons,
+    })
   }
 
   const res = await fetch(`${BASE}/${WABA_ID}/message_templates`, {
@@ -194,7 +215,7 @@ async function registerTemplate(tpl) {
       name: tpl.name,
       language: 'en_ZA',
       category: tpl.category,
-      components: [component],
+      components,
     }),
   })
   return res.json()

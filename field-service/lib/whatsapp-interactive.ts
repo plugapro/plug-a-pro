@@ -9,7 +9,7 @@
 
 import { logOutboundMessage } from './message-events'
 import { isCohortMismatch, isInternalTestPhone } from './internal-test-cohort'
-import { assertNoRawUrlsInWhatsAppBody } from './whatsapp-copy'
+import { assertNoRawUrlsInWhatsAppBody, type WhatsAppCtaLink } from './whatsapp-copy'
 
 const API_VERSION = 'v21.0'
 
@@ -81,6 +81,13 @@ function assertCohortSendAllowed(to: string, context?: OutboundInteractiveContex
   }
 }
 
+function assertVisibleWhatsAppTextIsSafe(contextName: string, fields: Array<[string, string | undefined]>) {
+  for (const [fieldName, value] of fields) {
+    if (!value) continue
+    assertNoRawUrlsInWhatsAppBody(value, `${contextName}:${fieldName}`)
+  }
+}
+
 // ─── Text ─────────────────────────────────────────────────────────────────────
 
 export async function sendText(
@@ -89,7 +96,7 @@ export async function sendText(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
-  assertNoRawUrlsInWhatsAppBody(text, context?.templateName ?? 'interactive:text')
+  assertVisibleWhatsAppTextIsSafe(context?.templateName ?? 'interactive:text', [['body', text]])
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -131,7 +138,13 @@ export async function sendButtons(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
-  assertNoRawUrlsInWhatsAppBody(body, context?.templateName ?? 'interactive:buttons')
+  const contextName = context?.templateName ?? 'interactive:buttons'
+  assertVisibleWhatsAppTextIsSafe(contextName, [
+    ['body', body],
+    ['header', options?.header],
+    ['footer', options?.footer],
+    ...buttons.map((button, index) => [`button:${index}`, button.title] as [string, string]),
+  ])
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -184,7 +197,20 @@ export async function sendList(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
-  assertNoRawUrlsInWhatsAppBody(body, context?.templateName ?? 'interactive:list')
+  const contextName = context?.templateName ?? 'interactive:list'
+  assertVisibleWhatsAppTextIsSafe(contextName, [
+    ['body', body],
+    ['header', options?.header],
+    ['footer', options?.footer],
+    ['buttonLabel', options?.buttonLabel],
+    ...sections.flatMap((section, sectionIndex) => [
+      [`section:${sectionIndex}:title`, section.title] as [string, string | undefined],
+      ...section.rows.flatMap((row, rowIndex) => [
+        [`section:${sectionIndex}:row:${rowIndex}:title`, row.title] as [string, string | undefined],
+        [`section:${sectionIndex}:row:${rowIndex}:description`, row.description] as [string, string | undefined],
+      ]),
+    ]),
+  ])
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -225,7 +251,13 @@ export async function sendCtaUrl(
   context?: OutboundInteractiveContext
 ): Promise<string> {
   assertCohortSendAllowed(to, context)
-  assertNoRawUrlsInWhatsAppBody(body, context?.templateName ?? 'interactive:cta_url')
+  const contextName = context?.templateName ?? 'interactive:cta_url'
+  assertVisibleWhatsAppTextIsSafe(contextName, [
+    ['body', body],
+    ['buttonText', buttonText],
+    ['header', options?.header],
+    ['footer', options?.footer],
+  ])
   const externalId = await post({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -257,6 +289,23 @@ export async function sendCtaUrl(
     }).catch(() => {})
   }
   return externalId
+}
+
+export async function sendCtaLink(
+  to: string,
+  body: string,
+  link: WhatsAppCtaLink,
+  options?: { header?: string; footer?: string },
+  context?: OutboundInteractiveContext
+): Promise<string> {
+  return sendCtaUrl(to, body, link.label, link.url, options, {
+    ...context,
+    metadata: {
+      ...(context?.metadata ?? {}),
+      ctaPurpose: link.purpose,
+      ctaId: link.id,
+    },
+  })
 }
 
 // ─── Parse inbound interactive replies ───────────────────────────────────────

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     lead: { findUnique: vi.fn() },
+    leadUnlock: { findUnique: vi.fn() },
   },
 }))
 
@@ -45,6 +46,8 @@ describe('provider lead access tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
+    mockDb.leadUnlock.findUnique.mockReset()
+    mockDb.leadUnlock.findUnique.mockResolvedValue(null)
     delete process.env.AUTH_SECRET
     delete process.env.NEXTAUTH_SECRET
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
@@ -345,7 +348,6 @@ describe('provider lead access tokens', () => {
     mockDb.lead.findUnique
       .mockResolvedValueOnce(makeLead({
         status: 'ACCEPTED',
-        unlock: { id: 'unlock-1', providerId: 'provider-1' },
       }))
       // Second query fetches only customer PII + full address — attachments are NOT re-fetched
       .mockResolvedValueOnce({
@@ -363,10 +365,28 @@ describe('provider lead access tokens', () => {
           },
         },
       })
+    mockDb.leadUnlock.findUnique.mockResolvedValueOnce({
+      id: 'unlock-1',
+      providerId: 'provider-1',
+      unlockedAt: new Date('2026-04-29T10:15:00.000Z'),
+    })
 
     const resolved = await resolveProviderLeadAccessToken(token)
 
+    expect(mockDb.leadUnlock.findUnique).toHaveBeenCalledWith({
+      where: { leadId: 'lead-1' },
+      select: {
+        id: true,
+        providerId: true,
+        unlockedAt: true,
+      },
+    })
     expect(mockDb.lead.findUnique).toHaveBeenCalledTimes(2)
+    expect(resolved.lead?.unlock).toMatchObject({
+      id: 'unlock-1',
+      providerId: 'provider-1',
+      creditsCharged: 1,
+    })
     expect(resolved.lead?.jobRequest.customer).toMatchObject({
       name: 'Nomsa Dlamini',
       phone: '+27821234567',

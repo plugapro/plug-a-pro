@@ -105,7 +105,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       '+27820000000',
       expect.stringContaining('Area: *Ruimsig*'),
-      'View Lead',
+      'View lead',
       expect.stringMatching(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//),
       { footer: 'Preview first. Acceptance uses 1 credit.' },
       expect.objectContaining({
@@ -121,7 +121,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     expect(mockSendCtaUrl).toHaveBeenCalledWith(
       '+27820000000',
       expect.not.stringContaining('Area: *ruimsig*'),
-      'View Lead',
+      'View lead',
       expect.any(String),
       expect.any(Object),
       expect.any(Object),
