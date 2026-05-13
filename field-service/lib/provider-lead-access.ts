@@ -68,10 +68,11 @@ function base64url(input: Buffer | string) {
 function getSigningSecret() {
   const secret =
     process.env.PROVIDER_LEAD_ACCESS_SECRET ||
-    process.env.NEXTAUTH_SECRET
+    process.env.NEXTAUTH_SECRET ||
+    process.env.AUTH_SECRET
 
   if (!secret) {
-    throw new Error('Missing PROVIDER_LEAD_ACCESS_SECRET or NEXTAUTH_SECRET')
+    throw new Error('Missing PROVIDER_LEAD_ACCESS_SECRET, NEXTAUTH_SECRET, or AUTH_SECRET')
   }
 
   return secret

@@ -45,6 +45,8 @@ describe('provider lead access tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.resetModules()
+    delete process.env.AUTH_SECRET
+    delete process.env.NEXTAUTH_SECRET
     process.env.PROVIDER_LEAD_ACCESS_SECRET = 'test-provider-lead-secret'
     process.env.PROVIDER_LEAD_APP_URL = 'https://app.plugapro.co.za'
   })
@@ -110,6 +112,7 @@ describe('provider lead access tokens', () => {
   it('returns invalid instead of throwing when signing secrets are missing', async () => {
     delete process.env.PROVIDER_LEAD_ACCESS_SECRET
     delete process.env.NEXTAUTH_SECRET
+    delete process.env.AUTH_SECRET
 
     const { verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
     const payload = Buffer.from(
@@ -122,6 +125,23 @@ describe('provider lead access tokens', () => {
       status: 'invalid',
       reason: 'SIGNING_SECRET_MISSING',
       payload: null,
+    })
+  })
+
+  it('falls back to AUTH_SECRET when provider-specific signing secrets are absent', async () => {
+    delete process.env.PROVIDER_LEAD_ACCESS_SECRET
+    delete process.env.NEXTAUTH_SECRET
+    process.env.AUTH_SECRET = 'test-auth-secret-fallback'
+
+    const { createProviderLeadAccessToken, verifyProviderLeadAccessToken } = await import('@/lib/provider-lead-access')
+    const token = createProviderLeadAccessToken({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    expect(verifyProviderLeadAccessToken(token)).toMatchObject({
+      status: 'active',
+      payload: {
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+      },
     })
   })
 
