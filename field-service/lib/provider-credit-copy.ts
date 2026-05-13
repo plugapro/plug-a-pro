@@ -29,7 +29,9 @@ function stripTrailingSlash(value: string) {
 }
 
 function configuredUrl(name: string) {
-  const value = process.env[name]?.trim()
+  const value = process.env[name]
+    ?.replace(/\\[rn]/g, '')
+    .trim()
   return value || null
 }
 

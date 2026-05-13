@@ -40,6 +40,14 @@ describe('getPublicAppUrl', () => {
     expect(getPublicAppUrl('/provider/terms/credits')).toBe('https://app.example.com/provider/terms/credits')
   })
 
+  it('strips escaped newline characters from configured base URLs before building WhatsApp CTAs', () => {
+    vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za\\n')
+
+    expect(getPublicAppUrl('/requests/access/token?view=matching_status')).toBe(
+      'https://app.plugapro.co.za/requests/access/token?view=matching_status',
+    )
+  })
+
   it('safely joins paths with duplicate leading slashes', () => {
     vi.stubEnv('APP_PUBLIC_URL', 'https://app.plugapro.co.za/')
 

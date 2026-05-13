@@ -11,6 +11,7 @@ import { type NextRequest, NextResponse, after } from 'next/server'
 import { verifyWebhookChallenge, verifyMetaSignature } from '@/lib/whatsapp'
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
+import { handleReviewFirstProviderNotificationStatus } from '@/lib/review-first'
 
 // GET — Meta webhook verification challenge
 export function GET(request: NextRequest) {
@@ -123,19 +124,36 @@ export async function POST(request: NextRequest) {
         // Update delivery receipts on MessageEvent records
         for (const status of value.statuses ?? []) {
           after(
-            db.messageEvent.updateMany({
-              where: { externalId: status.id },
-              data: {
-                status:
-                  status.status === 'delivered' ? 'DELIVERED'
-                  : status.status === 'read' ? 'READ'
-                  : status.status === 'failed' ? 'FAILED'
-                  : undefined,
-                deliveredAt: status.status === 'delivered' ? new Date() : undefined,
-                readAt: status.status === 'read' ? new Date() : undefined,
-                failureReason: status.errors?.[0]?.message,
-              },
-            }).catch(() => {})
+            (async () => {
+              await db.messageEvent.updateMany({
+                where: { externalId: status.id },
+                data: {
+                  status:
+                    status.status === 'sent' ? 'SENT'
+                    : status.status === 'delivered' ? 'DELIVERED'
+                    : status.status === 'read' ? 'READ'
+                    : status.status === 'failed' ? 'FAILED'
+                    : undefined,
+                  deliveredAt: status.status === 'delivered' ? new Date() : undefined,
+                  readAt: status.status === 'read' ? new Date() : undefined,
+                  failureReason: status.errors?.[0]?.message,
+                },
+              })
+
+              if (status.status === 'delivered' || status.status === 'read' || status.status === 'failed') {
+                await handleReviewFirstProviderNotificationStatus({
+                  externalId: status.id,
+                  status: status.status,
+                  failureReason: status.errors?.[0]?.message ?? null,
+                })
+              }
+            })().catch((error) => {
+              console.warn('[webhook/whatsapp] delivery receipt processing failed', {
+                externalId: status.id,
+                status: status.status,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            })
           )
           // Mirror delivery state onto OtpDeliveryAttempt so the auth OTP
           // surface has end-to-end visibility instead of only knowing whether

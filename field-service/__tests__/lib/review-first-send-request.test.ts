@@ -3,26 +3,54 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockJobRequest,
   mockLead,
+  mockMessageEvent,
+  mockAuditLog,
+  mockTransaction,
   mockSendJobOffer,
   mockSendText,
+  mockSendCtaUrl,
   mockGetProviderLeadAccessUrl,
+  mockGetJobRequestAccessUrl,
+  mockHasSuccessfulMessageForRecipient,
 } = vi.hoisted(() => ({
   mockJobRequest: {
     findUnique: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   mockLead: {
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
+    count: vi.fn(),
   },
+  mockMessageEvent: {
+    findFirst: vi.fn(),
+  },
+  mockAuditLog: {
+    create: vi.fn(),
+  },
+  mockTransaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback({
+    jobRequest: mockJobRequest,
+    lead: mockLead,
+    auditLog: mockAuditLog,
+  })),
   mockSendJobOffer: vi.fn(),
   mockSendText: vi.fn(),
+  mockSendCtaUrl: vi.fn(),
   mockGetProviderLeadAccessUrl: vi.fn(),
+  mockGetJobRequestAccessUrl: vi.fn(),
+  mockHasSuccessfulMessageForRecipient: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({
   db: {
     jobRequest: mockJobRequest,
     lead: mockLead,
+    messageEvent: mockMessageEvent,
+    auditLog: mockAuditLog,
+    $transaction: mockTransaction,
   },
 }))
 
@@ -32,10 +60,19 @@ vi.mock('@/lib/whatsapp', () => ({
 
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: mockSendText,
+  sendCtaUrl: mockSendCtaUrl,
 }))
 
 vi.mock('@/lib/provider-lead-access', () => ({
   getProviderLeadAccessUrl: mockGetProviderLeadAccessUrl,
+}))
+
+vi.mock('@/lib/job-request-access', () => ({
+  getJobRequestAccessUrl: mockGetJobRequestAccessUrl,
+}))
+
+vi.mock('@/lib/message-events', () => ({
+  hasSuccessfulMessageForRecipient: mockHasSuccessfulMessageForRecipient,
 }))
 
 vi.mock('@/lib/matching/service', () => ({
@@ -74,9 +111,22 @@ describe('sendRequestToShortlistedProviders', () => {
     })
     mockJobRequest.update.mockResolvedValue({})
     mockLead.update.mockResolvedValue({})
+    mockLead.updateMany.mockResolvedValue({ count: 1 })
+    mockLead.findMany.mockResolvedValue([])
+    mockLead.count.mockResolvedValue(0)
+    mockMessageEvent.findFirst.mockResolvedValue(null)
+    mockAuditLog.create.mockResolvedValue({})
+    mockTransaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({
+      jobRequest: mockJobRequest,
+      lead: mockLead,
+      auditLog: mockAuditLog,
+    }))
     mockGetProviderLeadAccessUrl.mockResolvedValue('https://app.plugapro.co.za/leads/access/signed-token')
+    mockGetJobRequestAccessUrl.mockResolvedValue('https://app.plugapro.co.za/requests/access/token?view=matching_status')
+    mockHasSuccessfulMessageForRecipient.mockResolvedValue(false)
     mockSendJobOffer.mockResolvedValue(undefined)
     mockSendText.mockResolvedValue('customer-message-id')
+    mockSendCtaUrl.mockResolvedValue('customer-failure-message-id')
   })
 
   it('uses the approved job_offer template to notify shortlisted providers', async () => {
@@ -118,7 +168,7 @@ describe('sendRequestToShortlistedProviders', () => {
     expect(mockLead.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'lead-1' },
       data: expect.objectContaining({
-        notifiedAt: expect.any(Date),
+        notifiedAt: null,
         notificationAttemptedAt: expect.any(Date),
       }),
     }))
@@ -128,6 +178,135 @@ describe('sendRequestToShortlistedProviders', () => {
       expect.objectContaining({
         templateName: 'interactive:rfp_sent_to_shortlist',
       }),
+    )
+  })
+
+  it('marks delivered provider notifications as notified from the webhook status', async () => {
+    mockMessageEvent.findFirst.mockResolvedValue({
+      id: 'message-1',
+      templateName: 'technician_job_reminder',
+      metadata: {
+        source: 'review_first_send_request',
+        requestId: 'request-1',
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+      },
+    })
+    const { handleReviewFirstProviderNotificationStatus } = await import('@/lib/review-first')
+
+    const result = await handleReviewFirstProviderNotificationStatus({
+      externalId: 'wamid.1',
+      status: 'delivered',
+    })
+
+    expect(result).toEqual(expect.objectContaining({ handled: true, result: 'delivered' }))
+    expect(mockLead.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'lead-1',
+        jobRequestId: 'request-1',
+        providerId: 'provider-1',
+        status: { in: ['SENT', 'VIEWED'] },
+        notifiedAt: null,
+      },
+      data: {
+        notifiedAt: expect.any(Date),
+        notificationAttemptedAt: null,
+      },
+    })
+  })
+
+  it('repairs a failed provider notification so the lead can be retried instead of expiring as no response', async () => {
+    mockMessageEvent.findFirst.mockResolvedValue({
+      id: 'message-1',
+      templateName: 'technician_job_reminder',
+      metadata: {
+        source: 'review_first_send_request',
+        requestId: 'request-1',
+        leadId: 'lead-1',
+        providerId: 'provider-1',
+      },
+    })
+    mockLead.findUnique.mockResolvedValue({
+      id: 'lead-1',
+      jobRequestId: 'request-1',
+      providerId: 'provider-1',
+      status: 'SENT',
+      notifiedAt: null,
+      jobRequest: {
+        id: 'request-1',
+        status: 'MATCHING',
+        assignmentMode: 'OPS_REVIEW',
+        customer: { phone: '+27820000000' },
+      },
+    })
+    const { handleReviewFirstProviderNotificationStatus } = await import('@/lib/review-first')
+
+    const result = await handleReviewFirstProviderNotificationStatus({
+      externalId: 'wamid.1',
+      status: 'failed',
+      failureReason: 'Business eligibility payment issue',
+    })
+
+    expect(result).toEqual({ handled: true, result: 'failed_repaired' })
+    expect(mockLead.update).toHaveBeenCalledWith({
+      where: { id: 'lead-1' },
+      data: {
+        status: 'SHORTLISTED',
+        expiresAt: null,
+        expiredAt: null,
+        respondedAt: null,
+        viewedAt: null,
+        notifiedAt: null,
+        notificationAttemptedAt: null,
+      },
+    })
+    expect(mockJobRequest.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'request-1',
+        status: 'MATCHING',
+        assignmentMode: 'OPS_REVIEW',
+      },
+      data: { status: 'PENDING_VALIDATION' },
+    })
+    expect(mockSendCtaUrl).toHaveBeenCalledWith(
+      '+27820000000',
+      expect.stringContaining("couldn't complete the WhatsApp notification"),
+      'View providers',
+      'https://app.plugapro.co.za/requests/access/token?view=matching_status',
+      undefined,
+      expect.objectContaining({
+        templateName: 'interactive:rfp_provider_notification_failed',
+        metadata: expect.objectContaining({
+          requestId: 'request-1',
+          leadId: 'lead-1',
+          providerId: 'provider-1',
+        }),
+      }),
+    )
+  })
+
+  it('only expires review-first provider leads after a confirmed provider notification', async () => {
+    const { expireRfpInvitations } = await import('@/lib/review-first')
+
+    await expireRfpInvitations()
+
+    expect(mockLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        status: { in: ['SENT', 'VIEWED'] },
+        respondedAt: null,
+        notifiedAt: { not: null },
+        expiresAt: expect.any(Object),
+        jobRequest: {
+          status: 'MATCHING',
+          assignmentMode: 'OPS_REVIEW',
+        },
+      }),
+    }))
+    expect(mockLead.updateMany).not.toHaveBeenCalled()
+    expect(mockSendText).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('None of the selected providers responded in time'),
+      expect.any(Object),
     )
   })
 })

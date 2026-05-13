@@ -2,9 +2,11 @@ import { db } from './db'
 import type { LeadStatus } from '@prisma/client'
 import { rankCandidatesForJobRequest } from './matching/service'
 import { getReviewProviderProfileUrl } from './review-provider-profile-access'
-import { sendText } from './whatsapp-interactive'
+import { sendCtaUrl, sendText } from './whatsapp-interactive'
 import { sendJobOffer } from './whatsapp'
 import { getProviderLeadAccessUrl } from './provider-lead-access'
+import { getJobRequestAccessUrl } from './job-request-access'
+import { hasSuccessfulMessageForRecipient } from './message-events'
 
 export const RFP_PROVIDER_RESPONSE_MINUTES = Math.max(
   1,
@@ -27,6 +29,8 @@ const MVP1_MATCH_RESULT_LIMIT = Math.min(
   5,
   Math.max(3, Number.parseInt(process.env.MVP1_MATCH_RESULT_LIMIT ?? '5', 10) || 5),
 )
+const REVIEW_FIRST_PROVIDER_NOTIFICATION_SOURCE = 'review_first_send_request'
+const REVIEW_FIRST_PROVIDER_NOTIFICATION_FAILED_TEMPLATE = 'interactive:rfp_provider_notification_failed'
 
 export class ReviewFirstError extends Error {
   constructor(
@@ -1271,7 +1275,11 @@ export async function sendRequestToShortlistedProviders(params: {
             expiresAt,
             respondedAt: null,
             viewedAt: null,
-            notifiedAt: new Date(),
+            // Meta can accept the send and later fail delivery asynchronously.
+            // `notifiedAt` is set only from delivery/read webhooks so expiry
+            // cannot turn an undelivered provider notification into a false
+            // "provider did not respond" customer outcome.
+            notifiedAt: null,
             notificationAttemptedAt: new Date(),
           },
         })
@@ -1328,6 +1336,210 @@ export async function sendRequestToShortlistedProviders(params: {
     invitedCount: notifiedCount,
     expiresAt,
   }
+}
+
+function metadataString(metadata: unknown, key: string) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const value = (metadata as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+export async function handleReviewFirstProviderNotificationStatus(params: {
+  externalId: string
+  status: 'sent' | 'delivered' | 'read' | 'failed'
+  failureReason?: string | null
+}) {
+  const messageEvent = await db.messageEvent.findFirst({
+    where: { externalId: params.externalId },
+    select: {
+      id: true,
+      templateName: true,
+      metadata: true,
+    },
+  })
+
+  const metadata = messageEvent?.metadata
+  if (metadataString(metadata, 'source') !== REVIEW_FIRST_PROVIDER_NOTIFICATION_SOURCE) {
+    return { handled: false as const, reason: 'not_review_first_provider_notification' }
+  }
+
+  const requestId = metadataString(metadata, 'requestId')
+  const leadId = metadataString(metadata, 'leadId')
+  const providerId = metadataString(metadata, 'providerId')
+  if (!requestId || !leadId || !providerId) {
+    console.warn('[review-first.provider-notification] metadata_missing', {
+      externalId: params.externalId,
+      messageEventId: messageEvent?.id ?? null,
+      status: params.status,
+    })
+    return { handled: false as const, reason: 'metadata_missing' }
+  }
+
+  if (params.status === 'delivered' || params.status === 'read') {
+    const updated = await db.lead.updateMany({
+      where: {
+        id: leadId,
+        jobRequestId: requestId,
+        providerId,
+        status: { in: ['SENT', 'VIEWED'] },
+        notifiedAt: null,
+      },
+      data: {
+        notifiedAt: new Date(),
+        notificationAttemptedAt: null,
+      },
+    })
+
+    console.info('[review-first.provider-notification] delivered', {
+      requestId,
+      leadId,
+      providerId,
+      status: params.status,
+      updatedCount: updated.count,
+    })
+    return { handled: true as const, result: 'delivered', updatedCount: updated.count }
+  }
+
+  if (params.status !== 'failed') {
+    return { handled: true as const, result: 'status_observed' }
+  }
+
+  const repair = await db.$transaction(async (tx) => {
+    const lead = await tx.lead.findUnique({
+      where: { id: leadId },
+      select: {
+        id: true,
+        jobRequestId: true,
+        providerId: true,
+        status: true,
+        notifiedAt: true,
+        jobRequest: {
+          select: {
+            id: true,
+            status: true,
+            assignmentMode: true,
+            customer: { select: { phone: true } },
+          },
+        },
+      },
+    })
+
+    if (!lead || lead.jobRequestId !== requestId || lead.providerId !== providerId) {
+      return { repaired: false as const, reason: 'lead_not_found_or_mismatch' }
+    }
+
+    if (!['SENT', 'VIEWED', 'EXPIRED'].includes(lead.status)) {
+      return { repaired: false as const, reason: 'lead_not_repairable', status: lead.status }
+    }
+
+    await tx.lead.update({
+      where: { id: lead.id },
+      data: {
+        status: 'SHORTLISTED',
+        expiresAt: null,
+        expiredAt: null,
+        respondedAt: null,
+        viewedAt: null,
+        notifiedAt: null,
+        notificationAttemptedAt: null,
+      },
+    })
+
+    const activeLeadCount = await tx.lead.count({
+      where: {
+        jobRequestId: requestId,
+        id: { not: lead.id },
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'] },
+      },
+    })
+
+    if (activeLeadCount === 0) {
+      await tx.jobRequest.updateMany({
+        where: {
+          id: requestId,
+          status: 'MATCHING',
+          assignmentMode: 'OPS_REVIEW',
+        },
+        data: { status: 'PENDING_VALIDATION' },
+      })
+    }
+
+    await tx.auditLog.create({
+      data: {
+        actorId: 'system',
+        actorRole: 'system',
+        action: 'review_first.provider_notification_failed',
+        entityType: 'Lead',
+        entityId: lead.id,
+        before: {
+          status: lead.status,
+          notifiedAt: lead.notifiedAt?.toISOString() ?? null,
+        },
+        after: {
+          status: 'SHORTLISTED',
+          requestStatus: activeLeadCount === 0 ? 'PENDING_VALIDATION' : lead.jobRequest.status,
+        },
+        reason: params.failureReason ?? 'WhatsApp provider notification failed after API accept.',
+      },
+    })
+
+    return {
+      repaired: true as const,
+      customerPhone: lead.jobRequest.customer?.phone ?? null,
+      activeLeadCount,
+    }
+  })
+
+  console.warn('[review-first.provider-notification] failed_repaired', {
+    requestId,
+    leadId,
+    providerId,
+    result: repair.repaired ? 'repaired' : 'skipped',
+    reason: repair.repaired ? null : repair.reason,
+    failureReason: params.failureReason ?? null,
+  })
+
+  if (repair.repaired && repair.customerPhone) {
+    const alreadySent = await hasSuccessfulMessageForRecipient({
+      to: repair.customerPhone,
+      templateName: REVIEW_FIRST_PROVIDER_NOTIFICATION_FAILED_TEMPLATE,
+      metadataPath: ['leadId'],
+      metadataEquals: leadId,
+    }).catch(() => false)
+
+    if (!alreadySent) {
+      const url = await getJobRequestAccessUrl(requestId, 'matching_status').catch(() => null)
+      if (url?.startsWith('https://')) {
+        await sendCtaUrl(
+          repair.customerPhone,
+          `We couldn't complete the WhatsApp notification to your selected provider.\n\nYour request is still saved. Open your provider review to retry sending the request or choose another provider.`,
+          'View providers',
+          url,
+          undefined,
+          {
+            templateName: REVIEW_FIRST_PROVIDER_NOTIFICATION_FAILED_TEMPLATE,
+            metadata: {
+              requestId,
+              leadId,
+              providerId,
+              idempotencyKey: `${REVIEW_FIRST_PROVIDER_NOTIFICATION_FAILED_TEMPLATE}:${leadId}`,
+            },
+          },
+        ).catch((error) => {
+          console.warn('[review-first.provider-notification] customer_failure_notice_failed', {
+            requestId,
+            leadId,
+            providerId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+      }
+    }
+  }
+
+  return repair.repaired
+    ? { handled: true as const, result: 'failed_repaired' }
+    : { handled: true as const, result: 'failed_skipped', reason: repair.reason }
 }
 
 export async function notifyCustomerRfpResponseSummary(requestId: string) {
@@ -1420,6 +1632,7 @@ export async function expireRfpInvitations() {
       assignmentHoldId: null,
       status: { in: ['SENT', 'VIEWED'] },
       respondedAt: null,
+      notifiedAt: { not: null },
       expiresAt: { lte: now },
       jobRequest: {
         status: 'MATCHING',
