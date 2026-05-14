@@ -92,7 +92,7 @@ export default async function CustomerProviderProfilePage({
     provider.providerCategories[0]?.categorySlug ?? provider.skills[0] ?? 'other'
   const bookingUrl = `/book/${encodeURIComponent(bookingCategory)}?provider=${encodeURIComponent(provider.id)}`
   const ctaHref = isCustomerSignedIn ? bookingUrl : `/sign-in?next=${encodeURIComponent(bookingUrl)}`
-  const ctaLabel = isCustomerSignedIn ? 'Request service' : 'Sign in to request service'
+  const ctaLabel = isCustomerSignedIn ? 'Request service from this provider' : 'Sign in to request service'
 
   const initials =
     provider.name?.split(' ').map(s => s[0]).slice(0, 2).join('') ?? 'P'
