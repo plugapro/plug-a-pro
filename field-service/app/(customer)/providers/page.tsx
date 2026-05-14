@@ -211,13 +211,19 @@ export default async function ProviderCataloguePage({
     .slice(0, 20)
 
   return (
-    <div className="pb-8">
+    <div className="min-h-screen pb-32 screen-enter">
       {/* Header */}
       <div className="px-[18px] pt-[60px] pb-4">
-        <h1 className="text-[30px] font-bold tracking-[-0.025em] leading-[1.1] text-[var(--ink)]">
+        <p
+          className="text-[11px] font-bold tracking-[0.08em] uppercase mb-1"
+          style={{ color: 'var(--brand-purple)' }}
+        >
+          Browse providers
+        </p>
+        <h1 className="text-[30px] font-bold tracking-[-0.025em] leading-[1.1]" style={{ color: 'var(--ink)' }}>
           Find a provider
         </h1>
-        <p className="mt-1.5 text-[14px] text-[var(--ink-mute)]">
+        <p className="mt-1.5 text-[14px]" style={{ color: 'var(--ink-mute)' }}>
           {isSignedIn
             ? 'Search and compare reviewed providers near you.'
             : 'Browse reviewed providers — sign in only when you request service.'}
@@ -228,11 +234,10 @@ export default async function ProviderCataloguePage({
       <div className="flex gap-2 overflow-x-auto px-[18px] pb-3 scrollbar-hide">
         <Link
           href={`/providers${normalizedQuery ? `?q=${encodeURIComponent(normalizedQuery)}` : ''}`}
-          className={`shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap ${
-            !normalizedCategory
-              ? 'bg-[var(--ink)] text-[var(--card)]'
-              : 'bg-[var(--card-alt)] text-[var(--ink)]'
-          }`}
+          className="shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap"
+          style={!normalizedCategory
+            ? { background: 'var(--brand-purple)', color: '#fff' }
+            : { background: 'var(--card-alt)', color: 'var(--ink)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
         >
           All
         </Link>
@@ -248,11 +253,10 @@ export default async function ProviderCataloguePage({
             <Link
               key={option.tag}
               href={`/providers?${query.toString()}`}
-              className={`shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap ${
-                isActive
-                  ? 'bg-[var(--ink)] text-[var(--card)]'
-                  : 'bg-[var(--card-alt)] text-[var(--ink)]'
-              }`}
+              className="shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap"
+              style={isActive
+                ? { background: 'var(--brand-purple)', color: '#fff' }
+                : { background: 'var(--card-alt)', color: 'var(--ink)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
             >
               {option.label}
             </Link>
@@ -262,11 +266,14 @@ export default async function ProviderCataloguePage({
 
       {/* Provider list */}
       {rankedProviders.length === 0 ? (
-        <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-8 text-center mt-4">
-          <p className="text-[15px] font-bold text-[var(--ink)] mb-1">No providers found</p>
-          <p className="text-[13px] text-[var(--ink-mute)]">Try a different category or request a service.</p>
+        <div className="px-[18px] mt-4">
+          <div className="rounded-[20px] p-8 text-center" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <p className="text-[15px] font-bold mb-1" style={{ color: 'var(--ink)' }}>No providers found</p>
+            <p className="text-[13px]" style={{ color: 'var(--ink-mute)' }}>Try a different category or request a service.</p>
+          </div>
         </div>
       ) : (
+        <div className="px-[18px]">
         <ProviderSearchInput
           selectedCategory={normalizedCategory || null}
           selectedArea={normalizedArea || null}
@@ -295,6 +302,7 @@ export default async function ProviderCataloguePage({
             rateNegotiable: provider.providerRates[0]?.rateNegotiable ?? true,
           }))}
         />
+        </div>
       )}
     </div>
   )

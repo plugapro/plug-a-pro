@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react'
 import { ProviderCard } from '@/components/shared/ProviderCard'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
@@ -64,29 +63,42 @@ export function ProviderSearchInput({
   }, [providers, normalizedSearchTerm])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <input
         value={searchTerm}
         onChange={(event) => setSearchTerm(event.target.value)}
         placeholder="Search plumbers, handymen, carpenters..."
-        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/25"
+        className="w-full h-[44px] rounded-[14px] px-4 text-[14px] outline-none transition-[box-shadow]"
+        style={{
+          background: 'var(--card)',
+          color: 'var(--ink)',
+          boxShadow: 'inset 0 0 0 1px var(--border)',
+        }}
         aria-label="Search providers"
       />
 
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[12px]" style={{ color: 'var(--ink-mute)' }}>
         {selectedCategory ? `Category: ${categoryLabel(selectedCategory)}` : 'All categories'}
         {selectedArea ? ` · Area: ${normaliseLocationDisplayName(selectedArea)}` : ''}
       </p>
 
       {visibleProviders.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No providers match your search
-        </p>
+        <div
+          className="rounded-[20px] p-8 text-center"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
+          <p className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>No providers match your search</p>
+          <p className="text-[13px] mt-1" style={{ color: 'var(--ink-mute)' }}>Try a different term or browse all categories.</p>
+        </div>
       ) : (
         <div className="space-y-3">
           {visibleProviders.map((provider) => (
-            <div key={provider.id} className="rounded-2xl border bg-card p-3 shadow-sm">
-              <p className="text-xs text-muted-foreground">
+            <div
+              key={provider.id}
+              className="rounded-[20px] p-4"
+              style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              <p className="text-[11px] font-bold tracking-[0.06em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
                 {categoryLabel(provider.mainCategory)}
                 {provider.experience ? ` · ${provider.experience}` : ''}
               </p>
@@ -107,23 +119,26 @@ export function ProviderSearchInput({
                 }}
               />
 
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {provider.callOutFee != null ? `Call-out fee: R${provider.callOutFee}` : 'Call-out fee on request'}
-                  {provider.rateNegotiable ? ' · Rate negotiable' : ' · Fixed rate'}
-                </p>
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/providers/${provider.id}`}>View profile</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link
-                    href={`/book/${encodeURIComponent(provider.mainCategory ?? provider.skills[0] ?? 'other')}?provider=${encodeURIComponent(provider.id)}`}
-                  >
-                    Request service
-                  </Link>
-                </Button>
+              <p className="text-[12px] mt-3" style={{ color: 'var(--ink-mute)' }}>
+                {provider.callOutFee != null ? `Call-out fee: R${provider.callOutFee}` : 'Call-out fee on request'}
+                {provider.rateNegotiable ? ' · Rate negotiable' : ' · Fixed rate'}
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Link
+                  href={`/providers/${provider.id}`}
+                  className="h-[42px] rounded-[12px] flex items-center justify-center text-[13px] font-semibold"
+                  style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}
+                >
+                  View profile
+                </Link>
+                <Link
+                  href={`/book/${encodeURIComponent(provider.mainCategory ?? provider.skills[0] ?? 'other')}?provider=${encodeURIComponent(provider.id)}`}
+                  className="h-[42px] rounded-[12px] flex items-center justify-center text-[13px] font-semibold text-white"
+                  style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
+                >
+                  Request service
+                </Link>
               </div>
             </div>
           ))}
