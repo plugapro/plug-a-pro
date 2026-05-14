@@ -16,6 +16,7 @@ import { createBookingArtifactsForApprovedQuote } from '../quotes'
 import { initializeBookingPayment } from '../payments'
 import { emitMatchEvent } from './events'
 import { notifyExpiredJobParties } from './customer-recontact'
+import { expireOpenJobRequest } from '../job-requests/expire-job-request'
 import { releaseProviderCapacity } from './reservation'
 import { sendText } from '../whatsapp-interactive'
 import { hasSuccessfulMessageForRecipient } from '../message-events'
@@ -1814,12 +1815,16 @@ async function offerNextRankedCandidate(params: {
       where: { id: params.dispatchDecisionId },
       data: { status: 'NO_MATCH', nextRetryAt: null },
     })
-    // Quick Match uses the dispatch decision's RANKED attempts as the customer-
-    // facing queue. When the queue is exhausted, terminate the request instead
-    // of reopening it for a fresh ranking loop.
-    await db.jobRequest.update({
-      where: { id: params.jobRequestId },
-      data: { status: 'EXPIRED' },
+    // Quick Match queue exhausted — terminate the request instead of reopening
+    // it for a fresh ranking loop. Use expireOpenJobRequest for guarded expiry.
+    const { transitioned } = await expireOpenJobRequest(
+      params.jobRequestId,
+      'quick_match_queue_exhausted',
+    )
+    console.info('[offerNextRankedCandidate] queue exhausted', {
+      jobRequestId: params.jobRequestId,
+      dispatchDecisionId: params.dispatchDecisionId,
+      transitioned,
     })
     return { nextOfferedProviderId: null, assignmentHoldId: null }
   }
@@ -2379,16 +2384,15 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
   const recentCutoff = new Date(
     now.getTime() - MATCHING_CONFIG.quickMatchProgressUpdateMinutes * 60_000,
   )
+  // OPEN is the live status for Quick Match AUTO_ASSIGN requests — the status
+  // never transitions to MATCHING in this flow. Also include MATCHING in case
+  // a legacy transition fired. Remove the active-hold filter so updates fire
+  // in the gap between holds (rotating to next provider) as well as when held.
   const requests = await db.jobRequest.findMany({
     where: {
-      status: 'MATCHING',
+      status: { in: ['OPEN', 'MATCHING'] },
       assignmentMode: 'AUTO_ASSIGN',
-      assignmentHolds: {
-        some: {
-          status: 'ACTIVE',
-          expiresAt: { gt: now },
-        },
-      },
+      createdAt: { gte: new Date(now.getTime() - 48 * 60 * 60 * 1000) },
     },
     select: {
       id: true,
@@ -2396,15 +2400,6 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
       isTestRequest: true,
       cohortName: true,
       customer: { select: { phone: true, isTestUser: true } },
-      assignmentHolds: {
-        where: {
-          status: 'ACTIVE',
-          expiresAt: { gt: now },
-        },
-        select: { id: true },
-        orderBy: { expiresAt: 'asc' },
-        take: 1,
-      },
     },
     take: 50,
   })
@@ -2452,7 +2447,6 @@ export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
           templateName: 'interactive:quick_match_progress_update',
           metadata: {
             jobRequestId: request.id,
-            activeHoldId: request.assignmentHolds[0]?.id ?? null,
             isTestRequest: request.isTestRequest,
             cohortName: request.cohortName,
             recipientIsTest: request.customer?.isTestUser ?? false,
