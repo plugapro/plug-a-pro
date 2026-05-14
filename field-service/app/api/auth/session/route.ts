@@ -26,9 +26,10 @@ const MAX_SESSION_MAX_AGE = 60 * 60 * 24
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { accessToken, expiresIn } = body as {
+    const { accessToken, expiresIn, requireAdmin } = body as {
       accessToken: unknown
       expiresIn: unknown
+      requireAdmin?: boolean
     }
 
     if (!accessToken || typeof accessToken !== 'string') {
@@ -87,6 +88,13 @@ export async function POST(request: NextRequest) {
         adminAccess = existingAdmin.active
         adminRole = existingAdmin.active ? existingAdmin.role.toLowerCase() : null
       }
+    }
+
+    // Refuse to issue a session cookie when the caller requires admin access but the
+    // user is not an active admin. This prevents a race window where a non-admin
+    // briefly holds a valid HttpOnly session cookie.
+    if (requireAdmin && !adminAccess) {
+      return NextResponse.json({ error: 'Admin access required', adminAccess: false }, { status: 403 })
     }
 
     const requestedMaxAge =

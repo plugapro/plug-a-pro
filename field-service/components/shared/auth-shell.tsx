@@ -32,7 +32,8 @@ function AuthShell({
   const router = useRouter()
 
   function handleBack() {
-    router.push(backHref!)
+    if (!backHref) return
+    router.push(backHref)
   }
 
   return (

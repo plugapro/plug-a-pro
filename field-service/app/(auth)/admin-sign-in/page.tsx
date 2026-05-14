@@ -23,6 +23,7 @@ export default function AdminSignInPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [forgotSent, setForgotSent] = useState(false)
   const next = getSafeAdminNextPath(
     searchParams.get('next') ?? searchParams.get('callbackUrl'),
     '/admin',
@@ -47,28 +48,34 @@ export default function AdminSignInPage() {
         return
       }
 
-      if (data.session?.access_token) {
-        const sessionRes = await fetch('/api/auth/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            accessToken: data.session.access_token,
-            expiresIn: data.session.expires_in ?? 3600,
-          }),
-        })
-        if (!sessionRes.ok) {
-          setError('Failed to establish session. Please try again.')
-          return
-        }
+      if (!data.session?.access_token) {
+        setError('Could not establish a session. Please try again.')
+        return
+      }
 
-        const sessionData = (await sessionRes.json()) as { adminAccess?: boolean }
+      // Pass requireAdmin: true so the server only writes the cookie when admin
+      // access is confirmed — avoids a race where a non-admin gets a live session.
+      const sessionRes = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: data.session.access_token,
+          expiresIn: data.session.expires_in ?? 3600,
+          requireAdmin: true,
+        }),
+      })
 
-        if (!sessionData.adminAccess) {
-          await supabase.auth.signOut()
-          await fetch('/api/auth/session', { method: 'DELETE' })
-          setError('Your account does not have admin access.')
-          return
-        }
+      if (sessionRes.status === 403) {
+        // Server confirmed the user is not an admin — no cookie was set, so no
+        // clean-up needed. Sign out the in-memory Supabase session only.
+        try { await supabase.auth.signOut() } catch { /* best-effort */ }
+        setError('Your account does not have admin access.')
+        return
+      }
+
+      if (!sessionRes.ok) {
+        setError('Failed to establish session. Please try again.')
+        return
       }
 
       // Hard navigation so the browser sends the newly-set HttpOnly cookie
@@ -128,12 +135,17 @@ export default function AdminSignInPage() {
             </label>
             <button
               type="button"
-              onClick={() => alert('Password reset — contact your Plug A Pro administrator.')}
+              onClick={() => setForgotSent(true)}
               className="text-[12px] font-semibold text-[var(--brand-purple)] outline-none focus-visible:underline"
             >
               Forgot?
             </button>
           </div>
+          {forgotSent && (
+            <p className="mb-2 text-[12px] text-[var(--ink-mute)]">
+              Contact your Plug A Pro administrator to reset your password.
+            </p>
+          )}
           <div style={{ position: 'relative' }}>
             <div style={{
               position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
