@@ -149,6 +149,32 @@ const TEMPLATES = [
     examples: ['Sipho Mokoena', 'https://app.plugapro.co.za/download'],
   },
   {
+    name: 'wallet_payat_topup_initiated',
+    category: 'UTILITY',
+    body: 'Tap the button below to pay for your Plug-A-Pro wallet top-up. {{1}} = {{2}} credits. Credits will appear in your wallet once Pay@ confirms payment.',
+    examples: ['R100.00', '2'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'Pay now',
+        url: 'https://app.plugapro.co.za/provider/credits/{{1}}',
+        example: ['payat-demo'],
+      },
+    ],
+  },
+  {
+    name: 'mvp1_accepted_lock_customer_confirmation',
+    category: 'UTILITY',
+    body: 'Good news. Your selected Plug A Pro provider has accepted your request. Your request is confirmed. We will keep you updated on the next step.',
+    examples: [],
+  },
+  {
+    name: 'mvp1_accepted_lock_provider_confirmation',
+    category: 'UTILITY',
+    body: 'Job accepted. Your credit has been applied and the customer details are now available in your job view.',
+    examples: [],
+  },
+  {
     name: 'technician_application_declined',
     category: 'UTILITY',
     // {{1}} applicant name, {{2}} reason or "at this time"
@@ -173,6 +199,7 @@ const MANAGED_EXISTING_TEMPLATE_NAMES = [
   'job_completed',
   'lead_unlock_customer_intro',
   'lead_unlock_provider',
+  'otp_login',
   'provider_invoice_send',
   'quote_ready',
   'technician_arrived',
@@ -198,8 +225,10 @@ async function registerTemplate(tpl) {
   const components = [{
     type: 'BODY',
     text: tpl.body,
-    example: { body_text: [tpl.examples] },
   }]
+  if (tpl.examples?.length) {
+    components[0].example = { body_text: [tpl.examples] }
+  }
 
   if (tpl.buttons?.length) {
     components.push({

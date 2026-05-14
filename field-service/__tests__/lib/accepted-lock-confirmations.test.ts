@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Prisma } from '@prisma/client'
 import { sendAcceptedLockConfirmations } from '../../lib/provider-accepted-lock'
 
-const { mockDb, mockSendTemplate } = vi.hoisted(() => ({
+const { mockDb, mockSendTemplate, mockSendText } = vi.hoisted(() => ({
   mockDb: {
     lead: {
       findUnique: vi.fn(),
@@ -13,12 +13,16 @@ const { mockDb, mockSendTemplate } = vi.hoisted(() => ({
       create: vi.fn(),
       updateMany: vi.fn(),
     },
+    inboundWhatsAppMessage: {
+      findFirst: vi.fn(),
+    },
   },
   mockSendTemplate: vi.fn(),
+  mockSendText: vi.fn(),
 }))
 
 vi.mock('../../lib/db', () => ({ db: mockDb }))
-vi.mock('../../lib/whatsapp', () => ({ sendTemplate: mockSendTemplate }))
+vi.mock('../../lib/whatsapp', () => ({ sendTemplate: mockSendTemplate, sendText: mockSendText }))
 
 function makeLockedLead(overrides: Record<string, unknown> = {}) {
   return {
@@ -45,7 +49,9 @@ describe('accepted lock confirmations', () => {
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.messageEvent.create.mockImplementation(async () => ({ id: `message-${mockDb.messageEvent.create.mock.calls.length}` }))
     mockDb.messageEvent.updateMany.mockResolvedValue({ count: 1 })
+    mockDb.inboundWhatsAppMessage.findFirst.mockResolvedValue({ id: 'inbound-recent-1' })
     mockSendTemplate.mockResolvedValue('wamid-confirmation')
+    mockSendText.mockResolvedValue('wamid-text-confirmation')
   })
 
   it('sends the customer confirmation after accepted lock', async () => {
@@ -177,6 +183,107 @@ describe('accepted lock confirmations', () => {
       }),
     })
     expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('falls back to text when accepted-lock templates are not approved', async () => {
+    mockSendTemplate
+      .mockRejectedValueOnce(new Error('[TEMPLATE_NOT_APPROVED] Template "mvp1_accepted_lock_customer_confirmation" is not approved. code=132001'))
+      .mockResolvedValueOnce('wamid-provider-confirmation')
+
+    const result = await sendAcceptedLockConfirmations({
+      leadId: 'lead-lock-1',
+      providerId: 'provider-lock-1',
+      traceId: 'trace-lock-1',
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      customer: { sent: true },
+      provider: { sent: true },
+    })
+    expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+      to: '+27220000000',
+      text: expect.stringContaining('Your request is confirmed'),
+      templateName: 'mvp1_accepted_lock_customer_confirmation:fallback_text',
+      recordMessageEvent: false,
+      metadata: expect.objectContaining({
+        leadId: 'lead-lock-1',
+        providerId: 'provider-lock-1',
+        recipientRole: 'customer',
+        fallbackReason: 'TEMPLATE_NOT_APPROVED',
+      }),
+    }))
+    expect(mockDb.inboundWhatsAppMessage.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        phone: { in: expect.arrayContaining(['+27220000000', '27220000000']) },
+      }),
+      select: { id: true },
+    })
+    expect(mockDb.messageEvent.updateMany).toHaveBeenCalledWith({
+      where: { id: 'message-1', status: 'QUEUED' },
+      data: expect.objectContaining({
+        status: 'SENT',
+        externalId: 'wamid-text-confirmation',
+        failureReason: null,
+      }),
+    })
+  })
+
+  it('does not send fallback text when the WhatsApp service window is closed', async () => {
+    mockDb.inboundWhatsAppMessage.findFirst.mockResolvedValueOnce(null)
+    mockSendTemplate
+      .mockRejectedValueOnce(new Error('[TEMPLATE_NOT_APPROVED] Template "mvp1_accepted_lock_customer_confirmation" is not approved. code=132001'))
+      .mockResolvedValueOnce('wamid-provider-confirmation')
+
+    const result = await sendAcceptedLockConfirmations({
+      leadId: 'lead-lock-1',
+      providerId: 'provider-lock-1',
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      customer: {
+        sent: false,
+        failureReason: expect.stringContaining('fallback text skipped: NO_ACTIVE_WHATSAPP_SERVICE_WINDOW'),
+      },
+      provider: { sent: true },
+    })
+    expect(mockSendText).not.toHaveBeenCalled()
+    expect(mockDb.messageEvent.updateMany).toHaveBeenCalledWith({
+      where: { id: 'message-1', status: 'QUEUED' },
+      data: expect.objectContaining({
+        status: 'FAILED',
+        failureReason: expect.stringContaining('NO_ACTIVE_WHATSAPP_SERVICE_WINDOW'),
+      }),
+    })
+  })
+
+  it('records the fallback text failure if template and fallback both fail', async () => {
+    mockSendTemplate
+      .mockRejectedValueOnce(new Error('[TEMPLATE_NOT_APPROVED] Template "mvp1_accepted_lock_customer_confirmation" is not approved. code=132001'))
+      .mockResolvedValueOnce('wamid-provider-confirmation')
+    mockSendText.mockRejectedValueOnce(new Error('WhatsApp send failed: outside customer service window'))
+
+    const result = await sendAcceptedLockConfirmations({
+      leadId: 'lead-lock-1',
+      providerId: 'provider-lock-1',
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      customer: {
+        sent: false,
+        failureReason: expect.stringContaining('fallback text failed: WhatsApp send failed'),
+      },
+      provider: { sent: true },
+    })
+    expect(mockDb.messageEvent.updateMany).toHaveBeenCalledWith({
+      where: { id: 'message-1', status: 'QUEUED' },
+      data: expect.objectContaining({
+        status: 'FAILED',
+        failureReason: expect.stringContaining('fallback text failed: WhatsApp send failed'),
+      }),
+    })
   })
 
   it('retries only the failed recipient on partial failure replay without re-sending to succeeded recipient', async () => {

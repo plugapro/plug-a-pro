@@ -2,7 +2,8 @@ import { Prisma } from '@prisma/client'
 import { db } from './db'
 import { hasSuccessfulMessageForRecipient } from './message-events'
 import type { TemplateName } from './messaging-templates'
-import { sendTemplate } from './whatsapp'
+import { sendTemplate, sendText as sendWhatsAppText } from './whatsapp'
+import { phoneLookupVariants } from './whatsapp-identity'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
@@ -11,6 +12,7 @@ const CREDIT_APPLICATION_REFERENCE_TYPES = [
 
 const ACCEPTED_LOCK_CUSTOMER_TEMPLATE = 'mvp1_accepted_lock_customer_confirmation'
 const ACCEPTED_LOCK_PROVIDER_TEMPLATE = 'mvp1_accepted_lock_provider_confirmation'
+const WHATSAPP_FREEFORM_FALLBACK_WINDOW_MS = 23 * 60 * 60 * 1000
 
 type AcceptedLockErrorCode =
   | 'NOT_FOUND'
@@ -682,6 +684,22 @@ async function markAcceptedLockConfirmationFailed(params: {
   })
 }
 
+function isTemplateNotApprovedError(error: unknown) {
+  return error instanceof Error && error.message.includes('[TEMPLATE_NOT_APPROVED]')
+}
+
+async function hasRecentInboundWhatsappSession(to: string) {
+  const cutoff = new Date(Date.now() - WHATSAPP_FREEFORM_FALLBACK_WINDOW_MS)
+  const inbound = await db.inboundWhatsAppMessage.findFirst({
+    where: {
+      phone: { in: phoneLookupVariants(to) },
+      firstSeenAt: { gte: cutoff },
+    },
+    select: { id: true },
+  })
+  return Boolean(inbound)
+}
+
 async function recordAcceptedLockConfirmationFailure(params: {
   to: string
   templateName: string
@@ -843,6 +861,102 @@ async function sendAcceptedLockConfirmation(params: {
     })
     return { sent: true }
   } catch (error) {
+    if (isTemplateNotApprovedError(error)) {
+      logAcceptedLockConfirmation({
+        leadId: params.leadId,
+        providerId: params.providerId,
+        serviceRequestId: params.serviceRequestId,
+        recipientRole: params.recipientRole,
+        result: 'fallback_attempt',
+        traceId: params.traceId,
+        reason: 'TEMPLATE_NOT_APPROVED',
+        error,
+      })
+
+      try {
+        const hasFallbackWindow = await hasRecentInboundWhatsappSession(to)
+        if (!hasFallbackWindow) {
+          const failureReason = `${error instanceof Error ? error.message : String(error)}; fallback text skipped: NO_ACTIVE_WHATSAPP_SERVICE_WINDOW`
+          await markAcceptedLockConfirmationFailed({
+            messageEventId: reservation.id,
+            failureReason,
+          }).catch(async () => {
+            await recordAcceptedLockConfirmationFailure({
+              ...params,
+              to,
+              failureReason,
+            })
+          })
+          logAcceptedLockConfirmation({
+            leadId: params.leadId,
+            providerId: params.providerId,
+            serviceRequestId: params.serviceRequestId,
+            recipientRole: params.recipientRole,
+            result: 'failed',
+            traceId: params.traceId,
+            reason: 'NO_ACTIVE_WHATSAPP_SERVICE_WINDOW',
+            error,
+          })
+          return { sent: false, failureReason }
+        }
+
+        const externalId = await sendWhatsAppText({
+          to,
+          text: params.body,
+          templateName: `${params.templateName}:fallback_text`,
+          metadata: {
+            leadId: params.leadId,
+            providerId: params.providerId,
+            jobRequestId: params.serviceRequestId,
+            recipientRole: params.recipientRole,
+            idempotencyKey: params.idempotencyKey,
+            source: 'accepted_lock_confirmation',
+            fallbackReason: 'TEMPLATE_NOT_APPROVED',
+            ...(params.traceId ? { traceId: params.traceId } : {}),
+          },
+          recordMessageEvent: false,
+        })
+        await markAcceptedLockConfirmationSent({
+          messageEventId: reservation.id,
+          externalId,
+        })
+        logAcceptedLockConfirmation({
+          leadId: params.leadId,
+          providerId: params.providerId,
+          serviceRequestId: params.serviceRequestId,
+          recipientRole: params.recipientRole,
+          result: 'sent_fallback_text',
+          traceId: params.traceId,
+          reason: 'TEMPLATE_NOT_APPROVED',
+        })
+        return { sent: true }
+      } catch (fallbackError) {
+        const fallbackFailureReason = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        const failureReason = `${error instanceof Error ? error.message : String(error)}; fallback text failed: ${fallbackFailureReason}`
+        await markAcceptedLockConfirmationFailed({
+          messageEventId: reservation.id,
+          failureReason,
+        }).catch(async () => {
+          await recordAcceptedLockConfirmationFailure({
+            ...params,
+            to,
+            failureReason,
+          })
+        })
+        logAcceptedLockConfirmation({
+          leadId: params.leadId,
+          providerId: params.providerId,
+          serviceRequestId: params.serviceRequestId,
+          recipientRole: params.recipientRole,
+          result: 'failed',
+          traceId: params.traceId,
+          reason: 'FALLBACK_TEXT_FAILED',
+          error: fallbackError,
+        })
+        return { sent: false, failureReason }
+      }
+    }
+
     const failureReason = error instanceof Error ? error.message : String(error)
     await markAcceptedLockConfirmationFailed({
       messageEventId: reservation.id,
