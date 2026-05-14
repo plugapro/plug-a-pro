@@ -11,6 +11,7 @@ import { getSafeCustomerNextPath, getSafeProviderNextPath } from '@/lib/safe-red
 import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
 import { PROVIDER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
+import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 
 type SendCodeError = {
   title: string
@@ -237,6 +238,9 @@ export default function ProviderSignInPage() {
                 if (error?.code === 'INVALID_PHONE_NUMBER' || error?.code === 'INVALID_MOBILE_NUMBER') setError(null)
               }}
             />
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink-mute)]">
+              {SA_OTP_SIGN_IN_HELPER_TEXT}
+            </p>
           </div>
 
           {error && (

@@ -13,6 +13,7 @@ import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
+import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 
 function getSupabaseClient() {
   return createClient(
@@ -116,6 +117,9 @@ export default function SignInPage() {
             disabled={loading}
             onEdit={() => setError(null)}
           />
+          <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--ink-mute)]">
+            {SA_OTP_SIGN_IN_HELPER_TEXT}
+          </p>
         </div>
 
         {WA_ENABLED && (
