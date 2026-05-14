@@ -5,45 +5,23 @@ import { notFound, redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
-import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
-import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { isEnabled } from '@/lib/flags'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { ArrowLeft, MapPin, ShieldCheck, Zap, Star, ExternalLink } from 'lucide-react'
 import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
-const CATEGORY_LABELS = new Map(SERVICE_CATEGORY_OPTIONS.map((option) => [option.tag, option.label]))
+const CATEGORY_LABELS = new Map(SERVICE_CATEGORY_OPTIONS.map(o => [o.tag, o.label]))
 
 function labelForCategory(tag: string) {
   return CATEGORY_LABELS.get(tag) ?? tag.replaceAll('_', ' ')
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-
-  const provider = await db.provider.findUnique({
-    where: { id },
-    select: { name: true, bio: true },
-  })
-
-  if (!provider) {
-    return buildMetadata({ title: 'Provider Profile' })
-  }
-
-  const summary = provider.bio ?? ''
-  const description =
-    summary.length > 150 ? `${summary.slice(0, 150)}...` : summary
-
-  return buildMetadata({
-    title: provider.name,
-    description: description || undefined,
-  })
+  const provider = await db.provider.findUnique({ where: { id }, select: { name: true, bio: true } })
+  if (!provider) return buildMetadata({ title: 'Provider Profile' })
+  const bio = provider.bio ?? ''
+  const description = bio.length > 150 ? `${bio.slice(0, 150)}...` : bio || undefined
+  return buildMetadata({ title: provider.name, description })
 }
 
 export default async function CustomerProviderProfilePage({
@@ -72,22 +50,14 @@ export default async function CustomerProviderProfilePage({
       evidenceNote: true,
       portfolioUrls: true,
       verified: true,
+      availableNow: true,
       providerCategories: {
         where: { approvalStatus: 'APPROVED' },
-        select: {
-          categorySlug: true,
-          subServices: true,
-          yearsExperience: true,
-        },
+        select: { categorySlug: true, subServices: true, yearsExperience: true },
         orderBy: { categorySlug: 'asc' },
       },
       providerRates: {
-        select: {
-          categorySlug: true,
-          callOutFee: true,
-          hourlyRate: true,
-          rateNegotiable: true,
-        },
+        select: { categorySlug: true, callOutFee: true, hourlyRate: true, rateNegotiable: true },
         orderBy: { categorySlug: 'asc' },
       },
     },
@@ -96,20 +66,11 @@ export default async function CustomerProviderProfilePage({
   if (!provider) notFound()
 
   const jobs = await db.job.findMany({
-    where: {
-      providerId: provider.id,
-      status: 'COMPLETED',
-    },
+    where: { providerId: provider.id, status: 'COMPLETED' },
     include: {
       booking: {
         include: {
-          match: {
-            include: {
-              jobRequest: {
-                select: { category: true },
-              },
-            },
-          },
+          match: { include: { jobRequest: { select: { category: true } } } },
         },
       },
     },
@@ -118,215 +79,381 @@ export default async function CustomerProviderProfilePage({
   })
 
   const reviews = await db.review.findMany({
-    where: {
-      reviewerType: 'CUSTOMER',
-      jobId: { in: jobs.map((job) => job.id) },
-    },
+    where: { reviewerType: 'CUSTOMER', jobId: { in: jobs.map(j => j.id) } },
     orderBy: { createdAt: 'desc' },
   })
 
-  const averageRating = reviews.length > 0
-    ? reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length
-    : null
-  const trustSignals = buildProviderTrustSignals({
-    marketplaceApproved: provider.verified,
-    skills: provider.skills,
-    serviceAreas: provider.serviceAreas,
-    experience: provider.experience,
-    evidenceNote: provider.evidenceNote,
-    completedJobs: jobs.length,
-    reviewCount: reviews.length,
-    averageRating,
-  })
+  const averageRating =
+    reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + r.score, 0) / reviews.length
+      : null
 
-  const bookingCategory = provider.providerCategories[0]?.categorySlug ?? provider.skills[0] ?? 'other'
-  const bookingUrl = `/book/${encodeURIComponent(bookingCategory)}?provider=${encodeURIComponent(
-    provider.id,
-  )}`
+  const bookingCategory =
+    provider.providerCategories[0]?.categorySlug ?? provider.skills[0] ?? 'other'
+  const bookingUrl = `/book/${encodeURIComponent(bookingCategory)}?provider=${encodeURIComponent(provider.id)}`
+  const ctaHref = isCustomerSignedIn ? bookingUrl : `/sign-in?next=${encodeURIComponent(bookingUrl)}`
+  const ctaLabel = isCustomerSignedIn ? 'Request service' : 'Sign in to request service'
+
+  const initials =
+    provider.name?.split(' ').map(s => s[0]).slice(0, 2).join('') ?? 'P'
+  const mainCategoryLabel =
+    provider.providerCategories.length > 0
+      ? labelForCategory(provider.providerCategories[0].categorySlug)
+      : (provider.skills[0] ?? 'General services')
 
   return (
-    <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
-      <div>
-        {isCustomerSignedIn ? (
-          <Link
-            href="/bookings"
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-          ← My bookings
-          </Link>
-        ) : null}
-        <h1 className="text-xl font-semibold mt-1">{provider.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {provider.verified ? 'Reviewed marketplace profile' : 'Provider profile'}
-        </p>
+    <div className="pb-32 screen-enter">
+
+      {/* ── Back nav ─────────────────────────────────────────────── */}
+      <div className="px-[18px] pt-[60px] pb-2">
+        <Link
+          href="/providers"
+          className="inline-flex items-center gap-1.5 text-[13px] font-semibold press-feedback"
+          style={{ color: 'var(--ink-mute)' }}
+        >
+          <ArrowLeft size={15} />
+          Providers
+        </Link>
       </div>
 
-      <Card>
-        <CardContent className="pt-5">
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 overflow-hidden rounded-2xl border bg-muted">
-              {provider.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={provider.avatarUrl} alt={`${provider.name} profile photo`} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                  No photo
-                </div>
+      {/* ── Hero ─────────────────────────────────────────────────── */}
+      <div className="px-[18px] pt-3 pb-5">
+        <div className="flex items-start gap-4">
+          <div
+            className="shrink-0 w-20 h-20 rounded-[20px] overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
+          >
+            {provider.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={provider.avatarUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[22px] font-bold text-white">
+                {initials}
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0 pt-1">
+            <p
+              className="text-[11px] font-bold tracking-[0.06em] uppercase mb-0.5"
+              style={{ color: 'var(--brand-purple)' }}
+            >
+              {mainCategoryLabel}
+            </p>
+            <h1
+              className="text-[22px] font-bold tracking-[-0.025em] leading-tight"
+              style={{ color: 'var(--ink)' }}
+            >
+              {provider.name}
+            </h1>
+            {provider.experience && (
+              <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>
+                {provider.experience}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {provider.verified && (
+                <span
+                  className="inline-flex items-center gap-1 h-5 px-2 rounded-full text-[10.5px] font-bold tracking-[0.04em] uppercase"
+                  style={{ background: 'rgba(15,162,138,0.12)', color: '#0FA28A' }}
+                >
+                  <ShieldCheck size={10} />
+                  Reviewed
+                </span>
+              )}
+              {provider.availableNow && (
+                <span
+                  className="inline-flex items-center gap-1 h-5 px-2 rounded-full text-[10.5px] font-bold tracking-[0.04em] uppercase"
+                  style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a' }}
+                >
+                  <Zap size={10} />
+                  Available now
+                </span>
               )}
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">
-                {provider.providerCategories.length > 0
-                  ? labelForCategory(provider.providerCategories[0].categorySlug)
-                  : 'General services'}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {provider.experience || 'Profile details coming soon'}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {provider.verified ? <Badge variant="success">Reviewed</Badge> : null}
-                {provider.serviceAreas.length > 0 ? (
-                  <Badge variant="outline">{provider.serviceAreas[0]}</Badge>
-                ) : null}
-              </div>
-            </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Request service
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isCustomerSignedIn ? (
-            <Button asChild className="w-full">
-              <Link href={bookingUrl}>Request service from this provider</Link>
-            </Button>
-          ) : (
-            <Button asChild variant="outline" className="w-full">
-              <Link href={`/sign-in?next=${encodeURIComponent(bookingUrl)}`}>
-                Sign in to request service
-              </Link>
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-2 mt-4">
+          <div
+            className="rounded-[14px] px-3 py-3 text-center"
+            style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+          >
+            <p className="text-[20px] font-bold tracking-[-0.02em]" style={{ color: 'var(--ink)' }}>
+              {averageRating ? averageRating.toFixed(1) : '—'}
+            </p>
+            <p className="text-[10.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>
+              {averageRating ? '★ Rating' : 'No rating'}
+            </p>
+          </div>
+          <div
+            className="rounded-[14px] px-3 py-3 text-center"
+            style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+          >
+            <p className="text-[20px] font-bold tracking-[-0.02em]" style={{ color: 'var(--ink)' }}>
+              {reviews.length}
+            </p>
+            <p className="text-[10.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>Reviews</p>
+          </div>
+          <div
+            className="rounded-[14px] px-3 py-3 text-center"
+            style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+          >
+            <p className="text-[20px] font-bold tracking-[-0.02em]" style={{ color: 'var(--ink)' }}>
+              {jobs.length}
+            </p>
+            <p className="text-[10.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>Jobs done</p>
+          </div>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Overview
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {provider.bio ? (
-            <p>{provider.bio}</p>
-          ) : (
-            <p className="text-muted-foreground">Profile details coming soon.</p>
-          )}
+      <div className="px-[18px] space-y-5">
 
-          {provider.providerCategories.length > 0 ? (
-            <div className="space-y-2">
-              <p className="font-medium">Services and experience</p>
-              {provider.providerCategories.map((category) => {
-                const rate = provider.providerRates.find((item) => item.categorySlug === category.categorySlug)
+        {/* ── About ────────────────────────────────────────────────── */}
+        {provider.bio && (
+          <section>
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
+              About
+            </p>
+            <p className="text-[14px] leading-[1.65]" style={{ color: 'var(--ink)' }}>
+              {provider.bio}
+            </p>
+          </section>
+        )}
+
+        {/* ── Services & rates ─────────────────────────────────────── */}
+        {provider.providerCategories.length > 0 && (
+          <section>
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
+              Services & rates
+            </p>
+            <div className="space-y-3">
+              {provider.providerCategories.map(cat => {
+                const rate = provider.providerRates.find(r => r.categorySlug === cat.categorySlug)
                 return (
-                  <div key={category.categorySlug} className="rounded-lg border px-3 py-3">
-                    <p className="font-medium">{labelForCategory(category.categorySlug)}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {category.yearsExperience != null
-                        ? `${category.yearsExperience} years experience`
-                        : provider.experience || 'Experience details coming soon'}
+                  <div
+                    key={cat.categorySlug}
+                    className="rounded-[18px] p-4"
+                    style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+                  >
+                    <p className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>
+                      {labelForCategory(cat.categorySlug)}
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {rate?.callOutFee != null ? `Call-out fee: R${rate.callOutFee.toNumber()}` : 'Call-out fee on request'}
-                      {rate?.hourlyRate != null ? ` · Hourly rate: R${rate.hourlyRate.toNumber()}` : ''}
-                      {rate ? ` · ${rate.rateNegotiable ? 'Rate negotiable' : 'Fixed rate'}` : ''}
-                    </p>
-                    {category.subServices.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {category.subServices.map((service) => (
-                          <Badge key={service} variant="neutral">
-                            {service}
-                          </Badge>
+                    {cat.yearsExperience != null && (
+                      <p className="text-[12px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>
+                        {cat.yearsExperience} {cat.yearsExperience === 1 ? 'year' : 'years'} experience
+                      </p>
+                    )}
+                    {rate && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                        <span className="text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
+                          {rate.callOutFee != null
+                            ? `Call-out: R${rate.callOutFee.toNumber()}`
+                            : 'Call-out on request'}
+                        </span>
+                        {rate.hourlyRate != null && (
+                          <span className="text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
+                            Hourly: R{rate.hourlyRate.toNumber()}
+                          </span>
+                        )}
+                        <span className="text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
+                          {rate.rateNegotiable ? 'Rate negotiable' : 'Fixed rate'}
+                        </span>
+                      </div>
+                    )}
+                    {cat.subServices.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-3">
+                        {cat.subServices.map(s => (
+                          <span
+                            key={s}
+                            className="h-6 px-2.5 rounded-full text-[11.5px] font-medium inline-flex items-center"
+                            style={{ background: 'var(--card-alt)', color: 'var(--ink)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+                          >
+                            {s}
+                          </span>
                         ))}
                       </div>
-                    ) : null}
+                    )}
                   </div>
                 )
               })}
             </div>
-          ) : null}
+          </section>
+        )}
 
-          <ProviderTrustSignals signals={trustSignals} />
-          {provider.portfolioUrls.length > 0 && (
-            <div className="rounded-lg border px-3 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-sm font-medium">Portfolio links</p>
-                <span className="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Provider-shared evidence
+        {/* ── Where I work ─────────────────────────────────────────── */}
+        {provider.serviceAreas.length > 0 && (
+          <section>
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
+              Where I work
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {provider.serviceAreas.slice(0, 8).map(area => (
+                <span
+                  key={area}
+                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[12px] font-medium"
+                  style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}
+                >
+                  <MapPin size={11} style={{ color: 'var(--brand-purple)', flexShrink: 0 }} />
+                  {area}
                 </span>
-              </div>
-              <div className="mt-2 space-y-2">
-                {provider.portfolioUrls.map((url) => (
-                  <a
-                    key={url}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block break-all text-sm text-primary hover:underline"
+              ))}
+              {provider.serviceAreas.length > 8 && (
+                <span
+                  className="inline-flex items-center h-7 px-2.5 rounded-full text-[12px] font-medium"
+                  style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink-mute)' }}
+                >
+                  +{provider.serviceAreas.length - 8} more
+                </span>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* ── Provider evidence note ───────────────────────────────── */}
+        {provider.evidenceNote && (
+          <section>
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
+              Provider note
+            </p>
+            <div
+              className="rounded-[18px] p-4"
+              style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              <p className="text-[13.5px] leading-[1.6]" style={{ color: 'var(--ink)' }}>
+                {provider.evidenceNote}
+              </p>
+              <p className="text-[11px] mt-2" style={{ color: 'var(--ink-mute)' }}>
+                Provider-shared — not independently verified by Plug A Pro
+              </p>
+            </div>
+          </section>
+        )}
+
+        {/* ── Portfolio ────────────────────────────────────────────── */}
+        {provider.portfolioUrls.length > 0 && (
+          <section>
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
+              Portfolio
+            </p>
+            <div
+              className="rounded-[18px] p-4 space-y-2.5"
+              style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              {provider.portfolioUrls.map(url => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-[13.5px] font-medium press-feedback"
+                  style={{ color: 'var(--brand-purple)' }}
+                >
+                  <ExternalLink size={13} className="shrink-0" />
+                  <span className="truncate">{url.replace(/^https?:\/\//, '')}</span>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Reviews ──────────────────────────────────────────────── */}
+        <section>
+          <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
+            Reviews{reviews.length > 0 ? ` (${reviews.length})` : ''}
+          </p>
+          {reviews.length === 0 ? (
+            <div
+              className="rounded-[18px] p-5 text-center"
+              style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              <p className="text-[14px] font-semibold" style={{ color: 'var(--ink)' }}>
+                No reviews yet
+              </p>
+              <p className="text-[12.5px] mt-1" style={{ color: 'var(--ink-mute)' }}>
+                {jobs.length > 0
+                  ? `${jobs.length} job${jobs.length === 1 ? '' : 's'} completed on the platform.`
+                  : 'Be the first to request and review this provider.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {reviews.map(review => {
+                const job = jobs.find(j => j.id === review.jobId)
+                return (
+                  <div
+                    key={review.id}
+                    className="rounded-[18px] p-4"
+                    style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
                   >
-                    {url}
-                  </a>
-                ))}
-              </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex gap-0.5">
+                        {[1, 2, 3, 4, 5].map(n => (
+                          <Star
+                            key={n}
+                            size={13}
+                            fill={n <= review.score ? '#F59E0B' : 'none'}
+                            stroke={n <= review.score ? '#F59E0B' : 'var(--border)'}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>
+                        {review.createdAt.toLocaleDateString('en-ZA', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                    {review.comment && (
+                      <p className="mt-2 text-[13.5px] leading-[1.6]" style={{ color: 'var(--ink)' }}>
+                        {review.comment}
+                      </p>
+                    )}
+                    {job && (
+                      <p className="mt-2 text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>
+                        {labelForCategory(job.booking.match.jobRequest.category)} · Verified customer
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
-          <ProviderTrustNote marketplaceApproved={provider.verified} className="pt-1" />
-        </CardContent>
-      </Card>
+        </section>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Recent reviews
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {reviews.length === 0 ? (
-            <p className="text-muted-foreground">
-              This provider has completed jobs through Plug A Pro, but no customer reviews are visible yet.
-            </p>
-          ) : (
-            reviews.map((review) => {
-              const job = jobs.find((entry) => entry.id === review.jobId)
-              return (
-                <div key={review.id} className="rounded-lg border px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium">{'★'.repeat(review.score)}{'☆'.repeat(5 - review.score)}</p>
-                    <span className="text-xs text-muted-foreground">
-                      {review.createdAt.toLocaleDateString('en-ZA', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </span>
-                  </div>
-                  {review.comment && <p className="mt-2 text-muted-foreground">{review.comment}</p>}
-                  {job && (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {job.booking.match.jobRequest.category} — Verified customer
-                    </p>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </CardContent>
-      </Card>
+        {/* ── Trust disclaimer ─────────────────────────────────────── */}
+        <div
+          className="rounded-[18px] p-4"
+          style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
+          <p className="text-[11px] font-bold tracking-[0.06em] uppercase mb-1" style={{ color: 'var(--ink-mute)' }}>
+            {provider.verified ? 'Application reviewed by Plug A Pro' : 'Provider-supplied profile'}
+          </p>
+          <p className="text-[12px] leading-[1.55]" style={{ color: 'var(--ink-mute)' }}>
+            Skills, bio, and service areas are supplied by the provider. Plug A Pro records completed
+            jobs and customer reviews but does not claim licensing or workmanship guarantees.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Sticky CTA ───────────────────────────────────────────── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-40 px-[18px] pt-3"
+        style={{
+          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)',
+          background: 'linear-gradient(to top, var(--background) 60%, transparent)',
+        }}
+      >
+        <Link
+          href={ctaHref}
+          className="flex items-center justify-center w-full h-[52px] rounded-[16px] text-[15px] font-bold text-white press-feedback"
+          style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
+        >
+          {ctaLabel}
+        </Link>
+      </div>
     </div>
   )
 }
