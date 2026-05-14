@@ -7,7 +7,7 @@ const { mockDb } = vi.hoisted(() => ({
     $transaction: vi.fn(),
     assignmentHold: { findFirst: vi.fn(), create: vi.fn() },
     matchAttempt: { create: vi.fn() },
-    dispatchDecision: { create: vi.fn() },
+    dispatchDecision: { create: vi.fn(), update: vi.fn() },
     jobRequest: { findUnique: vi.fn(), update: vi.fn() },
     providerCapacity: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
   },
@@ -77,7 +77,10 @@ function setupTransactionSuccess(overrides: {
       }),
     },
     matchAttempt: { create: vi.fn().mockResolvedValue({ id: 'attempt-1' }) },
-    dispatchDecision: { create: vi.fn().mockResolvedValue({ id: 'decision-1' }) },
+    dispatchDecision: {
+      create: vi.fn().mockResolvedValue({ id: 'decision-1' }),
+      update: vi.fn().mockResolvedValue({}),
+    },
     jobRequest: {
       findUnique: vi.fn().mockResolvedValue({ status: jobStatus }),
       update: vi.fn().mockResolvedValue({}),
@@ -211,7 +214,7 @@ describe('reserveBestProviderAtomically', () => {
           $queryRaw: vi.fn().mockResolvedValue([]),
           assignmentHold: { findFirst: vi.fn(), create: vi.fn() },
           matchAttempt: { create: vi.fn() },
-          dispatchDecision: { create: vi.fn() },
+          dispatchDecision: { create: vi.fn(), update: vi.fn() },
           jobRequest: { findUnique: vi.fn(), update: vi.fn() },
           providerCapacity: { findUnique: vi.fn(), upsert: vi.fn() },
         })
@@ -231,7 +234,10 @@ describe('reserveBestProviderAtomically', () => {
           }),
         },
         matchAttempt: { create: vi.fn().mockResolvedValue({ id: 'attempt-1' }) },
-        dispatchDecision: { create: vi.fn().mockResolvedValue({ id: 'decision-1' }) },
+        dispatchDecision: {
+          create: vi.fn().mockResolvedValue({ id: 'decision-1' }),
+          update: vi.fn().mockResolvedValue({}),
+        },
         jobRequest: {
           findUnique: vi.fn().mockResolvedValue({ status: 'OPEN' }),
           update: vi.fn().mockResolvedValue({}),

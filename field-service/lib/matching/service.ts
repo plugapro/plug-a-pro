@@ -1814,13 +1814,12 @@ async function offerNextRankedCandidate(params: {
       where: { id: params.dispatchDecisionId },
       data: { status: 'NO_MATCH', nextRetryAt: null },
     })
-    // Reset to OPEN so the cron re-dispatches with a fresh ranking on the next tick.
-    // Previously-declined providers are excluded by lead status; ghosted providers are
-    // auto-paused by pauseProviderAfterRepeatedOfferTimeouts. Do not expire here —
-    // the real deadline is jobRequest.expiresAt, enforced by the cron expiry sweep.
+    // Quick Match uses the dispatch decision's RANKED attempts as the customer-
+    // facing queue. When the queue is exhausted, terminate the request instead
+    // of reopening it for a fresh ranking loop.
     await db.jobRequest.update({
       where: { id: params.jobRequestId },
-      data: { status: 'OPEN' },
+      data: { status: 'EXPIRED' },
     })
     return { nextOfferedProviderId: null, assignmentHoldId: null }
   }
@@ -2368,6 +2367,110 @@ export async function processPendingAssignmentWorkflows() {
     expiredOffers,
     reoffered,
   }
+}
+
+export async function sendQuickMatchProgressUpdates(now = new Date()): Promise<{
+  considered: number
+  sent: number
+  skippedRecent: number
+  skippedNoPhone: number
+  failed: number
+}> {
+  const recentCutoff = new Date(
+    now.getTime() - MATCHING_CONFIG.quickMatchProgressUpdateMinutes * 60_000,
+  )
+  const requests = await db.jobRequest.findMany({
+    where: {
+      status: 'MATCHING',
+      assignmentMode: 'AUTO_ASSIGN',
+      assignmentHolds: {
+        some: {
+          status: 'ACTIVE',
+          expiresAt: { gt: now },
+        },
+      },
+    },
+    select: {
+      id: true,
+      category: true,
+      isTestRequest: true,
+      cohortName: true,
+      customer: { select: { phone: true, isTestUser: true } },
+      assignmentHolds: {
+        where: {
+          status: 'ACTIVE',
+          expiresAt: { gt: now },
+        },
+        select: { id: true },
+        orderBy: { expiresAt: 'asc' },
+        take: 1,
+      },
+    },
+    take: 50,
+  })
+
+  const result = {
+    considered: requests.length,
+    sent: 0,
+    skippedRecent: 0,
+    skippedNoPhone: 0,
+    failed: 0,
+  }
+
+  for (const request of requests) {
+    const phone = request.customer?.phone
+    if (!phone) {
+      result.skippedNoPhone++
+      continue
+    }
+
+    const recent = await db.messageEvent.findFirst({
+      where: {
+        to: phone,
+        templateName: 'interactive:quick_match_progress_update',
+        status: { in: ['SENT', 'DELIVERED', 'READ'] },
+        createdAt: { gte: recentCutoff },
+        metadata: {
+          path: ['jobRequestId'],
+          equals: request.id,
+        },
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (recent) {
+      result.skippedRecent++
+      continue
+    }
+
+    try {
+      await sendText(
+        phone,
+        `Quick Match is still checking providers for your ${request.category} request.\n\nWe'll keep trying the next suitable provider and message you as soon as there is an update.`,
+        {
+          templateName: 'interactive:quick_match_progress_update',
+          metadata: {
+            jobRequestId: request.id,
+            activeHoldId: request.assignmentHolds[0]?.id ?? null,
+            isTestRequest: request.isTestRequest,
+            cohortName: request.cohortName,
+            recipientIsTest: request.customer?.isTestUser ?? false,
+            idempotencyKey: `quick_match_progress:${request.id}:${Math.floor(now.getTime() / (MATCHING_CONFIG.quickMatchProgressUpdateMinutes * 60_000))}`,
+          },
+        },
+      )
+      result.sent++
+    } catch (err) {
+      result.failed++
+      console.error('[matching] quick-match customer progress update failed', {
+        jobRequestId: request.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  return result
 }
 
 // ── Capacity reconciliation ────────────────────────────────────────────────────

@@ -121,6 +121,20 @@ const TEMPLATES = [
     ],
   },
   {
+    name: 'quick_match_provider_lead_offer',
+    category: 'UTILITY',
+    body: 'Hi {{1}}, a new {{2}} lead is available in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
+    examples: ['Lovemore', 'DIY & Assembly', 'Bromhof, Johannesburg', 'Flexible'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'View lead',
+        url: 'https://app.plugapro.co.za/leads/access/{{1}}',
+        example: ['demo-lead-access-token'],
+      },
+    ],
+  },
+  {
     name: 'technician_job_reminder',
     category: 'UTILITY',
     // {{1}} tech name, {{2}} service, {{3}} address, {{4}} time, {{5}} job URL

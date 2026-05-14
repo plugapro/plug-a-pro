@@ -23,6 +23,7 @@ import { sendCustomerMatchFoundNotification } from '@/lib/whatsapp'
 import { notifyCustomerMatchingInProgress } from '@/lib/client-pwa-submission-notifications'
 import { isEnabled } from '@/lib/flags'
 import { findAlternativeSlots } from './alternative-slots'
+import { MATCHING_CONFIG } from './config'
 import type { SlotOption } from './types'
 
 export type MatchOrchestrationResult =
@@ -167,17 +168,53 @@ export async function orchestrateMatch(
 
     // 3. Score and rank (pure — no DB calls)
     const ranked = scoreAndRankCandidates(eligible, jobRequest)
+    const initialRankedSummary = ranked.map((rc) => ({ ...rc }))
 
-    // 4. Try top-5 candidates in rank order — stop on first successful reservation
+    const queuedRanked = ranked.slice(0, MATCHING_CONFIG.quickMatchMaxProviderOffers)
+    const queueDecision = await persistQuickMatchQueueDecision(db, {
+      jobRequestId,
+      mode: jobRequest.assignmentMode,
+      consideredCount: rawCandidates.length,
+      eligibleCount: eligible.length,
+      filteredOut,
+      rankingSummary: initialRankedSummary,
+      rankedCandidates: queuedRanked,
+      triggeredBy: options.triggeredBy,
+    })
+
+    // 4. Try top-10 candidates in rank order — stop on first successful reservation
     let reserved: Awaited<ReturnType<typeof reserveBestProviderAtomically>> | null = null
     const reservationFailures: Record<string, string> = {}
 
-    for (const rankedCandidate of ranked.slice(0, 5)) {
+    for (const [queueIndex, rankedCandidate] of queuedRanked.entries()) {
       const candidate = eligible.find((e) => e.id === rankedCandidate.providerId)
       if (!candidate) continue
-      reserved = await reserveBestProviderAtomically({ candidate, jobRequest })
+      const queuedAttempt = queueDecision.attemptsByProviderId.get(rankedCandidate.providerId)
+      reserved = await reserveBestProviderAtomically({
+        candidate,
+        jobRequest,
+        dispatchDecisionId: queueDecision.id,
+        matchAttemptId: queuedAttempt?.id,
+        rankedPosition: queuedAttempt?.rankedPosition ?? queueIndex + 1,
+      })
       if (reserved.ok) break
       reservationFailures[rankedCandidate.providerId] = reserved.reason
+      if (queuedAttempt?.id) {
+        await db.matchAttempt.update({
+          where: { id: queuedAttempt.id },
+          data: {
+            stage: 'SKIPPED',
+            reasonCode: reserved.reason,
+          },
+        }).catch((err) =>
+          console.error('[orchestrator] failed to mark skipped queued attempt', {
+            jobRequestId,
+            providerId: rankedCandidate.providerId,
+            matchAttemptId: queuedAttempt.id,
+            err,
+          })
+        )
+      }
       emitMatchEvent({
         event: 'reservation.failed',
         jobRequestId,
@@ -208,17 +245,17 @@ export async function orchestrateMatch(
           ? `Reservation failed — ${explanationParts.join(', ')}`
           : 'All top candidates were locked or at capacity'
 
-      await recordDispatchDecision(db, {
-        jobRequestId,
-        mode: jobRequest.assignmentMode,
-        status: 'NO_MATCH',
-        consideredCount: rawCandidates.length,
-        eligibleCount: eligible.length,
-        filteredOut,
-        rankingSummary: annotatedRanked,
-        explanation,
-        triggeredBy: options.triggeredBy,
-      })
+      await db.dispatchDecision.update({
+        where: { id: queueDecision.id },
+        data: {
+          status: 'NO_MATCH',
+          nextRetryAt: null,
+          explanation,
+          rankingSummary: annotatedRanked as object[],
+        },
+      }).catch((err) =>
+        console.error('[orchestrator] failed to mark queued decision no-match', { jobRequestId, err })
+      )
       return { status: 'NO_MATCH', filteredOut, consideredCount: rawCandidates.length }
     }
     // Note: nearMiss is not used here — reservation failures mean eligible providers exist
@@ -261,19 +298,23 @@ export async function orchestrateMatch(
       })
     )
 
-    // 6. Audit trail
-    await recordDispatchDecision(db, {
-      jobRequestId,
-      mode: jobRequest.assignmentMode,
-      status: 'OFFERING',
-      selectedProviderId: reserved.provider.id,
-      consideredCount: rawCandidates.length,
-      eligibleCount: eligible.length,
-      filteredOut,
-      rankingSummary: annotatedRanked,
-      explanation: `Lead dispatched to ${reserved.provider.name}`,
-      triggeredBy: options.triggeredBy,
-    })
+    // 6. Audit trail: update the same decision that owns the top-10 queue.
+    await db.dispatchDecision.update({
+      where: { id: queueDecision.id },
+      data: {
+        status: 'OFFERING',
+        selectedProviderId: reserved.provider.id,
+        selectedMatchAttemptId: queueDecision.attemptsByProviderId.get(reserved.provider.id)?.id,
+        consideredCount: rawCandidates.length,
+        eligibleCount: eligible.length,
+        filterSummary: filteredOut as object[],
+        rankingSummary: annotatedRanked as object[],
+        explanation: `Lead dispatched to ${reserved.provider.name}`,
+        nextRetryAt: reserved.hold.expiresAt,
+      },
+    }).catch((err) =>
+      console.error('[orchestrator] failed to update queued dispatch decision', { jobRequestId, err })
+    )
 
     emitMatchEvent({
       event: 'match.dispatched',
@@ -344,6 +385,80 @@ async function tryAlternativeSlotNegotiation(params: {
   }
 
   return { status: 'ALT_SLOT_NEGOTIATION_SENT', slotCount: slotOptions.length, strategy }
+}
+
+async function persistQuickMatchQueueDecision(
+  client: typeof db,
+  params: {
+    jobRequestId: string
+    mode: string
+    consideredCount: number
+    eligibleCount: number
+    filteredOut: FilteredProvider[]
+    rankingSummary: unknown[]
+    rankedCandidates: Array<{
+      providerId: string
+      score?: number
+      rank?: number
+      scoreBreakdown?: unknown
+    }>
+    triggeredBy: string
+  },
+): Promise<{
+  id: string
+  attemptsByProviderId: Map<string, { id: string; rankedPosition: number }>
+}> {
+  const idempotencyKey = JSON.stringify({
+    jobRequestId: params.jobRequestId,
+    status: 'RANKED',
+    selectedProviderId: null,
+    triggeredBy: params.triggeredBy,
+    ts: Math.floor(Date.now() / 60_000),
+  })
+
+  const decision = await client.dispatchDecision.create({
+    data: {
+      jobRequestId: params.jobRequestId,
+      mode: params.mode as 'AUTO_ASSIGN' | 'OPS_REVIEW',
+      status: 'RANKED',
+      consideredCount: params.consideredCount,
+      eligibleCount: params.eligibleCount,
+      filterSummary: params.filteredOut as object[],
+      rankingSummary: params.rankingSummary as object[],
+      explanation: `Quick Match queue prepared for top ${params.rankedCandidates.length} provider(s)`,
+      initiatedById: 'system',
+      initiatedByRole: 'system',
+      idempotencyKey,
+    },
+  })
+
+  await client.jobRequest.update({
+    where: { id: params.jobRequestId },
+    data: { latestDispatchDecisionId: decision.id },
+  })
+
+  const attemptsByProviderId = new Map<string, { id: string; rankedPosition: number }>()
+  for (const [index, candidate] of params.rankedCandidates.entries()) {
+    const rankedPosition = candidate.rank ?? index + 1
+    const attempt = await client.matchAttempt.create({
+      data: {
+        jobRequestId: params.jobRequestId,
+        providerId: candidate.providerId,
+        dispatchDecisionId: decision.id,
+        attemptNumber: rankedPosition,
+        rankedPosition,
+        stage: 'RANKED',
+        hardFilterPassed: true,
+        filteredReasonCodes: [],
+        feasibilityNotes: [],
+        score: candidate.score,
+        scoreBreakdown: candidate.scoreBreakdown as object | undefined,
+      },
+    })
+    attemptsByProviderId.set(candidate.providerId, { id: attempt.id, rankedPosition })
+  }
+
+  return { id: decision.id, attemptsByProviderId }
 }
 
 // ── Internal helper — writes DispatchDecision row ─────────────────────────────

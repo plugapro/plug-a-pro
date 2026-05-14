@@ -114,6 +114,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
         area: 'Ruimsig',
         scheduledWindow: 'Flexible',
         jobUrl: expect.stringMatching(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//),
+        templateName: 'quick_match_provider_lead_offer',
         metadata: expect.objectContaining({
           jobRequestId: 'jr-1',
           leadId: 'lead-1',
@@ -189,7 +190,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     expect(mockDb.messageEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         to: '+27820000000',
-        templateName: 'provider_lead_offer',
+        templateName: 'quick_match_provider_lead_offer',
         metadata: {
           path: ['jobRequestId'],
           equals: 'jr-1',

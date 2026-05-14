@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendLeadReminders } from '@/lib/matching-engine'
-import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from '@/lib/matching/service'
+import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState, sendQuickMatchProgressUpdates } from '@/lib/matching/service'
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
 import { expireRfpInvitations } from '@/lib/review-first'
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
   }
 
   const reqId = crypto.randomUUID().slice(0, 8)
-  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0, rfpExpired: 0 }
+  const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, progressUpdates: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0, rfpExpired: 0 }
 
   // 0. Reconcile stale capacity counters (safety net — corrects counter drift)
   try {
@@ -255,6 +255,15 @@ export async function GET(request: Request) {
     results.reminders = await sendLeadReminders()
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error sending lead reminders:`, err)
+    results.errors++
+  }
+
+  // 3b. Send customer-facing Quick Match progress updates at most every 30 min.
+  try {
+    const progress = await sendQuickMatchProgressUpdates()
+    results.progressUpdates = progress.sent
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error sending Quick Match progress updates:`, err)
     results.errors++
   }
 

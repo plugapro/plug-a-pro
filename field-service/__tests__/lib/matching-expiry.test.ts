@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { expireAssignmentOffer, processPendingAssignmentWorkflows, reconcileStaleAssignmentState } from '../../lib/matching/service'
+import {
+  expireAssignmentOffer,
+  processPendingAssignmentWorkflows,
+  reconcileStaleAssignmentState,
+  sendQuickMatchProgressUpdates,
+} from '../../lib/matching/service'
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
@@ -35,6 +40,7 @@ const { mockDb, mockEmitMatchEvent, mockSendText } = vi.hoisted(() => ({
     jobRequest: {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
     provider: {
@@ -311,7 +317,7 @@ describe('expireAssignmentOffer', () => {
     )
   })
 
-  it('expires the hold and reopens the job for redispatch when no next candidate', async () => {
+  it('expires the hold and terminates Quick Match when no next candidate remains', async () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
     // No RANKED attempts remaining
     mockDb.matchAttempt.findMany.mockResolvedValue([])
@@ -326,7 +332,7 @@ describe('expireAssignmentOffer', () => {
     expect(result.expired).toBe(true)
     expect(result.nextOfferedProviderId).toBeNull()
     expect(mockDb.jobRequest.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'OPEN' }) })
+      expect.objectContaining({ data: expect.objectContaining({ status: 'EXPIRED' }) })
     )
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'match.exhausted', jobRequestId: 'job-1' })
@@ -531,6 +537,66 @@ describe('expireAssignmentOffer', () => {
       expect.stringContaining('Leads paused'),
       expect.anything(),
     )
+  })
+})
+
+// ── Quick Match customer progress updates ────────────────────────────────────
+
+describe('sendQuickMatchProgressUpdates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupBaseTransaction()
+    mockSendText.mockResolvedValue(undefined)
+  })
+
+  it('sends a customer progress update for active Quick Match requests with no recent update', async () => {
+    mockDb.jobRequest.findMany.mockResolvedValue([
+      {
+        id: 'job-1',
+        category: 'DIY & Assembly',
+        isTestRequest: true,
+        cohortName: 'internal_staff_test',
+        customer: { phone: '+27773923802', isTestUser: true },
+        assignmentHolds: [{ id: 'hold-1' }],
+      },
+    ])
+    mockDb.messageEvent.findFirst.mockResolvedValue(null)
+
+    const result = await sendQuickMatchProgressUpdates()
+
+    expect(result.sent).toBe(1)
+    expect(mockSendText).toHaveBeenCalledWith(
+      '+27773923802',
+      expect.stringContaining('Quick Match is still checking providers'),
+      expect.objectContaining({
+        templateName: 'interactive:quick_match_progress_update',
+        metadata: expect.objectContaining({
+          jobRequestId: 'job-1',
+          isTestRequest: true,
+          recipientIsTest: true,
+        }),
+      }),
+    )
+  })
+
+  it('skips the customer progress update when one was sent in the last 30 minutes', async () => {
+    mockDb.jobRequest.findMany.mockResolvedValue([
+      {
+        id: 'job-1',
+        category: 'DIY & Assembly',
+        isTestRequest: false,
+        cohortName: null,
+        customer: { phone: '+27773923802', isTestUser: false },
+        assignmentHolds: [{ id: 'hold-1' }],
+      },
+    ])
+    mockDb.messageEvent.findFirst.mockResolvedValue({ id: 'message-1' })
+
+    const result = await sendQuickMatchProgressUpdates()
+
+    expect(result.sent).toBe(0)
+    expect(result.skippedRecent).toBe(1)
+    expect(mockSendText).not.toHaveBeenCalled()
   })
 })
 

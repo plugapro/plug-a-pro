@@ -16,6 +16,7 @@ const {
   mockDb: {
     assignmentHold: { findFirst: vi.fn() },
     dispatchDecision: { create: vi.fn(), update: vi.fn() },
+    matchAttempt: { create: vi.fn(), update: vi.fn() },
     jobRequest: {
       update: vi.fn(),
       findUnique: vi.fn(),
@@ -133,6 +134,11 @@ describe('orchestrateMatch', () => {
     mockDb.jobRequest.findUnique.mockResolvedValue({ altSlotNegotiationSentAt: null, altSlotNegotiationOutcome: null })
     mockDb.dispatchDecision.create.mockResolvedValue({ id: 'decision-1' })
     mockDb.dispatchDecision.update.mockResolvedValue({})
+    mockDb.matchAttempt.create.mockImplementation(async ({ data }: any) => ({
+      id: `attempt-${data.providerId}`,
+      ...data,
+    }))
+    mockDb.matchAttempt.update.mockResolvedValue({})
     mockDb.jobRequest.update.mockResolvedValue({})
     mockDispatchMatchLead.mockResolvedValue(undefined)
     mockEmitMatchEvent.mockReturnValue(undefined)
@@ -219,8 +225,8 @@ describe('orchestrateMatch', () => {
     )
   })
 
-  it('returns NO_MATCH when all top-5 reservations fail', async () => {
-    const candidates = [1, 2, 3, 4, 5].map((n) => makeEligibleCandidate(`provider-${n}`))
+  it('returns NO_MATCH when all top-10 reservations fail', async () => {
+    const candidates = Array.from({ length: 10 }, (_, index) => makeEligibleCandidate(`provider-${index + 1}`))
     mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
     mockLoadCandidatePool.mockResolvedValue(candidates)
     mockFilterEligibleProviders.mockResolvedValue({ eligible: candidates, filteredOut: [], nearMiss: [] })
@@ -232,7 +238,7 @@ describe('orchestrateMatch', () => {
     const result = await orchestrateMatch('job-1', { triggeredBy: 'cron' })
 
     expect(result.status).toBe('NO_MATCH')
-    expect(mockReserveBestProviderAtomically).toHaveBeenCalledTimes(5)
+    expect(mockReserveBestProviderAtomically).toHaveBeenCalledTimes(10)
     // Emits reservation.failed for each locked attempt
     expect(mockEmitMatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'reservation.failed' })
@@ -261,6 +267,55 @@ describe('orchestrateMatch', () => {
     )
   })
 
+  it('persists a top-10 Quick Match queue before dispatching the first provider', async () => {
+    const candidates = Array.from({ length: 12 }, (_, index) => makeEligibleCandidate(`provider-${index + 1}`))
+    const hold = makeHold('job-1', 'provider-1')
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
+    mockLoadCandidatePool.mockResolvedValue(candidates)
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: candidates, filteredOut: [], nearMiss: [] })
+    mockScoreAndRankCandidates.mockReturnValue(
+      candidates.map((candidate, index) => ({ providerId: candidate.id, score: 1 - index * 0.01, rank: index + 1 }))
+    )
+    mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: candidates[0] })
+
+    const result = await orchestrateMatch('job-1', { triggeredBy: 'job_creation' })
+
+    expect(result.status).toBe('DISPATCHED')
+    expect(mockDb.matchAttempt.create).toHaveBeenCalledTimes(10)
+    expect(mockDb.matchAttempt.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          dispatchDecisionId: 'decision-1',
+          providerId: 'provider-1',
+          rankedPosition: 1,
+          stage: 'RANKED',
+        }),
+      }),
+    )
+    expect(mockDb.matchAttempt.create).toHaveBeenNthCalledWith(
+      10,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          providerId: 'provider-10',
+          rankedPosition: 10,
+        }),
+      }),
+    )
+    expect(mockDb.matchAttempt.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ providerId: 'provider-11' }),
+      }),
+    )
+    expect(mockReserveBestProviderAtomically).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dispatchDecisionId: 'decision-1',
+        matchAttemptId: 'attempt-provider-1',
+        rankedPosition: 1,
+      }),
+    )
+  })
+
   // ── Retry on reservation failure ────────────────────────────────────────────
 
   it('falls through to second candidate when first reservation fails', async () => {
@@ -283,6 +338,13 @@ describe('orchestrateMatch', () => {
     expect(result.status).toBe('DISPATCHED')
     expect((result as any).providerId).toBe('provider-2')
     expect(mockReserveBestProviderAtomically).toHaveBeenCalledTimes(2)
+    expect(mockDb.matchAttempt.update).toHaveBeenCalledWith({
+      where: { id: 'attempt-provider-1' },
+      data: expect.objectContaining({
+        stage: 'SKIPPED',
+        reasonCode: 'AT_CAPACITY',
+      }),
+    })
   })
 
   // ── Feature flag — candidate pool toggle ────────────────────────────────────

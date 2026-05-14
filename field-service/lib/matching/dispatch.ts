@@ -20,7 +20,12 @@ import { MATCHING_CONFIG } from './config'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
 
-type AssignmentHold = { id: string; expiresAt: Date }
+type AssignmentHold = {
+  id: string
+  expiresAt: Date
+  dispatchDecisionId?: string | null
+  matchAttemptId?: string | null
+}
 
 function providerFirstName(provider: CandidatePoolEntry): string {
   return provider.name?.trim().split(/\s+/)[0] || 'there'
@@ -64,6 +69,8 @@ export async function dispatchMatchLead(params: {
     create: {
       jobRequestId: jobRequest.id,
       providerId: provider.id,
+      dispatchDecisionId: hold.dispatchDecisionId ?? undefined,
+      matchAttemptId: hold.matchAttemptId ?? undefined,
       assignmentHoldId: hold.id,
       status: 'SENT',
       sentAt: new Date(),
@@ -75,6 +82,8 @@ export async function dispatchMatchLead(params: {
       status: 'SENT',
       sentAt: new Date(),
       expiresAt: hold.expiresAt,
+      dispatchDecisionId: hold.dispatchDecisionId ?? undefined,
+      matchAttemptId: hold.matchAttemptId ?? undefined,
       assignmentHoldId: hold.id,
       isTestLead: jobRequest.isTestRequest ?? false,
       cohortName: jobRequest.cohortName ?? null,
@@ -157,9 +166,14 @@ export async function dispatchMatchLead(params: {
     })
   })
 
+  const providerLeadTemplateName =
+    jobRequest.assignmentMode === 'AUTO_ASSIGN'
+      ? 'quick_match_provider_lead_offer'
+      : 'provider_lead_offer'
+
   const ctaAlreadySent = await hasSuccessfulMessageForRecipient({
     to: provider.phone,
-    templateName: 'provider_lead_offer',
+    templateName: providerLeadTemplateName,
     metadataPath: ['jobRequestId'],
     metadataEquals: jobRequest.id,
   })
@@ -176,7 +190,7 @@ export async function dispatchMatchLead(params: {
       data: {
         channel: 'WHATSAPP',
         direction: 'OUTBOUND',
-        templateName: 'provider_lead_offer',
+        templateName: providerLeadTemplateName,
         body,
         to: provider.phone,
         status: 'FAILED',
@@ -193,6 +207,7 @@ export async function dispatchMatchLead(params: {
       area: suburb,
       scheduledWindow: preferredTime,
       jobUrl: leadUrl,
+      templateName: providerLeadTemplateName,
       metadata: msgMeta,
     }).catch(async (err: unknown) => {
       const failureReason = err instanceof Error ? err.message : String(err)
@@ -205,7 +220,7 @@ export async function dispatchMatchLead(params: {
         data: {
           channel: 'WHATSAPP',
           direction: 'OUTBOUND',
-          templateName: 'provider_lead_offer',
+          templateName: providerLeadTemplateName,
           body,
           to: provider.phone,
           status: 'FAILED',

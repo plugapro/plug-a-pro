@@ -214,6 +214,17 @@ export const TEMPLATES = {
       'Hi {{1}}, a customer selected you for a {{2}} job in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
   },
 
+  quick_match_provider_lead_offer: {
+    name: 'quick_match_provider_lead_offer',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Quick Match provider lead notification with signed lead URL only in a template URL button',
+    // {{1}} provider first name, {{2}} service, {{3}} area, {{4}} date/window;
+    // button (url, index 0): {{1}} signed lead access token suffix appended to /leads/access/
+    example:
+      'Hi {{1}}, a new {{2}} lead is available in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
+  },
+
   technician_job_reminder: {
     name: 'technician_job_reminder',
     language: 'en_ZA',

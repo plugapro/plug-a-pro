@@ -14,6 +14,8 @@ export const FAST_MATCH_PROVIDER_RESPONSE_MINUTES = parsePositiveIntEnv(
 
 export const MATCHING_CONFIG = {
   offerTtlMinutes: FAST_MATCH_PROVIDER_RESPONSE_MINUTES,
+  quickMatchMaxProviderOffers: 10,
+  quickMatchProgressUpdateMinutes: 30,
   retryDelayMinutes: 1,
   staleLocationThresholdHours: 8,
   // Providers whose last heartbeat is older than this are treated as offline.

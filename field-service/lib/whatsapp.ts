@@ -811,13 +811,14 @@ export async function sendJobOffer(params: {
   area: string         // "Sandton, Johannesburg"
   scheduledWindow: string
   jobUrl: string
+  templateName?: 'provider_lead_offer' | 'quick_match_provider_lead_offer'
   bookingId?: string   // not yet available at lead-dispatch time — optional for logging
   metadata?: Record<string, unknown>
 }): Promise<string> {
   // Provider job-offer links must travel as a URL button parameter only. Never
   // add the signed lead URL as a body variable; the token would be visible in
   // the WhatsApp chat transcript.
-  const templateName = 'provider_lead_offer'
+  const templateName = params.templateName ?? 'provider_lead_offer'
   const externalId = await sendTemplate({
     to: params.providerPhone,
     template: templateName,

@@ -18,6 +18,8 @@ type AssignmentHold = {
   id: string
   jobRequestId: string
   providerId: string
+  dispatchDecisionId: string
+  matchAttemptId: string
   status: string
   offeredAt: Date
   expiresAt: Date
@@ -30,6 +32,9 @@ type ReservationResult =
 export async function reserveBestProviderAtomically(params: {
   candidate: CandidatePoolEntry
   jobRequest: MatchingJobRequest
+  dispatchDecisionId?: string
+  matchAttemptId?: string
+  rankedPosition?: number
 }): Promise<ReservationResult> {
   const { candidate, jobRequest } = params
   const expiresAt = new Date(Date.now() + MATCHING_CONFIG.offerTtlMinutes * 60_000)
@@ -79,55 +84,82 @@ export async function reserveBestProviderAtomically(params: {
           return { reason: 'JOB_NO_LONGER_OPEN' as const }
         }
 
-        // ── 5. Create stub DispatchDecision then MatchAttempt ─────────────────
-        // DispatchDecision must come first — MatchAttempt requires its FK.
-        // The orchestrator overwrites these with real data after the transaction.
-        const dispatchDecision = await tx.dispatchDecision.create({
-          data: {
-            jobRequestId: jobRequest.id,
-            mode: jobRequest.assignmentMode as 'AUTO_ASSIGN' | 'OPS_REVIEW',
-            status: 'OFFERING',
-            selectedProviderId: candidate.id,
-            consideredCount: 1,
-            eligibleCount: 1,
-            filterSummary: [],
-            rankingSummary: [],
-            explanation: 'Reservation in progress',
-            initiatedById: 'system',
-            initiatedByRole: 'system',
-          },
-        })
+        // ── 5. Resolve dispatch queue identity ───────────────────────────────
+        // Quick Match now persists the top-10 queue before reservation. Older
+        // callers can still use the legacy stub path by omitting these IDs.
+        let dispatchDecisionId = params.dispatchDecisionId
+        let matchAttemptId = params.matchAttemptId
 
-        const matchAttempt = await tx.matchAttempt.create({
-          data: {
-            jobRequestId: jobRequest.id,
-            providerId: candidate.id,
-            dispatchDecisionId: dispatchDecision.id,
-            attemptNumber: 1,
-            rankedPosition: 1,
-            stage: 'OFFERED',
-            hardFilterPassed: true,
-            score: candidate.scoreBase,
-            offeredAt: new Date(),
-          },
-        })
+        if (!dispatchDecisionId || !matchAttemptId) {
+          const dispatchDecision = await tx.dispatchDecision.create({
+            data: {
+              jobRequestId: jobRequest.id,
+              mode: jobRequest.assignmentMode as 'AUTO_ASSIGN' | 'OPS_REVIEW',
+              status: 'OFFERING',
+              selectedProviderId: candidate.id,
+              consideredCount: 1,
+              eligibleCount: 1,
+              filterSummary: [],
+              rankingSummary: [],
+              explanation: 'Reservation in progress',
+              initiatedById: 'system',
+              initiatedByRole: 'system',
+            },
+          })
+
+          const matchAttempt = await tx.matchAttempt.create({
+            data: {
+              jobRequestId: jobRequest.id,
+              providerId: candidate.id,
+              dispatchDecisionId: dispatchDecision.id,
+              attemptNumber: 1,
+              rankedPosition: params.rankedPosition ?? 1,
+              stage: 'OFFERED',
+              hardFilterPassed: true,
+              score: candidate.scoreBase,
+              offeredAt: new Date(),
+            },
+          })
+
+          dispatchDecisionId = dispatchDecision.id
+          matchAttemptId = matchAttempt.id
+        } else {
+          await tx.matchAttempt.update({
+            where: { id: matchAttemptId },
+            data: {
+              stage: 'OFFERED',
+              offeredAt: new Date(),
+              reasonCode: 'TOP_RANKED_ACTIVE_OFFER',
+            },
+          })
+        }
 
         // ── 6. Create the AssignmentHold ───────────────────────────────────────
         const hold = await tx.assignmentHold.create({
           data: {
             jobRequestId: jobRequest.id,
             providerId: candidate.id,
-            dispatchDecisionId: dispatchDecision.id,
-            matchAttemptId: matchAttempt.id,
+            dispatchDecisionId,
+            matchAttemptId,
             status: 'ACTIVE',
             expiresAt,
+          },
+        })
+
+        await tx.dispatchDecision.update({
+          where: { id: dispatchDecisionId },
+          data: {
+            status: 'OFFERING',
+            selectedProviderId: candidate.id,
+            selectedMatchAttemptId: matchAttemptId,
+            nextRetryAt: expiresAt,
           },
         })
 
         // ── 7. Update job status → MATCHING ───────────────────────────────────
         await tx.jobRequest.update({
           where: { id: jobRequest.id },
-          data: { status: 'MATCHING', latestDispatchDecisionId: dispatchDecision.id },
+          data: { status: 'MATCHING', latestDispatchDecisionId: dispatchDecisionId },
         })
 
         // ── 8. Increment capacity counter ─────────────────────────────────────
