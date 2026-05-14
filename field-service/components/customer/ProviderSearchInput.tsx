@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import { ProviderCard } from '@/components/shared/ProviderCard'
-import Link from 'next/link'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
@@ -38,12 +37,22 @@ function categoryLabel(tag: string | null | undefined) {
   return CATEGORY_LABELS.get(tag) ?? tag.replaceAll('_', ' ')
 }
 
+const CATEGORY_HUES: Record<string, string> = {
+  plumbing: '#2A78F0',
+  electrical: '#FFC22B',
+  handyman: '#8B3FE8',
+  carpentry: '#C8854D',
+  painting: '#FF1F8E',
+  cleaning: '#0FA28A',
+  appliances: '#5B5B66',
+  gas: '#E5484D',
+}
+
 export function ProviderSearchInput({
   providers,
   selectedCategory,
   selectedArea,
 }: ProviderSearchInputProps) {
-  // Track the local query so the list can be filtered in the browser without a request.
   const [searchTerm, setSearchTerm] = useState('')
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
 
@@ -93,54 +102,25 @@ export function ProviderSearchInput({
       ) : (
         <div className="space-y-3">
           {visibleProviders.map((provider) => (
-            <div
+            <ProviderCard
               key={provider.id}
-              className="rounded-[20px] p-4"
-              style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
-            >
-              <p className="text-[11px] font-bold tracking-[0.06em] uppercase mb-2" style={{ color: 'var(--ink-mute)' }}>
-                {categoryLabel(provider.mainCategory)}
-                {provider.experience ? ` · ${provider.experience}` : ''}
-              </p>
-
-              <ProviderCard
-                provider={{
-                  id: provider.id,
-                  name: provider.name,
-                  avatarUrl: provider.avatarUrl,
-                  skills: provider.subServices.length > 0 ? provider.subServices : provider.skills,
-                  serviceArea: provider.serviceArea,
-                  averageRating: provider.averageRating,
-                  completedJobsCount: provider.completedJobsCount,
-                  verified: provider.verified,
-                  availableNow: provider.availableNow,
-                  labourRateCents:
-                    provider.hourlyRate != null ? Math.round(provider.hourlyRate * 100) : null,
-                }}
-              />
-
-              <p className="text-[12px] mt-3" style={{ color: 'var(--ink-mute)' }}>
-                {provider.callOutFee != null ? `Call-out fee: R${provider.callOutFee}` : 'Call-out fee on request'}
-                {provider.rateNegotiable ? ' · Rate negotiable' : ' · Fixed rate'}
-              </p>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Link
-                  href={`/providers/${provider.id}`}
-                  className="h-[42px] rounded-[12px] flex items-center justify-center text-[13px] font-semibold"
-                  style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}
-                >
-                  View profile
-                </Link>
-                <Link
-                  href={`/book/${encodeURIComponent(provider.mainCategory ?? provider.skills[0] ?? 'other')}?provider=${encodeURIComponent(provider.id)}`}
-                  className="h-[42px] rounded-[12px] flex items-center justify-center text-[13px] font-semibold text-white"
-                  style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
-                >
-                  Request service
-                </Link>
-              </div>
-            </div>
+              href={`/providers/${provider.id}`}
+              provider={{
+                id: provider.id,
+                name: provider.name,
+                avatarUrl: provider.avatarUrl,
+                skills: provider.subServices.length > 0 ? provider.subServices : provider.skills,
+                experience: provider.experience,
+                serviceArea: provider.serviceArea,
+                averageRating: provider.averageRating,
+                completedJobsCount: provider.completedJobsCount,
+                verified: provider.verified,
+                availableNow: provider.availableNow,
+                callOutFee: provider.callOutFee,
+                rateNegotiable: provider.rateNegotiable,
+                tone: CATEGORY_HUES[provider.mainCategory ?? ''],
+              }}
+            />
           ))}
         </div>
       )}

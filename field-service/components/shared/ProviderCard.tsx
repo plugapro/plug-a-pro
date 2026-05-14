@@ -1,61 +1,57 @@
 import * as React from 'react'
 import Link from 'next/link'
-import {
-  BadgeCheck,
-  ChevronRight,
-  Clock,
-  MapPin,
-  Star,
-  Wrench,
-} from 'lucide-react'
+import { Check, MapPin, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 
 export interface ProviderCardData {
   id: string
   name: string
-  /** Short business or trading name shown beneath the personal name. */
+  /** Short business or trading name — kept for backward compat, not shown in new design. */
   businessName?: string | null
   avatarUrl?: string | null
-  /** Skills or service categories. Only the first three render as chips. */
+  /** Skills used for service chips. Prefer subServices over skills when both present. */
   skills?: string[]
+  /** Sub-services from providerCategories — shown as chips when present. */
+  subServices?: string[]
+  mainCategory?: string | null
+  /** Experience label, e.g. "5 yrs" or "3–5 years". */
+  experience?: string | null
   serviceArea?: string | null
-  /** Hourly labour rate in cents (R / 100). Materials excluded. */
-  labourRateCents?: number | null
   averageRating?: number | null
   completedJobsCount?: number | null
   /** True when KYC and trust checks have passed. */
   verified?: boolean
-  /** Optional response-time hint, e.g. "Replies within an hour". */
+  /** Optional response-time hint — kept for compat, not shown in new design. */
   responseTime?: string | null
-  /** Available now / scheduled later — surfaced as a small tone chip. */
   availableNow?: boolean
+  /** Call-out fee in Rands (not cents). */
+  callOutFee?: number | null
+  /** Hourly labour rate in cents — kept for backward compat, not shown in new design. */
+  labourRateCents?: number | null
+  rateNegotiable?: boolean
+  /** CSS color / gradient hint for avatar background, e.g. "#2A78F0". */
+  tone?: string
 }
 
 interface ProviderCardProps {
   provider: ProviderCardData
   /** Where the card link points. Falls back to /providers/[id]. */
   href?: string
-  /** Optional sticky CTA on the card (e.g. "Choose"). */
+  /** Optional node rendered below the card (kept for backward compat). */
   action?: React.ReactNode
   className?: string
 }
 
-function formatLabourRate(cents: number | null | undefined): string | null {
-  if (cents == null) return null
-  const rands = cents / 100
-  return `R${rands.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}/hr`
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[1][0]).toUpperCase()
 }
 
 /**
- * Marketplace-grade provider card. Surfaces the trust signals customers
- * use to choose a provider on a phone screen: profile photo, name,
- * verification, rating, completed jobs, service area, labour rate, and
- * availability. Renders with consistent padding and tap target so it
- * works inside grids or single-column lists.
- *
- * Only renders fields that are actually present on the data — never
- * fabricates a star rating, completed job count, or labour rate.
+ * Design-spec provider card. Surfaces avatar, name, verification, rating,
+ * completed jobs, location, service chips, call-out fee, and availability.
+ * All values are optional — only present data is rendered.
  */
 export function ProviderCard({
   provider,
@@ -64,121 +60,313 @@ export function ProviderCard({
   className,
 }: ProviderCardProps) {
   const target = href ?? `/providers/${provider.id}`
-  const rate = formatLabourRate(provider.labourRateCents)
-  const ratingValue =
-    typeof provider.averageRating === 'number'
-      ? provider.averageRating.toFixed(1)
-      : null
-  const skillChips = (provider.skills ?? []).slice(0, 3)
+
+  const avatarGradient = provider.tone
+    ? `linear-gradient(135deg, ${provider.tone}, #2A78F0)`
+    : 'linear-gradient(135deg, #8B3FE8, #2A78F0)'
+
+  const chips = (
+    (provider.subServices && provider.subServices.length > 0
+      ? provider.subServices
+      : provider.skills) ?? []
+  ).slice(0, 4)
+
+  const hasBottomRow =
+    provider.callOutFee != null ||
+    provider.availableNow !== undefined ||
+    true // always render bottom row per spec
 
   return (
-    <Link
-      href={target}
-      className={cn(
-        'group block rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)] transition-colors hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
-        className,
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <div
-          aria-hidden
-          className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border/80 bg-muted text-muted-foreground"
-        >
-          {provider.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={provider.avatarUrl}
-              alt=""
-              className="size-full object-cover"
-            />
-          ) : (
-            <Wrench className="size-5" />
-          )}
-          {provider.verified ? (
-            <span className="absolute -bottom-1 -right-1 inline-flex size-6 items-center justify-center rounded-full border border-card bg-primary text-primary-foreground shadow-sm">
-              <BadgeCheck className="size-3.5" />
-              <span className="sr-only">Verified provider</span>
-            </span>
-          ) : null}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0">
-              <p className="truncate text-base font-semibold text-foreground">
-                {provider.name}
-              </p>
-              {provider.businessName ? (
-                <p className="truncate text-xs text-muted-foreground">
-                  {provider.businessName}
-                </p>
-              ) : null}
-            </div>
-            <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+    <>
+      <Link
+        href={target}
+        className={cn('block', className)}
+        style={{
+          borderRadius: 24,
+          background: 'var(--card)',
+          boxShadow: 'inset 0 0 0 1px var(--border)',
+          padding: '14px 16px',
+          cursor: 'pointer',
+          textDecoration: 'none',
+        }}
+      >
+        {/* Top row: avatar + name column */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          {/* Avatar */}
+          <div
+            aria-hidden
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 14,
+              background: avatarGradient,
+              flexShrink: 0,
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {provider.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={provider.avatarUrl}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <span
+                style={{
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 17,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1,
+                }}
+              >
+                {initials(provider.name)}
+              </span>
+            )}
           </div>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {ratingValue ? (
-              <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                <Star className="size-3.5 fill-current text-[var(--tone-warning-fg)]" />
-                {ratingValue}
+          {/* Name column */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Row 1: Name + verified badge */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span
+                style={{
+                  fontWeight: 700,
+                  fontSize: 15,
+                  letterSpacing: '-0.2px',
+                  color: 'var(--ink)',
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {provider.name}
+              </span>
+              {provider.verified ? (
+                <span
+                  aria-label="Verified provider"
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    background: 'var(--brand-gradient-soft)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Check
+                    size={11}
+                    style={{ color: 'var(--brand-purple)', strokeWidth: 3 }}
+                  />
+                </span>
+              ) : null}
+            </div>
+
+            {/* Row 2: Rating pill */}
+            {provider.averageRating != null ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  marginTop: 2,
+                }}
+              >
+                <Star
+                  size={13}
+                  style={{ color: '#F59E0B', fill: '#F59E0B', flexShrink: 0 }}
+                />
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--ink)',
+                  }}
+                >
+                  {provider.averageRating.toFixed(1)}
+                </span>
                 {provider.completedJobsCount != null ? (
-                  <span className="font-normal text-muted-foreground">
+                  <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
                     · {provider.completedJobsCount} jobs
                   </span>
                 ) : null}
-              </span>
+              </div>
             ) : provider.completedJobsCount != null ? (
-              <span>{provider.completedJobsCount} jobs completed</span>
-            ) : null}
-
-            {provider.serviceArea ? (
-              <span className="inline-flex items-center gap-1">
-                <MapPin className="size-3.5" />
-                {provider.serviceArea}
-              </span>
-            ) : null}
-
-            {provider.responseTime ? (
-              <span className="inline-flex items-center gap-1">
-                <Clock className="size-3.5" />
-                {provider.responseTime}
-              </span>
-            ) : null}
-          </div>
-
-          {skillChips.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {skillChips.map((s) => (
-                <Badge key={s} variant="neutral" className="capitalize">
-                  {s.replaceAll('_', ' ')}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {(rate || provider.availableNow || action) && (
-        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/70 pt-3">
-          <div className="flex items-center gap-2 text-xs">
-            {rate ? (
-              <span className="font-semibold tabular-nums text-foreground">
-                {rate}
-                <span className="ml-1 font-normal text-muted-foreground">
-                  excl. materials
+              <div style={{ marginTop: 2 }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
+                  {provider.completedJobsCount} jobs completed
                 </span>
-              </span>
-            ) : (
-              <span className="text-muted-foreground">Quoted per job</span>
-            )}
-            {provider.availableNow ? (
-              <Badge variant="success">Available now</Badge>
+              </div>
+            ) : null}
+
+            {/* Row 3: Location row */}
+            {(provider.serviceArea || provider.experience) ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  marginTop: 2,
+                }}
+              >
+                <MapPin
+                  size={12}
+                  style={{ color: 'var(--brand-purple)', flexShrink: 0 }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
+                  {provider.serviceArea}
+                  {provider.serviceArea && provider.experience ? ` · ${provider.experience}` : provider.experience}
+                </span>
+              </div>
             ) : null}
           </div>
-          {action ? <div className="shrink-0">{action}</div> : null}
         </div>
-      )}
-    </Link>
+
+        {/* Service chips */}
+        {chips.length > 0 ? (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              marginTop: 12,
+            }}
+          >
+            {chips.map((chip) => (
+              <span
+                key={chip}
+                style={{
+                  height: 26,
+                  padding: '0 10px',
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: 'var(--brand-gradient-soft)',
+                  color: 'var(--brand-purple)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {chip.replaceAll('_', ' ')}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {/* Divider */}
+        <div
+          aria-hidden
+          style={{
+            height: 1,
+            background: 'var(--border)',
+            marginTop: 12,
+          }}
+        />
+
+        {/* Bottom row: price + availability */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: 12,
+          }}
+        >
+          {/* Left: call-out fee */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            {provider.callOutFee != null ? (
+              <>
+                <span style={{ color: 'var(--ink-mute)', fontSize: 12 }}>
+                  Call-out from
+                </span>
+                <span
+                  style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}
+                >
+                  R{provider.callOutFee}
+                </span>
+                {provider.rateNegotiable ? (
+                  <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>
+                    · rate negotiable
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <span style={{ color: 'var(--ink-mute)', fontSize: 12 }}>
+                Call-out on request
+              </span>
+            )}
+          </div>
+
+          {/* Right: availability chip */}
+          {provider.availableNow ? (
+            <span
+              style={{
+                height: 26,
+                padding: '0 10px',
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                background: 'rgba(15,157,88,0.10)',
+                color: '#0F7A45',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: '#0F7A45',
+                  flexShrink: 0,
+                }}
+              />
+              Available now
+            </span>
+          ) : (
+            <span
+              style={{
+                height: 26,
+                padding: '0 10px',
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                background: 'rgba(230,153,0,0.10)',
+                color: '#A66400',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: '#A66400',
+                  flexShrink: 0,
+                }}
+              />
+              Busy today
+            </span>
+          )}
+        </div>
+      </Link>
+      {action ? <div>{action}</div> : null}
+    </>
   )
 }
