@@ -6,18 +6,24 @@ const {
   mockGetSession,
   mockResolveCustomerForSession,
   mockProviderFindFirst,
+  mockProviderFindMany,
   mockJobRequestCount,
   mockJobCount,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockResolveCustomerForSession: vi.fn(),
   mockProviderFindFirst: vi.fn(),
+  mockProviderFindMany: vi.fn(),
   mockJobRequestCount: vi.fn(),
   mockJobCount: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
   getSession: mockGetSession,
+}))
+
+vi.mock('@/components/customer/AreaSelector', () => ({
+  AreaSelector: () => null,
 }))
 
 vi.mock('@/lib/customer-session', () => ({
@@ -28,6 +34,7 @@ vi.mock('@/lib/db', () => ({
   db: {
     provider: {
       findFirst: mockProviderFindFirst,
+      findMany: mockProviderFindMany,
     },
     jobRequest: {
       count: mockJobRequestCount,
@@ -44,6 +51,7 @@ describe('customer mobile landing page', () => {
     mockGetSession.mockResolvedValue(null)
     mockResolveCustomerForSession.mockResolvedValue(null)
     mockProviderFindFirst.mockResolvedValue(null)
+    mockProviderFindMany.mockResolvedValue([])
     mockJobRequestCount.mockResolvedValue(0)
     mockJobCount.mockResolvedValue(0)
   })
