@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { MapPin, ChevronDown, X, Search } from 'lucide-react'
 
@@ -12,27 +12,52 @@ interface AreaSelectorProps {
   currentArea?: string
 }
 
+function getAreaSnapshot() {
+  if (typeof window === 'undefined') return ''
+  return localStorage.getItem(STORAGE_KEY) ?? ''
+}
+
+function parseAreaSnapshot(snapshot: string): AreaOption | null {
+  if (!snapshot) return null
+  try {
+    const parsed = JSON.parse(snapshot) as Partial<AreaOption>
+    if (typeof parsed.slug === 'string' && typeof parsed.label === 'string') {
+      return { slug: parsed.slug, label: parsed.label }
+    }
+  } catch {}
+  return null
+}
+
+function subscribeToAreaStore(onStoreChange: () => void) {
+  if (typeof window === 'undefined') return () => {}
+  const listener = () => onStoreChange()
+  window.addEventListener('storage', listener)
+  window.addEventListener('pap-area-change', listener)
+  return () => {
+    window.removeEventListener('storage', listener)
+    window.removeEventListener('pap-area-change', listener)
+  }
+}
+
+function notifyAreaStoreChanged() {
+  window.dispatchEvent(new Event('pap-area-change'))
+}
+
 export function AreaSelector({ currentArea }: AreaSelectorProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<AreaOption[]>([])
-  const [selectedLabel, setSelectedLabel] = useState<string | null>(null)
+  const areaSnapshot = useSyncExternalStore(subscribeToAreaStore, getAreaSnapshot, () => '')
+  const selectedArea = parseAreaSnapshot(areaSnapshot)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsed: AreaOption = JSON.parse(stored)
-        setSelectedLabel(parsed.label)
-        if (!currentArea) {
-          router.replace(`/?area=${encodeURIComponent(parsed.slug)}`)
-        }
-      }
-    } catch {}
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!currentArea && selectedArea?.slug) {
+      router.replace(`/?area=${encodeURIComponent(selectedArea.slug)}`)
+    }
+  }, [currentArea, router, selectedArea?.slug])
 
   const fetchResults = useCallback((q: string) => {
     if (q.length < 2) { setResults([]); return }
@@ -63,19 +88,19 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
 
   function select(area: AreaOption) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(area)) } catch {}
-    setSelectedLabel(area.label)
+    notifyAreaStoreChanged()
     closeSheet()
     router.push(`/?area=${encodeURIComponent(area.slug)}`)
   }
 
   function clear() {
     try { localStorage.removeItem(STORAGE_KEY) } catch {}
-    setSelectedLabel(null)
+    notifyAreaStoreChanged()
     closeSheet()
     router.push('/')
   }
 
-  const displayLabel = selectedLabel ?? currentArea ?? null
+  const displayLabel = selectedArea?.label ?? currentArea ?? null
 
   return (
     <>
