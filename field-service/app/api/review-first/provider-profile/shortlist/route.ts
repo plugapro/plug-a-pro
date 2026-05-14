@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveReviewProviderProfileToken } from '@/lib/review-provider-profile-access'
-import { shortlistProviderForCustomerReview } from '@/lib/review-first'
+import { shortlistProviderForCustomerReview, ReviewFirstError } from '@/lib/review-first'
 
 export async function POST(req: Request) {
   const reqOrigin = new URL(req.url).origin
@@ -31,11 +31,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid or expired profile link' }, { status: 400 })
   }
 
-  await shortlistProviderForCustomerReview({
-    requestId: resolved.request.id,
-    customerId: resolved.request.customerId,
-    providerId: resolved.provider.id,
-  })
+  try {
+    await shortlistProviderForCustomerReview({
+      requestId: resolved.request.id,
+      customerId: resolved.request.customerId,
+      providerId: resolved.provider.id,
+    })
+  } catch (err) {
+    if (err instanceof ReviewFirstError) {
+      const status =
+        err.code === 'FORBIDDEN' ? 403
+        : err.code === 'SHORTLIST_LIMIT_REACHED' ? 409
+        : 400
+      return NextResponse.json({ error: err.message, code: err.code }, { status })
+    }
+    throw err
+  }
 
   return NextResponse.redirect(
     new URL(`/provider-public-profile/${encodeURIComponent(token)}?shortlisted=1`, req.url),

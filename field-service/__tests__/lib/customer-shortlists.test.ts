@@ -233,6 +233,7 @@ describe('customer shortlists', () => {
           .mockResolvedValue(makeRequestForProviderSelection()),
       },
       lead: {
+        findUnique: vi.fn().mockResolvedValue({ status: 'SENT' }),
         update: vi.fn().mockResolvedValue({ id: 'lead-1' }),
         upsert: vi.fn().mockResolvedValue({
           id: 'lead-1',
@@ -385,8 +386,8 @@ describe('customer shortlists', () => {
     })
 
     expect(result.selectedItem).toMatchObject({ id: 'item-1' })
-    expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
-      where: { id: 'request-1' },
+    expect(state.tx.jobRequest.updateMany).toHaveBeenCalledWith({
+      where: { id: 'request-1', status: 'SHORTLIST_READY' },
       data: {
         status: 'PROVIDER_CONFIRMATION_PENDING',
         selectedProviderId: 'provider-1',

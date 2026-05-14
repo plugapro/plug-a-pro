@@ -151,7 +151,7 @@ describe('provider opportunity responses', () => {
     expect(state.tx.lead.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'lead-1' },
       data: expect.objectContaining({
-        status: 'VIEWED',
+        status: 'INTERESTED',
         respondedAt: expect.any(Date),
       }),
     }))

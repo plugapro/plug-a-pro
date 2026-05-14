@@ -563,14 +563,29 @@ export async function selectShortlistedProviderForRequest(params: {
   const leadExpiryTs = new Date(selectedAt.getTime() + PROVIDER_CONFIRMATION_WINDOW_MS)
 
   const result = await db.$transaction(async (tx) => {
-    await tx.jobRequest.update({
-      where: { id: params.requestId },
+    // Re-validate inside the transaction: expireRfpInvitations could have expired
+    // the lead between the outer status check and here.
+    const currentLead = await tx.lead.findUnique({
+      where: { id: item.leadInviteId },
+      select: { status: true },
+    })
+    if (!currentLead || currentLead.status === 'EXPIRED') {
+      throw new CustomerShortlistError('ITEM_NOT_SELECTABLE', 'This provider is no longer selectable.')
+    }
+
+    // Guarded update prevents a double-tap or concurrent request from advancing
+    // the job past SHORTLIST_READY while this transaction is in flight.
+    const reqUpdate = await tx.jobRequest.updateMany({
+      where: { id: params.requestId, status: 'SHORTLIST_READY' },
       data: {
         status: 'PROVIDER_CONFIRMATION_PENDING',
         selectedProviderId: item.providerId,
         selectedLeadInviteId: item.leadInviteId,
       },
     })
+    if (reqUpdate.count === 0) {
+      throw new CustomerShortlistError('REQUEST_NOT_AWAITING_SELECTION', 'This request is no longer awaiting customer selection.')
+    }
 
     await tx.lead.update({
       where: { id: item.leadInviteId },
@@ -836,6 +851,7 @@ export async function declineSelectedProviderJob(params: {
           expiresAt: true,
           selectedProviderId: true,
           selectedLeadInviteId: true,
+          customer: { select: { phone: true } },
         },
       },
     },
@@ -1061,6 +1077,22 @@ export async function declineSelectedProviderJob(params: {
     result: 'declined',
     source: 'provider_confirmation',
   })
+
+  const customerPhone = lead.jobRequest.customer?.phone
+  if (customerPhone) {
+    sendText({
+      to: customerPhone,
+      text: `Unfortunately, the provider you selected is no longer available for this job.\n\nYou can go back and choose another provider from your shortlist.`,
+      templateName: 'interactive:selected_provider_declined',
+      metadata: { requestId: lead.jobRequestId, leadId: lead.id },
+    }).catch((err: unknown) => {
+      console.error('[provider-lead-action] failed to notify customer of provider decline', {
+        leadId: lead.id,
+        jobRequestId: lead.jobRequestId,
+        err,
+      })
+    })
+  }
 
   return {
     ok: true as const,

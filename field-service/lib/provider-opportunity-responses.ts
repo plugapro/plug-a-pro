@@ -227,7 +227,7 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
       where: { id: input.leadId },
       data: input.response === 'NOT_INTERESTED'
         ? { status: 'DECLINED', respondedAt: now, declinedAt: now }
-        : { status: 'VIEWED', viewedAt: now, respondedAt: now },
+        : { status: 'INTERESTED', viewedAt: now, respondedAt: now },
       select: { jobRequestId: true },
     })
     jobRequestIdForTrigger = updatedLead.jobRequestId
@@ -332,7 +332,7 @@ async function maybeAutoTriggerShortlist(requestId: string) {
       estimatedArrivalAt: { not: null },
       leadInvite: {
         jobRequestId: requestId,
-        status: { in: ['SENT', 'VIEWED'] },
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
         expiresAt: { gt: new Date() },
       },
       provider: { active: true, status: 'ACTIVE', verified: true },

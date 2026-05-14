@@ -138,9 +138,12 @@ describe('sendRequestToShortlistedProviders', () => {
       customerId: 'customer-1',
     })
 
-    expect(result.invitedCount).toBe(0)
+    expect(result.invitedCount).toBe(1)
     expect(result.pendingCount).toBe(1)
-    expect(mockJobRequest.update).not.toHaveBeenCalled()
+    expect(mockJobRequest.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'request-1' },
+      data: expect.objectContaining({ status: 'MATCHING' }),
+    }))
     expect(mockSendJobOffer).toHaveBeenCalledWith(expect.objectContaining({
       providerPhone: '+27821111111',
       providerFirstName: 'Lovemore',

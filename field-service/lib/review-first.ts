@@ -1038,85 +1038,106 @@ export async function shortlistProviderForCustomerReview(params: {
   }
 
   const shortlistLeadStatuses: LeadStatus[] = ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED']
-  const shortlistCount = await db.lead.count({
-    where: {
-      jobRequestId: request.id,
-      status: { in: shortlistLeadStatuses },
-    },
-  })
 
-  const existingLead = await db.lead.findUnique({
-    where: {
-      jobRequestId_providerId: {
+  // Wrap count check + lead upsert + shortlist find/create in a single transaction
+  // to prevent two concurrent taps exceeding MAX_SHORTLISTED_PROVIDERS (C2) and
+  // to prevent duplicate DRAFT ProviderShortlist rows (C3).
+  const { lead } = await db.$transaction(async (tx) => {
+    const shortlistCount = await tx.lead.count({
+      where: {
+        jobRequestId: request.id,
+        status: { in: shortlistLeadStatuses },
+      },
+    })
+
+    const existingLead = await tx.lead.findUnique({
+      where: {
+        jobRequestId_providerId: {
+          jobRequestId: request.id,
+          providerId: params.providerId,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    })
+
+    if (!existingLead && shortlistCount >= MAX_SHORTLISTED_PROVIDERS) {
+      throw new ReviewFirstError('SHORTLIST_LIMIT_REACHED', `You can shortlist up to ${MAX_SHORTLISTED_PROVIDERS} providers.`)
+    }
+
+    const lead = await tx.lead.upsert({
+      where: {
+        jobRequestId_providerId: {
+          jobRequestId: request.id,
+          providerId: params.providerId,
+        },
+      },
+      create: {
         jobRequestId: request.id,
         providerId: params.providerId,
+        dispatchDecisionId: request.latestDispatchDecisionId,
+        matchAttemptId: rankedCandidate.id,
+        status: 'SHORTLISTED',
+        matchScore: rankedCandidate.score ?? null,
+        rankingPosition: rankedCandidate.rankedPosition ?? null,
+        expiresAt: null,
       },
-    },
-    select: {
-      id: true,
-      status: true,
-    },
-  })
-
-  if (!existingLead && shortlistCount >= MAX_SHORTLISTED_PROVIDERS) {
-    throw new ReviewFirstError('SHORTLIST_LIMIT_REACHED', `You can shortlist up to ${MAX_SHORTLISTED_PROVIDERS} providers.`)
-  }
-
-  const lead = await db.lead.upsert({
-    where: {
-      jobRequestId_providerId: {
-        jobRequestId: request.id,
-        providerId: params.providerId,
+      update: {
+        status: existingLead?.status === 'SHORTLISTED' || existingLead?.status === 'SEND_PENDING' || existingLead?.status === 'SEND_FAILED' || existingLead?.status === 'SENT' || existingLead?.status === 'VIEWED' || existingLead?.status === 'INTERESTED'
+          ? existingLead.status
+          : 'SHORTLISTED',
+        dispatchDecisionId: request.latestDispatchDecisionId,
+        matchAttemptId: rankedCandidate.id,
+        matchScore: rankedCandidate.score ?? null,
+        rankingPosition: rankedCandidate.rankedPosition ?? null,
+        expiresAt: null,
       },
-    },
-    create: {
-      jobRequestId: request.id,
-      providerId: params.providerId,
-      dispatchDecisionId: request.latestDispatchDecisionId,
-      matchAttemptId: rankedCandidate.id,
-      status: 'SHORTLISTED',
-      matchScore: rankedCandidate.score ?? null,
-      rankingPosition: rankedCandidate.rankedPosition ?? null,
-      expiresAt: null,
-    },
-    update: {
-      status: existingLead?.status === 'SHORTLISTED' || existingLead?.status === 'SEND_PENDING' || existingLead?.status === 'SEND_FAILED' || existingLead?.status === 'SENT' || existingLead?.status === 'VIEWED' || existingLead?.status === 'INTERESTED'
-        ? existingLead.status
-        : 'SHORTLISTED',
-      dispatchDecisionId: request.latestDispatchDecisionId,
-      matchAttemptId: rankedCandidate.id,
-      matchScore: rankedCandidate.score ?? null,
-      rankingPosition: rankedCandidate.rankedPosition ?? null,
-      expiresAt: null,
-    },
-  })
+    })
 
-  let shortlist = await db.providerShortlist.findFirst({
-    where: { requestId: request.id, status: 'DRAFT' },
-    select: { id: true },
-  })
-  if (!shortlist) {
-    shortlist = await db.providerShortlist.create({
-      data: { requestId: request.id, status: 'DRAFT' },
+    let shortlist = await tx.providerShortlist.findFirst({
+      where: { requestId: request.id, status: 'DRAFT' },
       select: { id: true },
     })
-  }
+    if (!shortlist) {
+      try {
+        shortlist = await tx.providerShortlist.create({
+          data: { requestId: request.id, status: 'DRAFT' },
+          select: { id: true },
+        })
+      } catch (err) {
+        // P2002: a concurrent transaction created the DRAFT shortlist first.
+        if ((err as { code?: string }).code === 'P2002') {
+          shortlist = await tx.providerShortlist.findFirst({
+            where: { requestId: request.id, status: 'DRAFT' },
+            select: { id: true },
+          })
+          if (!shortlist) throw err
+        } else {
+          throw err
+        }
+      }
+    }
 
-  await db.providerShortlistItem.upsert({
-    where: {
-      shortlistId_leadInviteId: {
+    await tx.providerShortlistItem.upsert({
+      where: {
+        shortlistId_leadInviteId: {
+          shortlistId: shortlist.id,
+          leadInviteId: lead.id,
+        },
+      },
+      create: {
         shortlistId: shortlist.id,
         leadInviteId: lead.id,
+        providerId: params.providerId,
+        rank: rankedCandidate.rankedPosition ?? 999,
+        matchScore: rankedCandidate.score ?? null,
       },
-    },
-    create: {
-      shortlistId: shortlist.id,
-      leadInviteId: lead.id,
-      providerId: params.providerId,
-      rank: rankedCandidate.rankedPosition ?? 999,
-      matchScore: rankedCandidate.score ?? null,
-    },
-    update: {},
+      update: {},
+    })
+
+    return { lead }
   })
 
   const provider = await db.provider.findUnique({
@@ -1408,7 +1429,10 @@ export async function sendRequestToShortlistedProviders(params: {
     )
   }
 
-  if (notifiedCount > 0) {
+  // pendingCount tracks API-accepted sends; notifiedCount tracks confirmed delivery
+  // from webhooks, which cannot be known here. Use pendingCount to gate the
+  // MATCHING transition so the status is set as soon as any send is accepted.
+  if (pendingCount > 0) {
     await db.jobRequest.update({
       where: { id: request.id },
       data: {
@@ -1436,7 +1460,7 @@ export async function sendRequestToShortlistedProviders(params: {
 
   return {
     requestId: request.id,
-    invitedCount: notifiedCount,
+    invitedCount: pendingCount,
     pendingCount,
     failedCount,
     expiresAt: firstExpiresAt,
