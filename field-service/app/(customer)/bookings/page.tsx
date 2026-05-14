@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
+import * as React from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Plus, MapPin } from 'lucide-react'
@@ -81,6 +82,15 @@ function bookingLabel(bookingStatus: string, jobStatus?: string | null): string 
     COMPLETED: 'Completed',
   }
   return bmap[bookingStatus] ?? bookingStatus
+}
+
+function chipStyle(tone: StatusTone): React.CSSProperties {
+  switch (tone) {
+    case 'success': return { background: 'rgba(15,157,88,0.10)', color: '#0F7A45' }
+    case 'danger':  return { background: 'rgba(229,72,77,0.10)', color: '#C1121F' }
+    case 'warn':    return { background: 'rgba(230,153,0,0.10)', color: '#A66400' }
+    default:        return { background: 'rgba(230,153,0,0.10)', color: '#A66400' }
+  }
 }
 
 function FilterPill({
@@ -281,9 +291,10 @@ export default async function CustomerBookingsPage({
                         <span className="font-mono text-[11.5px] text-[var(--ink-soft)] tracking-wider">
                           PAP-{ref}
                         </span>
-                        <div className="flex items-center gap-1.5">
-                          <StatusDot tone={tone} size={7} />
-                          <span className="text-[12px] font-semibold text-[var(--ink-mute)]">{label}</span>
+                        <div className="flex items-center gap-1.5 h-[22px] px-2.5 rounded-full text-[11.5px] font-semibold"
+                             style={chipStyle(tone)}>
+                          <StatusDot tone={tone} size={6} />
+                          {label}
                         </div>
                       </div>
                       <p className="text-[16px] font-bold text-[var(--ink)] tracking-[-0.015em]">
@@ -293,11 +304,23 @@ export default async function CustomerBookingsPage({
                         {request.category?.replaceAll('_', ' ')}{request.address ? ` · ${request.address.suburb}` : ''}
                       </p>
                       <div className="border-t border-[var(--border)] my-3" />
-                      <div className="flex items-center justify-between">
-                        <span className="text-[13px] text-[var(--ink-mute)]">
-                          {providerName ?? 'Finding providers…'}
-                        </span>
-                        <span className="h-8 px-4 rounded-[10px] bg-[var(--ink)] text-[var(--card)] text-[13px] font-semibold flex items-center">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {request.match?.provider?.avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={request.match.provider.avatarUrl} alt=""
+                                 className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
+                          ) : providerName ? (
+                            <div className="w-7 h-7 rounded-[8px] shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
+                                 style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}>
+                              {providerName.trim().split(/\s+/).slice(0, 2).map((p: string) => p[0]).join('').toUpperCase()}
+                            </div>
+                          ) : null}
+                          <span className="text-[13px] text-[var(--ink-mute)] truncate">
+                            {providerName ?? 'Finding providers…'}
+                          </span>
+                        </div>
+                        <span className="h-8 px-4 rounded-[10px] bg-[var(--ink)] text-[var(--card)] text-[13px] font-semibold flex items-center shrink-0">
                           View
                         </span>
                       </div>
@@ -336,9 +359,10 @@ export default async function CustomerBookingsPage({
                         <span className="font-mono text-[11.5px] text-[var(--ink-soft)] tracking-wider">
                           PAP-{ref}
                         </span>
-                        <div className="flex items-center gap-1.5">
-                          <StatusDot tone={tone} size={7} />
-                          <span className="text-[12px] font-semibold text-[var(--ink-mute)]">{label}</span>
+                        <div className="flex items-center gap-1.5 h-[22px] px-2.5 rounded-full text-[11.5px] font-semibold"
+                             style={chipStyle(tone)}>
+                          <StatusDot tone={tone} size={6} />
+                          {label}
                         </div>
                       </div>
                       <p className="text-[16px] font-bold text-[var(--ink)] tracking-[-0.015em] capitalize">
@@ -350,11 +374,23 @@ export default async function CustomerBookingsPage({
                         {amount ? ` · ${amount}` : ''}
                       </p>
                       <div className="border-t border-[var(--border)] my-3" />
-                      <div className="flex items-center justify-between">
-                        <span className="text-[13px] text-[var(--ink-mute)]">
-                          {providerName ?? '—'}
-                        </span>
-                        <span className="h-8 px-4 rounded-[10px] bg-[var(--ink)] text-[var(--card)] text-[13px] font-semibold flex items-center">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {b.match.provider?.avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={b.match.provider.avatarUrl} alt=""
+                                 className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
+                          ) : providerName ? (
+                            <div className="w-7 h-7 rounded-[8px] shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
+                                 style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}>
+                              {providerName.trim().split(/\s+/).slice(0, 2).map((p: string) => p[0]).join('').toUpperCase()}
+                            </div>
+                          ) : null}
+                          <span className="text-[13px] text-[var(--ink-mute)] truncate">
+                            {providerName ?? '—'}
+                          </span>
+                        </div>
+                        <span className="h-8 px-4 rounded-[10px] bg-[var(--ink)] text-[var(--card)] text-[13px] font-semibold flex items-center shrink-0">
                           View
                         </span>
                       </div>
@@ -368,22 +404,26 @@ export default async function CustomerBookingsPage({
 
         {/* Empty state */}
         {!hasResults && (
-          <div className="flex flex-col items-center py-12 text-center">
-            <div className="w-16 h-16 rounded-[20px] brand-gradient-soft flex items-center justify-center mb-4">
-              <MapPin size={28} className="text-[var(--brand-purple)]" />
+          <div className="rounded-[20px] p-8 text-center"
+               style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="w-14 h-14 rounded-[18px] flex items-center justify-center mx-auto mb-4"
+                 style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))', color: 'var(--brand-purple)' }}>
+              <MapPin size={26} />
             </div>
-            <p className="text-[16px] font-bold text-[var(--ink)] tracking-[-0.01em] mb-1">
-              {site || category || status ? 'No results' : 'No bookings yet'}
+            <p className="text-[16px] font-bold tracking-[-0.01em] mb-1.5" style={{ color: 'var(--ink)' }}>
+              {site || category || status ? 'No results' : 'No active bookings'}
             </p>
-            <p className="text-[13.5px] text-[var(--ink-mute)] mb-6 max-w-[260px]">
+            <p className="text-[13.5px] mb-6 max-w-[240px] mx-auto" style={{ color: 'var(--ink-mute)' }}>
               {site || category || status
                 ? 'Try a different filter combination.'
-                : 'When you request a service it\'ll appear here.'}
+                : "When you request a service it'll appear here."}
             </p>
             {!site && !category && !status && (
-              <Button asChild size="md">
-                <Link href="/services">Request a service</Link>
-              </Button>
+              <Link href="/services"
+                    className="text-[13.5px] font-semibold"
+                    style={{ color: 'var(--brand-purple)' }}>
+                Request a service →
+              </Link>
             )}
           </div>
         )}

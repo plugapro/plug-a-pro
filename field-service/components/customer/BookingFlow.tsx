@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, MapPin, Shield, CheckCircle2 } from 'lucide-react'
+import { ChevronLeft, MapPin, Shield, CheckCircle2, Zap, Clock, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -21,6 +21,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
+import { WA_ENABLED } from '@/lib/whatsapp-client'
 import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 import {
   BUDGET_PREFERENCE_OPTIONS,
@@ -587,7 +588,7 @@ export function BookingFlow({
             )}
             <div className="flex-1">
               {step !== 'waitlisted' && (
-                <div className="text-[11px] font-bold tracking-[0.06em] uppercase" style={{ color: '#8B3FE8' }}>
+                <div className="text-[11px] font-bold tracking-[0.06em] uppercase" style={{ color: 'var(--brand-purple)' }}>
                   {category.name} · Step {Math.max(stepIndex + 1, 1)} of 3
                 </div>
               )}
@@ -607,7 +608,7 @@ export function BookingFlow({
             >
               {[0, 1, 2].map((i) => (
                 <div key={i} className="flex-1 h-1 rounded-full"
-                     style={{ background: i <= stepIndex ? '#8B3FE8' : 'var(--border)', transition: 'background 0.3s' }} />
+                     style={{ background: i <= stepIndex ? 'var(--brand-gradient, var(--brand-purple))' : 'var(--border)', transition: 'background 0.3s' }} />
               ))}
             </div>
           )}
@@ -627,9 +628,9 @@ export function BookingFlow({
         <form onSubmit={handleAddressSubmit} className="px-[18px] space-y-4">
           {/* Privacy notice */}
           <div className="rounded-[16px] p-4"
-               style={{ background: 'rgba(139,63,232,0.06)', boxShadow: 'inset 0 0 0 1px rgba(139,63,232,0.12)' }}>
+               style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.06))', boxShadow: 'inset 0 0 0 1px rgba(139,63,232,0.12)' }}>
             <div className="flex items-start gap-3">
-              <Shield size={18} className="shrink-0 mt-0.5" style={{ color: '#8B3FE8' }} />
+              <Shield size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--brand-purple)' }} />
               <div className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)' }}>
                 <strong>Your address stays private.</strong> Providers only see your suburb and province until one accepts the job.
               </div>
@@ -645,8 +646,8 @@ export function BookingFlow({
                   <button key={site.id} type="button" onClick={() => applySavedSite(site)}
                           className="w-full text-left rounded-[14px] px-4 py-3"
                           style={{
-                            background: selectedSiteId === site.id ? 'rgba(139,63,232,0.08)' : 'var(--card)',
-                            boxShadow: selectedSiteId === site.id ? 'inset 0 0 0 1.5px #8B3FE8' : 'inset 0 0 0 1px var(--border)',
+                            background: selectedSiteId === site.id ? 'var(--brand-gradient-soft, rgba(139,63,232,0.08))' : 'var(--card)',
+                            boxShadow: selectedSiteId === site.id ? 'inset 0 0 0 1.5px var(--brand-purple)' : 'inset 0 0 0 1px var(--border)',
                             color: 'var(--ink)',
                           }}>
                     <div className="text-[14px] font-semibold">{site.label ?? site.suburb}</div>
@@ -658,8 +659,8 @@ export function BookingFlow({
                 <button type="button" onClick={handleEnterNewAddress}
                         className="w-full text-left rounded-[14px] px-4 py-3"
                         style={{
-                          background: selectedSiteId === 'new' ? 'rgba(139,63,232,0.08)' : 'var(--card)',
-                          boxShadow: selectedSiteId === 'new' ? 'inset 0 0 0 1.5px #8B3FE8' : 'inset 0 0 0 1px var(--border)',
+                          background: selectedSiteId === 'new' ? 'var(--brand-gradient-soft, rgba(139,63,232,0.08))' : 'var(--card)',
+                          boxShadow: selectedSiteId === 'new' ? 'inset 0 0 0 1.5px var(--brand-purple)' : 'inset 0 0 0 1px var(--border)',
                           color: 'var(--ink)',
                         }}>
                   <div className="text-[14px] font-semibold">+ Enter a new address</div>
@@ -674,7 +675,7 @@ export function BookingFlow({
               <button type="button" onClick={handleUseMyLocation} disabled={locationLoading}
                       className="w-full h-12 rounded-[14px] flex items-center justify-center gap-2.5 text-[13.5px] font-semibold"
                       style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}>
-                <MapPin size={16} style={{ color: '#8B3FE8' }} />
+                <MapPin size={16} style={{ color: 'var(--brand-purple)' }} />
                 {locationLoading ? 'Finding your address…' : 'Use my current location'}
               </button>
               {locationDetectedLabel && (
@@ -963,9 +964,9 @@ export function BookingFlow({
             <div className="text-[12px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>When do you need this done?</div>
             <div className="grid grid-cols-3 gap-2">
               {([
-                { id: 'asap' as const, label: 'Emergency', sub: 'Today / ASAP', hue: '#E5484D' },
-                { id: 'this_week' as const, label: 'This week', sub: 'Within days', hue: '#FFC22B' },
-                { id: 'flexible' as const, label: 'Flexible', sub: "I'm flexible", hue: '#0FA28A' },
+                { id: 'asap' as const, label: 'Emergency', sub: 'Today / ASAP', hue: '#E5484D', icon: <Zap size={14} /> },
+                { id: 'this_week' as const, label: 'This week', sub: 'Within days', hue: '#FFC22B', icon: <Clock size={14} /> },
+                { id: 'flexible' as const, label: 'Flexible', sub: "I'm flexible", hue: '#0FA28A', icon: <Calendar size={14} /> },
               ]).map((u) => {
                 const active = urgency === u.id
                 return (
@@ -978,7 +979,7 @@ export function BookingFlow({
                           }}>
                     <div className="w-7 h-7 rounded-[8px] flex items-center justify-center mb-2"
                          style={{ background: `${u.hue}15`, color: u.hue }}>
-                      <div className="w-2 h-2 rounded-full" style={{ background: u.hue }} />
+                      {u.icon}
                     </div>
                     <div className="text-[13px] font-semibold leading-tight">{u.label}</div>
                     <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>{u.sub}</div>
@@ -1164,7 +1165,7 @@ export function BookingFlow({
           <div className="rounded-[20px] p-6 text-center"
                style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
             <div className="w-[64px] h-[64px] rounded-[20px] flex items-center justify-center mx-auto mb-4"
-                 style={{ background: 'rgba(139,63,232,0.08)', color: '#8B3FE8' }}>
+                 style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))', color: 'var(--brand-purple)' }}>
               <MapPin size={28} />
             </div>
             <h2 className="text-[17px] font-bold mb-2" style={{ color: 'var(--ink)' }}>Not in your area yet</h2>
@@ -1191,7 +1192,7 @@ export function BookingFlow({
           <div className="relative px-[22px] pt-[60px] pb-10 flex flex-col items-center">
             {/* Layered icon */}
             <div className="w-[120px] h-[120px] rounded-[36px] flex items-center justify-center mb-5"
-                 style={{ background: 'rgba(139,63,232,0.08)' }}>
+                 style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))' }}>
               <div className="w-[80px] h-[80px] rounded-[24px] flex items-center justify-center text-white"
                    style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)', boxShadow: '0 12px 32px rgba(139,63,232,0.4)' }}>
                 <CheckCircle2 size={40} />
@@ -1210,7 +1211,7 @@ export function BookingFlow({
                  style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-[12px] flex items-center justify-center shrink-0"
-                     style={{ background: 'rgba(139,63,232,0.08)', color: '#8B3FE8' }}>
+                     style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))', color: 'var(--brand-purple)' }}>
                   <CheckCircle2 size={20} />
                 </div>
                 <div className="flex-1">
@@ -1227,6 +1228,28 @@ export function BookingFlow({
                 </div>
               </div>
             </div>
+
+            {/* WhatsApp confirmation card */}
+            {WA_ENABLED && (
+              <div className="w-full rounded-[20px] p-4 mb-4"
+                   style={{ background: 'rgba(37,211,102,0.06)', boxShadow: 'inset 0 0 0 1px rgba(37,211,102,0.18)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-[12px] flex items-center justify-center shrink-0"
+                       style={{ background: '#25D366', color: '#fff' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width={20} height={20} aria-hidden>
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[13px] font-bold" style={{ color: 'var(--ink)' }}>Updates on WhatsApp</div>
+                    <div className="text-[12px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>Live status, quotes &amp; messages.</div>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#1FAD52" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width={18} height={18} aria-hidden>
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+              </div>
+            )}
 
             {/* Matching mode selector */}
             {!selectedMatchingMode ? (
