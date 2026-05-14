@@ -1,23 +1,74 @@
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 text-center">
-      <div className="space-y-2">
-        <h1 className="text-6xl font-bold text-muted-foreground/30">404</h1>
-        <h2 className="text-xl font-semibold">Page not found</h2>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          The page you&apos;re looking for doesn&apos;t exist or has been moved.
+    <div className="relative flex min-h-screen flex-col items-center justify-center px-6 text-center overflow-hidden">
+      {/* Radial halo */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-[30%] -translate-x-1/2 -translate-y-1/2 w-[360px] h-[360px] rounded-full opacity-20"
+        style={{ background: 'var(--brand-purple)', filter: 'blur(80px)' }}
+      />
+
+      {/* Layered icon */}
+      <div className="relative mb-8">
+        {/* Outer gradient-soft tile 88×88 */}
+        <div
+          className="w-[88px] h-[88px] rounded-[28px] flex items-center justify-center"
+          style={{ background: 'rgba(139,63,232,0.10)' }}
+        >
+          {/* Inner white tile 56×56 */}
+          <div
+            className="w-[56px] h-[56px] rounded-[18px] flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)',
+              boxShadow: '0 8px 24px rgba(139,63,232,0.35)',
+            }}
+          >
+            <span
+              className="font-bold text-white leading-none"
+              style={{ fontSize: 28 }}
+              aria-hidden
+            >
+              ?
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 mb-10 max-w-[320px]">
+        <h1
+          className="font-bold tracking-[-0.025em]"
+          style={{ fontSize: 26, color: 'var(--ink)' }}
+        >
+          We can&apos;t find that page
+        </h1>
+        <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.55 }}>
+          The link may have expired, moved, or never existed.
         </p>
       </div>
-      <div className="flex gap-3">
-        <Button asChild>
-          <Link href="/">Go home</Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href="/bookings">My bookings</Link>
-        </Button>
+
+      <div className="flex flex-col gap-3 w-full max-w-[280px]">
+        <Link
+          href="/"
+          className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold text-white"
+          style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
+        >
+          Back to home
+        </Link>
+        <a
+          href="https://wa.me/27000000000?text=Hi%2C+I+found+a+broken+link+on+Plug+A+Pro"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
+          style={{
+            background: 'var(--card-alt)',
+            color: 'var(--ink)',
+            boxShadow: 'inset 0 0 0 1px var(--border)',
+          }}
+        >
+          Report this
+        </a>
       </div>
     </div>
   )

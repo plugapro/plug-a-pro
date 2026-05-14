@@ -15,8 +15,8 @@ import { buildMetadata } from '@/lib/metadata'
 import { JobStatusControls } from '@/components/technician/StatusControls'
 import { EvidenceUploader } from '@/components/technician/EvidenceUploader'
 import { ExtraWorkForm } from '@/components/technician/ExtraWorkForm'
-import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ChevronLeft } from 'lucide-react'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 
 export const metadata = buildMetadata({ title: 'Job Detail', noIndex: true })
@@ -24,10 +24,10 @@ export const metadata = buildMetadata({ title: 'Job Detail', noIndex: true })
 export default async function JobDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>
+  params: Promise<{ jobId: string }>
 }) {
   const session = await requireProvider()
-  const { id } = await params
+  const { jobId: id } = await params
 
   const provider = await db.provider.findUnique({ where: { userId: session.id } })
   if (!provider) redirect('/provider')
@@ -123,23 +123,32 @@ export default async function JobDetailPage({
   }
 
   return (
-    <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-24">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-muted-foreground" asChild>
-            <Link href="/provider">← Jobs</Link>
-          </Button>
-          <h1 className="text-xl font-semibold mt-1">
-            Job #{job.id.slice(-8).toUpperCase()}
-          </h1>
-        </div>
+    <div className="min-h-screen pb-32 screen-enter">
+      {/* Page header */}
+      <div className="px-[18px] pt-[60px] pb-4 flex items-center gap-3">
+        <Link href="/provider" aria-label="Back to jobs">
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+          >
+            <ChevronLeft className="w-5 h-5" style={{ color: 'var(--ink)' }} />
+          </div>
+        </Link>
+        <h1
+          className="text-[28px] font-bold tracking-[-0.025em] flex-1"
+          style={{ color: 'var(--ink)' }}
+        >
+          Job #{job.id.slice(-8).toUpperCase()}
+        </h1>
         <StatusBadge status={job.status} type="job" />
       </div>
 
-      {/* Job details */}
-      <Card>
-        <CardContent className="p-4 space-y-2 text-sm">
+      <div className="px-[18px] space-y-3">
+        {/* Job details */}
+        <div
+          className="rounded-[20px] p-5 space-y-2 text-sm"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
           <Row label="Customer">{customerFirst}</Row>
           {address && (
             <Row label="Address">
@@ -163,21 +172,25 @@ export default async function JobDetailPage({
           )}
           {b.notes && <Row label="Notes">{b.notes}</Row>}
           <Row label="Ref">{job.bookingId.slice(-8).toUpperCase()}</Row>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Completion note — shown once job is awaiting or completed */}
-      {(['PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] as const).includes(
-        job.status as 'PENDING_COMPLETION_CONFIRMATION' | 'COMPLETED'
-      ) && (job as any).completionNote && (
-        <Card>
-          <CardContent className="p-4 space-y-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        {/* Completion note — shown once job is awaiting or completed */}
+        {(['PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] as const).includes(
+          job.status as 'PENDING_COMPLETION_CONFIRMATION' | 'COMPLETED'
+        ) && (job as any).completionNote && (
+          <div
+            className="rounded-[20px] p-5 space-y-1"
+            style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+          >
+            <p
+              className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3"
+              style={{ color: 'var(--ink-mute)' }}
+            >
               Completion note
             </p>
             <p className="text-sm">{(job as any).completionNote}</p>
             {(job as any).completedAt && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs" style={{ color: 'var(--ink-mute)' }}>
                 Completed {(job as any).completedAt.toLocaleString('en-ZA', {
                   day: 'numeric',
                   month: 'short',
@@ -187,106 +200,127 @@ export default async function JobDetailPage({
                 })}
               </p>
             )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Status controls — client component */}
-      <JobStatusControls jobId={job.id} currentStatus={job.status} />
-
-      {/* Status history */}
-      {job.statusHistory.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            History
-          </h2>
-          <div className="space-y-1">
-            {job.statusHistory.map((event) => (
-              <div key={event.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
-                <span>{event.timestamp.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</span>
-                <span>→</span>
-                <span className="capitalize">{event.toStatus.replace(/_/g, ' ').toLowerCase()}</span>
-                {event.notes && <span className="italic">({event.notes})</span>}
-              </div>
-            ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Photos section */}
-      {(['STARTED', 'ARRIVED', 'PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] as const).includes(job.status as 'STARTED' | 'ARRIVED' | 'PENDING_COMPLETION_CONFIRMATION' | 'COMPLETED') && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Job photos
-          </h2>
+        {/* Status controls — client component */}
+        <JobStatusControls jobId={job.id} currentStatus={job.status} />
 
-          {/* Existing photos */}
-          {job.photos.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
-              {job.photos.map((photo) => (
-                <div key={photo.id} className="space-y-1">
-                  <AttachmentThumbnail
-                    attachmentId={photo.id}
-                    src={`/api/attachments/${photo.id}`}
-                    alt={photo.label ?? 'Job photo'}
-                    href={`/api/attachments/${photo.id}`}
-                    className="rounded-lg object-cover w-full h-40"
-                  />
-                  {(photo.caption || photo.label) && (
-                    <p className="text-xs text-muted-foreground capitalize text-center">
-                      {photo.caption ?? photo.label}
-                    </p>
-                  )}
+        {/* Status history */}
+        {job.statusHistory.length > 0 && (
+          <div className="space-y-2">
+            <h2
+              className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              History
+            </h2>
+            <div className="space-y-1">
+              {job.statusHistory.map((event) => (
+                <div key={event.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--ink-mute)' }}>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--brand-purple)' }} />
+                  <span>{event.timestamp.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>→</span>
+                  <span className="capitalize">{event.toStatus.replace(/_/g, ' ').toLowerCase()}</span>
+                  {event.notes && <span className="italic">({event.notes})</span>}
                 </div>
               ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Upload controls — only when job is not yet completed */}
-          {!['COMPLETED', 'CANCELLED'].includes(job.status) && (
-            <EvidenceUploader jobId={job.id} />
-          )}
-        </div>
-      )}
+        {/* Photos section */}
+        {(['STARTED', 'ARRIVED', 'PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] as const).includes(job.status as 'STARTED' | 'ARRIVED' | 'PENDING_COMPLETION_CONFIRMATION' | 'COMPLETED') && (
+          <div className="space-y-3">
+            <h2
+              className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Job photos
+            </h2>
 
-      {/* Extra work form — only while job is active */}
-      {job.status === 'STARTED' && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Request extra work
-          </h2>
-          <ExtraWorkForm jobId={job.id} onSubmitted={() => {}} />
-        </div>
-      )}
+            {/* Existing photos */}
+            {job.photos.length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {job.photos.map((photo) => (
+                  <div key={photo.id} className="space-y-1">
+                    <AttachmentThumbnail
+                      attachmentId={photo.id}
+                      src={`/api/attachments/${photo.id}`}
+                      alt={photo.label ?? 'Job photo'}
+                      href={`/api/attachments/${photo.id}`}
+                      className="rounded-lg object-cover w-full h-40"
+                    />
+                    {(photo.caption || photo.label) && (
+                      <p className="text-xs capitalize text-center" style={{ color: 'var(--ink-mute)' }}>
+                        {photo.caption ?? photo.label}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-      {/* Extra work requests */}
-      {job.extras.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Extra work
-          </h2>
-          {job.extras.map((extra) => (
-            <Card key={extra.id}>
-              <CardContent className="p-3 text-sm">
+            {/* Upload controls — only when job is not yet completed */}
+            {!['COMPLETED', 'CANCELLED'].includes(job.status) && (
+              <EvidenceUploader jobId={job.id} />
+            )}
+          </div>
+        )}
+
+        {/* Extra work form — only while job is active */}
+        {job.status === 'STARTED' && (
+          <div className="space-y-3">
+            <h2
+              className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Request extra work
+            </h2>
+            <ExtraWorkForm jobId={job.id} onSubmitted={() => {}} />
+          </div>
+        )}
+
+        {/* Extra work requests */}
+        {job.extras.length > 0 && (
+          <div className="space-y-2">
+            <h2
+              className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Extra work
+            </h2>
+            {job.extras.map((extra) => (
+              <div
+                key={extra.id}
+                className="rounded-[20px] p-5 text-sm"
+                style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+              >
                 <div className="flex justify-between">
                   <p>{extra.description}</p>
                   <p className="font-medium">R {Number(extra.amount).toFixed(0)}</p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs mt-1" style={{ color: 'var(--ink-mute)' }}>
                   Status: <span className="capitalize">{extra.status.toLowerCase()}</span>
                 </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              </div>
+            ))}
+          </div>
+        )}
 
-      <Card>
-        <CardContent className="p-4 space-y-3">
+        {/* Dispute section */}
+        <div
+          className="rounded-[20px] p-5 space-y-3"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
           <div>
-            <p className="font-medium text-sm">Problem on this job?</p>
-            <p className="text-sm text-muted-foreground">
+            <p
+              className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Problem on this job?
+            </p>
+            <p className="text-sm" style={{ color: 'var(--ink-mute)' }}>
               Raise it with Plug A Pro support so the written quote, photos, and job history can be reviewed.
             </p>
           </div>
@@ -294,16 +328,20 @@ export default async function JobDetailPage({
           {disputes.length > 0 && (
             <div className="space-y-2">
               {disputes.map((dispute) => (
-                <div key={dispute.id} className="rounded-lg border px-3 py-3 text-sm">
+                <div
+                  key={dispute.id}
+                  className="rounded-[20px] px-4 py-3 text-sm"
+                  style={{ boxShadow: 'inset 0 0 0 1px var(--border)' }}
+                >
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-medium">Issue #{dispute.id.slice(-8).toUpperCase()}</p>
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                    <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--ink-mute)' }}>
                       {dispute.status.replaceAll('_', ' ').toLowerCase()}
                     </span>
                   </div>
-                  <p className="mt-2 text-muted-foreground">{dispute.reason}</p>
+                  <p className="mt-2" style={{ color: 'var(--ink-mute)' }}>{dispute.reason}</p>
                   {dispute.resolution && (
-                    <p className="mt-2 text-xs text-muted-foreground">
+                    <p className="mt-2 text-xs" style={{ color: 'var(--ink-mute)' }}>
                       Resolution: {dispute.resolution}
                     </p>
                   )}
@@ -326,8 +364,8 @@ export default async function JobDetailPage({
               </Button>
             </form>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

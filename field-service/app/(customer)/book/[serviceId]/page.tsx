@@ -3,7 +3,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
@@ -36,13 +36,6 @@ export default async function RequestJobPage({
   ])
   const preferredProviderId = preferredProviderIdRaw?.trim() || null
   const session = await getSession()
-  if (!session) {
-    const next = new URLSearchParams()
-    if (templateId) next.set('template', templateId)
-    if (preferredProviderId) next.set('provider', preferredProviderId)
-    const nextPath = `/book/${category}${next.toString() ? `?${next.toString()}` : ''}`
-    redirect(`/sign-in?next=${encodeURIComponent(nextPath)}`)
-  }
 
   const categoryInfo = CATEGORIES[category]
   if (!categoryInfo) notFound()
@@ -53,11 +46,15 @@ export default async function RequestJobPage({
     description: categoryInfo.description,
   }
 
-  // Fetch saved addresses and flag in parallel — non-fatal if customer not yet created.
-  const [customer, addressBookEnabled] = await Promise.all([
-    resolveCustomerForSession(db, session),
-    isEnabled('feature.customer.address_book', { userId: session.id }),
-  ])
+  // Logged-out visitors can complete the request draft; auth is enforced when
+  // the booking API receives the submit. Customer-specific saved-site/template
+  // data is loaded only after a session exists.
+  const [customer, addressBookEnabled] = session
+    ? await Promise.all([
+        resolveCustomerForSession(db, session),
+        isEnabled('feature.customer.address_book', { userId: session.id }),
+      ])
+    : [null, false] as const
 
   const savedSites = customer
     ? await db.customerAddress.findMany({

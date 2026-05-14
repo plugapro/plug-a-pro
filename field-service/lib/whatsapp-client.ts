@@ -1,0 +1,1 @@
+export const WA_ENABLED = !!process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER

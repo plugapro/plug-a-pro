@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import CustomerLayout from '@/app/(customer)/layout'
+import type { BottomNavItem } from '@/components/shared/bottom-nav'
 
 const {
   mockGetSession,
@@ -41,9 +42,15 @@ vi.mock('@/components/customer/BusinessTypePrompt', () => ({
   BusinessTypePrompt: () => <div>Business prompt</div>,
 }))
 
-vi.mock('@/components/shared/app-nav-link', () => ({
-  AppNavLink: ({ href, label }: { href: string; label: string }) => (
-    <a href={href}>{label}</a>
+vi.mock('@/components/shared/bottom-nav', () => ({
+  BottomNav: ({ items }: { items: BottomNavItem[] }) => (
+    <nav data-testid="bottom-nav">
+      {items.map((item) => (
+        <a key={item.id} href={item.href} data-id={item.id}>
+          {item.label}
+        </a>
+      ))}
+    </nav>
   ),
 }))
 
@@ -60,12 +67,11 @@ describe('customer layout auth-aware navigation', () => {
     const html = renderToStaticMarkup(await CustomerLayout({ children: <div>home</div> }))
 
     expect(html).toContain('Sign in')
-    expect(html).not.toContain('My Account')
     expect(html).not.toContain('Bookings')
     expect(html).not.toContain('Profile')
   })
 
-  it('shows customer navigation and My Account for logged-in customers', async () => {
+  it('shows customer navigation for logged-in customers', async () => {
     mockGetSession.mockResolvedValue({ id: 'u-1', role: 'customer', phone: '+27825550000' })
     mockResolveCustomerForSession.mockResolvedValue({
       id: 'c-1',
@@ -79,9 +85,10 @@ describe('customer layout auth-aware navigation', () => {
 
     const html = renderToStaticMarkup(await CustomerLayout({ children: <div>home</div> }))
 
-    expect(html).toContain('My Account')
     expect(html).toContain('Bookings')
     expect(html).toContain('Profile')
+    expect(html).toContain('/bookings')
+    expect(html).toContain('/profile')
   })
 
   it('shows provider-first navigation for provider sessions', async () => {
@@ -90,7 +97,6 @@ describe('customer layout auth-aware navigation', () => {
 
     const html = renderToStaticMarkup(await CustomerLayout({ children: <div>home</div> }))
 
-    expect(html).toContain('Provider Portal')
     expect(html).toContain('Dashboard')
     expect(html).toContain('Jobs')
     expect(html).toContain('/provider/profile')

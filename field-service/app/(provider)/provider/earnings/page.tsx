@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
+import { ChevronLeft } from 'lucide-react'
 import { EarningsDashboard } from '@/components/technician/EarningsDashboard'
 
 export const metadata = buildMetadata({ title: 'Earnings', noIndex: true })
@@ -106,17 +107,23 @@ export default async function EarningsPage() {
   }
 
   return (
-    <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-24">
-      <div className="flex items-center gap-3">
+    <div className="min-h-screen pb-32 screen-enter">
+      <div className="px-[18px] pt-[60px] pb-4 flex items-center gap-3">
         <Link
           href="/provider"
-          className="text-xs text-muted-foreground hover:text-foreground"
+          aria-label="Back"
+          className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
         >
-          ← Jobs
+          <ChevronLeft size={18} style={{ color: 'var(--ink)' }} />
         </Link>
-        <h1 className="text-xl font-semibold">Earnings</h1>
+        <h1 className="text-[28px] font-bold tracking-[-0.025em]" style={{ color: 'var(--ink)' }}>
+          Earnings
+        </h1>
       </div>
-      <EarningsDashboard data={data} />
+      <div className="px-[18px]">
+        <EarningsDashboard data={data} />
+      </div>
     </div>
   )
 }

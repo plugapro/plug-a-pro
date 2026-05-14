@@ -2,6 +2,7 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { ChevronLeft } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import { db } from '@/lib/db'
@@ -225,322 +226,410 @@ export default async function LeadDetailPage({
   const visiblePhotos = isUnlocked && unlockedDetails ? unlockedDetails.attachments : preview.attachments
 
   return (
-    <div className="px-4 py-6 space-y-5 max-w-lg mx-auto pb-28">
-      {/* Header */}
-      <div className="space-y-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          New job lead · {lead.id.slice(-8).toUpperCase()}
+    <div className="min-h-screen pb-32 screen-enter">
+      {/* Page header */}
+      <div className="px-[18px] pt-[60px] pb-4">
+        <Link
+          href="/provider/leads"
+          aria-label="Back to leads"
+          className="inline-flex items-center justify-center w-9 h-9 rounded-full mb-4"
+          style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
+          <ChevronLeft size={18} style={{ color: 'var(--ink)' }} />
+        </Link>
+        <p
+          className="text-[11px] font-bold tracking-[0.08em] uppercase mb-1"
+          style={{ color: 'var(--brand-purple)' }}
+        >
+          New lead
         </p>
-        <h1 className="text-xl font-semibold">{preview.jobType}</h1>
+        <h1
+          className="text-[28px] font-bold tracking-[-0.025em]"
+          style={{ color: 'var(--ink)' }}
+        >
+          {preview.jobType}
+        </h1>
       </div>
 
-      {/* Expiry banner */}
-      {lead.expiresAt && !isAcceptedLead && (
-        <AlertCallout tone={isExpired ? 'danger' : 'warning'}>
-          {isExpired
-            ? 'This lead has expired and can no longer be accepted.'
-            : `Expires ${formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · ${format(lead.expiresAt, 'HH:mm, d MMM')}`}
-        </AlertCallout>
-      )}
+      {/* Alerts */}
+      <div className="px-[18px] space-y-3 mt-0">
+        {/* Expiry banner */}
+        {lead.expiresAt && !isAcceptedLead && (
+          <AlertCallout tone={isExpired ? 'danger' : 'warning'}>
+            {isExpired
+              ? 'This lead has expired and can no longer be accepted.'
+              : `Expires ${formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · ${format(lead.expiresAt, 'HH:mm, d MMM')}`}
+          </AlertCallout>
+        )}
 
-      {isResponded && (
-        <AlertCallout tone="neutral">
-          You have already {lead.status === 'DECLINED' ? 'declined' : 'accepted'} this lead.
-        </AlertCallout>
-      )}
+        {isResponded && (
+          <AlertCallout tone="neutral">
+            You have already {lead.status === 'DECLINED' ? 'declined' : 'accepted'} this lead.
+          </AlertCallout>
+        )}
 
-      {resolvedSearchParams.declined && (
-        <AlertCallout tone="success" title="Lead declined">
-          <p>We&apos;ll offer this lead to another provider.</p>
-          <p className="mt-2 text-xs font-medium uppercase tracking-wide opacity-80">
-            Ref: {lead.id.slice(-8).toUpperCase()}
-          </p>
-          {resolvedSearchParams.traceId ? (
-            <p className="mt-1 text-xs opacity-80">Trace ID: {resolvedSearchParams.traceId}</p>
-          ) : null}
-          <div className="mt-3 grid gap-2">
-            <Button asChild size="sm" variant="outline">
-              <Link href="/provider/leads">Available jobs</Link>
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/provider">Main menu</Link>
-            </Button>
+        {resolvedSearchParams.declined && (
+          <AlertCallout tone="success" title="Lead declined">
+            <p>We&apos;ll offer this lead to another provider.</p>
+            <p className="mt-2 text-xs font-medium uppercase tracking-wide opacity-80">
+              Ref: {lead.id.slice(-8).toUpperCase()}
+            </p>
+            {resolvedSearchParams.traceId ? (
+              <p className="mt-1 text-xs opacity-80">Trace ID: {resolvedSearchParams.traceId}</p>
+            ) : null}
+            <div className="mt-3 grid gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link href="/provider/leads">Available jobs</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/provider">Main menu</Link>
+              </Button>
+            </div>
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.declineError && (
+          <AlertCallout tone="danger" title="We couldn&apos;t decline this lead">
+            <p>
+              {resolvedSearchParams.declineError === 'PROVIDER_LEAD_ACCESS_DENIED'
+                ? 'You do not have access to decline this lead.'
+                : resolvedSearchParams.declineError === 'LEAD_NOT_FOUND'
+                  ? 'This lead could not be found.'
+                  : 'The decline action could not be completed.'}
+            </p>
+            <p className="mt-1 text-xs opacity-80">
+              Error code: {resolvedSearchParams.declineError}
+              {resolvedSearchParams.traceId ? ` · Trace ID: ${resolvedSearchParams.traceId}` : ''}
+            </p>
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.accepted && (
+          <AlertCallout tone="success" title="Job accepted">
+            You used {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
+            Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
+            Customer contact and request details are now available below.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.acceptError === 'credits' && (
+          <AlertCallout
+            tone="warning"
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link href="/provider/credits">Top up</Link>
+              </Button>
+            }
+          >
+            Your acceptance was recorded, but you need {lead.unlockCostCredits} Plug A Pro provider credit{lead.unlockCostCredits === 1 ? '' : 's'} before this job can continue.
+            Your current credits balance is {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
+            Customer direct contact details remain locked and no credit was deducted.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.acceptError === 'inactive' && (
+          <AlertCallout tone="warning">
+            Your provider profile is not active, so you cannot accept leads right now.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.acceptError === 'approval' && (
+          <AlertCallout tone="warning">
+            Your provider application is still under review. You can accept leads once your profile is approved.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.acceptError === 'expired' && (
+          <AlertCallout tone="warning">
+            This lead has expired and can no longer be accepted. No credits were used.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.acceptError === 'taken' && (
+          <AlertCallout tone="warning">
+            This lead has already been accepted by another provider. No credits were used.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.acceptError && !['credits', 'inactive', 'approval', 'expired', 'taken'].includes(resolvedSearchParams.acceptError) && (
+          <AlertCallout tone="danger">
+            This lead could not be accepted. It may no longer be available.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.dispute === 'submitted' && (
+          <AlertCallout tone="success">
+            Refund dispute submitted. Plug-A-Pro will review it before any credits are refunded.
+          </AlertCallout>
+        )}
+
+        {resolvedSearchParams.dispute && resolvedSearchParams.dispute !== 'submitted' && (
+          <AlertCallout tone="danger">
+            This refund dispute could not be submitted. It may already be resolved.
+          </AlertCallout>
+        )}
+
+        {!isResponded && (
+          <div
+            className="rounded-[20px] px-5 py-4 text-sm space-y-2"
+            style={{
+              background: 'rgba(139,63,232,0.06)',
+              boxShadow: 'inset 0 0 0 1px rgba(139,63,232,0.15)',
+            }}
+          >
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>Lead preview</p>
+            <p style={{ color: 'var(--ink-mute)' }}>
+              Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
+            </p>
+            <p style={{ color: 'var(--ink-mute)' }}>
+              Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
+            </p>
           </div>
-        </AlertCallout>
-      )}
+        )}
 
-      {resolvedSearchParams.declineError && (
-        <AlertCallout tone="danger" title="We couldn&apos;t decline this lead">
-          <p>
-            {resolvedSearchParams.declineError === 'PROVIDER_LEAD_ACCESS_DENIED'
-              ? 'You do not have access to decline this lead.'
-              : resolvedSearchParams.declineError === 'LEAD_NOT_FOUND'
-                ? 'This lead could not be found.'
-                : 'The decline action could not be completed.'}
-          </p>
-          <p className="mt-1 text-xs opacity-80">
-            Error code: {resolvedSearchParams.declineError}
-            {resolvedSearchParams.traceId ? ` · Trace ID: ${resolvedSearchParams.traceId}` : ''}
-          </p>
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.accepted && (
-        <AlertCallout tone="success" title="Job accepted">
-          You used {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
-          Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
-          Customer contact and request details are now available below.
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.acceptError === 'credits' && (
-        <AlertCallout
-          tone="warning"
-          action={
-            <Button asChild size="sm" variant="outline">
-              <Link href="/provider/credits">Top up</Link>
-            </Button>
-          }
-        >
-          Your acceptance was recorded, but you need {lead.unlockCostCredits} Plug A Pro provider credit{lead.unlockCostCredits === 1 ? '' : 's'} before this job can continue.
-          Your current credits balance is {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
-          Customer direct contact details remain locked and no credit was deducted.
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.acceptError === 'inactive' && (
-        <AlertCallout tone="warning">
-          Your provider profile is not active, so you cannot accept leads right now.
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.acceptError === 'approval' && (
-        <AlertCallout tone="warning">
-          Your provider application is still under review. You can accept leads once your profile is approved.
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.acceptError === 'expired' && (
-        <AlertCallout tone="warning">
-          This lead has expired and can no longer be accepted. No credits were used.
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.acceptError === 'taken' && (
-        <AlertCallout tone="warning">
-          This lead has already been accepted by another provider. No credits were used.
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.acceptError && !['credits', 'inactive', 'approval', 'expired', 'taken'].includes(resolvedSearchParams.acceptError) && (
-        <AlertCallout tone="danger">
-          This lead could not be accepted. It may no longer be available.
-        </AlertCallout>
-      )}
-
-      {!isResponded && (
-        <div className="app-shell-panel space-y-2 px-4 py-3 text-sm">
-          <p className="font-semibold">Lead preview</p>
-          <p className="text-muted-foreground">
-            Customer contact, exact street address, unit, complex and access details are hidden until you accept this customer-selected job.
-          </p>
-          <p>
-            Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
-          </p>
-        </div>
-      )}
-
-      {confirmingAccept && (
-        <AlertCallout tone="info" title="Confirm lead acceptance">
-          {hasEnoughCredits ? (
-            <>
-              <p>
-                Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
-                Your current credits balance is {totalCreditBalance}. After acceptance, your balance will be {totalCreditBalance - lead.unlockCostCredits}.
-              </p>
-              <p className="mt-1">Full customer details are released only after credit is applied and the request is locked.</p>
-            </>
-          ) : (
-            <>
-              <p>
-                You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
-                Your current credits balance is {totalCreditBalance}.
-              </p>
-              <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
-            </>
-          )}
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.dispute === 'submitted' && (
-        <AlertCallout tone="success">
-          Refund dispute submitted. Plug-A-Pro will review it before any credits are refunded.
-        </AlertCallout>
-      )}
-
-      {resolvedSearchParams.dispute && resolvedSearchParams.dispute !== 'submitted' && (
-        <AlertCallout tone="danger">
-          This refund dispute could not be submitted. It may already be resolved.
-        </AlertCallout>
-      )}
+        {confirmingAccept && (
+          <AlertCallout tone="info" title="Confirm lead acceptance">
+            {hasEnoughCredits ? (
+              <>
+                <p>
+                  Accepting this lead uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} after the server confirms your balance.
+                  Your current credits balance is {totalCreditBalance}. After acceptance, your balance will be {totalCreditBalance - lead.unlockCostCredits}.
+                </p>
+                <p className="mt-1">Full customer details are released only after credit is applied and the request is locked.</p>
+              </>
+            ) : (
+              <>
+                <p>
+                  You need {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} to accept this customer-selected job.
+                  Your current credits balance is {totalCreditBalance}.
+                </p>
+                <p className="mt-1">Top up before accepting. No customer contact or exact address details have been released.</p>
+              </>
+            )}
+          </AlertCallout>
+        )}
+      </div>
 
       {/* Job details */}
-      <div className="rounded-xl border bg-card divide-y">
-        <div className="px-4 py-3 space-y-0.5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Category</p>
-          <p className="font-medium">{preview.category}</p>
-        </div>
-        <div className="px-4 py-3 space-y-0.5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Job type</p>
-          <p className="font-medium">{preview.jobType}</p>
-        </div>
-        <div className="px-4 py-3 space-y-0.5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">
-            {isUnlocked ? 'Full location' : 'Area preview'}
-          </p>
-          <p className="font-medium">
-            {isUnlocked ? unlockedDetails?.fullAddress ?? 'Location on file' : preview.area}
-          </p>
-        </div>
-        <div className="px-4 py-3 space-y-0.5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Preferred time</p>
-          <p className="font-medium">{preferredWindow}</p>
-        </div>
-        {estimatedValue && (
+      <div className="px-[18px] space-y-3 mt-4">
+        <div
+          className="rounded-[20px] divide-y divide-[var(--border)]"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
           <div className="px-4 py-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Estimated job value</p>
-            <p className="font-medium">{estimatedValue}</p>
-          </div>
-        )}
-        {(isUnlocked ? unlockedDetails?.fullNotes : preview.shortNotes) && (
-          <div className="px-4 py-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">
-              {isUnlocked ? 'Full job notes' : 'Short customer notes'}
+            <p
+              className="text-[11px] font-bold tracking-[0.08em] uppercase"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Category
             </p>
-            <p className="text-sm whitespace-pre-wrap">
-              {isUnlocked ? unlockedDetails?.fullNotes : preview.shortNotes}
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>{preview.category}</p>
+          </div>
+          <div className="px-4 py-3 space-y-0.5">
+            <p
+              className="text-[11px] font-bold tracking-[0.08em] uppercase"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Job type
+            </p>
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>{preview.jobType}</p>
+          </div>
+          <div className="px-4 py-3 space-y-0.5">
+            <p
+              className="text-[11px] font-bold tracking-[0.08em] uppercase"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              {isUnlocked ? 'Full location' : 'Area preview'}
+            </p>
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>
+              {isUnlocked ? unlockedDetails?.fullAddress ?? 'Location on file' : preview.area}
             </p>
           </div>
-        )}
-        <div className="px-4 py-3 grid grid-cols-3 gap-2 text-sm">
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Balance</p>
-            <p className="text-lg font-semibold">{lead.wallet.totalCredits}</p>
-          </div>
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Paid</p>
-            <p className="text-lg font-semibold">{lead.wallet.paidCredits}</p>
-          </div>
-          <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">Starter</p>
-            <p className="text-lg font-semibold">{lead.wallet.promoCredits}</p>
-          </div>
-        </div>
-        {!isUnlocked && (
-          <div className="px-4 py-3 space-y-1 text-sm">
-            <p className="font-medium">Accept cost: {lead.unlockCostCredits} Plug A Pro provider credit</p>
-            <p className="text-muted-foreground">
-              Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}). Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
-              Credits use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider credits terms and rules</Link>.
-            </p>
-          </div>
-        )}
-        {isUnlocked && unlockedDetails && (
           <div className="px-4 py-3 space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer contact</p>
-            <p className="font-medium">{unlockedDetails.customerName}</p>
-            <p className="text-sm text-muted-foreground">{unlockedDetails.customerPhone}</p>
-            {unlockedDetails.whatsappHref ? (
-              <Button asChild size="sm" className="mt-2">
-                <Link href={unlockedDetails.whatsappHref}>Contact Customer</Link>
-              </Button>
-            ) : null}
+            <p
+              className="text-[11px] font-bold tracking-[0.08em] uppercase"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Preferred time
+            </p>
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>{preferredWindow}</p>
           </div>
-        )}
-        {visiblePhotos.length > 0 && (
-          <div className="px-4 py-3 space-y-2">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Customer photos</p>
-            <div className="grid grid-cols-2 gap-2">
-              {visiblePhotos.map((photo) => {
-                const src = `/api/attachments/${photo.id}`
-                return (
-                  <AttachmentThumbnail
-                    key={photo.id}
-                    attachmentId={photo.id}
-                    src={src}
-                    href={src}
-                    alt={photo.caption ?? 'Customer photo'}
-                  />
-                )
-              })}
+          {estimatedValue && (
+            <div className="px-4 py-3 space-y-0.5">
+              <p
+                className="text-[11px] font-bold tracking-[0.08em] uppercase"
+                style={{ color: 'var(--ink-mute)' }}
+              >
+                Estimated job value
+              </p>
+              <p className="font-semibold" style={{ color: 'var(--ink)' }}>{estimatedValue}</p>
+            </div>
+          )}
+          {(isUnlocked ? unlockedDetails?.fullNotes : preview.shortNotes) && (
+            <div className="px-4 py-3 space-y-0.5">
+              <p
+                className="text-[11px] font-bold tracking-[0.08em] uppercase"
+                style={{ color: 'var(--ink-mute)' }}
+              >
+                {isUnlocked ? 'Full job notes' : 'Short customer notes'}
+              </p>
+              <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>
+                {isUnlocked ? unlockedDetails?.fullNotes : preview.shortNotes}
+              </p>
+            </div>
+          )}
+          <div className="px-4 py-3 grid grid-cols-3 gap-2 text-sm">
+            <div
+              className="rounded-[12px] p-3"
+              style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              <p className="text-xs" style={{ color: 'var(--ink-mute)' }}>Balance</p>
+              <p className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>{lead.wallet.totalCredits}</p>
+            </div>
+            <div
+              className="rounded-[12px] p-3"
+              style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              <p className="text-xs" style={{ color: 'var(--ink-mute)' }}>Paid</p>
+              <p className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>{lead.wallet.paidCredits}</p>
+            </div>
+            <div
+              className="rounded-[12px] p-3"
+              style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              <p className="text-xs" style={{ color: 'var(--ink-mute)' }}>Starter</p>
+              <p className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>{lead.wallet.promoCredits}</p>
             </div>
           </div>
-        )}
-        <div className="px-4 py-3 space-y-0.5">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Received</p>
-          <p className="text-sm text-muted-foreground">
-            {format(lead.sentAt, 'HH:mm, d MMM yyyy')}
-          </p>
+          {!isUnlocked && (
+            <div className="px-4 py-3 space-y-1 text-sm">
+              <p className="font-semibold" style={{ color: 'var(--ink)' }}>Accept cost: {lead.unlockCostCredits} Plug A Pro provider credit</p>
+              <p style={{ color: 'var(--ink-mute)' }}>
+                Each customer-selected job you accept uses {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} (1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}). Customer contact details, exact address, unit, complex, and access notes are hidden until acceptance.
+                Credits use follows the <Link href={termsUrl} className="font-medium underline underline-offset-4">provider credits terms and rules</Link>.
+              </p>
+            </div>
+          )}
+          {isUnlocked && unlockedDetails && (
+            <div className="px-4 py-3 space-y-0.5">
+              <p
+                className="text-[11px] font-bold tracking-[0.08em] uppercase"
+                style={{ color: 'var(--ink-mute)' }}
+              >
+                Customer contact
+              </p>
+              <p className="font-semibold" style={{ color: 'var(--ink)' }}>{unlockedDetails.customerName}</p>
+              <p className="text-sm" style={{ color: 'var(--ink-mute)' }}>{unlockedDetails.customerPhone}</p>
+              {unlockedDetails.whatsappHref ? (
+                <Button asChild size="sm" className="mt-2">
+                  <Link href={unlockedDetails.whatsappHref}>Contact Customer</Link>
+                </Button>
+              ) : null}
+            </div>
+          )}
+          {visiblePhotos.length > 0 && (
+            <div className="px-4 py-3 space-y-2">
+              <p
+                className="text-[11px] font-bold tracking-[0.08em] uppercase"
+                style={{ color: 'var(--ink-mute)' }}
+              >
+                Customer photos
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {visiblePhotos.map((photo) => {
+                  const src = `/api/attachments/${photo.id}`
+                  return (
+                    <AttachmentThumbnail
+                      key={photo.id}
+                      attachmentId={photo.id}
+                      src={src}
+                      href={src}
+                      alt={photo.caption ?? 'Customer photo'}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <div className="px-4 py-3 space-y-0.5">
+            <p
+              className="text-[11px] font-bold tracking-[0.08em] uppercase"
+              style={{ color: 'var(--ink-mute)' }}
+            >
+              Received
+            </p>
+            <p className="text-sm" style={{ color: 'var(--ink-mute)' }}>
+              {format(lead.sentAt, 'HH:mm, d MMM yyyy')}
+            </p>
+          </div>
         </div>
       </div>
 
       {isUnlocked && (
-        <div className="rounded-xl border bg-card p-4 space-y-3">
-          <div>
-            <h2 className="font-semibold">Refund dispute</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Refunds are reviewed for invalid leads only. Choosing another provider, quote rejection, slow response, high quote, or a customer changing their mind after a valid intro is not refundable.
-            </p>
-          </div>
-
-          {unlockDispute ? (
-            <div className="rounded-lg border bg-muted/30 px-3 py-3 text-sm">
-              <p className="font-medium">
-                {LEAD_UNLOCK_DISPUTE_REASON_LABELS[unlockDispute.reason]}
+        <div className="px-[18px] space-y-3 mt-4">
+          <div
+            className="rounded-[20px] p-4 space-y-3"
+            style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+          >
+            <div>
+              <h2 className="font-semibold" style={{ color: 'var(--ink)' }}>Refund dispute</h2>
+              <p className="mt-1 text-sm" style={{ color: 'var(--ink-mute)' }}>
+                Refunds are reviewed for invalid leads only. Choosing another provider, quote rejection, slow response, high quote, or a customer changing their mind after a valid intro is not refundable.
               </p>
-              <p className="mt-1 text-muted-foreground">
-                Status: {unlockDispute.status.replaceAll('_', ' ').toLowerCase()}
-              </p>
-              {unlockDispute.notes ? (
-                <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{unlockDispute.notes}</p>
-              ) : null}
             </div>
-          ) : null}
 
-          {lead.unlock?.status === 'REFUNDED' && (
-            <AlertCallout tone="success">
-              This unlock was refunded. Reason: {lead.unlock.refundReason ?? 'Approved invalid lead dispute'}.
-            </AlertCallout>
-          )}
-
-          {canDisputeUnlock ? (
-            <form action={disputeUnlockedLead} className="space-y-3">
-              <input type="hidden" name="leadId" value={leadId} />
-              <select
-                name="reason"
-                required
-                className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
-                defaultValue=""
+            {unlockDispute ? (
+              <div
+                className="rounded-[12px] px-3 py-3 text-sm"
+                style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
               >
-                <option value="" disabled>Select refund reason</option>
-                {REFUNDABLE_LEAD_UNLOCK_DISPUTE_REASONS.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {LEAD_UNLOCK_DISPUTE_REASON_LABELS[reason]}
-                  </option>
-                ))}
-              </select>
-              <textarea
-                name="notes"
-                rows={3}
-                maxLength={1000}
-                className="w-full rounded-xl border bg-background px-3 py-2 text-sm"
-                placeholder="Add details that help admin verify the issue."
-              />
-              <Button type="submit" variant="outline" className="w-full">
-                Submit refund dispute
-              </Button>
-            </form>
-          ) : null}
+                <p className="font-semibold" style={{ color: 'var(--ink)' }}>
+                  {LEAD_UNLOCK_DISPUTE_REASON_LABELS[unlockDispute.reason]}
+                </p>
+                <p className="mt-1" style={{ color: 'var(--ink-mute)' }}>
+                  Status: {unlockDispute.status.replaceAll('_', ' ').toLowerCase()}
+                </p>
+                {unlockDispute.notes ? (
+                  <p className="mt-2 whitespace-pre-wrap" style={{ color: 'var(--ink-mute)' }}>{unlockDispute.notes}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {lead.unlock?.status === 'REFUNDED' && (
+              <AlertCallout tone="success">
+                This unlock was refunded. Reason: {lead.unlock.refundReason ?? 'Approved invalid lead dispute'}.
+              </AlertCallout>
+            )}
+
+            {canDisputeUnlock ? (
+              <form action={disputeUnlockedLead} className="space-y-3">
+                <input type="hidden" name="leadId" value={leadId} />
+                <select
+                  name="reason"
+                  required
+                  className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select refund reason</option>
+                  {REFUNDABLE_LEAD_UNLOCK_DISPUTE_REASONS.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {LEAD_UNLOCK_DISPUTE_REASON_LABELS[reason]}
+                    </option>
+                  ))}
+                </select>
+                <textarea
+                  name="notes"
+                  rows={3}
+                  maxLength={1000}
+                  className="w-full rounded-xl border bg-background px-3 py-2 text-sm"
+                  placeholder="Add details that help admin verify the issue."
+                />
+                <Button type="submit" variant="outline" className="w-full">
+                  Submit refund dispute
+                </Button>
+              </form>
+            ) : null}
+          </div>
         </div>
       )}
 
@@ -554,7 +643,7 @@ export default async function LeadDetailPage({
                   Accept job
                 </Link>
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
+              <p className="text-center text-xs" style={{ color: 'var(--ink-mute)' }}>
                 Credits balance: {totalCreditBalance} Plug A Pro provider credits · Required: {lead.unlockCostCredits}
               </p>
             </>
@@ -566,7 +655,7 @@ export default async function LeadDetailPage({
                 Confirm accept
               </LeadActionSubmitButton>
               {!hasEnoughCredits ? (
-                <p className="text-center text-xs text-muted-foreground">
+                <p className="text-center text-xs" style={{ color: 'var(--ink-mute)' }}>
                   If credits are still insufficient, this lead will stay locked until you top up.
                 </p>
               ) : null}
@@ -592,13 +681,6 @@ export default async function LeadDetailPage({
           </form>
         </div>
       )}
-
-      {/* Back */}
-      <div className="pt-2">
-        <Link href="/provider/leads" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-          ← Back to leads
-        </Link>
-      </div>
     </div>
   )
 }

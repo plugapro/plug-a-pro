@@ -211,24 +211,27 @@ export default async function ProviderCataloguePage({
     .slice(0, 20)
 
   return (
-    <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
-      <div>
-        <h1 className="text-xl font-semibold">Find a Provider</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+    <div className="pb-8">
+      {/* Header */}
+      <div className="px-[18px] pt-[60px] pb-4">
+        <h1 className="text-[30px] font-bold tracking-[-0.025em] leading-[1.1] text-[var(--ink)]">
+          Find a provider
+        </h1>
+        <p className="mt-1.5 text-[14px] text-[var(--ink-mute)]">
           {isSignedIn
             ? 'Search and compare reviewed providers near you.'
-            : 'Browse reviewed providers now, then sign in only when you request service.'}
+            : 'Browse reviewed providers — sign in only when you request service.'}
         </p>
       </div>
 
-      {/* Category filter bar */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-hide">
+      {/* Category filter pills */}
+      <div className="flex gap-2 overflow-x-auto px-[18px] pb-3 scrollbar-hide">
         <Link
           href={`/providers${normalizedQuery ? `?q=${encodeURIComponent(normalizedQuery)}` : ''}`}
-          className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+          className={`shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap ${
             !normalizedCategory
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border bg-background text-foreground hover:bg-muted'
+              ? 'bg-[var(--ink)] text-[var(--card)]'
+              : 'bg-[var(--card-alt)] text-[var(--ink)]'
           }`}
         >
           All
@@ -245,10 +248,10 @@ export default async function ProviderCataloguePage({
             <Link
               key={option.tag}
               href={`/providers?${query.toString()}`}
-              className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              className={`shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap ${
                 isActive
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-background text-foreground hover:bg-muted'
+                  ? 'bg-[var(--ink)] text-[var(--card)]'
+                  : 'bg-[var(--card-alt)] text-[var(--ink)]'
               }`}
             >
               {option.label}
@@ -259,9 +262,10 @@ export default async function ProviderCataloguePage({
 
       {/* Provider list */}
       {rankedProviders.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-12">
-          No providers found for this filter.
-        </p>
+        <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-8 text-center mt-4">
+          <p className="text-[15px] font-bold text-[var(--ink)] mb-1">No providers found</p>
+          <p className="text-[13px] text-[var(--ink-mute)]">Try a different category or request a service.</p>
+        </div>
       ) : (
         <ProviderSearchInput
           selectedCategory={normalizedCategory || null}

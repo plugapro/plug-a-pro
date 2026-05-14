@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChevronLeft } from 'lucide-react'
 
 export const metadata = buildMetadata({ title: 'Activity', noIndex: true })
 
@@ -80,31 +80,45 @@ export default async function ActivityPage() {
       : []
 
   return (
-    <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
-      <div>
-        <Link href="/bookings" className="text-xs text-muted-foreground hover:text-foreground">
-          ← My requests &amp; bookings
+    <div className="min-h-screen pb-32 screen-enter">
+      <div className="px-[18px] pt-[60px] pb-4 flex items-center gap-3">
+        <Link
+          href="/bookings"
+          aria-label="Back"
+          className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
+          <ChevronLeft size={18} style={{ color: 'var(--ink)' }} />
         </Link>
-        <h1 className="text-xl font-semibold mt-1">Activity</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Your last 50 account events</p>
+        <h1 className="text-[28px] font-bold tracking-[-0.025em]" style={{ color: 'var(--ink)' }}>
+          Activity
+        </h1>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Recent events
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div
+        className="mx-[18px] rounded-[20px]"
+        style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+      >
+        <p
+          className="px-5 pt-4 pb-2 text-[11px] font-bold tracking-[0.08em] uppercase"
+          style={{ color: 'var(--ink-mute)' }}
+        >
+          Recent events
+        </p>
+        <div className="divide-y divide-[var(--border)]">
           {logs.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No activity yet.</p>
+            <p className="text-sm py-6 text-center" style={{ color: 'var(--ink-mute)' }}>
+              No activity yet.
+            </p>
           ) : (
-            <ul className="divide-y">
+            <ul className="divide-y divide-[var(--border)]">
               {logs.map((log) => (
-                <li key={log.id} className="py-3 flex items-start justify-between gap-3 text-sm">
+                <li key={log.id} className="px-5 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-medium truncate">{formatAction(log.action)}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="font-medium truncate text-sm" style={{ color: 'var(--ink)' }}>
+                      {formatAction(log.action)}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--ink-mute)' }}>
                       {formatEntityType(log.entityType)}
                       {log.entityId && (
                         <span className="ml-1 font-mono">#{log.entityId.slice(-8).toUpperCase()}</span>
@@ -113,7 +127,8 @@ export default async function ActivityPage() {
                   </div>
                   <time
                     dateTime={log.timestamp.toISOString()}
-                    className="text-xs text-muted-foreground whitespace-nowrap shrink-0"
+                    className="text-xs whitespace-nowrap shrink-0"
+                    style={{ color: 'var(--ink-mute)' }}
                   >
                     {formatTimestamp(log.timestamp)}
                   </time>
@@ -121,8 +136,8 @@ export default async function ActivityPage() {
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

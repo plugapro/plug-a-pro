@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { ChevronLeft } from 'lucide-react'
 import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { db } from '@/lib/db'
@@ -13,7 +14,6 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import {
@@ -116,40 +116,46 @@ export default async function RequestDetailPage({
     : null
 
   return (
-    <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
+    <div className="min-h-screen pb-32 screen-enter">
       <AutoRefresh
         terminalState={(
           ['CANCELLED', 'COMPLETED', 'EXPIRED', 'CLOSED'] as string[]
         ).includes(jobRequest.status)}
       />
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <Link
-            href="/bookings"
-            className="text-xs text-muted-foreground hover:text-foreground"
+      <div className="px-[18px] pt-[60px] pb-4 flex items-center gap-3">
+        <Link href="/bookings" aria-label="Back to bookings">
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center"
+            style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
           >
-            ← My requests & bookings
-          </Link>
-          <h1 className="text-xl font-semibold mt-1">
-            Request #{jobRequest.id.slice(-8).toUpperCase()}
-          </h1>
-          <p className="text-sm text-muted-foreground capitalize">
-            {jobRequest.category}
+            <ChevronLeft size={18} />
+          </div>
+        </Link>
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-[11px] font-bold tracking-[0.08em] uppercase"
+            style={{ color: 'var(--brand-purple)' }}
+          >
+            Request
           </p>
+          <h1
+            className="text-[28px] font-bold tracking-[-0.025em] truncate"
+            style={{ color: 'var(--ink)' }}
+          >
+            {jobRequest.title || jobRequest.category}
+          </h1>
         </div>
         <StatusBadge status={jobRequest.status} type="jobRequest" />
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Request
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
+      <div className="px-[18px] space-y-3">
+
+      <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+        <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Request</p>
+        <div className="space-y-3 text-sm">
           <div>
-            <p className="font-medium">{jobRequest.title}</p>
-            <p className="text-muted-foreground mt-1">
+            <p className="font-medium" style={{ color: 'var(--ink)' }}>{jobRequest.title}</p>
+            <p className="mt-1" style={{ color: 'var(--ink-mute)' }}>
               {jobRequest.description}
             </p>
           </div>
@@ -178,7 +184,7 @@ export default async function RequestDetailPage({
           )}
           {jobRequest.attachments.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--ink-mute)' }}>
                 Photos
               </p>
               <div className="grid grid-cols-2 gap-2">
@@ -200,28 +206,28 @@ export default async function RequestDetailPage({
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Cancelled state banner */}
       {jobRequest.status === 'CANCELLED' && (
-        <Card className="border-muted-foreground/30 bg-muted">
-          <CardContent className="space-y-3 px-4 py-4 text-sm">
-            <p className="font-medium">Request cancelled</p>
-            <p className="text-muted-foreground">
+        <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="space-y-3 text-sm">
+            <p className="font-medium" style={{ color: 'var(--ink)' }}>Request cancelled</p>
+            <p style={{ color: 'var(--ink-mute)' }}>
               You can start a new request anytime.
             </p>
             <Button asChild className="w-full">
               <Link href="/services">Start new request</Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Expired state banner — no suitable providers found within the match window */}
       {jobRequest.status === 'EXPIRED' && (
-        <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
-          <CardContent className="space-y-3 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
+        <div className="rounded-[20px] p-5" style={{ background: 'var(--tone-warning-bg)', boxShadow: 'inset 0 0 0 1px var(--tone-warning-border)' }}>
+          <div className="space-y-3 text-sm" style={{ color: 'var(--tone-warning-fg)' }}>
             <p className="font-medium">
               We could not find enough suitable providers yet.
             </p>
@@ -237,30 +243,30 @@ export default async function RequestDetailPage({
                 <Link href="/services">Start new request</Link>
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Provider confirmation banner — shown when a provider has been selected
           and their confirmation is pending. */}
       {jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING' &&
         selectedShortlistItem && (
-          <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
-            <CardContent className="space-y-2 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
+          <div className="rounded-[20px] p-5" style={{ background: 'var(--tone-warning-bg)', boxShadow: 'inset 0 0 0 1px var(--tone-warning-border)' }}>
+            <div className="space-y-2 text-sm" style={{ color: 'var(--tone-warning-fg)' }}>
               <p className="font-medium">Waiting for provider confirmation</p>
               <p>
                 You selected {selectedShortlistItem.provider.name}. We notified
                 them on WhatsApp and are asking them to confirm the job. You
                 will be notified once they accept.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
       {/* Provider declined banner — shown when the selected provider could not confirm */}
       {resolvedSearchParams.selection === 'provider-declined' && (
-        <Card className="border-destructive/30 bg-destructive/5">
-          <CardContent className="space-y-2 px-4 py-4 text-sm text-destructive">
+        <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="space-y-2 text-sm text-destructive">
             <p className="font-medium">
               The selected provider could not confirm this job.
             </p>
@@ -271,15 +277,15 @@ export default async function RequestDetailPage({
             <Button asChild variant="outline" className="w-full">
               <Link href="https://plugapro.co.za/contact">Contact support</Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Matching timed out — still in matching after extended wait */}
       {jobRequest.status === 'MATCHING' &&
         resolvedSearchParams.selection === 'matching-timeout' && (
-          <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
-            <CardContent className="space-y-2 px-4 py-4 text-sm text-[var(--tone-warning-fg)]">
+          <div className="rounded-[20px] p-5" style={{ background: 'var(--tone-warning-bg)', boxShadow: 'inset 0 0 0 1px var(--tone-warning-border)' }}>
+            <div className="space-y-2 text-sm" style={{ color: 'var(--tone-warning-fg)' }}>
               <p className="font-medium">
                 We&apos;re still waiting for provider responses.
               </p>
@@ -289,22 +295,22 @@ export default async function RequestDetailPage({
               <Button asChild variant="outline" className="w-full">
                 <Link href="https://plugapro.co.za/contact">Ask for help</Link>
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
       {/* Shortlist — shown when SHORTLIST_READY or PROVIDER_CONFIRMATION_PENDING with no final match */}
       {shortlist && shortlist.items.length > 0 && !match && (
         <section className="space-y-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>
               Provider shortlist
             </p>
-            <h2 className="mt-1 text-lg font-semibold">
+            <h2 className="mt-1 text-lg font-semibold" style={{ color: 'var(--ink)' }}>
               We found {shortlist.items.length} suitable provider
               {shortlist.items.length === 1 ? '' : 's'}
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm" style={{ color: 'var(--ink-mute)' }}>
               Compare their experience, call-out fee, availability, and profile
               before choosing.
             </p>
@@ -323,17 +329,23 @@ export default async function RequestDetailPage({
                 averageRating: item.provider.averageRating,
               })
               return (
-                <Card
+                <div
                   key={item.id}
-                  className={selected ? 'border-primary' : undefined}
+                  className="rounded-[20px] p-5"
+                  style={{
+                    background: 'var(--card)',
+                    boxShadow: selected
+                      ? 'inset 0 0 0 2px var(--brand-purple)'
+                      : 'inset 0 0 0 1px var(--border)',
+                  }}
                 >
-                  <CardHeader className="pb-2">
+                  <div className="pb-2">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <CardTitle className="text-base">
+                        <p className="text-base font-semibold" style={{ color: 'var(--ink)' }}>
                           {item.provider.name}
-                        </CardTitle>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        </p>
+                        <p className="mt-1 text-xs" style={{ color: 'var(--ink-mute)' }}>
                           {item.provider.verified
                             ? 'Application reviewed'
                             : 'Provider-supplied profile'}
@@ -350,10 +362,10 @@ export default async function RequestDetailPage({
                         />
                       )}
                     </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3 text-sm">
+                  </div>
+                  <div className="space-y-3 text-sm">
                     {item.provider.bio && (
-                      <p className="text-muted-foreground">
+                      <p style={{ color: 'var(--ink-mute)' }}>
                         {item.provider.bio}
                       </p>
                     )}
@@ -401,7 +413,7 @@ export default async function RequestDetailPage({
                     )}
                     {item.provider.portfolioUrls.length > 0 && (
                       <div className="space-y-1">
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--ink-mute)' }}>
                           Previous work
                         </p>
                         {item.provider.portfolioUrls.slice(0, 3).map((url) => (
@@ -449,8 +461,8 @@ export default async function RequestDetailPage({
                         </form>
                       )
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )
             })}
           </div>
@@ -496,27 +508,23 @@ export default async function RequestDetailPage({
       )}
 
       {provider && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Matched provider
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+        <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Matched provider</p>
+          <div className="space-y-3 text-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-medium">{provider.name}</p>
+                <p className="font-medium" style={{ color: 'var(--ink)' }}>{provider.name}</p>
                 {provider.bio && (
-                  <p className="text-muted-foreground mt-1">{provider.bio}</p>
+                  <p className="mt-1" style={{ color: 'var(--ink-mute)' }}>{provider.bio}</p>
                 )}
               </div>
               {match && <StatusBadge status={match.status} type="match" />}
             </div>
             <ProviderTrustSignals signals={providerSignals} />
             {provider.portfolioUrls.length > 0 && (
-              <div className="rounded-lg border px-3 py-3">
-                <p className="text-sm font-medium">Portfolio links</p>
-                <p className="mt-2 text-xs text-muted-foreground">
+              <div className="rounded-[14px] px-3 py-3" style={{ boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Portfolio links</p>
+                <p className="mt-2 text-xs" style={{ color: 'var(--ink-mute)' }}>
                   Shared by the provider unless Plug A Pro says a specific link
                   or document was reviewed.
                 </p>
@@ -541,18 +549,14 @@ export default async function RequestDetailPage({
                 View provider profile
               </Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {latestQuote && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Quote history
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+        <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Quote history</p>
+          <div className="space-y-3 text-sm">
             <QuoteHistoryTimeline
               audience="customer"
               requestId={id}
@@ -575,21 +579,17 @@ export default async function RequestDetailPage({
                 })) ?? []
               }
             />
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {booking ? (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Booking
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+        <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Booking</p>
+          <div className="space-y-3 text-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-medium">
+                <p className="font-medium" style={{ color: 'var(--ink)' }}>
                   {booking.scheduledDate
                     ? booking.scheduledDate.toLocaleDateString('en-ZA', {
                         weekday: 'long',
@@ -599,7 +599,7 @@ export default async function RequestDetailPage({
                     : 'Date to be confirmed'}
                 </p>
                 {booking.scheduledWindow && (
-                  <p className="text-muted-foreground">
+                  <p style={{ color: 'var(--ink-mute)' }}>
                     {booking.scheduledWindow}
                   </p>
                 )}
@@ -613,31 +613,27 @@ export default async function RequestDetailPage({
             <Button asChild className="w-full">
               <Link href={`/bookings/${booking.id}`}>Open booking details</Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Matching activity
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+        <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Matching activity</p>
+          <div className="space-y-3 text-sm">
             {jobRequest.status === 'PENDING_VALIDATION' && (
               <div className="space-y-1">
                 {!isReviewFirstFlow ? (
                   <>
-                    <p className="font-medium">
+                    <p className="font-medium" style={{ color: 'var(--ink)' }}>
                       Choose how to find your provider
                     </p>
-                    <p className="text-muted-foreground">
+                    <p style={{ color: 'var(--ink-mute)' }}>
                       We&apos;ve received your {jobRequest.category} request
                       {jobRequest.address
                         ? ` in ${normaliseLocationDisplayName(jobRequest.address.suburb)}, ${normaliseLocationDisplayName(jobRequest.address.city)}`
                         : ''}
                       .
                     </p>
-                    <p className="text-muted-foreground">
+                    <p style={{ color: 'var(--ink-mute)' }}>
                       Select Quick Match to contact one suitable provider at a
                       time, or Review Providers First to compare options before
                       choosing.
@@ -679,35 +675,35 @@ export default async function RequestDetailPage({
                   </>
                 ) : (
                   <div className="space-y-3 pt-1">
-                    <p className="font-medium">Review Providers First</p>
-                    <p className="text-muted-foreground">
+                    <p className="font-medium" style={{ color: 'var(--ink)' }}>Review Providers First</p>
+                    <p style={{ color: 'var(--ink-mute)' }}>
                       Shortlist 1 to 3 providers, then send your request only to
                       those providers.
                     </p>
                     {isReviewFirstPending ? (
-                      <p className="text-muted-foreground">We&apos;re finding matching providers for your request.</p>
+                      <p style={{ color: 'var(--ink-mute)' }}>We&apos;re finding matching providers for your request.</p>
                     ) : reviewCandidates?.candidates?.length ? (
                       <div className="space-y-2">
                         {reviewCandidates.candidates.map((candidate) => (
-                          <Card key={candidate.providerId}>
-                            <CardContent className="space-y-2 px-4 py-3 text-sm">
-                              <p className="font-medium">{candidate.name}</p>
-                              <p className="text-muted-foreground">
+                          <div key={candidate.providerId} className="rounded-[14px] p-4" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                            <div className="space-y-2 text-sm">
+                              <p className="font-medium" style={{ color: 'var(--ink)' }}>{candidate.name}</p>
+                              <p style={{ color: 'var(--ink-mute)' }}>
                                 {candidate.skills[0] ?? jobRequest.category} ·{' '}
                                 {candidate.serviceAreas[0] ?? 'Your area'}
                               </p>
                               {candidate.callOutFee != null && (
-                                <p className="text-muted-foreground">
+                                <p style={{ color: 'var(--ink-mute)' }}>
                                   Call-out fee: R
                                   {Math.round(candidate.callOutFee)}
                                 </p>
                               )}
                               {candidate.experience && (
-                                <p className="text-muted-foreground">
+                                <p style={{ color: 'var(--ink-mute)' }}>
                                   Experience: {candidate.experience}
                                 </p>
                               )}
-                              <p className="text-muted-foreground">
+                              <p style={{ color: 'var(--ink-mute)' }}>
                                 Why matched: {candidate.whyMatched}
                               </p>
                               <div className="grid grid-cols-2 gap-2">
@@ -745,27 +741,27 @@ export default async function RequestDetailPage({
                                   </Button>
                                 </form>
                               </div>
-                            </CardContent>
-                          </Card>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground">
+                      <p style={{ color: 'var(--ink-mute)' }}>
                         No matching providers are available right now.
                       </p>
                     )}
                     {reviewShortlist && (
-                      <Card className="border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)]">
-                        <CardContent className="space-y-2 px-4 py-3 text-sm">
-                          <p className="font-medium text-[var(--tone-warning-fg)]">
+                      <div className="rounded-[14px] p-4" style={{ background: 'var(--tone-warning-bg)', boxShadow: 'inset 0 0 0 1px var(--tone-warning-border)' }}>
+                        <div className="space-y-2 text-sm">
+                          <p className="font-medium" style={{ color: 'var(--tone-warning-fg)' }}>
                             Your shortlist
                           </p>
                           {reviewShortlist.providers.length === 0 ? (
-                            <p className="text-[var(--tone-warning-fg)]">
+                            <p style={{ color: 'var(--tone-warning-fg)' }}>
                               Please shortlist at least one provider first.
                             </p>
                           ) : (
-                            <div className="space-y-1 text-[var(--tone-warning-fg)]">
+                            <div className="space-y-1" style={{ color: 'var(--tone-warning-fg)' }}>
                               {reviewShortlist.providers.map(
                                 (provider, idx) => (
                                   <p key={provider.providerId}>
@@ -805,8 +801,8 @@ export default async function RequestDetailPage({
                               </Button>
                             </form>
                           </div>
-                        </CardContent>
-                      </Card>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -814,8 +810,8 @@ export default async function RequestDetailPage({
             )}
             {jobRequest.status === 'OPEN' && (
               <div className="space-y-2">
-                <p className="font-medium">We match based on:</p>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <p className="font-medium" style={{ color: 'var(--ink)' }}>We match based on:</p>
+                <div className="grid grid-cols-2 gap-2 text-xs" style={{ color: 'var(--ink-mute)' }}>
                   {[
                     'Service type',
                     'Area',
@@ -833,10 +829,10 @@ export default async function RequestDetailPage({
             )}
             {jobRequest.status === 'MATCHING' && (
               <div className="space-y-1">
-                <p className="font-medium">
+                <p className="font-medium" style={{ color: 'var(--ink)' }}>
                   Providers are reviewing your request
                 </p>
-                <p className="text-muted-foreground">
+                <p style={{ color: 'var(--ink-mute)' }}>
                   {jobRequest.assignmentMode === 'OPS_REVIEW'
                     ? "Your shortlisted providers are reviewing your request. We'll notify you as each response comes in."
                     : "Suitable providers are reviewing your request. We'll notify you when your shortlist is ready."}
@@ -845,35 +841,35 @@ export default async function RequestDetailPage({
             )}
             {(jobRequest.status === 'OPEN' ||
               jobRequest.status === 'MATCHING') && (
-              <div className="rounded-lg bg-muted/50 border px-4 py-3 text-sm text-foreground">
+              <div className="rounded-[14px] px-4 py-3 text-sm" style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}>
                 {getMatchEtaCopy()}
               </div>
             )}
             {jobRequest.status === 'PENDING_VALIDATION' ? (
-              <p className="text-muted-foreground">
+              <p style={{ color: 'var(--ink-mute)' }}>
                 Matching starts after you choose a mode above.
               </p>
             ) : jobRequest.leads.length === 0 ? (
-              <p className="text-muted-foreground">
+              <p style={{ color: 'var(--ink-mute)' }}>
                 We&apos;re still validating the request before it is sent to
                 providers.
               </p>
             ) : (
               <>
-                <p className="text-muted-foreground">
+                <p style={{ color: 'var(--ink-mute)' }}>
                   {jobRequest.leads.length} provider
                   {jobRequest.leads.length === 1 ? '' : 's'} notified so far.
                 </p>
                 <div className="space-y-2">
                   {jobRequest.leads.map((lead) => (
-                    <div key={lead.id} className="rounded-lg border px-3 py-2">
+                    <div key={lead.id} className="rounded-[14px] px-3 py-2" style={{ boxShadow: 'inset 0 0 0 1px var(--border)' }}>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium">{lead.provider.name}</p>
-                        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                        <p className="font-medium" style={{ color: 'var(--ink)' }}>{lead.provider.name}</p>
+                        <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--ink-mute)' }}>
                           {lead.status.toLowerCase()}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-xs mt-1" style={{ color: 'var(--ink-mute)' }}>
                         Sent{' '}
                         {lead.sentAt.toLocaleDateString('en-ZA', {
                           day: 'numeric',
@@ -885,9 +881,11 @@ export default async function RequestDetailPage({
                 </div>
               </>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
+
+      </div>
     </div>
   )
 }
@@ -928,17 +926,17 @@ function Row({
 }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right">{children}</span>
+      <span style={{ color: 'var(--ink-mute)' }}>{label}</span>
+      <span className="text-right" style={{ color: 'var(--ink)' }}>{children}</span>
     </div>
   )
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border px-3 py-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 font-medium">{value}</p>
+    <div className="rounded-[12px] px-3 py-2" style={{ boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+      <p className="text-xs" style={{ color: 'var(--ink-mute)' }}>{label}</p>
+      <p className="mt-1 font-medium" style={{ color: 'var(--ink)' }}>{value}</p>
     </div>
   )
 }

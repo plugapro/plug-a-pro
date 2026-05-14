@@ -36,6 +36,7 @@ const PUBLIC_PATHS = [
   '/providers/',
   '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
+  '/book',                 // booking steps 1-3 are public; submit endpoint enforces auth
   '/requests/access',      // signed single-ticket links are scoped to one request
   '/leads/access',         // HMAC-signed provider lead links — token validates identity; no session needed
   '/api/cron',             // Vercel cron invokes these without a session cookie; handlers enforce CRON_SECRET

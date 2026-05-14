@@ -1,22 +1,20 @@
 // ─── Customer: My bookings ────────────────────────────────────────────────────
-// Lists all bookings for the authenticated customer with site/category/status
-// filters via URL searchParams.
 
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { Plus, MapPin } from 'lucide-react'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
-import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/shared/EmptyState'
-import { Inbox } from 'lucide-react'
+import { SectionLabel } from '@/components/ui/section-label'
+import { StatusDot, type StatusTone } from '@/components/ui/status-dot'
 import { cn } from '@/lib/utils'
 
-export const metadata = buildMetadata({ title: 'My Requests & Bookings' })
+export const metadata = buildMetadata({ title: 'My Bookings' })
 
 function filterLink(
   current: Record<string, string | undefined>,
@@ -31,7 +29,61 @@ function filterLink(
   return qs ? `/bookings?${qs}` : '/bookings'
 }
 
-function FilterChip({
+function requestTone(status: string): StatusTone {
+  if (['MATCHED', 'ACCEPTED_LOCKED'].includes(status)) return 'success'
+  if (['SHORTLIST_READY', 'PROVIDER_CONFIRMATION_PENDING'].includes(status)) return 'warn'
+  if (['CANCELLED', 'EXPIRED', 'FAILED'].includes(status)) return 'danger'
+  return 'warn'
+}
+
+function requestLabel(status: string): string {
+  const map: Record<string, string> = {
+    PENDING_VALIDATION: 'Pending',
+    OPEN: 'Matching',
+    MATCHING: 'Matching',
+    SHORTLIST_READY: 'Choose provider',
+    PROVIDER_CONFIRMATION_PENDING: 'Confirming',
+    ACCEPTED_LOCKED: 'Accepted',
+    MATCHED: 'Matched',
+    EXPIRED: 'Expired',
+    CANCELLED: 'Cancelled',
+  }
+  return map[status] ?? status
+}
+
+function bookingTone(bookingStatus: string, jobStatus?: string | null): StatusTone {
+  if (jobStatus === 'COMPLETED') return 'success'
+  if (jobStatus === 'CANCELLED' || bookingStatus === 'CANCELLED') return 'danger'
+  if (['EN_ROUTE', 'ARRIVED', 'STARTED', 'AWAITING_APPROVAL', 'PENDING_COMPLETION_CONFIRMATION'].includes(jobStatus ?? '')) return 'success'
+  return 'warn'
+}
+
+function bookingLabel(bookingStatus: string, jobStatus?: string | null): string {
+  if (jobStatus) {
+    const map: Record<string, string> = {
+      SCHEDULED: 'Scheduled',
+      EN_ROUTE: 'On the way',
+      ARRIVED: 'Arrived',
+      STARTED: 'In progress',
+      PAUSED: 'Paused',
+      AWAITING_APPROVAL: 'Needs approval',
+      PENDING_COMPLETION_CONFIRMATION: 'Ready for sign-off',
+      COMPLETED: 'Completed',
+      CANCELLED: 'Cancelled',
+      FAILED: 'Failed',
+    }
+    if (map[jobStatus]) return map[jobStatus]
+  }
+  const bmap: Record<string, string> = {
+    SCHEDULED: 'Scheduled',
+    RESCHEDULED: 'Rescheduled',
+    CANCELLED: 'Cancelled',
+    COMPLETED: 'Completed',
+  }
+  return bmap[bookingStatus] ?? bookingStatus
+}
+
+function FilterPill({
   href,
   active,
   children,
@@ -44,10 +96,10 @@ function FilterChip({
     <Link
       href={href}
       className={cn(
-        'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+        'shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap',
         active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-foreground hover:bg-muted',
+          ? 'bg-[var(--ink)] text-[var(--card)]'
+          : 'bg-[var(--card-alt)] text-[var(--ink)] hover:bg-[var(--border)]',
       )}
     >
       {children}
@@ -67,25 +119,24 @@ export default async function CustomerBookingsPage({
 
   if (!customer) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-10">
-        <EmptyState
-          icon={<Inbox className="size-5" />}
-          title="No requests or bookings yet"
-          description="Book your first service to get started."
-          action={
-            <Button asChild>
-              <Link href="/services">Browse services</Link>
-            </Button>
-          }
-        />
+      <div className="px-[18px] pt-[60px] pb-8">
+        <h1 className="text-[30px] font-bold tracking-[-0.025em] leading-[1.1] text-[var(--ink)]">
+          Your bookings
+        </h1>
+        <p className="mt-2 text-[14.5px] text-[var(--ink-mute)]">
+          No bookings found. Book your first service to get started.
+        </p>
+        <div className="mt-6">
+          <Button asChild fullWidth size="md">
+            <Link href="/services">Request a service</Link>
+          </Button>
+        </div>
       </div>
     )
   }
 
   const { site, category, status } = await searchParams
   const filters = { site, category, status }
-
-  // ── Filter options ──────────────────────────────────────────────────────────
 
   const [savedSites, allRequests] = await Promise.all([
     db.customerAddress.findMany({
@@ -105,18 +156,10 @@ export default async function CustomerBookingsPage({
   const showSiteFilter = savedSites.length >= 1
   const showCategoryFilter = distinctCategories.length >= 1
 
-  // ── Data queries with filters ───────────────────────────────────────────────
-
-  const addressFilter = site
-    ? { addressId: site }
-    : {}
-
-  const categoryFilter = category
-    ? { category }
-    : {}
-
+  const addressFilter = site ? { addressId: site } : {}
+  const categoryFilter = category ? { category } : {}
   const isCompleted = status === 'completed'
-  const isActive    = status === 'active'
+  const isActive = status === 'active'
 
   const requests = await db.jobRequest.findMany({
     where: {
@@ -135,7 +178,7 @@ export default async function CustomerBookingsPage({
       address: { select: { suburb: true, city: true } },
       match: {
         include: {
-          provider: { select: { name: true } },
+          provider: { select: { name: true, avatarUrl: true } },
         },
       },
     },
@@ -162,197 +205,199 @@ export default async function CustomerBookingsPage({
               address: { select: { suburb: true, city: true } },
             },
           },
+          provider: { select: { name: true, avatarUrl: true } },
         },
       },
       quote: { select: { amount: true } },
-      job:   { select: { status: true } },
+      job: { select: { status: true } },
     },
     orderBy: { createdAt: 'desc' },
   })
 
-  return (
-    <div className="px-4 py-6 space-y-4 max-w-lg mx-auto">
-      <h1 className="text-xl font-semibold">My Requests &amp; Bookings</h1>
+  const hasResults = requests.length > 0 || bookings.length > 0
 
-      {/* ── Status filter ── */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-hide">
-        <FilterChip href={filterLink(filters, { status: undefined })} active={!status}>
-          All
-        </FilterChip>
-        <FilterChip href={filterLink(filters, { status: 'active' })} active={status === 'active'}>
-          Active
-        </FilterChip>
-        <FilterChip href={filterLink(filters, { status: 'completed' })} active={status === 'completed'}>
-          Completed
-        </FilterChip>
+  return (
+    <div className="pb-8">
+      {/* Header */}
+      <div className="px-[18px] pt-[60px] pb-4">
+        <h1 className="text-[30px] font-bold tracking-[-0.025em] leading-[1.1] text-[var(--ink)]">
+          Your bookings
+        </h1>
+        <p className="mt-1.5 text-[14px] text-[var(--ink-mute)]">
+          Active and recent requests
+        </p>
       </div>
 
-      {/* ── Category filter ── */}
+      {/* Status filter pills */}
+      <div className="flex gap-2 overflow-x-auto px-[18px] pb-1 scrollbar-hide">
+        <FilterPill href={filterLink(filters, { status: undefined })} active={!status}>All</FilterPill>
+        <FilterPill href={filterLink(filters, { status: 'active' })} active={status === 'active'}>Active</FilterPill>
+        <FilterPill href={filterLink(filters, { status: 'completed' })} active={status === 'completed'}>Completed</FilterPill>
+      </div>
+
+      {/* Category filter pills */}
       {showCategoryFilter && (
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-hide">
-          <FilterChip href={filterLink(filters, { category: undefined })} active={!category}>
-            All categories
-          </FilterChip>
+        <div className="flex gap-2 overflow-x-auto px-[18px] pt-2 pb-1 scrollbar-hide">
+          <FilterPill href={filterLink(filters, { category: undefined })} active={!category}>All categories</FilterPill>
           {distinctCategories.map((cat) => (
-            <FilterChip
-              key={cat}
-              href={filterLink(filters, { category: cat })}
-              active={category === cat}
-            >
+            <FilterPill key={cat} href={filterLink(filters, { category: cat })} active={category === cat}>
               <span className="capitalize">{cat.replaceAll('_', ' ')}</span>
-            </FilterChip>
+            </FilterPill>
           ))}
         </div>
       )}
 
-      {/* ── Site filter ── */}
+      {/* Site filter pills */}
       {showSiteFilter && (
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-hide">
-          <FilterChip href={filterLink(filters, { site: undefined })} active={!site}>
-            All sites
-          </FilterChip>
+        <div className="flex gap-2 overflow-x-auto px-[18px] pt-2 pb-1 scrollbar-hide">
+          <FilterPill href={filterLink(filters, { site: undefined })} active={!site}>All sites</FilterPill>
           {savedSites.map((s) => (
-            <FilterChip
-              key={s.id}
-              href={filterLink(filters, { site: s.id })}
-              active={site === s.id}
-            >
+            <FilterPill key={s.id} href={filterLink(filters, { site: s.id })} active={site === s.id}>
               {s.label ?? s.suburb ?? s.city ?? 'Site'}
-            </FilterChip>
+            </FilterPill>
           ))}
         </div>
       )}
 
-      {requests.length > 0 && (
-        <section className="space-y-3">
-          <div className="space-y-1">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-              Active requests
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Requests still being matched or awaiting a booking.
+      <div className="px-[18px] pt-5 space-y-5">
+        {/* Job requests */}
+        {requests.length > 0 && (
+          <section>
+            <SectionLabel className="mb-3">Active requests</SectionLabel>
+            <div className="space-y-3">
+              {requests.map((request) => {
+                const tone = requestTone(request.status)
+                const label = requestLabel(request.status)
+                const ref = request.id.slice(-8).toUpperCase()
+                const providerName = request.match?.provider?.name ?? null
+                return (
+                  <Link
+                    key={request.id}
+                    href={`/requests/${request.id}`}
+                    className="block bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] hover:shadow-[var(--shadow-float)] transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 active:translate-y-px overflow-hidden"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono text-[11.5px] text-[var(--ink-soft)] tracking-wider">
+                          PAP-{ref}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <StatusDot tone={tone} size={7} />
+                          <span className="text-[12px] font-semibold text-[var(--ink-mute)]">{label}</span>
+                        </div>
+                      </div>
+                      <p className="text-[16px] font-bold text-[var(--ink)] tracking-[-0.015em]">
+                        {request.title}
+                      </p>
+                      <p className="text-[13px] text-[var(--ink-mute)] mt-0.5 capitalize">
+                        {request.category?.replaceAll('_', ' ')}{request.address ? ` · ${request.address.suburb}` : ''}
+                      </p>
+                      <div className="border-t border-[var(--border)] my-3" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[13px] text-[var(--ink-mute)]">
+                          {providerName ?? 'Finding providers…'}
+                        </span>
+                        <span className="h-8 px-4 rounded-[10px] bg-[var(--ink)] text-[var(--card)] text-[13px] font-semibold flex items-center">
+                          View
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Confirmed bookings */}
+        {bookings.length > 0 && (
+          <section>
+            <SectionLabel className="mb-3">Confirmed bookings</SectionLabel>
+            <div className="space-y-3">
+              {bookings.map((b) => {
+                const jobRequest = b.match.jobRequest
+                const address = jobRequest.address
+                const tone = bookingTone(b.status, b.job?.status)
+                const label = bookingLabel(b.status, b.job?.status)
+                const ref = b.id.slice(-8).toUpperCase()
+                const providerName = b.match.provider?.name ?? null
+                const amount = b.quote.amount ? `R ${Number(b.quote.amount).toFixed(0)}` : null
+                const dateStr = b.scheduledDate
+                  ? b.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
+                  : 'Date TBC'
+                return (
+                  <Link
+                    key={b.id}
+                    href={`/bookings/${b.id}`}
+                    className="block bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] hover:shadow-[var(--shadow-float)] transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 active:translate-y-px overflow-hidden"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono text-[11.5px] text-[var(--ink-soft)] tracking-wider">
+                          PAP-{ref}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <StatusDot tone={tone} size={7} />
+                          <span className="text-[12px] font-semibold text-[var(--ink-mute)]">{label}</span>
+                        </div>
+                      </div>
+                      <p className="text-[16px] font-bold text-[var(--ink)] tracking-[-0.015em] capitalize">
+                        {jobRequest.category?.replaceAll('_', ' ')}
+                      </p>
+                      <p className="text-[13px] text-[var(--ink-mute)] mt-0.5">
+                        {dateStr}
+                        {address ? ` · ${address.suburb}` : ''}
+                        {amount ? ` · ${amount}` : ''}
+                      </p>
+                      <div className="border-t border-[var(--border)] my-3" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[13px] text-[var(--ink-mute)]">
+                          {providerName ?? '—'}
+                        </span>
+                        <span className="h-8 px-4 rounded-[10px] bg-[var(--ink)] text-[var(--card)] text-[13px] font-semibold flex items-center">
+                          View
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Empty state */}
+        {!hasResults && (
+          <div className="flex flex-col items-center py-12 text-center">
+            <div className="w-16 h-16 rounded-[20px] brand-gradient-soft flex items-center justify-center mb-4">
+              <MapPin size={28} className="text-[var(--brand-purple)]" />
+            </div>
+            <p className="text-[16px] font-bold text-[var(--ink)] tracking-[-0.01em] mb-1">
+              {site || category || status ? 'No results' : 'No bookings yet'}
             </p>
+            <p className="text-[13.5px] text-[var(--ink-mute)] mb-6 max-w-[260px]">
+              {site || category || status
+                ? 'Try a different filter combination.'
+                : 'When you request a service it\'ll appear here.'}
+            </p>
+            {!site && !category && !status && (
+              <Button asChild size="md">
+                <Link href="/services">Request a service</Link>
+              </Button>
+            )}
           </div>
+        )}
 
-          {requests.map((request) => (
-            <Link
-              key={request.id}
-              href={`/requests/${request.id}`}
-              className="block rounded-xl border bg-card p-4 space-y-2 hover:bg-accent transition-colors"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className="font-medium">{request.title}</p>
-                <StatusBadge status={request.status} type="jobRequest" />
-              </div>
-
-              {request.address && (
-                <p className="text-sm text-muted-foreground">
-                  {request.address.suburb}, {request.address.city}
-                </p>
-              )}
-
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  Created {request.createdAt.toLocaleDateString('en-ZA', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
-                </span>
-                {request.match?.provider ? (
-                  <span className="font-medium">{request.match.provider.name}</span>
-                ) : (
-                  <span className="font-medium">Pending match</span>
-                )}
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Ref: {request.id.slice(-8).toUpperCase()}
-              </p>
+        {/* Bottom CTA */}
+        {hasResults && (
+          <Button asChild fullWidth variant="secondary" size="md">
+            <Link href="/services">
+              <Plus size={18} />
+              Request another service
             </Link>
-          ))}
-        </section>
-      )}
-
-      {bookings.length > 0 && (
-        <section className="space-y-3">
-          <div className="space-y-1">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-              Confirmed bookings
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Jobs that already have a booking and provider workflow attached.
-            </p>
-          </div>
-
-          {bookings.map((b) => {
-            const jobRequest = b.match.jobRequest
-            const address    = jobRequest.address
-            return (
-              <Link
-                key={b.id}
-                href={`/bookings/${b.id}`}
-                className="block rounded-xl border bg-card p-4 space-y-2 hover:bg-accent transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium capitalize">{jobRequest.category}</p>
-                  {b.job
-                    ? <StatusBadge status={b.job.status} type="job" />
-                    : <StatusBadge status={b.status} type="booking" />}
-                </div>
-
-                {address && (
-                  <p className="text-sm text-muted-foreground">
-                    {address.suburb}, {address.city}
-                  </p>
-                )}
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    {b.scheduledDate
-                      ? b.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
-                      : 'Date TBC'}
-                    {b.scheduledWindow ? ` · ${b.scheduledWindow}` : ''}
-                  </span>
-                  <span className="font-medium">R {Number(b.quote.amount).toFixed(0)}</span>
-                </div>
-
-                <p className="text-xs text-muted-foreground">
-                  Ref: {b.id.slice(-8).toUpperCase()}
-                </p>
-
-                {b.job?.status === 'COMPLETED' && (
-                  <div className="pt-1">
-                    <Button asChild variant="outline" size="sm" className="h-7 text-xs">
-                      <Link
-                        href={`/book/${jobRequest.category}?template=${jobRequest.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Book again
-                      </Link>
-                    </Button>
-                  </div>
-                )}
-              </Link>
-            )
-          })}
-        </section>
-      )}
-
-      {requests.length === 0 && bookings.length === 0 && (
-        <div className="flex flex-col items-center py-12 text-center space-y-3">
-          <p className="text-muted-foreground">
-            {site || category || status
-              ? 'No results for this filter combination.'
-              : 'You have no requests or bookings yet.'}
-          </p>
-          {!site && !category && !status && (
-            <Button asChild>
-              <Link href="/services">Book a service</Link>
-            </Button>
-          )}
-        </div>
-      )}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

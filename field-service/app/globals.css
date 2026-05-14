@@ -6,173 +6,211 @@
    This keeps Tailwind dark: utilities and CSS-variable .dark overrides in sync. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Brand gradient utilities ──────────────────────────────────────────── */
+@utility brand-gradient {
+  background: var(--brand-gradient);
+}
+@utility brand-gradient-soft {
+  background: var(--brand-gradient-soft);
+}
+@utility brand-gradient-text {
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
 /* ──────────────────────────────────────────────────────────────────
-   Plug A Pro — Design Tokens
-   Dual-theme visual system. Defaults to the user's system preference
-   (light or dark). Dark mode retains the premium near-black aesthetic;
-   light mode is clean, crisp, and readable for outdoor working conditions.
-
-   All colour, radius, spacing, shadow, and motion values are exposed
-   as CSS custom properties so screens never hardcode hex values.
-   Tailwind utilities reach the same tokens through `bg-background`,
-   `text-foreground`, `border-border`, etc.
-
-   Adding new components: use token utilities (bg-card, text-foreground,
-   border-border) and tone classes (.tone-info, .tone-success, etc.).
-   Avoid hardcoded colours like bg-black, text-white, bg-zinc-950.
+   Plug A Pro — Design Tokens v2
+   Plus Jakarta Sans + DM Mono. Brand gradient accent (pink→purple→blue).
+   Purple (#8B3FE8) as single-colour accent. Soft neutrals, no harsh darks.
+   Tokens follow the handoff spec exactly. Tailwind utilities map through
+   the same variable names: bg-background, text-foreground, border-border, etc.
    ────────────────────────────────────────────────────────────────── */
 
 @layer base {
   :root {
-    /* Brand */
-    --color-whatsapp: #25d366;
-    --color-whatsapp-hover: #1fb85a;
-    --brand-blue: #2563eb;
-    --brand-blue-strong: #1d4ed8;
-    --brand-magenta: #e64691;
-    --brand-violet: #7c3aed;
-    --brand-sky: #0ea5e9;
+    /* ── Brand ───────────────────────────────────────────────────── */
+    --brand-pink:    #FF1F8E;
+    --brand-purple:  #8B3FE8;
+    --brand-blue:    #2A78F0;
+    --brand-gradient: linear-gradient(135deg, #FF1F8E 0%, #8B3FE8 50%, #2A78F0 100%);
+    --brand-gradient-soft: linear-gradient(135deg, #FF1F8E18 0%, #8B3FE814 50%, #2A78F018 100%);
 
-    /* Light surface (kept as fallback for users who explicitly choose
-       light mode; the product defaults to dark — see ThemeProvider) */
-    --background: #f6f7f9;
-    --foreground: #0d1117;
-    --card: rgba(255, 255, 255, 0.96);
-    --card-foreground: #0d1117;
-    --popover: rgba(255, 255, 255, 0.98);
-    --popover-foreground: #0d1117;
-    --primary: #2563eb;
-    --primary-foreground: #f8fbff;
-    --secondary: #eef1f6;
-    --secondary-foreground: #1a2333;
-    --muted: #eef1f6;
-    --muted-foreground: #5b6473;
-    --accent: #eef2f8;
-    --accent-foreground: #19233a;
-    --destructive: #d64242;
-    --destructive-foreground: #ffffff;
-    --border: #d9dee6;
-    --input: #c9d0db;
-    --ring: rgba(37, 99, 235, 0.55);
-    --radius: 0.875rem;
-    --radius-sm: 0.5rem;
-    --radius-md: 0.75rem;
-    --radius-lg: 1rem;
-    --radius-xl: 1.25rem;
-    --radius-2xl: 1.5rem;
-    --chart-1: #2563eb;
-    --chart-2: #0ea5e9;
-    --chart-3: #e64691;
-    --chart-4: #14b8a6;
-    --chart-5: #f59e0b;
-    --surface-subtle: rgba(255, 255, 255, 0.74);
-    --surface-raised: rgba(255, 255, 255, 0.94);
-    --surface-elevated: rgba(255, 255, 255, 1);
-    --surface-hero: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(238, 242, 248, 0.95));
-    --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.08);
-    --shadow-float: 0 20px 50px rgba(15, 23, 42, 0.16);
-    --shadow-pop: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 18px 44px rgba(15, 23, 42, 0.18);
-    --motion-fast: 120ms;
-    --motion-base: 180ms;
-    --ease-out: cubic-bezier(0.2, 0, 0, 1);
-    --press-scale: 0.985;
-    --press-y: 1px;
-    --tone-neutral-bg: #eef1f6;
-    --tone-neutral-border: #d8dee7;
-    --tone-neutral-fg: #485264;
-    --tone-info-bg: #e8f1ff;
-    --tone-info-border: #bcd2fb;
-    --tone-info-fg: #1d4ed8;
-    --tone-success-bg: #e8f8ef;
-    --tone-success-border: #b9e8c9;
-    --tone-success-fg: #157040;
-    --tone-warning-bg: #fff3d9;
-    --tone-warning-border: #f3ce82;
-    --tone-warning-fg: #8a5a07;
-    --tone-danger-bg: #ffeceb;
-    --tone-danger-border: #f1b3ad;
-    --tone-danger-fg: #a82828;
-    --tone-brand-bg: #fbe7f0;
-    --tone-brand-border: #f0c0d8;
-    --tone-brand-fg: #b02a6b;
+    /* ── Channel & status ────────────────────────────────────────── */
+    --whatsapp:       #25D366;
+    --whatsapp-dark:  #1FAD52;
+    --success:        #0F9D58;
+    --warning:        #E69900;
+    --danger:         #E5484D;
+
+    /* ── Light surfaces ──────────────────────────────────────────── */
+    --background:     #F6F6F8;
+    --foreground:     #0A0A0F;
+    --card:           #FFFFFF;
+    --card-foreground:#0A0A0F;
+    --card-alt:       #F1F1F4;
+    --popover:        #FFFFFF;
+    --popover-foreground: #0A0A0F;
+
+    /* ── Text hierarchy ──────────────────────────────────────────── */
+    --ink:       #0A0A0F;
+    --ink-mute:  #6B6F76;
+    --ink-soft:  #9CA0A8;
+
+    /* ── Primary (purple accent) ─────────────────────────────────── */
+    --primary:            #8B3FE8;
+    --primary-foreground: #FFFFFF;
+
+    /* ── Secondary / muted ───────────────────────────────────────── */
+    --secondary:           #F1F1F4;
+    --secondary-foreground:#0A0A0F;
+    --muted:               #F1F1F4;
+    --muted-foreground:    #6B6F76;
+    --accent:              #F1F1F4;
+    --accent-foreground:   #0A0A0F;
+
+    /* ── Destructive ─────────────────────────────────────────────── */
+    --destructive:            #E5484D;
+    --destructive-foreground: #FFFFFF;
+
+    /* ── Borders & inputs ────────────────────────────────────────── */
+    --border:        #EBEBEF;
+    --border-strong: #D9D9DE;
+    --input:         #EBEBEF;
+    --ring:          rgba(139, 63, 232, 0.55);
+
+    /* ── Radius scale ────────────────────────────────────────────── */
+    --radius:      1.5rem;    /* 24px — card (lg) */
+    --radius-sm:   0.625rem;  /* 10px — sm */
+    --radius-md:   1rem;      /* 16px — button/input/chip */
+    --radius-lg:   1.5rem;    /* 24px — card */
+    --radius-xl:   1.75rem;   /* 28px — featured card */
+    --radius-2xl:  1.75rem;   /* 28px — alias */
+    --radius-pill: 9999px;
+
+    /* ── Shadows ─────────────────────────────────────────────────── */
+    --shadow-soft:  0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.06);
+    --shadow-float: 0 1px 0 var(--border), 0 10px 30px rgba(15, 15, 30, 0.06);
+    --shadow-pop:   0 1px 0 rgba(255,255,255,.25) inset, 0 8px 24px #8B3FE833, 0 2px 6px #8B3FE822;
+    --shadow-whatsapp: 0 1px 0 rgba(255,255,255,.25) inset, 0 6px 18px #25D36655;
+
+    /* ── Motion ──────────────────────────────────────────────────── */
+    --motion-fast:   120ms;
+    --motion-base:   180ms;
+    --ease-out:      cubic-bezier(0.2, 0, 0, 1);
+    --press-scale:   0.985;
+    --press-y:       1px;
+
+    /* ── Charts ──────────────────────────────────────────────────── */
+    --chart-1: #8B3FE8;
+    --chart-2: #2A78F0;
+    --chart-3: #FF1F8E;
+    --chart-4: #0F9D58;
+    --chart-5: #E69900;
+
+    /* ── Legacy surface tokens (keep for admin UI compat) ────────── */
+    --surface-subtle:  rgba(255, 255, 255, 0.74);
+    --surface-raised:  rgba(255, 255, 255, 0.94);
+    --surface-elevated:#FFFFFF;
+    --surface-hero:    linear-gradient(180deg, rgba(255,255,255,0.95), rgba(241,241,244,0.95));
+
+    /* ── Semantic tone classes (light) ───────────────────────────── */
+    --tone-neutral-bg:     #F1F1F4;
+    --tone-neutral-border: #D9D9DE;
+    --tone-neutral-fg:     #3D3D45;
+    --tone-info-bg:        rgba(42, 120, 240, 0.10);
+    --tone-info-border:    rgba(42, 120, 240, 0.25);
+    --tone-info-fg:        #1A5CC9;
+    --tone-success-bg:     rgba(15, 157, 88, 0.10);
+    --tone-success-border: rgba(15, 157, 88, 0.25);
+    --tone-success-fg:     #0C7A45;
+    --tone-warning-bg:     rgba(230, 153, 0, 0.10);
+    --tone-warning-border: rgba(230, 153, 0, 0.25);
+    --tone-warning-fg:     #A66400;
+    --tone-danger-bg:      rgba(229, 72, 77, 0.10);
+    --tone-danger-border:  rgba(229, 72, 77, 0.25);
+    --tone-danger-fg:      #B43439;
+    --tone-brand-bg:       var(--brand-gradient-soft);
+    --tone-brand-border:   rgba(139, 63, 232, 0.20);
+    --tone-brand-fg:       #8B3FE8;
+    --color-whatsapp:      #25D366;
+    --color-whatsapp-hover:#1FAD52;
   }
 
-  /* Default presentation: premium dark system. Applied when the
-     user picks dark mode or system prefers dark. The product also
-     forces dark-first via ThemeProvider defaultTheme="dark". */
+  /* ── Dark mode ───────────────────────────────────────────────────── */
   .dark {
-    /* Surfaces — near-black foundation, gently elevated cards */
-    --background: #050608;
-    --foreground: #f4f5f7;
-    --card: #0d0e12;
-    --card-foreground: #f4f5f7;
-    --popover: #101218;
-    --popover-foreground: #f4f5f7;
+    /* Surfaces */
+    --background:     #0B0B10;
+    --foreground:     #F4F4F6;
+    --card:           #15161C;
+    --card-foreground:#F4F4F6;
+    --card-alt:       #1B1C24;
+    --popover:        #15161C;
+    --popover-foreground: #F4F4F6;
 
-    /* Primary action — clean, high-contrast accent on near-black */
-    --primary: #4a8cff;
-    --primary-foreground: #050608;
+    /* Text */
+    --ink:      #F4F4F6;
+    --ink-mute: #A0A0AB;
+    --ink-soft: #71727B;
 
-    /* Secondary / quiet surfaces */
-    --secondary: #14161c;
-    --secondary-foreground: #f4f5f7;
-    --muted: #0e1015;
-    --muted-foreground: #8a909c;
+    /* Primary stays purple */
+    --primary:            #8B3FE8;
+    --primary-foreground: #FFFFFF;
+
+    /* Secondary / muted */
+    --secondary:           #1B1C24;
+    --secondary-foreground:#F4F4F6;
+    --muted:               #1B1C24;
+    --muted-foreground:    #A0A0AB;
     --accent: #181b22;
     --accent-foreground: #f4f5f7;
 
-    /* Status */
-    --destructive: #ff5b52;
-    --destructive-foreground: #ffffff;
+    --destructive:            #FF5B52;
+    --destructive-foreground: #FFFFFF;
 
-    /* Soft translucent borders — Apple-style hairlines */
-    --border: rgba(255, 255, 255, 0.08);
-    --input: rgba(255, 255, 255, 0.1);
-    --ring: rgba(74, 140, 255, 0.55);
+    --border:        #26272F;
+    --border-strong: #33343D;
+    --input:         #26272F;
+    --ring:          rgba(139, 63, 232, 0.55);
 
-    /* Charts — saturated but readable on near-black */
-    --chart-1: #4a8cff;
-    --chart-2: #30d6c5;
-    --chart-3: #ff6fae;
-    --chart-4: #34d399;
-    --chart-5: #ffb340;
+    --chart-1: #A87DF0;
+    --chart-2: #5BA8FF;
+    --chart-3: #FF6FAE;
+    --chart-4: #34D399;
+    --chart-5: #FFB340;
 
-    /* Layered surfaces */
-    --surface-subtle: #0a0b0f;
-    --surface-raised: #0f1116;
-    --surface-elevated: #14161c;
-    --surface-hero: linear-gradient(180deg, #0a0b0f 0%, #050608 100%);
+    --surface-subtle:  #0D0E12;
+    --surface-raised:  #15161C;
+    --surface-elevated:#1B1C24;
+    --surface-hero:    linear-gradient(180deg, #0D0E12 0%, #0B0B10 100%);
 
-    /* Refined dark shadows — depth without sparkle */
-    --shadow-soft:
-      0 1px 0 rgba(255, 255, 255, 0.04) inset,
-      0 8px 24px rgba(0, 0, 0, 0.45);
-    --shadow-float:
-      0 1px 0 rgba(255, 255, 255, 0.05) inset,
-      0 24px 60px rgba(0, 0, 0, 0.6);
-    --shadow-pop:
-      0 1px 0 rgba(255, 255, 255, 0.06) inset,
-      0 20px 50px rgba(0, 0, 0, 0.55);
+    --shadow-soft:  0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.45);
+    --shadow-float: 0 1px 0 var(--border), 0 10px 30px rgba(15,15,30,0.15);
+    --shadow-pop:   0 1px 0 rgba(255,255,255,.25) inset, 0 8px 24px #8B3FE833, 0 2px 6px #8B3FE822;
+    --shadow-whatsapp: 0 1px 0 rgba(255,255,255,.25) inset, 0 6px 18px #25D36655;
 
-    /* Semantic tones — restrained on dark, never neon */
-    --tone-neutral-bg: rgba(148, 163, 184, 0.1);
-    --tone-neutral-border: rgba(148, 163, 184, 0.18);
-    --tone-neutral-fg: #c5cbd6;
-    --tone-info-bg: rgba(74, 140, 255, 0.12);
-    --tone-info-border: rgba(74, 140, 255, 0.28);
-    --tone-info-fg: #9ec0ff;
-    --tone-success-bg: rgba(48, 209, 88, 0.12);
-    --tone-success-border: rgba(48, 209, 88, 0.28);
-    --tone-success-fg: #7eddaa;
-    --tone-warning-bg: rgba(255, 159, 10, 0.14);
-    --tone-warning-border: rgba(255, 159, 10, 0.3);
-    --tone-warning-fg: #ffcd80;
-    --tone-danger-bg: rgba(255, 91, 82, 0.14);
-    --tone-danger-border: rgba(255, 91, 82, 0.3);
-    --tone-danger-fg: #ffb1ab;
-    --tone-brand-bg: rgba(230, 70, 145, 0.14);
-    --tone-brand-border: rgba(230, 70, 145, 0.32);
-    --tone-brand-fg: #ffb3d2;
+    --tone-neutral-bg:     rgba(160, 160, 171, 0.10);
+    --tone-neutral-border: rgba(160, 160, 171, 0.20);
+    --tone-neutral-fg:     #C5CBD6;
+    --tone-info-bg:        rgba(42, 120, 240, 0.14);
+    --tone-info-border:    rgba(42, 120, 240, 0.30);
+    --tone-info-fg:        #91B8FF;
+    --tone-success-bg:     rgba(15, 157, 88, 0.14);
+    --tone-success-border: rgba(15, 157, 88, 0.30);
+    --tone-success-fg:     #5BD49B;
+    --tone-warning-bg:     rgba(230, 153, 0, 0.14);
+    --tone-warning-border: rgba(230, 153, 0, 0.30);
+    --tone-warning-fg:     #FFC25A;
+    --tone-danger-bg:      rgba(229, 72, 77, 0.14);
+    --tone-danger-border:  rgba(229, 72, 77, 0.30);
+    --tone-danger-fg:      #FF8B8E;
+    --tone-brand-bg:       var(--brand-gradient-soft);
+    --tone-brand-border:   rgba(139, 63, 232, 0.28);
+    --tone-brand-fg:       #C490FF;
+    --color-whatsapp:      #25D366;
+    --color-whatsapp-hover:#1FAD52;
   }
 }
 
@@ -192,15 +230,20 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+    font-family: var(--font-ui, "Plus Jakarta Sans", -apple-system, system-ui, sans-serif);
+    font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
-  /* Typography rhythm — Geist Sans handles the rest */
+  /* Typography rhythm */
   h1, h2, h3, h4 {
-    letter-spacing: -0.015em;
+    letter-spacing: -0.02em;
+  }
+
+  code, kbd, pre, .font-mono {
+    font-family: var(--font-mono, "DM Mono", ui-monospace, monospace);
   }
 
   /* Slightly tighter caret colour on dark backgrounds */
@@ -429,6 +472,48 @@
 .safe-x {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+}
+
+/* ── Screen-enter animation ─────────────────────────────────────────────── */
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@utility screen-enter {
+  animation: screen-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Skeleton shimmer override — more on-brand than plain pulse */
+[data-slot="skeleton"] {
+  background: linear-gradient(
+    90deg,
+    var(--card-alt) 0%,
+    color-mix(in srgb, var(--brand-purple) 6%, var(--card-alt)) 50%,
+    var(--card-alt) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Button press feedback — applies to all interactive surfaces */
+@utility press-feedback {
+  transition: transform 0.08s ease, opacity 0.08s ease;
+}
+@utility press-feedback:active {
+  transform: scale(0.965);
+  opacity: 0.88;
 }
 
 /* Reduced motion: kill non-essential animation but keep focus rings. */

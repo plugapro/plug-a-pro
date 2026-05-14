@@ -4,12 +4,12 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
+import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
-import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
+import { AuthShell } from '@/components/shared/auth-shell'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
 import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
@@ -27,20 +27,24 @@ export default function SignUpPage() {
 
   const prefillPhone = searchParams.get('phone') ?? ''
   const prefillNext = getSafeCustomerNextPath(searchParams.get('next'), '/services')
+
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState(prefillPhone)
-  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canSubmit = !loading && !!phone && name.trim().length >= 2 && agreed
+  const name = `${firstName.trim()} ${lastName.trim()}`.trim()
+  const canSubmit = !loading && !!phone && name.length >= 2 && agreed
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
-    if (name.trim().length < 2) {
-      setError('Please enter your full name (at least 2 characters).')
+    if (name.length < 2) {
+      setError('Please enter your first and last name.')
       return
     }
     if (!agreed) {
@@ -66,18 +70,12 @@ export default function SignUpPage() {
         } else if (msg.includes('invalid') || msg.includes('format')) {
           setError('Invalid phone number format. Please use your full South African number.')
         } else if (
-          msg.includes('otp_whatsapp_disabled') ||
-          msg.includes('template_not_approved') ||
-          msg.includes('wa_auth_failed') ||
-          msg.includes('wa_transient') ||
-          msg.includes('unsupported') ||
-          msg.includes('provider') ||
-          msg.includes('not enabled') ||
-          msg.includes('phone')
+          msg.includes('otp_whatsapp_disabled') || msg.includes('template_not_approved') ||
+          msg.includes('wa_auth_failed') || msg.includes('wa_transient') ||
+          msg.includes('unsupported') || msg.includes('provider') ||
+          msg.includes('not enabled') || msg.includes('phone')
         ) {
-          setError(
-            "We couldn't deliver your code on WhatsApp. Check the number and try again, or contact support@plugapro.co.za.",
-          )
+          setError("We couldn't deliver your code on WhatsApp. Check the number and try again, or contact support@plugapro.co.za.")
         } else {
           console.error('[sign-up] Supabase OTP error:', otpError.message)
           setError('Could not send code. Please try again or contact support@plugapro.co.za.')
@@ -87,13 +85,13 @@ export default function SignUpPage() {
 
       const params = new URLSearchParams({
         phone: normalized.e164,
-        name: name.trim(),
+        name: name,
         intent: 'signup',
         next: prefillNext,
       })
       saveOtpVerifyState(sessionStorage, CUSTOMER_OTP_VERIFY_STORAGE_KEY, {
         phone: normalized.e164,
-        name: name.trim(),
+        name: name,
         intent: 'signup',
         next: prefillNext,
         savedAt: Date.now(),
@@ -107,18 +105,51 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="space-y-1 text-center">
-        <p className="app-kicker">Customer Access</p>
-        <h1 className="text-2xl font-semibold text-foreground">Create your account</h1>
-        <p className="text-sm text-muted-foreground">A code will be sent on WhatsApp — we&apos;ll match you to nearby service providers</p>
-      </div>
+    <AuthShell
+      backHref="/sign-in"
+      eyebrow="New here"
+      title="Create your account"
+      subtitle="Takes about 30 seconds. We'll text you when a provider accepts your request."
+      dense
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-[14px]">
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label htmlFor="firstName" className="block text-[13px] font-semibold text-[var(--ink)] mb-1.5 tracking-[-0.01em]">
+              First name
+            </label>
+            <Input
+              id="firstName"
+              type="text"
+              value={firstName}
+              onChange={(e) => { setFirstName(e.target.value); setError(null) }}
+              placeholder="Thandi"
+              disabled={loading}
+              autoComplete="given-name"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="lastName" className="block text-[13px] font-semibold text-[var(--ink)] mb-1.5 tracking-[-0.01em]">
+              Last name
+            </label>
+            <Input
+              id="lastName"
+              type="text"
+              value={lastName}
+              onChange={(e) => { setLastName(e.target.value); setError(null) }}
+              placeholder="Mahlangu"
+              disabled={loading}
+              autoComplete="family-name"
+              required
+            />
+          </div>
+        </div>
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="phone" className="text-foreground">Mobile number</Label>
+        <div>
+          <label htmlFor="phone" className="block text-[13px] font-semibold text-[var(--ink)] mb-1.5 tracking-[-0.01em]">
+            Mobile number
+          </label>
           <SaMobileNumberInput
             id="phone"
             value={phone}
@@ -126,59 +157,82 @@ export default function SignUpPage() {
             disabled={loading}
             onEdit={() => setError(null)}
           />
-          <p className="text-xs text-muted-foreground">
-            {SA_OTP_SIGN_IN_HELPER_TEXT}
-          </p>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="name" className="text-foreground">Full name</Label>
+        <div>
+          <div className="flex items-baseline justify-between mb-1.5">
+            <label htmlFor="email" className="text-[13px] font-semibold text-[var(--ink)] tracking-[-0.01em]">
+              Email
+            </label>
+            <span className="text-[12px] text-[var(--ink-mute)]">Optional</span>
+          </div>
           <Input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e) => { setName(e.target.value); setError(null) }}
-            placeholder="Your full name"
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@email.co.za"
             disabled={loading}
-            autoComplete="name"
-            required
-            minLength={2}
-            maxLength={120}
+            autoComplete="email"
           />
         </div>
 
-        <div className="flex items-start gap-2 pt-1">
-          <Checkbox
-            id="terms"
-            checked={agreed}
-            onCheckedChange={(v) => setAgreed(v === true)}
-            disabled={loading}
-          />
-          <Label htmlFor="terms" className="text-xs text-muted-foreground leading-relaxed cursor-pointer">
+        <button
+          type="button"
+          onClick={() => setAgreed((a) => !a)}
+          className="flex gap-2.5 items-start text-left bg-transparent border-none cursor-pointer px-1 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-purple)] rounded-lg"
+        >
+          <div
+            className={[
+              'flex items-center justify-center w-5 h-5 rounded-[6px] shrink-0 mt-0.5',
+              'transition-[background,box-shadow] duration-150',
+              agreed
+                ? 'brand-gradient text-white'
+                : 'bg-card shadow-[inset_0_0_0_1.5px_var(--border-strong)]',
+            ].join(' ')}
+            aria-hidden
+          >
+            {agreed && (
+              <svg width="13" height="10" viewBox="0 0 13 10" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="1.5,5.5 5,9 11.5,1" />
+              </svg>
+            )}
+          </div>
+          <span className="text-[13px] leading-relaxed text-[var(--ink-mute)]">
             I agree to the{' '}
-            <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
-              Terms of Service
+            <Link href="/terms" className="text-[var(--brand-purple)] font-semibold" onClick={(e) => e.stopPropagation()}>
+              Terms
             </Link>
             {' '}and{' '}
-            <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+            <Link href="/privacy" className="text-[var(--brand-purple)] font-semibold" onClick={(e) => e.stopPropagation()}>
               Privacy Policy
             </Link>
-          </Label>
-        </div>
+            . My phone number is only shared with a provider after I accept their quote.
+          </span>
+        </button>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="text-[13px] text-[var(--danger)] text-center">{error}</p>
+        )}
 
-        <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
-          {loading ? 'Sending code…' : 'Send code'}
+        <Button
+          type="submit"
+          fullWidth
+          variant={canSubmit ? 'default' : 'secondary'}
+          disabled={!canSubmit}
+          size="md"
+        >
+          {loading ? 'Sending code…' : 'Create account'}
+          {!loading && <ArrowRight size={18} />}
         </Button>
       </form>
 
-      <p className="text-center text-xs text-muted-foreground">
+      <p className="mt-6 text-center text-[13px] text-[var(--ink-mute)]">
         Already have an account?{' '}
-        <Link href="/sign-in" className="font-medium text-primary underline-offset-4 hover:underline">
-          Sign in →
+        <Link href="/sign-in" className="text-[var(--brand-purple)] font-semibold">
+          Sign in
         </Link>
       </p>
-    </div>
+    </AuthShell>
   )
 }

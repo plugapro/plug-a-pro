@@ -94,7 +94,7 @@ describe('anonymous provider discovery', () => {
         status: 'ACTIVE',
       }),
     }))
-    expect(html).toContain('Find a Provider')
+    expect(html).toContain('Find a provider')
     expect(html).toContain('Ana K')
   })
 

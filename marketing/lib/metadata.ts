@@ -3,8 +3,9 @@ import type { Metadata } from "next";
 export const siteConfig = {
   venture: "plug-a-pro",
   name: "Plug A Pro",
+  tagline: "Reliable Local Services Made Simple",
   description:
-    "Find nearby local pros for small home jobs. Describe what you need on WhatsApp, get a written quote, and track the job to completion. Free for customers.",
+    "Find trusted plumbers, handymen, repair and maintenance providers through Plug A Pro. One simple number handles requests, quotes and updates so you get help without the chase.",
   url: "https://plugapro.co.za", // TODO: update with production URL
   accent: "oklch(0.55 0.2 250)",
   ogImage: "/og.png",

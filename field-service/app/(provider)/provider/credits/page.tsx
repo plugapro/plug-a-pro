@@ -151,140 +151,186 @@ export default async function ProviderCreditsPage({
   const termsUrl = getProviderTermsUrl()
 
   return (
-    <div className="mx-auto max-w-lg space-y-5 px-4 py-6 pb-24">
-      <PageHeader
-        eyebrow="Provider credits"
-        title="Provider Credits"
-        description={`Credits are prepaid platform units, not loans or financial credit. 1 credit = R${PROVIDER_CREDIT_PRICE_ZAR}. Credits are used only when you accept a customer-selected job.`}
-        action={
-          <Button asChild variant="outline" size="sm">
-            <Link href="/provider">Jobs</Link>
-          </Button>
-        }
-      />
+    <div className="min-h-screen pb-32 screen-enter">
+      {/* Page header */}
+      <div className="px-[18px] pt-[60px] pb-4">
+        <div className="text-[28px] font-bold tracking-[-0.025em]" style={{ color: 'var(--ink)' }}>Credits</div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Credits balance</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Total available credits</p>
-            <p className="text-4xl font-bold tracking-normal">{summary.totalAvailableCredits}</p>
+      {/* Credits hero card — dark ink background with purple halo */}
+      <div className="px-[18px]">
+        <div className="relative overflow-hidden rounded-[24px] p-5"
+             style={{ background: 'var(--ink)', color: 'var(--card)' }}>
+          {/* Radial halo */}
+          <div aria-hidden className="absolute right-[-40px] top-[-40px] w-[220px] h-[220px] rounded-full opacity-30"
+               style={{ background: '#8B3FE8', filter: 'blur(50px)' }} />
+
+          <div className="relative">
+            <div className="text-[11px] font-bold tracking-[0.08em] uppercase opacity-60 mb-1">
+              Available credits
+            </div>
+            <div className="text-[48px] font-bold tracking-[-0.03em] leading-none mb-1">
+              {summary.totalAvailableCredits}
+            </div>
+            <div className="text-[12.5px] opacity-60 mb-5">
+              {summary.paidCredits} purchased · {summary.promoCredits} starter · {summary.estimatedLeadsUnlockable} accepts available
+            </div>
+
+            <div className="flex gap-2.5">
+              <Link href="/provider/credits#topup"
+                    className="flex-1 h-10 rounded-[12px] flex items-center justify-center text-[13px] font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.15)', color: 'var(--card)' }}>
+                Top up
+              </Link>
+              <Link href={termsUrl}
+                    className="flex-1 h-10 rounded-[12px] flex items-center justify-center text-[13px] font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--card)' }}>
+                Terms
+              </Link>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-sm">
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Purchased</p>
-              <p className="text-lg font-semibold">{summary.paidCredits}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Starter</p>
-              <p className="text-lg font-semibold">{summary.promoCredits}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Accepts</p>
-              <p className="text-lg font-semibold">{summary.estimatedLeadsUnlockable}</p>
+        </div>
+      </div>
+
+      {/* What credits cost */}
+      <div className="px-[18px] mt-4">
+        <div className="rounded-[20px] px-4 py-3"
+             style={{ background: 'rgba(139,63,232,0.06)', boxShadow: 'inset 0 0 0 1px rgba(139,63,232,0.15)' }}>
+          <div className="text-[12.5px]" style={{ color: 'var(--ink)' }}>
+            Credits are prepaid platform units, not loans. 1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}. Credits are only used when you accept a customer-selected job.
+          </div>
+        </div>
+      </div>
+
+      {/* Payfast return banners */}
+      {topupParam === 'success' && (
+        <div className="px-[18px] mt-4">
+          <AlertCallout tone="success" title="Payment submitted">
+            Your credits will appear in your wallet once Payfast confirms the payment — usually a few seconds.
+          </AlertCallout>
+        </div>
+      )}
+      {topupParam === 'cancelled' && (
+        <div className="px-[18px] mt-4">
+          <AlertCallout tone="warning" title="Payment not completed">
+            Your wallet was not charged. Select a package below to try again.
+          </AlertCallout>
+        </div>
+      )}
+
+      {/* Manual EFT instructions (if just created) */}
+      {instructions && (
+        <div className="px-[18px] mt-4">
+          <EftInstructions instructions={instructions} />
+        </div>
+      )}
+
+      {/* Top up with Pay@ */}
+      <div className="px-[18px] mt-6" id="topup">
+        <div className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>
+          Top up with Pay@
+        </div>
+        <div className="rounded-[20px] overflow-hidden"
+             style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="px-4 pt-4 pb-1">
+            <div className="text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
+              Pay with a retail cash reference, QR code, or hosted payment page. 1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}. Credits are issued automatically once Pay@ confirms payment.
             </div>
           </div>
-        </CardContent>
-      </Card>
+          <div className="px-4 pb-4 mt-3">
+            <PayatPackageSelector />
+          </div>
+        </div>
+      </div>
 
-      {/* Payfast return-URL banners */}
-      {topupParam === 'success' ? (
-        <AlertCallout tone="success" title="Payment submitted">
-          Your credits will appear in your wallet once Payfast confirms the payment — this usually takes a few seconds.
-        </AlertCallout>
-      ) : null}
+      {/* Pay by card with Payfast */}
+      <div className="px-[18px] mt-4">
+        <div className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>
+          Pay by card (Payfast)
+        </div>
+        <div className="rounded-[20px] overflow-hidden"
+             style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="px-4 pt-4 pb-1">
+            <div className="text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
+              Use Payfast if you prefer card, instant EFT, or SCode checkout.
+            </div>
+          </div>
+          <div className="px-4 pb-4 mt-3">
+            <PayfastPackageSelector />
+          </div>
+        </div>
+      </div>
 
-      {topupParam === 'cancelled' ? (
-        <AlertCallout tone="warning" title="Payment not completed">
-          Your wallet was not charged. Select a package below to try again.
-        </AlertCallout>
-      ) : null}
-
-      {/* Manual EFT instructions (if a manual intent was just created) */}
-      {instructions ? <EftInstructions instructions={instructions} /> : null}
-
-      {/* Pay@ top-up — primary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Top up with Pay@</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Pay with a retail cash reference, QR code, or hosted payment page. 1 credit = R{PROVIDER_CREDIT_PRICE_ZAR}. Credits are issued automatically once Pay@ confirms payment.
-          </p>
-          <PayatPackageSelector />
-        </CardContent>
-      </Card>
-
-      {/* Payfast top-up — secondary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Pay by card with Payfast</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Use Payfast if you prefer card, instant EFT, or SCode checkout.
-          </p>
-          <PayfastPackageSelector />
-        </CardContent>
-      </Card>
-
-      {/* Manual EFT — secondary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Manual EFT</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Manual EFT top-ups are credited after funds are confirmed by our finance team (1–2 business days).
-          </p>
-          <div className="grid gap-2">
+      {/* Manual EFT */}
+      <div className="px-[18px] mt-4">
+        <div className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>
+          Manual EFT
+        </div>
+        <div className="rounded-[20px] overflow-hidden"
+             style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="px-4 pt-4 pb-1">
+            <div className="text-[12.5px]" style={{ color: 'var(--ink-mute)' }}>
+              Manual EFT top-ups are credited after funds are confirmed by our finance team (1–2 business days).
+            </div>
+          </div>
+          <div className="px-4 pb-4 mt-3 space-y-2">
             {TOP_UP_OPTIONS.map((option) => (
               <form key={option.amountCents} action={createProviderTopUpIntentFormAction}>
                 <input type="hidden" name="amountCents" value={option.amountCents} />
-                <Button type="submit" variant="outline" className="h-auto w-full justify-between p-4">
-                  <span className="text-left">
-                    <span className="block font-semibold">{option.label}</span>
-                    <span className="block text-xs font-normal text-muted-foreground">
+                <button type="submit"
+                        className="w-full flex items-center justify-between px-4 py-3 rounded-[14px] text-left"
+                        style={{
+                          background: 'var(--card-alt)',
+                          boxShadow: 'inset 0 0 0 1px var(--border)',
+                          color: 'var(--ink)',
+                        }}>
+                  <div>
+                    <div className="text-[14px] font-semibold">{option.label}</div>
+                    <div className="text-[12px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>
                       {option.credits} Plug A Pro provider credits
-                    </span>
-                  </span>
-                  <span>Get instructions</span>
-                </Button>
+                    </div>
+                  </div>
+                  <div className="text-[12.5px] font-semibold" style={{ color: '#8B3FE8' }}>
+                    Get instructions
+                  </div>
+                </button>
               </form>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent wallet activity</CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* Wallet activity */}
+      <div className="px-[18px] mt-6">
+        <div className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>
+          Recent wallet activity
+        </div>
+        <div className="rounded-[20px] overflow-hidden"
+             style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
           {ledger.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">
+            <div className="px-4 py-8 text-center text-[13px]" style={{ color: 'var(--ink-mute)' }}>
               No wallet activity yet.
-            </p>
+            </div>
           ) : (
-            <ul>
+            <ul className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {ledger.map((item) => (
                 <ActivityRow key={item.id} item={item} />
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <p className="text-center text-xs text-muted-foreground">
-        Credits use is governed by the{' '}
-        <Link href={termsUrl} className="font-medium underline underline-offset-4">
-          provider credits terms and rules
-        </Link>
-        .
-      </p>
+      {/* Terms footer */}
+      <div className="px-[18px] mt-6 text-center">
+        <div className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>
+          Credit use is governed by the{' '}
+          <Link href={termsUrl} className="underline underline-offset-4" style={{ color: 'var(--ink-mute)' }}>
+            provider credits terms and rules
+          </Link>
+          .
+        </div>
+      </div>
     </div>
   )
 }

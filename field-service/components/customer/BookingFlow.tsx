@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { MapPin } from 'lucide-react'
+import { ChevronLeft, MapPin, Shield, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -554,432 +554,390 @@ export function BookingFlow({
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  return (
-    <div className="px-4 py-6 max-w-lg mx-auto space-y-6">
-      {/* Category header */}
-      <div>
-        <p className="text-xs text-muted-foreground uppercase tracking-wide">{category.slug}</p>
-        <h1 className="text-xl font-semibold mt-0.5">{category.name}</h1>
-        {category.description && (
-          <p className="text-sm text-muted-foreground mt-1">{category.description}</p>
-        )}
-      </div>
+  const STEP_SEQUENCE = ['address', 'description', 'confirm', 'submitted'] as const
+  const stepIndex = STEP_SEQUENCE.indexOf(step as typeof STEP_SEQUENCE[number])
+  const STEP_LABELS: Partial<Record<Step, string>> = {
+    address: 'Service address',
+    description: 'Job details',
+    confirm: 'Review',
+    submitted: 'Request received',
+    waitlisted: 'Area not covered',
+  }
 
-      {/* Step indicator — hidden on waitlisted screen */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {(['address', 'description', 'confirm', 'submitted'] as Step[]).map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
-            <span
-              className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold ${
-                step === s
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : ['address', 'description', 'confirm', 'submitted'].indexOf(step) > i
-                    ? 'tone-success'
-                    : 'border-border bg-card text-muted-foreground'
-              }`}
-            >
-              {i + 1}
-            </span>
-            {i < 3 && <span className="text-muted-foreground/40">—</span>}
+  return (
+    <div className="min-h-screen pb-32">
+
+      {/* Header strip */}
+      {step !== 'submitted' && (
+        <div className="px-[18px] pt-[54px] pb-4">
+          <div className="flex items-center gap-3 mb-3">
+            {step !== 'waitlisted' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (step === 'description') setStep('address')
+                  else if (step === 'confirm') setStep('description')
+                  else if (step === 'address') window.history.back()
+                }}
+                className="w-[38px] h-[38px] rounded-[12px] flex items-center justify-center shrink-0"
+                style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}
+              >
+                <ChevronLeft size={18} />
+              </button>
+            )}
+            <div className="flex-1">
+              {step !== 'waitlisted' && (
+                <div className="text-[11px] font-bold tracking-[0.06em] uppercase" style={{ color: '#8B3FE8' }}>
+                  {category.name} · Step {Math.max(stepIndex + 1, 1)} of 3
+                </div>
+              )}
+              <div className="text-[19px] font-bold tracking-[-0.025em] mt-0.5" style={{ color: 'var(--ink)' }}>
+                {STEP_LABELS[step] ?? ''}
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+          {step !== 'waitlisted' && stepIndex < 3 && (
+            <div
+              className="flex gap-1"
+              role="progressbar"
+              aria-valuenow={stepIndex + 1}
+              aria-valuemin={1}
+              aria-valuemax={3}
+              aria-label={`Step ${stepIndex + 1} of 3`}
+            >
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex-1 h-1 rounded-full"
+                     style={{ background: i <= stepIndex ? '#8B3FE8' : 'var(--border)', transition: 'background 0.3s' }} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Error banner */}
       {error && (
-        <div className="tone-danger rounded-2xl border px-4 py-3 text-sm">
+        <div className="mx-[18px] mb-4 rounded-[14px] px-4 py-3 text-[13px]"
+             style={{ background: 'rgba(229,72,77,0.08)', boxShadow: 'inset 0 0 0 1px rgba(229,72,77,0.2)', color: '#E5484D' }}>
           {error}
         </div>
       )}
 
-      {/* ── Step 1: Address ──────────────────────────────────────────────── */}
+      {/* ── Step 1: Address ──────────────────────────────────────────────────── */}
       {step === 'address' && (
-        <form onSubmit={handleAddressSubmit} className="space-y-4">
-          <h2 className="font-medium">Service address</h2>
+        <form onSubmit={handleAddressSubmit} className="px-[18px] space-y-4">
+          {/* Privacy notice */}
+          <div className="rounded-[16px] p-4"
+               style={{ background: 'rgba(139,63,232,0.06)', boxShadow: 'inset 0 0 0 1px rgba(139,63,232,0.12)' }}>
+            <div className="flex items-start gap-3">
+              <Shield size={18} className="shrink-0 mt-0.5" style={{ color: '#8B3FE8' }} />
+              <div className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)' }}>
+                <strong>Your address stays private.</strong> Providers only see your suburb and province until one accepts the job.
+              </div>
+            </div>
+          </div>
 
-          {/* ── Saved site picker (flag-gated) ────────────────────────── */}
+          {/* Saved site picker (flag-gated) */}
           {showSitePicker && (
             <div className="space-y-2">
-              <p className="text-sm font-medium">Choose a saved site</p>
+              <div className="text-[12px] font-semibold" style={{ color: 'var(--ink-mute)' }}>Saved sites</div>
               <div className="space-y-2">
                 {savedSites.map((site) => (
-                  <button
-                    key={site.id}
-                    type="button"
-                    onClick={() => applySavedSite(site)}
-                    className={`w-full text-left rounded-xl border px-4 py-3 text-sm transition-colors ${
-                      selectedSiteId === site.id
-                        ? 'border-primary bg-primary/10 font-medium'
-                        : 'border-border bg-card hover:bg-muted'
-                    }`}
-                  >
-                    <span className="block font-medium">
-                      {site.label ?? site.suburb}
-                    </span>
-                    <span className="block text-xs text-muted-foreground mt-0.5">
+                  <button key={site.id} type="button" onClick={() => applySavedSite(site)}
+                          className="w-full text-left rounded-[14px] px-4 py-3"
+                          style={{
+                            background: selectedSiteId === site.id ? 'rgba(139,63,232,0.08)' : 'var(--card)',
+                            boxShadow: selectedSiteId === site.id ? 'inset 0 0 0 1.5px #8B3FE8' : 'inset 0 0 0 1px var(--border)',
+                            color: 'var(--ink)',
+                          }}>
+                    <div className="text-[14px] font-semibold">{site.label ?? site.suburb}</div>
+                    <div className="text-[12px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>
                       {[site.street, site.suburb, site.city].filter(Boolean).join(', ')}
-                    </span>
+                    </div>
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={handleEnterNewAddress}
-                  className={`w-full text-left rounded-xl border px-4 py-3 text-sm transition-colors ${
-                    selectedSiteId === 'new'
-                      ? 'border-primary bg-primary/10 font-medium'
-                      : 'border-border bg-card hover:bg-muted'
-                  }`}
-                >
-                  + Enter a new address
+                <button type="button" onClick={handleEnterNewAddress}
+                        className="w-full text-left rounded-[14px] px-4 py-3"
+                        style={{
+                          background: selectedSiteId === 'new' ? 'rgba(139,63,232,0.08)' : 'var(--card)',
+                          boxShadow: selectedSiteId === 'new' ? 'inset 0 0 0 1.5px #8B3FE8' : 'inset 0 0 0 1px var(--border)',
+                          color: 'var(--ink)',
+                        }}>
+                  <div className="text-[14px] font-semibold">+ Enter a new address</div>
                 </button>
               </div>
             </div>
           )}
 
-          {/* Show the privacy notice + manual form when: no site picker, OR user chose "new", OR a site is selected */}
           {(!showSitePicker || selectedSiteId !== null) && (
             <>
-          <Card>
-            <CardContent className="space-y-1 px-4 py-4 text-sm">
-              <p className="font-medium">Your address stays private</p>
-              <p className="text-muted-foreground">
-                Providers will only see your suburb, city, and province before you select one and they accept the job.
-              </p>
-              <p className="text-muted-foreground">
-                Your exact address and phone number are only shared after acceptance.
-              </p>
-            </CardContent>
-          </Card>
+              {/* Use my location */}
+              <button type="button" onClick={handleUseMyLocation} disabled={locationLoading}
+                      className="w-full h-12 rounded-[14px] flex items-center justify-center gap-2.5 text-[13.5px] font-semibold"
+                      style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', color: 'var(--ink)' }}>
+                <MapPin size={16} style={{ color: '#8B3FE8' }} />
+                {locationLoading ? 'Finding your address…' : 'Use my current location'}
+              </button>
+              {locationDetectedLabel && (
+                <div className="text-center text-[12px]" style={{ color: 'var(--ink-mute)' }}>
+                  Detected: <span className="font-semibold">{locationDetectedLabel}</span>
+                </div>
+              )}
 
-          {/* Primary CTA: Use my location */}
-          <Card className="border-dashed bg-muted/40">
-            <CardContent className="px-4 py-4 space-y-3">
-              <div className="flex items-start gap-3">
-                <MapPin className="h-5 w-5 mt-0.5 shrink-0 text-muted-foreground" />
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium">Use your current location</p>
-                  <p className="text-xs text-muted-foreground">
-                    We&apos;ll auto-fill your suburb and street address.
-                  </p>
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+                <span className="text-[11px] uppercase tracking-[0.06em]" style={{ color: 'var(--ink-soft)' }}>or enter manually</span>
+                <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+              </div>
+
+              <div className="space-y-3">
+                {/* Province */}
+                <div>
+                  <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Province</div>
+                  <Select
+                    value={address.province}
+                    onValueChange={(val) => {
+                      setAddress((current) => ({
+                        ...current,
+                        province: val,
+                        city: '',
+                        region: '',
+                        suburb: '',
+                        postalCode: '',
+                      }))
+                      setLocationNodeId(null)
+                      setLocationDetectedLabel(null)
+                    }}
+                  >
+                    <SelectTrigger id="province" className="w-full h-12 rounded-[14px]"
+                                   style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROVINCE_LABELS.map((p) => (
+                        <SelectItem key={p} value={p}>{p}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Suburb */}
+                <div>
+                  <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Suburb</div>
+                  <SuburbPicker
+                    provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
+                    onSelect={(selection) => {
+                      setLocationDetectedLabel(null)
+                      if (selection) {
+                        setAddress((prev) => ({
+                          ...prev,
+                          suburb: selection.suburb,
+                          region: selection.region,
+                          city: selection.city,
+                          province: selection.province,
+                          postalCode: selection.postalCode,
+                        }))
+                        setLocationNodeId(selection.locationNodeId)
+                      } else {
+                        setAddress((prev) => ({
+                          ...prev,
+                          suburb: '',
+                          region: '',
+                          city: '',
+                          postalCode: '',
+                        }))
+                        setLocationNodeId(null)
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Unit + Complex */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+                      Unit <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
+                    </div>
+                    <Input id="unitNumber" type="text" value={address.unitNumber}
+                           onChange={(e) => setAddress({ ...address, unitNumber: e.target.value })}
+                           placeholder="12B" className="h-12 rounded-[14px]" />
+                  </div>
+                  <div>
+                    <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+                      Complex <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
+                    </div>
+                    <Input id="complexName" type="text" value={address.complexName}
+                           onChange={(e) => setAddress({ ...address, complexName: e.target.value })}
+                           placeholder="Acacia Mews" className="h-12 rounded-[14px]" />
+                  </div>
+                </div>
+
+                {/* Street address */}
+                <div>
+                  <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Street address</div>
+                  <Input id="addressLine1" required type="text" value={address.addressLine1}
+                         onChange={(e) => setAddress({ ...address, addressLine1: e.target.value })}
+                         placeholder="12 Main Road" className="h-12 rounded-[14px]" />
+                </div>
+
+                {/* Address line 2 */}
+                <div>
+                  <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+                    Address line 2 <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
+                  </div>
+                  <Input id="addressLine2" type="text" value={address.addressLine2}
+                         onChange={(e) => setAddress({ ...address, addressLine2: e.target.value })}
+                         placeholder="Building entrance, floor, landmark" className="h-12 rounded-[14px]" />
                 </div>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={locationLoading}
-                onClick={handleUseMyLocation}
-              >
-                {locationLoading ? 'Finding address…' : 'Use my current location'}
-              </Button>
-              {locationDetectedLabel && (
-                <p className="text-xs text-center text-muted-foreground">
-                  Detected: <span className="font-medium">{locationDetectedLabel}</span>
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="flex-1 border-t border-border" />
-            <span>or enter your address manually</span>
-            <div className="flex-1 border-t border-border" />
-          </div>
-
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="province" className="text-muted-foreground">Province</Label>
-              <Select
-                value={address.province}
-                onValueChange={(val) => {
-                  setAddress((current) => ({
-                    ...current,
-                    province: val,
-                    city: '',
-                    region: '',
-                    suburb: '',
-                    postalCode: '',
-                  }))
-                  setLocationNodeId(null)
-                  setLocationDetectedLabel(null)
-                }}
-              >
-                <SelectTrigger id="province" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVINCE_LABELS.map((p) => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-muted-foreground">Suburb</Label>
-              <SuburbPicker
-                provinceKey={PROVINCE_KEY_BY_LABEL[address.province] ?? 'gauteng'}
-                onSelect={(selection) => {
-                  setLocationDetectedLabel(null)
-                  if (selection) {
-                    setAddress((prev) => ({
-                      ...prev,
-                      suburb: selection.suburb,
-                      region: selection.region,
-                      city: selection.city,
-                      province: selection.province,
-                      postalCode: selection.postalCode,
-                    }))
-                    setLocationNodeId(selection.locationNodeId)
-                  } else {
-                    setAddress((prev) => ({
-                      ...prev,
-                      suburb: '',
-                      region: '',
-                      city: '',
-                      postalCode: '',
-                    }))
-                    setLocationNodeId(null)
-                  }
-                }}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="unitNumber" className="text-muted-foreground">
-                  Unit number <span className="text-muted-foreground/60">(optional)</span>
-                </Label>
-                <Input
-                  id="unitNumber"
-                  type="text"
-                  value={address.unitNumber}
-                  onChange={(e) => setAddress({ ...address, unitNumber: e.target.value })}
-                  placeholder="12B"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="complexName" className="text-muted-foreground">
-                  Complex name <span className="text-muted-foreground/60">(optional)</span>
-                </Label>
-                <Input
-                  id="complexName"
-                  type="text"
-                  value={address.complexName}
-                  onChange={(e) => setAddress({ ...address, complexName: e.target.value })}
-                  placeholder="Acacia Mews"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="addressLine1" className="text-muted-foreground">Street address</Label>
-              <Input
-                id="addressLine1"
-                required
-                type="text"
-                value={address.addressLine1}
-                onChange={(e) => setAddress({ ...address, addressLine1: e.target.value })}
-                placeholder="12 Main Road"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="addressLine2" className="text-muted-foreground">
-                Address line 2 <span className="text-muted-foreground/60">(optional)</span>
-              </Label>
-              <Input
-                id="addressLine2"
-                type="text"
-                value={address.addressLine2}
-                onChange={(e) => setAddress({ ...address, addressLine2: e.target.value })}
-                placeholder="Building entrance, floor, landmark"
-              />
-            </div>
-          </div>
             </>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            size="lg"
-            disabled={showSitePicker && selectedSiteId === null}
-          >
-            Next: Describe your job →
+          <Button type="submit" className="w-full" size="lg"
+                  disabled={showSitePicker && selectedSiteId === null}>
+            Continue →
           </Button>
         </form>
       )}
 
-      {/* ── Step 2: Description ──────────────────────────────────────────── */}
+      {/* ── Step 2: Description ────────────────────────────────────────────────── */}
       {step === 'description' && (
-        <form onSubmit={handleDescriptionSubmit} className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-medium">Describe your job</h2>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setStep('address')}
-              className="text-xs text-muted-foreground"
-            >
-              ← Back
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            {/* "Other" requires client to pick the closest real category */}
-            {category.slug === 'other' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="closestCategory" className="text-muted-foreground">
-                  Closest type of work <span className="text-destructive">*</span>
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Choose the closest type of help so we can find the right worker.
-                </p>
-                <Select
-                  value={closestCategory}
-                  onValueChange={setClosestCategory}
-                >
-                  <SelectTrigger id="closestCategory" className="w-full">
-                    <SelectValue placeholder="Select the closest match…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REAL_CATEGORIES.map((cat) => (
-                      <SelectItem key={cat.tag} value={cat.tag}>{cat.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+        <form onSubmit={handleDescriptionSubmit} className="px-[18px] space-y-4">
+          {/* "Other" category fallback */}
+          {category.slug === 'other' && (
+            <div>
+              <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+                Closest type of work <span style={{ color: '#E5484D' }}>*</span>
               </div>
-            )}
-
-            <div className="space-y-1">
-              <Label htmlFor="subcategory" className="text-muted-foreground">
-                Specific type of work <span className="text-muted-foreground/60">(optional)</span>
-              </Label>
-              <Input
-                id="subcategory"
-                type="text"
-                value={subcategory}
-                onChange={(e) => setSubcategory(e.target.value)}
-                placeholder="e.g. leaking tap, gate motor, DB board"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="jobType" className="text-muted-foreground">Job type</Label>
-              <Select value={jobType} onValueChange={(value) => setJobType(value as JobType)}>
-                <SelectTrigger id="jobType" className="w-full">
-                  <SelectValue />
+              <p className="text-[11.5px] mb-2" style={{ color: 'var(--ink-mute)' }}>
+                Choose the closest type of help so we can find the right worker.
+              </p>
+              <Select value={closestCategory} onValueChange={setClosestCategory}>
+                <SelectTrigger id="closestCategory" className="w-full h-12 rounded-[14px]">
+                  <SelectValue placeholder="Select the closest match…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {JOB_TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  {REAL_CATEGORIES.map((cat) => (
+                    <SelectItem key={cat.tag} value={cat.tag}>{cat.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+          )}
 
-            <div className="space-y-1">
-              <Label htmlFor="title" className="text-muted-foreground">Job title</Label>
-              <Input
-                id="title"
-                required
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={`e.g. Fix leaking kitchen tap`}
-              />
+          <div>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+              Specific type of work <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="description" className="text-muted-foreground">
-                Details <span className="text-muted-foreground/60">(optional)</span>
-              </Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe the problem, any access notes, or urgency…"
-                rows={4}
-              />
+            <Input id="subcategory" type="text" value={subcategory}
+                   onChange={(e) => setSubcategory(e.target.value)}
+                   placeholder="e.g. leaking tap, gate motor, DB board" className="h-12 rounded-[14px]" />
+          </div>
+
+          <div>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Job type</div>
+            <Select value={jobType} onValueChange={(value) => setJobType(value as JobType)}>
+              <SelectTrigger id="jobType" className="w-full h-12 rounded-[14px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {JOB_TYPE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Job title</div>
+            <Input id="title" required type="text" value={title}
+                   onChange={(e) => setTitle(e.target.value)}
+                   placeholder="e.g. Fix leaking kitchen tap" className="h-12 rounded-[14px]" />
+          </div>
+
+          <div>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+              Details <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="accessNotes" className="text-muted-foreground">
-                Access notes <span className="text-muted-foreground/60">(optional)</span>
-              </Label>
-              <Textarea
-                id="accessNotes"
-                value={accessNotes}
-                onChange={(event) => setAccessNotes(event.target.value)}
-                placeholder="Landmarks, gate/security instructions, parking notes, dog warnings"
-                rows={3}
-              />
-              <p className="text-xs text-muted-foreground">
-                Access notes are shared only with the selected provider after they accept your job.
-              </p>
+            <Textarea id="description" value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Describe the problem, any access notes, or urgency…"
+                      rows={4} className="rounded-[14px]" />
+          </div>
+
+          <div>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+              Access notes <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="photos" className="text-muted-foreground">
-                Photos <span className="text-muted-foreground/60">(optional)</span>
-              </Label>
-              <Input
-                id="photos"
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(event) => {
-                  const MAX_PHOTO_SIZE = 10 * 1024 * 1024
-                  const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif']
-                  const raw = Array.from(event.target.files ?? []).slice(0, 5)
-                  const valid: File[] = []
-                  const errors: string[] = []
-                  for (const file of raw) {
-                    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
-                      errors.push(`"${file.name}" is not a supported image type (JPEG, PNG, WEBP, HEIC, GIF).`)
-                    } else if (file.size > MAX_PHOTO_SIZE) {
-                      errors.push(`"${file.name}" is too large — photos must be 10 MB or smaller.`)
-                    } else {
-                      valid.push(file)
-                    }
+            <Textarea id="accessNotes" value={accessNotes}
+                      onChange={(event) => setAccessNotes(event.target.value)}
+                      placeholder="Landmarks, gate/security instructions, parking notes"
+                      rows={3} className="rounded-[14px]" />
+            <div className="text-[11.5px] mt-1.5" style={{ color: 'var(--ink-mute)' }}>
+              Shared only with the selected provider after acceptance.
+            </div>
+          </div>
+
+          {/* Photos */}
+          <div>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+              Photos <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
+            </div>
+            <Input
+              id="photos"
+              type="file"
+              accept="image/*"
+              multiple
+              className="rounded-[14px]"
+              onChange={(event) => {
+                const MAX_PHOTO_SIZE = 10 * 1024 * 1024
+                const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif']
+                const raw = Array.from(event.target.files ?? []).slice(0, 5)
+                const valid: File[] = []
+                const errors: string[] = []
+                for (const file of raw) {
+                  if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+                    errors.push(`"${file.name}" is not a supported image type (JPEG, PNG, WEBP, HEIC, GIF).`)
+                  } else if (file.size > MAX_PHOTO_SIZE) {
+                    errors.push(`"${file.name}" is too large — photos must be 10 MB or smaller.`)
+                  } else {
+                    valid.push(file)
                   }
-                  setPhotos(valid)
-                  setPhotoErrors(errors)
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Add up to 5 photos of the problem so the provider can quote with less back-and-forth.
-              </p>
-              {photoErrors.length > 0 && (
+                }
+                setPhotos(valid)
+                setPhotoErrors(errors)
+              }}
+            />
+            <div className="text-[11.5px] mt-1.5" style={{ color: 'var(--ink-mute)' }}>
+              Up to 5 photos help providers quote faster.
+            </div>
+            {photoErrors.length > 0 && (
+              <div className="space-y-1 mt-2">
+                {photoErrors.map((err, i) => (
+                  <p key={i} className="text-[12px]" style={{ color: '#E5484D' }}>{err}</p>
+                ))}
+              </div>
+            )}
+            {photos.length > 0 && (
+              <div className="mt-2 space-y-2">
+                <div className="text-[12px]" style={{ color: 'var(--ink-mute)' }}>
+                  {photos.length} photo{photos.length === 1 ? '' : 's'} selected.
+                </div>
                 <div className="space-y-1">
-                  {photoErrors.map((err, i) => (
-                    <p key={i} className="text-xs text-destructive">{err}</p>
+                  {photos.map((photo, index) => (
+                    <div key={`${photo.name}-${index}`}
+                         className="flex items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-[12px]"
+                         style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                      <span className="truncate" style={{ color: 'var(--ink)' }}>{photo.name}</span>
+                      <button type="button" className="font-semibold shrink-0" style={{ color: '#E5484D' }}
+                              onClick={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}>
+                        Remove
+                      </button>
+                    </div>
                   ))}
                 </div>
-              )}
-              {photos.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    {photos.length} photo{photos.length === 1 ? '' : 's'} selected.
-                  </p>
-                  <div className="space-y-1">
-                    {photos.map((photo, index) => (
-                      <div key={`${photo.name}-${index}`} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs">
-                        <span className="truncate">{photo.name}</span>
-                        <button
-                          type="button"
-                          className="font-medium text-destructive"
-                          onClick={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {photos.length > 0 && (
-                <div className="space-y-1 border border-border rounded-xl px-4 py-3 bg-muted/30">
+                <div className="rounded-[12px] px-4 py-3"
+                     style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
                   <div className="flex items-start gap-2">
                     <Checkbox
                       id="photosSafeForPreview"
@@ -987,123 +945,112 @@ export function BookingFlow({
                       onCheckedChange={(value) => setPhotosSafeForPreview(value === true)}
                     />
                     <div className="space-y-1">
-                      <Label htmlFor="photosSafeForPreview" className="text-muted-foreground">
+                      <Label htmlFor="photosSafeForPreview" className="text-[12.5px]" style={{ color: 'var(--ink)' }}>
                         Share photos with shortlisted providers before acceptance
                       </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Keep this on so providers can better estimate arrival and pricing before you select one.
+                      <p className="text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>
+                        Keep this on so providers can estimate pricing before you select one.
                       </p>
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
-            {/* Urgency picker */}
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">When do you need this done?</Label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['asap', 'this_week', 'flexible'] as const).map((u) => (
-                  <button
-                    key={u}
-                    type="button"
-                    onClick={() => setUrgency(u)}
-                    className={`rounded-lg border px-2 py-2 text-center text-xs transition-colors ${
-                      urgency === u
-                        ? 'border-primary bg-primary/10 font-semibold'
-                        : 'border-border bg-card hover:bg-muted'
-                    }`}
-                  >
-                    {URGENCY_LABELS[u]}
+          {/* Urgency — 3 coloured tiles */}
+          <div>
+            <div className="text-[12px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>When do you need this done?</div>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { id: 'asap' as const, label: 'Emergency', sub: 'Today / ASAP', hue: '#E5484D' },
+                { id: 'this_week' as const, label: 'This week', sub: 'Within days', hue: '#FFC22B' },
+                { id: 'flexible' as const, label: 'Flexible', sub: "I'm flexible", hue: '#0FA28A' },
+              ]).map((u) => {
+                const active = urgency === u.id
+                return (
+                  <button key={u.id} type="button" onClick={() => setUrgency(u.id)}
+                          className="rounded-[14px] px-2 py-3 text-left"
+                          style={{
+                            background: 'var(--card)',
+                            boxShadow: active ? `inset 0 0 0 1.5px ${u.hue}, 0 4px 14px ${u.hue}18` : 'inset 0 0 0 1px var(--border)',
+                            color: 'var(--ink)',
+                          }}>
+                    <div className="w-7 h-7 rounded-[8px] flex items-center justify-center mb-2"
+                         style={{ background: `${u.hue}15`, color: u.hue }}>
+                      <div className="w-2 h-2 rounded-full" style={{ background: u.hue }} />
+                    </div>
+                    <div className="text-[13px] font-semibold leading-tight">{u.label}</div>
+                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>{u.sub}</div>
                   </button>
-                ))}
-              </div>
+                )
+              })}
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="preferredDate" className="text-muted-foreground">
-                  Preferred date <span className="text-muted-foreground/60">(optional)</span>
-                </Label>
-                <Input
-                  id="preferredDate"
-                  type="date"
-                  value={preferredDate}
-                  onChange={(e) => setPreferredDate(e.target.value)}
-                />
+          {/* Date + Time window */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+                Preferred date <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="preferredTimeWindow" className="text-muted-foreground">Time</Label>
-                <Select
-                  value={preferredTimeWindow}
-                  onValueChange={(value) => setPreferredTimeWindow(value as PreferredTimeWindow)}
-                >
-                  <SelectTrigger id="preferredTimeWindow" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIME_WINDOW_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Input id="preferredDate" type="date" value={preferredDate}
+                     onChange={(e) => setPreferredDate(e.target.value)} className="h-12 rounded-[14px]" />
             </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="providerPreference" className="text-muted-foreground">Provider preference</Label>
-              <Select
-                value={providerPreference}
-                onValueChange={(value) => setProviderPreference(value as ProviderPreference)}
-              >
-                <SelectTrigger id="providerPreference" className="w-full">
+            <div>
+              <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Time</div>
+              <Select value={preferredTimeWindow} onValueChange={(value) => setPreferredTimeWindow(value as PreferredTimeWindow)}>
+                <SelectTrigger id="preferredTimeWindow" className="w-full h-12 rounded-[14px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PROVIDER_PREFERENCE_OPTIONS.map((option) => (
+                  {TIME_WINDOW_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="budgetPreference" className="text-muted-foreground">Budget</Label>
-                <Select
-                  value={budgetPreference}
-                  onValueChange={(value) => setBudgetPreference(value as BudgetPreference)}
-                >
-                  <SelectTrigger id="budgetPreference" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BUDGET_PREFERENCE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <div>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Provider preference</div>
+            <Select value={providerPreference} onValueChange={(value) => setProviderPreference(value as ProviderPreference)}>
+              <SelectTrigger id="providerPreference" className="w-full h-12 rounded-[14px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDER_PREFERENCE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>Budget</div>
+              <Select value={budgetPreference} onValueChange={(value) => setBudgetPreference(value as BudgetPreference)}>
+                <SelectTrigger id="budgetPreference" className="w-full h-12 rounded-[14px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BUDGET_PREFERENCE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>
+                Max call-out <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>(optional)</span>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="maxCallOutFee" className="text-muted-foreground">
-                  Max call-out <span className="text-muted-foreground/60">(optional)</span>
-                </Label>
-                <Input
-                  id="maxCallOutFee"
-                  inputMode="numeric"
-                  min="0"
-                  type="number"
-                  value={maxCallOutFee}
-                  onChange={(e) => setMaxCallOutFee(e.target.value)}
-                  placeholder="R"
-                />
-              </div>
+              <Input id="maxCallOutFee" inputMode="numeric" min="0" type="number"
+                     value={maxCallOutFee} onChange={(e) => setMaxCallOutFee(e.target.value)}
+                     placeholder="R" className="h-12 rounded-[14px]" />
             </div>
           </div>
 
-          <Button type="submit" className="w-full" size="lg">
-            Review request →
-          </Button>
+          <Button type="submit" className="w-full" size="lg">Review request →</Button>
           <Button
             type="button"
             variant="ghost"
@@ -1123,167 +1070,205 @@ export function BookingFlow({
         </form>
       )}
 
-      {/* ── Step 3: Confirm ──────────────────────────────────────────────── */}
+      {/* ── Step 3: Confirm ────────────────────────────────────────────────────── */}
       {step === 'confirm' && (
-        <div className="space-y-4">
-          <h2 className="font-medium">Confirm your request</h2>
+        <div className="px-[18px] space-y-4">
+          {/* Service summary */}
+          <div className="rounded-[20px] p-4"
+               style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Service</div>
+            <Row label="Category">
+              {category.slug === 'other' && closestCategory
+                ? `${REAL_CATEGORIES.find((c) => c.tag === closestCategory)?.label ?? closestCategory} (Other)`
+                : category.name}
+            </Row>
+            {subcategory && <Row label="Specific">{subcategory}</Row>}
+            <Row label="Type">{JOB_TYPE_OPTIONS.find((option) => option.value === jobType)?.label ?? jobType}</Row>
+            <Row label="Job">{title}</Row>
+            {description && <Row label="Details">{description}</Row>}
+            {accessNotes && <Row label="Access">{accessNotes}</Row>}
+            {photos.length > 0 && <Row label="Photos">{photos.length} attached</Row>}
+          </div>
 
-          <Card>
-            <CardContent className="px-4 py-4 space-y-3 text-sm">
-              <Row label="Category">
-                {category.slug === 'other' && closestCategory
-                  ? `${REAL_CATEGORIES.find((c) => c.tag === closestCategory)?.label ?? closestCategory} (Other)`
-                  : category.name}
+          {/* Timing & preferences */}
+          <div className="rounded-[20px] p-4"
+               style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Timing &amp; preferences</div>
+            <Row label="Urgency">{URGENCY_LABELS[urgency]}</Row>
+            {preferredDate && (
+              <Row label="Preferred">
+                {preferredDate} · {TIME_WINDOW_OPTIONS.find((option) => option.value === preferredTimeWindow)?.label ?? preferredTimeWindow}
               </Row>
-              {subcategory && <Row label="Specific">{subcategory}</Row>}
-              <Row label="Type">{JOB_TYPE_OPTIONS.find((option) => option.value === jobType)?.label ?? jobType}</Row>
-              <Row label="Job">{title}</Row>
-              {description && <Row label="Details">{description}</Row>}
-              {accessNotes && <Row label="Access notes">{accessNotes}</Row>}
-              {photos.length > 0 && <Row label="Photos">{photos.length} attached</Row>}
-              <Row label="Timing">{URGENCY_LABELS[urgency]}</Row>
-              {preferredDate && (
-                <Row label="Preferred">
-                  {preferredDate} · {TIME_WINDOW_OPTIONS.find((option) => option.value === preferredTimeWindow)?.label ?? preferredTimeWindow}
-                </Row>
-              )}
-              <Row label="Provider">
-                {PROVIDER_PREFERENCE_OPTIONS.find((option) => option.value === providerPreference)?.label ?? providerPreference}
-              </Row>
-              <Row label="Budget">
-                {BUDGET_PREFERENCE_OPTIONS.find((option) => option.value === budgetPreference)?.label ?? budgetPreference}
-                {maxCallOutFee ? ` · Max R${maxCallOutFee}` : ''}
-              </Row>
-              <Row label="Address">
-                {[streetSummary, address.suburb, address.region, address.city, address.province, address.postalCode]
-                  .filter(Boolean)
-                  .join(', ')}
-              </Row>
-            </CardContent>
-          </Card>
+            )}
+            <Row label="Provider">
+              {PROVIDER_PREFERENCE_OPTIONS.find((option) => option.value === providerPreference)?.label ?? providerPreference}
+            </Row>
+            <Row label="Budget">
+              {BUDGET_PREFERENCE_OPTIONS.find((option) => option.value === budgetPreference)?.label ?? budgetPreference}
+              {maxCallOutFee ? ` · Max R${maxCallOutFee}` : ''}
+            </Row>
+          </div>
 
-          <Card>
-            <CardContent className="space-y-3 px-4 py-4 text-sm">
-              <p className="font-medium">Before we send this to providers</p>
-              <p className="text-muted-foreground">
-                Your phone number and exact address will only be shared after you select a provider and that provider accepts the job.
-              </p>
-              <label className="flex items-start gap-2">
-                <input
-                  checked={privacyAcknowledged}
-                  className="mt-1"
-                  type="checkbox"
-                  onChange={(event) => setPrivacyAcknowledged(event.target.checked)}
-                />
-                <span>I understand when my contact and exact address are shared.</span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input
-                  checked={termsAcknowledged}
-                  className="mt-1"
-                  type="checkbox"
-                  onChange={(event) => setTermsAcknowledged(event.target.checked)}
-                />
-                <span>I confirm these request details are accurate.</span>
-              </label>
-            </CardContent>
-          </Card>
+          {/* Address */}
+          <div className="rounded-[20px] p-4"
+               style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="text-[11px] font-bold tracking-[0.08em] uppercase mb-3" style={{ color: 'var(--ink-mute)' }}>Address (suburb shared)</div>
+            <div className="text-[13.5px]" style={{ color: 'var(--ink)', lineHeight: 1.55 }}>
+              {[streetSummary, address.suburb, address.region, address.city, address.province, address.postalCode]
+                .filter(Boolean)
+                .join(', ')}
+            </div>
+            <div className="flex items-center gap-1.5 mt-2 text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>
+              <Shield size={11} />
+              Full address shared only after provider acceptance.
+            </div>
+          </div>
+
+          {/* Acknowledgements */}
+          <div className="rounded-[20px] p-4"
+               style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="text-[14px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>Before we send this to providers</div>
+            <div className="text-[12.5px] mb-4" style={{ color: 'var(--ink-mute)' }}>
+              Your phone number and exact address will only be shared after you select a provider and they accept the job.
+            </div>
+            <label className="flex items-start gap-3 mb-3 cursor-pointer">
+              <input type="checkbox" checked={privacyAcknowledged} className="mt-0.5"
+                     onChange={(event) => setPrivacyAcknowledged(event.target.checked)} />
+              <span className="text-[13px]" style={{ color: 'var(--ink)' }}>
+                I understand when my contact and exact address are shared.
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={termsAcknowledged} className="mt-0.5"
+                     onChange={(event) => setTermsAcknowledged(event.target.checked)} />
+              <span className="text-[13px]" style={{ color: 'var(--ink)' }}>
+                I confirm these request details are accurate.
+              </span>
+            </label>
+          </div>
 
           <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setStep('description')}
-              className="flex-1"
-              size="lg"
-            >
+            <Button variant="outline" onClick={() => setStep('description')} className="flex-1" size="lg">
               ← Back
             </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={loading}
-              className="flex-1"
-              size="lg"
-            >
+            <Button onClick={handleConfirm} disabled={loading} className="flex-1" size="lg">
               {loading ? 'Submitting…' : 'Submit request'}
             </Button>
           </div>
         </div>
       )}
 
-      {/* ── Waitlisted: outside service area ─────────────────────────────── */}
+      {/* ── Waitlisted ─────────────────────────────────────────────────────────── */}
       {step === 'waitlisted' && (
-        <Card>
-          <CardContent className="px-4 py-6 space-y-3 text-center">
-            <p className="text-2xl">📍</p>
-            <p className="font-semibold text-base">Not in your area yet</p>
-            <p className="text-sm text-muted-foreground">
+        <div className="px-[18px]">
+          <div className="rounded-[20px] p-6 text-center"
+               style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="w-[64px] h-[64px] rounded-[20px] flex items-center justify-center mx-auto mb-4"
+                 style={{ background: 'rgba(139,63,232,0.08)', color: '#8B3FE8' }}>
+              <MapPin size={28} />
+            </div>
+            <h2 className="text-[17px] font-bold mb-2" style={{ color: 'var(--ink)' }}>Not in your area yet</h2>
+            <p className="text-[13px] mb-3" style={{ color: 'var(--ink-mute)' }}>
               We&apos;re not in <strong>{waitlistedCity}</strong> just yet, but we&apos;re growing fast.
             </p>
-            <p className="text-sm text-muted-foreground">
-              We&apos;ve saved your contact and will reach out the moment Plug A Pro goes live in your area. No action needed from you.
+            <p className="text-[13px] mb-3" style={{ color: 'var(--ink-mute)' }}>
+              We&apos;ve saved your contact and will reach out the moment Plug A Pro goes live in your area. No action needed.
             </p>
-            <p className="text-xs text-muted-foreground pt-2">
+            <p className="text-[12px]" style={{ color: 'var(--ink-soft)' }}>
               Currently serving: <strong>Johannesburg</strong>
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
-      {/* ── Step 4: Submitted ────────────────────────────────────────────── */}
+      {/* ── Step 4: Submitted ─────────────────────────────────────────────────── */}
       {step === 'submitted' && jobRequestId && (
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="px-4 py-4 space-y-3">
-              <p className="font-medium text-sm">Request submitted</p>
-              <p className="text-xs text-muted-foreground font-mono">
-                Ref: {jobRequestId.slice(-8).toUpperCase()}
-              </p>
-              {!selectedMatchingMode ? (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    How would you like to find a provider?
-                  </p>
-                  <div className="space-y-2">
-                    <Button
-                      className="w-full"
-                      disabled={matchingModeSubmitting}
-                      onClick={() => handleMatchingModeSelect('quick_match')}
-                    >
-                      {matchingModeSubmitting ? 'Starting…' : 'Quick Match'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      disabled={matchingModeSubmitting}
-                      onClick={() => handleMatchingModeSelect('review_first')}
-                    >
-                      Review Providers First
-                    </Button>
+        <div className="relative">
+          {/* Radial halo */}
+          <div aria-hidden className="absolute inset-0 pointer-events-none"
+               style={{ background: 'radial-gradient(60% 50% at 50% 30%, rgba(139,63,232,0.12), transparent 70%)' }} />
+
+          <div className="relative px-[22px] pt-[60px] pb-10 flex flex-col items-center">
+            {/* Layered icon */}
+            <div className="w-[120px] h-[120px] rounded-[36px] flex items-center justify-center mb-5"
+                 style={{ background: 'rgba(139,63,232,0.08)' }}>
+              <div className="w-[80px] h-[80px] rounded-[24px] flex items-center justify-center text-white"
+                   style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)', boxShadow: '0 12px 32px rgba(139,63,232,0.4)' }}>
+                <CheckCircle2 size={40} />
+              </div>
+            </div>
+
+            <h1 className="text-[26px] font-bold tracking-[-0.03em] text-center mb-2"
+                style={{ color: 'var(--ink)' }}>Request received</h1>
+            <p className="text-[14.5px] text-center mb-6 leading-[1.55]"
+               style={{ color: 'var(--ink-mute)', maxWidth: 320 }}>
+              We&apos;re matching qualified providers in your area now. You&apos;ll get a notification when the first one responds.
+            </p>
+
+            {/* Reference card */}
+            <div className="w-full rounded-[20px] p-4 mb-4"
+                 style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-[12px] flex items-center justify-center shrink-0"
+                     style={{ background: 'rgba(139,63,232,0.08)', color: '#8B3FE8' }}>
+                  <CheckCircle2 size={20} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Reference</div>
+                  <div className="text-[12.5px] tracking-[0.04em] mt-0.5"
+                       style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--ink-mute)' }}>
+                    {jobRequestId.slice(-8).toUpperCase()}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Quick Match asks one suitable provider at a time. If they don&apos;t respond, we try the next provider.
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
+                </div>
+                <div className="flex items-center gap-1.5 h-[22px] px-2.5 rounded-full text-[11.5px] font-semibold"
+                     style={{ background: 'rgba(255,194,43,0.15)', color: '#FFC22B' }}>
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#FFC22B' }} />
+                  Matching
+                </div>
+              </div>
+            </div>
+
+            {/* Matching mode selector */}
+            {!selectedMatchingMode ? (
+              <div className="w-full rounded-[20px] p-4 mb-6"
+                   style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                <div className="text-[14px] font-semibold mb-1" style={{ color: 'var(--ink)' }}>
+                  How would you like to find a provider?
+                </div>
+                <div className="text-[12.5px] mb-4" style={{ color: 'var(--ink-mute)' }}>
+                  Quick Match notifies one provider at a time. Review Providers First collects responses for you to compare.
+                </div>
+                <div className="space-y-2">
+                  <Button className="w-full" disabled={matchingModeSubmitting}
+                          onClick={() => handleMatchingModeSelect('quick_match')}>
+                    {matchingModeSubmitting ? 'Starting…' : 'Quick Match'}
+                  </Button>
+                  <Button variant="outline" className="w-full" disabled={matchingModeSubmitting}
+                          onClick={() => handleMatchingModeSelect('review_first')}>
+                    Review Providers First
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full rounded-[20px] p-4 mb-6"
+                   style={{ background: 'rgba(15,162,138,0.06)', boxShadow: 'inset 0 0 0 1px rgba(15,162,138,0.2)' }}>
+                <div className="text-[13.5px]" style={{ color: 'var(--ink)' }}>
                   {selectedMatchingMode === 'quick_match'
                     ? 'Quick Match is active. We are checking with one suitable provider now and will rotate if they do not respond.'
                     : 'Review Providers First is active. We are collecting provider responses so you can compare before selecting.'}
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                </div>
+              </div>
+            )}
 
-          <div className="space-y-3">
-            <Button asChild className="w-full">
-              <Link href={ticketUrl ?? `/requests/${jobRequestId}`}>View ticket</Link>
-            </Button>
-            <Link
-              href="/bookings"
-              className="block text-center text-xs text-muted-foreground hover:text-foreground"
-            >
-              View my requests &amp; bookings
-            </Link>
+            <div className="w-full space-y-2.5">
+              <Button asChild className="w-full" size="lg">
+                <Link href={ticketUrl ?? `/requests/${jobRequestId}`}>Track this request</Link>
+              </Button>
+              <Link href="/bookings"
+                    className="block text-center text-[13px]" style={{ color: 'var(--ink-mute)' }}>
+                View my requests &amp; bookings
+              </Link>
+            </div>
           </div>
         </div>
       )}

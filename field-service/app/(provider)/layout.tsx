@@ -1,40 +1,32 @@
-// Provider PWA layout
-// Mobile-first, persistent session, offline-tolerant
-// Auth enforced via proxy.ts — only provider role can access
+// Provider PWA layout — mobile-first, bottom navigation, design system v2
 
+import { Home, Inbox, Briefcase, CircleUser, Coins } from 'lucide-react'
 import { requireProvider } from '@/lib/auth'
-import { AppLogo } from '@/components/shared/app-logo'
-import { AppNavLink } from '@/components/shared/app-nav-link'
+import { BottomNav, type BottomNavItem } from '@/components/shared/bottom-nav'
+
+const ICON_SIZE = 20
+
+const navItems: BottomNavItem[] = [
+  { id: 'home',    label: 'Home',    icon: <Home size={ICON_SIZE} />,       href: '/provider', exact: true },
+  { id: 'leads',   label: 'Leads',   icon: <Inbox size={ICON_SIZE} />,      href: '/provider/leads' },
+  { id: 'jobs',    label: 'Jobs',    icon: <Briefcase size={ICON_SIZE} />,  href: '/provider/jobs' },
+  { id: 'credits', label: 'Credits', icon: <Coins size={ICON_SIZE} />,      href: '/provider/credits' },
+  { id: 'profile', label: 'Profile', icon: <CircleUser size={ICON_SIZE} />, href: '/provider/profile' },
+]
 
 export default async function ProviderLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  // Auth guard — redirects to sign-in if not provider
   await requireProvider()
 
   return (
-    <div className="app-shell flex min-h-screen flex-col">
-      <header className="app-shell-header sticky top-0 z-50 safe-top">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
-          <AppLogo compact />
-          <span className="rounded-full border border-border/80 bg-card/80 px-3 py-1 text-xs font-medium text-muted-foreground">
-            Provider App
-          </span>
-        </div>
-      </header>
-
-      <main className="flex-1 pb-20">{children}</main>
-
-      <nav className="app-bottom-nav fixed bottom-0 left-0 right-0 z-50 safe-bottom">
-        <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-3">
-          <AppNavLink href="/provider/jobs" label="Jobs" icon="jobs" />
-          <AppNavLink href="/provider/leads" label="Leads" icon="leads" />
-          <AppNavLink href="/provider/credits" label="Credits" icon="earnings" />
-          <AppNavLink href="/provider/profile" label="Profile" icon="userRound" />
-        </div>
-      </nav>
+    <div className="flex min-h-dvh flex-col bg-background">
+      <main className="flex-1 pb-[calc(80px+env(safe-area-inset-bottom,0px))]">
+        {children}
+      </main>
+      <BottomNav items={navItems} />
     </div>
   )
 }

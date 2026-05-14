@@ -118,13 +118,14 @@ export function OtpInput({ value, onChange, disabled, length = 6 }: OtpInputProp
           enterKeyHint="done"
           aria-label={`Digit ${i + 1} of ${length}`}
           className={cn(
-            'w-11 h-14 rounded-xl border border-input/90 bg-card/80',
-            'text-center text-2xl font-semibold text-foreground',
-            'shadow-[0_1px_2px_rgba(15,23,42,0.05)] outline-none',
-            'transition-[color,box-shadow,border-color,background-color]',
-            'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            'w-11 h-14 rounded-[16px] bg-card outline-none',
+            'text-center text-2xl font-semibold font-mono text-[var(--ink)]',
+            'transition-[box-shadow,background-color] duration-150',
+            digits[i]
+              ? 'shadow-[inset_0_0_0_1.5px_var(--brand-purple)]'
+              : 'shadow-[inset_0_0_0_1px_var(--border)]',
+            'focus-visible:shadow-[inset_0_0_0_1.5px_var(--brand-purple)]',
             'disabled:pointer-events-none disabled:opacity-50',
-            digits[i] && 'border-ring/60',
           )}
         />
       ))}

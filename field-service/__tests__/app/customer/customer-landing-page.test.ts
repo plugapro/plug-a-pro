@@ -51,10 +51,9 @@ describe('customer mobile landing page', () => {
   it('renders clear customer and provider CTAs', async () => {
     const html = renderToStaticMarkup(await CustomerHomePage())
 
-    expect(html).toContain('Find trusted service providers near you')
-    expect(html).toContain('Find a provider')
+    expect(html).toContain('Find trusted help, near you.')
     expect(html).toContain('Request a service')
-    expect(html).toContain('Join as a service provider')
+    expect(html).toContain('Join as provider')
     expect(html).toContain('Sign in')
   })
 
@@ -67,7 +66,7 @@ describe('customer mobile landing page', () => {
     expect(html).toContain('Carpentry')
     expect(html).toContain('Cleaning')
     expect(html).toContain('Painting')
-    expect(html).toContain('Appliance Repairs')
+    expect(html).toContain('Appliances')
     expect(html).toContain('Geyser')
   })
 
@@ -78,10 +77,9 @@ describe('customer mobile landing page', () => {
 
     const html = renderToStaticMarkup(await CustomerHomePage())
 
-    expect(html).toContain('Welcome back, Lovemore')
-    expect(html).toContain('Open provider dashboard')
-    expect(html).toContain('View provider jobs')
-    expect(html).toContain('Update provider profile')
+    expect(html).toContain('Hi Lovemore')
+    expect(html).toContain('View jobs')
+    expect(html).toContain('Provider dashboard')
   })
 
   it('renders multi-role context switch when customer and provider are both present', async () => {
@@ -91,8 +89,8 @@ describe('customer mobile landing page', () => {
 
     const html = renderToStaticMarkup(await CustomerHomePage())
 
-    expect(html).toContain('What would you like to do?')
+    expect(html).toContain('Hi Sarah')
     expect(html).toContain('Request a service')
-    expect(html).toContain('Provider dashboard')
+    expect(html).toContain('My bookings')
   })
 })

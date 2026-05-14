@@ -260,256 +260,292 @@ export default async function ProviderProfilePage({
   const reviewByJobId = new Map(reviews.map((review) => [review.jobId, review]))
 
   return (
-    <div className="px-4 py-6 space-y-6 max-w-lg mx-auto">
-      <h1 className="text-xl font-semibold">My Profile</h1>
+    <div className="pb-32 screen-enter">
+      {/* Page header */}
+      <div className="px-[18px] pt-[60px] pb-4">
+        <div className="text-[28px] font-bold tracking-[-0.025em]" style={{ color: 'var(--ink)' }}>My Profile</div>
+      </div>
 
+      {/* Profile hero card */}
+      <div className="px-[18px] mb-5">
+        <div className="rounded-[20px] p-4 flex items-center gap-4"
+             style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="w-16 h-16 rounded-[20px] flex items-center justify-center text-[20px] font-bold text-white shrink-0"
+               style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}>
+            {provider.name ? provider.name.split(' ').map((s: string) => s[0]).slice(0, 2).join('') : 'P'}
+          </div>
+          <div>
+            <div className="text-[16px] font-bold tracking-[-0.02em]" style={{ color: 'var(--ink)' }}>
+              {provider.name ?? 'Provider'}
+            </div>
+            <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>{provider.phone ?? '—'}</div>
+            <div className="mt-1.5 inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-bold tracking-[0.04em] uppercase"
+                 style={{
+                   background: provider.verified ? 'rgba(15,162,138,0.12)' : 'rgba(255,194,43,0.15)',
+                   color: provider.verified ? '#0FA28A' : '#FFC22B',
+                 }}>
+              {provider.verified ? 'Verified' : 'Pending verification'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Error callout */}
       {resolvedSearchParams.error === 'skills_required' && (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          Select at least one skill before saving your profile.
+        <div className="px-[18px] mb-4">
+          <div className="rounded-[14px] px-4 py-3 text-[13px]"
+               style={{ background: 'rgba(229,72,77,0.08)', boxShadow: 'inset 0 0 0 1px rgba(229,72,77,0.25)', color: '#E5484D' }}>
+            Select at least one skill before saving your profile.
+          </div>
         </div>
       )}
 
-      <form action={updateProfile} className="space-y-6">
-        {/* Contact info */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Contact
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="name" className="text-sm">Name</Label>
-              <Input
-                id="name"
-                name="name"
-                defaultValue={provider.name ?? ''}
-                placeholder="Your name"
-                className="h-9"
-              />
+      <div className="px-[18px]">
+        <form action={updateProfile} className="space-y-4">
+          {/* Contact info */}
+          <div className="rounded-[20px] overflow-hidden" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="px-4 pt-4 pb-1">
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>Contact</div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                defaultValue={provider.email ?? ''}
-                placeholder="your@email.com"
-                className="h-9"
-              />
-            </div>
-            <div className="space-y-1 text-sm">
-              <span className="text-muted-foreground text-sm">Phone</span>
-              <p className="text-sm pt-1">{provider.phone ?? '—'}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Public profile and evidence
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="bio" className="text-sm">Bio</Label>
-              <Textarea
-                id="bio"
-                name="bio"
-                defaultValue={provider.bio ?? ''}
-                rows={3}
-                placeholder="Tell customers what kind of work you do."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="experience" className="text-sm">Experience</Label>
-              <Input
-                id="experience"
-                name="experience"
-                defaultValue={provider.experience ?? ''}
-                placeholder="Example: 3–5 years"
-                className="h-9"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm">Skills</Label>
-              <p className="text-xs text-muted-foreground">
-                Select all the services you want to receive jobs for.
-              </p>
-              <SkillPicker initialSkillLabels={provider.skills} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm">Service areas</Label>
-              <p className="text-xs text-muted-foreground">
-                Select the suburbs where you offer services.
-              </p>
-              <ServiceAreaPicker
-                initialCities={cities}
-                selectedNodeIds={selectedNodeIds}
-                selectedLabels={selectedLabels}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="evidenceNote" className="text-sm">Provider evidence note</Label>
-              <Textarea
-                id="evidenceNote"
-                name="evidenceNote"
-                defaultValue={provider.evidenceNote ?? ''}
-                rows={4}
-                placeholder="Optional: mention past jobs, references, or types of work you are comfortable sharing."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="portfolioUrls" className="text-sm">Portfolio links</Label>
-              <Textarea
-                id="portfolioUrls"
-                name="portfolioUrls"
-                defaultValue={provider.portfolioUrls.join('\n')}
-                rows={3}
-                placeholder="Optional: one link per line to examples of your work."
-              />
-            </div>
-            <ProviderTrustNote marketplaceApproved={provider.verified} />
-          </CardContent>
-        </Card>
-
-        {/* Availability schedule */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Availability
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {DAYS.map(({ value: day, label }) => {
-              const entry     = scheduleMap[day]
-              const isActive  = entry?.active  ?? (day >= 1 && day <= 5)
-              const startTime = entry?.startTime ?? '08:00'
-              const endTime   = entry?.endTime   ?? '17:00'
-
-              return (
-                <div key={day} className="flex items-center gap-3">
-                  {/* Active toggle */}
-                  <label className="flex items-center gap-2 w-28 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      name={`day_${day}_active`}
-                      defaultChecked={isActive}
-                      className="h-4 w-4 rounded border-input accent-primary"
-                    />
-                    <span className="text-sm">{label.slice(0, 3)}</span>
-                  </label>
-
-                  {/* Time inputs */}
-                  <input
-                    type="time"
-                    name={`day_${day}_start`}
-                    defaultValue={startTime}
-                    className="h-8 w-24 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  <span className="text-xs text-muted-foreground">to</span>
-                  <input
-                    type="time"
-                    name={`day_${day}_end`}
-                    defaultValue={endTime}
-                    className="h-8 w-24 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
-
-        <Button type="submit" className="w-full">Save changes</Button>
-      </form>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Rating &amp; review history
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <div className="rounded-lg border px-3 py-3 text-center">
-              <p className="text-xs text-muted-foreground">Average</p>
-              <p className="mt-1 font-semibold">
-                {averageRating ? `${averageRating.toFixed(1)} / 5` : '—'}
-              </p>
-            </div>
-            <div className="rounded-lg border px-3 py-3 text-center">
-              <p className="text-xs text-muted-foreground">Reviews</p>
-              <p className="mt-1 font-semibold">{reviews.length}</p>
-            </div>
-            <div className="rounded-lg border px-3 py-3 text-center">
-              <p className="text-xs text-muted-foreground">Completed jobs</p>
-              <p className="mt-1 font-semibold">{completedJobs.length}</p>
+            <div className="px-4 pb-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="name" className="text-sm">Name</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  defaultValue={provider.name ?? ''}
+                  placeholder="Your name"
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="email" className="text-sm">Email</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  defaultValue={provider.email ?? ''}
+                  placeholder="your@email.com"
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1 text-sm">
+                <span className="text-muted-foreground text-sm">Phone</span>
+                <p className="text-sm pt-1">{provider.phone ?? '—'}</p>
+              </div>
             </div>
           </div>
 
-          {completedJobs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Complete a few jobs and customer reviews will appear here.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {completedJobs.map((job) => {
-                const review = reviewByJobId.get(job.id)
+          {/* Public profile and evidence */}
+          <div className="rounded-[20px] overflow-hidden" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="px-4 pt-4 pb-1">
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>Public profile and evidence</div>
+            </div>
+            <div className="px-4 pb-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="bio" className="text-sm">Bio</Label>
+                <Textarea
+                  id="bio"
+                  name="bio"
+                  defaultValue={provider.bio ?? ''}
+                  rows={3}
+                  placeholder="Tell customers what kind of work you do."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="experience" className="text-sm">Experience</Label>
+                <Input
+                  id="experience"
+                  name="experience"
+                  defaultValue={provider.experience ?? ''}
+                  placeholder="Example: 3–5 years"
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Skills</Label>
+                <p className="text-xs text-muted-foreground">
+                  Select all the services you want to receive jobs for.
+                </p>
+                <SkillPicker initialSkillLabels={provider.skills} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Service areas</Label>
+                <p className="text-xs text-muted-foreground">
+                  Select the suburbs where you offer services.
+                </p>
+                <ServiceAreaPicker
+                  initialCities={cities}
+                  selectedNodeIds={selectedNodeIds}
+                  selectedLabels={selectedLabels}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="evidenceNote" className="text-sm">Provider evidence note</Label>
+                <Textarea
+                  id="evidenceNote"
+                  name="evidenceNote"
+                  defaultValue={provider.evidenceNote ?? ''}
+                  rows={4}
+                  placeholder="Optional: mention past jobs, references, or types of work you are comfortable sharing."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="portfolioUrls" className="text-sm">Portfolio links</Label>
+                <Textarea
+                  id="portfolioUrls"
+                  name="portfolioUrls"
+                  defaultValue={provider.portfolioUrls.join('\n')}
+                  rows={3}
+                  placeholder="Optional: one link per line to examples of your work."
+                />
+              </div>
+              <ProviderTrustNote marketplaceApproved={provider.verified} />
+            </div>
+          </div>
+
+          {/* Availability schedule */}
+          <div className="rounded-[20px] overflow-hidden" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+            <div className="px-4 pt-4 pb-1">
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>Availability</div>
+            </div>
+            <div className="px-4 pb-4 space-y-4">
+              {DAYS.map(({ value: day, label }) => {
+                const entry     = scheduleMap[day]
+                const isActive  = entry?.active  ?? (day >= 1 && day <= 5)
+                const startTime = entry?.startTime ?? '08:00'
+                const endTime   = entry?.endTime   ?? '17:00'
+
                 return (
-                  <div key={job.id} className="rounded-lg border px-3 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium capitalize">
-                          {job.booking.match.jobRequest.category}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {job.booking.match.jobRequest.customer.name}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {(job.completedAt ?? job.createdAt).toLocaleDateString('en-ZA', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </p>
-                    </div>
-                    {review ? (
-                      <>
-                        <p className="mt-2 text-sm">{'★'.repeat(review.score)}{'☆'.repeat(5 - review.score)}</p>
-                        {review.comment && (
-                          <p className="mt-2 text-sm text-muted-foreground">{review.comment}</p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        No customer review left for this job yet.
-                      </p>
-                    )}
+                  <div key={day} className="flex items-center gap-3">
+                    {/* Active toggle */}
+                    <label className="flex items-center gap-2 w-28 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        name={`day_${day}_active`}
+                        defaultChecked={isActive}
+                        className="h-4 w-4 rounded border-input accent-primary"
+                      />
+                      <span className="text-sm">{label.slice(0, 3)}</span>
+                    </label>
+
+                    {/* Time inputs */}
+                    <input
+                      type="time"
+                      name={`day_${day}_start`}
+                      defaultValue={startTime}
+                      className="h-8 w-24 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <input
+                      type="time"
+                      name={`day_${day}_end`}
+                      defaultValue={endTime}
+                      className="h-8 w-24 rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
                   </div>
                 )
               })}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
 
-      <PushSubscribeButton />
+          <Button type="submit" className="w-full">Save changes</Button>
+        </form>
+      </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Appearance
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ThemeToggle className="w-full" />
-        </CardContent>
-      </Card>
+      {/* Rating & review history */}
+      <div className="px-[18px] mt-4">
+        <div className="rounded-[20px] overflow-hidden" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="px-4 pt-4 pb-1">
+            <div className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>Rating &amp; review history</div>
+          </div>
+          <div className="px-4 pb-4 space-y-4">
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div className="rounded-[12px] px-3 py-3 text-center" style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                <p className="text-xs text-muted-foreground">Average</p>
+                <p className="mt-1 font-semibold">
+                  {averageRating ? `${averageRating.toFixed(1)} / 5` : '—'}
+                </p>
+              </div>
+              <div className="rounded-[12px] px-3 py-3 text-center" style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                <p className="text-xs text-muted-foreground">Reviews</p>
+                <p className="mt-1 font-semibold">{reviews.length}</p>
+              </div>
+              <div className="rounded-[12px] px-3 py-3 text-center" style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                <p className="text-xs text-muted-foreground">Completed jobs</p>
+                <p className="mt-1 font-semibold">{completedJobs.length}</p>
+              </div>
+            </div>
 
-      <SignOutButton />
+            {completedJobs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Complete a few jobs and customer reviews will appear here.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {completedJobs.map((job) => {
+                  const review = reviewByJobId.get(job.id)
+                  return (
+                    <div key={job.id} className="rounded-[14px] px-3 py-3" style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium capitalize">
+                            {job.booking.match.jobRequest.category}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {job.booking.match.jobRequest.customer.name}
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {(job.completedAt ?? job.createdAt).toLocaleDateString('en-ZA', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </p>
+                      </div>
+                      {review ? (
+                        <>
+                          <p className="mt-2 text-sm">{'★'.repeat(review.score)}{'☆'.repeat(5 - review.score)}</p>
+                          {review.comment && (
+                            <p className="mt-2 text-sm text-muted-foreground">{review.comment}</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          No customer review left for this job yet.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Push notifications */}
+      <div className="px-[18px] mt-4">
+        <PushSubscribeButton />
+      </div>
+
+      {/* Appearance */}
+      <div className="px-[18px] mt-4">
+        <div className="rounded-[20px] overflow-hidden" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
+          <div className="px-4 pt-4 pb-1">
+            <div className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>Appearance</div>
+          </div>
+          <div className="px-4 pb-4">
+            <ThemeToggle className="w-full" />
+          </div>
+        </div>
+      </div>
+
+      {/* Sign out */}
+      <div className="px-[18px] mt-4">
+        <SignOutButton />
+      </div>
     </div>
   )
 }

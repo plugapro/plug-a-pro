@@ -6,8 +6,7 @@ import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { recordAuditLog } from '@/lib/audit'
 import { AUDIT_ENTITY } from '@/lib/audit-entities'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChevronLeft } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AlertCallout } from '@/components/shared/AlertCallout'
@@ -152,7 +151,7 @@ export default async function ProviderAvailabilityPage({
 
   if (!provider) {
     return (
-      <div className="px-4 py-8 text-center text-muted-foreground">
+      <div className="px-4 py-8 text-center" style={{ color: 'var(--ink-mute)' }}>
         <p>Your provider account is not yet set up.</p>
       </div>
     )
@@ -168,27 +167,43 @@ export default async function ProviderAvailabilityPage({
       : 'Available now'
 
   return (
-    <div className="px-4 py-6 space-y-6 max-w-2xl mx-auto">
-      <div>
-        <h1 className="text-xl font-semibold">Availability</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="min-h-screen pb-32 screen-enter">
+      <div className="px-[18px] pt-[60px] pb-4">
+        <p className="text-[11px] font-bold tracking-[0.08em] uppercase mb-1" style={{ color: 'var(--brand-purple)' }}>
+          Settings
+        </p>
+        <h1 className="text-[28px] font-bold tracking-[-0.025em]" style={{ color: 'var(--ink)' }}>
+          Availability
+        </h1>
+        <p className="text-[14px] mt-1" style={{ color: 'var(--ink-mute)' }}>
           Control whether you receive new leads. Existing accepted jobs are not affected.
         </p>
       </div>
 
       {resolvedSearchParams.saved === '1' && (
-        <AlertCallout tone="success">
-          Availability saved. Current status: {statusLabel}.
-        </AlertCallout>
+        <div className="px-[18px] mb-4">
+          <AlertCallout tone="success">
+            Availability saved. Current status: {statusLabel}.
+          </AlertCallout>
+        </div>
       )}
 
-      <form action={saveAvailability} className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Lead Availability</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-card p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 hover:border-border">
+      <form action={saveAvailability} className="px-[18px] space-y-4">
+        {/* Lead Availability */}
+        <div
+          className="rounded-[20px]"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
+          <div className="px-5 pt-4 pb-2">
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>
+              Lead Availability
+            </p>
+          </div>
+          <div className="px-5 pb-5 space-y-3">
+            <label
+              className="flex cursor-pointer items-start gap-3 rounded-xl p-3 transition-colors has-[:checked]:bg-[rgba(139,63,232,0.06)]"
+              style={{ border: '1px solid var(--border)', background: 'var(--card-alt)' }}
+            >
               <input
                 type="radio"
                 name="availabilityMode"
@@ -197,13 +212,16 @@ export default async function ProviderAvailabilityPage({
                 className="mt-1 size-4 accent-primary"
               />
               <span>
-                <span className="block font-medium">Always available</span>
-                <span className="block text-sm text-muted-foreground">
+                <span className="block font-medium" style={{ color: 'var(--ink)' }}>Always available</span>
+                <span className="block text-sm" style={{ color: 'var(--ink-mute)' }}>
                   Receive matching leads whenever you are active.
                 </span>
               </span>
             </label>
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-card p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 hover:border-border">
+            <label
+              className="flex cursor-pointer items-start gap-3 rounded-xl p-3 transition-colors has-[:checked]:bg-[rgba(139,63,232,0.06)]"
+              style={{ border: '1px solid var(--border)', background: 'var(--card-alt)' }}
+            >
               <input
                 type="radio"
                 name="availabilityMode"
@@ -212,13 +230,16 @@ export default async function ProviderAvailabilityPage({
                 className="mt-1 size-4 accent-primary"
               />
               <span>
-                <span className="block font-medium">Set working hours</span>
-                <span className="block text-sm text-muted-foreground">
+                <span className="block font-medium" style={{ color: 'var(--ink)' }}>Set working hours</span>
+                <span className="block text-sm" style={{ color: 'var(--ink-mute)' }}>
                   Use your weekly schedule to control lead eligibility.
                 </span>
               </span>
             </label>
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-card p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 hover:border-border">
+            <label
+              className="flex cursor-pointer items-start gap-3 rounded-xl p-3 transition-colors has-[:checked]:bg-[rgba(139,63,232,0.06)]"
+              style={{ border: '1px solid var(--border)', background: 'var(--card-alt)' }}
+            >
               <input
                 type="radio"
                 name="availabilityMode"
@@ -227,31 +248,37 @@ export default async function ProviderAvailabilityPage({
                 className="mt-1 size-4 accent-primary"
               />
               <span>
-                <span className="block font-medium">Paused</span>
-                <span className="block text-sm text-muted-foreground">
+                <span className="block font-medium" style={{ color: 'var(--ink)' }}>Paused</span>
+                <span className="block text-sm" style={{ color: 'var(--ink-mute)' }}>
                   Stop receiving new leads until you reactivate.
                 </span>
               </span>
             </label>
 
             <div className="grid gap-2 sm:grid-cols-2">
-              <label className="flex items-center gap-2 rounded-xl border border-border/80 bg-card p-3 text-sm">
+              <label
+                className="flex items-center gap-2 rounded-xl p-3 text-sm"
+                style={{ border: '1px solid var(--border)', background: 'var(--card-alt)' }}
+              >
                 <input
                   type="checkbox"
                   name="emergencyAvailable"
                   defaultChecked={availability?.emergencyAvailable ?? false}
                   className="size-4 rounded border-input accent-primary"
                 />
-                Available for emergency jobs
+                <span style={{ color: 'var(--ink)' }}>Available for emergency jobs</span>
               </label>
-              <label className="flex items-center gap-2 rounded-xl border border-border/80 bg-card p-3 text-sm">
+              <label
+                className="flex items-center gap-2 rounded-xl p-3 text-sm"
+                style={{ border: '1px solid var(--border)', background: 'var(--card-alt)' }}
+              >
                 <input
                   type="checkbox"
                   name="sameDayAvailable"
                   defaultChecked={availability?.sameDayAvailable ?? true}
                   className="size-4 rounded border-input accent-primary"
                 />
-                Accept same-day jobs
+                <span style={{ color: 'var(--ink)' }}>Accept same-day jobs</span>
               </label>
             </div>
 
@@ -270,22 +297,29 @@ export default async function ProviderAvailabilityPage({
                 <Input id="pauseReason" name="pauseReason" defaultValue={availability?.pauseReason ?? ''} />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Weekly Working Hours</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        {/* Weekly Working Hours */}
+        <div
+          className="rounded-[20px]"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
+          <div className="px-5 pt-4 pb-2">
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>
+              Weekly Working Hours
+            </p>
+          </div>
+          <div className="px-5 pb-5 space-y-3">
             {DAYS.map((day) => {
               const row = scheduleMap[day.value]
               return (
                 <div
                   key={day.value}
-                  className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-border/80 bg-card p-3 sm:gap-3"
+                  className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl p-3 sm:gap-3"
+                  style={{ border: '1px solid var(--border)', background: 'var(--card-alt)' }}
                 >
-                  <label className="flex items-center gap-2 text-sm font-medium">
+                  <label className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--ink)' }}>
                     <input
                       type="checkbox"
                       name={`day_${day.value}_active`}
@@ -309,30 +343,49 @@ export default async function ProviderAvailabilityPage({
                 </div>
               )
             })}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Service Areas</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+        {/* Service Areas */}
+        <div
+          className="rounded-[20px]"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+        >
+          <div className="px-5 pt-4 pb-2">
+            <p className="text-[11px] font-bold tracking-[0.08em] uppercase" style={{ color: 'var(--ink-mute)' }}>
+              Service Areas
+            </p>
+          </div>
+          <div className="px-5 pb-5 space-y-2 text-sm">
             {provider.technicianServiceAreas.length === 0 ? (
-              <p className="text-muted-foreground">No structured service areas saved yet.</p>
+              <p style={{ color: 'var(--ink-mute)' }}>No structured service areas saved yet.</p>
             ) : (
               provider.technicianServiceAreas.map((area) => (
-                <div key={area.label} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span>{area.label}</span>
-                  <span className={area.active ? 'text-[var(--tone-success-fg)] font-medium' : 'text-muted-foreground'}>
+                <div
+                  key={area.label}
+                  className="flex items-center justify-between rounded-lg px-3 py-2"
+                  style={{ border: '1px solid var(--border)' }}
+                >
+                  <span style={{ color: 'var(--ink)' }}>{area.label}</span>
+                  <span
+                    className={area.active ? 'font-medium' : ''}
+                    style={{ color: area.active ? 'var(--tone-success-fg)' : 'var(--ink-mute)' }}
+                  >
                     {area.active ? 'Active pilot' : 'Coming soon'}
                   </span>
                 </div>
               ))
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Button type="submit" className="w-full">Save Availability</Button>
+        <button
+          type="submit"
+          className="w-full h-[52px] rounded-[14px] font-semibold text-[15px] text-white"
+          style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
+        >
+          Save Availability
+        </button>
       </form>
     </div>
   )

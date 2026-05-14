@@ -81,14 +81,15 @@ export default function AdminSignInPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-dvh items-center justify-center px-4 py-12 bg-background">
+      <div className="w-full max-w-sm rounded-[28px] bg-card shadow-[inset_0_0_0_1px_var(--border)] p-8 space-y-6">
       {/* Header */}
       <div className="space-y-1 text-center">
-        <p className="app-kicker">
+        <p className="text-[11px] font-bold tracking-[0.085em] uppercase text-[var(--brand-purple)]">
           Admin Portal
         </p>
-        <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
-        <p className="text-sm text-muted-foreground">Internal team access only</p>
+        <h1 className="text-2xl font-semibold text-[var(--ink)]">Sign in</h1>
+        <p className="text-sm text-[var(--ink-mute)]">Internal team access only</p>
       </div>
 
       {/* Form */}
@@ -134,6 +135,7 @@ export default function AdminSignInPage() {
           {loading ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
+      </div>
     </div>
   )
 }
