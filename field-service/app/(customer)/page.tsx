@@ -46,7 +46,7 @@ export default async function CustomerHomePage({
 }: {
   searchParams?: Promise<{ area?: string }>
 } = {}) {
-  const { area } = await (searchParams ?? Promise.resolve({}))
+  const { area } = await (searchParams ?? Promise.resolve({} as { area?: string }))
   const session = await getSession()
   let customer: { id: string; name: string | null } | null = null
   let provider: { id: string; name: string | null } | null = null
@@ -356,7 +356,7 @@ export default async function CustomerHomePage({
       {/* How it works */}
       <div className="px-[18px] pt-2 pb-4">
         <SectionLabel>How it works</SectionLabel>
-        <div className="rounded-[24px] divide-y" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)', divideColor: 'var(--border)' }}>
+        <div className="rounded-[24px] divide-y divide-[var(--border)]" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
           {[
             { icon: <Search size={18} />,      title: 'Set your area',         desc: 'Tap "Near you" to filter by your suburb or city.' },
             { icon: <ShieldCheck size={18} />,  title: 'Browse & pick',         desc: 'See vetted providers available right now near you.' },
