@@ -53,6 +53,8 @@ describe('loadCandidatePool', () => {
     expect(candidates[0]).toMatchObject({
       id: 'provider-1',
       active: true,
+      isTestUser: false,
+      cohortName: null,
       verified: true,
       availableNow: true,
     })
@@ -87,7 +89,7 @@ describe('loadCandidatePool', () => {
     ])
 
     const { loadCandidatePool } = await import('@/lib/matching/candidate-pool')
-    await loadCandidatePool({
+    const candidates = await loadCandidatePool({
       category: 'plumbing',
       address: {
         suburb: 'Sandton',
@@ -100,6 +102,11 @@ describe('loadCandidatePool', () => {
       isTestRequest: true,
     })
 
+    expect(candidates[0]).toMatchObject({
+      id: 'provider-test',
+      isTestUser: true,
+      cohortName: 'internal_staff_test',
+    })
     expect(mockDb.provider.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ isTestUser: true }),
     }))

@@ -175,6 +175,8 @@ async function loadFromDirectScan(params: {
     reliabilityScore: p.reliabilityScore,
     averageRating: p.averageRating,
     active: p.active,
+    isTestUser: p.isTestUser,
+    cohortName: p.cohortName,
     verified: p.verified,
     availableNow: p.availableNow,
     lastKnownLat: p.lastKnownLat,

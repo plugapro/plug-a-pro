@@ -22,6 +22,17 @@ import type { MatchingJobRequest } from './types'
 
 type AssignmentHold = { id: string; expiresAt: Date }
 
+async function resolveProviderRecipientIsTest(provider: CandidatePoolEntry): Promise<boolean> {
+  if (typeof provider.isTestUser === 'boolean') return provider.isTestUser
+
+  const row = await (db as any).provider?.findUnique?.({
+    where: { id: provider.id },
+    select: { isTestUser: true },
+  }).catch(() => null) as { isTestUser?: boolean } | null
+
+  return Boolean(row?.isTestUser)
+}
+
 export async function dispatchMatchLead(params: {
   jobRequest: MatchingJobRequest & { address?: { suburb?: string | null } | null }
   hold: AssignmentHold
@@ -113,6 +124,7 @@ export async function dispatchMatchLead(params: {
     responseWindowMinutes: MATCHING_CONFIG.offerTtlMinutes,
   })
   const actionsBody = buildProviderLeadActionsMessage({ category, area: suburb, balance })
+  const recipientIsTest = await resolveProviderRecipientIsTest(provider)
   const msgMeta = {
     jobRequestId: jobRequest.id,
     leadId: lead.id,
@@ -120,7 +132,7 @@ export async function dispatchMatchLead(params: {
     providerId: provider.id,
     isTestLead: lead.isTestLead,
     isTestRequest: jobRequest.isTestRequest ?? false,
-    recipientIsTest: provider.isTestUser ?? false,
+    recipientIsTest,
   }
   const leadUrl = await getProviderLeadAccessUrl({
     leadId: lead.id,
