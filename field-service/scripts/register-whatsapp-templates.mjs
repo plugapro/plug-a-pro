@@ -122,7 +122,7 @@ const TEMPLATES = [
   },
   {
     name: 'quick_match_provider_lead_offer',
-    category: 'UTILITY',
+    category: 'MARKETING',
     body: 'Hi {{1}}, a new {{2}} lead is available in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
     examples: ['Lovemore', 'DIY & Assembly', 'Bromhof, Johannesburg', 'Flexible'],
     buttons: [

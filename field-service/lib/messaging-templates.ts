@@ -217,7 +217,9 @@ export const TEMPLATES = {
   quick_match_provider_lead_offer: {
     name: 'quick_match_provider_lead_offer',
     language: 'en_ZA',
-    category: 'UTILITY',
+    // Meta approved this as MARKETING. The provider lead sender is a direct
+    // dispatch path and does not use the generic customer canSend() gate.
+    category: 'MARKETING',
     description: 'Quick Match provider lead notification with signed lead URL only in a template URL button',
     // {{1}} provider first name, {{2}} service, {{3}} area, {{4}} date/window;
     // button (url, index 0): {{1}} signed lead access token suffix appended to /leads/access/
