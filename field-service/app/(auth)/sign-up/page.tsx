@@ -12,6 +12,7 @@ import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
 import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
+import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 
 function getSupabaseClient() {
   return createClient(
@@ -89,6 +90,13 @@ export default function SignUpPage() {
         name: name.trim(),
         intent: 'signup',
         next: prefillNext,
+      })
+      saveOtpVerifyState(sessionStorage, CUSTOMER_OTP_VERIFY_STORAGE_KEY, {
+        phone: normalized.e164,
+        name: name.trim(),
+        intent: 'signup',
+        next: prefillNext,
+        savedAt: Date.now(),
       })
       router.push(`/verify?${params.toString()}`)
     } catch {

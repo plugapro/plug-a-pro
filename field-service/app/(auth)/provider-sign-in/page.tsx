@@ -9,6 +9,7 @@ import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { getSafeCustomerNextPath, getSafeProviderNextPath } from '@/lib/safe-redirect'
 import { normalizeOtpPhoneNumber, type OtpCountryCode } from '@/lib/phone-normalization'
+import { PROVIDER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 
 type SendCodeError = {
   title: string
@@ -245,9 +246,12 @@ export default function ProviderSignInPage() {
         return
       }
 
-      router.push(
-        `/provider-verify?phone=${encodeURIComponent(payload.phone)}&next=${encodeURIComponent(next)}`,
-      )
+      saveOtpVerifyState(sessionStorage, PROVIDER_OTP_VERIFY_STORAGE_KEY, {
+        phone: payload.phone,
+        next,
+        savedAt: Date.now(),
+      })
+      router.push(`/provider-verify?phone=${encodeURIComponent(payload.phone)}&next=${encodeURIComponent(next)}`)
     } catch {
       setError(localError({
         reason: 'The browser could not reach the sign-in service. Please try again or contact support with this screenshot.',

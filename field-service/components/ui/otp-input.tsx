@@ -106,6 +106,7 @@ export function OtpInput({ value, onChange, disabled, length = 6 }: OtpInputProp
           inputMode="numeric"
           pattern="[0-9]*"
           maxLength={length}
+          name={i === 0 ? 'one-time-code' : undefined}
           value={digits[i] ?? ''}
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
@@ -114,6 +115,7 @@ export function OtpInput({ value, onChange, disabled, length = 6 }: OtpInputProp
           disabled={disabled}
           autoFocus={i === 0}
           autoComplete={i === 0 ? 'one-time-code' : 'off'}
+          enterKeyHint="done"
           aria-label={`Digit ${i + 1} of ${length}`}
           className={cn(
             'w-11 h-14 rounded-xl border border-input/90 bg-card/80',

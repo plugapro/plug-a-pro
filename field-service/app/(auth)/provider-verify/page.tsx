@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { OtpInput } from '@/components/ui/otp-input'
 import { Button } from '@/components/ui/button'
 import { getSafeCustomerNextPath, getSafeProviderNextPath } from '@/lib/safe-redirect'
+import { loadOtpVerifyState, PROVIDER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 
 function formatPhoneForDisplay(e164: string) {
   const digits = e164.replace(/\D/g, '')
@@ -59,6 +60,12 @@ function messageForCode(code: string | undefined) {
   }
 }
 
+function buildProviderVerifyHref(state: { phone: string; next?: string }) {
+  const params = new URLSearchParams({ phone: state.phone })
+  if (state.next) params.set('next', state.next)
+  return `/provider-verify?${params.toString()}`
+}
+
 function ProviderVerifyForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -78,6 +85,25 @@ function ProviderVerifyForm() {
   const [resendCooldown, setResendCooldown] = useState(30)
   const [done, setDone] = useState(false)
   const submitRef = useRef(false)
+
+  useEffect(() => {
+    if (phone) {
+      saveOtpVerifyState(sessionStorage, PROVIDER_OTP_VERIFY_STORAGE_KEY, {
+        phone,
+        next,
+        savedAt: Date.now(),
+      })
+      return
+    }
+
+    const restored = loadOtpVerifyState(sessionStorage, PROVIDER_OTP_VERIFY_STORAGE_KEY)
+    if (restored) {
+      router.replace(buildProviderVerifyHref(restored))
+      return
+    }
+
+    router.replace('/provider-sign-in')
+  }, [phone, next, router])
 
   useEffect(() => {
     if (resendCooldown <= 0) return
@@ -163,10 +189,7 @@ function ProviderVerifyForm() {
     }
   }
 
-  if (!phone) {
-    router.replace('/provider-sign-in')
-    return null
-  }
+  if (!phone) return <p className="text-sm text-muted-foreground text-center">Restoring sign in…</p>
 
   if (done) {
     return (

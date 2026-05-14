@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import { OtpInput } from '@/components/ui/otp-input'
 import { getOtpVerifyErrorMessage } from '@/lib/auth-client-errors'
 import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
+import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, loadOtpVerifyState, saveOtpVerifyState } from '@/lib/otp-verify-state'
 
 function getSupabaseClient() {
   return createClient(
@@ -18,6 +19,14 @@ function formatPhoneForDisplay(e164: string) {
   const digits = e164.replace(/\D/g, '')
   if (!digits.startsWith('27') || digits.length !== 11) return e164
   return `+27 ${digits.slice(2, 4)} *** ${digits.slice(-4)}`
+}
+
+function buildCustomerVerifyHref(state: { phone: string; next?: string; name?: string; intent?: string }) {
+  const params = new URLSearchParams({ phone: state.phone })
+  if (state.next) params.set('next', state.next)
+  if (state.name) params.set('name', state.name)
+  if (state.intent) params.set('intent', state.intent)
+  return `/verify?${params.toString()}`
 }
 
 function VerifyForm() {
@@ -37,6 +46,27 @@ function VerifyForm() {
   const [resendCooldown, setResendCooldown] = useState(30)
   const [done, setDone] = useState(false)
   const submitRef = useRef(false)
+
+  useEffect(() => {
+    if (phone) {
+      saveOtpVerifyState(sessionStorage, CUSTOMER_OTP_VERIFY_STORAGE_KEY, {
+        phone,
+        next,
+        name: name || undefined,
+        intent: intent || undefined,
+        savedAt: Date.now(),
+      })
+      return
+    }
+
+    const restored = loadOtpVerifyState(sessionStorage, CUSTOMER_OTP_VERIFY_STORAGE_KEY)
+    if (restored) {
+      router.replace(buildCustomerVerifyHref(restored))
+      return
+    }
+
+    router.replace('/sign-in')
+  }, [phone, next, name, intent, router])
 
   useEffect(() => {
     if (resendCooldown <= 0) return
@@ -129,10 +159,7 @@ function VerifyForm() {
     setResendCooldown(30)
   }
 
-  if (!phone) {
-    router.replace('/sign-in')
-    return null
-  }
+  if (!phone) return <p className="text-sm text-muted-foreground text-center">Restoring sign in…</p>
 
   if (done) {
     return (

@@ -11,6 +11,7 @@ import { SA_OTP_SIGN_IN_HELPER_TEXT } from '@/lib/auth-example-phone'
 import { getSafeCustomerNextPath } from '@/lib/safe-redirect'
 import { phoneExistsForSignIn } from '@/lib/auth-phone-check'
 import { normalizeOtpPhoneNumber } from '@/lib/phone-normalization'
+import { CUSTOMER_OTP_VERIFY_STORAGE_KEY, saveOtpVerifyState } from '@/lib/otp-verify-state'
 
 function getSupabaseClient() {
   return createClient(
@@ -78,9 +79,12 @@ export default function SignInPage() {
         return
       }
 
-      router.push(
-        `/verify?phone=${encodeURIComponent(normalized.e164)}&next=${encodeURIComponent(next)}`,
-      )
+      saveOtpVerifyState(sessionStorage, CUSTOMER_OTP_VERIFY_STORAGE_KEY, {
+        phone: normalized.e164,
+        next,
+        savedAt: Date.now(),
+      })
+      router.push(`/verify?phone=${encodeURIComponent(normalized.e164)}&next=${encodeURIComponent(next)}`)
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
