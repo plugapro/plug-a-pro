@@ -510,10 +510,10 @@
 /* Button press feedback — applies to all interactive surfaces */
 @utility press-feedback {
   transition: transform 0.08s ease, opacity 0.08s ease;
-}
-@utility press-feedback:active {
-  transform: scale(0.965);
-  opacity: 0.88;
+  &:active {
+    transform: scale(0.965);
+    opacity: 0.88;
+  }
 }
 
 /* Reduced motion: kill non-essential animation but keep focus rings. */
