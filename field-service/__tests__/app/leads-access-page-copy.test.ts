@@ -18,6 +18,7 @@ describe('signed provider lead page copy', () => {
   })
 
   it('uses the accept-or-decline journey with confirmation and protected details', () => {
+    expect(source).toContain('export const maxDuration = 30')
     expect(source).toContain('Accept job')
     expect(source).toContain('Confirm lead acceptance')
     expect(source).toContain('Full customer details are released only after credit is applied and the request is locked.')
