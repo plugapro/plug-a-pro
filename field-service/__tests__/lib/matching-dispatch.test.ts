@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockDb,
-  mockSendCtaUrl,
+  mockSendJobOffer,
   mockSendButtons,
   mockNotifyZeroBalance,
 } = vi.hoisted(() => ({
@@ -12,15 +12,17 @@ const {
     messageEvent: { findFirst: vi.fn(), create: vi.fn() },
     attachment: { count: vi.fn().mockResolvedValue(2) },
   },
-  mockSendCtaUrl: vi.fn(),
+  mockSendJobOffer: vi.fn(),
   mockSendButtons: vi.fn(),
   mockNotifyZeroBalance: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 vi.mock('@/lib/whatsapp-interactive', () => ({
-  sendCtaUrl: mockSendCtaUrl,
   sendButtons: mockSendButtons,
+}))
+vi.mock('@/lib/whatsapp', () => ({
+  sendJobOffer: mockSendJobOffer,
 }))
 vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderZeroBalanceLeadAvailable: mockNotifyZeroBalance,
@@ -48,12 +50,12 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.attachment.count.mockResolvedValue(2)
     mockDb.provider.findUnique.mockResolvedValue(null)
-    mockSendCtaUrl.mockResolvedValue('wamid-cta')
+    mockSendJobOffer.mockResolvedValue('wamid-template')
     mockSendButtons.mockResolvedValue('wamid-buttons')
     mockNotifyZeroBalance.mockResolvedValue(undefined)
   })
 
-  it('sends a clean CTA URL without exposing a raw URL in the body and preserves accept/decline actions', async () => {
+  it('sends the approved provider lead template and preserves accept/decline actions', async () => {
     const { dispatchMatchLead } = await import('@/lib/matching/dispatch')
     const holdExpiresAt = new Date('2026-04-28T12:15:00.000Z')
 
@@ -104,14 +106,14 @@ describe('dispatchMatchLead WhatsApp notification', () => {
       },
     })
 
-    expect(mockSendCtaUrl).toHaveBeenCalledWith(
-      '+27820000000',
-      expect.stringContaining('Area: *Ruimsig*'),
-      'View lead',
-      expect.stringMatching(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//),
-      { footer: 'Preview first. Acceptance uses 1 credit.' },
+    expect(mockSendJobOffer).toHaveBeenCalledWith(
       expect.objectContaining({
-        templateName: 'dispatch:job_lead',
+        providerPhone: '+27820000000',
+        providerFirstName: 'Sipho',
+        serviceName: 'plumbing',
+        area: 'Ruimsig',
+        scheduledWindow: 'Flexible',
+        jobUrl: expect.stringMatching(/^https:\/\/app\.plugapro\.co\.za\/leads\/access\//),
         metadata: expect.objectContaining({
           jobRequestId: 'jr-1',
           leadId: 'lead-1',
@@ -119,14 +121,6 @@ describe('dispatchMatchLead WhatsApp notification', () => {
           providerId: 'provider-1',
         }),
       }),
-    )
-    expect(mockSendCtaUrl).toHaveBeenCalledWith(
-      '+27820000000',
-      expect.not.stringContaining('Area: *ruimsig*'),
-      'View lead',
-      expect.any(String),
-      expect.any(Object),
-      expect.any(Object),
     )
 
     expect(mockSendButtons).toHaveBeenCalledWith(
@@ -195,7 +189,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
     expect(mockDb.messageEvent.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         to: '+27820000000',
-        templateName: 'dispatch:job_lead',
+        templateName: 'provider_lead_offer',
         metadata: {
           path: ['jobRequestId'],
           equals: 'jr-1',
@@ -212,7 +206,7 @@ describe('dispatchMatchLead WhatsApp notification', () => {
         },
       }),
     }))
-    expect(mockSendCtaUrl).not.toHaveBeenCalled()
+    expect(mockSendJobOffer).not.toHaveBeenCalled()
     expect(mockSendButtons).not.toHaveBeenCalled()
   })
 
@@ -274,13 +268,9 @@ describe('dispatchMatchLead WhatsApp notification', () => {
       where: { id: 'provider-1' },
       select: { isTestUser: true },
     })
-    expect(mockSendCtaUrl).toHaveBeenCalledWith(
-      '+27820000000',
-      expect.any(String),
-      'View lead',
-      expect.any(String),
-      expect.any(Object),
+    expect(mockSendJobOffer).toHaveBeenCalledWith(
       expect.objectContaining({
+        providerPhone: '+27820000000',
         metadata: expect.objectContaining({
           isTestLead: true,
           isTestRequest: true,

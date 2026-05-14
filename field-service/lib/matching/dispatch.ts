@@ -14,13 +14,17 @@ import {
   buildProviderLeadActionsMessage,
   buildProviderLeadPreviewMessage,
 } from '@/lib/provider-credit-copy'
-import { sendButtons, sendCtaUrl } from '@/lib/whatsapp-interactive'
-import { ctaLabelFor } from '@/lib/whatsapp-copy'
+import { sendButtons } from '@/lib/whatsapp-interactive'
+import { sendJobOffer } from '@/lib/whatsapp'
 import { MATCHING_CONFIG } from './config'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
 
 type AssignmentHold = { id: string; expiresAt: Date }
+
+function providerFirstName(provider: CandidatePoolEntry): string {
+  return provider.name?.trim().split(/\s+/)[0] || 'there'
+}
 
 async function resolveProviderRecipientIsTest(provider: CandidatePoolEntry): Promise<boolean> {
   if (typeof provider.isTestUser === 'boolean') return provider.isTestUser
@@ -155,7 +159,7 @@ export async function dispatchMatchLead(params: {
 
   const ctaAlreadySent = await hasSuccessfulMessageForRecipient({
     to: provider.phone,
-    templateName: 'dispatch:job_lead',
+    templateName: 'provider_lead_offer',
     metadataPath: ['jobRequestId'],
     metadataEquals: jobRequest.id,
   })
@@ -172,7 +176,7 @@ export async function dispatchMatchLead(params: {
       data: {
         channel: 'WHATSAPP',
         direction: 'OUTBOUND',
-        templateName: 'dispatch:job_lead',
+        templateName: 'provider_lead_offer',
         body,
         to: provider.phone,
         status: 'FAILED',
@@ -182,16 +186,17 @@ export async function dispatchMatchLead(params: {
       },
     }).catch(() => {})
   } else if (!ctaAlreadySent) {
-    await sendCtaUrl(
-      provider.phone,
-      body,
-      ctaLabelFor('view_lead'),
-      leadUrl,
-      { footer: 'Preview first. Acceptance uses 1 credit.' },
-      { templateName: 'dispatch:job_lead', metadata: msgMeta }
-    ).catch(async (err: unknown) => {
+    await sendJobOffer({
+      providerPhone: provider.phone,
+      providerFirstName: providerFirstName(provider),
+      serviceName: category,
+      area: suburb,
+      scheduledWindow: preferredTime,
+      jobUrl: leadUrl,
+      metadata: msgMeta,
+    }).catch(async (err: unknown) => {
       const failureReason = err instanceof Error ? err.message : String(err)
-      console.error('[dispatch] WhatsApp send failed — hold still active', {
+      console.error('[dispatch] WhatsApp template send failed — hold still active', {
         ...msgMeta,
         error: failureReason,
       })
@@ -200,7 +205,7 @@ export async function dispatchMatchLead(params: {
         data: {
           channel: 'WHATSAPP',
           direction: 'OUTBOUND',
-          templateName: 'dispatch:job_lead',
+          templateName: 'provider_lead_offer',
           body,
           to: provider.phone,
           status: 'FAILED',

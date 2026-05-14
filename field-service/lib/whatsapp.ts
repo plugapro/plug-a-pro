@@ -821,6 +821,7 @@ export async function sendJobOffer(params: {
   const externalId = await sendTemplate({
     to: params.providerPhone,
     template: templateName,
+    metadata: params.metadata,
     components: [
       {
         type: 'body',

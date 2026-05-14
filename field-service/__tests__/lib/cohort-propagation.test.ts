@@ -15,7 +15,7 @@ const {
   mockGetWalletBalance,
   mockGetProviderLeadAccessUrl,
   mockNotifyZeroBalance,
-  mockSendCtaUrl,
+  mockSendJobOffer,
   mockSendButtons,
 } = vi.hoisted(() => ({
   mockDb: {
@@ -32,7 +32,7 @@ const {
   mockGetWalletBalance: vi.fn(),
   mockGetProviderLeadAccessUrl: vi.fn(),
   mockNotifyZeroBalance: vi.fn(),
-  mockSendCtaUrl: vi.fn(),
+  mockSendJobOffer: vi.fn(),
   mockSendButtons: vi.fn(),
 }))
 
@@ -58,8 +58,10 @@ vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderZeroBalanceLeadAvailable: mockNotifyZeroBalance,
 }))
 vi.mock('@/lib/whatsapp-interactive', () => ({
-  sendCtaUrl: mockSendCtaUrl,
   sendButtons: mockSendButtons,
+}))
+vi.mock('@/lib/whatsapp', () => ({
+  sendJobOffer: mockSendJobOffer,
 }))
 vi.mock('@/lib/message-events', () => ({
   hasSuccessfulMessageForRecipient: vi.fn().mockResolvedValue(false),
@@ -184,7 +186,7 @@ describe('test cohort propagation chain', () => {
     mockGetWalletBalance.mockResolvedValue({ totalCreditBalance: 5, paidCreditBalance: 0, promoCreditBalance: 5 })
     mockGetProviderLeadAccessUrl.mockResolvedValue('https://example.com/lead/x')
     mockNotifyZeroBalance.mockResolvedValue(undefined)
-    mockSendCtaUrl.mockResolvedValue('msg-id')
+    mockSendJobOffer.mockResolvedValue('msg-id')
     mockSendButtons.mockResolvedValue('msg-id-2')
 
     await dispatchMatchLead({
@@ -240,7 +242,7 @@ describe('test cohort propagation chain', () => {
     mockGetWalletBalance.mockResolvedValue({ totalCreditBalance: 5, paidCreditBalance: 0, promoCreditBalance: 5 })
     mockGetProviderLeadAccessUrl.mockResolvedValue('https://example.com/lead/y')
     mockNotifyZeroBalance.mockResolvedValue(undefined)
-    mockSendCtaUrl.mockResolvedValue('msg-id')
+    mockSendJobOffer.mockResolvedValue('msg-id')
     mockSendButtons.mockResolvedValue('msg-id-2')
 
     await dispatchMatchLead({
@@ -280,13 +282,13 @@ describe('test cohort propagation chain', () => {
       } as never,
     })
 
-    // Both interactive sends should have been called with metadata carrying the test flags
-    const ctaCall = mockSendCtaUrl.mock.calls[0]
+    // Both the approved template and interactive action sends should carry the test flags.
+    const templateCall = mockSendJobOffer.mock.calls[0]
     const buttonsCall = mockSendButtons.mock.calls[0]
-    const ctaContext = ctaCall[ctaCall.length - 1]
+    const templateParams = templateCall[0]
     const buttonsContext = buttonsCall[buttonsCall.length - 1]
 
-    expect(ctaContext.metadata).toMatchObject({
+    expect(templateParams.metadata).toMatchObject({
       isTestLead: true,
       isTestRequest: true,
       recipientIsTest: true,
