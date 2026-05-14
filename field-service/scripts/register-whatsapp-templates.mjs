@@ -149,6 +149,36 @@ const TEMPLATES = [
     examples: ['Sipho Mokoena', 'https://app.plugapro.co.za/download'],
   },
   {
+    name: 'wallet_low_balance',
+    category: 'UTILITY',
+    body: 'You have {{1}} Plug A Pro provider credit left. 1 credit = R50. Each customer-selected job you accept uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
+    examples: ['1', 'R100', '2'],
+  },
+  {
+    name: 'wallet_zero_balance_lead',
+    category: 'UTILITY',
+    body: 'New matched lead available, but your wallet has {{1}} credits. 1 credit = R50. You need 1 credit only if the customer selects you and you accept that selected job. Top up {{2}} to continue.',
+    examples: ['0', 'R100'],
+  },
+  {
+    name: 'wallet_payment_intent_created',
+    category: 'UTILITY',
+    body: 'Plug A Pro provider credits top-up created: {{1}} = {{2}} credits. EFT to {{3}}, {{4}}, account {{5}}, branch {{6}}, {{7}}. Use exact reference: {{8}}. Credits are issued after Plug-A-Pro confirms the payment.',
+    examples: ['R100.00', '2', 'Plug A Pro provider credits', 'Test Bank', '123456789', '250655', 'Business current account', 'PAP-1000-ABCD'],
+  },
+  {
+    name: 'wallet_payment_credited',
+    category: 'UTILITY',
+    body: 'Payment received. Your wallet has been credited with {{1}} Plug A Pro provider credits. 1 credit = R50. Each customer-selected job you accept uses 1 credit.',
+    examples: ['2'],
+  },
+  {
+    name: 'wallet_payfast_topup_initiated',
+    category: 'UTILITY',
+    body: 'Your Plug-A-Pro top-up of {{1}} ({{2}} credits) has been initiated. Complete your payment on the checkout page. Credits will appear in your wallet once Payfast confirms payment.',
+    examples: ['R100.00', '2'],
+  },
+  {
     name: 'wallet_payat_topup_initiated',
     category: 'UTILITY',
     body: 'Tap the button below to pay for your Plug-A-Pro wallet top-up. {{1}} = {{2}} credits. Credits will appear in your wallet once Pay@ confirms payment.',
@@ -157,10 +187,22 @@ const TEMPLATES = [
       {
         type: 'URL',
         text: 'Pay now',
-        url: 'https://app.plugapro.co.za/provider/credits/{{1}}',
-        example: ['payat-demo'],
+        url: 'https://go.payat.co.za/{{1}}',
+        example: ['pay/demo-reference'],
       },
     ],
+  },
+  {
+    name: 'lead_unlock_provider',
+    category: 'UTILITY',
+    body: 'Lead accepted and unlocked: {{1}}. 1 credit used. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}. Thanks.',
+    examples: ['Plumbing', 'Zanele', '+27829876543', '12 Main Road, Sandton, Johannesburg', 'Thu 30 Apr, 10:00', 'Kitchen sink leak'],
+  },
+  {
+    name: 'lead_unlock_customer_intro',
+    category: 'UTILITY',
+    body: 'Good news. We matched you with {{1}}. They may contact you shortly.',
+    examples: ['Sipho Pro'],
   },
   {
     name: 'mvp1_accepted_lock_customer_confirmation',
@@ -197,18 +239,11 @@ const MANAGED_EXISTING_TEMPLATE_NAMES = [
   'extra_work_approval',
   'follow_up',
   'job_completed',
-  'lead_unlock_customer_intro',
-  'lead_unlock_provider',
   'otp_login',
   'provider_invoice_send',
   'quote_ready',
   'technician_arrived',
   'technician_on_the_way',
-  'wallet_low_balance',
-  'wallet_payfast_topup_initiated',
-  'wallet_payment_credited',
-  'wallet_payment_intent_created',
-  'wallet_zero_balance_lead',
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -62,6 +62,7 @@ describe('provider wallet notification delivery', () => {
       creditsToIssue: 2,
       amountCents: 10_000,
       paymentReference: 'PAP-1000-ABCD',
+      paymentMethod: 'MANUAL_EFT',
       providerCellphone: null,
       provider: { id: 'provider-1', phone: '+27821234567' },
     }
@@ -263,5 +264,37 @@ describe('provider wallet notification delivery', () => {
       'lead_unlock:provider_confirmation',
       'lead_unlock:customer_intro',
     ])
+  })
+
+  it('sends Pay@ top-up notifications with the Pay@ URL only in the button suffix', async () => {
+    state.intent.status = 'PENDING_PAYMENT'
+    state.intent.paymentMethod = 'PAYAT'
+    const { notifyProviderPayatTopUpInitiated } = await import('../../lib/provider-wallet-notifications')
+
+    await notifyProviderPayatTopUpInitiated('intent-1', 'https://go.payat.co.za/pay/intent-1?token=abc')
+
+    expect(mockSendTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      template: 'wallet_payat_topup_initiated',
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: 'R 100,00' },
+            { type: 'text', text: '2' },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: 0,
+          parameters: [{ type: 'text', text: 'pay/intent-1?token=abc' }],
+        },
+      ],
+    }))
+    expect(state.createdMessages[0]).toMatchObject({
+      templateName: 'wallet:payat_topup_initiated',
+      body: expect.not.stringContaining('go.payat.co.za'),
+      status: 'SENT',
+    })
   })
 })

@@ -286,7 +286,7 @@ export const TEMPLATES = {
     description: 'Sent when a matched lead is available but the provider wallet has no credits',
     // {{1}} current credits, {{2}} minimum top-up amount
     example:
-      'New matched lead available, but your wallet has {{1}} credits. 1 credit = R50. You need 1 credit only if the customer selects you and you accept that selected job. Top up {{2}}.',
+      'New matched lead available, but your wallet has {{1}} credits. 1 credit = R50. You need 1 credit only if the customer selects you and you accept that selected job. Top up {{2}} to continue.',
   },
 
   wallet_payment_intent_created: {
@@ -341,7 +341,7 @@ export const TEMPLATES = {
     // {{1}} category, {{2}} customer name, {{3}} customer phone, {{4}} address,
     // {{5}} preferred time, {{6}} details
     example:
-      'Lead accepted and unlocked: {{1}}. 1 credit used. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}',
+      'Lead accepted and unlocked: {{1}}. 1 credit used. Customer: {{2}}. Phone: {{3}}. Address: {{4}}. Preferred time: {{5}}. Details: {{6}}. Thanks.',
   },
 
   lead_unlock_customer_intro: {

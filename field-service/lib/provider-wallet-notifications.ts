@@ -216,6 +216,15 @@ function templateUrlButtonComponent(index: number, url: string): WhatsAppCompone
   }
 }
 
+function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppComponent {
+  const url = new URL(paymentLink)
+  if (url.hostname !== 'go.payat.co.za') {
+    throw new Error('Pay@ payment link must use go.payat.co.za')
+  }
+  const suffix = `${url.pathname.replace(/^\//, '')}${url.search}${url.hash}`
+  return templateUrlButtonComponent(index, suffix)
+}
+
 function noExtraNotes(description?: string | null) {
   return description?.trim() || 'No extra notes'
 }
@@ -470,7 +479,7 @@ export async function notifyProviderPayatTopUpInitiated(
     templateParameters: [amountFormatted, String(intent.creditsToIssue)],
     templateComponents: [
       ...templateBodyComponents([amountFormatted, String(intent.creditsToIssue)]),
-      templateUrlButtonComponent(0, paymentLink),
+      payatUrlButtonComponent(0, paymentLink),
     ],
     body: buildPayatTopUpInitiatedMessage({
       amountFormatted,
