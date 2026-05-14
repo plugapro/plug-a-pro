@@ -12,7 +12,6 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
 import { AppLogo } from '@/components/shared/app-logo'
-import { Wordmark } from '@/components/shared/wordmark'
 import { SectionLabel } from '@/components/ui/section-label'
 
 export const metadata = buildMetadata({
@@ -74,9 +73,7 @@ export default async function CustomerHomePage() {
       {/* Header strip */}
       <div className="relative flex items-center gap-3 px-[18px] pt-[60px] pb-1.5">
         <AppLogo href="/" compact className="h-8" priority />
-        <div className="flex-1">
-          <Wordmark size={13} />
-        </div>
+        <div className="flex-1" />
         <Link
           href="/profile"
           aria-label="Notifications"
