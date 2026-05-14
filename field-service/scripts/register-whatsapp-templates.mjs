@@ -164,13 +164,13 @@ const TEMPLATES = [
   },
   {
     name: 'wallet_low_balance',
-    category: 'UTILITY',
+    category: 'MARKETING',
     body: 'You have {{1}} Plug A Pro provider credit left. 1 credit = R50. Each customer-selected job you accept uses 1 credit. Top up now so you do not miss matched leads. {{2}} = {{3}} credits.',
     examples: ['1', 'R100', '2'],
   },
   {
     name: 'wallet_zero_balance_lead',
-    category: 'UTILITY',
+    category: 'MARKETING',
     body: 'New matched lead available, but your wallet has {{1}} credits. 1 credit = R50. You need 1 credit only if the customer selects you and you accept that selected job. Top up {{2}} to continue.',
     examples: ['0', 'R100'],
   },
@@ -214,7 +214,7 @@ const TEMPLATES = [
   },
   {
     name: 'lead_unlock_customer_intro',
-    category: 'UTILITY',
+    category: 'MARKETING',
     body: 'Good news. We matched you with {{1}}. They may contact you shortly.',
     examples: ['Sipho Pro'],
   },

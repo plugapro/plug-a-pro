@@ -283,7 +283,9 @@ export const TEMPLATES = {
   wallet_low_balance: {
     name: 'wallet_low_balance',
     language: 'en_ZA',
-    category: 'UTILITY',
+    // Meta classified this as MARKETING; keep local category aligned with the
+    // WABA template so registration and policy checks do not drift.
+    category: 'MARKETING',
     description: 'Sent when a provider wallet reaches one remaining credit',
     // {{1}} remaining credits, {{2}} top-up amount, {{3}} credits issued
     example:
@@ -293,7 +295,9 @@ export const TEMPLATES = {
   wallet_zero_balance_lead: {
     name: 'wallet_zero_balance_lead',
     language: 'en_ZA',
-    category: 'UTILITY',
+    // Meta classified this as MARKETING; keep local category aligned with the
+    // WABA template so registration and policy checks do not drift.
+    category: 'MARKETING',
     description: 'Sent when a matched lead is available but the provider wallet has no credits',
     // {{1}} current credits, {{2}} minimum top-up amount
     example:
@@ -358,7 +362,9 @@ export const TEMPLATES = {
   lead_unlock_customer_intro: {
     name: 'lead_unlock_customer_intro',
     language: 'en_ZA',
-    category: 'UTILITY',
+    // Meta classified this as MARKETING; keep local category aligned with the
+    // WABA template so registration and policy checks do not drift.
+    category: 'MARKETING',
     description: 'Sent to a customer after a provider unlocks their lead details',
     // {{1}} provider name
     example:
