@@ -911,9 +911,9 @@ export async function sendAcceptedLockConfirmations(params: {
   const customerIdempotencyKey = `accepted_lock_confirmation:customer:${lead.id}:${params.providerId}`
   const providerIdempotencyKey = `accepted_lock_confirmation:provider:${lead.id}:${params.providerId}`
   const customerBody =
-    'Good news. Your selected Plug A Pro provider has accepted your request. Your request is now confirmed at MVP1 level. Next steps will be handled through the current pilot process.'
+    'Good news. Your selected Plug A Pro provider has accepted your request. Your request is confirmed. We will keep you updated on the next step.'
   const providerBody =
-    'You have accepted this Plug A Pro lead. Your credit has been applied. MVP1 flow is complete; follow the current pilot operating process for next steps.'
+    'Job accepted. Your credit has been applied and the customer details are now available in your job view.'
 
   const [customer, provider] = await Promise.all([
     sendAcceptedLockConfirmation({

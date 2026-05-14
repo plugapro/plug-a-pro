@@ -229,7 +229,7 @@ export default async function LeadDetailPage({
       {/* Header */}
       <div className="space-y-1">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          New Lead · {lead.id.slice(-8).toUpperCase()}
+          New job lead · {lead.id.slice(-8).toUpperCase()}
         </p>
         <h1 className="text-xl font-semibold">{preview.jobType}</h1>
       </div>
@@ -286,9 +286,10 @@ export default async function LeadDetailPage({
       )}
 
       {resolvedSearchParams.accepted && (
-        <AlertCallout tone="success" title="Lead accepted">
-          {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'} applied. Balance remaining: {acceptedRemainingBalance}.
-          Full customer and request details are now available below.
+        <AlertCallout tone="success" title="Job accepted">
+          You used {lead.unlockCostCredits} credit{lead.unlockCostCredits === 1 ? '' : 's'}.
+          Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
+          Customer contact and request details are now available below.
         </AlertCallout>
       )}
 

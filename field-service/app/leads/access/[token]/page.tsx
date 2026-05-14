@@ -802,7 +802,7 @@ export default async function ProviderLeadAccessPage({
       <main className="mx-auto max-w-lg px-4 py-6 pb-36 space-y-5">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {isAccepted ? 'Accepted Job' : 'New Lead'} · Lead Ref {leadRef}
+            {isAccepted ? 'Accepted job' : 'New job lead'} · Ref {leadRef}
           </p>
           <h1 className="text-xl font-semibold">{jr.title || jr.category}</h1>
           {acceptedStage && (
@@ -818,29 +818,26 @@ export default async function ProviderLeadAccessPage({
 
         {isAccepted && (
           <div className="tone-success rounded-lg border px-4 py-3 text-sm space-y-1">
-            <p className="font-semibold">Job assigned to you</p>
+            <p className="font-semibold">Job confirmed</p>
             {jr.match?.createdAt && (
               <p>Accepted {format(jr.match.createdAt, 'HH:mm, d MMM yyyy')} · 1 credit used.</p>
             )}
-            <p>{jr.match ? 'Next step: contact the customer and confirm your arrival time below.' : 'MVP1 accepted lock is complete for this request.'}</p>
+            <p>{jr.match ? 'Next step: contact the customer and confirm your arrival time below.' : 'You can now view the customer details and arrange the next step.'}</p>
           </div>
         )}
 
         {resolvedSearchParams.accepted === '1' && (
           <div className="tone-success rounded-lg border px-4 py-3 text-sm">
-            <p className="font-medium">Lead accepted.</p>
+            <p className="font-medium">Job accepted.</p>
             {resolvedSearchParams.alreadyAccepted === '1' ? (
-              <p className="mt-1">You had already accepted this lead — no credit was used on this action.</p>
+              <p className="mt-1">This job was already accepted. No extra credit was used.</p>
             ) : (
               <p className="mt-1">
-                {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'} applied.
+                You used {LEAD_UNLOCK_COST_CREDITS} credit{LEAD_UNLOCK_COST_CREDITS === 1 ? '' : 's'}.
                 Balance remaining: {acceptedRemainingBalance} credit{acceptedRemainingBalance === 1 ? '' : 's'}.
               </p>
             )}
-            <p className="mt-1">Full customer and request details are now available.</p>
-            {resolvedSearchParams.actionTraceId ? (
-              <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
-            ) : null}
+            <p className="mt-1">Customer contact and request details are now available below.</p>
           </div>
         )}
 
@@ -851,9 +848,6 @@ export default async function ProviderLeadAccessPage({
             <p className="mt-2 text-xs font-medium uppercase tracking-wide">
               Ref: {jobRef}
             </p>
-            {resolvedSearchParams.actionTraceId ? (
-              <p className="mt-2 text-xs">Trace ID: {resolvedSearchParams.actionTraceId}</p>
-            ) : null}
             <div className="mt-4 grid gap-2">
               {backToWhatsAppHref ? (
                 <Button asChild size="sm" className="bg-[var(--tone-success-fg)] hover:opacity-90 text-white">

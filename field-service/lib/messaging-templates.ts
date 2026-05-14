@@ -421,7 +421,7 @@ export const TEMPLATES = {
     category: 'UTILITY',
     description: 'Sent to the customer when their selected provider accepts the job (MVP1 pilot flow)',
     example:
-      'Good news. Your selected Plug A Pro provider has accepted your request. Your request is now confirmed at MVP1 level. Next steps will be handled through the current pilot process.',
+      'Good news. Your selected Plug A Pro provider has accepted your request. Your request is confirmed. We will keep you updated on the next step.',
   },
 
   mvp1_accepted_lock_provider_confirmation: {
@@ -430,7 +430,7 @@ export const TEMPLATES = {
     category: 'UTILITY',
     description: 'Sent to the provider when they accept a customer-selected job (MVP1 pilot flow)',
     example:
-      'You have accepted this Plug A Pro lead. Your credit has been applied. MVP1 flow is complete; follow the current pilot operating process for next steps.',
+      'Job accepted. Your credit has been applied and the customer details are now available in your job view.',
   },
 
 } as const

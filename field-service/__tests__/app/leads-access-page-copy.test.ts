@@ -23,6 +23,12 @@ describe('signed provider lead page copy', () => {
     expect(source).toContain('Confirm lead acceptance')
     expect(source).toContain('Full customer details are released only after credit is applied and the request is locked.')
     expect(source).toContain('hasAcceptedDetails && customer')
+    expect(source).toContain('Job accepted.')
+    expect(source).toContain('Job confirmed')
+    expect(source).toContain('Customer contact and request details are now available below.')
+    expect(source).not.toContain('MVP1 accepted lock is complete')
+    const acceptedConfirmation = source.match(/\{resolvedSearchParams\.accepted === '1' && \([\s\S]*?\n        \)\}/)?.[0] ?? ''
+    expect(acceptedConfirmation).not.toContain('Trace ID')
   })
 
   it('renders credit pricing from the central R50 provider-wallet constant', () => {
