@@ -17,6 +17,9 @@ import {
   checkProviderLeadCreditBalanceInTransaction,
 } from './provider-credit-check'
 
+const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_TIMEOUT_MS = 20_000
+const SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_MAX_WAIT_MS = 10_000
+
 export type SelectedProviderAcceptanceResult =
   | {
       ok: true
@@ -313,6 +316,9 @@ export async function acceptSelectedProviderJob(params: {
         creditTransactionId: creditApplication.creditTransactionId,
         notificationSent: false,
       }
+    }, {
+      maxWait: SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_MAX_WAIT_MS,
+      timeout: SELECTED_PROVIDER_ACCEPTANCE_TRANSACTION_TIMEOUT_MS,
     })
 
     if (!result.ok) {

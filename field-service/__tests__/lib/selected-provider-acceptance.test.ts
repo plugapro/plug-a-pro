@@ -266,6 +266,18 @@ describe('selected provider final acceptance', () => {
     expect(JSON.stringify(result)).not.toContain('phone')
   })
 
+  it('runs the acceptance workflow with an extended transaction timeout', async () => {
+    await acceptSelectedProviderJob({ leadId: 'lead-1', providerId: 'provider-1', source: 'pwa' })
+
+    expect(mockDb.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({
+        maxWait: 10_000,
+        timeout: 20_000,
+      }),
+    )
+  })
+
   it('sets CREDIT_REQUIRED when accepted provider has no credits', async () => {
     state.wallet = { paidCreditBalance: 0, promoCreditBalance: 0, status: 'ACTIVE' }
 
