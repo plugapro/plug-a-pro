@@ -2,6 +2,11 @@
 
 import { useEffect } from 'react'
 
+const WA_NUMBER = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
+const WA_HREF = WA_NUMBER
+  ? `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent("Hi, I'm getting an error on Plug A Pro")}`
+  : `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Error report')}`
+
 export default function Error({
   error,
   reset,
@@ -85,7 +90,7 @@ export default function Error({
           Try again
         </button>
         <a
-          href="https://wa.me/27000000000?text=Hi%2C+I%27m+getting+an+error+on+Plug+A+Pro"
+          href={WA_HREF}
           target="_blank"
           rel="noopener noreferrer"
           className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"

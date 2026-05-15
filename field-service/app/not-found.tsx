@@ -1,5 +1,10 @@
 import Link from 'next/link'
 
+const WA_NUMBER = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
+const WA_HREF = WA_NUMBER
+  ? `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hi, I found a broken link on Plug A Pro')}`
+  : `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Broken link report')}`
+
 export default function NotFound() {
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center px-6 text-center overflow-hidden">
@@ -57,7 +62,7 @@ export default function NotFound() {
           Back to home
         </Link>
         <a
-          href="https://wa.me/27000000000?text=Hi%2C+I+found+a+broken+link+on+Plug+A+Pro"
+          href={WA_HREF}
           target="_blank"
           rel="noopener noreferrer"
           className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"

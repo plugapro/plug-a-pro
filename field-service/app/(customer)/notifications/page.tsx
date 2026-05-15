@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { ChevronLeft } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
 export default async function NotificationsPage() {
@@ -12,17 +12,22 @@ export default async function NotificationsPage() {
         <Link
           href="/"
           aria-label="Back"
-          className="w-9 h-9 rounded-full flex items-center justify-center"
-          style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+          className="flex items-center justify-center w-9 h-9 rounded-[12px] shrink-0"
+          style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
         >
-          <ChevronLeft size={18} style={{ color: 'var(--ink)' }} />
+          <ArrowLeft size={18} style={{ color: 'var(--ink)' }} />
         </Link>
-        <h1
-          className="font-bold tracking-[-0.025em]"
-          style={{ fontSize: 28, color: 'var(--ink)' }}
-        >
-          Notifications
-        </h1>
+        <div>
+          <p className="text-[11px] font-bold tracking-[0.085em] uppercase text-[var(--brand-purple)]">
+            Activity
+          </p>
+          <h1
+            className="font-bold tracking-[-0.025em] leading-tight"
+            style={{ fontSize: 22, color: 'var(--ink)' }}
+          >
+            Notifications
+          </h1>
+        </div>
       </div>
 
       {/* Empty state */}
@@ -30,7 +35,7 @@ export default async function NotificationsPage() {
         {/* Icon */}
         <div
           className="w-[88px] h-[88px] rounded-[28px] flex items-center justify-center mb-6"
-          style={{ background: 'rgba(139,63,232,0.08)' }}
+          style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))' }}
         >
           <div
             className="w-[56px] h-[56px] rounded-[18px] flex items-center justify-center"
