@@ -166,10 +166,13 @@ export async function acceptLead(params: {
     where: { id: params.leadId },
     select: {
       id: true,
+      jobRequestId: true,
+      providerId: true,
       customerSelectedAt: true,
       jobRequest: {
         select: {
           status: true,
+          assignmentMode: true,
           selectedProviderId: true,
           selectedLeadInviteId: true,
         },
@@ -181,15 +184,47 @@ export async function acceptLead(params: {
     return { ok: false, reason: 'NOT_FOUND' }
   }
 
-  // MVP1 acceptance unification:
-  // final credit-charging acceptance must happen only after customer selection.
+  // OPS_REVIEW: ops dispatched directly — no customer-selection step. Atomically
+  // claim PROVIDER_CONFIRMATION_PENDING for this provider so the standard
+  // acceptSelectedProviderJob path can proceed unchanged.
+  let opsReviewDirectClaim = false
   if (selectedLead.jobRequest.status !== 'PROVIDER_CONFIRMATION_PENDING') {
-    return { ok: false, reason: 'EXPIRED' }
+    if (
+      selectedLead.jobRequest.assignmentMode === 'OPS_REVIEW' &&
+      selectedLead.jobRequest.status === 'MATCHING' &&
+      selectedLead.providerId === params.providerId
+    ) {
+      const now = new Date()
+      const claimed = await db.$transaction(async (tx) => {
+        const jrUpdate = await tx.jobRequest.updateMany({
+          where: { id: selectedLead.jobRequestId, status: 'MATCHING' },
+          data: {
+            status: 'PROVIDER_CONFIRMATION_PENDING',
+            selectedProviderId: params.providerId,
+            selectedLeadInviteId: params.leadId,
+          },
+        })
+        if (jrUpdate.count === 0) return false
+        await tx.lead.update({
+          where: { id: params.leadId },
+          data: { customerSelectedAt: now, status: 'CUSTOMER_SELECTED' },
+        })
+        return true
+      })
+      if (!claimed) return { ok: false, reason: 'EXPIRED' }
+      opsReviewDirectClaim = true
+    } else {
+      return { ok: false, reason: 'EXPIRED' }
+    }
   }
+  // For standard REVIEW_FIRST (customer-selected) leads, validate the snapshot
+  // still matches what was set by selectShortlistedProviderForRequest.
   if (
-    !selectedLead.customerSelectedAt ||
-    selectedLead.jobRequest.selectedProviderId !== params.providerId ||
-    selectedLead.jobRequest.selectedLeadInviteId !== params.leadId
+    !opsReviewDirectClaim && (
+      !selectedLead.customerSelectedAt ||
+      selectedLead.jobRequest.selectedProviderId !== params.providerId ||
+      selectedLead.jobRequest.selectedLeadInviteId !== params.leadId
+    )
   ) {
     return { ok: false, reason: 'FORBIDDEN' }
   }
