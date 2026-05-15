@@ -1376,8 +1376,8 @@ export async function sendRequestToShortlistedProviders(params: {
             providerPhone,
             actionsBody,
             [
-              { id: `ops_accept:${lead.id}`, title: 'Accept Lead' },
-              { id: `ops_decline:${lead.id}`, title: 'Decline' },
+              { id: `ops_accept:${lead.id}`, title: "I'm Available" },
+              { id: `ops_decline:${lead.id}`, title: 'Not Available' },
             ],
             undefined,
             { templateName: 'rfp:job_lead_actions', metadata: { requestId: request.id, leadId: lead.id, providerId: lead.provider.id } },

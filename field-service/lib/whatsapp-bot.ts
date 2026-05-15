@@ -3102,8 +3102,12 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
   }
 }
 
-// ─── OPS_REVIEW / RFP: direct lead acceptance (no AssignmentHold) ────────────
+// ─── RFP: register provider interest (no credit deduction, customer still selects) ──
 // Button ID format: `ops_accept:{leadId}`
+// These buttons are sent exclusively from sendRequestToShortlistedProviders (review-first
+// flow). Tapping "I'm Available" marks the lead INTERESTED + records a ProviderLeadResponse
+// so the customer can compare responses and select a provider. Credits are deducted only
+// after the customer selects this provider and they confirm via confirm_accept.
 
 async function handleOpsLeadAcceptance(phone: string, buttonId: string): Promise<void> {
   const traceId = createTraceId('wbot')
@@ -3119,55 +3123,145 @@ async function handleOpsLeadAcceptance(phone: string, buttonId: string): Promise
     return
   }
 
-  const { acceptLead } = await import('./matching-engine')
-  let result
-  try {
-    result = await acceptLead({ leadId, providerId: provider.id, source: 'whatsapp', traceId })
-  } catch (error) {
-    await sendWhatsAppJourneyRecovery(phone, {
-      userRole: 'provider',
-      channel: 'whatsapp',
-      flowName: 'provider_matching',
-      currentStep: 'ops_lead_accept',
-      failureType: 'dependency_failure',
-      actionId: buttonId,
-      requestId: leadId,
-      error,
-      traceId,
-    })
-    console.error('[whatsapp-bot] ops_accept: unhandled acceptLead exception', {
-      traceId, leadId, providerId: provider.id, error_code: 'UNKNOWN_LEAD_ACCEPT_ERROR',
-      error: error instanceof Error ? error.message : String(error),
-    })
+  await handleRfpLeadInterest(phone, provider.id, leadId, traceId)
+}
+
+async function handleRfpLeadInterest(
+  phone: string,
+  providerId: string,
+  leadId: string,
+  traceId: string,
+): Promise<void> {
+  const lead = await db.lead.findUnique({
+    where: { id: leadId },
+    select: {
+      id: true,
+      status: true,
+      providerId: true,
+      jobRequestId: true,
+      expiresAt: true,
+      jobRequest: {
+        select: {
+          id: true,
+          category: true,
+          status: true,
+        },
+      },
+    },
+  })
+
+  if (!lead || lead.providerId !== providerId) {
+    await sendText(phone, '⚠️ This lead could not be found or is not assigned to your account.')
     return
   }
 
-  if (!result.ok) {
-    if (result.reason === 'INSUFFICIENT_CREDITS') {
-      await sendLeadInsufficientCreditsMessage(phone, leadId, result.currentCreditBalance ?? 0)
-      return
-    }
-    if (result.reason === 'EXPIRED') {
-      await sendText(phone, '⚠️ This lead has expired. New leads will come through as jobs arise.')
-      return
-    }
-    if (result.reason === 'FORBIDDEN') {
-      await sendText(phone, '⚠️ This lead was not assigned to this provider number. Please use the WhatsApp number that received the lead.')
-      return
-    }
-    if (result.reason === 'NOT_FOUND') {
-      await sendText(phone, '⚠️ This lead could not be found. It may have expired or already been closed.')
-      return
-    }
-    await sendText(phone, `We couldn't process your acceptance right now.\n\n_Ref: ${traceId}_`)
+  if (lead.expiresAt && lead.expiresAt <= new Date()) {
+    await sendText(phone, '⚠️ This lead has expired. New leads will come through as jobs arise.')
     return
   }
 
   const ref = leadId.slice(-8).toUpperCase()
+
+  // Idempotent: already interested or already selected
+  if (lead.status === 'INTERESTED') {
+    await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.`)
+    return
+  }
+  if (['CUSTOMER_SELECTED', 'ACCEPTED_LOCKED', 'ACCEPTED', 'PROVIDER_ACCEPTED', 'CREDIT_APPLIED'].includes(lead.status)) {
+    await sendText(phone, `✅ You've been selected for Ref ${ref}. The customer will be in touch shortly.`)
+    return
+  }
+  if (['DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'].includes(lead.status)) {
+    await sendText(phone, `This lead is no longer available. New leads will come through as jobs arise.`)
+    return
+  }
+  if (!['SHORTLISTED', 'SEND_PENDING', 'SENT', 'VIEWED'].includes(lead.status)) {
+    await sendText(phone, `We couldn't process your response right now.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  // Fetch call-out fee: try category-specific rate first, then most recent rate
+  const categorySlug = lead.jobRequest.category.trim().toLowerCase()
+  const providerRate =
+    (await db.providerRate.findFirst({
+      where: { providerId, categorySlug },
+      select: { callOutFee: true, rateNegotiable: true },
+    }).catch(() => null)) ??
+    (await db.providerRate.findFirst({
+      where: { providerId },
+      orderBy: { updatedAt: 'desc' },
+      select: { callOutFee: true, rateNegotiable: true },
+    }).catch(() => null))
+
+  const idempotencyKey = `rfp_interest:${leadId}:${providerId}`
+  let alreadyRegistered = false
+
+  try {
+    await db.$transaction(async (tx) => {
+      const leadUpdate = await tx.lead.updateMany({
+        where: {
+          id: leadId,
+          providerId,
+          status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SENT', 'VIEWED'] },
+        },
+        data: { status: 'INTERESTED', respondedAt: new Date() },
+      })
+
+      if (leadUpdate.count === 0) {
+        alreadyRegistered = true
+        return
+      }
+
+      await tx.providerLeadResponse.create({
+        data: {
+          leadInviteId: leadId,
+          providerId,
+          response: 'INTERESTED',
+          callOutFee: providerRate?.callOutFee ?? null,
+          estimatedArrivalAt: null,
+          negotiable: providerRate?.rateNegotiable ?? true,
+          source: 'whatsapp_button',
+          idempotencyKey,
+        },
+      })
+    })
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2002') {
+      // Unique constraint on idempotencyKey — concurrent tap already handled
+      alreadyRegistered = true
+    } else {
+      console.error('[whatsapp-bot] rfp_interest: transaction failed', {
+        traceId, leadId, providerId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      await sendText(phone, `We couldn't process your response right now.\n\n_Ref: ${traceId}_`)
+      return
+    }
+  }
+
+  if (alreadyRegistered) {
+    await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.`)
+    return
+  }
+
   await sendText(
     phone,
-    `✅ *Job accepted — Ref ${ref}*\n\nYou used 1 credit. Open the lead link to view the customer's contact and address details.`
+    `✅ *Availability noted — Ref ${ref}*\n\nWe've let the customer know you're available for this job.\n\nYou'll receive a confirmation message here on WhatsApp if the customer selects you.`,
   )
+
+  console.info('[whatsapp-bot] rfp_interest: interest registered', { traceId, leadId, providerId })
+
+  // Notify the customer that a provider responded so they can review and select
+  const jobStatus = lead.jobRequest.status
+  if (!['PROVIDER_CONFIRMATION_PENDING', 'MATCHED', 'CANCELLED', 'EXPIRED'].includes(jobStatus)) {
+    const { notifyCustomerRfpResponseSummary } = await import('./review-first')
+    notifyCustomerRfpResponseSummary(lead.jobRequestId).catch((err) => {
+      console.warn('[whatsapp-bot] rfp_interest: customer notification failed', {
+        traceId, leadId, providerId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
 }
 
 // ─── OPS_REVIEW / RFP: direct lead decline with reason ───────────────────────
