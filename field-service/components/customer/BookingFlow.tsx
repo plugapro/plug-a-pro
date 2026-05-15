@@ -971,13 +971,14 @@ export function BookingFlow({
                 const active = urgency === u.id
                 return (
                   <button key={u.id} type="button" onClick={() => setUrgency(u.id)}
+                          aria-pressed={active}
                           className="rounded-[14px] px-2 py-3 text-left"
                           style={{
                             background: 'var(--card)',
                             boxShadow: active ? `inset 0 0 0 1.5px ${u.hue}, 0 4px 14px ${u.hue}18` : 'inset 0 0 0 1px var(--border)',
                             color: 'var(--ink)',
                           }}>
-                    <div className="w-7 h-7 rounded-[8px] flex items-center justify-center mb-2"
+                    <div aria-hidden="true" className="w-7 h-7 rounded-[8px] flex items-center justify-center mb-2"
                          style={{ background: `${u.hue}15`, color: u.hue }}>
                       {u.icon}
                     </div>

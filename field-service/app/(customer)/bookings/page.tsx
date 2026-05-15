@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import * as React from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { Plus, MapPin } from 'lucide-react'
 import { db } from '@/lib/db'
@@ -34,7 +35,7 @@ function requestTone(status: string): StatusTone {
   if (['MATCHED', 'ACCEPTED_LOCKED'].includes(status)) return 'success'
   if (['SHORTLIST_READY', 'PROVIDER_CONFIRMATION_PENDING'].includes(status)) return 'warn'
   if (['CANCELLED', 'EXPIRED', 'FAILED'].includes(status)) return 'danger'
-  return 'warn'
+  return 'idle'
 }
 
 function requestLabel(status: string): string {
@@ -89,7 +90,8 @@ function chipStyle(tone: StatusTone): React.CSSProperties {
     case 'success': return { background: 'rgba(15,157,88,0.10)', color: '#0F7A45' }
     case 'danger':  return { background: 'rgba(229,72,77,0.10)', color: '#C1121F' }
     case 'warn':    return { background: 'rgba(230,153,0,0.10)', color: '#A66400' }
-    default:        return { background: 'rgba(230,153,0,0.10)', color: '#A66400' }
+    case 'idle':    return { background: 'rgba(156,160,168,0.10)', color: '#6B7280' }
+    default:        return { background: 'rgba(156,160,168,0.10)', color: '#6B7280' }
   }
 }
 
@@ -307,9 +309,9 @@ export default async function CustomerBookingsPage({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           {request.match?.provider?.avatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={request.match.provider.avatarUrl} alt=""
-                                 className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
+                            <Image src={request.match.provider.avatarUrl} alt=""
+                                   width={28} height={28}
+                                   className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
                           ) : providerName ? (
                             <div className="w-7 h-7 rounded-[8px] shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
                                  style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}>
@@ -377,9 +379,9 @@ export default async function CustomerBookingsPage({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           {b.match.provider?.avatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={b.match.provider.avatarUrl} alt=""
-                                 className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
+                            <Image src={b.match.provider.avatarUrl} alt=""
+                                   width={28} height={28}
+                                   className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
                           ) : providerName ? (
                             <div className="w-7 h-7 rounded-[8px] shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
                                  style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}>
