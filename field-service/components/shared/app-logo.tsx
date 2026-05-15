@@ -15,13 +15,13 @@ export function AppLogo({
 }) {
   const logo = (
     <Image
-      src="/logo.png"
+      src="/icon.png"
       alt="Plug A Pro"
-      width={compact ? 92 : 104}
-      height={compact ? 32 : 36}
+      width={32}
+      height={32}
       priority={priority}
       unoptimized
-      className={cn(compact ? 'h-8 w-auto' : 'h-9 w-auto', className)}
+      className={cn('h-8 w-8', className)}
     />
   )
 
