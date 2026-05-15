@@ -9,6 +9,10 @@ type CustomerRecord = {
   email: string | null
 }
 
+type CustomerMemberClient = {
+  findFirst: (...args: any[]) => Promise<{ principalCustomerId: string } | null>
+}
+
 type CustomerClient = {
   customer: {
     findUnique: (...args: any[]) => Promise<CustomerRecord | null>
@@ -17,9 +21,7 @@ type CustomerClient = {
   }
   // Optional so existing test mocks that pre-date M1-T8 don't need updating.
   // When db is passed as the client (all production callers) this is always present.
-  customerMember?: {
-    findFirst: (...args: any[]) => Promise<{ principalCustomerId: string } | null>
-  }
+  customerMember?: CustomerMemberClient
 }
 
 const customerSessionSelect = {
@@ -46,8 +48,14 @@ export async function resolveCustomerForSession(
   // customer account — per spec, members always book under the company account
   // regardless of whether they also have their own Customer row.
   if (client.customerMember) {
-    const memberDelegation = await resolveMemberDelegation(client, session)
-    if (memberDelegation) return memberDelegation
+    try {
+      const memberDelegation = await resolveMemberDelegation(client.customerMember, client.customer, session)
+      if (memberDelegation) return memberDelegation
+    } catch (err) {
+      // Delegation is best-effort. A transient DB or flag error must not block
+      // a customer who has a valid direct account from resolving their session.
+      console.error('[customer-session] resolveMemberDelegation failed, falling back', err)
+    }
   }
 
   if (!customer && session.phone) {
@@ -71,7 +79,8 @@ export async function resolveCustomerForSession(
 }
 
 async function resolveMemberDelegation(
-  client: CustomerClient,
+  memberClient: CustomerMemberClient,
+  customerClient: CustomerClient['customer'],
   session: AuthUser,
 ): Promise<CustomerRecord | null> {
   if (!await isEnabled('feature.customer.operator_member', { userId: session.id })) {
@@ -80,14 +89,14 @@ async function resolveMemberDelegation(
 
   // memberUserId is non-nullable in the schema, so userId is always the authoritative
   // lookup key. Phone-based matching is omitted to prevent SIM-swap privilege escalation.
-  const membership = await client.customerMember!.findFirst({
+  const membership = await memberClient.findFirst({
     where: { memberUserId: session.id, active: true },
     select: { principalCustomerId: true },
   })
 
   if (!membership) return null
 
-  return client.customer.findUnique({
+  return customerClient.findUnique({
     where: { id: membership.principalCustomerId },
     select: customerSessionSelect,
   })

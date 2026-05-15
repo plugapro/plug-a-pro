@@ -274,4 +274,15 @@ describe('resolveCustomerForSession — operator member delegation (flag on)', (
 
     expect(result?.id).toBe('cust_1')
   })
+
+  it('falls back to direct resolution when resolveMemberDelegation throws', async () => {
+    const ownRec = makeCustomerRecord({ userId: 'user_1' })
+    const client = makeClient({ findUniqueResults: [ownRec] })
+    client.customerMember.findFirst.mockRejectedValueOnce(new Error('DB timeout'))
+
+    const result = await resolveCustomerForSession(client as never, makeSession())
+
+    // Despite the delegation error, the member's own customer record is returned
+    expect(result?.id).toBe('cust_1')
+  })
 })
