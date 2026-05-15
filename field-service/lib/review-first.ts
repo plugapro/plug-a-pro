@@ -1351,6 +1351,7 @@ export async function sendRequestToShortlistedProviders(params: {
           },
         })
         pendingCount += 1
+        notifiedCount++
         console.info('[review-first.send] provider_whatsapp_accepted', {
           requestId: request.id,
           requestRef: request.requestRef,
@@ -1980,6 +1981,29 @@ export async function expireRfpInvitations() {
   const requestIds = Array.from(new Set(expired.map((lead) => lead.jobRequestId)))
   for (const requestId of requestIds) {
     await notifyCustomerRfpResponseSummary(requestId).catch(() => undefined)
+  }
+
+  // Retry notification for CUSTOMER_SELECTED leads where the initial send failed
+  const stuckSelected = await db.lead.findMany({
+    where: {
+      assignmentHoldId: null,
+      status: 'CUSTOMER_SELECTED',
+      notifiedAt: null,
+      customerSelectedAt: { lte: new Date(now.getTime() - 5 * 60 * 1000) },
+      jobRequest: { status: 'PROVIDER_CONFIRMATION_PENDING' },
+    },
+    select: { id: true, jobRequestId: true, providerId: true },
+    take: 20,
+  })
+
+  for (const lead of stuckSelected) {
+    const { notifySelectedProvider } = await import('./customer-shortlists')
+    await notifySelectedProvider({ leadId: lead.id }).catch((err) => {
+      console.warn('[expireRfpInvitations] stuck_customer_selected_retry_failed', {
+        leadId: lead.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
   }
 
   return { expiredCount: expired.length }

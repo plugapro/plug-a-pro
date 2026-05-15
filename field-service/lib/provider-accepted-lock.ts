@@ -1063,3 +1063,77 @@ export async function sendAcceptedLockConfirmations(params: {
     provider,
   }
 }
+
+export async function notifyNonSelectedRfpProviders(params: {
+  acceptedLeadId: string
+  traceId?: string
+}): Promise<void> {
+  const acceptedLead = await db.lead.findUnique({
+    where: { id: params.acceptedLeadId },
+    select: { jobRequestId: true, jobRequest: { select: { category: true } } },
+  })
+  if (!acceptedLead) return
+
+  const nonSelectedLeads = await db.lead.findMany({
+    where: {
+      jobRequestId: acceptedLead.jobRequestId,
+      id: { not: params.acceptedLeadId },
+      status: 'EXPIRED',
+      providerResponses: { some: { response: 'INTERESTED' } },
+    },
+    select: {
+      id: true,
+      providerId: true,
+      provider: { select: { phone: true, name: true } },
+    },
+  })
+
+  if (nonSelectedLeads.length === 0) return
+
+  await Promise.allSettled(
+    nonSelectedLeads.map(async (lead) => {
+      const phone = lead.provider.phone?.trim()
+      if (!phone) return
+
+      const idempotencyKey = `rfp_not_selected:${lead.id}`
+      const alreadySent = await db.messageEvent.findFirst({
+        where: { idempotencyKey, status: { in: ['SENT', 'DELIVERED', 'READ'] } },
+        select: { id: true },
+      }).catch(() => null)
+      if (alreadySent) return
+
+      const ref = lead.id.slice(-6).toUpperCase()
+      const firstName = lead.provider.name?.split(' ')[0] ?? 'there'
+      const text = [
+        `Hi ${firstName} 👋`,
+        '',
+        `Thank you for your availability on Ref ${ref} (${acceptedLead.jobRequest.category}).`,
+        'The customer has confirmed another provider for this job.',
+        '',
+        'More opportunities will come your way — keep your availability up to date!',
+      ].join('\n')
+
+      await sendWhatsAppText({
+        to: phone,
+        text,
+        templateName: 'rfp_not_selected_courtesy',
+        metadata: {
+          leadId: lead.id,
+          providerId: lead.providerId,
+          jobRequestId: acceptedLead.jobRequestId,
+          source: 'rfp_not_selected',
+          idempotencyKey,
+          ...(params.traceId ? { traceId: params.traceId } : {}),
+        },
+        recordMessageEvent: true,
+      }).catch((error) => {
+        console.warn('[provider-accepted-lock] rfp_not_selected_notify_failed', {
+          leadId: lead.id,
+          providerId: lead.providerId,
+          error: error instanceof Error ? error.message : String(error),
+          traceId: params.traceId ?? null,
+        })
+      })
+    }),
+  )
+}

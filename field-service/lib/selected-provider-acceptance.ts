@@ -10,6 +10,7 @@ import {
   AcceptedLeadLockError,
   lockAcceptedLeadAfterCreditInTransaction,
   notifyAcceptedLeadLocked,
+  notifyNonSelectedRfpProviders,
 } from './provider-accepted-lock'
 import type { AcceptedLeadLockResult } from './provider-accepted-lock'
 import {
@@ -94,7 +95,9 @@ export async function acceptSelectedProviderJob(params: {
   })
 
   try {
-    let notificationPayload: Parameters<typeof notifyAcceptedLeadLocked>[0] | null = null
+    // Box the payload to prevent TypeScript from narrowing the `let` to `never`
+    // after it is mutated inside the async $transaction callback.
+    const notificationPayloadBox: { value: { leadId: string; providerId: string } | null } = { value: null }
 
     const result = await db.$transaction(async (tx) => {
       const lead = await tx.lead.findUnique({
@@ -169,7 +172,7 @@ export async function acceptSelectedProviderJob(params: {
           promoCreditBalance: creditApplication.promoCreditBalance,
         })
         const { notificationPayload: lockPayload, ...acceptedLockPublic } = acceptedLock
-        notificationPayload = lockPayload ? { leadId: lockPayload.leadId, providerId: lockPayload.providerId } : null
+        notificationPayloadBox.value = lockPayload ? { leadId: lockPayload.leadId, providerId: lockPayload.providerId } : null
         return {
           ok: true as const,
           leadId: lead.id,
@@ -298,7 +301,7 @@ export async function acceptSelectedProviderJob(params: {
         promoCreditBalance: creditApplication.promoCreditBalance,
       })
       const { notificationPayload: lockPayload, ...acceptedLockPublic } = acceptedLock
-      notificationPayload = lockPayload ? { leadId: lockPayload.leadId, providerId: lockPayload.providerId } : null
+      notificationPayloadBox.value = lockPayload ? { leadId: lockPayload.leadId, providerId: lockPayload.providerId } : null
 
       return {
         ok: true as const,
@@ -334,9 +337,22 @@ export async function acceptSelectedProviderJob(params: {
       return result
     }
 
+    const notificationPayload = notificationPayloadBox.value
+
     const notificationSent = notificationPayload
       ? await notifyAcceptedLeadLocked(notificationPayload)
       : false
+
+    // Fire-and-forget: courtesy notification to non-selected INTERESTED providers
+    if (notificationPayload) {
+      notifyNonSelectedRfpProviders({ acceptedLeadId: notificationPayload.leadId, traceId: params.traceId })
+        .catch((error) => {
+          console.warn('[selected-provider-acceptance] rfp_not_selected_notify_error', {
+            leadId: notificationPayload.leadId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+    }
 
     logProviderLeadAction({
       leadId: params.leadId,

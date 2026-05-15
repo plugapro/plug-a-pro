@@ -179,11 +179,9 @@ export async function generateCustomerShortlistForRequest(
   const responses = await db.providerLeadResponse.findMany({
     where: {
       response: 'INTERESTED',
-      callOutFee: { not: null },
-      estimatedArrivalAt: { not: null },
       leadInvite: {
         jobRequestId: requestId,
-        status: { in: ['SENT', 'VIEWED'] },
+        status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
         expiresAt: { gt: new Date() },
       },
       provider: {
@@ -197,7 +195,6 @@ export async function generateCustomerShortlistForRequest(
       provider: true,
     },
     orderBy: [
-      { estimatedArrivalAt: 'asc' },
       { callOutFee: 'asc' },
       { createdAt: 'asc' },
     ],
