@@ -436,7 +436,7 @@ export async function buildAcceptedLeadContactUrl(params: {
   if (resolved.status !== 'active' || !resolved.lead || resolved.lead.id !== params.leadId) {
     return null
   }
-  if (resolved.lead.status !== 'ACCEPTED') return null
+  if (resolved.lead.status !== 'ACCEPTED' && resolved.lead.status !== 'ACCEPTED_LOCKED') return null
 
   const customerPhone = resolved.lead.jobRequest.customer?.phone
   if (!customerPhone) return null
@@ -475,7 +475,7 @@ export async function buildAcceptedLeadContactUrlForProvider(params: {
     },
   })
 
-  if (!lead || lead.provider.phone !== params.providerPhone || lead.status !== 'ACCEPTED') {
+  if (!lead || lead.provider.phone !== params.providerPhone || (lead.status !== 'ACCEPTED' && lead.status !== 'ACCEPTED_LOCKED')) {
     return null
   }
 
