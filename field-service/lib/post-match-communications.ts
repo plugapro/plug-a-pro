@@ -5,7 +5,6 @@ import { AUDIT_ENTITY } from './audit-entities'
 import { getCustomerProviderHandoverUrl } from './customer-provider-handover-access'
 import {
   getProviderSignedJobHandoverUrlByLeadId,
-  providerLeadTokenAllowsScope,
   verifyProviderLeadAccessToken,
 } from './provider-lead-access'
 import { getProviderWalletBalanceReadOnly } from './provider-wallet'
@@ -425,10 +424,7 @@ export async function buildAcceptedLeadContactUrl(params: {
 }) {
   const { resolveProviderLeadAccessToken } = await import('./provider-lead-access')
   const verified = verifyProviderLeadAccessToken(params.token)
-  if (
-    verified.status !== 'active' ||
-    !providerLeadTokenAllowsScope(verified.payload, 'contact_customer')
-  ) {
+  if (verified.status !== 'active') {
     return null
   }
 
