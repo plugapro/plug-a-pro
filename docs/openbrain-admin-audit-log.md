@@ -1,6 +1,6 @@
 # OpenBrain Knowledge Entry — Admin Platform Production-Readiness Audit
 
-**Project:** Plug-A-Pro  
+**Project:** Plug A Pro  
 **Domain:** engineering  
 **Title:** audit — admin platform production-readiness scan (2026-05-06)  
 **Tags:** admin, audit, production-readiness, security, performance, 2026-05-06

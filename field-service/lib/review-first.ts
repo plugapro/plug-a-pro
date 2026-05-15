@@ -1864,6 +1864,17 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
   // it would confuse them to receive "X providers responded" after they've already chosen.
   if (['PROVIDER_CONFIRMATION_PENDING', 'MATCHED', 'CANCELLED', 'EXPIRED'].includes(request.status)) return
 
+  // Dedup: if a summary was sent to this customer in the last 30 seconds, skip.
+  // Prevents burst messages when multiple providers tap "I'm Available" simultaneously.
+  const recentlySummarized = await hasSuccessfulMessageForRecipient({
+    to: request.customer.phone,
+    templateName: 'interactive:rfp_response_summary',
+    metadataPath: ['requestId'],
+    metadataEquals: requestId,
+    since: new Date(Date.now() - 30_000),
+  }).catch(() => false)
+  if (recentlySummarized) return
+
   const total = request.leads.length
   if (total === 0) {
     console.warn('[review-first] notifyCustomerRfpResponseSummary: no active leads found', { requestId })

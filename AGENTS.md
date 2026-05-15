@@ -1,8 +1,8 @@
-# Plug-A-Pro Engineering Instructions
+# Plug A Pro Engineering Instructions
 
 ## Project context
 
-Plug-A-Pro is a mobile-first, WhatsApp-enabled field service marketplace. The platform connects customers with verified service providers and supports booking, lead matching, payments, job execution, and customer communication.
+Plug A Pro is a mobile-first, WhatsApp-enabled field service marketplace. The platform connects customers with verified service providers and supports booking, lead matching, payments, job execution, and customer communication.
 
 The current implementation priority is provider monetisation through a credit wallet system.
 

@@ -858,7 +858,7 @@ pnpm brain -- knowledge add \
 
 ### Current Unlock Rules
 
-- Unlock cost is fixed at 1 Plug-A-Pro Credit through `LEAD_UNLOCK_COST_CREDITS`.
+- Unlock cost is fixed at 1 Plug A Pro Credit through `LEAD_UNLOCK_COST_CREDITS`.
 - KYC approval maps to `Provider.kycStatus === "VERIFIED"`.
 - A provider may unlock only a lead assigned to that provider.
 - If a `Match` already exists for the lead's job request, the unlock must belong to the matched provider.
@@ -1046,7 +1046,7 @@ Pre-unlock provider preview includes service category, suburb/city, preferred ti
 
 ### Product and Accounting Summary
 
-Plug-A-Pro now uses provider-facing **Plug-A-Pro Credits** for paid lead monetisation. The product term is credits, not tokens, because the unit represents a business-priced lead access credit rather than a transferable or speculative token. The current pricing rule is fixed in code as `PLUG_A_PRO_CREDIT_VALUE_CENTS = 5000`, so 1 credit equals R50.
+Plug A Pro now uses provider-facing **Plug A Pro Credits** for paid lead monetisation. The product term is credits, not tokens, because the unit represents a business-priced lead access credit rather than a transferable or speculative token. The current pricing rule is fixed in code as `PLUG_A_PRO_CREDIT_VALUE_CENTS = 5000`, so 1 credit equals R50.
 
 Wallet balances are stored as credits, not Rand values. `ProviderWallet` caches separate `paidCreditBalance` and `promoCreditBalance` values, while immutable `WalletLedgerEntry` rows remain the accounting source of truth. Wallet status supports `ACTIVE`, `SUSPENDED`, and `CLOSED`; suspension blocks lead unlock debits without erasing balances.
 
@@ -1067,7 +1067,7 @@ Implemented model and service references:
 - R100 issues 2 credits, R200 issues 4 credits, and R500 issues 10 credits.
 - Manual EFT intent creation never credits a wallet automatically.
 - Admin reconciliation credits only after funds are confirmed and the `PaymentIntent` is valid.
-- Active lead unlock costs 1 Plug-A-Pro Credit through `LEAD_UNLOCK_COST_CREDITS`.
+- Active lead unlock costs 1 Plug A Pro Credit through `LEAD_UNLOCK_COST_CREDITS`.
 - Providers must have `Provider.kycStatus === "VERIFIED"` before unlocking full customer details.
 - Lead previews do not charge credits and must not expose customer full name, phone, exact address, or attachments.
 - Duplicate unlock attempts by the same provider return the existing unlock without another debit.

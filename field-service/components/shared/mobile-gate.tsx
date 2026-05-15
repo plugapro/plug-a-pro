@@ -81,10 +81,10 @@ export function MobileGate({ children }: { children: React.ReactNode }) {
               Mobile-only platform
             </p>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Please use mobile for Plug-A-Pro
+              Please use mobile for Plug A Pro
             </h1>
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              Plug-A-Pro is designed for phones and tablets. For the best, safer
+              Plug A Pro is designed for phones and tablets. For the best, safer
               experience, open this link on a mobile device.
             </p>
             <p className="mt-6 rounded border border-dashed border-border/70 px-4 py-3 text-xs text-muted-foreground">

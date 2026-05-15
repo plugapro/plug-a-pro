@@ -5,8 +5,8 @@ import { buildMetadata } from '@/lib/metadata'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = buildMetadata({
-  title: 'Plug-A-Pro Public Service Status',
-  description: 'Live visibility into core Plug-A-Pro platform and journey health.',
+  title: 'Plug A Pro Public Service Status',
+  description: 'Live visibility into core Plug A Pro platform and journey health.',
   path: '/status',
 })
 

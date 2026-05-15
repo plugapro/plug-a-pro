@@ -1,14 +1,14 @@
-# Plug-A-Pro – Social Media Account Migration Brief
+# Plug A Pro – Social Media Account Migration Brief
 
 **Prepared for:** AI cowork assistant / technical coordinator helping with the migration
 **Owner:** Lebogang Mafoko (Kgolaentle Holdings)
-**Subject:** Move operational control of Plug-A-Pro social assets from `info@kgolaentle` to `lebogang@kgolaentle.com`
+**Subject:** Move operational control of Plug A Pro social assets from `info@kgolaentle` to `lebogang@kgolaentle.com`
 
 ---
 
 ## 1. Task Introduction
 
-Plug-A-Pro's social presence (Facebook Page, Instagram, Meta Business Suite, WhatsApp Business, ad accounts, pixel, catalogue, and any linked domains) is currently sitting under the `info@kgolaentle` email. We need to move proper ownership and admin control to `lebogang@kgolaentle.com`, which is the correct business owner identity for Kgolaentle Holdings (Reg 2014/077326/07).
+Plug A Pro's social presence (Facebook Page, Instagram, Meta Business Suite, WhatsApp Business, ad accounts, pixel, catalogue, and any linked domains) is currently sitting under the `info@kgolaentle` email. We need to move proper ownership and admin control to `lebogang@kgolaentle.com`, which is the correct business owner identity for Kgolaentle Holdings (Reg 2014/077326/07).
 
 This is not a simple "change the email" job. Think of it more like changing the locks on a shop. We need to cut new keys for the right person, test that they actually open every door, and only then take the old keys back. If we rush this, the business can get locked out of its own page, which would be a real problem for customer communication and any live ads.
 
@@ -20,7 +20,7 @@ The work will mostly happen inside Meta Business Suite, Business Manager, and th
 
 Right now, `info@kgolaentle` is a generic shared inbox. That's risky for a few reasons:
 
-If someone leaves the team, or that mailbox gets compromised, or password recovery emails go to a place no one is watching, the business effectively loses its social media. For a service business like Plug-A-Pro, the Facebook Page and WhatsApp number ARE the front door. Customers find us there, message us there, and trust the brand they see there. Losing that, even for a few days, hurts revenue and reputation.
+If someone leaves the team, or that mailbox gets compromised, or password recovery emails go to a place no one is watching, the business effectively loses its social media. For a service business like Plug A Pro, the Facebook Page and WhatsApp number ARE the front door. Customers find us there, message us there, and trust the brand they see there. Losing that, even for a few days, hurts revenue and reputation.
 
 There's also a governance angle. Meta tracks who legally owns a Business Portfolio. If the registered admin is a generic inbox rather than the business owner, it weakens our position if we ever need to prove ownership during a recovery dispute or business verification. Linking the assets to `lebogang@kgolaentle.com` puts control in the right hands and makes future audits, ad spend approvals, and verifications much smoother.
 
@@ -34,13 +34,13 @@ Before touching anything, we need to take a clear picture of what exists today. 
 
 **Identity and access**
 
-- Does `info@kgolaentle` currently have full admin / "Full control" rights on the Plug-A-Pro Facebook Page, or only Editor / Moderator level?
+- Does `info@kgolaentle` currently have full admin / "Full control" rights on the Plug A Pro Facebook Page, or only Editor / Moderator level?
 - Does `lebogang@kgolaentle.com` already have a Facebook personal profile attached to it? If not, one needs to be created first, because Meta admin roles are tied to a personal profile, not just an email.
-- Is there an existing Meta Business Portfolio (formerly Business Manager) for Kgolaentle / Plug-A-Pro? If yes, who is listed as the Business Admin?
+- Is there an existing Meta Business Portfolio (formerly Business Manager) for Kgolaentle / Plug A Pro? If yes, who is listed as the Business Admin?
 
 **Assets to inventory**
 
-- All Facebook Pages owned or managed (Plug-A-Pro and any sub-brand pages)
+- All Facebook Pages owned or managed (Plug A Pro and any sub-brand pages)
 - Instagram accounts linked to those pages
 - WhatsApp Business account / phone numbers connected to the Page or to a WhatsApp Business API setup
 - Ad accounts, including any with active spend or saved payment methods
@@ -63,7 +63,7 @@ If any of the above is unknown, that itself is the first thing to check before w
 
 When this migration is finished, the picture should look like this:
 
-`lebogang@kgolaentle.com` is set as a Full Control admin on the Plug-A-Pro Facebook Page and as a Business Admin on the Meta Business Portfolio that owns the Page. Lebogang's profile is also the primary recovery contact, with 2FA enabled using an authenticator app (not SMS, where possible).
+`lebogang@kgolaentle.com` is set as a Full Control admin on the Plug A Pro Facebook Page and as a Business Admin on the Meta Business Portfolio that owns the Page. Lebogang's profile is also the primary recovery contact, with 2FA enabled using an authenticator app (not SMS, where possible).
 
 The Instagram account, WhatsApp Business number, ad account, pixel, catalogue, and any verified domains all sit inside the same Business Portfolio and are administered by Lebogang's profile. Payment methods on the ad account are confirmed working and tied to Kgolaentle Holdings.
 
@@ -81,7 +81,7 @@ This is meant to be followed manually inside Meta. Menu names change often, so t
 
 **Phase A: Inventory and prep**
 
-1. List every social asset currently associated with Plug-A-Pro (use Section 3 as your template).
+1. List every social asset currently associated with Plug A Pro (use Section 3 as your template).
 2. Confirm `lebogang@kgolaentle.com` has an active Facebook personal profile. If not, create one. Use the real name and a strong unique password.
 3. Enable 2FA on Lebogang's new profile immediately, before adding any business roles.
 4. Take screenshots of the current admin list for the Page and the Business Portfolio. This is your "before" snapshot — useful if anything goes sideways.
@@ -89,8 +89,8 @@ This is meant to be followed manually inside Meta. Menu names change often, so t
 **Phase B: Add the new admin without removing the old one**
 
 5. From the existing admin account (`info@kgolaentle`), invite `lebogang@kgolaentle.com` to the Business Portfolio as a Business Admin (full access, including finance and pages).
-6. From the same account, add Lebogang as a Full Control admin on the Plug-A-Pro Facebook Page.
-7. If there is no Business Portfolio yet, create one now under Lebogang's profile, and then claim or request access to the Plug-A-Pro Page from inside it. Don't just "add" the Page — claim ownership properly so the Portfolio holds the asset.
+6. From the same account, add Lebogang as a Full Control admin on the Plug A Pro Facebook Page.
+7. If there is no Business Portfolio yet, create one now under Lebogang's profile, and then claim or request access to the Plug A Pro Page from inside it. Don't just "add" the Page — claim ownership properly so the Portfolio holds the asset.
 8. Lebogang accepts the invitations from his account. Check email and Facebook notifications.
 
 **Phase C: Re-link and verify each asset**
@@ -126,7 +126,7 @@ This is meant to be followed manually inside Meta. Menu names change often, so t
 
 The task is considered complete when ALL of these are true:
 
-- `lebogang@kgolaentle.com` can independently administer the Plug-A-Pro Facebook Page, Instagram, WhatsApp Business, ad account, pixel, catalogue, and Business Portfolio without needing `info@kgolaentle` for anything.
+- `lebogang@kgolaentle.com` can independently administer the Plug A Pro Facebook Page, Instagram, WhatsApp Business, ad account, pixel, catalogue, and Business Portfolio without needing `info@kgolaentle` for anything.
 - 2FA is active on Lebogang's profile, ideally via authenticator app.
 - Business Portfolio shows Kgolaentle Holdings' correct legal info and Lebogang as primary contact.
 - Recovery email and recovery phone on the Portfolio are pointing to Lebogang, not the old shared inbox.
@@ -151,7 +151,7 @@ Things that genuinely happen and that we should be ready for:
 
 **The Instagram account is linked but invisible in Business Suite.** This usually means it's connected at Page level only, or it's a personal account that was never converted to a Business or Creator account. Convert it first, then re-link via the Portfolio.
 
-**The WhatsApp Business number is attached to the wrong Portfolio.** Moving WhatsApp Business assets between Portfolios is restricted and may need Meta support. If the number is on a Cloud API setup, this also affects any messaging integrations Plug-A-Pro plans to use later — important for the WhatsApp-first model.
+**The WhatsApp Business number is attached to the wrong Portfolio.** Moving WhatsApp Business assets between Portfolios is restricted and may need Meta support. If the number is on a Cloud API setup, this also affects any messaging integrations Plug A Pro plans to use later — important for the WhatsApp-first model.
 
 **Ad account or payment method cannot be transferred.** Ad accounts can be moved between Portfolios in some cases, but billing thresholds and payment methods sometimes need to be re-added. Capture screenshots of current spend, audiences, and saved cards before moving anything financial.
 
@@ -169,14 +169,14 @@ Use this as the closing record once the migration is done. Fill in the blanks be
 
 ---
 
-> **Plug-A-Pro Social Media Migration – Handover Note**
+> **Plug A Pro Social Media Migration – Handover Note**
 >
 > **Date completed:** _________
 > **Completed by:** _________
 > **Verified by:** Lebogang Mafoko
 >
 > **What was moved**
-> The following Plug-A-Pro social assets were migrated from `info@kgolaentle` administration to `lebogang@kgolaentle.com` administration:
+> The following Plug A Pro social assets were migrated from `info@kgolaentle` administration to `lebogang@kgolaentle.com` administration:
 >
 > - Facebook Page: _________
 > - Instagram account: _________

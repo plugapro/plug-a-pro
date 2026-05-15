@@ -146,7 +146,7 @@ export function buildPaymentIntentCreatedMessage(params: {
     `Account type: ${params.bankAccount.accountType}`,
     '',
     `Use exact reference: ${params.paymentReference}`,
-    'Credits are issued after Plug-A-Pro confirms the payment.',
+    'Credits are issued after Plug A Pro confirms the payment.',
   ])
 }
 
@@ -159,7 +159,7 @@ export function buildPayfastTopUpInitiatedMessage(params: {
   creditsToIssue: number
 }) {
   return compactLines([
-    `Your Plug-A-Pro top-up of ${params.amountFormatted} (${params.creditsToIssue} credits) has been initiated.`,
+    `Your Plug A Pro top-up of ${params.amountFormatted} (${params.creditsToIssue} credits) has been initiated.`,
     'Complete your payment on the checkout page.',
     'Credits will appear in your wallet once Payfast confirms payment.',
     `${PROVIDER_CREDITS_PRICE_LINE} 1 credit is used only when a customer selects you and you accept that selected job.`,
@@ -172,7 +172,7 @@ export function buildPayatTopUpInitiatedMessage(params: {
   paymentLink?: string
 }) {
   return compactLines([
-    'Tap the button below to pay for your Plug-A-Pro wallet top-up.',
+    'Tap the button below to pay for your Plug A Pro wallet top-up.',
     `${params.amountFormatted} = ${params.creditsToIssue} credits.`,
     'You can pay with Pay@ retail cash, QR, or the hosted payment page.',
     'Credits will appear in your wallet once Pay@ confirms payment.',

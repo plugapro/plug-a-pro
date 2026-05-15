@@ -249,7 +249,7 @@ function HeroStatusBanner({
       <div className="relative px-5 py-5 sm:px-6">
         {/* Top row: brand kicker + refresh */}
         <div className="mb-4 flex items-center justify-between">
-          <p className="app-kicker text-muted-foreground/60">Plug-A-Pro · Service Status</p>
+          <p className="app-kicker text-muted-foreground/60">Plug A Pro · Service Status</p>
           <button
             type="button"
             onClick={onRefresh}
@@ -286,7 +286,7 @@ function HeroStatusBanner({
           <span aria-hidden className="hidden sm:inline">·</span>
           <span className="flex items-center gap-1">
             <Bot className="size-3 shrink-0" />
-            Plug-A-Pro Bot
+            Plug A Pro Bot
           </span>
           <span aria-hidden className="hidden sm:inline">·</span>
           <span>Auto-refresh every {AUTO_REFRESH_INTERVAL_S}s</span>

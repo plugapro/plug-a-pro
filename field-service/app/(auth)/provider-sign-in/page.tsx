@@ -47,7 +47,7 @@ function formatPhoneForDisplay(e164: string | undefined) {
 function whatsappHref(message: string) {
   const configured = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER || process.env.NEXT_PUBLIC_WHATSAPP_BUSINESS_NUMBER
   const digits = configured?.replace(/\D/g, '')
-  if (!digits) return `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Plug-A-Pro sign-in help')}`
+  if (!digits) return `mailto:support@plugapro.co.za?subject=${encodeURIComponent('Plug A Pro sign-in help')}`
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`
 }
 

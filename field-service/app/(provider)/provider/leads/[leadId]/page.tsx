@@ -359,7 +359,7 @@ export default async function LeadDetailPage({
 
         {resolvedSearchParams.dispute === 'submitted' && (
           <AlertCallout tone="success">
-            Refund dispute submitted. Plug-A-Pro will review it before any credits are refunded.
+            Refund dispute submitted. Plug A Pro will review it before any credits are refunded.
           </AlertCallout>
         )}
 

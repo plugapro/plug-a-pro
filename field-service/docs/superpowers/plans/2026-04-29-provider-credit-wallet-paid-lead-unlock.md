@@ -2,7 +2,7 @@
 
 > **For agentic workers:** This plan is the implementation-grade reference for the shipped provider credit wallet pilot. The earlier spec in `../specs/2026-04-29-provider-credit-wallet-paid-lead-unlock-map.md` preserves planning history; its sections 7-10 are superseded by this plan and the implementation snapshot.
 
-**Goal:** Operate Plug-A-Pro Credits as the provider-facing paid-lead currency, with manual EFT top-ups, admin reconciliation, promo rewards, paid lead unlocks, refunds/disputes, notification hooks, and preview-safe lead access.
+**Goal:** Operate Plug A Pro Credits as the provider-facing paid-lead currency, with manual EFT top-ups, admin reconciliation, promo rewards, paid lead unlocks, refunds/disputes, notification hooks, and preview-safe lead access.
 
 **Architecture:** Wallet balance changes are centralized in `lib/provider-wallet.ts`. Money-moving admin actions use `crudAction()` for DB-backed role checks and atomic dual audit rows. Provider lead unlocks debit credits and create `LeadUnlock` records in one transaction. Manual EFT provider top-ups are represented by `PaymentIntent` rows and only credit wallets after admin reconciliation. Lead preview data is gated at the query layer before unlock.
 
@@ -38,7 +38,7 @@
 
 ## Canonical Business Rules
 
-- 1 Plug-A-Pro Credit = R50 via `PLUG_A_PRO_CREDIT_VALUE_CENTS = 5_000`.
+- 1 Plug A Pro Credit = R50 via `PLUG_A_PRO_CREDIT_VALUE_CENTS = 5_000`.
 - Minimum manual EFT top-up is R100 via `MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000`.
 - Lead unlock cost is fixed at 1 credit via `LEAD_UNLOCK_COST_CREDITS = 1`.
 - Manual EFT intent creation never credits the wallet.

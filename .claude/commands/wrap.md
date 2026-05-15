@@ -14,11 +14,11 @@ Follow these steps exactly:
 
 4. **OpenBrain log** — check for an existing entry within 7 days first:
    ```
-   cd "/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend" && pnpm brain -- knowledge list --project "Plug-A-Pro"
+   cd "/Users/shimane/Library/CloudStorage/Dropbox/KgolaEntle Holdings/Solutions/Projects/MobileApps/OpenBrain/backend" && pnpm brain -- knowledge list --project "Plug A Pro"
    ```
    If a related entry exists, update it (add a `## <date>` section). Otherwise create a new one:
    ```
-   pnpm brain -- knowledge add --project "Plug-A-Pro" --domain "engineering" \
+   pnpm brain -- knowledge add --project "Plug A Pro" --domain "engineering" \
      --title "<type> — <summary> (YYYY-MM-DD)" \
      --tags "<relevant tags>" \
      --content "<structured log>"

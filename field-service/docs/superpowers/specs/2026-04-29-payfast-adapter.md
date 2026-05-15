@@ -9,7 +9,7 @@
 
 ## 1. Scope
 
-The Payfast adapter (`lib/payfast.ts`) is the single point of contact between Plug-A-Pro and the Payfast payment gateway. It has no knowledge of the provider wallet, ledger, or any other internal domain. Every other module that touches Payfast calls this module's exported functions and must not replicate its logic.
+The Payfast adapter (`lib/payfast.ts`) is the single point of contact between Plug A Pro and the Payfast payment gateway. It has no knowledge of the provider wallet, ledger, or any other internal domain. Every other module that touches Payfast calls this module's exported functions and must not replicate its logic.
 
 **What it handles:**
 - Checkout payload construction (fields + MD5 signature)

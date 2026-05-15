@@ -19,7 +19,7 @@ const TOP_UP_OPTIONS = TOP_UP_AMOUNTS_CENTS.map((amountCents) => ({
 
 function whatsAppShareUrl(paymentLink: string) {
   // WhatsApp sharing opens with the Pay@ link ready for the provider to send.
-  const message = `Tap here to pay for your Plug-A-Pro wallet top-up: ${paymentLink}`
+  const message = `Tap here to pay for your Plug A Pro wallet top-up: ${paymentLink}`
   return `https://wa.me/?text=${encodeURIComponent(message)}`
 }
 

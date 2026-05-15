@@ -35,7 +35,7 @@ export function buildMetadata(overrides: {
 }): Metadata {
   const title = overrides.title
     ? `${overrides.title} | ${siteConfig.name}`
-    : siteConfig.name;
+    : `${siteConfig.name} | ${siteConfig.tagline}`;
 
   return {
     metadataBase: new URL(siteConfig.url),

@@ -314,7 +314,7 @@ export const TEMPLATES = {
     // {{1}} amount, {{2}} credits, {{3}} account name, {{4}} bank, {{5}} account number,
     // {{6}} branch code, {{7}} account type, {{8}} payment reference
     example:
-      'Plug A Pro provider credits top-up created: {{1}} = {{2}} credits. EFT to {{3}}, {{4}}, account {{5}}, branch {{6}}, {{7}}. Use exact reference: {{8}}. Credits are issued after Plug-A-Pro confirms the payment.',
+      'Plug A Pro provider credits top-up created: {{1}} = {{2}} credits. EFT to {{3}}, {{4}}, account {{5}}, branch {{6}}, {{7}}. Use exact reference: {{8}}. Credits are issued after Plug A Pro confirms the payment.',
   },
 
   wallet_payment_credited: {
@@ -335,7 +335,7 @@ export const TEMPLATES = {
     // {{1}} amount formatted (e.g. "R100.00"), {{2}} credits to issue
     // NOTE: WhatsApp template approval required before live sends succeed.
     example:
-      'Your Plug-A-Pro top-up of {{1}} ({{2}} credits) has been initiated. Complete your payment on the checkout page. Credits will appear in your wallet once Payfast confirms payment.',
+      'Your Plug A Pro top-up of {{1}} ({{2}} credits) has been initiated. Complete your payment on the checkout page. Credits will appear in your wallet once Payfast confirms payment.',
   },
 
   wallet_payat_topup_initiated: {
@@ -347,7 +347,7 @@ export const TEMPLATES = {
     // button (url, index 0): Pay@ payment URL
     // NOTE: WhatsApp template approval required before live sends succeed.
     example:
-      'Tap the button below to pay for your Plug-A-Pro wallet top-up. {{1}} = {{2}} credits. Credits will appear in your wallet once Pay@ confirms payment.',
+      'Tap the button below to pay for your Plug A Pro wallet top-up. {{1}} = {{2}} credits. Credits will appear in your wallet once Pay@ confirms payment.',
   },
 
   lead_unlock_provider: {

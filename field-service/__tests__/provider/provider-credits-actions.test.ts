@@ -42,7 +42,7 @@ vi.mock('../../lib/provider-credit-payment-intents', () => ({
 describe('provider credits server actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug-A-Pro Holdings')
+    vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NAME', 'Plug A Pro Holdings')
     vi.stubEnv('PROVIDER_CREDIT_EFT_BANK_NAME', 'Pilot Bank')
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_NUMBER', '123456789')
     vi.stubEnv('PROVIDER_CREDIT_EFT_BRANCH_CODE', '250655')
@@ -155,7 +155,7 @@ describe('provider credits server actions', () => {
         paymentReference: 'PAP-7842-9F3K',
         expiresAt: new Date('2026-05-06T12:00:00.000Z'),
         bankAccount: {
-          accountName: 'Plug-A-Pro Holdings',
+          accountName: 'Plug A Pro Holdings',
           bankName: 'Pilot Bank',
           accountNumber: '123456789',
           branchCode: '250655',
@@ -195,7 +195,7 @@ describe('provider credits server actions', () => {
         paymentReference: 'PAP-7842-9F3K',
         expiresAt: null,
         bankAccount: {
-          accountName: 'Plug-A-Pro Holdings',
+          accountName: 'Plug A Pro Holdings',
           bankName: 'Pilot Bank',
           accountNumber: '123456789',
           branchCode: '250655',
