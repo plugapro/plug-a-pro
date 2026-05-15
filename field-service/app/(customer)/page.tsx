@@ -11,7 +11,6 @@ import { db } from '@/lib/db'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { buildMetadata } from '@/lib/metadata'
 import { AppLogo } from '@/components/shared/app-logo'
-import { Wordmark } from '@/components/shared/wordmark'
 import { SectionLabel } from '@/components/ui/section-label'
 import { AreaSelector } from '@/components/customer/AreaSelector'
 import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
@@ -268,7 +267,6 @@ export default async function CustomerHomePage({
       {/* ── Header strip ─────────────────────────────────────────────── */}
       <div className="relative flex items-center gap-2.5 px-[18px] pt-[60px] pb-1.5">
         <AppLogo href="/" compact className="h-8" priority />
-        <Wordmark size={13} />
         <div className="flex-1" />
         <Link
           href="/profile"
