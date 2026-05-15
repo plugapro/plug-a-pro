@@ -4,7 +4,7 @@ import Link from 'next/link'
 import {
   Droplets, Hammer, Zap, Paintbrush, Sparkles, Wrench,
   Flame, Tv2, Bell, ArrowRight, ShieldCheck, Search,
-  MapPin, Check, Star,
+  Check,
 } from 'lucide-react'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -14,7 +14,6 @@ import { AppLogo } from '@/components/shared/app-logo'
 import { Wordmark } from '@/components/shared/wordmark'
 import { SectionLabel } from '@/components/ui/section-label'
 import { AreaSelector } from '@/components/customer/AreaSelector'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
 export const metadata = buildMetadata({
   title: 'Find trusted service providers near you',
@@ -32,18 +31,6 @@ const CATEGORIES = [
   { label: 'Gas & Geyser', tag: 'plumbing',    icon: Flame,       hue: '#E5484D', q: 'geyser' },
 ] as const
 
-const CATEGORY_HUES: Record<string, string> = {
-  plumbing: '#2A78F0',
-  electrical: '#FFC22B',
-  handyman: '#8B3FE8',
-  carpentry: '#C8854D',
-  painting: '#FF1F8E',
-  cleaning: '#0FA28A',
-  appliances: '#5B5B66',
-  gas: '#E5484D',
-}
-
-const CATEGORY_LABELS = new Map(SERVICE_CATEGORY_OPTIONS.map(o => [o.tag, o.label]))
 
 function categoryHref(tag: string, area?: string, q?: string) {
   const params = new URLSearchParams()
@@ -54,130 +41,6 @@ function categoryHref(tag: string, area?: string, q?: string) {
 }
 
 // Inline provider card for "Top rated near you" section
-function HomeProviderCard({ p }: { p: {
-  id: string; name: string; avatarUrl: string | null; averageRating: number | null
-  completedJobsCount: number; verified: boolean; availableNow: boolean
-  serviceAreas: string[]; experience: string | null
-  providerCategories: { categorySlug: string; subServices: string[] }[]
-  providerRates: { callOutFee: number | null; rateNegotiable: boolean }[]
-} }) {
-  const tone = CATEGORY_HUES[p.providerCategories[0]?.categorySlug ?? ''] ?? '#8B3FE8'
-  const initials = p.name.split(' ').map(s => s[0]).slice(0, 2).join('')
-  const rating = p.averageRating ? Number(p.averageRating).toFixed(1) : null
-  const serviceArea = p.serviceAreas[0] ?? null
-  const chips = (p.providerCategories[0]?.subServices ?? []).slice(0, 4)
-  const rate = p.providerRates[0]
-
-  return (
-    <Link
-      href={`/providers/${p.id}`}
-      className="block press-feedback"
-      style={{
-        background: 'var(--card)',
-        borderRadius: 24,
-        boxShadow: 'inset 0 0 0 1px var(--border)',
-        padding: 14,
-      }}
-    >
-      {/* Top row */}
-      <div style={{ display: 'flex', gap: 12 }}>
-        {/* Avatar */}
-        <div style={{
-          width: 52, height: 52, borderRadius: 14, flexShrink: 0,
-          background: `linear-gradient(135deg, ${tone}, #8B3FE8)`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden',
-        }}>
-          {p.avatarUrl
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={p.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <span style={{ color: '#fff', fontWeight: 700, fontSize: 17, letterSpacing: 0.3 }}>{initials}</span>
-          }
-        </div>
-
-        {/* Name + signals */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{
-              flex: 1, minWidth: 0,
-              fontWeight: 700, fontSize: 15, letterSpacing: -0.2,
-              color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>{p.name}</span>
-            {p.verified && (
-              <span style={{
-                width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-                background: 'var(--brand-gradient-soft)',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Check size={10} style={{ color: 'var(--brand-purple)', strokeWidth: 2.6 }} />
-              </span>
-            )}
-          </div>
-
-          {rating && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-              <Star size={13} style={{ fill: '#F5B400', color: '#F5B400' }} />
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>{rating}</span>
-              <span style={{ fontSize: 12.5, color: 'var(--ink-mute)', fontWeight: 500 }}>· {p.completedJobsCount} jobs</span>
-            </div>
-          )}
-
-          {(serviceArea || p.experience) && (
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3,
-              fontSize: 12, color: 'var(--ink-mute)',
-            }}>
-              <MapPin size={12} style={{ color: 'var(--brand-purple)', flexShrink: 0 }} />
-              {serviceArea}{serviceArea && p.experience ? ` · ${p.experience}` : p.experience}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Service chips */}
-      {chips.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-          {chips.map(c => (
-            <span key={c} style={{
-              height: 26, padding: '0 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
-              background: 'var(--brand-gradient-soft)', color: 'var(--brand-purple)',
-              display: 'inline-flex', alignItems: 'center',
-            }}>{c}</span>
-          ))}
-        </div>
-      )}
-
-      {/* Divider + pricing/availability */}
-      <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          {rate?.callOutFee != null ? (
-            <>
-              <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>Call-out from </span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', letterSpacing: -0.2 }}>R{rate.callOutFee}</span>
-              {rate.rateNegotiable && <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}> · rate negotiable</span>}
-            </>
-          ) : (
-            <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>Call-out on request</span>
-          )}
-        </div>
-        <span style={{
-          height: 26, padding: '0 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          ...(p.availableNow
-            ? { background: 'rgba(15,157,88,0.10)', color: '#0F7A45' }
-            : { background: 'rgba(230,153,0,0.10)', color: '#A66400' }
-          ),
-        }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-            background: p.availableNow ? '#0F9D58' : '#E69900',
-          }} />
-          {p.availableNow ? 'Available now' : 'Busy today'}
-        </span>
-      </div>
-    </Link>
-  )
-}
 
 export default async function CustomerHomePage({
   searchParams,
@@ -189,60 +52,26 @@ export default async function CustomerHomePage({
   let customer: { id: string; name: string | null } | null = null
   let provider: { id: string; name: string | null } | null = null
 
-  const [sessionData, featuredProviders] = await Promise.all([
-    (async () => {
-      if (!session) return { customer: null, provider: null }
-      try {
-        const [c, p] = await Promise.all([
-          resolveCustomerForSession(db, session),
-          db.provider.findFirst({
-            where: {
-              OR: [
-                { userId: session.id },
-                ...(session.phone ? [{ phone: session.phone }] : []),
-              ],
-            },
-            select: { id: true, name: true },
-          }),
-        ])
-        return { customer: c ? { id: c.id, name: c.name ?? null } : null, provider: p }
-      } catch {
-        return { customer: null, provider: null }
-      }
-    })(),
-    db.provider.findMany({
-      where: {
-        active: true,
-        verified: true,
-        status: 'ACTIVE',
-        ...(area ? { serviceAreas: { has: area } } : {}),
-      },
-      orderBy: [{ averageRating: 'desc' }, { completedJobsCount: 'desc' }],
-      take: 2,
-      select: {
-        id: true,
-        name: true,
-        avatarUrl: true,
-        averageRating: true,
-        completedJobsCount: true,
-        verified: true,
-        availableNow: true,
-        serviceAreas: true,
-        experience: true,
-        providerCategories: {
-          where: { approvalStatus: 'APPROVED' },
-          orderBy: { categorySlug: 'asc' },
-          take: 1,
-          select: { categorySlug: true, subServices: true },
-        },
-        providerRates: {
-          orderBy: { categorySlug: 'asc' },
-          take: 1,
-          select: { callOutFee: true, rateNegotiable: true },
-        },
-      },
-    }),
-  ])
+  const sessionData = await (async () => {
+    if (!session) return { customer: null, provider: null }
+    try {
+      const [c, p] = await Promise.all([
+        resolveCustomerForSession(db, session),
+        db.provider.findFirst({
+          where: {
+            OR: [
+              { userId: session.id },
+              ...(session.phone ? [{ phone: session.phone }] : []),
+            ],
+          },
+          select: { id: true, name: true },
+        }),
+      ])
+      return { customer: c ? { id: c.id, name: c.name ?? null } : null, provider: p }
+    } catch {
+      return { customer: null, provider: null }
+    }
+  })()
 
   customer = sessionData.customer
   provider = sessionData.provider
@@ -251,10 +80,6 @@ export default async function CustomerHomePage({
   const hasProviderRole = Boolean(provider) || session?.role === 'provider'
   const hasCustomerRole = Boolean(customer) || session?.role === 'customer'
   const firstName = (customer?.name || provider?.name || '').split(' ')[0]
-
-  const areaLabel = area
-    ? area.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-    : null
 
   return (
     <div className="relative screen-enter">
@@ -376,37 +201,6 @@ export default async function CustomerHomePage({
           })}
         </div>
       </div>
-
-      {/* ── Top rated near you ───────────────────────────────────────── */}
-      {featuredProviders.length > 0 && (
-        <div className="px-[18px] pt-5 pb-1">
-          <SectionLabel
-            action={
-              <Link
-                href={area ? `/providers?area=${encodeURIComponent(area)}` : '/providers'}
-                className="text-[13px] font-semibold"
-                style={{ color: 'var(--brand-purple)' }}
-              >
-                See all
-              </Link>
-            }
-          >
-            {areaLabel ? `Top rated near ${areaLabel}` : 'Top rated near you'}
-          </SectionLabel>
-          <div className="space-y-3">
-            {featuredProviders.map(p => (
-              <HomeProviderCard key={p.id} p={{
-                ...p,
-                averageRating: p.averageRating ? Number(p.averageRating) : null,
-                providerRates: p.providerRates.map(r => ({
-                  callOutFee: r.callOutFee ? Number(r.callOutFee) : null,
-                  rateNegotiable: r.rateNegotiable,
-                })),
-              }} />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ── How it works ─────────────────────────────────────────────── */}
       <div className="px-[18px] pt-5 pb-1">
