@@ -107,6 +107,7 @@ function FilterPill({
   return (
     <Link
       href={href}
+      aria-current={active ? 'page' : undefined}
       className={cn(
         'shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap',
         active
@@ -314,7 +315,7 @@ export default async function CustomerBookingsPage({
                                    className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
                           ) : providerName ? (
                             <div className="w-7 h-7 rounded-[8px] shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
-                                 style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}>
+                                 style={{ background: 'var(--brand-gradient, linear-gradient(135deg, #8B3FE8, #2A78F0))' }}>
                               {providerName.trim().split(/\s+/).slice(0, 2).map((p: string) => p[0]).join('').toUpperCase()}
                             </div>
                           ) : null}
@@ -384,7 +385,7 @@ export default async function CustomerBookingsPage({
                                    className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
                           ) : providerName ? (
                             <div className="w-7 h-7 rounded-[8px] shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
-                                 style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}>
+                                 style={{ background: 'var(--brand-gradient, linear-gradient(135deg, #8B3FE8, #2A78F0))' }}>
                               {providerName.trim().split(/\s+/).slice(0, 2).map((p: string) => p[0]).join('').toUpperCase()}
                             </div>
                           ) : null}

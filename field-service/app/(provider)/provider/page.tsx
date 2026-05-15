@@ -3,8 +3,6 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import {
   Briefcase,
@@ -13,7 +11,6 @@ import {
   Coins,
   Inbox,
   ListChecks,
-  LogOut,
   MapPin,
   Sparkles,
   Star,
@@ -24,6 +21,7 @@ import {
   Zap,
   Calendar,
 } from 'lucide-react'
+import { ProviderSignOutButton } from '@/components/provider/ProviderSignOutButton'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
@@ -40,13 +38,6 @@ import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { calculateProviderProfileCompleteness } from '@/lib/provider-pwa-dashboard'
 
 export const metadata = buildMetadata({ title: 'Provider Home', noIndex: true })
-
-async function handleSignOut() {
-  'use server'
-  const cookieStore = await cookies()
-  cookieStore.delete('sb-access-token')
-  redirect('/provider-sign-in')
-}
 
 async function toggleAvailability() {
   'use server'
@@ -226,7 +217,7 @@ export default async function ProviderHomePage() {
   const lowOnCredits = walletBalance.totalCreditBalance <= 1
   const profileIncomplete = profileCompleteness.percentage < 80
   const firstName = provider.name?.split(' ')[0] ?? 'there'
-  const rating = provider.averageRating ? Number(provider.averageRating).toFixed(1) : '—'
+  const rating = provider.averageRating !== null ? Number(provider.averageRating).toFixed(1) : '—'
 
   return (
     <div className="pb-6 screen-enter">
@@ -236,15 +227,7 @@ export default async function ProviderHomePage() {
         <div className="flex items-center mb-4">
           <AppLogo href="/provider" compact className="h-[26px]" priority />
           <div className="flex-1" />
-          <form action={handleSignOut}>
-            <button
-              type="submit"
-              aria-label="Sign out"
-              className="flex items-center justify-center w-9 h-9 rounded-[12px] bg-card shadow-[inset_0_0_0_1px_var(--border)] text-[var(--ink-mute)] hover:text-[var(--danger)] transition-colors"
-            >
-              <LogOut size={16} />
-            </button>
-          </form>
+          <ProviderSignOutButton />
         </div>
         <p className="text-[11px] font-bold tracking-[0.085em] uppercase text-[var(--brand-purple)] mb-1">
           Provider portal

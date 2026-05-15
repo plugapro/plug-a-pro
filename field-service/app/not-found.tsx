@@ -26,7 +26,7 @@ export default function NotFound() {
           <div
             className="w-[56px] h-[56px] rounded-[18px] flex items-center justify-center"
             style={{
-              background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)',
+              background: 'var(--brand-gradient, linear-gradient(135deg, #8B3FE8, #2A78F0))',
               boxShadow: '0 8px 24px rgba(139,63,232,0.35)',
             }}
           >
@@ -65,6 +65,7 @@ export default function NotFound() {
           href={WA_HREF}
           target="_blank"
           rel="noopener noreferrer"
+          aria-label="Report this broken link"
           className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold"
           style={{
             background: 'var(--card-alt)',

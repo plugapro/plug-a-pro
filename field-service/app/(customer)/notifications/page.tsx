@@ -40,7 +40,7 @@ export default async function NotificationsPage() {
           <div
             className="w-[56px] h-[56px] rounded-[18px] flex items-center justify-center"
             style={{
-              background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)',
+              background: 'var(--brand-gradient, linear-gradient(135deg, #8B3FE8, #2A78F0))',
               boxShadow: '0 8px 24px rgba(139,63,232,0.30)',
             }}
           >

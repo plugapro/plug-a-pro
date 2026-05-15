@@ -85,7 +85,7 @@ export default function Error({
         <button
           onClick={reset}
           className="h-[52px] rounded-[14px] flex items-center justify-center text-[15px] font-semibold text-white"
-          style={{ background: 'linear-gradient(135deg, #8B3FE8, #2A78F0)' }}
+          style={{ background: 'var(--brand-gradient, linear-gradient(135deg, #8B3FE8, #2A78F0))' }}
         >
           Try again
         </button>
