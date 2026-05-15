@@ -48,15 +48,16 @@ let _degradedNotice = false
 
 function getRedis(): Redis | null {
   if (_redis) return _redis
-  // Accept the canonical Upstash env var names AND the names Vercel's
-  // Marketplace Upstash Redis integration injects (KV_REST_API_URL /
-  // KV_REST_API_TOKEN). This keeps the integration "click-and-go" without
-  // requiring manual env var aliases.
+  // Accept canonical Upstash names, the names Vercel's Marketplace integration
+  // injects (KV_REST_API_*), and the names the Vercel Upstash-for-Redis
+  // integration injects (UPSTASH_REDIS_KV_REST_API_*).
   const url =
     process.env.UPSTASH_REDIS_REST_URL ??
+    process.env.UPSTASH_REDIS_KV_REST_API_URL ??
     process.env.KV_REST_API_URL
   const token =
     process.env.UPSTASH_REDIS_REST_TOKEN ??
+    process.env.UPSTASH_REDIS_KV_REST_API_TOKEN ??
     process.env.KV_REST_API_TOKEN
   if (!url || !token) {
     if (!_degradedNotice) {
