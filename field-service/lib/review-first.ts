@@ -1370,7 +1370,7 @@ export async function sendRequestToShortlistedProviders(params: {
             `📌 *${request.category}* in *${area || 'your area'}*`,
             preferredTime ? `Preferred time: *${preferredTime}*` : null,
             '',
-            'Tap *Accept Lead* to confirm this job (uses 1 credit = R50). Full customer details unlock after acceptance.',
+            "Tap *I'm Available* if you can take this job. The customer reviews all responses and picks a provider — if selected, you'll get a confirmation here and full details unlock. Accepting uses 1 credit.",
           ].filter(Boolean).join('\n')
           sendButtons(
             providerPhone,
@@ -1835,6 +1835,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
     where: { id: requestId },
     select: {
       id: true,
+      status: true,
       customer: { select: { phone: true } },
       leads: {
         where: {
@@ -1859,6 +1860,9 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
     },
   })
   if (!request?.customer?.phone) return
+  // Don't send a summary if the customer has already progressed past the selection step —
+  // it would confuse them to receive "X providers responded" after they've already chosen.
+  if (['PROVIDER_CONFIRMATION_PENDING', 'MATCHED', 'CANCELLED', 'EXPIRED'].includes(request.status)) return
 
   const total = request.leads.length
   if (total === 0) {
@@ -1911,6 +1915,23 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
       metadata: { requestId: request.id, responded, total, available: available.length },
     },
   ).catch(() => undefined)
+
+  if (available.length > 0) {
+    const url = await getJobRequestAccessUrl(requestId, 'shortlist').catch(() => null)
+    if (url?.startsWith('https://')) {
+      await sendCtaUrl(
+        request.customer.phone,
+        'Tap to review and select your provider.',
+        ctaLabelFor('view_request'),
+        url,
+        undefined,
+        {
+          templateName: 'interactive:rfp_response_summary_cta',
+          metadata: { requestId: request.id, responded, total },
+        },
+      ).catch(() => undefined)
+    }
+  }
 }
 
 export async function expireRfpInvitations() {

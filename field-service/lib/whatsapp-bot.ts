@@ -1054,7 +1054,7 @@ async function processInboundMessageUnlocked(
       const leadId = reply.id.slice('ops_decline:'.length)
       await sendButtons(
         phone,
-        '❌ *Decline Lead*\n\nWhy are you declining?',
+        '❌ *Not Available*\n\nWhat\'s the reason?',
         [
           { id: `ops_hd_unavail:${leadId}`, title: '📅 Not available' },
           { id: `ops_hd_toofar:${leadId}`, title: '📍 Too far' },
@@ -3186,12 +3186,18 @@ async function handleRfpLeadInterest(
     (await db.providerRate.findFirst({
       where: { providerId, categorySlug },
       select: { callOutFee: true, rateNegotiable: true },
-    }).catch(() => null)) ??
+    }).catch((err) => {
+      console.warn('[whatsapp-bot] rfp_interest: providerRate_fetch_failed', { traceId, leadId, providerId, error: err instanceof Error ? err.message : String(err) })
+      return null
+    })) ??
     (await db.providerRate.findFirst({
       where: { providerId },
       orderBy: { updatedAt: 'desc' },
       select: { callOutFee: true, rateNegotiable: true },
-    }).catch(() => null))
+    }).catch((err) => {
+      console.warn('[whatsapp-bot] rfp_interest: providerRate_fallback_fetch_failed', { traceId, leadId, providerId, error: err instanceof Error ? err.message : String(err) })
+      return null
+    }))
 
   const idempotencyKey = `rfp_interest:${leadId}:${providerId}`
   let alreadyRegistered = false
@@ -3228,6 +3234,7 @@ async function handleRfpLeadInterest(
   } catch (err) {
     if ((err as { code?: string }).code === 'P2002') {
       // Unique constraint on idempotencyKey — concurrent tap already handled
+      console.info('[whatsapp-bot] rfp_interest: concurrent_tap_deduped', { traceId, leadId, providerId })
       alreadyRegistered = true
     } else {
       console.error('[whatsapp-bot] rfp_interest: transaction failed', {
@@ -3287,9 +3294,40 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
   }
 
   try {
+    // RFP leads (no assignmentHold) are not reachable via rejectAssignmentOffer, so
+    // declineLead silently no-ops and returns alreadyClosed for INTERESTED/SENT/VIEWED.
+    // Load the lead and handle pre-customer-selection RFP leads with a direct update.
+    const lead = await db.lead.findUnique({
+      where: { id: leadId },
+      select: { id: true, status: true, providerId: true, assignmentHoldId: true },
+    })
+
+    if (!lead || lead.providerId !== provider.id) {
+      await sendText(phone, '⚠️ This lead could not be found or is not assigned to your account.')
+      return
+    }
+
+    const rfpOpenStatuses = ['SHORTLISTED', 'SEND_PENDING', 'SENT', 'VIEWED', 'INTERESTED'] as const
+    if (
+      rfpOpenStatuses.includes(lead.status as (typeof rfpOpenStatuses)[number]) &&
+      !lead.assignmentHoldId
+    ) {
+      const now = new Date()
+      await db.lead.updateMany({
+        where: { id: leadId, providerId: provider.id, status: { in: [...rfpOpenStatuses] } },
+        data: { status: 'DECLINED', respondedAt: now, declinedAt: now },
+      })
+      await sendText(phone, `Understood — noted as unavailable (${reason}). You'll receive new job notifications as they arise.`)
+      console.info('[whatsapp-bot] ops_decline: rfp_lead_declined', {
+        traceId, leadId, providerId: provider.id, reason, prevStatus: lead.status,
+      })
+      return
+    }
+
+    // Standard path: customer-selected or assignment-hold (auto-assign v2) leads
     const { declineLead } = await import('./matching-engine')
     await declineLead({ leadId, providerId: provider.id })
-    await sendText(phone, `Understood — lead passed (${reason}). New leads will come through as jobs arise.`)
+    await sendText(phone, `Understood — noted as unavailable (${reason}). You'll receive new job notifications as they arise.`)
     console.info('[whatsapp-bot] ops_decline: lead declined', { traceId, leadId, providerId: provider.id, reason })
   } catch (error) {
     console.error('[whatsapp-bot] ops_decline: unexpected failure', {
