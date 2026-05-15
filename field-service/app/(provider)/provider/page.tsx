@@ -3,6 +3,9 @@
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { revalidatePath } from 'next/cache'
 import {
   Briefcase,
   CheckCircle2,
@@ -10,10 +13,16 @@ import {
   Coins,
   Inbox,
   ListChecks,
+  LogOut,
+  MapPin,
   Sparkles,
-  Wallet,
+  Star,
+  ToggleLeft,
   ToggleRight,
+  Wallet,
   ArrowRight,
+  Zap,
+  Calendar,
 } from 'lucide-react'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
@@ -31,6 +40,46 @@ import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { calculateProviderProfileCompleteness } from '@/lib/provider-pwa-dashboard'
 
 export const metadata = buildMetadata({ title: 'Provider Home', noIndex: true })
+
+async function handleSignOut() {
+  'use server'
+  const cookieStore = await cookies()
+  cookieStore.delete('sb-access-token')
+  redirect('/provider-sign-in')
+}
+
+async function toggleAvailability() {
+  'use server'
+  const session = await requireProvider()
+  const provider = await db.provider.findUnique({ where: { userId: session.id }, select: { id: true, availableNow: true } })
+  if (!provider) return
+  await db.provider.update({
+    where: { id: provider.id },
+    data: { availableNow: !provider.availableNow },
+  })
+  revalidatePath('/provider')
+}
+
+function UrgencyChip({ urgency }: { urgency: string | null }) {
+  if (!urgency) return null
+  const map: Record<string, { label: string; hue: string }> = {
+    asap:      { label: 'Emergency', hue: '#E5484D' },
+    this_week: { label: 'This week',  hue: '#FFC22B' },
+    flexible:  { label: 'Flexible',   hue: '#0FA28A' },
+  }
+  const config = map[urgency]
+  if (!config) return null
+  return (
+    <span
+      className="inline-flex items-center gap-1 h-[20px] px-2 rounded-full text-[11px] font-semibold"
+      style={{ background: `${config.hue}18`, color: config.hue }}
+    >
+      {urgency === 'asap' && <Zap size={10} aria-hidden />}
+      {urgency === 'flexible' && <Calendar size={10} aria-hidden />}
+      {config.label}
+    </span>
+  )
+}
 
 export default async function ProviderHomePage() {
   const session = await requireProvider()
@@ -92,6 +141,7 @@ export default async function ProviderHomePage() {
     pendingOpportunitiesCount,
     selectedPendingCount,
     walletBalance,
+    pendingLeads,
   ] = await Promise.all([
     db.job.findMany({
       where: {
@@ -137,6 +187,26 @@ export default async function ProviderHomePage() {
       },
     }),
     getProviderWalletBalance(provider.id),
+    db.lead.findMany({
+      where: {
+        providerId: provider.id,
+        status: { in: ['SENT', 'VIEWED'] },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: {
+        id: true,
+        status: true,
+        jobRequest: {
+          select: {
+            category: true,
+            urgency: true,
+            address: { select: { suburb: true } },
+          },
+        },
+      },
+      orderBy: { sentAt: 'desc' },
+      take: 3,
+    }),
   ])
 
   const termsUrl = getProviderTermsUrl()
@@ -156,21 +226,27 @@ export default async function ProviderHomePage() {
   const lowOnCredits = walletBalance.totalCreditBalance <= 1
   const profileIncomplete = profileCompleteness.percentage < 80
   const firstName = provider.name?.split(' ')[0] ?? 'there'
+  const rating = provider.averageRating ? Number(provider.averageRating).toFixed(1) : '—'
 
   return (
     <div className="pb-6 screen-enter">
-      {/* Header strip */}
-      <div className="relative flex items-center gap-3 px-[18px] pt-[60px] pb-1.5">
-        <AppLogo href="/provider" compact className="h-8" priority />
-        <div className="flex-1" />
-        <span className="h-7 px-3 rounded-full bg-[var(--card-alt)] text-[var(--ink-mute)] text-[12px] font-semibold flex items-center">
-          Provider
-        </span>
-      </div>
 
-      {/* Hero greeting */}
-      <div className="px-[18px] pt-3 pb-5">
-        <p className="text-[12px] font-bold tracking-[0.05em] uppercase text-[var(--brand-purple)] mb-1">
+      {/* Header */}
+      <div className="px-[18px] pt-[60px] pb-5">
+        <div className="flex items-center mb-4">
+          <AppLogo href="/provider" compact className="h-[26px]" priority />
+          <div className="flex-1" />
+          <form action={handleSignOut}>
+            <button
+              type="submit"
+              aria-label="Sign out"
+              className="flex items-center justify-center w-9 h-9 rounded-[12px] bg-card shadow-[inset_0_0_0_1px_var(--border)] text-[var(--ink-mute)] hover:text-[var(--danger)] transition-colors"
+            >
+              <LogOut size={16} />
+            </button>
+          </form>
+        </div>
+        <p className="text-[11px] font-bold tracking-[0.085em] uppercase text-[var(--brand-purple)] mb-1">
           Provider portal
         </p>
         <h1 className="text-[28px] font-bold tracking-[-0.025em] leading-[1.1] text-[var(--ink)]">
@@ -182,6 +258,7 @@ export default async function ProviderHomePage() {
       </div>
 
       <div className="px-[18px] space-y-5">
+
         {/* Alert banners */}
         {selectedPendingCount > 0 && (
           <AlertCallout
@@ -244,7 +321,7 @@ export default async function ProviderHomePage() {
                 <Button asChild size="sm" className="flex-1 bg-white text-[var(--ink)] hover:bg-white/90">
                   <Link href="/provider/credits">
                     <Coins size={14} />
-                    Top up
+                    + Top up
                   </Link>
                 </Button>
                 <Button asChild size="sm" variant="ghost" className="text-white/70 hover:text-white hover:bg-white/10">
@@ -255,46 +332,150 @@ export default async function ProviderHomePage() {
           </div>
         </section>
 
-        {/* Stats row */}
+        {/* Stats row — 3 cards */}
         <section>
-          <SectionLabel className="mb-3" action={
-            <Link href="/provider/leads" className="text-[13px] font-semibold text-[var(--brand-purple)]">
-              See leads
-            </Link>
-          }>
-            Today
-          </SectionLabel>
-          <div className="grid grid-cols-2 gap-3">
-            <Link href="/provider/leads" className="block">
-              <StatCard
-                label="New opportunities"
-                value={pendingOpportunitiesCount}
-                icon={<Inbox className="size-3.5" />}
-                tone={pendingOpportunitiesCount > 0 ? 'info' : 'neutral'}
-              />
-            </Link>
-            <Link href="/provider/leads" className="block">
-              <StatCard
-                label="Awaiting acceptance"
-                value={selectedPendingCount}
-                icon={<Clock3 className="size-3.5" />}
-                tone={selectedPendingCount > 0 ? 'warning' : 'neutral'}
-              />
-            </Link>
-            <StatCard
-              label="Active jobs"
-              value={activeJobs.length}
-              icon={<ListChecks className="size-3.5" />}
-              tone="brand"
-            />
-            <StatCard
-              label="Completed"
-              value={completedJobsCount}
-              icon={<CheckCircle2 className="size-3.5" />}
-              tone="success"
-            />
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-3.5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <div className="flex items-center justify-center w-6 h-6 rounded-[7px] text-[var(--brand-purple)]"
+                     style={{ background: 'rgba(139,63,232,0.10)' }}>
+                  <ListChecks size={13} />
+                </div>
+              </div>
+              <p className="text-[22px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none mb-1 tabular-nums">
+                {activeJobs.length}
+              </p>
+              <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Active jobs</p>
+            </div>
+            <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-3.5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <div className="flex items-center justify-center w-6 h-6 rounded-[7px] text-[#0FA28A]"
+                     style={{ background: 'rgba(15,162,138,0.10)' }}>
+                  <CheckCircle2 size={13} />
+                </div>
+              </div>
+              <p className="text-[22px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none mb-1 tabular-nums">
+                {completedJobsCount}
+              </p>
+              <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Completed</p>
+            </div>
+            <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-3.5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <div className="flex items-center justify-center w-6 h-6 rounded-[7px] text-[#FFC22B]"
+                     style={{ background: 'rgba(255,194,43,0.12)' }}>
+                  <Star size={13} />
+                </div>
+              </div>
+              <p className="text-[22px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none mb-1 tabular-nums">
+                {rating}
+              </p>
+              <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Rating ★</p>
+            </div>
           </div>
         </section>
+
+        {/* Availability toggle */}
+        <section>
+          <div className="bg-card rounded-[24px] shadow-[inset_0_0_0_1px_var(--border)] p-4">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex items-center justify-center w-9 h-9 rounded-[11px] shrink-0"
+                style={provider.availableNow
+                  ? { background: 'rgba(15,162,138,0.12)', color: '#0FA28A' }
+                  : { background: 'var(--card-alt, #F4F4F7)', color: 'var(--ink-mute)' }}
+              >
+                {provider.availableNow ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[14px] font-semibold text-[var(--ink)] tracking-[-0.01em]">
+                  {provider.availableNow ? "You're available now" : "You're not available"}
+                </p>
+                <p className="text-[12px] text-[var(--ink-mute)] mt-0.5">
+                  {provider.availableNow
+                    ? 'You can receive new leads and job requests.'
+                    : 'Toggle on to start receiving leads in your area.'}
+                </p>
+              </div>
+              <form action={toggleAvailability}>
+                <button
+                  type="submit"
+                  aria-label={provider.availableNow ? 'Set unavailable' : 'Set available'}
+                  className="relative w-[46px] h-[26px] rounded-full transition-colors shrink-0"
+                  style={{
+                    background: provider.availableNow ? '#0FA28A' : 'var(--border)',
+                  }}
+                >
+                  <span
+                    className="absolute top-[3px] w-5 h-5 rounded-full bg-white shadow-sm transition-[left] duration-200"
+                    style={{ left: provider.availableNow ? 'calc(100% - 23px)' : '3px' }}
+                  />
+                </button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        {/* New leads preview */}
+        {pendingLeads.length > 0 && (
+          <section>
+            <SectionLabel className="mb-3" action={
+              <Link href="/provider/leads" className="text-[13px] font-semibold text-[var(--brand-purple)]">
+                See all ({pendingOpportunitiesCount})
+              </Link>
+            }>
+              New leads
+            </SectionLabel>
+            <div className="space-y-2.5">
+              {pendingLeads.map((lead) => (
+                <Link
+                  key={lead.id}
+                  href={`/provider/leads/${lead.id}`}
+                  className="block bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] hover:shadow-[var(--shadow-float)] transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 active:translate-y-px p-4"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <p className="text-[15px] font-bold text-[var(--ink)] tracking-[-0.015em] capitalize">
+                      {lead.jobRequest.category?.replaceAll('_', ' ') ?? 'Job request'}
+                    </p>
+                    <UrgencyChip urgency={lead.jobRequest.urgency ?? null} />
+                  </div>
+                  {lead.jobRequest.address?.suburb && (
+                    <p className="flex items-center gap-1 text-[12.5px] text-[var(--ink-mute)] mb-3">
+                      <MapPin size={12} aria-hidden />
+                      {lead.jobRequest.address.suburb}
+                    </p>
+                  )}
+                  <div className="border-t border-[var(--border)] pt-3 flex items-center justify-between">
+                    <span className="flex items-center gap-1 text-[12.5px] font-semibold text-[var(--brand-purple)]">
+                      <Sparkles size={13} aria-hidden />
+                      Lead unlock: <b>1 credit</b>
+                    </span>
+                    <span className="text-[12.5px] font-semibold text-[var(--ink-mute)]">
+                      {lead.status === 'VIEWED' ? 'Viewed' : 'New'}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {pendingLeads.length === 0 && pendingOpportunitiesCount === 0 && (
+          <section>
+            <SectionLabel className="mb-3">New leads</SectionLabel>
+            <div className="bg-card rounded-[24px] shadow-[inset_0_0_0_1px_var(--border)] p-6 text-center">
+              <div
+                className="w-12 h-12 rounded-[16px] flex items-center justify-center mx-auto mb-3"
+                style={{ background: 'var(--brand-gradient-soft, rgba(139,63,232,0.08))', color: 'var(--brand-purple)' }}
+              >
+                <Inbox size={22} />
+              </div>
+              <p className="text-[14px] font-semibold text-[var(--ink)] mb-1">No new leads right now</p>
+              <p className="text-[12.5px] text-[var(--ink-mute)]">
+                Stay available — we&apos;ll WhatsApp you when a lead arrives.
+              </p>
+            </div>
+          </section>
+        )}
 
         {/* Profile completeness */}
         {profileIncomplete && (
@@ -317,9 +498,9 @@ export default async function ProviderHomePage() {
         {/* Quick links */}
         <section className="bg-card rounded-[24px] shadow-[inset_0_0_0_1px_var(--border)] overflow-hidden divide-y divide-[var(--border)]">
           {[
-            { href: '/provider/availability', icon: <ToggleRight size={18} />, label: 'Manage availability', hue: '#0FA28A' },
             { href: '/provider/credits', icon: <Wallet size={18} />, label: 'Top up / view credits', hue: '#8B3FE8' },
-            { href: termsUrl, icon: <Coins size={18} />, label: 'Credits terms & rules', hue: '#5B5B66' },
+            { href: '/provider/earnings', icon: <Coins size={18} />, label: 'Earnings', hue: '#0FA28A' },
+            { href: termsUrl, icon: <Clock3 size={18} />, label: 'Credits terms & rules', hue: '#5B5B66' },
           ].map(({ href, icon, label, hue }) => (
             <Link
               key={href}
@@ -340,9 +521,9 @@ export default async function ProviderHomePage() {
           ))}
         </section>
 
-        {/* Active jobs */}
+        {/* Active / in-progress jobs */}
         <section>
-          <SectionLabel className="mb-3">Active ({activeJobs.length})</SectionLabel>
+          <SectionLabel className="mb-3">In progress ({activeJobs.length})</SectionLabel>
           {activeJobs.length === 0 ? (
             <div className="bg-card rounded-[24px] shadow-[inset_0_0_0_1px_var(--border)] p-6 text-center">
               <p className="text-[14px] font-semibold text-[var(--ink)] mb-1">No active jobs right now</p>
@@ -382,6 +563,7 @@ export default async function ProviderHomePage() {
             </div>
           </section>
         )}
+
       </div>
     </div>
   )
