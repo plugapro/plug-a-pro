@@ -22,6 +22,7 @@ const {
       findUnique: vi.fn(),
     },
     lead: { findMany: vi.fn() },
+    $transaction: vi.fn(),
   },
   mockLoadMatchingJobRequest: vi.fn(),
   mockLoadCandidatePool: vi.fn(),
@@ -127,6 +128,7 @@ describe('orchestrateMatch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockIsEnabled.mockResolvedValue(false)
+    mockDb.$transaction.mockImplementation(async (fn: (tx: typeof mockDb) => unknown) => fn(mockDb as any))
     mockDb.assignmentHold.findFirst.mockResolvedValue(null)
     // Default: no declined leads for this job request
     mockDb.lead.findMany.mockResolvedValue([])

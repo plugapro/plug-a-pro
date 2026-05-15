@@ -56,6 +56,7 @@ const {
     job: { create: vi.fn(), findMany: vi.fn() },
     technicianScheduleItem: { create: vi.fn(), updateMany: vi.fn() },
     match: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+    providerCapacity: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $transaction: vi.fn(),
   },
   mockNotifyProviderNewJob: vi.fn().mockResolvedValue(undefined),
@@ -610,8 +611,8 @@ describe('matching service', () => {
       where: { id: 'lead-1' },
       data: { status: 'DECLINED', respondedAt: expect.any(Date), declinedAt: expect.any(Date) },
     })
-    expect(mockDb.assignmentHold.update).toHaveBeenCalledWith({
-      where: { id: 'hold-1' },
+    expect(mockDb.assignmentHold.updateMany).toHaveBeenCalledWith({
+      where: { id: 'hold-1', status: 'ACTIVE' },
       data: {
         status: 'REJECTED',
         respondedAt: expect.any(Date),

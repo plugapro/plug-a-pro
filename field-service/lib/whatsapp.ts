@@ -921,14 +921,15 @@ export interface SendCustomerMatchFoundParams {
 export async function sendCustomerMatchFoundNotification(
   params: SendCustomerMatchFoundParams
 ): Promise<void> {
-  // Idempotency guard
-  const jobRequest = await db.jobRequest.findUnique({
-    where: { id: params.jobRequestId },
-    select: { matchFoundWhatsappSentAt: true },
+  if (!params.customerPhone) return
+
+  // Atomic idempotency guard — prevents duplicate sends when cron and the
+  // fire-and-forget path race through the same job.
+  const reserved = await db.jobRequest.updateMany({
+    where: { id: params.jobRequestId, matchFoundWhatsappSentAt: null },
+    data: { matchFoundWhatsappSentAt: new Date() },
   })
-  if (jobRequest?.matchFoundWhatsappSentAt) {
-    return
-  }
+  if (reserved.count === 0) return
 
   const providerFirstName = params.providerName.split(' ')[0]
 
@@ -950,11 +951,13 @@ export async function sendCustomerMatchFoundNotification(
         parameters: [{ type: 'text', text: params.jobRequestId }],
       },
     ],
-  })
-
-  await db.jobRequest.update({
-    where: { id: params.jobRequestId },
-    data: { matchFoundWhatsappSentAt: new Date() },
+  }).catch(async (err) => {
+    // Roll back the sentinel if the send fails so a future caller can retry.
+    await db.jobRequest.updateMany({
+      where: { id: params.jobRequestId },
+      data: { matchFoundWhatsappSentAt: null },
+    }).catch(() => undefined)
+    throw err
   })
 
   await logOutboundMessage({

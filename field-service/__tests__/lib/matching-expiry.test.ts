@@ -322,10 +322,11 @@ describe('expireAssignmentOffer', () => {
     // No RANKED attempts remaining
     mockDb.matchAttempt.findMany.mockResolvedValue([])
     mockDb.provider.findUnique.mockResolvedValue({ phone: '+27821234567' })
-    mockDb.jobRequest.findUnique.mockResolvedValue({
-      ...makeMatchingJobRequest(),
-      status: 'EXPIRED',
-    })
+    // First call (inside expireOpenJobRequest tx) sees MATCHING → transitions it.
+    // Subsequent calls (notifyExpiredJobParties) see EXPIRED → sends notifications.
+    mockDb.jobRequest.findUnique
+      .mockResolvedValueOnce(makeMatchingJobRequest())
+      .mockResolvedValue({ ...makeMatchingJobRequest(), status: 'EXPIRED' })
 
     const result = await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
 
@@ -352,12 +353,15 @@ describe('expireAssignmentOffer', () => {
     mockDb.assignmentHold.findUnique.mockResolvedValue(makeActiveHold())
     mockDb.matchAttempt.findMany.mockResolvedValue([])
     mockDb.provider.findUnique.mockResolvedValue({ phone: '+27821234567' })
-    mockDb.jobRequest.findUnique.mockResolvedValue({
-      ...makeMatchingJobRequest(),
-      status: 'EXPIRED',
+    const futureWindow = {
       requestedWindowStart: new Date(Date.now() + 2 * 60 * 60 * 1000),
       requestedWindowEnd: new Date(Date.now() + 4 * 60 * 60 * 1000),
-    })
+    }
+    // First call (inside expireOpenJobRequest tx) sees MATCHING → transitions it.
+    // Subsequent calls (notifyExpiredJobParties) see EXPIRED with future window.
+    mockDb.jobRequest.findUnique
+      .mockResolvedValueOnce({ ...makeMatchingJobRequest(), ...futureWindow })
+      .mockResolvedValue({ ...makeMatchingJobRequest(), status: 'EXPIRED', ...futureWindow })
 
     await expireAssignmentOffer({ assignmentHoldId: 'hold-1' })
 

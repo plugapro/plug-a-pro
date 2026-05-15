@@ -286,17 +286,19 @@ export async function orchestrateMatch(
 
     // 5b. Notify customer that a provider has been matched (CW2)
     // Defensive: failure must not crash the orchestrator
-    await sendCustomerMatchFoundNotification({
-      customerPhone: jobRequest.customer?.phone ?? '',
-      providerName: reserved.provider.name,
-      serviceName: jobRequest.category,
-      jobRequestId: jobRequest.id,
-    }).catch((err) =>
-      console.error('[orchestrator] customer match-found notification failed', {
+    if (jobRequest.customer?.phone) {
+      await sendCustomerMatchFoundNotification({
+        customerPhone: jobRequest.customer.phone,
+        providerName: reserved.provider.name,
+        serviceName: jobRequest.category,
         jobRequestId: jobRequest.id,
-        err,
-      })
-    )
+      }).catch((err) =>
+        console.error('[orchestrator] customer match-found notification failed', {
+          jobRequestId: jobRequest.id,
+          err,
+        })
+      )
+    }
 
     // 6. Audit trail: update the same decision that owns the top-10 queue.
     await db.dispatchDecision.update({
@@ -416,49 +418,56 @@ async function persistQuickMatchQueueDecision(
     ts: Math.floor(Date.now() / 60_000),
   })
 
-  const decision = await client.dispatchDecision.create({
-    data: {
-      jobRequestId: params.jobRequestId,
-      mode: params.mode as 'AUTO_ASSIGN' | 'OPS_REVIEW',
-      status: 'RANKED',
-      consideredCount: params.consideredCount,
-      eligibleCount: params.eligibleCount,
-      filterSummary: params.filteredOut as object[],
-      rankingSummary: params.rankingSummary as object[],
-      explanation: `Quick Match queue prepared for top ${params.rankedCandidates.length} provider(s)`,
-      initiatedById: 'system',
-      initiatedByRole: 'system',
-      idempotencyKey,
-    },
-  })
-
-  await client.jobRequest.update({
-    where: { id: params.jobRequestId },
-    data: { latestDispatchDecisionId: decision.id },
-  })
-
-  const attemptsByProviderId = new Map<string, { id: string; rankedPosition: number }>()
-  for (const [index, candidate] of params.rankedCandidates.entries()) {
-    const rankedPosition = candidate.rank ?? index + 1
-    const attempt = await client.matchAttempt.create({
+  // Wrap decision + jobRequest update + all attempt rows in one transaction so
+  // a partial failure never leaves latestDispatchDecisionId pointing to an
+  // incomplete queue (which would cause premature queue exhaustion).
+  const { decisionId, attemptsByProviderId } = await client.$transaction(async (tx) => {
+    const decision = await tx.dispatchDecision.create({
       data: {
         jobRequestId: params.jobRequestId,
-        providerId: candidate.providerId,
-        dispatchDecisionId: decision.id,
-        attemptNumber: rankedPosition,
-        rankedPosition,
-        stage: 'RANKED',
-        hardFilterPassed: true,
-        filteredReasonCodes: [],
-        feasibilityNotes: [],
-        score: candidate.score,
-        scoreBreakdown: candidate.scoreBreakdown as object | undefined,
+        mode: params.mode as 'AUTO_ASSIGN' | 'OPS_REVIEW',
+        status: 'RANKED',
+        consideredCount: params.consideredCount,
+        eligibleCount: params.eligibleCount,
+        filterSummary: params.filteredOut as object[],
+        rankingSummary: params.rankingSummary as object[],
+        explanation: `Quick Match queue prepared for top ${params.rankedCandidates.length} provider(s)`,
+        initiatedById: 'system',
+        initiatedByRole: 'system',
+        idempotencyKey,
       },
     })
-    attemptsByProviderId.set(candidate.providerId, { id: attempt.id, rankedPosition })
-  }
 
-  return { id: decision.id, attemptsByProviderId }
+    await tx.jobRequest.update({
+      where: { id: params.jobRequestId },
+      data: { latestDispatchDecisionId: decision.id },
+    })
+
+    const attemptsByProviderId = new Map<string, { id: string; rankedPosition: number }>()
+    for (const [index, candidate] of params.rankedCandidates.entries()) {
+      const rankedPosition = candidate.rank ?? index + 1
+      const attempt = await tx.matchAttempt.create({
+        data: {
+          jobRequestId: params.jobRequestId,
+          providerId: candidate.providerId,
+          dispatchDecisionId: decision.id,
+          attemptNumber: rankedPosition,
+          rankedPosition,
+          stage: 'RANKED',
+          hardFilterPassed: true,
+          filteredReasonCodes: [],
+          feasibilityNotes: [],
+          score: candidate.score,
+          scoreBreakdown: candidate.scoreBreakdown as object | undefined,
+        },
+      })
+      attemptsByProviderId.set(candidate.providerId, { id: attempt.id, rankedPosition })
+    }
+
+    return { decisionId: decision.id, attemptsByProviderId }
+  })
+
+  return { id: decisionId, attemptsByProviderId }
 }
 
 // ── Internal helper — writes DispatchDecision row ─────────────────────────────

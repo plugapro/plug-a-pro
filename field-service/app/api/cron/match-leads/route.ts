@@ -222,6 +222,48 @@ export async function GET(request: Request) {
     results.errors++
   }
 
+  // 1k. Recover MATCHING jobs with no active hold — these are stuck because the
+  // ranked queue was exhausted but expireOpenJobRequest previously only handled
+  // OPEN status. With that fix in place this sweep terminates lingering cases.
+  // A job is considered stuck if it has been in MATCHING for >30 min with no
+  // active hold: either expire it (if expiresAt has passed) or reset to OPEN.
+  try {
+    const stuckMatchingJobs = await db.jobRequest.findMany({
+      where: {
+        status: 'MATCHING',
+        assignmentMode: 'AUTO_ASSIGN',
+        updatedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) },
+        assignmentHolds: { none: { status: 'ACTIVE' } },
+      },
+      select: { id: true, expiresAt: true },
+      take: 20,
+    })
+
+    for (const jr of stuckMatchingJobs) {
+      try {
+        const isExpired = !jr.expiresAt || jr.expiresAt <= new Date()
+        if (isExpired) {
+          const { transitioned } = await expireOpenJobRequest(jr.id, 'stuck_matching_recovery')
+          if (transitioned) {
+            results.expiredRequests++
+            notifyExpiredJobParties({ jobRequestId: jr.id }).catch((err: unknown) => {
+              console.error(`[cron/match-leads:${reqId}] Failed to notify stuck-MATCHING expired job ${jr.id}:`, err)
+            })
+          }
+        } else {
+          await db.jobRequest.update({ where: { id: jr.id }, data: { status: 'OPEN' } })
+          console.info(`[cron/match-leads:${reqId}] Reset stuck MATCHING job to OPEN`, { jobRequestId: jr.id })
+        }
+      } catch (err) {
+        console.error(`[cron/match-leads:${reqId}] Error recovering stuck MATCHING job ${jr.id}:`, err)
+        results.errors++
+      }
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error sweeping stuck MATCHING jobs:`, err)
+    results.errors++
+  }
+
   // 2. Dispatch leads for OPEN requests with no active hold.
   // take: 20 is safe at 5-min cadence (matches the max concurrent open requests we'd expect).
   // If queue grows beyond this, add cursor-based pagination here.

@@ -2531,14 +2531,11 @@ export async function rejectAssignmentOffer(params: {
     return { ok: false, reason: 'TAKEN' }
   }
 
-  await db.$transaction(async (tx) => {
+  const declined = await db.$transaction(async (tx) => {
     const declinedAt = new Date()
-    await tx.lead.update({
-      where: { id: lead.id },
-      data: { status: 'DECLINED', respondedAt: declinedAt, declinedAt },
-    })
-    await tx.assignmentHold.update({
-      where: { id: lead.assignmentHold!.id },
+    // Guard against concurrent double-tap: only proceed if hold is still ACTIVE.
+    const holdUpdate = await tx.assignmentHold.updateMany({
+      where: { id: lead.assignmentHold!.id, status: 'ACTIVE' },
       data: {
         status: 'REJECTED',
         respondedAt: declinedAt,
@@ -2546,12 +2543,18 @@ export async function rejectAssignmentOffer(params: {
         outcomeReasonCode: params.reasonCode ?? 'TECHNICIAN_REJECTED_OFFER',
       },
     })
+    if (holdUpdate.count === 0) return false // concurrent decline won
+
+    await tx.lead.update({
+      where: { id: lead.id },
+      data: { status: 'DECLINED', respondedAt: declinedAt, declinedAt },
+    })
     if (lead.matchAttemptId) {
       await tx.matchAttempt.update({
         where: { id: lead.matchAttemptId },
         data: {
           stage: 'REJECTED',
-          respondedAt: new Date(),
+          respondedAt: declinedAt,
           responseOutcome: 'REJECTED',
           reasonCode: params.reasonCode ?? 'TECHNICIAN_REJECTED_OFFER',
         },
@@ -2561,7 +2564,23 @@ export async function rejectAssignmentOffer(params: {
       assignmentHoldId: lead.assignmentHold!.id,
       itemType: 'ASSIGNMENT_HOLD',
     })
+    return true
   })
+
+  if (!declined) {
+    return { ok: false, reason: 'TAKEN' }
+  }
+
+  // Decrement the provider's capacity counter now that the hold is released.
+  // Mirrors expireAssignmentOffer — must run outside the transaction so a
+  // failure here does not roll back the decline.
+  await releaseProviderCapacity(lead.assignmentHold.providerId).catch((err) =>
+    console.error('[rejectAssignmentOffer] releaseProviderCapacity failed', {
+      providerId: lead.assignmentHold!.providerId,
+      leadId: params.leadId,
+      err,
+    })
+  )
 
   let nextOfferedProviderId: string | null = null
   // Prefer lead.dispatchDecisionId (old path, pre-queued ranked candidates).
