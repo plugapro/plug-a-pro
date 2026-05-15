@@ -8,6 +8,7 @@ const {
   mockTransaction,
   mockSendJobOffer,
   mockSendText,
+  mockSendButtons,
   mockSendCtaUrl,
   mockGetProviderLeadAccessUrl,
   mockGetJobRequestAccessUrl,
@@ -38,6 +39,7 @@ const {
   })),
   mockSendJobOffer: vi.fn(),
   mockSendText: vi.fn(),
+  mockSendButtons: vi.fn(),
   mockSendCtaUrl: vi.fn(),
   mockGetProviderLeadAccessUrl: vi.fn(),
   mockGetJobRequestAccessUrl: vi.fn(),
@@ -60,6 +62,7 @@ vi.mock('@/lib/whatsapp', () => ({
 
 vi.mock('@/lib/whatsapp-interactive', () => ({
   sendText: mockSendText,
+  sendButtons: mockSendButtons,
   sendCtaUrl: mockSendCtaUrl,
 }))
 
@@ -127,6 +130,7 @@ describe('sendRequestToShortlistedProviders', () => {
     mockHasSuccessfulMessageForRecipient.mockResolvedValue(false)
     mockSendJobOffer.mockResolvedValue('wamid.provider')
     mockSendText.mockResolvedValue('customer-message-id')
+    mockSendButtons.mockResolvedValue('customer-buttons-message-id')
     mockSendCtaUrl.mockResolvedValue('customer-failure-message-id')
   })
 
