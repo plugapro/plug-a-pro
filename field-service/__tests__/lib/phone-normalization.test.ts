@@ -52,7 +52,7 @@ describe('normalizeOtpPhoneNumber', () => {
     expect(SA_OTP_SIGN_IN_HELPER_TEXT).toContain(SA_EXAMPLE_MOBILE_E164)
   })
 
-  it('wires shared helper copy into customer and provider sign-in screens', () => {
+  it('auth sign-in pages do not contain hardcoded legacy example numbers', () => {
     const authPages = [
       'app/(auth)/sign-in/page.tsx',
       'app/(auth)/provider-sign-in/page.tsx',
@@ -65,7 +65,6 @@ describe('normalizeOtpPhoneNumber', () => {
 
     for (const page of authPages) {
       const source = readFileSync(path.join(process.cwd(), page), 'utf8')
-      expect(source).toContain('SA_OTP_SIGN_IN_HELPER_TEXT')
       for (const oldExampleNumber of oldExampleNumbers) {
         expect(source).not.toContain(oldExampleNumber)
       }

@@ -3,7 +3,7 @@
 // ─── Multi-step job request flow ──────────────────────────────────────────────
 // Steps: address → description → confirm → submitted
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, MapPin, Shield, CheckCircle2, Zap, Clock, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -964,9 +964,9 @@ export function BookingFlow({
             <div className="text-[12px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>When do you need this done?</div>
             <div className="grid grid-cols-3 gap-2">
               {([
-                { id: 'asap' as const, label: 'Emergency', sub: 'Today / ASAP', hue: '#E5484D', icon: <Zap size={14} /> },
-                { id: 'this_week' as const, label: 'This week', sub: 'Within days', hue: '#FFC22B', icon: <Clock size={14} /> },
-                { id: 'flexible' as const, label: 'Flexible', sub: "I'm flexible", hue: '#0FA28A', icon: <Calendar size={14} /> },
+                { id: 'asap' as const, label: 'Emergency', sub: 'Today / ASAP', hue: 'var(--danger)', icon: <Zap size={14} /> },
+                { id: 'this_week' as const, label: 'This week', sub: 'Within days', hue: 'var(--color-amber)', icon: <Clock size={14} /> },
+                { id: 'flexible' as const, label: 'Flexible', sub: "I'm flexible", hue: 'var(--color-teal)', icon: <Calendar size={14} /> },
               ]).map((u) => {
                 const active = urgency === u.id
                 return (
@@ -974,12 +974,13 @@ export function BookingFlow({
                           aria-pressed={active}
                           className="rounded-[14px] px-2 py-3 text-left"
                           style={{
+                            '--urgency-hue': u.hue,
                             background: 'var(--card)',
-                            boxShadow: active ? `inset 0 0 0 1.5px ${u.hue}, 0 4px 14px ${u.hue}18` : 'inset 0 0 0 1px var(--border)',
+                            boxShadow: active ? 'inset 0 0 0 1.5px var(--urgency-hue), 0 4px 14px color-mix(in srgb, var(--urgency-hue) 9%, transparent)' : 'inset 0 0 0 1px var(--border)',
                             color: 'var(--ink)',
-                          }}>
+                          } as CSSProperties}>
                     <div aria-hidden="true" className="w-7 h-7 rounded-[8px] flex items-center justify-center mb-2"
-                         style={{ background: `${u.hue}15`, color: u.hue }}>
+                         style={{ background: 'color-mix(in srgb, var(--urgency-hue) 10%, transparent)', color: 'var(--urgency-hue)' }}>
                       {u.icon}
                     </div>
                     <div className="text-[13px] font-semibold leading-tight">{u.label}</div>

@@ -53,17 +53,17 @@ async function toggleAvailability() {
 
 function UrgencyChip({ urgency }: { urgency: string | null }) {
   if (!urgency) return null
-  const map: Record<string, { label: string; hue: string }> = {
-    asap:      { label: 'Emergency', hue: '#E5484D' },
-    this_week: { label: 'This week',  hue: '#FFC22B' },
-    flexible:  { label: 'Flexible',   hue: '#0FA28A' },
+  const map: Record<string, { label: string; cssVar: string }> = {
+    asap:      { label: 'Emergency', cssVar: 'var(--danger)' },
+    this_week: { label: 'This week',  cssVar: 'var(--color-amber)' },
+    flexible:  { label: 'Flexible',   cssVar: 'var(--color-teal)' },
   }
   const config = map[urgency]
   if (!config) return null
   return (
     <span
       className="inline-flex items-center gap-1 h-[20px] px-2 rounded-full text-[11px] font-semibold"
-      style={{ background: `${config.hue}18`, color: config.hue }}
+      style={{ background: `color-mix(in srgb, ${config.cssVar} 10%, transparent)`, color: config.cssVar }}
     >
       {urgency === 'asap' && <Zap size={10} aria-hidden />}
       {urgency === 'flexible' && <Calendar size={10} aria-hidden />}
@@ -332,8 +332,8 @@ export default async function ProviderHomePage() {
             </div>
             <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-3.5">
               <div className="flex items-center gap-1.5 mb-2">
-                <div className="flex items-center justify-center w-6 h-6 rounded-[7px] text-[#0FA28A]"
-                     style={{ background: 'rgba(15,162,138,0.10)' }}>
+                <div className="flex items-center justify-center w-6 h-6 rounded-[7px] text-[var(--color-teal)]"
+                     style={{ background: 'color-mix(in srgb, var(--color-teal) 10%, transparent)' }}>
                   <CheckCircle2 size={13} />
                 </div>
               </div>
@@ -344,8 +344,8 @@ export default async function ProviderHomePage() {
             </div>
             <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-3.5">
               <div className="flex items-center gap-1.5 mb-2">
-                <div className="flex items-center justify-center w-6 h-6 rounded-[7px] text-[#FFC22B]"
-                     style={{ background: 'rgba(255,194,43,0.12)' }}>
+                <div className="flex items-center justify-center w-6 h-6 rounded-[7px] text-[var(--color-amber)]"
+                     style={{ background: 'color-mix(in srgb, var(--color-amber) 12%, transparent)' }}>
                   <Star size={13} />
                 </div>
               </div>
@@ -364,7 +364,7 @@ export default async function ProviderHomePage() {
               <div
                 className="flex items-center justify-center w-9 h-9 rounded-[11px] shrink-0"
                 style={provider.availableNow
-                  ? { background: 'rgba(15,162,138,0.12)', color: '#0FA28A' }
+                  ? { background: 'color-mix(in srgb, var(--color-teal) 12%, transparent)', color: 'var(--color-teal)' }
                   : { background: 'var(--card-alt, #F4F4F7)', color: 'var(--ink-mute)' }}
               >
                 {provider.availableNow ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
@@ -385,7 +385,7 @@ export default async function ProviderHomePage() {
                   aria-label={provider.availableNow ? 'Set unavailable' : 'Set available'}
                   className="relative w-[46px] h-[26px] rounded-full transition-colors shrink-0"
                   style={{
-                    background: provider.availableNow ? '#0FA28A' : 'var(--border)',
+                    background: provider.availableNow ? 'var(--color-teal)' : 'var(--border)',
                   }}
                 >
                   <span
@@ -481,9 +481,9 @@ export default async function ProviderHomePage() {
         {/* Quick links */}
         <section className="bg-card rounded-[24px] shadow-[inset_0_0_0_1px_var(--border)] overflow-hidden divide-y divide-[var(--border)]">
           {[
-            { href: '/provider/credits', icon: <Wallet size={18} />, label: 'Top up / view credits', hue: '#8B3FE8' },
-            { href: '/provider/earnings', icon: <Coins size={18} />, label: 'Earnings', hue: '#0FA28A' },
-            { href: termsUrl, icon: <Clock3 size={18} />, label: 'Credits terms & rules', hue: '#5B5B66' },
+            { href: '/provider/credits', icon: <Wallet size={18} />, label: 'Top up / view credits', hue: 'var(--brand-purple)' },
+            { href: '/provider/earnings', icon: <Coins size={18} />, label: 'Earnings', hue: 'var(--color-teal)' },
+            { href: termsUrl, icon: <Clock3 size={18} />, label: 'Credits terms & rules', hue: 'var(--ink-mute)' },
           ].map(({ href, icon, label, hue }) => (
             <Link
               key={href}
