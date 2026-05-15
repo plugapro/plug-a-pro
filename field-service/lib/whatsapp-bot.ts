@@ -276,6 +276,11 @@ function isStatelessNotificationReply(
     id.startsWith('mdc_') ||
     id.startsWith('accept:') ||
     id.startsWith('decline:') ||
+    id.startsWith('ops_accept:') ||
+    id.startsWith('ops_decline:') ||
+    id.startsWith('ops_hd_unavail:') ||
+    id.startsWith('ops_hd_toofar:') ||
+    id.startsWith('ops_hd_other:') ||
     id.startsWith('hd_unavailable:') ||
     id.startsWith('hd_area:') ||
     id.startsWith('hd_other:') ||
@@ -1035,6 +1040,38 @@ async function processInboundMessageUnlocked(
     ) {
       // ── Matching engine v2: AssignmentHold decline with reason ───────────────
       await handleAssignmentHoldDecline(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('ops_accept:')) {
+      // ── OPS_REVIEW / RFP direct lead acceptance (no AssignmentHold) ──────────
+      await handleOpsLeadAcceptance(phone, reply.id)
+      return
+    }
+
+    if (reply.id?.startsWith('ops_decline:')) {
+      // ── OPS_REVIEW / RFP direct lead decline — show reason sub-menu ──────────
+      const leadId = reply.id.slice('ops_decline:'.length)
+      await sendButtons(
+        phone,
+        '❌ *Decline Lead*\n\nWhy are you declining?',
+        [
+          { id: `ops_hd_unavail:${leadId}`, title: '📅 Not available' },
+          { id: `ops_hd_toofar:${leadId}`, title: '📍 Too far' },
+          { id: `ops_hd_other:${leadId}`, title: '✏️ Other reason' },
+        ]
+      )
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
+
+    if (
+      reply.id?.startsWith('ops_hd_unavail:') ||
+      reply.id?.startsWith('ops_hd_toofar:') ||
+      reply.id?.startsWith('ops_hd_other:')
+    ) {
+      // ── OPS_REVIEW / RFP lead decline with reason ─────────────────────────────
+      await handleOpsLeadDecline(phone, reply.id)
       return
     }
 
@@ -3062,6 +3099,109 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
         recoveryClass: 'retry_same_step',
       },
     ).catch(() => {})
+  }
+}
+
+// ─── OPS_REVIEW / RFP: direct lead acceptance (no AssignmentHold) ────────────
+// Button ID format: `ops_accept:{leadId}`
+
+async function handleOpsLeadAcceptance(phone: string, buttonId: string): Promise<void> {
+  const traceId = createTraceId('wbot')
+  const leadId = buttonId.slice('ops_accept:'.length).trim()
+  if (!leadId) {
+    await sendText(phone, `We couldn't read that lead response. Please use the latest lead message or reply *menu*.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  const { acceptLead } = await import('./matching-engine')
+  let result
+  try {
+    result = await acceptLead({ leadId, providerId: provider.id, source: 'whatsapp', traceId })
+  } catch (error) {
+    await sendWhatsAppJourneyRecovery(phone, {
+      userRole: 'provider',
+      channel: 'whatsapp',
+      flowName: 'provider_matching',
+      currentStep: 'ops_lead_accept',
+      failureType: 'dependency_failure',
+      actionId: buttonId,
+      requestId: leadId,
+      error,
+      traceId,
+    })
+    console.error('[whatsapp-bot] ops_accept: unhandled acceptLead exception', {
+      traceId, leadId, providerId: provider.id, error_code: 'UNKNOWN_LEAD_ACCEPT_ERROR',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return
+  }
+
+  if (!result.ok) {
+    if (result.reason === 'INSUFFICIENT_CREDITS') {
+      await sendLeadInsufficientCreditsMessage(phone, leadId, result.currentCreditBalance ?? 0)
+      return
+    }
+    if (result.reason === 'EXPIRED') {
+      await sendText(phone, '⚠️ This lead has expired. New leads will come through as jobs arise.')
+      return
+    }
+    if (result.reason === 'FORBIDDEN') {
+      await sendText(phone, '⚠️ This lead was not assigned to this provider number. Please use the WhatsApp number that received the lead.')
+      return
+    }
+    if (result.reason === 'NOT_FOUND') {
+      await sendText(phone, '⚠️ This lead could not be found. It may have expired or already been closed.')
+      return
+    }
+    await sendText(phone, `We couldn't process your acceptance right now.\n\n_Ref: ${traceId}_`)
+    return
+  }
+
+  const ref = leadId.slice(-8).toUpperCase()
+  await sendText(
+    phone,
+    `✅ *Job accepted — Ref ${ref}*\n\nYou used 1 credit. Open the lead link to view the customer's contact and address details.`
+  )
+}
+
+// ─── OPS_REVIEW / RFP: direct lead decline with reason ───────────────────────
+// Button ID format: `ops_hd_unavail:{leadId}` | `ops_hd_toofar:{leadId}` | `ops_hd_other:{leadId}`
+
+async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<void> {
+  const traceId = createTraceId('wbot')
+  const colonIdx = buttonId.indexOf(':')
+  const prefix = buttonId.slice(0, colonIdx)
+  const leadId = buttonId.slice(colonIdx + 1).trim()
+
+  const reasonMap: Record<string, string> = {
+    ops_hd_unavail: 'Not available',
+    ops_hd_toofar: 'Too far',
+    ops_hd_other: 'Other',
+  }
+  const reason = reasonMap[prefix] ?? 'Declined'
+
+  const provider = await db.provider.findUnique({ where: { phone }, select: { id: true } })
+  if (!provider) {
+    await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
+    return
+  }
+
+  try {
+    const { declineLead } = await import('./matching-engine')
+    await declineLead({ leadId, providerId: provider.id })
+    await sendText(phone, `Understood — lead passed (${reason}). New leads will come through as jobs arise.`)
+    console.info('[whatsapp-bot] ops_decline: lead declined', { traceId, leadId, providerId: provider.id, reason })
+  } catch (error) {
+    console.error('[whatsapp-bot] ops_decline: unexpected failure', {
+      traceId, phone, leadId, reason, providerId: provider.id, error,
+    })
+    await sendText(phone, `We couldn't process your response right now.\n\n_Ref: ${traceId}_`)
   }
 }
 

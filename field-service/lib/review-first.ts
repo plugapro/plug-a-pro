@@ -2,7 +2,7 @@ import { db } from './db'
 import type { LeadStatus } from '@prisma/client'
 import { rankCandidatesForJobRequest } from './matching/service'
 import { getReviewProviderProfileUrl } from './review-provider-profile-access'
-import { sendCtaUrl, sendText } from './whatsapp-interactive'
+import { sendButtons, sendCtaUrl, sendText } from './whatsapp-interactive'
 import { sendJobOffer } from './whatsapp'
 import { getProviderLeadAccessUrl } from './provider-lead-access'
 import { getJobRequestAccessUrl } from './job-request-access'
@@ -1360,6 +1360,35 @@ export async function sendRequestToShortlistedProviders(params: {
           statusBefore: lead.status,
           statusAfter: 'SEND_PENDING',
         })
+
+        // Follow-up: native Accept/Decline buttons for providers on social-data bundles.
+        // The template above is the reliable notification; these buttons are best-effort.
+        // Uses ops_accept:{leadId} so the bot can accept directly without a hold lookup.
+        const providerPhone = normaliseWhatsAppPhone(lead.provider.phone)
+        if (providerPhone) {
+          const actionsBody = [
+            `📌 *${request.category}* in *${area || 'your area'}*`,
+            preferredTime ? `Preferred time: *${preferredTime}*` : null,
+            '',
+            'Tap *Accept Lead* to confirm this job (uses 1 credit = R50). Full customer details unlock after acceptance.',
+          ].filter(Boolean).join('\n')
+          sendButtons(
+            providerPhone,
+            actionsBody,
+            [
+              { id: `ops_accept:${lead.id}`, title: 'Accept Lead' },
+              { id: `ops_decline:${lead.id}`, title: 'Decline' },
+            ],
+            undefined,
+            { templateName: 'rfp:job_lead_actions', metadata: { requestId: request.id, leadId: lead.id, providerId: lead.provider.id } },
+          ).catch((err: unknown) => {
+            console.warn('[review-first.send] action buttons failed (non-fatal)', {
+              requestId: request.id,
+              leadId: lead.id,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          })
+        }
       } else {
         await db.lead.update({
           where: { id: lead.id },
