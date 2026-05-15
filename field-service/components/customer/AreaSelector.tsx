@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { MapPin, ChevronDown, X, Search } from 'lucide-react'
 
@@ -116,7 +117,7 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
         <ChevronDown size={13} style={{ color: 'var(--ink-mute)' }} />
       </button>
 
-      {open && (
+      {open && typeof document !== 'undefined' && createPortal(
         <>
           <div
             className="fixed inset-0 z-40"
@@ -204,7 +205,8 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </>
   )
