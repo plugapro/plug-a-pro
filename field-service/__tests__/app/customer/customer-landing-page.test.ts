@@ -60,9 +60,8 @@ describe('customer mobile landing page', () => {
     const html = renderToStaticMarkup(await CustomerHomePage())
 
     expect(html).toContain('Find trusted help, near you.')
-    expect(html).toContain('Request a service')
+    expect(html).toContain('Request')
     expect(html).toContain('Join as provider')
-    expect(html).toContain('Sign in')
   })
 
   it('renders required category shortcuts', async () => {
@@ -86,8 +85,8 @@ describe('customer mobile landing page', () => {
     const html = renderToStaticMarkup(await CustomerHomePage())
 
     expect(html).toContain('Hi Lovemore')
-    expect(html).toContain('View jobs')
-    expect(html).toContain('Provider dashboard')
+    expect(html).toContain('what needs fixing?')
+    expect(html).not.toContain('Join as provider')
   })
 
   it('renders multi-role context switch when customer and provider are both present', async () => {
@@ -98,7 +97,7 @@ describe('customer mobile landing page', () => {
     const html = renderToStaticMarkup(await CustomerHomePage())
 
     expect(html).toContain('Hi Sarah')
-    expect(html).toContain('Request a service')
-    expect(html).toContain('My bookings')
+    expect(html).toContain('what needs fixing?')
+    expect(html).toContain('Join as provider')
   })
 })

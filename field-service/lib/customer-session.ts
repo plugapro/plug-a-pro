@@ -39,20 +39,22 @@ export async function resolveCustomerForSession(
     select: customerSessionSelect,
   })
 
+  // M1-T8: CustomerMember operator delegation.
+  // Runs AFTER the userId lookup but BEFORE the phone lookup so that a member's
+  // userId is never self-linked to a phone-only principal record via the fallback
+  // path. When an active membership exists the session resolves to the principal
+  // customer account — per spec, members always book under the company account
+  // regardless of whether they also have their own Customer row.
+  if (client.customerMember) {
+    const memberDelegation = await resolveMemberDelegation(client, session)
+    if (memberDelegation) return memberDelegation
+  }
+
   if (!customer && session.phone) {
     customer = await client.customer.findUnique({
       where: { phone: session.phone },
       select: customerSessionSelect,
     })
-  }
-
-  // M1-T8: CustomerMember operator delegation.
-  // Checked before self-linking so that a member's userId is never bound to the
-  // principal's phone-only record. When the flag is on and the user has an active
-  // membership, all session activity routes to the principal customer account.
-  if (client.customerMember) {
-    const memberDelegation = await resolveMemberDelegation(client, session)
-    if (memberDelegation) return memberDelegation
   }
 
   // Self-link: bind the Supabase userId to the phone-only Customer record created
@@ -76,11 +78,10 @@ async function resolveMemberDelegation(
     return null
   }
 
-  const orClauses: Array<Record<string, string>> = [{ memberUserId: session.id }]
-  if (session.phone) orClauses.push({ memberPhone: session.phone })
-
+  // memberUserId is non-nullable in the schema, so userId is always the authoritative
+  // lookup key. Phone-based matching is omitted to prevent SIM-swap privilege escalation.
   const membership = await client.customerMember!.findFirst({
-    where: { OR: orClauses, active: true },
+    where: { memberUserId: session.id, active: true },
     select: { principalCustomerId: true },
   })
 

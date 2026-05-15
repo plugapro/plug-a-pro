@@ -153,7 +153,7 @@ describe('resolveCustomerForSession — operator member delegation (flag on)', (
     mockIsEnabled.mockResolvedValue(true)
   })
 
-  it('resolves to principal customer when memberPhone matches', async () => {
+  it('resolves to principal customer even when member has their own Customer record', async () => {
     const ownRec = makeCustomerRecord({ id: 'cust_member', userId: 'user_1' })
     const principalRec = makeCustomerRecord({ id: 'cust_principal', userId: 'user_org' })
     const client = makeClient({
@@ -168,7 +168,6 @@ describe('resolveCustomerForSession — operator member delegation (flag on)', (
 
   it('resolves to principal customer when memberUserId matches', async () => {
     const principalRec = makeCustomerRecord({ id: 'cust_principal', userId: 'user_org' })
-    // phone: null → only one findUnique fires (userId) before member check
     const client = makeClient({
       findUniqueResults: [null, principalRec],
       memberResult: { principalCustomerId: 'cust_principal' },
@@ -182,7 +181,7 @@ describe('resolveCustomerForSession — operator member delegation (flag on)', (
     expect(result?.id).toBe('cust_principal')
   })
 
-  it('queries customerMember with OR on userId and phone', async () => {
+  it('queries customerMember by memberUserId only (no phone OR clause)', async () => {
     const client = makeClient({
       findUniqueResults: [null, null],
       memberResult: null,
@@ -192,30 +191,7 @@ describe('resolveCustomerForSession — operator member delegation (flag on)', (
 
     expect(client.customerMember.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
-          OR: expect.arrayContaining([
-            { memberUserId: 'user_1' },
-            { memberPhone: '+27821234567' },
-          ]),
-          active: true,
-        }),
-      }),
-    )
-  })
-
-  it('queries customerMember with only userId when session.phone is null', async () => {
-    const client = makeClient({ findUniqueResults: [null], memberResult: null })
-
-    await resolveCustomerForSession(
-      client as never,
-      makeSession({ phone: null }),
-    )
-
-    expect(client.customerMember.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          OR: [{ memberUserId: 'user_1' }],
-        }),
+        where: { memberUserId: 'user_1', active: true },
       }),
     )
   })
@@ -256,10 +232,13 @@ describe('resolveCustomerForSession — operator member delegation (flag on)', (
   })
 
   it('does NOT self-link member userId to a phone-only record when member delegation occurs', async () => {
-    // Phone-only record for the principal (userId=null)
+    // Principal has no userId yet (phone-only record). Delegation returns it directly;
+    // the self-link path (userId=null → update) is never reached because the early
+    // return from delegation bypasses it.
     const phoneOnlyPrincipal = makeCustomerRecord({ id: 'cust_principal', userId: null })
     const client = makeClient({
-      findUniqueResults: [null, null, phoneOnlyPrincipal],
+      // [0] userId lookup → null, [1] delegation's principal lookup → phoneOnlyPrincipal
+      findUniqueResults: [null, phoneOnlyPrincipal],
       memberResult: { principalCustomerId: 'cust_principal' },
     })
 

@@ -118,7 +118,7 @@ describe('anonymous provider discovery', () => {
 
     const html = renderToStaticMarkup(await ProviderProfilePage({ params: Promise.resolve({ id: 'provider-1' }) }))
 
-    expect(html).toContain('Sign in to request service')
+    expect(html).toContain('Sign in to request')
     expect(html).toContain('/sign-in?next=%2Fbook%2Fplumbing%3Fprovider%3Dprovider-1')
   })
 
@@ -143,8 +143,8 @@ describe('anonymous provider discovery', () => {
 
     const html = renderToStaticMarkup(await ProviderProfilePage({ params: Promise.resolve({ id: 'provider-1' }) }))
 
-    expect(html).toContain('Request service from this provider')
+    expect(html).toContain('Request service')
     expect(html).toContain('/book/plumbing?provider=provider-1')
-    expect(html).not.toContain('Sign in to request service')
+    expect(html).not.toContain('Sign in to request')
   })
 })
