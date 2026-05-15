@@ -543,7 +543,6 @@ export default async function LeadDetailPage({
                       key={photo.id}
                       attachmentId={photo.id}
                       src={src}
-                      href={src}
                       alt={photo.caption ?? 'Customer photo'}
                     />
                   )

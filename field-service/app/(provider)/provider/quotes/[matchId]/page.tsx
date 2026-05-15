@@ -272,7 +272,6 @@ export default async function QuotePage({
                     key={photo.id}
                     attachmentId={photo.id}
                     src={src}
-                    href={src}
                     alt={photo.caption ?? 'Customer photo'}
                     className="h-36 w-full rounded-lg object-cover"
                   />

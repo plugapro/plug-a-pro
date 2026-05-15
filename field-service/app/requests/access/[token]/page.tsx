@@ -365,7 +365,6 @@ export default async function TicketAccessPage({
                       key={photo.id}
                       attachmentId={photo.id}
                       src={src}
-                      href={src}
                       alt={photo.caption ?? 'Customer photo'}
                       className="h-36 w-full rounded-lg object-cover"
                       fallbackText="Photo unavailable"
@@ -1061,7 +1060,6 @@ export default async function TicketAccessPage({
                     <AttachmentThumbnail
                       attachmentId={photo.id}
                       src={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
-                      href={`/api/attachments/${photo.id}?token=${encodeURIComponent(token)}`}
                       alt={photo.caption ?? 'Work evidence'}
                       className="h-40 w-full rounded-lg object-cover"
                       fallbackText="Photo unavailable"

@@ -1113,7 +1113,6 @@ export default async function ProviderLeadAccessPage({
                       key={photo.id}
                       attachmentId={photo.id}
                       src={src}
-                      href={src}
                       alt={photo.caption ?? 'Customer photo'}
                     />
                   )

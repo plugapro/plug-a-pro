@@ -248,7 +248,6 @@ export default async function JobDetailPage({
                       attachmentId={photo.id}
                       src={`/api/attachments/${photo.id}`}
                       alt={photo.label ?? 'Job photo'}
-                      href={`/api/attachments/${photo.id}`}
                       className="rounded-lg object-cover w-full h-40"
                     />
                     {(photo.caption || photo.label) && (
