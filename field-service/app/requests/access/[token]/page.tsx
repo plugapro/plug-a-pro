@@ -420,7 +420,7 @@ export default async function TicketAccessPage({
               <>
                 <p className="font-medium">We&apos;re checking suitable providers</p>
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  {['Service type', 'Area', 'Availability', 'Experience', 'Rate', 'Verification level'].map((item) => (
+                  {['Service type', 'Area', 'Availability', 'Experience', 'Rate', 'Track record'].map((item) => (
                     <span key={item} className="rounded-md border px-2 py-1">{item}</span>
                   ))}
                 </div>

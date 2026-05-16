@@ -148,26 +148,6 @@ export function ProviderCard({
               >
                 {provider.name}
               </span>
-              {provider.verified ? (
-                <span
-                  aria-label="Verified provider"
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: '50%',
-                    background: 'var(--brand-gradient-soft)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <Check
-                    size={11}
-                    style={{ color: 'var(--brand-purple)', strokeWidth: 3 }}
-                  />
-                </span>
-              ) : null}
             </div>
 
             {/* Row 2: Rating pill */}

@@ -50,7 +50,7 @@ export default function PrivacyPage() {
           <li><strong>Professional:</strong> Skills, trade licences, service areas, experience, availability, certifications, and portfolio materials</li>
           <li><strong>Earnings and job history:</strong> Job completion records, payout history, and settlement data processed through the Platform</li>
           <li><strong>Wallet and credits:</strong> Provider credits balance, top-up history, lead unlock records</li>
-          <li><strong>KYC/onboarding:</strong> Identity verification status, application review notes (internal only)</li>
+          <li><strong>Onboarding:</strong> Application status, review notes (internal only)</li>
         </ul>
 
         <h3>Automatically Collected</h3>

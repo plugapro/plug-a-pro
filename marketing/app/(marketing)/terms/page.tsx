@@ -55,7 +55,7 @@ export default function TermsPage() {
         <p>
           Plug A Pro does not guarantee the identity, qualifications, licensing, legality, safety, or quality
           of any Provider&apos;s work except where Plug A Pro has <strong>expressly stated in writing on
-          the Platform</strong> that a specific verification has been completed.
+          the Platform</strong> that a specific check has been completed.
         </p>
 
         <h2>3. Eligibility</h2>

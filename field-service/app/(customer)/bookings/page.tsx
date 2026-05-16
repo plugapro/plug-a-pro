@@ -109,7 +109,7 @@ function FilterPill({
       href={href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap',
+        'shrink-0 inline-flex items-center h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap',
         active
           ? 'bg-[var(--ink)] text-[var(--card)]'
           : 'bg-[var(--card-alt)] text-[var(--ink)] hover:bg-[var(--border)]',

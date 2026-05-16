@@ -130,7 +130,7 @@ export default async function CustomerHomePage({
           {!isLoggedOut && <><br />what needs fixing?</>}
         </h1>
         <p className="mt-2 mb-4 text-[14.5px] leading-relaxed text-[var(--ink-mute)] [text-wrap:pretty] max-w-[320px]">
-          Plumbers, electricians, handymen and more — vetted, rated, and tracked end-to-end.
+          Plumbers, electricians, handymen and more — rated, reviewed, and tracked end-to-end.
         </p>
 
         {/* Search bar */}
@@ -222,7 +222,7 @@ export default async function CustomerHomePage({
         >
           {[
             { icon: <Sparkles size={18} />, n: 1, title: 'Tell us what you need', desc: 'Pick a category and describe the job.' },
-            { icon: <Search size={18} />,   n: 2, title: 'We match providers',   desc: 'Vetted pros in your area get notified.' },
+            { icon: <Search size={18} />,   n: 2, title: 'We match providers',   desc: 'Skilled pros in your area get notified.' },
             { icon: <Bell size={18} />,      n: 3, title: 'Approve & track',     desc: 'Updates straight to WhatsApp.' },
             { icon: <Check size={18} />,     n: 4, title: 'Pay after the job',   desc: 'Rate your provider when it\'s done.' },
           ].map(({ icon, n, title, desc }) => (
@@ -252,8 +252,8 @@ export default async function CustomerHomePage({
           {[
             {
               icon: <ShieldCheck size={18} />,
-              value: verifiedProviderCount > 0 ? `${verifiedProviderCount}+` : 'Vetted',
-              label: 'Verified providers',
+              value: verifiedProviderCount > 0 ? `${verifiedProviderCount}+` : 'Active',
+              label: 'Active providers',
             },
             {
               icon: <Star size={18} />,
@@ -308,7 +308,7 @@ export default async function CustomerHomePage({
                 Win paying work — without the noise.
               </h2>
               <p className="text-[13px] leading-[1.5] mb-4" style={{ opacity: 0.75 }}>
-                Verified leads, transparent fees, and end-to-end job tracking. Apply once, get matched daily.
+                Real leads, transparent fees, and end-to-end job tracking. Apply once, get matched daily.
               </p>
               <div className="flex gap-2">
                 <Link

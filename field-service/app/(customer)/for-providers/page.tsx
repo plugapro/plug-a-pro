@@ -10,18 +10,18 @@ import { Button } from '@/components/ui/button'
 
 export const metadata = buildMetadata({
   title: 'Join as a Service Provider',
-  description: 'Receive verified job leads in your area. Apply once, get matched daily. Transparent fees, end-to-end tracking.',
+  description: 'Receive real job leads in your area. Apply once, get matched daily. Transparent fees, end-to-end tracking.',
 })
 
 const HOW_IT_WORKS = [
-  { icon: <Wrench size={18} />, title: 'Apply once', desc: 'Tell us your skills, service areas, and experience. Verification takes under 24 hours.' },
+  { icon: <Wrench size={18} />, title: 'Apply once', desc: 'Tell us your skills, service areas, and experience. Approval usually takes under 24 hours.' },
   { icon: <Bell size={18} />, title: 'Receive leads', desc: 'We notify you on WhatsApp when a matching job is available. Accept or pass — no pressure.' },
   { icon: <Zap size={18} />, title: 'Quote & win work', desc: 'Contact the customer, do the inspection if needed, and submit a written quote through the platform.' },
   { icon: <CheckCircle2 size={18} />, title: 'Get paid', desc: 'Complete the job, collect payment, and build your rating. Repeat.' },
 ]
 
 const BENEFITS = [
-  { icon: <ShieldCheck size={16} />, text: 'Verified, paying customers — no tyre-kickers' },
+  { icon: <ShieldCheck size={16} />, text: 'Real, paying customers — no tyre-kickers' },
   { icon: <MapPin size={16} />, text: 'Leads matched to your service area' },
   { icon: <Star size={16} />, text: 'Build a rated profile that wins repeat work' },
   { icon: <Zap size={16} />, text: 'Transparent credit system — no hidden subscription' },
@@ -55,7 +55,7 @@ export default function ProviderLandingPage() {
           Win paying work — without the noise.
         </h1>
         <p className="text-[14.5px] leading-relaxed text-[var(--ink-mute)] [text-wrap:pretty] max-w-[340px] mb-6">
-          Verified leads in your area, sent to your WhatsApp. Transparent fees, written quotes, end-to-end tracking.
+          Real leads in your area, sent to your WhatsApp. Transparent fees, written quotes, end-to-end tracking.
         </p>
         <div className="flex flex-col gap-2.5">
           <Button asChild size="lg" className="w-full">
@@ -128,7 +128,7 @@ export default function ProviderLandingPage() {
           </Link>
         </Button>
         <p className="mt-3 text-center text-[12px]" style={{ color: 'var(--ink-soft)' }}>
-          Verification usually completes within 24 hours.
+          Approval usually takes under 24 hours.
         </p>
       </div>
     </div>

@@ -234,7 +234,7 @@ export default async function ProviderCataloguePage({
       <div className="flex gap-2 overflow-x-auto px-[18px] pb-3 scrollbar-hide">
         <Link
           href={`/providers${normalizedQuery ? `?q=${encodeURIComponent(normalizedQuery)}` : ''}`}
-          className="shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap"
+          className="shrink-0 inline-flex items-center h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap"
           style={!normalizedCategory
             ? { background: 'var(--brand-purple)', color: '#fff' }
             : { background: 'var(--card-alt)', color: 'var(--ink)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
@@ -253,7 +253,7 @@ export default async function ProviderCataloguePage({
             <Link
               key={option.tag}
               href={`/providers?${query.toString()}`}
-              className="shrink-0 h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap"
+              className="shrink-0 inline-flex items-center h-8 px-4 rounded-full text-[13px] font-semibold transition-colors duration-150 whitespace-nowrap"
               style={isActive
                 ? { background: 'var(--brand-purple)', color: '#fff' }
                 : { background: 'var(--card-alt)', color: 'var(--ink)', boxShadow: 'inset 0 0 0 1px var(--border)' }}

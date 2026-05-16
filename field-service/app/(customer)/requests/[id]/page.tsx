@@ -818,7 +818,7 @@ export default async function RequestDetailPage({
                     'Availability',
                     'Experience',
                     'Rate',
-                    'Verification level',
+                    'Track record',
                   ].map((item) => (
                     <span key={item} className="rounded-md border px-2 py-1">
                       {item}

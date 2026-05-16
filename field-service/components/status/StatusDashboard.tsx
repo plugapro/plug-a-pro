@@ -148,7 +148,7 @@ const JOURNEYS: {
     id: 'provider-signup',
     icon: UserCheck,
     label: 'Join as a Provider',
-    description: 'Register as a service provider and get verified',
+    description: 'Register as a service provider and get approved',
     statusKey: 'platform',
   },
   {

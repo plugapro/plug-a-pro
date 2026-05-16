@@ -253,18 +253,6 @@ export default async function CustomerProviderProfilePage({
                 >
                   {provider.name}
                 </h1>
-                {provider.verified && (
-                  <span
-                    aria-label="Verified provider"
-                    style={{
-                      width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-                      background: 'var(--brand-gradient-soft)',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <Check size={11} style={{ color: 'var(--brand-purple)', strokeWidth: 2.4 }} />
-                  </span>
-                )}
               </div>
 
               {/* Rating pill */}
@@ -478,7 +466,7 @@ export default async function CustomerProviderProfilePage({
                 {provider.evidenceNote}
               </p>
               <p className="text-[11px] mt-2" style={{ color: 'var(--ink-mute)' }}>
-                Provider-shared — not independently verified by Plug A Pro
+                Provider-shared — not independently reviewed by Plug A Pro
               </p>
             </div>
           </section>
@@ -558,7 +546,7 @@ export default async function CustomerProviderProfilePage({
                   )}
                   {jobCategoryMap.get(review.jobId) && (
                     <p className="mt-2 text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>
-                      {labelForCategory(jobCategoryMap.get(review.jobId)!)} · Verified customer
+                      {labelForCategory(jobCategoryMap.get(review.jobId)!)}
                     </p>
                   )}
                 </div>
