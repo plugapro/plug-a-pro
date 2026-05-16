@@ -53,6 +53,8 @@ export interface HealthDashboardModel {
   healthEndpoint: HealthStatus
   database: HealthStatus
   platform: HealthStatus
+  whatsapp: HealthStatus
+  payments: HealthStatus
   groups: HealthServiceGroup[]
   build: HealthBuildSummary
   botMessage: string
@@ -431,6 +433,8 @@ export function normalizeHealthPayload(raw: unknown): HealthDashboardModel {
     healthEndpoint: endpointStatus,
     database: dbStatus,
     platform: platformStatus,
+    whatsapp: whatsappStatus,
+    payments: paymentsStatus,
     groups,
     build,
     botMessage,
@@ -668,6 +672,8 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
     healthEndpoint: unknownBase,
     database: unknownBase,
     platform: unknownBase,
+    whatsapp: unknownBase,
+    payments: unknownBase,
     groups: serviceGroups,
     build: defaultBuildSummary,
     botMessage: "I cannot reach the health endpoint right now. Platform status cannot be confirmed.",
@@ -677,7 +683,7 @@ export function buildFallbackHealthModel(errorMessage = 'Health endpoint unreach
 export function getActiveIssues(groups: HealthServiceGroup[]): HealthService[] {
   return groups
     .flatMap((g) => g.services)
-    .filter((s) => s.status === 'down' || s.status === 'degraded' || s.status === 'not_monitored')
+    .filter((s) => s.status === 'down' || s.status === 'degraded')
 }
 
 export function serviceStatusSummary(services: HealthService[]): string {

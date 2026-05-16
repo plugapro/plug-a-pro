@@ -3,8 +3,8 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import {
   Droplets, Hammer, Zap, Paintbrush, Sparkles, Wrench,
-  Flame, Tv2, Bell, ArrowRight, ShieldCheck, Search,
-  Check,
+  Flame, Tv2, Bell, ShieldCheck, Search,
+  Check, Star, MapPin,
 } from 'lucide-react'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -75,6 +75,11 @@ export default async function CustomerHomePage({
 
   customer = sessionData.customer
   provider = sessionData.provider
+
+  const [completedJobsCount, verifiedProviderCount] = await Promise.all([
+    db.job.count({ where: { status: 'COMPLETED' } }),
+    db.provider.count({ where: { verified: true, active: true, status: 'ACTIVE' } }),
+  ]).catch(() => [0, 0] as const)
 
   const isLoggedOut = !session
   const hasProviderRole = Boolean(provider) || session?.role === 'provider'
@@ -160,6 +165,11 @@ export default async function CustomerHomePage({
         <div className="mt-3">
           <AreaSelector currentArea={area} />
         </div>
+
+        {/* WhatsApp trust signal */}
+        <p className="mt-3 text-[12px] leading-relaxed text-center" style={{ color: 'var(--ink-soft)' }}>
+          Updates sent to your WhatsApp · Quote in writing before work starts
+        </p>
       </div>
 
       {/* ── Categories ───────────────────────────────────────────────── */}
@@ -190,8 +200,9 @@ export default async function CustomerHomePage({
                 <div
                   className="flex items-center justify-center w-9 h-9 rounded-[11px]"
                   style={{ background: `${cat.hue}15`, color: cat.hue }}
+                  aria-hidden
                 >
-                  <Icon size={20} />
+                  <Icon size={20} aria-hidden />
                 </div>
                 <span className="text-[11.5px] font-semibold text-center leading-tight tracking-[-0.01em]" style={{ color: 'var(--ink)' }}>
                   {cat.label}
@@ -235,6 +246,39 @@ export default async function CustomerHomePage({
         </div>
       </div>
 
+      {/* ── Trust indicators ─────────────────────────────────────────── */}
+      <div className="px-[18px] pt-5 pb-1">
+        <div className="grid grid-cols-3 gap-2.5">
+          {[
+            {
+              icon: <ShieldCheck size={18} />,
+              value: verifiedProviderCount > 0 ? `${verifiedProviderCount}+` : 'Vetted',
+              label: 'Verified providers',
+            },
+            {
+              icon: <Star size={18} />,
+              value: 'Written',
+              label: 'Quote before work',
+            },
+            {
+              icon: <MapPin size={18} />,
+              value: completedJobsCount > 0 ? `${completedJobsCount}+` : 'Local',
+              label: completedJobsCount > 0 ? 'Jobs completed' : 'Coverage',
+            },
+          ].map(({ icon, value, label }) => (
+            <div
+              key={label}
+              className="flex flex-col items-center gap-1.5 rounded-[16px] py-4 px-2"
+              style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
+            >
+              <div style={{ color: 'var(--brand-purple)' }}>{icon}</div>
+              <p className="text-[15px] font-bold tracking-[-0.02em]" style={{ color: 'var(--ink)' }}>{value}</p>
+              <p className="text-[10.5px] font-medium text-center leading-tight" style={{ color: 'var(--ink-mute)' }}>{label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── For service providers CTA ─────────────────────────────────── */}
       {(isLoggedOut || hasCustomerRole) && (
         <div className="px-[18px] pt-5 pb-1">
@@ -268,14 +312,14 @@ export default async function CustomerHomePage({
               </p>
               <div className="flex gap-2">
                 <Link
-                  href="/provider-sign-in"
+                  href="/provider"
                   className="flex-1 h-[42px] rounded-[12px] flex items-center justify-center text-[13.5px] font-bold press-feedback"
                   style={{ background: '#fff', color: '#0A0A0F' }}
                 >
                   Join as provider
                 </Link>
                 <a
-                  href="https://wa.me/27000000000?text=Register"
+                  href="https://wa.me/27693552447?text=Register"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="h-[42px] px-[14px] rounded-[12px] flex items-center gap-1.5 text-[13.5px] font-bold press-feedback"

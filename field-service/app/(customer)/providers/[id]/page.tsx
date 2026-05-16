@@ -312,7 +312,7 @@ export default async function CustomerProviderProfilePage({
               {isCustomerSignedIn ? 'Request service' : 'Sign in to request'}
             </Link>
             <a
-              href={`https://wa.me/27000000000?text=Hi%2C+I%27m+looking+for+${encodeURIComponent(primaryCategoryLabel)}+services`}
+              href={`https://wa.me/27693552447?text=Hi%2C+I%27m+looking+for+${encodeURIComponent(primaryCategoryLabel)}+services`}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Chat on WhatsApp"
