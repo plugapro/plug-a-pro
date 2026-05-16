@@ -312,7 +312,7 @@ export default async function CustomerHomePage({
               </p>
               <div className="flex gap-2">
                 <Link
-                  href="/provider"
+                  href="/for-providers"
                   className="flex-1 h-[42px] rounded-[12px] flex items-center justify-center text-[13.5px] font-bold press-feedback"
                   style={{ background: '#fff', color: '#0A0A0F' }}
                 >
