@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         gatewayReference: payload.gatewayReference,
       },
     })
-    return NextResponse.json({ error: 'Amount mismatch' }, { status: 400 })
+    return NextResponse.json({ received: true, rejected: 'amount_mismatch' })
   }
 
   await db.paymentIntent.update({

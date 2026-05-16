@@ -202,11 +202,18 @@ export default async function ProviderCreditsPage({
         </div>
       </div>
 
-      {/* Payfast return banners */}
+      {/* Top-up return banners */}
       {topupParam === 'success' && (
         <div className="px-[18px] mt-4">
           <AlertCallout tone="success" title="Payment submitted">
-            Your credits will appear in your wallet once Payfast confirms the payment — usually a few seconds.
+            Your credits will appear in your wallet once payment is confirmed — usually a few seconds.
+          </AlertCallout>
+        </div>
+      )}
+      {topupParam === 'failed' && (
+        <div className="px-[18px] mt-4">
+          <AlertCallout tone="danger" title="Payment failed">
+            Your wallet was not charged. Please try again or choose a different payment method.
           </AlertCallout>
         </div>
       )}

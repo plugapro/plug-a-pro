@@ -103,6 +103,23 @@ function PaymentScreen({
     )
   }
 
+  if (paymentStatus === 'EXPIRED') {
+    return (
+      <div className="flex flex-col items-center gap-4 rounded-lg border bg-background p-6 text-center">
+        <XCircle className="size-10 text-[var(--ink-mute,theme(colors.muted.foreground))]" aria-hidden="true" />
+        <div>
+          <p className="font-semibold">Payment link expired</p>
+          <p className="text-sm text-muted-foreground">
+            This Pay@ link is no longer valid. Start a new top-up.
+          </p>
+        </div>
+        <Button onClick={onReset} variant="outline" size="sm">
+          Start new payment
+        </Button>
+      </div>
+    )
+  }
+
   if (timedOut) {
     return (
       <div className="space-y-4 rounded-lg border bg-background p-4 text-center">

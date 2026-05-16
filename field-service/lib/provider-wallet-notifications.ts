@@ -507,7 +507,7 @@ export async function notifyProviderPaymentCredited(paymentIntentId: string) {
   if (!intent?.provider.phone || intent.status !== 'CREDITED') return
 
   await sendNotification({
-    to: intent.provider.phone,
+    to: intent.providerCellphone ?? intent.provider.phone,
     templateName: 'wallet:payment_credited',
     whatsappTemplate: 'wallet_payment_credited',
     templateParameters: [String(intent.creditsToIssue)],
@@ -517,6 +517,7 @@ export async function notifyProviderPaymentCredited(paymentIntentId: string) {
       providerId: intent.providerId,
       paymentIntentId: intent.id,
       creditsToIssue: intent.creditsToIssue,
+      allowTestCohortOverride: true,
     },
   })
 }

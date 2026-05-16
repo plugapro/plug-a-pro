@@ -273,6 +273,7 @@ function isStatelessNotificationReply(
     id === 'back_home' ||
     id === 'session_restart' ||
     id === 'provider_top_up_credits' ||
+    id.startsWith('topup_payat_') ||
     id.startsWith('mdc_') ||
     id.startsWith('accept:') ||
     id.startsWith('decline:') ||
@@ -905,12 +906,38 @@ async function processInboundMessageUnlocked(
     }
 
     if (reply.id === 'provider_top_up_credits') {
-      await sendCtaUrl(
+      await sendButtons(
         phone,
-        'Top up your Plug A Pro provider credits before accepting customer-selected jobs.',
-        ctaLabelFor('credits_history'),
-        getWorkerPortalUrl('/provider/credits'),
+        'Choose a top-up amount. Payment is collected at any Pick n Pay, Shoprite, or Checkers till. Credits are issued automatically once payment is confirmed.',
+        [
+          { id: 'topup_payat_10000', title: 'R100 — 1 credit' },
+          { id: 'topup_payat_20000', title: 'R200 — 2 credits' },
+          { id: 'topup_payat_50000', title: 'R500 — 5 credits' },
+        ],
       )
+      return
+    }
+
+    if (reply.id?.startsWith('topup_payat_')) {
+      const amountCents = parseInt(reply.id.replace('topup_payat_', ''), 10)
+      const provider = await findProviderByWhatsAppPhone(phone, { id: true })
+      if (!provider || !Number.isFinite(amountCents)) {
+        await sendText(phone, 'Unable to start top-up. Please try again or visit the provider portal.')
+        return
+      }
+      try {
+        const { createPayatTopUpIntent } = await import('./provider-credit-payment-intents')
+        await createPayatTopUpIntent({
+          providerId: provider.id,
+          amountCents,
+          providerCellphone: phone,
+          metadata: { source: 'whatsapp' },
+        })
+        // createPayatTopUpIntent fires notifyProviderPayatTopUpInitiated automatically
+        // which delivers the payment link to this same WhatsApp number.
+      } catch {
+        await sendText(phone, 'Could not create a Pay@ payment link. Please try again or visit the provider portal.')
+      }
       return
     }
 
