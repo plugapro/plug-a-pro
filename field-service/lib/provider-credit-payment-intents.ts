@@ -282,10 +282,10 @@ export async function createPayatTopUpIntent(
 
   const creditsToIssue = creditsForAmount(input.amountCents)
 
-  const intent = await db.$transaction(async (tx) => {
+  const { intent, provider } = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
       where: { id: input.providerId },
-      select: { id: true, phone: true },
+      select: { id: true, phone: true, name: true, email: true },
     })
 
     if (!provider) {
@@ -302,7 +302,7 @@ export async function createPayatTopUpIntent(
 
     // The PaymentIntent is created before Pay@ is called so webhook references
     // can use the immutable intent ID and remain idempotent under retries.
-    return tx.paymentIntent.create({
+    const intent = await tx.paymentIntent.create({
       data: {
         providerId: provider.id,
         amountCents: input.amountCents,
@@ -315,12 +315,17 @@ export async function createPayatTopUpIntent(
         metadata: toJson(input.metadata),
       },
     })
+
+    return { intent, provider }
   })
 
   const payat = await createPayatPaymentRequest({
     topupId: intent.id,
     amountCents: intent.amountCents,
     description: `Plug A Pro wallet top-up R${Math.round(intent.amountCents / 100)}`,
+    providerName: provider.name ?? 'Provider',
+    providerPhone: provider.phone ?? input.providerCellphone ?? '',
+    providerEmail: provider.email ?? '',
   })
 
   const { notifyProviderPayatTopUpInitiated } = await import('./provider-wallet-notifications')

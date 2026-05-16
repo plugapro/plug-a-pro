@@ -53,7 +53,6 @@ describe('Pay@ provider credit payment intents', () => {
     })
     mockCreatePayatPaymentRequest.mockResolvedValue({
       reference: 'intent-payat-1',
-      qrCodeUrl: 'https://go.payat.co.za/qr/intent-payat-1',
       paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
     })
   })
@@ -81,12 +80,14 @@ describe('Pay@ provider credit payment intents', () => {
       topupId: 'intent-payat-1',
       amountCents: 10_000,
       description: 'Plug A Pro wallet top-up R100',
+      providerName: 'Provider One',
+      providerPhone: '+27821234567',
+      providerEmail: 'pro@example.com',
     })
     expect(result).toEqual({
       intent: state.createdIntent,
       payat: {
         reference: 'intent-payat-1',
-        qrCodeUrl: 'https://go.payat.co.za/qr/intent-payat-1',
         paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
       },
     })
