@@ -6,89 +6,141 @@ export type PayatPaymentRequest = {
   topupId: string
   amountCents: number
   description: string
+  providerName: string
+  providerPhone: string
+  providerEmail: string
 }
 
 export type PayatPaymentResponse = {
   reference: string
-  qrCodeUrl: string
   paymentLink: string
 }
 
 function requirePayatConfig(name: string) {
-  // Fail before creating a gateway request if required Pay@ config is absent.
   const value = process.env[name]?.trim()
   if (!value) throw new Error(`${name} must be set`)
   return value
 }
 
-function getNotifyUrl() {
-  // Pay@ calls this route after retail cash, QR, or hosted-page payments settle.
+function getReturnUrls() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
   if (!appUrl) throw new Error('NEXT_PUBLIC_APP_URL must be set')
-  return `${appUrl.replace(/\/$/, '')}/api/payat/webhook`
+  const base = appUrl.replace(/\/$/, '')
+  return {
+    successReturnUrl: `${base}/provider/credits?topup=success`,
+    failureReturnUrl: `${base}/provider/credits?topup=failed`,
+  }
 }
 
-function mapPayatResponse(data: Record<string, unknown>, fallbackReference: string): PayatPaymentResponse {
-  // Pay@ field names are normalized here so route/UI code stays stable.
-  const qrCodeUrl = data.qrCodeUrl ?? data.qr_code_url ?? data.qrUrl ?? data.qr_url
-  const paymentLink = data.paymentLink ?? data.payment_link ?? data.url ?? data.checkoutUrl
+function generateClientAccountNumber() {
+  // Pay@ requires a unique 14-digit numeric string per RTP.
+  return String(Date.now()).padStart(14, '0').slice(-14)
+}
 
-  if (typeof qrCodeUrl !== 'string' || typeof paymentLink !== 'string') {
-    throw new Error('Pay@ payment response did not include QR code and payment link URLs')
+// Module-level flag — generatecredentials is idempotent; only call once per process.
+let merchantRegistered = false
+
+async function ensureMerchantIdentifier(token: string, apiBase: string) {
+  if (merchantRegistered) return
+
+  const merchantId = requirePayatConfig('PAYAT_MERCHANT_ID')
+  const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
+
+  const res = await fetch(`${apiBase}/integrator/ecommerce/generatecredentials`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ merchantIdentifier, merchantId }),
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (!res.ok && res.status !== 409) {
+    console.warn(`[payat] generatecredentials returned ${res.status} — proceeding anyway`)
   }
 
-  return {
-    reference: fallbackReference,
-    qrCodeUrl,
-    paymentLink,
+  merchantRegistered = true
+}
+
+function mapPayatResponse(
+  data: Record<string, unknown>,
+  fallbackReference: string,
+): PayatPaymentResponse {
+  const paymentLink =
+    data.paymentLink ?? data.payment_link ?? data.url ?? data.checkoutUrl
+
+  if (typeof paymentLink !== 'string') {
+    throw new Error('Pay@ RTP response did not include paymentLink')
   }
+
+  return { reference: fallbackReference, paymentLink }
 }
 
 async function sendPayatPaymentRequest(
   params: PayatPaymentRequest,
   retryOnUnauthorized: boolean,
 ): Promise<PayatPaymentResponse> {
-  // Validate product packages before calling the gateway.
   if (!PAYAT_ALLOWED_AMOUNTS_CENTS.has(params.amountCents)) {
     throw new Error(`Invalid top-up amount: ${params.amountCents} cents`)
   }
 
   const token = await getPayatToken()
   const apiBase = requirePayatConfig('PAYAT_API_BASE').replace(/\/$/, '')
-  const merchantId = requirePayatConfig('PAYAT_MERCHANT_ID')
+  const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
 
-  const response = await fetch(`${apiBase}/payment-request`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  await ensureMerchantIdentifier(token, apiBase)
+
+  const { successReturnUrl, failureReturnUrl } = getReturnUrls()
+
+  const response = await fetch(
+    `${apiBase}/integrator/ecommerce/rtp/create/single/${merchantIdentifier}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        clientAccountNumber: generateClientAccountNumber(),
+        amount: String(params.amountCents),
+        minimumAmount: String(params.amountCents),
+        maximumAmount: String(params.amountCents),
+        description: params.description,
+        clientReferenceNumber: params.topupId,
+        merchantDisplayName: 'Plug A Pro',
+        notificationNumber: params.providerPhone,
+        customerNameSurname: params.providerName,
+        customerMobileNumber: params.providerPhone,
+        customerEmail: params.providerEmail,
+        daysValid: '3',
+        merchantEcommerceStoreName: 'PLUGAPRO',
+        successReturnUrl,
+        failureReturnUrl,
+        lineItems: [{ description: params.description, amount: String(params.amountCents) }],
+        multiPremium: 1,
+      }),
+      signal: AbortSignal.timeout(10_000),
     },
-    body: JSON.stringify({
-      merchantId,
-      amount: params.amountCents,
-      reference: params.topupId,
-      description: params.description,
-      notifyUrl: getNotifyUrl(),
-    }),
-    signal: AbortSignal.timeout(10_000),
-  })
+  )
 
   if (response.status === 401 && retryOnUnauthorized) {
-    // Pay@ tokens can be revoked server-side; refresh once then surface errors.
     invalidatePayatToken()
     return sendPayatPaymentRequest(params, false)
   }
 
   if (!response.ok) {
-    throw new Error(`Pay@ payment request failed: ${response.status} ${await response.text()}`)
+    throw new Error(`Pay@ RTP creation failed: ${response.status} ${await response.text()}`)
   }
 
-  return mapPayatResponse(await response.json() as Record<string, unknown>, params.topupId)
+  return mapPayatResponse(
+    (await response.json()) as Record<string, unknown>,
+    params.topupId,
+  )
 }
 
 export async function createPayatPaymentRequest(
   params: PayatPaymentRequest,
 ): Promise<PayatPaymentResponse> {
-  // A small wrapper keeps retry state private to this module.
   return sendPayatPaymentRequest(params, true)
 }
