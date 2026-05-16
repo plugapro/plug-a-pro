@@ -4,6 +4,7 @@ import { hasSuccessfulMessageForRecipient } from './message-events'
 import type { TemplateName } from './messaging-templates'
 import { sendTemplate, sendText as sendWhatsAppText } from './whatsapp'
 import { phoneLookupVariants } from './whatsapp-identity'
+import { sendPostMatchIntroductions } from './post-match-intro'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
@@ -571,6 +572,10 @@ export async function notifyAcceptedLeadLocked(params: { leadId: string; provide
       providerId: params.providerId,
     })
     if (!result.ok) return false
+
+    // Fire intro messages (contact exchange) non-blocking — errors logged inside.
+    void sendPostMatchIntroductions({ leadId: params.leadId, providerId: params.providerId })
+
     return !result.customer.failureReason && !result.provider.failureReason
   } catch (error) {
     console.error('[provider-accepted-lock-confirmation]', {
