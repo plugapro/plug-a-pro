@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import Image from 'next/image'
-import { ExternalLink, Loader2, MessageCircle, QrCode } from 'lucide-react'
+import { useState, useEffect, useRef, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import QRCode from 'react-qr-code'
+import { CheckCircle2, ExternalLink, Loader2, MessageCircle, QrCode, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-wallet'
 import {
@@ -17,10 +18,148 @@ const TOP_UP_OPTIONS = TOP_UP_AMOUNTS_CENTS.map((amountCents) => ({
   credits: amountCents / PROVIDER_CREDIT_PRICE_CENTS,
 }))
 
+const POLL_INTERVAL_MS = 5_000
+const POLL_TIMEOUT_MS = 10 * 60 * 1000
+const TERMINAL_STATUSES = new Set(['CREDITED', 'FAILED', 'EXPIRED'])
+
 function whatsAppShareUrl(paymentLink: string) {
-  // WhatsApp sharing opens with the Pay@ link ready for the provider to send.
   const message = `Tap here to pay for your Plug A Pro wallet top-up: ${paymentLink}`
   return `https://wa.me/?text=${encodeURIComponent(message)}`
+}
+
+function PaymentScreen({
+  result,
+  onReset,
+}: {
+  result: ProviderPayatTopUpResult
+  onReset: () => void
+}) {
+  const router = useRouter()
+  const [paymentStatus, setPaymentStatus] = useState<string>('PENDING_PAYMENT')
+  const [timedOut, setTimedOut] = useState(false)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (TERMINAL_STATUSES.has(paymentStatus)) return
+
+    intervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/provider/payment-intent/${result.intentId}/status`)
+        if (!res.ok) return
+        const data = (await res.json()) as { status: string }
+        setPaymentStatus(data.status)
+        if (TERMINAL_STATUSES.has(data.status)) {
+          clearInterval(intervalRef.current!)
+          clearTimeout(timeoutRef.current!)
+          if (data.status === 'CREDITED') router.refresh()
+        }
+      } catch {
+        // network hiccup — retry on next tick
+      }
+    }, POLL_INTERVAL_MS)
+
+    timeoutRef.current = setTimeout(() => {
+      clearInterval(intervalRef.current!)
+      setTimedOut(true)
+    }, POLL_TIMEOUT_MS)
+
+    return () => {
+      clearInterval(intervalRef.current!)
+      clearTimeout(timeoutRef.current!)
+    }
+  }, [result.intentId, paymentStatus, router])
+
+  if (paymentStatus === 'CREDITED') {
+    return (
+      <div className="flex flex-col items-center gap-4 rounded-lg border bg-background p-6 text-center">
+        <CheckCircle2 className="size-10 text-green-500" aria-hidden="true" />
+        <div>
+          <p className="font-semibold">Credits added to your wallet</p>
+          <p className="text-sm text-muted-foreground">
+            {result.creditsToIssue} credits · R{result.amountCents / 100}
+          </p>
+        </div>
+        <Button onClick={onReset} variant="outline" size="sm">
+          Top up again
+        </Button>
+      </div>
+    )
+  }
+
+  if (paymentStatus === 'FAILED') {
+    return (
+      <div className="flex flex-col items-center gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+        <XCircle className="size-10 text-destructive" aria-hidden="true" />
+        <div>
+          <p className="font-semibold">Payment could not be confirmed</p>
+          <p className="text-sm text-muted-foreground">
+            Contact support if funds were deducted.
+          </p>
+        </div>
+        <Button onClick={onReset} variant="outline" size="sm">
+          Try again
+        </Button>
+      </div>
+    )
+  }
+
+  if (timedOut) {
+    return (
+      <div className="space-y-4 rounded-lg border bg-background p-4 text-center">
+        <p className="text-sm text-muted-foreground">
+          Taking longer than expected. Check your WhatsApp or try again.
+        </p>
+        <Button onClick={onReset} variant="outline" size="sm">
+          Start new payment
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 rounded-lg border bg-background p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">Pay@ payment ready</p>
+            <p className="text-xs text-muted-foreground">
+              Ref {result.reference.slice(-8).toUpperCase()} · {result.creditsToIssue} credits
+            </p>
+          </div>
+          <QrCode className="size-5 text-primary" aria-hidden="true" />
+        </div>
+
+        <div className="flex justify-center rounded-md border bg-white p-3">
+          <QRCode value={result.paymentLink} size={200} />
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Scan at Pick n Pay, Shoprite, or Checkers to pay cash
+        </p>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button asChild>
+            <a href={result.paymentLink} target="_blank" rel="noreferrer">
+              <ExternalLink className="size-4" aria-hidden="true" />
+              Pay now
+            </a>
+          </Button>
+          <Button asChild variant="outline">
+            <a href={whatsAppShareUrl(result.paymentLink)} target="_blank" rel="noreferrer">
+              <MessageCircle className="size-4" aria-hidden="true" />
+              WhatsApp
+            </a>
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+          Waiting for payment confirmation…
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function PayatPackageSelector() {
@@ -45,41 +184,13 @@ export function PayatPackageSelector() {
 
   if (result) {
     return (
-      <div className="space-y-4">
-        <div className="grid gap-3 rounded-lg border bg-background p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold">Pay@ payment ready</p>
-              <p className="text-xs text-muted-foreground">
-                Reference {result.reference.slice(-8).toUpperCase()} · {result.creditsToIssue} credits
-              </p>
-            </div>
-            <QrCode className="size-5 text-primary" aria-hidden="true" />
-          </div>
-          <Image
-            src={result.qrCodeUrl}
-            alt="Pay@ QR code"
-            width={224}
-            height={224}
-            unoptimized
-            className="mx-auto aspect-square w-full max-w-56 rounded-md border bg-white object-contain p-3"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <Button asChild>
-              <a href={result.paymentLink} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-4" aria-hidden="true" />
-                Pay now
-              </a>
-            </Button>
-            <Button asChild variant="outline">
-              <a href={whatsAppShareUrl(result.paymentLink)} target="_blank" rel="noreferrer">
-                <MessageCircle className="size-4" aria-hidden="true" />
-                WhatsApp
-              </a>
-            </Button>
-          </div>
-        </div>
-      </div>
+      <PaymentScreen
+        result={result}
+        onReset={() => {
+          setResult(null)
+          setSelectedAmount(null)
+        }}
+      />
     )
   }
 

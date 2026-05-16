@@ -233,7 +233,6 @@ export type ProviderPayatTopUpResult = {
   amountCents: number
   creditsToIssue: number
   reference: string
-  qrCodeUrl: string
   paymentLink: string
 }
 
@@ -253,7 +252,6 @@ export async function createProviderPayatTopUpIntent(
     amountCents: result.intent.amountCents,
     creditsToIssue: result.intent.creditsToIssue,
     reference: result.payat.reference,
-    qrCodeUrl: result.payat.qrCodeUrl,
     paymentLink: result.payat.paymentLink,
   }
 }
