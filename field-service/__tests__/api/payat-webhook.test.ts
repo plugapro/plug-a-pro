@@ -103,4 +103,17 @@ describe('POST /api/payat/webhook', () => {
     expect(res.status).toBe(200)
     expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
   })
+
+  it('credits wallet when Pay@ sends clientReferenceNumber instead of reference', async () => {
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    const res = await POST(
+      request({ clientReferenceNumber: 'intent-payat-1', status: 'PAID', amount: 10_000 }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(mockDb.paymentIntent.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'intent-payat-1' } }),
+    )
+    expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
+  })
 })

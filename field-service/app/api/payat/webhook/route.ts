@@ -5,6 +5,8 @@ import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gate
 
 type PayatWebhookPayload = {
   reference?: unknown
+  clientReferenceNumber?: unknown
+  sourceReference?: unknown
   status?: unknown
   amount?: unknown
   transactionId?: unknown
@@ -33,7 +35,10 @@ function isValidSignature(rawBody: string, signature: string) {
 
 function normalisePayload(payload: PayatWebhookPayload) {
   // Pay@ notifications are treated as authoritative only after signature validation.
-  const reference = typeof payload.reference === 'string' ? payload.reference.trim() : ''
+  const reference =
+    typeof payload.clientReferenceNumber === 'string' ? payload.clientReferenceNumber.trim() :
+    typeof payload.reference === 'string' ? payload.reference.trim() :
+    typeof payload.sourceReference === 'string' ? payload.sourceReference.trim() : ''
   const status = typeof payload.status === 'string' ? payload.status.trim().toUpperCase() : ''
   const amount = typeof payload.amount === 'number'
     ? payload.amount
