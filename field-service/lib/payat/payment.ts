@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto'
 import { getPayatToken, invalidatePayatToken } from './token'
 
 export const PAYAT_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
@@ -34,15 +35,16 @@ function getReturnUrls() {
 
 function generateClientAccountNumber() {
   // Pay@ requires a unique 14-digit numeric string per RTP.
-  return String(Date.now()).padStart(14, '0').slice(-14)
+  // Use crypto random bytes to avoid timestamp collisions under concurrent requests.
+  const hex = randomBytes(7).toString('hex')
+  const num = BigInt('0x' + hex) % BigInt('100000000000000')
+  return num.toString().padStart(14, '0')
 }
 
-// Module-level flag — generatecredentials is idempotent; only call once per process.
-let merchantRegistered = false
-
 async function ensureMerchantIdentifier(token: string, apiBase: string) {
-  if (merchantRegistered) return
-
+  // generatecredentials is idempotent (409 = already registered).
+  // Always call it — module-level flags are unreliable in serverless runtimes
+  // where each cold start starts fresh and warm instances share nothing.
   const merchantId = requirePayatConfig('PAYAT_MERCHANT_ID')
   const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
 
@@ -59,8 +61,6 @@ async function ensureMerchantIdentifier(token: string, apiBase: string) {
   if (!res.ok && res.status !== 409) {
     console.warn(`[payat] generatecredentials returned ${res.status} — proceeding anyway`)
   }
-
-  merchantRegistered = true
 }
 
 function mapPayatResponse(

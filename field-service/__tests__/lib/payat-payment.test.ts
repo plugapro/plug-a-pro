@@ -93,13 +93,13 @@ describe('Pay@ YAPI payment request service', () => {
     ])
   })
 
-  it('skips re-registration on subsequent calls (module-level cache)', async () => {
+  it('calls generatecredentials before every RTP (serverless-safe, idempotent)', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{}' })
       .mockResolvedValue({
-        status: 201,
+        status: 200,
         ok: true,
+        text: async () => '{}',
         json: async () => ({ paymentLink: 'https://go.payat.co.za/pay/rtp-x' }),
       })
     vi.stubGlobal('fetch', fetchMock)
@@ -122,11 +122,11 @@ describe('Pay@ YAPI payment request service', () => {
       providerEmail: 'a@a.com',
     })
 
-    // Only 1 registration call despite 2 RTP calls
+    // One registration call per RTP — idempotent, serverless-safe
     const regCalls = fetchMock.mock.calls.filter((c: unknown[]) =>
       String(c[0]).includes('generatecredentials'),
     )
-    expect(regCalls).toHaveLength(1)
+    expect(regCalls).toHaveLength(2)
   })
 
   it('proceeds if generatecredentials returns 409 (already registered)', async () => {
@@ -155,11 +155,13 @@ describe('Pay@ YAPI payment request service', () => {
   it('invalidates token and retries once on Pay@ 401', async () => {
     const fetchMock = vi
       .fn()
-      // registration
+      // registration — first attempt
       .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{}' })
       // RTP attempt 1: 401
       .mockResolvedValueOnce({ status: 401, ok: false, text: async () => 'expired' })
-      // registration skipped (cached) — RTP attempt 2: success
+      // registration — retry attempt (no module-level cache; called again)
+      .mockResolvedValueOnce({ status: 409, ok: false, text: async () => 'Conflict' })
+      // RTP attempt 2: success
       .mockResolvedValueOnce({
         status: 201,
         ok: true,

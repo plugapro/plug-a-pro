@@ -33,25 +33,41 @@ function isValidSignature(rawBody: string, signature: string) {
   return timingSafeEqual(expectedBuffer, receivedBuffer)
 }
 
+// Minimum package is R100 = 10000 cents. Amounts below this threshold are
+// assumed to be in rands (Pay@ gateway variants differ) and converted.
+const MIN_PACKAGE_CENTS = 10_000
+
 function normalisePayload(payload: PayatWebhookPayload) {
   // Pay@ notifications are treated as authoritative only after signature validation.
+  // clientReferenceNumber is set to the PaymentIntent UUID in the RTP create call.
+  // reference / sourceReference are gateway-specific aliases and may carry a different
+  // value — they are used only as a fallback.
   const reference =
     typeof payload.clientReferenceNumber === 'string' ? payload.clientReferenceNumber.trim() :
     typeof payload.reference === 'string' ? payload.reference.trim() :
     typeof payload.sourceReference === 'string' ? payload.sourceReference.trim() : ''
+  const usedClientRef = typeof payload.clientReferenceNumber === 'string'
+
   const status = typeof payload.status === 'string' ? payload.status.trim().toUpperCase() : ''
-  const amount = typeof payload.amount === 'number'
+
+  // Pay@ gateway variants differ on amount units (rands vs cents). Parse as float
+  // and normalise to cents: values below the minimum package are treated as rands.
+  const rawAmount = typeof payload.amount === 'number'
     ? payload.amount
     : typeof payload.amount === 'string'
-      ? Number.parseInt(payload.amount, 10)
+      ? parseFloat(payload.amount)
       : Number.NaN
+  const amount = Number.isFinite(rawAmount)
+    ? rawAmount < MIN_PACKAGE_CENTS ? Math.round(rawAmount * 100) : Math.round(rawAmount)
+    : Number.NaN
+
   const gatewayReference = typeof payload.transactionId === 'string'
     ? payload.transactionId
     : typeof payload.paymentId === 'string'
       ? payload.paymentId
       : null
 
-  return { reference, status, amount, gatewayReference }
+  return { reference, usedClientRef, status, amount, gatewayReference }
 }
 
 export async function POST(request: NextRequest) {
@@ -76,7 +92,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
-  const intent = await db.paymentIntent.findUnique({
+  // Primary lookup: clientReferenceNumber is our intent UUID primary key.
+  let intent = await db.paymentIntent.findUnique({
     where: { id: payload.reference },
     select: {
       id: true,
@@ -86,6 +103,22 @@ export async function POST(request: NextRequest) {
       paymentMethod: true,
     },
   })
+
+  // Secondary lookup: if Pay@ fell back to reference/sourceReference (which may
+  // carry the human-readable paymentReference e.g. "PAT-ABCDEF"), try matching
+  // by paymentReference instead.
+  if (!intent && !payload.usedClientRef && payload.reference) {
+    intent = await db.paymentIntent.findFirst({
+      where: { paymentReference: payload.reference, paymentMethod: 'PAYAT' },
+      select: {
+        id: true,
+        amountCents: true,
+        status: true,
+        creditedAt: true,
+        paymentMethod: true,
+      },
+    })
+  }
 
   if (!intent) {
     console.warn('[payat-webhook] notification for unknown payment intent', {
@@ -106,7 +139,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
-  if (!Number.isInteger(payload.amount) || payload.amount !== intent.amountCents) {
+  if (!Number.isFinite(payload.amount) || payload.amount !== intent.amountCents) {
     console.error('[payat-webhook] amount mismatch; marking intent failed', {
       intentId: intent.id,
       expected: intent.amountCents,
@@ -118,7 +151,7 @@ export async function POST(request: NextRequest) {
         status: 'FAILED',
         itnReceivedAt: new Date(),
         itnPaymentStatus: payload.status,
-        itnAmountCents: Number.isInteger(payload.amount) ? payload.amount : null,
+        itnAmountCents: Number.isFinite(payload.amount) ? payload.amount : null,
         gatewayReference: payload.gatewayReference,
       },
     })

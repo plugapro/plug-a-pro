@@ -41,8 +41,6 @@ function PaymentScreen({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (TERMINAL_STATUSES.has(paymentStatus)) return
-
     intervalRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/provider/payment-intent/${result.intentId}/status`)
@@ -59,6 +57,7 @@ function PaymentScreen({
       }
     }, POLL_INTERVAL_MS)
 
+    // Timeout is set once per mount — not reset on each poll cycle.
     timeoutRef.current = setTimeout(() => {
       clearInterval(intervalRef.current!)
       setTimedOut(true)
@@ -68,7 +67,7 @@ function PaymentScreen({
       clearInterval(intervalRef.current!)
       clearTimeout(timeoutRef.current!)
     }
-  }, [result.intentId, paymentStatus, router])
+  }, [result.intentId, router])
 
   if (paymentStatus === 'CREDITED') {
     return (
