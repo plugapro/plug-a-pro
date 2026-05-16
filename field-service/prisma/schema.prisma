@@ -38,6 +38,11 @@ model Customer {
   whatsappMarketingSource   String?   // "bot" | "pwa" | "admin" | "import"
   lastWhatsappPrefSyncAt    DateTime?
 
+  // Generic opt-in flags (legacy columns, present in production; kept in sync with
+  // the whatsappMarketingOptIn / whatsappServiceOptIn fields via merge logic)
+  marketingOptIn Boolean   @default(false)
+  serviceOptIn   Boolean   @default(true)
+
   // Moderation / lifecycle
   isBlocked      Boolean   @default(false)
   blockedReason  String?
