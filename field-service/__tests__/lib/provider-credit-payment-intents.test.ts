@@ -14,11 +14,11 @@ const {
   state,
 } = vi.hoisted(() => {
   const state: {
-    provider: { id: string; phone: string | null } | null
+    provider: { id: string; phone: string | null; name: string | null; email: string | null } | null
     existingReferences: Set<string>
     intents: any[]
   } = {
-    provider: { id: 'provider-1', phone: '+27821234567' },
+    provider: { id: 'provider-1', phone: '+27821234567', name: 'Provider One', email: 'provider@example.com' },
     existingReferences: new Set(),
     intents: [],
   }
@@ -78,14 +78,13 @@ describe('provider credit payment intents', () => {
     vi.stubEnv('PROVIDER_CREDIT_EFT_ACCOUNT_TYPE', 'Business current account')
     vi.stubEnv('PROVIDER_CREDIT_EFT_INTENT_EXPIRY_DAYS', '7')
 
-    state.provider = { id: 'provider-1', phone: '+27821234567' }
+    state.provider = { id: 'provider-1', phone: '+27821234567', name: 'Provider One', email: 'provider@example.com' }
     state.existingReferences = new Set()
     state.intents = []
     mockNotifyPaymentIntentCreated.mockResolvedValue(undefined)
     mockNotifyProviderPayatTopUpInitiated.mockResolvedValue(undefined)
     mockCreatePayatPaymentRequest.mockResolvedValue({
       reference: 'intent-1',
-      qrCodeUrl: 'https://go.payat.co.za/qr/intent-1',
       paymentLink: 'https://go.payat.co.za/pay/intent-1',
     })
 
@@ -236,10 +235,12 @@ describe('provider credit payment intents', () => {
       topupId: 'intent-1',
       amountCents: 10_000,
       description: 'Plug A Pro wallet top-up R100',
+      providerName: 'Provider One',
+      providerPhone: '+27821234567',
+      providerEmail: 'provider@example.com',
     })
     expect(result.payat).toEqual({
       reference: 'intent-1',
-      qrCodeUrl: 'https://go.payat.co.za/qr/intent-1',
       paymentLink: 'https://go.payat.co.za/pay/intent-1',
     })
   })
