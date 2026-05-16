@@ -42,6 +42,16 @@ export default function SignInPage() {
     '/bookings',
   )
 
+  const eyebrow = next.includes('/book/')
+    ? 'Almost there'
+    : next.includes('/bookings')
+      ? 'See your bookings'
+      : 'Sign in or get started'
+
+  const subtitle = next.includes('/book/')
+    ? "Sign in to submit your request. You'll get a written quote on WhatsApp before any work starts."
+    : "Get a one-time code on WhatsApp. Your number is never shared with providers until you accept a quote."
+
   const isValidPhone = phone.replace(/\D/g, '').length >= 9
 
   async function handleSubmit(e: React.FormEvent) {
@@ -101,9 +111,9 @@ export default function SignInPage() {
 
   return (
     <AuthShell
-      eyebrow="Welcome back"
+      eyebrow={eyebrow}
       title="Sign in to Plug A Pro"
-      subtitle="Get a one-time code on WhatsApp. Your number is never shared with providers until you accept a quote."
+      subtitle={subtitle}
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
         <div>

@@ -502,7 +502,9 @@ export function BookingFlow({
 
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
-          throw new Error('Your session has expired. Please sign in again before submitting your request.')
+          // Draft is auto-saved to localStorage — redirect to sign-in and come back
+          window.location.href = `/sign-in?next=${encodeURIComponent(`/book/${category.slug}`)}`
+          return
         }
         if (res.status === 400) {
           throw new Error('Please review your address and job details, then try again.')
