@@ -39,6 +39,66 @@ jobs:
       - name: Unit tests
         run: pnpm test --run
 
+  migrate-diff:
+    name: Schema/migration sync check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check schema matches migrations
+        # Fails if schema.prisma was changed without a corresponding migration.
+        # Pure local file comparison — no database connection required.
+        run: |
+          pnpm exec prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --exit-code
+
+  migrate-status:
+    name: Production migration status (push only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check all migrations applied in production
+        # Fails if any local migration is not yet applied in the production DB.
+        # Skipped automatically when DATABASE_URL secret is not configured.
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL not set — skipping production migration status check."
+            exit 0
+          fi
+          pnpm exec prisma migrate status
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
   build:
     name: Build (push only)
     runs-on: ubuntu-latest

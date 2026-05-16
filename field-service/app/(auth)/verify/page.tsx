@@ -56,9 +56,21 @@ function VerifyForm() {
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [resendCooldown, setResendCooldown] = useState(30)
   const [done, setDone] = useState(false)
   const submitRef = useRef(false)
+
+  const COOLDOWN_KEY = 'pap:otp:resend_until'
+  function getPersistedCooldown() {
+    try {
+      const until = Number(sessionStorage.getItem(COOLDOWN_KEY) ?? '0')
+      return Math.max(0, Math.ceil((until - Date.now()) / 1000))
+    } catch { return 0 }
+  }
+  const [resendCooldown, setResendCooldown] = useState(() => {
+    const persisted = getPersistedCooldown()
+    if (persisted > 0) return persisted
+    try { return sessionStorage.getItem(COOLDOWN_KEY) !== null ? 0 : 30 } catch { return 30 }
+  })
 
   useEffect(() => {
     if (phone) {
@@ -140,12 +152,16 @@ function VerifyForm() {
   async function handleResend() {
     if (resendCooldown > 0) return
     const supabase = getSupabaseClient()
-    await supabase.auth.signInWithOtp({ phone })
+    const { error: resendError } = await supabase.auth.signInWithOtp({ phone })
+    if (resendError) {
+      setError('Could not resend the code. Please try again.')
+      return
+    }
+    try { sessionStorage.setItem(COOLDOWN_KEY, String(Date.now() + 30_000)) } catch { /* ignore */ }
     setResendCooldown(30)
   }
 
-  const waNumber = (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
-  const waHref = waNumber ? `https://wa.me/${waNumber}` : undefined
+  const waHref = WA_ENABLED ? 'whatsapp://' : undefined
 
   if (!phone) return <p className="text-sm text-[var(--ink-mute)] text-center">Restoring sign in…</p>
   if (done) return <p className="text-sm text-[var(--ink-mute)] text-center">Redirecting…</p>
@@ -206,15 +222,13 @@ function VerifyForm() {
           Verify &amp; continue
         </Button>
 
-        {WA_ENABLED && waHref && (
+        {waHref && (
           <a
             href={waHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 h-11 text-[13.5px] font-semibold text-[#1FAD52] outline-none focus-visible:underline"
+            className="md:hidden flex items-center justify-center gap-2 h-11 text-[13.5px] font-semibold text-[#1FAD52] outline-none focus-visible:underline"
           >
             <WhatsAppIcon />
-            Open WhatsApp to find the code
+            Switch to WhatsApp to read the code
           </a>
         )}
       </div>

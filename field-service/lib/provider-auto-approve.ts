@@ -72,6 +72,9 @@ type AutoApproveDb = {
   providerPromoAward?: {
     count: (args?: any) => Promise<number>
   }
+  paymentIntent?: {
+    count: (args?: any) => Promise<number>
+  }
   providerCategory?: {
     createMany: (args: any) => Promise<{ count: number }>
     updateMany: (args: any) => Promise<{ count: number }>
@@ -165,10 +168,15 @@ const AUTO_APPROVE_SIDE_EFFECT_MARKER_REQUIRED_COLUMNS = [
 function isSchemaError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const code = (error as { code?: string }).code
-  if (code === '42P01' || code === '42704') return true
+  // 42P01: undefined table, 42703: undefined column, 42704: undefined type
+  if (code === '42P01' || code === '42703' || code === '42704') return true
 
   const message = toErrorText(error).toLowerCase()
-  return message.includes('does not exist') || message.includes('relation')
+  return (
+    message.includes('does not exist') ||
+    message.includes('relation') ||
+    message.includes('unknown argument')
+  )
 }
 
 function toErrorText(error: unknown): string {
@@ -223,6 +231,22 @@ async function checkProviderPromoAwardSchemaCompatibility(client: AutoApproveDb)
     return { isCompatible: true, reasons: [] }
   } catch (error) {
     return { isCompatible: false, reasons: [`PROMO_AWARD_SCHEMA_PRECHECK_FAILED:${toErrorText(error)}`] }
+  }
+}
+
+async function checkPaymentIntentSchemaCompatibility(client: AutoApproveDb): Promise<PreflightResult> {
+  if (!client.paymentIntent?.count) {
+    return { isCompatible: false, reasons: ['PAYMENT_INTENT_MODEL_MISSING'] }
+  }
+  try {
+    // Probe the exact field that the promo award queries — catches column drift early.
+    await client.paymentIntent.count({ where: { providerId: '__precheck__' } })
+    return { isCompatible: true, reasons: [] }
+  } catch (error) {
+    if (isSchemaError(error)) {
+      return { isCompatible: false, reasons: ['PAYMENT_INTENT_SCHEMA_DRIFT'] }
+    }
+    return { isCompatible: false, reasons: [`PAYMENT_INTENT_SCHEMA_PRECHECK_FAILED:${toErrorText(error)}`] }
   }
 }
 
@@ -680,12 +704,16 @@ export async function autoApproveProviderApplications(
   // Check optional side-effect compatibility once per run.
   const promoPreflight = await checkProviderPromoAwardSchemaCompatibility(client)
   const markerPreflight = await checkProviderAutoApproveSideEffectSchemaCompatibility(client)
+  const paymentIntentPreflight = await checkPaymentIntentSchemaCompatibility(client)
 
   if (!promoPreflight.isCompatible) {
     console.error('[auto-approve:promo-schema] preflight failed', { reasons: promoPreflight.reasons })
   }
   if (!markerPreflight.isCompatible) {
     console.error('[auto-approve:marker-schema] preflight failed', { reasons: markerPreflight.reasons })
+  }
+  if (!paymentIntentPreflight.isCompatible) {
+    console.error('[auto-approve:payment-intent-schema] preflight failed — promo awards will be skipped', { reasons: paymentIntentPreflight.reasons })
   }
 
   const result: AutoApproveResult = {
@@ -707,7 +735,7 @@ export async function autoApproveProviderApplications(
       queueReleased: 0,
       enrichmentQueued: 0,
     },
-    skippedReasons: [...promoPreflight.reasons, ...markerPreflight.reasons],
+    skippedReasons: [...promoPreflight.reasons, ...markerPreflight.reasons, ...paymentIntentPreflight.reasons],
   }
   const markerSchemaCompatible = markerPreflight.isCompatible
 
@@ -861,7 +889,7 @@ export async function autoApproveProviderApplications(
       providerId,
       runId,
       markerEnabled: markerSchemaCompatible,
-      enabled: promoPreflight.isCompatible,
+      enabled: promoPreflight.isCompatible && paymentIntentPreflight.isCompatible,
       sourceRefType: sideEffectSource.sourceRefType,
       sourceRefId,
     })

@@ -233,6 +233,7 @@ describe('provider auto-approval', () => {
       },
       // Promo schema passes; marker schema absent → forces direct (non-marker) execution path.
       providerPromoAward: { count: vi.fn().mockResolvedValue(0) },
+      paymentIntent: { count: vi.fn().mockResolvedValue(0) },
       $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
     }
 
@@ -281,6 +282,7 @@ describe('provider auto-approval', () => {
         }),
       },
       providerPromoAward: { count: vi.fn().mockResolvedValue(0) },
+      paymentIntent: { count: vi.fn().mockResolvedValue(0) },
       providerAutoApproveSideEffectMarker: markerStorage,
       $transaction: vi.fn(async (callback: (txClient: typeof tx) => Promise<unknown>) => callback(tx)),
     }
