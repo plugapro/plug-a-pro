@@ -205,8 +205,8 @@ export default async function TicketAccessPage({
     const code = expired ? 'TICKET_LINK_EXPIRED' : invalid ? 'TICKET_LINK_INVALID' : 'TICKET_LOOKUP_FAILED'
     const title = expired ? 'This request link has expired.' : "We couldn't open this request link."
     const body = expired
-      ? 'This secure request link is time-limited. Open the latest WhatsApp message to get a fresh link, or start a new request below.'
-      : 'We could not verify this request link. It may be old, malformed, or no longer available.'
+      ? 'This secure request link is time-limited. Open the latest WhatsApp message from Plug A Pro to get a fresh link, or sign in to view your requests below.'
+      : 'This link may be from an older WhatsApp message that has since been updated. Check your latest message from Plug A Pro for a fresh link, or sign in to view your requests.'
     return (
       <div className="mx-auto max-w-lg space-y-4 px-4 py-10">
         <Card>

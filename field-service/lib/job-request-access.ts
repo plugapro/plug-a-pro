@@ -3,10 +3,10 @@ import { db } from './db'
 import { getPublicAppUrl } from './provider-credit-copy'
 import { createTraceId } from './support-diagnostics'
 
-// Client request access tokens should align with the blueprint hardening window.
-// Existing issued tokens keep their persisted expiry; this value affects only
-// newly issued or refreshed tokens.
-const ACCESS_TOKEN_TTL_HOURS = 72
+// 30-day TTL so a customer's first WhatsApp link stays valid for the entire
+// active job lifecycle. ensureJobRequestAccessToken reuses an existing valid
+// token on every call, so this only affects newly issued or expired tokens.
+const ACCESS_TOKEN_TTL_HOURS = 720
 
 function buildExpiryDate() {
   return new Date(Date.now() + ACCESS_TOKEN_TTL_HOURS * 60 * 60 * 1000)
