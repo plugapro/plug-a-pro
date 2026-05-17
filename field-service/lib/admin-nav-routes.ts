@@ -33,5 +33,6 @@ export const ADMIN_SMOKE_ROUTES = ADMIN_NAV_ITEMS.map((item) => item.href)
 export const CLIENT_PUBLIC_SMOKE_ROUTES = [
   '/requests/access/recovery?reason=invalid',
   '/book/plumbing',
+  '/for-providers', // renamed from /provider — kept separate from the authenticated /provider/* tree
 ] as const
 

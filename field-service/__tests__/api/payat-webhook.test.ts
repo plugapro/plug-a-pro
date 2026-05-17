@@ -163,4 +163,42 @@ describe('POST /api/payat/webhook', () => {
     )
     expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('intent-payat-1')
   })
+
+  it('C-1: ignores a PAID webhook for an intent already marked FAILED', async () => {
+    mockDb.paymentIntent.findUnique.mockResolvedValue({
+      id: 'intent-payat-1',
+      amountCents: 10_000,
+      status: 'FAILED',
+      creditedAt: null,
+      paymentMethod: 'PAYAT',
+    })
+
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }))
+
+    expect(res.status).toBe(200)
+    expect(mockDb.paymentIntent.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'ITN_RECEIVED' }) }),
+    )
+    expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
+
+  it('C-1: ignores a COMPLETED webhook for an intent already marked FAILED', async () => {
+    mockDb.paymentIntent.findUnique.mockResolvedValue({
+      id: 'intent-payat-1',
+      amountCents: 10_000,
+      status: 'FAILED',
+      creditedAt: null,
+      paymentMethod: 'PAYAT',
+    })
+
+    const { POST } = await import('@/app/api/payat/webhook/route')
+    const res = await POST(request({ reference: 'intent-payat-1', status: 'COMPLETED', amount: 10_000 }))
+
+    expect(res.status).toBe(200)
+    expect(mockDb.paymentIntent.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'ITN_RECEIVED' }) }),
+    )
+    expect(mockCreditProviderWalletFromPayatWebhook).not.toHaveBeenCalled()
+  })
 })
