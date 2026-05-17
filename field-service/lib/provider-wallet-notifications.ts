@@ -1,4 +1,4 @@
-import type { MessageStatus } from '@prisma/client'
+import type { MessageStatus, Prisma } from '@prisma/client'
 import { db } from './db'
 import type { TemplateName } from './messaging-templates'
 import { getManualEftBankAccountInstructions } from './provider-credit-payment-intents'
@@ -263,7 +263,7 @@ async function recordFailedNotification(payload: NotificationPayload, failureRea
       status: 'FAILED',
       sentAt: new Date(),
       failureReason,
-      metadata: payload.metadata ?? {},
+      metadata: (payload.metadata ?? {}) as Prisma.InputJsonValue,
     },
   }).catch(() => {})
 }
@@ -290,7 +290,7 @@ async function sendNotification(payload: NotificationPayload) {
         idempotencyKey: payload.idempotencyKey,
         status: 'SENT',
         sentAt: new Date(),
-        metadata: payload.metadata ?? {},
+        metadata: (payload.metadata ?? {}) as Prisma.InputJsonValue,
       },
     })
 
