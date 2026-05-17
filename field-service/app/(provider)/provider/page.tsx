@@ -36,6 +36,8 @@ import { AppLogo } from '@/components/shared/app-logo'
 import { getProviderWalletBalance } from '@/lib/provider-wallet'
 import { getProviderTermsUrl } from '@/lib/provider-credit-copy'
 import { calculateProviderProfileCompleteness } from '@/lib/provider-pwa-dashboard'
+import { recordAuditLog } from '@/lib/audit'
+import { AUDIT_ENTITY } from '@/lib/audit-entities'
 
 export const metadata = buildMetadata({ title: 'Provider Home', noIndex: true })
 
@@ -48,6 +50,15 @@ async function toggleAvailability() {
     where: { id: provider.id },
     data: { availableNow: !provider.availableNow },
   })
+  await recordAuditLog({
+    actorId: provider.id,
+    actorRole: 'provider',
+    action: 'provider.availability.toggled',
+    entityType: AUDIT_ENTITY.PROVIDER,
+    entityId: provider.id,
+    before: { availableNow: provider.availableNow },
+    after: { availableNow: !provider.availableNow },
+  }).catch(() => {})
   revalidatePath('/provider')
 }
 

@@ -262,6 +262,17 @@ function providerCoversAddress(
   return { covers: false, tier: 'NO_MATCH' }
 }
 
+// ── Custom error ─────────────────────────────────────────────────────────────
+
+export class MatchingFilterError extends Error {
+  readonly cause: unknown
+  constructor(message: string, cause?: unknown) {
+    super(message)
+    this.name = 'MatchingFilterError'
+    this.cause = cause
+  }
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function filterEligibleProviders(
@@ -278,93 +289,114 @@ export async function filterEligibleProviders(
   const normalizedCategory = jobRequest.category.trim().toLowerCase()
 
   // ── Batch-fetch all detail tables in parallel ─────────────────────────────
-  const [
-    metricsRows,
-    skillRows,
-    certRows,
-    areaRows,
-    availabilityRows,
-    scheduleRows,
-    scheduleItemRows,
-    adminCertRows,
-    adminEquipRows,
-    categoryApprovalRows,
-  ] = await Promise.all([
-    (db as any).provider?.findMany?.({
-      where: {
-        id: { in: providerIds },
-        active: true,
-        verified: true,
-        status: 'ACTIVE',
-        isTestUser: Boolean(jobRequest.isTestRequest),
-      },
-      select: {
-        id: true,
-        completedJobsCount: true,
-        onTimeRate: true,
-        acceptanceRate: true,
-        complaintCount: true,
-        complaintRate: true,
-        cancellationRate: true,
-        punctualityScore: true,
-        lastKnownLocationAt: true,
-        equipmentTags: true,
-        vehicleTypes: true,
-      },
-    }).catch(() => []) as Promise<MetricsRow[]>,
-    (db as any).technicianSkill?.findMany?.({
-      where: { providerId: { in: providerIds } },
-      select: { providerId: true, skillTag: true },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & SkillRow>>,
-    (db as any).technicianCertification?.findMany?.({
-      where: { providerId: { in: providerIds } },
-      select: { providerId: true, certificationCode: true, status: true },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & CertRow>>,
-    (db as any).technicianServiceArea?.findMany?.({
-      where: { providerId: { in: providerIds } },
-      select: {
-        providerId: true, label: true, city: true, active: true,
-        areaType: true, lat: true, lng: true, radiusKm: true,
-        locationNodeId: true, regionKey: true,
-      },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & ServiceAreaRow>>,
-    (db as any).technicianAvailability?.findMany?.({
-      where: { providerId: { in: providerIds } },
-      select: {
-        providerId: true,
-        availabilityMode: true,
-        availabilityState: true,
-        nextAvailableAt: true,
-        breakUntil: true,
-        emergencyAvailable: true,
-        sameDayAvailable: true,
-      },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & AvailabilityRow>>,
-    (db as any).providerSchedule?.findMany?.({
-      where: { providerId: { in: providerIds }, active: true },
-      select: { providerId: true, dayOfWeek: true, startTime: true, endTime: true, active: true },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & ScheduleRow>>,
-    (db as any).technicianScheduleItem?.findMany?.({
-      where: { providerId: { in: providerIds }, status: 'ACTIVE' },
-      select: {
-        providerId: true, id: true, itemType: true, title: true,
-        startAt: true, endAt: true, bufferBeforeMinutes: true, bufferAfterMinutes: true,
-        locationLabel: true, lat: true, lng: true, status: true,
-      },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & ScheduleItemRow>>,
-    (db as any).providerCertification?.findMany?.({
-      where: { providerId: { in: providerIds } },
-      select: { providerId: true, name: true, verifiedAt: true },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & AdminCertRow>>,
-    (db as any).providerEquipment?.findMany?.({
-      where: { providerId: { in: providerIds }, active: true },
-      select: { providerId: true, label: true, category: true, active: true },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & AdminEquipRow>>,
-    (db as any).providerCategory?.findMany?.({
-      where: { providerId: { in: providerIds }, categorySlug: normalizedCategory },
-      select: { providerId: true, approvalStatus: true },
-    }).catch(() => []) as Promise<Array<{ providerId: string } & ProviderCategoryRow>>,
-  ])
+  // NOTE: No .catch() here — a DB failure must surface as an error so the
+  // orchestrator can return { status: 'ERROR' } rather than silently filtering
+  // out every provider (which is what .catch(() => []) would cause).
+  let metricsRows: MetricsRow[]
+  let skillRows: Array<{ providerId: string } & SkillRow>
+  let certRows: Array<{ providerId: string } & CertRow>
+  let areaRows: Array<{ providerId: string } & ServiceAreaRow>
+  let availabilityRows: Array<{ providerId: string } & AvailabilityRow>
+  let scheduleRows: Array<{ providerId: string } & ScheduleRow>
+  let scheduleItemRows: Array<{ providerId: string } & ScheduleItemRow>
+  let adminCertRows: Array<{ providerId: string } & AdminCertRow>
+  let adminEquipRows: Array<{ providerId: string } & AdminEquipRow>
+  let categoryApprovalRows: Array<{ providerId: string } & ProviderCategoryRow>
+
+  try {
+    ;[
+      metricsRows,
+      skillRows,
+      certRows,
+      areaRows,
+      availabilityRows,
+      scheduleRows,
+      scheduleItemRows,
+      adminCertRows,
+      adminEquipRows,
+      categoryApprovalRows,
+    ] = await Promise.all([
+      db.provider.findMany({
+        where: {
+          id: { in: providerIds },
+          active: true,
+          verified: true,
+          status: 'ACTIVE',
+          isTestUser: Boolean(jobRequest.isTestRequest),
+        },
+        select: {
+          id: true,
+          completedJobsCount: true,
+          onTimeRate: true,
+          acceptanceRate: true,
+          complaintCount: true,
+          complaintRate: true,
+          cancellationRate: true,
+          punctualityScore: true,
+          lastKnownLocationAt: true,
+          equipmentTags: true,
+          vehicleTypes: true,
+        },
+      }) as Promise<MetricsRow[]>,
+      db.technicianSkill.findMany({
+        where: { providerId: { in: providerIds } },
+        select: { providerId: true, skillTag: true },
+      }) as Promise<Array<{ providerId: string } & SkillRow>>,
+      db.technicianCertification.findMany({
+        where: { providerId: { in: providerIds } },
+        select: { providerId: true, certificationCode: true, status: true },
+      }) as Promise<Array<{ providerId: string } & CertRow>>,
+      db.technicianServiceArea.findMany({
+        where: { providerId: { in: providerIds } },
+        select: {
+          providerId: true, label: true, city: true, active: true,
+          areaType: true, lat: true, lng: true, radiusKm: true,
+          locationNodeId: true, regionKey: true,
+        },
+      }) as Promise<Array<{ providerId: string } & ServiceAreaRow>>,
+      db.technicianAvailability.findMany({
+        where: { providerId: { in: providerIds } },
+        select: {
+          providerId: true,
+          availabilityMode: true,
+          availabilityState: true,
+          nextAvailableAt: true,
+          breakUntil: true,
+          emergencyAvailable: true,
+          sameDayAvailable: true,
+        },
+      }) as Promise<Array<{ providerId: string } & AvailabilityRow>>,
+      db.providerSchedule.findMany({
+        where: { providerId: { in: providerIds }, active: true },
+        select: { providerId: true, dayOfWeek: true, startTime: true, endTime: true, active: true },
+      }) as Promise<Array<{ providerId: string } & ScheduleRow>>,
+      db.technicianScheduleItem.findMany({
+        where: { providerId: { in: providerIds }, status: 'ACTIVE' },
+        select: {
+          providerId: true, id: true, itemType: true, title: true,
+          startAt: true, endAt: true, bufferBeforeMinutes: true, bufferAfterMinutes: true,
+          locationLabel: true, lat: true, lng: true, status: true,
+        },
+      }) as Promise<Array<{ providerId: string } & ScheduleItemRow>>,
+      db.providerCertification.findMany({
+        where: { providerId: { in: providerIds } },
+        select: { providerId: true, name: true, verifiedAt: true },
+      }) as Promise<Array<{ providerId: string } & AdminCertRow>>,
+      db.providerEquipment.findMany({
+        where: { providerId: { in: providerIds }, active: true },
+        select: { providerId: true, label: true, category: true, active: true },
+      }) as Promise<Array<{ providerId: string } & AdminEquipRow>>,
+      db.providerCategory.findMany({
+        where: { providerId: { in: providerIds }, categorySlug: normalizedCategory },
+        select: { providerId: true, approvalStatus: true },
+      }) as Promise<Array<{ providerId: string } & ProviderCategoryRow>>,
+    ])
+  } catch (err) {
+    throw new MatchingFilterError(
+      `filterEligibleProviders: DB batch-fetch failed for job ${jobRequest.id} — ${err instanceof Error ? err.message : String(err)}`,
+      err
+    )
+  }
 
   // ── Cooldown: find providers who already timed out on THIS job recently ────────
   const cooldownCutoff = new Date(Date.now() - MATCHING_CONFIG.cooldownAfterTimeoutMinutes * 60_000)
