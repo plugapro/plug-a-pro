@@ -14,6 +14,7 @@
 //   WHATSAPP_ACCESS_TOKEN=<token> WHATSAPP_WABA_ID=<waba_id> node scripts/register-whatsapp-templates.mjs
 //   WHATSAPP_ACCESS_TOKEN=<token> WHATSAPP_WABA_ID=<waba_id> node scripts/register-whatsapp-templates.mjs --delete-rejected
 //   node scripts/register-whatsapp-templates.mjs --audit-coverage
+//   WHATSAPP_ACCESS_TOKEN=<token> WHATSAPP_WABA_ID=<waba_id> node scripts/register-whatsapp-templates.mjs --check-status
 //
 // --delete-rejected: deletes the 16 previously rejected en_US templates first
 
@@ -26,8 +27,9 @@ const TOKEN   = process.env.WHATSAPP_ACCESS_TOKEN
 const BASE    = 'https://graph.facebook.com/v21.0'
 const DELETE_FIRST = process.argv.includes('--delete-rejected')
 const AUDIT_COVERAGE = process.argv.includes('--audit-coverage')
+const CHECK_STATUS = process.argv.includes('--check-status')
 
-if (!AUDIT_COVERAGE && (!WABA_ID || !TOKEN)) {
+if (!AUDIT_COVERAGE && !CHECK_STATUS && (!WABA_ID || !TOKEN)) {
   console.error('Set WHATSAPP_WABA_ID and WHATSAPP_ACCESS_TOKEN')
   process.exit(1)
 }
@@ -341,6 +343,38 @@ function auditCoverage() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  if (CHECK_STATUS) {
+    if (!WABA_ID || !TOKEN) {
+      console.error('Set WHATSAPP_WABA_ID and WHATSAPP_ACCESS_TOKEN')
+      process.exit(1)
+    }
+    const walletTemplateNames = TEMPLATES
+      .filter((t) => t.name.startsWith('wallet_'))
+      .map((t) => t.name)
+
+    console.log(`\nChecking approval status for ${walletTemplateNames.length} wallet templates...\n`)
+
+    for (const name of walletTemplateNames) {
+      const url = `${BASE}/${WABA_ID}/message_templates?name=${name}&fields=name,status,category,language`
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })
+      const json = await res.json()
+      const templates = json.data ?? []
+
+      if (templates.length === 0) {
+        console.log(`  ${name.padEnd(36)} ⚠️  NOT FOUND on WABA`)
+      } else {
+        for (const tpl of templates) {
+          const statusIcon = tpl.status === 'APPROVED' ? '✅' : tpl.status === 'PENDING' ? '⏳' : '❌'
+          console.log(`  ${name.padEnd(36)} ${statusIcon}  ${tpl.status} (${tpl.language})`)
+        }
+      }
+      await sleep(150)
+    }
+    console.log('\nNote: PENDING templates are awaiting Meta review (24–72h).')
+    console.log('APPROVED templates send immediately. REJECTED templates need to be re-submitted.')
+    return
+  }
+
   if (AUDIT_COVERAGE) {
     process.exitCode = auditCoverage()
     return
