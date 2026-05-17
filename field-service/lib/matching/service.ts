@@ -24,6 +24,7 @@ import { createTraceId } from '../support-diagnostics'
 import { LEAD_UNLOCK_COST_CREDITS, LeadUnlockError, unlockLeadForProviderInTransaction } from '../lead-unlocks'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildProviderLeadActionsMessage } from '../provider-credit-copy'
+import { isOutsideStandardLeadHours } from './filter'
 import type {
   CoverageTier,
   DispatchActor,
@@ -214,11 +215,6 @@ function isSameCalendarDay(left: Date, right: Date) {
   return left.getFullYear() === right.getFullYear() &&
     left.getMonth() === right.getMonth() &&
     left.getDate() === right.getDate()
-}
-
-function isOutsideStandardLeadHours(date: Date) {
-  const hour = date.getHours()
-  return hour < 7 || hour >= 17
 }
 
 async function safeOptionalMutation<T>(factory: () => Promise<T>, fallback: T): Promise<T> {
@@ -2342,6 +2338,7 @@ export async function acceptAssignmentOffer(params: {
 }
 
 export async function processPendingAssignmentWorkflows() {
+  // Process at most 50 expired holds per cron tick to avoid function timeout under burst load.
   const activeHolds = await safeOptionalQuery(
     () =>
       db.assignmentHold.findMany({
@@ -2350,6 +2347,7 @@ export async function processPendingAssignmentWorkflows() {
           expiresAt: { lte: new Date() },
         },
         select: { id: true },
+        take: 50,
       }),
     [] as Array<{ id: string }>,
   )
@@ -2683,15 +2681,24 @@ export async function expireAssignmentOffer(params: {
       data: { status: 'EXPIRED', respondedAt: new Date() },
     })
     expiredLeadCount = leadUpdate.count
-    await tx.matchAttempt.update({
-      where: { id: hold.matchAttemptId },
-      data: {
-        stage: 'TIMED_OUT',
-        respondedAt: new Date(),
-        responseOutcome: 'TIMED_OUT',
-        reasonCode: 'OFFER_TIMEOUT',
-      },
-    })
+    // Guard: matchAttemptId may be null if this is a legacy or stub path.
+    // Only update matchAttempt if the ID is present.
+    if (hold.matchAttemptId) {
+      await tx.matchAttempt.update({
+        where: { id: hold.matchAttemptId },
+        data: {
+          stage: 'TIMED_OUT',
+          respondedAt: new Date(),
+          responseOutcome: 'TIMED_OUT',
+          reasonCode: 'OFFER_TIMEOUT',
+        },
+      })
+    } else {
+      console.warn('[expireAssignmentOffer] matchAttemptId is null, skipping matchAttempt update', {
+        holdId: hold.id,
+        jobRequestId: hold.jobRequestId,
+      })
+    }
     await releaseAssignmentHoldScheduleItems(tx, {
       assignmentHoldId: hold.id,
       itemType: 'ASSIGNMENT_HOLD',

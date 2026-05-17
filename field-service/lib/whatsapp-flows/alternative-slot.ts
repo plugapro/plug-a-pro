@@ -394,14 +394,18 @@ async function handleProviderDeclinedAllSlots(
     return
   }
 
+  // Clear alt-slot negotiation state so orchestrator can attempt normal matching again
   await db.jobRequest.update({
     where: { id: jobRequestId },
-    data: { altSlotNegotiationOutcome: 'PROVIDER_DECLINED' },
+    data: {
+      altSlotNegotiationSentAt: null,
+      altSlotNegotiationOutcome: null,
+    },
   })
 
   await sendText(phone, "No problem — we'll look for other providers. Thanks for letting us know. 👍")
 
-  // Notify customer and switch to customer-first for remaining slots
+  // Notify customer
   const customerPhone = jobRequest.customer?.phone
   if (customerPhone) {
     const customerFirstName = (jobRequest.customer?.name || 'there').split(/\s+/)[0]
@@ -410,9 +414,16 @@ async function handleProviderDeclinedAllSlots(
 
     await sendText(
       customerPhone,
-      `📋 *Still searching…*\n\nHi *${customerFirstName}*, we're still working to find you a *${categoryDisplay}* provider.\n\nWe'll notify you as soon as one becomes available. Reply *Hi* to check status.`
+      `🕐 *Still looking for your ${categoryDisplay} pro!*
+
+Hi *${customerFirstName}*, we're still searching for a *${categoryDisplay}* provider for your request.
+
+We'll notify you as soon as one becomes available. Reply *Hi* to check status.`
     ).catch(() => {})
   }
+
+  // Trigger re-match fire-and-forget so a new match attempt starts immediately
+  void triggerRematch(jobRequestId)
 }
 
 // ── Customer confirms/rejects provider's chosen slot ─────────────────────────
@@ -533,10 +544,14 @@ async function handleCustomerRejectedProviderSlot(
     return
   }
 
-  // Reset outcome to null — negotiation is still open, cron can retry
+  // Clear BOTH altSlotNegotiationSentAt and altSlotNegotiationOutcome so the orchestrator
+  // can retry the full negotiation cycle with a different provider
   await db.jobRequest.update({
     where: { id: jobRequestId },
-    data: { altSlotNegotiationOutcome: null },  // keep in-flight — cron retries
+    data: {
+      altSlotNegotiationSentAt: null,
+      altSlotNegotiationOutcome: null,
+    },
   })
 
   const categoryDisplay = jobRequest.category.charAt(0).toUpperCase() +
@@ -544,8 +559,15 @@ async function handleCustomerRejectedProviderSlot(
 
   await sendText(
     phone,
-    `📋 *No problem.*\n\nWe'll continue searching for a *${categoryDisplay}* provider for your preferred time.\n\nReply *Hi* anytime to check your request status.`
+    `📋 *No problem.*
+
+We'll continue searching for a *${categoryDisplay}* provider for your preferred time.
+
+Reply *Hi* anytime to check your request status.`
   )
+
+  // Trigger re-match fire-and-forget so a new match attempt starts immediately
+  void triggerRematch(jobRequestId)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -43,8 +43,10 @@ export async function reserveBestProviderAtomically(params: {
     const result = await db.$transaction(
       async (tx) => {
         // ── 1. Lock the provider row (SKIP LOCKED = fail fast, don't queue) ──
+        // Table name must match Prisma @@map("providers") exactly. Using quoted identifier
+        // to ensure PostgreSQL treats it as a literal lowercase table name.
         const locked = await tx.$queryRaw<{ id: string }[]>`
-          SELECT id FROM providers
+          SELECT id FROM "providers"
           WHERE id = ${candidate.id}
             AND active = true
           FOR UPDATE SKIP LOCKED
