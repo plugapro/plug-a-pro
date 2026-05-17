@@ -786,7 +786,7 @@ export default async function ProviderLeadAccessPage({
       ? Number(resolvedSearchParams.remainingBalance)
       : providerCreditBalance
   const confirmingAccept = resolvedSearchParams.confirmAccept === '1' && canRespondToLead
-  const supportWhatsAppDigits = process.env.SUPPORT_WHATSAPP_NUMBER?.replace(/\D/g, '')
+  const supportWhatsAppDigits = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER?.replace(/\D/g, '')
   const backToWhatsAppHref = supportWhatsAppDigits
     ? `https://wa.me/${supportWhatsAppDigits}?text=${encodeURIComponent(`Hi, I declined lead ${jobRef}.`)}`
     : null

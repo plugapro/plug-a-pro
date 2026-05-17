@@ -1176,8 +1176,10 @@ export function verifyWebhookChallenge(
   challenge: string | null
 ): string | null {
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN
-  if (mode === 'subscribe' && token === verifyToken) {
-    return challenge
+  if (mode === 'subscribe' && token && verifyToken) {
+    const a = Buffer.from(token)
+    const b = Buffer.from(verifyToken)
+    if (a.length === b.length && timingSafeEqual(a, b)) return challenge
   }
   return null
 }

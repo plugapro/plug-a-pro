@@ -240,6 +240,12 @@ export async function createProviderPayatTopUpIntent(
   amountCents: number,
 ): Promise<ProviderPayatTopUpResult> {
   const provider = await getAuthenticatedProvider()
+  const activeIntentCount = await db.paymentIntent.count({
+    where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
+  })
+  if (activeIntentCount >= 3) {
+    throw new Error('Too many pending payment intents. Complete or cancel existing payments first.')
+  }
   const result = await createPayatTopUpIntent({
     providerId: provider.id,
     amountCents,
@@ -269,6 +275,12 @@ export async function createProviderPayfastTopUpIntent(
   paymentMethod: PayfastTopUpMethod = 'PAYFAST_CARD',
 ): Promise<ProviderPayfastCheckoutResult> {
   const provider = await getAuthenticatedProvider()
+  const activeIntentCount = await db.paymentIntent.count({
+    where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
+  })
+  if (activeIntentCount >= 3) {
+    throw new Error('Too many pending payment intents. Complete or cancel existing payments first.')
+  }
   const result = await createPayfastTopUpIntent({
     providerId: provider.id,
     amountCents,

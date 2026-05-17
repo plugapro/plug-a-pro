@@ -106,6 +106,14 @@ export default async function ConfirmCompletionPage({ params }: Props) {
 
   async function handleConfirm() {
     'use server'
+    const recheck = verifyJobCompletionToken(token)
+    if (
+      recheck.status !== 'active' ||
+      recheck.payload.jobId !== jobId ||
+      recheck.payload.customerId !== customerId
+    ) {
+      throw new Error('Token expired or invalid')
+    }
     await transitionJob({
       jobId,
       toStatus: 'COMPLETED',

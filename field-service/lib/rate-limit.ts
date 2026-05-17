@@ -46,6 +46,23 @@ let _redis: Redis | null = null
 let _limiters: Partial<Record<LimiterKey, Ratelimit>> = {}
 let _degradedNotice = false
 
+type MemoryWindowEntry = { count: number; windowStart: number }
+const _memoryStore = new Map<string, MemoryWindowEntry>()
+
+function memoryConsume(key: string, limit: number, windowMs: number): RateLimitDecision {
+  const now = Date.now()
+  const entry = _memoryStore.get(key)
+  if (!entry || now - entry.windowStart > windowMs) {
+    _memoryStore.set(key, { count: 1, windowStart: now })
+    return { ok: true }
+  }
+  if (entry.count >= limit) {
+    return { ok: false, retryAfterMs: windowMs - (now - entry.windowStart) }
+  }
+  entry.count++
+  return { ok: true }
+}
+
 function getRedis(): Redis | null {
   if (_redis) return _redis
   // Accept canonical Upstash names, the names Vercel's Marketplace integration
@@ -107,7 +124,10 @@ async function consume(
   identifier: string,
 ): Promise<RateLimitDecision> {
   const limiter = getLimiter(key)
-  if (!limiter) return { ok: true }
+  if (!limiter) {
+    const cfg = configs()[key]
+    return memoryConsume(`${key}:${identifier}`, cfg.limit, cfg.windowSec * 1000)
+  }
   try {
     const result = await limiter.limit(identifier)
     if (result.success) return { ok: true }
@@ -169,9 +189,10 @@ export async function checkOtpVerifyLimit(params: {
   return { ok: true }
 }
 
-/** Test helper. Clears the lazy clients and one-shot warning state. */
+/** Test helper. Clears the lazy clients, one-shot warning state, and in-memory store. */
 export function resetRateLimitForTests(): void {
   _redis = null
   _limiters = {}
   _degradedNotice = false
+  _memoryStore.clear()
 }

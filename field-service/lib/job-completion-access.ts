@@ -20,13 +20,11 @@ type CompletionTokenPayload = {
 
 function getSigningSecret() {
   const secret =
-    process.env.PROVIDER_LEAD_ACCESS_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    process.env.WHATSAPP_APP_SECRET ||
-    process.env.CRON_SECRET
+    process.env.COMPLETION_TOKEN_SECRET ||
+    process.env.PROVIDER_LEAD_ACCESS_SECRET
 
   if (!secret) {
-    throw new Error('Missing PROVIDER_LEAD_ACCESS_SECRET or fallback signing secret')
+    throw new Error('COMPLETION_TOKEN_SECRET must be set')
   }
 
   return secret

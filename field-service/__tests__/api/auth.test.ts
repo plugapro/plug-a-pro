@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { resetRateLimitForTests } from '@/lib/rate-limit'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -329,6 +330,7 @@ describe('POST /api/auth/phone-exists', () => {
 describe('POST /api/auth/provider/send-code', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
+    resetRateLimitForTests()
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.test'
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
 
