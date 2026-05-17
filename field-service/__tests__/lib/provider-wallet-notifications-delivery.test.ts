@@ -133,8 +133,8 @@ describe('provider wallet notification delivery', () => {
       body: 'Payment received. Your wallet has been credited with 2 Plug A Pro provider credits. 1 credit = R50. 1 credit is used only when a customer selects you and you accept that selected job.',
       to: '+27821234567',
       status: 'SENT',
+      idempotencyKey: 'wallet:payment_credited:intent-1',
       metadata: expect.objectContaining({
-        idempotencyKey: 'wallet:payment_credited:intent-1',
         providerId: 'provider-1',
         paymentIntentId: 'intent-1',
       }),

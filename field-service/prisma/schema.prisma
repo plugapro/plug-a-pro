@@ -663,17 +663,34 @@ model Booking {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  match    Match    @relation(fields: [matchId], references: [id])
-  quote    Quote    @relation(fields: [quoteId], references: [id])
-  job      Job?
-  payment  Payment?
-  invoice  Invoice?
-  messages MessageEvent[]
+  match         Match                @relation(fields: [matchId], references: [id])
+  quote         Quote                @relation(fields: [quoteId], references: [id])
+  job           Job?
+  payment       Payment?
+  invoice       Invoice?
+  messages      MessageEvent[]
   scheduleItems TechnicianScheduleItem[]
+  statusHistory BookingStatusEvent[]
 
   @@index([status, createdAt])
   @@index([matchId])
   @@map("bookings")
+}
+
+model BookingStatusEvent {
+  id         String        @id @default(cuid())
+  bookingId  String
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+  actorId    String
+  actorRole  String
+  notes      String?
+  timestamp  DateTime      @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("booking_status_events")
 }
 
 // ─── Jobs (execution) ─────────────────────────────────────────────────────────

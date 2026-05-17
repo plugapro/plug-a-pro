@@ -1,6 +1,62 @@
-import type { JobStatus, PaymentStatus, Prisma } from '@prisma/client'
+import type { BookingStatus, JobStatus, PaymentStatus, Prisma } from '@prisma/client'
 import { db } from './db'
 import { recordAuditLog } from './audit'
+
+// ─── Booking state machine ────────────────────────────────────────────────────
+
+const VALID_BOOKING_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
+  SCHEDULED:   ['RESCHEDULED', 'CANCELLED', 'COMPLETED'],
+  RESCHEDULED: ['SCHEDULED', 'CANCELLED', 'COMPLETED'],
+  CANCELLED:   [],
+  COMPLETED:   [],
+}
+
+export async function transitionBooking(params: {
+  bookingId: string
+  toStatus: BookingStatus
+  actorId: string
+  actorRole: 'customer' | 'provider' | 'admin' | 'system'
+  notes?: string
+}): Promise<void> {
+  const { bookingId, toStatus, actorId, actorRole, notes } = params
+
+  const booking = await db.booking.findUnique({ where: { id: bookingId } })
+  if (!booking) throw new Error(`Booking not found: ${bookingId}`)
+
+  const allowed = VALID_BOOKING_TRANSITIONS[booking.status]
+  if (!allowed.includes(toStatus)) {
+    throw new Error(
+      `Invalid booking transition: ${booking.status} → ${toStatus}. Allowed: ${allowed.join(', ')}`
+    )
+  }
+
+  await db.$transaction(async (tx) => {
+    const updated = await tx.booking.updateMany({
+      where: { id: bookingId, status: booking.status },
+      data: { status: toStatus },
+    })
+    if (updated.count === 0) {
+      throw new Error(`Concurrent modification: booking ${bookingId} status changed before transaction committed`)
+    }
+
+    await tx.bookingStatusEvent.create({
+      data: { bookingId, fromStatus: booking.status, toStatus, actorId, actorRole, notes },
+    })
+
+    await recordAuditLog(
+      {
+        actorId,
+        actorRole,
+        action: 'booking.status_transition',
+        entityType: 'booking',
+        entityId: bookingId,
+        before: { status: booking.status },
+        after: { status: toStatus, notes: notes ?? null },
+      },
+      tx
+    )
+  })
+}
 
 function isTerminalJobStatus(status: JobStatus) {
   return status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED'
@@ -52,19 +108,24 @@ export async function cancelBookingLifecycle(params: {
   await db.$transaction(async (tx) => {
     await tx.booking.update({
       where: { id: booking.id },
+      data: { status: 'CANCELLED', cancelReason: reason },
+    })
+
+    await tx.bookingStatusEvent.create({
       data: {
-        status: 'CANCELLED',
-        cancelReason: reason,
+        bookingId: booking.id,
+        fromStatus: booking.status,
+        toStatus: 'CANCELLED',
+        actorId: params.actorId,
+        actorRole: params.actorRole,
+        notes: reason,
       },
     })
 
     if (booking.job && !isTerminalJobStatus(booking.job.status)) {
       await tx.job.update({
         where: { id: booking.job.id },
-        data: {
-          status: 'CANCELLED',
-          failureReason: reason,
-        },
+        data: { status: 'CANCELLED', failureReason: reason },
       })
 
       await tx.jobStatusEvent.create({
@@ -85,10 +146,10 @@ export async function cancelBookingLifecycle(params: {
     })
 
     if (booking.payment) {
-    await tx.payment.update({
-      where: { bookingId: booking.id },
-      data: {
-        metadata: {
+      await tx.payment.update({
+        where: { bookingId: booking.id },
+        data: {
+          metadata: {
             ...(((booking.payment.metadata as Prisma.JsonObject | null) ?? {})),
             cancellation: {
               cancelledAt: new Date().toISOString(),
