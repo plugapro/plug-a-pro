@@ -717,6 +717,7 @@ async function processInboundMessageUnlocked(
       'provider_application_status',
       'provider_update_application',
       'provider_top_up_credits',
+      'provider_topup',
     ].includes(reply.id))
     const identity = await resolveWhatsAppUserContext(phone)
     const selectedMenuPath = reply.id ?? rawText ?? 'unknown'
@@ -1281,6 +1282,9 @@ async function processInboundMessageUnlocked(
     } else if (reply.id === 'provider_application_status') {
       flow = 'provider_journey'
       step = 'pj_application_status'
+    } else if (reply.id === 'provider_topup') {
+      flow = 'provider_journey'
+      step = 'pj_topup_select_amount'
     } else if (reply.id === 'provider_update_application') {
       const application = await db.providerApplication.findFirst({
         // Include MORE_INFO_REQUIRED so providers awaiting requested admin follow-up
