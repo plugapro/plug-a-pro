@@ -57,7 +57,7 @@ export function AttachmentThumbnail({
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger asChild>
         <button type="button" className="block w-full cursor-zoom-in focus:outline-none">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           {/* next/image does not support onError; we need it to detect broken proxy responses. */}
           <img
             src={src}

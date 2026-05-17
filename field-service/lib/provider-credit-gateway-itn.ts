@@ -9,7 +9,7 @@
  * Responsibilities:
  *   - Idempotent crediting of a provider wallet from a verified ITN
  *   - Atomic transaction: intent → CREDITED, wallet balance increment, ledger entry
- *   - Post-credit events: WhatsApp notification + promo award (outside transaction)
+ *   - Post-credit events: WhatsApp notification (outside transaction)
  *
  * Invariants:
  *   - One intent → at most one credit, regardless of how many times this
@@ -19,7 +19,6 @@
 
 import { db } from './db'
 import { creditPaidCreditsInTransaction } from './provider-wallet'
-import { awardFirstTopUpPromoCreditsInTransaction } from './provider-promo-awards'
 
 // Gateway intents arrive at ITN_RECEIVED before crediting. This function
 // accepts both ITN_RECEIVED (normal flow) and PENDING_PAYMENT (admin retry
@@ -124,15 +123,6 @@ async function creditProviderWalletFromGatewayIntent(
         where: { id: intent.id },
         data: { creditedLedgerEntryId: ledgerEntry.id },
       })
-
-      // Check and award first-top-up promo credits. Runs in the same
-      // transaction so it is atomic with the paid credit write.
-      await awardFirstTopUpPromoCreditsInTransaction(
-        tx,
-        intent.providerId,
-        intent.id,
-        source.createdBy,
-      )
 
       return { ledgerEntryId: ledgerEntry.id }
     })

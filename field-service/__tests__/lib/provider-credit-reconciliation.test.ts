@@ -191,7 +191,7 @@ describe('provider credit reconciliation service', () => {
     expect(result.intent.creditedAt).toBeInstanceOf(Date)
     expect(result.wallet).toMatchObject({
       paidCreditBalance: 4,
-      promoCreditBalance: 3,
+      promoCreditBalance: 1,
     })
     expect(result.ledgerEntries[0]).toMatchObject({
       entryType: 'TOPUP_CREDIT',
@@ -200,16 +200,6 @@ describe('provider credit reconciliation service', () => {
       referenceType: 'payment_intent',
       referenceId: 'intent-1',
       createdBy: 'admin-user-1',
-    })
-    expect(result.ledgerEntries[1]).toMatchObject({
-      entryType: 'PROMO_CREDIT',
-      creditType: 'PROMO',
-      amountCredits: 2,
-      referenceType: 'provider_promo_award',
-    })
-    expect(result.promoAward).toMatchObject({
-      awardType: 'FIRST_TOPUP',
-      creditsAwarded: 2,
     })
   })
 
@@ -223,7 +213,7 @@ describe('provider credit reconciliation service', () => {
     expect(result.intent.status).toBe('CREDITED')
     expect(result.wallet).toMatchObject({
       paidCreditBalance: 4,
-      promoCreditBalance: 3,
+      promoCreditBalance: 1,
     })
     expect(result.ledgerEntries[0]).toMatchObject({
       entryType: 'TOPUP_CREDIT',

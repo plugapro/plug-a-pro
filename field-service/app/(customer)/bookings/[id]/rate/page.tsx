@@ -82,24 +82,14 @@ export default async function RatePage({
     })
     if (existingReview) redirect(`/bookings/${id}`)
 
-    const { awardFirstCompletedJobWithCustomerRatingPromoCreditsInTransaction } = await import('@/lib/provider-promo-awards')
-    await dbServer.$transaction(async (tx) => {
-      const review = await tx.review.create({
-        data: {
-          jobId,
-          reviewerType: 'CUSTOMER',
-          customerId:   activeCustomer.id,
-          score,
-          comment,
-        },
-      })
-
-      await awardFirstCompletedJobWithCustomerRatingPromoCreditsInTransaction(
-        tx,
-        jobProviderId,
+    await dbServer.review.create({
+      data: {
         jobId,
-        review.id,
-      )
+        reviewerType: 'CUSTOMER',
+        customerId:   activeCustomer.id,
+        score,
+        comment,
+      },
     })
 
     redirect(`/bookings/${id}`)

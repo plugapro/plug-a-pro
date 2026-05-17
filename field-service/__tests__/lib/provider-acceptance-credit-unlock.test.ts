@@ -54,6 +54,7 @@ vi.mock('../../lib/provider-accepted-lock', () => ({
   },
   lockAcceptedLeadAfterCreditInTransaction: mockLockAcceptedLead,
   notifyAcceptedLeadLocked: mockNotifyAcceptedLeadLocked,
+  notifyNonSelectedRfpProviders: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('../../lib/provider-lead-access', () => ({
   getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/jobs/signed-token'),

@@ -235,7 +235,9 @@ function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppCo
 }
 
 function noExtraNotes(description?: string | null) {
-  return description?.trim() || 'No extra notes'
+  if (!description?.trim()) return 'No extra notes'
+  // WhatsApp template parameters cannot contain newlines or tabs
+  return description.replace(/[\r\n\t]+/g, ' ').replace(/\s{5,}/g, '    ').trim()
 }
 
 async function hasSentNotification(payload: NotificationPayload) {

@@ -37,12 +37,6 @@ const { mockDb, walletState } = vi.hoisted(() => {
 })
 
 const mockNotify = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-const mockAwardPromo = vi.hoisted(() => vi.fn().mockResolvedValue({
-  award: null,
-  wallet: null,
-  ledgerEntries: [],
-}))
-
 vi.mock('@/lib/db', () => ({ db: mockDb }))
 
 vi.mock('@/lib/provider-wallet', async (importOriginal) => {
@@ -71,10 +65,6 @@ vi.mock('@/lib/provider-wallet', async (importOriginal) => {
     ),
   }
 })
-
-vi.mock('@/lib/provider-promo-awards', () => ({
-  awardFirstTopUpPromoCreditsInTransaction: mockAwardPromo,
-}))
 
 vi.mock('@/lib/provider-wallet-notifications', () => ({
   notifyProviderPaymentCredited: mockNotify,
@@ -227,19 +217,6 @@ describe('creditProviderWalletFromGatewayItn', () => {
     await creditProviderWalletFromGatewayItn('intent-1')
     await new Promise((r) => setTimeout(r, 0))
     expect(mockNotify).not.toHaveBeenCalled()
-  })
-
-  it('calls awardFirstTopUpPromoCreditsInTransaction inside the transaction', async () => {
-    const { creditProviderWalletFromGatewayItn } = await import(
-      '../../lib/provider-credit-gateway-itn'
-    )
-    await creditProviderWalletFromGatewayItn('intent-1')
-    expect(mockAwardPromo).toHaveBeenCalledWith(
-      expect.anything(),
-      'provider-1',
-      'intent-1',
-      'payfast-itn',
-    )
   })
 
   it('returns credited: false for a non-creditable intent status', async () => {

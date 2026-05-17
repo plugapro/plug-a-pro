@@ -1,7 +1,6 @@
 import { Prisma, type PaymentIntent } from '@prisma/client'
 import { db } from './db'
 import { creditPaidCreditsInTransaction, type WalletMutationResult } from './provider-wallet'
-import { awardFirstTopUpPromoCreditsInTransaction } from './provider-promo-awards'
 
 const CREDITABLE_STATUSES = [
   'PENDING_PAYMENT',
@@ -266,24 +265,13 @@ export async function creditPaymentIntentInTransaction(
     data: { creditedLedgerEntryId: walletResult.ledgerEntries[0].id },
   })
 
-  const promoAwardResult = await awardFirstTopUpPromoCreditsInTransaction(
-    tx,
-    intent.providerId,
-    intent.id,
-    adminUserId,
-  )
-
   const updatedIntent = await tx.paymentIntent.findUniqueOrThrow({
     where: { id: intent.id },
   })
 
   return {
     intent: updatedIntent,
-    wallet: promoAwardResult.wallet ?? walletResult.wallet,
-    ledgerEntries: [
-      ...walletResult.ledgerEntries,
-      ...promoAwardResult.ledgerEntries,
-    ],
-    promoAward: promoAwardResult.award,
+    wallet: walletResult.wallet,
+    ledgerEntries: walletResult.ledgerEntries,
   }
 }

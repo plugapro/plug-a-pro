@@ -23,6 +23,7 @@ const { mockDb, mockSendTemplate, state } = vi.hoisted(() => {
     mockDb: {
       $transaction: vi.fn(),
       lead: { findUnique: vi.fn() },
+      leadUnlock: { findFirst: vi.fn() },
       messageEvent: {
         findFirst: vi.fn(),
         create: vi.fn(),
@@ -205,6 +206,7 @@ describe('MVP1 selected-provider acceptance end to end', () => {
     state.tx = makeTx()
     mockDb.$transaction.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => fn(state.tx))
     mockDb.lead.findUnique.mockImplementation(async () => state.lead)
+    mockDb.leadUnlock.findFirst.mockResolvedValue(null)
     mockDb.messageEvent.findFirst.mockResolvedValue(null)
     mockDb.messageEvent.create.mockImplementation(async () => ({ id: `message-e2e-${mockDb.messageEvent.create.mock.calls.length}` }))
     mockDb.messageEvent.updateMany.mockResolvedValue({ count: 1 })

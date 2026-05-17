@@ -6,6 +6,7 @@ import { sendTemplate, sendText as sendWhatsAppText } from './whatsapp'
 import { phoneLookupVariants } from './whatsapp-identity'
 import { sendPostMatchIntroductions } from './post-match-intro'
 import { notifyPostMatchAcceptance } from './post-match-communications'
+import { notifyLeadUnlocked } from './provider-wallet-notifications'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
@@ -574,7 +575,33 @@ export async function notifyAcceptedLeadLocked(params: { leadId: string; provide
     })
     if (!result.ok) return false
 
-    // Fire intro messages (contact exchange) non-blocking — errors logged inside.
+    // Fire template-based contact exchange (lead_unlock_provider) — works outside the 24h
+    // re-engagement window because it uses a registered template, not an interactive button.
+    // Look up the unlock record created during credit application.
+    void db.leadUnlock.findFirst({
+      where: { leadId: params.leadId, providerId: params.providerId },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+    }).then((unlock) => {
+      if (unlock) {
+        return notifyLeadUnlocked(unlock.id).catch((err: unknown) => {
+          console.error('[provider-accepted-lock] notifyLeadUnlocked failed (non-fatal)', {
+            leadId: params.leadId,
+            unlockId: unlock.id,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+      }
+    }).catch((err: unknown) => {
+      console.error('[provider-accepted-lock] unlock lookup for notification failed (non-fatal)', {
+        leadId: params.leadId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+
+    // Fire interactive CTA intro messages (contact exchange) — requires 24h re-engagement
+    // window; falls back gracefully when outside the window. The template path above is the
+    // reliable fallback for providers who have not messaged recently.
     void sendPostMatchIntroductions({ leadId: params.leadId, providerId: params.providerId })
 
     // Fire rich acceptance messages with app deep links to both parties (non-blocking).

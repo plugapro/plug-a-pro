@@ -447,15 +447,11 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       promoCreditBalance: 0,
     })
 
-    await awardPromoCreditsForMilestone('provider-1', 'PROFILE_COMPLETED', {
+    await awardPromoCreditsForMilestone('provider-1', 'MOBILE_VERIFIED', {
       referenceType: 'provider',
       referenceId: 'provider-1',
     })
-    await awardPromoCreditsForMilestone('provider-1', 'KYC_APPROVED', {
-      referenceType: 'provider_kyc',
-      referenceId: 'provider-1',
-    })
-    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 7 })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 3 })
 
     const preview = await getProviderLeadDetailForProvider('lead-1', 'provider-1')
     expect(preview?.unlockedDetails).toBeNull()
@@ -463,7 +459,7 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
     expect(JSON.stringify(preview)).not.toContain('12 Exact Street')
 
     await unlockLeadForProvider('lead-1', 'provider-1')
-    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 6 })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 2 })
     expect(state.ledgerEntries).toContainEqual(expect.objectContaining({
       entryType: 'LEAD_UNLOCK_DEBIT',
       creditType: 'PROMO',
@@ -489,14 +485,14 @@ describe('provider credit wallet and paid lead monetisation integration', () => 
       status: 'PENDING_PAYMENT',
       creditsToIssue: 2,
     })
-    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 6 })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 0, promoCreditBalance: 2 })
 
     await reconcilePaymentIntent('intent-1', 'admin-1', 'BANK-PAP-7842-9F3K', {
       statementAmountCents: 10_000,
       adminNote: 'Funds confirmed',
     })
     await creditPaymentIntent('intent-1', 'admin-1', { adminNote: 'Credit approved' })
-    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 2, promoCreditBalance: 8 })
+    expect(wallet('provider-1')).toMatchObject({ paidCreditBalance: 2, promoCreditBalance: 2 })
 
     // Promo-first debit is intentional. This simulates prior promo exhaustion so
     // the second unlock validates the paid-credit path after the confirmed top-up.
