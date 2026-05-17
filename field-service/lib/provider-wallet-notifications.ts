@@ -241,13 +241,8 @@ function noExtraNotes(description?: string | null) {
 async function hasSentNotification(payload: NotificationPayload) {
   const existing = await db.messageEvent.findFirst({
     where: {
-      to: payload.to,
-      templateName: payload.templateName,
+      idempotencyKey: payload.idempotencyKey,
       status: { in: SENT_OR_BETTER },
-      metadata: {
-        path: ['idempotencyKey'],
-        equals: payload.idempotencyKey,
-      },
     },
     select: { id: true },
   })
@@ -264,13 +259,11 @@ async function recordFailedNotification(payload: NotificationPayload, failureRea
       templateName: payload.templateName,
       body: payload.body,
       to: payload.to,
+      idempotencyKey: payload.idempotencyKey,
       status: 'FAILED',
       sentAt: new Date(),
       failureReason,
-      metadata: {
-        ...payload.metadata,
-        idempotencyKey: payload.idempotencyKey,
-      },
+      metadata: payload.metadata ?? {},
     },
   }).catch(() => {})
 }
@@ -294,12 +287,10 @@ async function sendNotification(payload: NotificationPayload) {
         body: payload.body,
         to: payload.to,
         externalId,
+        idempotencyKey: payload.idempotencyKey,
         status: 'SENT',
         sentAt: new Date(),
-        metadata: {
-          ...payload.metadata,
-          idempotencyKey: payload.idempotencyKey,
-        },
+        metadata: payload.metadata ?? {},
       },
     })
 
