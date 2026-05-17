@@ -219,7 +219,7 @@ export async function notifyPostMatchAcceptance(params: {
       `🎉 *Great news, ${customerName}!*\n\n` +
       `*${providerDisplayName(provider.name)}* has accepted your *${category}* request.\n\n` +
       `They will contact you shortly to confirm the visit details.\n\n` +
-      `Provider contact:\n${provider.phone}\n\n` +
+      `` +
       `Ref: *${ref}*`
     const customerContext = {
       templateName: 'post_match_customer_provider_accepted',
@@ -238,15 +238,18 @@ export async function notifyPostMatchAcceptance(params: {
 
     try {
       if (customerHandoverUrl) {
+        // Send message with provider WhatsApp CTA button
+        const whatsappProviderUrl = `https://wa.me/${provider.phone.replace(/\D/g, '')}`;
         await sendCtaUrl(
           customer.phone,
           customerBody,
-          'View Provider',
-          customerHandoverUrl,
-          { footer: 'Secure link for this request only.' },
+          'WhatsApp Provider',
+          whatsappProviderUrl,
+          { footer: 'Chat directly with your provider.' },
           customerContext,
         )
       } else {
+        // No handover URL — send plain text; provider will contact customer
         await sendText(customer.phone, customerBody, customerContext)
       }
       customerNotified = true

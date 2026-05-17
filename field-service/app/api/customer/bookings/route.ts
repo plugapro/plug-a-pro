@@ -15,12 +15,14 @@ import {
   InvalidStructuredAddressError,
   resolveStructuredAddressCapture,
 } from '@/lib/structured-address'
+import { isEnabled } from '@/lib/flags'
 import { isInActiveServiceArea, addToServiceAreaWaitlist } from '@/lib/service-area-guard'
 import { uploadJobRequestPhoto } from '@/lib/storage'
 import { notifyCustomerPwaRequestSubmitted } from '@/lib/client-pwa-submission-notifications'
 
 const MAX_REQUEST_PHOTOS = 5
 const MAX_REQUEST_PHOTO_SIZE = 10 * 1024 * 1024
+const MAX_CONCURRENT_ACTIVE_REQUESTS = 5
 
 type PhotoSafeForPreviewList = boolean[]
 
@@ -54,6 +56,23 @@ export async function POST(req: NextRequest) {
   }
   if (!session.phone) {
     return NextResponse.json({ error: 'Verified phone required' }, { status: 403 })
+  }
+
+  // Rate limit: check for too many active requests
+  const activeRequestCount = await db.jobRequest.count({
+    where: {
+      customerId: session.id,
+      status: { in: ['PENDING_VALIDATION', 'OPEN', 'MATCHING'] },
+    },
+  })
+  if (activeRequestCount >= MAX_CONCURRENT_ACTIVE_REQUESTS) {
+    return NextResponse.json(
+      {
+        error: 'TOO_MANY_ACTIVE_REQUESTS',
+        message: 'You have too many active service requests. Please wait for one to be resolved before submitting a new one.',
+      },
+      { status: 429 },
+    )
   }
 
   let body: {
@@ -240,7 +259,11 @@ export async function POST(req: NextRequest) {
       sanitizedPreferredProviderId = preferredProvider?.id ?? null
     }
 
+        // Determine assignment mode based on feature flag
+    const autoAssign = await isEnabled('feature.customer.auto_assign_on_submit')
+
     const result = await createJobRequest({
+
       userId: session.id,
       phone: session.phone!,
       category,
@@ -251,8 +274,8 @@ export async function POST(req: NextRequest) {
       requestedWindowStart: requestedWindowStart ? new Date(requestedWindowStart) : null,
       requestedWindowEnd: requestedWindowEnd ? new Date(requestedWindowEnd) : null,
       requestedArrivalLatest: requestedArrivalLatest ? new Date(requestedArrivalLatest) : null,
-      assignmentMode: 'OPS_REVIEW',
-      deferMatchingModeSelection: true,
+            assignmentMode: autoAssign ? 'AUTO_ASSIGN' : 'OPS_REVIEW',
+      deferMatchingModeSelection: !autoAssign,
       preferredProviderId: sanitizedPreferredProviderId,
       customerAcceptedAmount: typeof customerAcceptedAmount === 'number' ? customerAcceptedAmount : null,
       customerAcceptedScope: customerAcceptedScope ?? null,
@@ -299,6 +322,7 @@ export async function POST(req: NextRequest) {
       suburb: resolvedAddress.suburb,
       city: resolvedAddress.city,
       ticketUrl: result.ticketUrl,
+      assignmentMode: autoAssign ? 'AUTO_ASSIGN' : 'OPS_REVIEW',
       requestId: result.jobRequestId,
     }).catch((error) => {
       console.warn('[bookings] request submitted notification failed', {

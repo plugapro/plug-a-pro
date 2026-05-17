@@ -285,9 +285,15 @@ async function declineLeadWithToken(formData: FormData) {
   }
 
   const { declineLead } = await import('@/lib/matching-engine')
+  const { declineSelectedProviderJob } = await import('@/lib/customer-shortlists')
   let result
   try {
-    result = await declineLead({ leadId: lead.id, providerId: lead.providerId })
+    // For shortlist-path leads (CUSTOMER_SELECTED), use the correct decline function
+    if (lead.status === 'CUSTOMER_SELECTED') {
+      result = await declineSelectedProviderJob({ leadId: lead.id, providerId: lead.providerId })
+    } else {
+      result = await declineLead({ leadId: lead.id, providerId: lead.providerId })
+    }
   } catch (error) {
     if (isRedirectError(error)) throw error
     console.error('[leads/access] decline lead action failed', {
@@ -1263,7 +1269,7 @@ export default async function ProviderLeadAccessPage({
             <div>
               <h2 className="text-base font-semibold">Mark job done</h2>
               <p className="text-sm text-muted-foreground">
-                Once you've finished the work, mark it done. The customer will be notified and invited to leave a review.
+                Once you&apos;ve finished the work, mark it done. The customer will be notified and invited to leave a review.
               </p>
             </div>
             <form action={markJobDoneWithToken}>

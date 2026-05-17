@@ -15,7 +15,7 @@ import {
   buildProviderLeadPreviewMessage,
 } from '@/lib/provider-credit-copy'
 import { sendButtons } from '@/lib/whatsapp-interactive'
-import { sendJobOffer } from '@/lib/whatsapp'
+import { sendJobOffer, sendText } from '@/lib/whatsapp'
 import { MATCHING_CONFIG } from './config'
 import type { CandidatePoolEntry } from './candidate-pool'
 import type { MatchingJobRequest } from './types'
@@ -274,4 +274,34 @@ export async function dispatchMatchLead(params: {
       },
     }).catch(() => {})
   })
+
+  // Notify customer that offer was sent and provide offer window duration
+  if (jobRequest.customer?.phone && !actionsAlreadySent) {
+    const customerAlreadyNotified = await hasSuccessfulMessageForRecipient({
+      to: jobRequest.customer.phone,
+      templateName: 'dispatch:customer_offer_sent',
+      metadataPath: ['leadId'],
+      metadataEquals: lead.id,
+    }).catch(() => false)
+
+    if (!customerAlreadyNotified) {
+      await sendText({
+        phone: jobRequest.customer.phone,
+        body: `We sent your request to a nearby provider. They have ${MATCHING_CONFIG.offerTtlMinutes} minutes to confirm. We'll notify you as soon as they respond.`,
+        metadata: {
+          templateName: 'dispatch:customer_offer_sent',
+          leadId: lead.id,
+          jobRequestId: jobRequest.id,
+          providerId: provider.id,
+          isTestRequest: jobRequest.isTestRequest ?? false,
+        },
+      }).catch((err: unknown) => {
+        console.error('[dispatch] customer offer window notification failed (non-fatal)', {
+          jobRequestId: jobRequest.id,
+          leadId: lead.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+  }
 }

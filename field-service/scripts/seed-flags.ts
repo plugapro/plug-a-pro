@@ -141,6 +141,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'auth.otp.whatsapp',
     description: 'Deliver Supabase Auth OTPs via WhatsApp template instead of SMS. Real kill switch is the Supabase Send SMS Hook URL in the dashboard; this flag is a code-level safety gate. Default off — enable per env after the Meta otp_login template is approved and the hook is wired.',
   },
+  {
+    key: 'feature.customer.auto_assign_on_submit',
+    description: 'When enabled, customer PWA job submissions use AUTO_ASSIGN mode for immediate matching. When disabled, submissions use OPS_REVIEW for manual approval.',
+  },
 ]
 
 async function main() {
