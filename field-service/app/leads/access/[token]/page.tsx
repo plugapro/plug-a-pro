@@ -8,6 +8,7 @@ import { format, formatDistanceToNow } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { ArrivalSubmitButton } from '@/components/provider/ArrivalSubmitButton'
 import { LeadActionSubmitButton } from '@/components/provider/LeadActionSubmitButton'
+import { LeadExpiryWatcher } from '@/components/provider/LeadExpiryWatcher'
 import { db } from '@/lib/db'
 import {
   hashSignedToken,
@@ -673,21 +674,26 @@ export default async function ProviderLeadAccessPage({
   const leadRef = lead.id.slice(-8).toUpperCase()
   const jobRef = lead.jobRequestId.slice(-8).toUpperCase()
 
-  if (((isExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired && !isCreditApplied) || isDeclined) && !resolvedSearchParams.declined) {
-    const code: DiagnosticCode = isExpired ? 'JOB_LINK_EXPIRED' : 'JOB_LINK_INVALID'
+  // acceptLead can return LEAD_EXPIRED before the DB status reflects it
+  // (race with background expiry job). Treat the authoritative error code as
+  // an expiry signal so we show ClosedLeadMessage instead of a generic error.
+  const treatAsExpired = isExpired || resolvedSearchParams.errorCode === 'LEAD_EXPIRED'
+
+  if (((treatAsExpired && !isAccepted && !isProviderAcceptedPending && !isCreditRequired && !isCreditApplied) || isDeclined) && !resolvedSearchParams.declined) {
+    const code: DiagnosticCode = treatAsExpired ? 'JOB_LINK_EXPIRED' : 'JOB_LINK_INVALID'
     console.warn('[leads/access] signed lead link closed', {
       traceId,
       leadId: lead.id,
       providerId: lead.providerId,
       leadStatus: lead.status,
       expiresAt: lead.expiresAt,
-      internal_reason: isExpired ? 'lead_expired' : 'lead_already_responded',
+      internal_reason: treatAsExpired ? 'lead_expired' : 'lead_already_responded',
       action: 'View Lead',
     })
     return (
       <ClosedLeadMessage
         title={
-          isExpired
+          treatAsExpired
             ? 'This lead is no longer available.'
             : 'You already responded to this lead.'
         }
@@ -811,9 +817,12 @@ export default async function ProviderLeadAccessPage({
         </div>
 
         {showExpiryCountdown && lead.expiresAt && (
-          <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
-            Expires {formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · {format(lead.expiresAt, 'HH:mm, d MMM')}
-          </div>
+          <>
+            <LeadExpiryWatcher expiresAt={lead.expiresAt.toISOString()} />
+            <div className="tone-warning rounded-lg border px-4 py-3 text-sm">
+              Expires {formatDistanceToNow(lead.expiresAt, { addSuffix: true })} · {format(lead.expiresAt, 'HH:mm, d MMM')}
+            </div>
+          </>
         )}
 
         {isAccepted && (
