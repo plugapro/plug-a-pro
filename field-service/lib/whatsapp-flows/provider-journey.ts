@@ -1730,9 +1730,10 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'pj_topup_select_amount' }
 }
 
+// provider param typed explicitly because findProviderForWhatsApp returns any (as any cast for Prisma include compatibility)
 async function handleTopUpEftCreate(
   ctx: FlowContext,
-  provider: Awaited<ReturnType<typeof findProviderForWhatsApp>>,
+  provider: { id: string; name: string | null; phone: string | null },
   amountCents: number,
 ): Promise<FlowResult> {
   let intent: Awaited<ReturnType<typeof createManualEftTopUpIntent>>['intent']
@@ -1771,7 +1772,7 @@ async function handleTopUpEftCreate(
     '',
     expiryLine,
     'Credits will be added once Plug A Pro confirms your payment.',
-  ].filter(Boolean).join('\n')
+  ].filter((line): line is string => line !== null).join('\n')
 
   await sendText(ctx.phone, message)
 
