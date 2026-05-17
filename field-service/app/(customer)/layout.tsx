@@ -1,5 +1,7 @@
 // Customer PWA layout — mobile-first, bottom navigation, design system v2
 
+export const dynamic = 'force-dynamic'
+
 import type { Metadata } from 'next'
 import {
   Home,

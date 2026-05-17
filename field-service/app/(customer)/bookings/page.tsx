@@ -45,7 +45,7 @@ function requestLabel(status: string): string {
     MATCHING: 'Matching',
     SHORTLIST_READY: 'Choose provider',
     PROVIDER_CONFIRMATION_PENDING: 'Confirming',
-    ACCEPTED_LOCKED: 'Accepted',
+    ACCEPTED_LOCKED: 'Provider accepted',
     MATCHED: 'Matched',
     EXPIRED: 'Expired',
     CANCELLED: 'Cancelled',
@@ -194,6 +194,12 @@ export default async function CustomerBookingsPage({
           provider: { select: { name: true, avatarUrl: true } },
         },
       },
+      // Fallback provider name when the match doesn't exist yet (ACCEPTED_LOCKED)
+      leads: {
+        where: { status: { in: ['ACCEPTED_LOCKED', 'PROVIDER_ACCEPTED', 'CREDIT_APPLIED', 'ACCEPTED'] } },
+        select: { provider: { select: { name: true, avatarUrl: true } } },
+        take: 1,
+      },
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -282,7 +288,14 @@ export default async function CustomerBookingsPage({
                 const tone = requestTone(request.status)
                 const label = requestLabel(request.status)
                 const ref = request.id.slice(-8).toUpperCase()
-                const providerName = request.match?.provider?.name ?? null
+                const providerName =
+                  request.match?.provider?.name ??
+                  request.leads[0]?.provider?.name ??
+                  null
+                const providerAvatarUrl =
+                  request.match?.provider?.avatarUrl ??
+                  request.leads[0]?.provider?.avatarUrl ??
+                  null
                 return (
                   <Link
                     key={request.id}
@@ -309,8 +322,8 @@ export default async function CustomerBookingsPage({
                       <div className="border-t border-[var(--border)] my-3" />
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          {request.match?.provider?.avatarUrl ? (
-                            <Image src={request.match.provider.avatarUrl} alt=""
+                          {providerAvatarUrl ? (
+                            <Image src={providerAvatarUrl} alt=""
                                    width={28} height={28}
                                    className="w-7 h-7 rounded-[8px] object-cover shrink-0" />
                           ) : providerName ? (
