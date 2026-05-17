@@ -4,6 +4,8 @@
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { sendCustomerRunningLateNotification, sendProviderInvoiceTemplate } from '../whatsapp'
+import { createManualEftTopUpIntent } from '../provider-credit-payment-intents'
+import { notifyProviderPaymentIntentCreated } from '../provider-wallet-notifications'
 import { logOutboundMessage } from '../message-events'
 import { db } from '../db'
 import { transitionJob } from '../jobs'
@@ -288,6 +290,10 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
       return handleProviderDisputeCollect(ctx)
     case 'pj_invoice':
       return handleInvoiceFlow(ctx.phone)
+    case 'pj_topup_select_amount':
+      return handleTopUpSelectAmount(ctx)
+    case 'pj_topup_eft_created':
+      return handleProviderMenu(ctx)
     default:
       return handleProviderMenu(ctx)
   }
@@ -319,6 +325,7 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
       title: 'Provider',
       rows: [
         { id: 'provider_check_status', title: 'View Credits', description: 'Check balance and provider status' },
+        { id: 'provider_topup', title: 'Top Up Credits', description: 'Add credits via bank transfer' },
         { id: 'provider_available_jobs', title: 'View Opportunities', description: 'Review safe job previews' },
         { id: 'provider_my_jobs', title: 'View Active Jobs', description: 'Manage accepted and scheduled work' },
         paused
@@ -496,6 +503,8 @@ async function handleToggleAvailable(ctx: FlowContext): Promise<FlowResult> {
     )
     return { nextStep: 'pj_toggle_available' }
   }
+
+  if (ctx.reply.id === 'provider_topup') return { nextStep: 'pj_topup_select_amount' }
 
   // Unexpected input — re-show menu
   return handleProviderMenu(ctx)
@@ -1680,4 +1689,98 @@ export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
 
   await sendText(phone, "Invoice sent to your customer.")
   return { nextStep: 'done' }
+}
+
+// ─── Top-Up (EFT) ────────────────────────────────────────────────────────────
+
+const TOPUP_PACKAGES = [
+  { id: 'provider_topup_100', amountCents: 10_000, label: 'R100 — 2 credits' },
+  { id: 'provider_topup_200', amountCents: 20_000, label: 'R200 — 4 credits' },
+  { id: 'provider_topup_500', amountCents: 50_000, label: 'R500 — 10 credits' },
+] as const
+
+async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
+  const provider = await findProviderForWhatsApp(ctx.phone)
+  if (!provider) {
+    await sendText(ctx.phone, "You're not registered as a provider. Reply *join* to apply.")
+    return { nextStep: 'done' }
+  }
+
+  // Process a package selection reply
+  const selected = TOPUP_PACKAGES.find((pkg) => pkg.id === ctx.reply.id)
+  if (selected) {
+    return handleTopUpEftCreate(ctx, provider, selected.amountCents)
+  }
+
+  // First entry or unrecognised reply — show the package list
+  const creditLine = await providerCreditBalanceLine(provider.id)
+  await sendList(
+    ctx.phone,
+    `💳 *Top Up Credits*\n\n${creditLine}\n\n1 credit = R50. Credits are used only when a customer selects you and you accept the job.\n\nChoose how much to add:`,
+    [{
+      title: 'Bank Transfer (EFT)',
+      rows: [
+        { id: 'provider_topup_100', title: 'R100', description: '2 credits' },
+        { id: 'provider_topup_200', title: 'R200', description: '4 credits' },
+        { id: 'provider_topup_500', title: 'R500', description: '10 credits' },
+      ],
+    }],
+    { buttonLabel: 'Select Amount' },
+  )
+  return { nextStep: 'pj_topup_select_amount' }
+}
+
+async function handleTopUpEftCreate(
+  ctx: FlowContext,
+  provider: Awaited<ReturnType<typeof findProviderForWhatsApp>>,
+  amountCents: number,
+): Promise<FlowResult> {
+  let intent: Awaited<ReturnType<typeof createManualEftTopUpIntent>>['intent']
+  let instructions: Awaited<ReturnType<typeof createManualEftTopUpIntent>>['instructions']
+
+  try {
+    const result = await createManualEftTopUpIntent({
+      providerId: provider.id,
+      amountCents,
+      providerCellphone: ctx.phone,
+    })
+    intent = result.intent
+    instructions = result.instructions
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Something went wrong. Please try again or open the Worker Portal.'
+    await sendText(ctx.phone, `⚠️ Could not create your top-up: ${message}`)
+    return { nextStep: 'pj_topup_select_amount' }
+  }
+
+  const expiryLine = instructions.expiresAt
+    ? `Expires: ${instructions.expiresAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Johannesburg' })}`
+    : null
+
+  const message = [
+    `✅ *Top-Up Created: ${instructions.amountFormatted} (${instructions.creditsToIssue} credits)*`,
+    '',
+    '*Bank Transfer Details:*',
+    `Account name: *${instructions.bankAccount.accountName}*`,
+    `Bank: *${instructions.bankAccount.bankName}*`,
+    `Account number: *${instructions.bankAccount.accountNumber}*`,
+    `Branch code: *${instructions.bankAccount.branchCode}*`,
+    `Account type: *${instructions.bankAccount.accountType}*`,
+    '',
+    `*Use this exact reference:*`,
+    `*${instructions.paymentReference}*`,
+    '',
+    expiryLine,
+    'Credits will be added once Plug A Pro confirms your payment.',
+  ].filter(Boolean).join('\n')
+
+  await sendText(ctx.phone, message)
+
+  notifyProviderPaymentIntentCreated(intent.id).catch((err: unknown) => {
+    console.error('[provider-journey] notifyProviderPaymentIntentCreated failed (non-fatal)', {
+      intentId: intent.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  })
+
+  return { nextStep: 'pj_topup_eft_created' }
 }
