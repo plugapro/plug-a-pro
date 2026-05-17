@@ -2824,7 +2824,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       console.warn('[whatsapp-bot] accept: insufficient credits', {
         traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'INSUFFICIENT_CREDITS',
       })
-      await sendLeadInsufficientCreditsMessage(phone, lead.id, result.currentCreditBalance ?? 0)
+      await sendLeadInsufficientCreditsMessage(phone, lead.id, result.currentCreditBalance ?? 0, holdId)
       return
     }
     if (result.reason === 'PROVIDER_NOT_APPROVED') {
@@ -3038,6 +3038,7 @@ async function sendLeadInsufficientCreditsMessage(
   phone: string,
   leadId: string,
   currentCreditBalance: number,
+  holdId?: string,
 ): Promise<void> {
   await sendButtons(
     phone,
@@ -3047,7 +3048,7 @@ async function sendLeadInsufficientCreditsMessage(
     }),
     [
       { id: 'provider_top_up_credits', title: 'Top up credits' },
-      { id: `match_inspect_${leadId}`, title: ctaLabelFor('view_lead') },
+      { id: holdId ? `accept:${holdId}` : `match_inspect_${leadId}`, title: ctaLabelFor('view_lead') },
       { id: 'back_home', title: 'Main Menu' },
     ],
   )
@@ -3124,9 +3125,6 @@ async function handleAssignmentHoldDecline(phone: string, buttonId: string): Pro
   try {
     const { declineLead } = await import('./matching-engine')
     await declineLead({ leadId: lead.id, providerId: provider.id })
-
-    const { releaseProviderCapacity } = await import('./matching/reservation')
-    await releaseProviderCapacity(provider.id).catch(() => {})
 
     await sendText(
       phone,
