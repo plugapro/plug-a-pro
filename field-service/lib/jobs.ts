@@ -342,6 +342,7 @@ export async function resolveExtraWork(params: {
 
   if (!extra) throw new Error('Invalid approval token')
   if (extra.status !== 'PENDING') throw new Error('Extra work already resolved')
+  if (extra.expiresAt && extra.expiresAt < new Date()) throw new Error('Approval link expired')
 
   await db.extraWork.update({
     where: { id: extra.id },

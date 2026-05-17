@@ -106,10 +106,15 @@ export async function cancelBookingLifecycle(params: {
   } satisfies Prisma.JsonObject
 
   await db.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: booking.id },
+    // CAS guard: prevents a concurrent cancel or completion from racing this
+    // transition. Mirrors the pattern used in transitionBooking().
+    const bookingUpdate = await tx.booking.updateMany({
+      where: { id: booking.id, status: { notIn: ['CANCELLED', 'COMPLETED'] } },
       data: { status: 'CANCELLED', cancelReason: reason },
     })
+    if (bookingUpdate.count === 0) {
+      throw new Error(`Concurrent modification: booking ${booking.id} was already cancelled or completed`)
+    }
 
     await tx.bookingStatusEvent.create({
       data: {

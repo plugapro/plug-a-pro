@@ -106,55 +106,58 @@ export default async function ProviderCataloguePage({
       active: true,
       verified: true,
       status: 'ACTIVE',
-      OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: now } }],
-      ...(normalizedCategory
-        ? {
-            OR: [
+      AND: [
+        // Suspension check must live in AND so it cannot be clobbered by any
+        // dynamic OR spread below — prior bug allowed suspended providers to
+        // appear in results when category + query filters were both active.
+        { OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: now } }] },
+        ...(normalizedCategory
+          ? [
               {
-                providerCategories: {
-                  some: {
-                    categorySlug: normalizedCategory,
-                    approvalStatus: 'APPROVED',
+                OR: [
+                  {
+                    providerCategories: {
+                      some: {
+                        categorySlug: normalizedCategory,
+                        approvalStatus: 'APPROVED',
+                      },
+                    },
                   },
-                },
-              },
-              {
-                AND: [
-                  { providerCategories: { none: {} } },
-                  { skills: { has: normalizedCategory } },
+                  {
+                    AND: [
+                      { providerCategories: { none: {} } },
+                      { skills: { has: normalizedCategory } },
+                    ],
+                  },
                 ],
               },
-            ],
-          }
-        : {}),
-      ...(normalizedArea ? { serviceAreas: { has: normalizedArea } } : {}),
-      ...(availableOnly ? { availableNow: true } : {}),
-      ...(maxCallOutFee != null
-        ? {
-            providerRates: {
-              some: {
-                callOutFee: { lte: maxCallOutFee },
-              },
-            },
-          }
-        : {}),
-      ...(normalizedQuery
-        ? {
-            OR: [
-              { name: { contains: normalizedQuery, mode: 'insensitive' } },
-              { bio: { contains: normalizedQuery, mode: 'insensitive' } },
+            ]
+          : []),
+        ...(normalizedArea ? [{ serviceAreas: { has: normalizedArea } }] : []),
+        ...(availableOnly ? [{ availableNow: true }] : []),
+        ...(maxCallOutFee != null
+          ? [{ providerRates: { some: { callOutFee: { lte: maxCallOutFee } } } }]
+          : []),
+        ...(normalizedQuery
+          ? [
               {
-                providerCategories: {
-                  some: {
-                    categorySlug: { contains: normalizedQuery, mode: 'insensitive' },
-                    approvalStatus: 'APPROVED',
+                OR: [
+                  { name: { contains: normalizedQuery, mode: 'insensitive' as const } },
+                  { bio: { contains: normalizedQuery, mode: 'insensitive' as const } },
+                  {
+                    providerCategories: {
+                      some: {
+                        categorySlug: { contains: normalizedQuery, mode: 'insensitive' as const },
+                        approvalStatus: 'APPROVED',
+                      },
+                    },
                   },
-                },
+                  { serviceAreas: { has: normalizedQuery } },
+                ],
               },
-              { serviceAreas: { has: normalizedQuery } },
-            ],
-          }
-        : {}),
+            ]
+          : []),
+      ],
     },
     take: 100,
     orderBy: { completedJobsCount: 'desc' },
