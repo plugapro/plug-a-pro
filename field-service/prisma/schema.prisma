@@ -846,6 +846,7 @@ model ExtraWork {
   approvedAt     DateTime?
   declinedAt     DateTime?
   approvedByName String?
+  expiresAt      DateTime?
   createdAt      DateTime       @default(now())
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)

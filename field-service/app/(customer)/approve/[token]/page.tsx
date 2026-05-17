@@ -47,6 +47,23 @@ export default async function ApprovalPage({ params, searchParams }: Props) {
 
   if (!extra) notFound()
 
+  // Token expired — show neutral message so customer can contact support
+  if (extra.expiresAt && extra.expiresAt < new Date() && extra.status === 'PENDING') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center px-4">
+        <Card className="w-full max-w-sm shadow-sm">
+          <CardContent className="px-6 py-6 text-center space-y-1">
+            <p className="text-2xl mb-2">⏰</p>
+            <h1 className="text-lg font-semibold">Approval link expired</h1>
+            <p className="text-sm text-muted-foreground">
+              This approval link has expired. Please contact your provider to request a new one.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   // Already resolved
   if (extra.status !== 'PENDING') {
     return (

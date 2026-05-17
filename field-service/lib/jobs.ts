@@ -288,12 +288,15 @@ export async function createExtraWork(params: {
   })
   if (existingPending) return existingPending.approvalToken
 
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000)
+
   const extra = await db.extraWork.create({
     data: {
       jobId: params.jobId,
       description: params.description,
       amount: params.amountRand,
       status: 'PENDING',
+      expiresAt,
     },
   })
 
