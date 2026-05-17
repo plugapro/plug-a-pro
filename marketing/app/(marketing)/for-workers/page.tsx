@@ -178,19 +178,16 @@ export default function ForWorkersPage() {
           <p className="text-sm text-muted-foreground mb-4">
             You don&apos;t need a formal business or company registration to apply. If you have practical skills and a track record of doing good work, we want to hear from you.
           </p>
-          <p className="text-sm text-muted-foreground mb-4">
-            For electrical, gas, and structural work, South African law requires specific licences regardless of business registration. You are responsible for holding any credentials that apply to the work you offer. Plug A Pro records the types of work you list but does not check or confirm your licences.
-          </p>
           <ul className="grid grid-cols-2 gap-2 mb-6">
             {[
-              "Gardeners and landscapers",
-              "Painters",
               "Handymen and general repairs",
+              "Gardeners and landscapers",
+              "Cleaners",
               "Plumbers (small jobs)",
-              "Appliance repairers",
-              "Electricians (minor work)",
-              "DIY and handyman specialists",
-              "Furniture and fixture installers",
+              "Carpenters",
+              "Tilers",
+              "DIY and flat-pack assembly",
+              "Painters",
             ].map((type) => (
               <li
                 key={type}

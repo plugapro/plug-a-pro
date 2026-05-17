@@ -65,9 +65,8 @@ export default function TermsPage() {
         </p>
         <p>
           Providers must hold any licences, registrations, permits, or certifications required by South
-          African law for the specific services they offer (for example: registered electricians under the
-          Electrical Installation Regulations; plumbers under relevant plumbing codes; gas installers under
-          LPG regulations).
+          African law for the specific services they offer (for example: plumbers under applicable plumbing
+          codes, or any other trade where South African law requires a licence or registration).
         </p>
 
         <h2>4. How the Platform Works</h2>

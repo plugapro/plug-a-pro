@@ -54,9 +54,7 @@ export default function ProviderTermsPage() {
           Examples include (without limitation):
         </p>
         <ul>
-          <li>Registered electricians under the Electrical Installation Regulations</li>
           <li>Qualified plumbers where required under applicable plumbing codes</li>
-          <li>LPG gas installers under relevant gas installation regulations</li>
           <li>Any other trade-specific or safety-related licences applicable to your services</li>
         </ul>
         <p>

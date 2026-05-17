@@ -130,7 +130,7 @@ export default async function CustomerHomePage({
           {!isLoggedOut && <><br />what needs fixing?</>}
         </h1>
         <p className="mt-2 mb-4 text-[14.5px] leading-relaxed text-[var(--ink-mute)] [text-wrap:pretty] max-w-[320px]">
-          Plumbers, electricians, handymen and more — rated, reviewed, and tracked end-to-end.
+          Handymen, plumbers, gardeners, tilers and more — rated, reviewed, and tracked end-to-end.
         </p>
 
         {/* Search bar */}
@@ -146,7 +146,7 @@ export default async function CustomerHomePage({
             <Search size={18} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
             <input
               name="q"
-              placeholder="Plumber, leak, electrician…"
+              placeholder="Handyman, tiler, plumber…"
               className="flex-1 min-w-0 h-full border-none outline-none bg-transparent px-3 text-[15px] font-medium placeholder:text-[var(--ink-soft)]"
               style={{ color: 'var(--ink)' }}
             />

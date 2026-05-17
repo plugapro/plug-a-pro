@@ -51,7 +51,7 @@ const CUSTOMER_FAQS = [
 const WORKER_FAQS = [
   {
     q: "Who can register as a service provider?",
-    a: "Anyone with practical home-job skills: plumbers, painters, gardeners, appliance repairers, electricians (minor work), and general maintenance providers. You don't need a registered company to join. For certain job types — electrical, gas, structural work — South African law may require a licence regardless of business registration. You are responsible for holding the right credentials for the work you offer.",
+    a: "Anyone with practical home-job skills: handymen, plumbers, gardeners, cleaners, carpenters, tilers, painters, and DIY or assembly specialists. You don't need a registered company to join. For trade work where South African law requires a licence — such as plumbing — you are responsible for holding the right credentials for the work you offer.",
   },
   {
     q: "How do I register?",
