@@ -22,7 +22,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { SuburbPicker } from './SuburbPicker'
 import { buildLegacyStreetAddress } from '@/lib/address-format'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
+import { getPilotServiceCategories } from '@/lib/service-categories'
 import {
   BUDGET_PREFERENCE_OPTIONS,
   JOB_TYPE_OPTIONS,
@@ -110,7 +110,7 @@ const PROVINCE_KEY_BY_LABEL: Record<string, string> = {
 const PROVINCE_LABELS = Object.keys(PROVINCE_KEY_BY_LABEL)
 
 // Categories that can be selected as "closest match" when a client picks Other
-const REAL_CATEGORIES = SERVICE_CATEGORY_OPTIONS.filter((c) => c.tag !== 'other')
+const REAL_CATEGORIES = getPilotServiceCategories()
 
 const URGENCY_LABELS: Record<Urgency, string> = {
   asap: 'Today / ASAP',

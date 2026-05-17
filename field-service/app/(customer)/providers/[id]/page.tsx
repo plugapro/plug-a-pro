@@ -7,9 +7,9 @@ import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { isEnabled } from '@/lib/flags'
 import { ArrowLeft, Check, MapPin, Star, ExternalLink } from 'lucide-react'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
+import { getPilotServiceCategories } from '@/lib/service-categories'
 
-const CATEGORY_LABELS = new Map(SERVICE_CATEGORY_OPTIONS.map(o => [o.tag, o.label]))
+const CATEGORY_LABELS = new Map(getPilotServiceCategories().map(o => [o.tag, o.label]))
 
 function labelForCategory(tag: string) {
   return CATEGORY_LABELS.get(tag) ?? tag.replaceAll('_', ' ')

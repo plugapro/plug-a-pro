@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ProviderCard } from '@/components/shared/ProviderCard'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
+import { getPilotServiceCategories } from '@/lib/service-categories'
 
 type SearchableProvider = {
   id: string
@@ -30,7 +30,7 @@ type ProviderSearchInputProps = {
   selectedArea?: string | null
 }
 
-const CATEGORY_LABELS = new Map(SERVICE_CATEGORY_OPTIONS.map((option) => [option.tag, option.label]))
+const CATEGORY_LABELS = new Map(getPilotServiceCategories().map((option) => [option.tag, option.label]))
 
 function categoryLabel(tag: string | null | undefined) {
   if (!tag) return 'General'

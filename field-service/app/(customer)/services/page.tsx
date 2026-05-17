@@ -5,8 +5,8 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
-  Droplets, Hammer, Zap, Paintbrush, Sparkles, Wrench,
-  Flame, Tv2, ArrowRight,
+  Droplets, Hammer, Paintbrush, Sparkles, Wrench,
+  Layers, Scissors, ArrowRight,
 } from 'lucide-react'
 import { getSession } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
@@ -15,14 +15,14 @@ import { SectionLabel } from '@/components/ui/section-label'
 export const metadata = buildMetadata({ title: 'Request a Service' })
 
 const CATEGORIES = [
-  { slug: 'plumbing',    name: 'Plumbing',    desc: 'Leaks, pipes, taps, drains',      icon: Droplets,   hue: '#2A78F0' },
-  { slug: 'electrical',  name: 'Electrical',  desc: 'Wiring, faults, installations',   icon: Zap,        hue: '#FFC22B' },
-  { slug: 'handyman',    name: 'Handyman',    desc: 'General repairs and maintenance',  icon: Hammer,     hue: '#8B3FE8' },
-  { slug: 'carpentry',   name: 'Carpentry',   desc: 'Furniture, doors, shelving',       icon: Wrench,     hue: '#C8854D' },
-  { slug: 'painting',    name: 'Painting',    desc: 'Interior and exterior painting',   icon: Paintbrush, hue: '#FF1F8E' },
-  { slug: 'cleaning',    name: 'Cleaning',    desc: 'Domestic and commercial cleaning', icon: Sparkles,   hue: '#0FA28A' },
-  { slug: 'appliances',  name: 'Appliances',  desc: 'Repair and installation',          icon: Tv2,        hue: '#5B5B66' },
-  { slug: 'plumbing',    name: 'Gas & Geyser', desc: 'Geyser install, gas lines',      icon: Flame,      hue: '#E5484D' },
+  { slug: 'plumbing',  name: 'Plumbing',           desc: 'Leaks, pipes, taps, drains',       icon: Droplets,   hue: '#2A78F0' },
+  { slug: 'handyman',  name: 'Handyman',            desc: 'General repairs and maintenance',   icon: Hammer,     hue: '#8B3FE8' },
+  { slug: 'carpentry', name: 'Carpentry',           desc: 'Furniture, doors, shelving',        icon: Wrench,     hue: '#C8854D' },
+  { slug: 'tiling',    name: 'Tiling',              desc: 'Floor and wall tiling, grouting',   icon: Layers,     hue: '#E5484D' },
+  { slug: 'painting',  name: 'Painting',            desc: 'Interior and exterior painting',    icon: Paintbrush, hue: '#FF1F8E' },
+  { slug: 'cleaning',  name: 'Cleaning',            desc: 'Domestic and commercial cleaning',  icon: Sparkles,   hue: '#0FA28A' },
+  { slug: 'garden',    name: 'Garden & Landscaping', desc: 'Lawn care, trimming, landscaping', icon: Scissors,   hue: '#2D9C5D' },
+  { slug: 'diy',       name: 'DIY & Assembly',      desc: 'Flat-pack, shelving, mounting',     icon: Hammer,     hue: '#7C4DFF' },
 ] as const
 
 export default async function ServicesPage() {

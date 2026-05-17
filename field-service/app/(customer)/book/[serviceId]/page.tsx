@@ -10,14 +10,14 @@ import { resolveCustomerForSession } from '@/lib/customer-session'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { BookingFlow } from '@/components/customer/BookingFlow'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
+import { getPilotServiceCategories } from '@/lib/service-categories'
 
 export const metadata = buildMetadata({ title: 'Request a Job' })
 
-// Build a lookup map from the single canonical list so all 15 categories are
-// valid routes without any manual maintenance here.
+// Only pilot skills are valid booking routes. Navigating to /book/electrical
+// returns 404 until that trade is opened for the pilot.
 const CATEGORIES = Object.fromEntries(
-  SERVICE_CATEGORY_OPTIONS.map((cat) => [
+  getPilotServiceCategories().map((cat) => [
     cat.tag,
     { name: cat.label, description: cat.description },
   ]),

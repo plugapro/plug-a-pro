@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
+import { getPilotServiceCategories } from '@/lib/service-categories'
 import { ProviderSearchInput } from '@/components/customer/ProviderSearchInput'
 import { buildMetadata } from '@/lib/metadata'
 import { Prisma } from '@prisma/client'
@@ -249,7 +249,7 @@ export default async function ProviderCataloguePage({
         >
           All
         </Link>
-        {SERVICE_CATEGORY_OPTIONS.filter((o) => o.tag !== 'other').map((option) => {
+        {getPilotServiceCategories().map((option) => {
           const isActive = normalizedCategory === option.tag
           const query = new URLSearchParams()
           query.set('category', option.tag)
