@@ -30,6 +30,7 @@ const {
     },
     paymentIntent: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
     },
     providerWallet: {
@@ -99,6 +100,9 @@ describe('provider credit payment intents', () => {
         ? { id: `intent-${args.where.paymentReference}` }
         : null
     ))
+
+    // No active duplicate intents by default — allow creation to proceed.
+    mockDb.paymentIntent.findFirst.mockResolvedValue(null)
 
     mockDb.paymentIntent.create.mockImplementation(async (args: any) => {
       const intent = {

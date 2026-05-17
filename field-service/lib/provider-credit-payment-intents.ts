@@ -17,13 +17,15 @@ export const MIN_PROVIDER_CREDIT_TOPUP_CENTS = 10_000
 export const MANUAL_EFT_REFERENCE_ATTEMPTS = 10
 
 // ─── Gateway-allowed top-up package amounts ───────────────────────────────────
-// Pay@ and Payfast both expose the approved R100/R200/R500 packages.
+// Pay@, Payfast, and manual EFT all restrict to the approved R100/R200/R500 packages.
 export const PAYFAST_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
+export const MANUAL_EFT_ALLOWED_AMOUNTS_CENTS = new Set([10_000, 20_000, 50_000])
 
 type PaymentIntentErrorCode =
   | 'INVALID_AMOUNT'
   | 'PROVIDER_NOT_FOUND'
   | 'REFERENCE_GENERATION_FAILED'
+  | 'DUPLICATE_INTENT'
 
 export class ProviderCreditPaymentIntentError extends Error {
   constructor(
@@ -183,6 +185,13 @@ function buildManualEftInstructions(
 export async function createManualEftTopUpIntent(
   input: CreateManualEftTopUpIntentInput,
 ): Promise<CreateManualEftTopUpIntentResult> {
+  if (!MANUAL_EFT_ALLOWED_AMOUNTS_CENTS.has(input.amountCents)) {
+    throw new ProviderCreditPaymentIntentError(
+      'INVALID_AMOUNT',
+      'Top-up amount must be one of the approved credits packages: R100, R200, or R500.',
+    )
+  }
+
   const creditsToIssue = creditsForAmount(input.amountCents)
   const referenceGenerator = input.referenceGenerator ?? generateManualEftPaymentReference
   const now = input.now ?? new Date()
@@ -295,10 +304,33 @@ export async function createPayatTopUpIntent(
       )
     }
 
+    // H-4: Prevent duplicate active Pay@ intents for the same provider+amount.
+    // A provider clicking "pay" multiple times must not create concurrent RTP links.
+    const existingIntent = await tx.paymentIntent.findFirst({
+      where: {
+        providerId: input.providerId,
+        amountCents: input.amountCents,
+        paymentMethod: 'PAYAT',
+        status: 'PENDING_PAYMENT',
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    })
+    if (existingIntent) {
+      throw new ProviderCreditPaymentIntentError(
+        'DUPLICATE_INTENT',
+        'A pending Pay@ top-up for this amount is already active.',
+      )
+    }
+
     const paymentReference = await createUniquePaymentReference(
       tx,
       () => `PAT-${randomBytes(6).toString('hex').toUpperCase()}`,
     )
+
+    // H-2: expiresAt matches the Pay@ RTP daysValid:3 so the intent does not
+    // stay PENDING_PAYMENT indefinitely after the payment link expires.
+    const payatExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
 
     // The PaymentIntent is created before Pay@ is called so webhook references
     // can use the immutable intent ID and remain idempotent under retries.
@@ -312,6 +344,7 @@ export async function createPayatTopUpIntent(
         paymentReference,
         status: 'PENDING_PAYMENT',
         providerCellphone: input.providerCellphone ?? provider.phone,
+        expiresAt: payatExpiresAt,
         metadata: toJson(input.metadata),
       },
     })

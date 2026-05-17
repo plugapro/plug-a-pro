@@ -927,14 +927,26 @@ async function processInboundMessageUnlocked(
       }
       try {
         const { createPayatTopUpIntent } = await import('./provider-credit-payment-intents')
-        await createPayatTopUpIntent({
+        const result = await createPayatTopUpIntent({
           providerId: provider.id,
           amountCents,
           providerCellphone: phone,
           metadata: { source: 'whatsapp' },
         })
-        // createPayatTopUpIntent fires notifyProviderPayatTopUpInitiated automatically
-        // which delivers the payment link to this same WhatsApp number.
+        // H-10: Send a direct CTA URL as a delivery guarantee — the template
+        // notification from notifyProviderPayatTopUpInitiated may be delayed or
+        // fail if the template is pending approval.
+        await sendCtaUrl(
+          phone,
+          `Tap below to complete your Pay@ top-up of R${Math.round(amountCents / 100)}.`,
+          'Pay now',
+          result.payat.paymentLink,
+        ).catch((error: unknown) => {
+          console.error('[whatsapp-bot] Pay@ payment link direct sendCtaUrl failed', {
+            intentId: result.intent.id,
+            error,
+          })
+        })
       } catch {
         await sendText(phone, 'Could not create a Pay@ payment link. Please try again or visit the provider portal.')
       }

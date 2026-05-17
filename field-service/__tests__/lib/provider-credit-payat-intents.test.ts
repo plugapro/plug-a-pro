@@ -13,6 +13,7 @@ const { mockDb, mockCreatePayatPaymentRequest, state } = vi.hoisted(() => {
     },
     paymentIntent: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
     },
   }
@@ -40,6 +41,8 @@ describe('Pay@ provider credit payment intents', () => {
     )
     mockDb.provider.findUnique.mockResolvedValue(state.provider)
     mockDb.paymentIntent.findUnique.mockResolvedValue(null)
+    // No active duplicate intents by default — allow creation to proceed.
+    mockDb.paymentIntent.findFirst.mockResolvedValue(null)
     mockDb.paymentIntent.create.mockImplementation(async (args: any) => {
       state.createdIntent = {
         id: 'intent-payat-1',

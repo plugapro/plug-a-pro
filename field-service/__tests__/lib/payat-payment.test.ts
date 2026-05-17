@@ -93,7 +93,7 @@ describe('Pay@ YAPI payment request service', () => {
     ])
   })
 
-  it('calls generatecredentials before every RTP (serverless-safe, idempotent)', async () => {
+  it('calls generatecredentials once per warm instance (TTL-cached, idempotent)', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue({
@@ -122,11 +122,12 @@ describe('Pay@ YAPI payment request service', () => {
       providerEmail: 'a@a.com',
     })
 
-    // One registration call per RTP — idempotent, serverless-safe
+    // Registration is cached for 1 hour — only called once per warm instance.
+    // Subsequent RTPs within the TTL skip the generatecredentials round-trip.
     const regCalls = fetchMock.mock.calls.filter((c: unknown[]) =>
       String(c[0]).includes('generatecredentials'),
     )
-    expect(regCalls).toHaveLength(2)
+    expect(regCalls).toHaveLength(1)
   })
 
   it('proceeds if generatecredentials returns 409 (already registered)', async () => {
@@ -155,13 +156,11 @@ describe('Pay@ YAPI payment request service', () => {
   it('invalidates token and retries once on Pay@ 401', async () => {
     const fetchMock = vi
       .fn()
-      // registration — first attempt
+      // registration — first attempt (sets merchant cache for this instance)
       .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{}' })
       // RTP attempt 1: 401
       .mockResolvedValueOnce({ status: 401, ok: false, text: async () => 'expired' })
-      // registration — retry attempt (no module-level cache; called again)
-      .mockResolvedValueOnce({ status: 409, ok: false, text: async () => 'Conflict' })
-      // RTP attempt 2: success
+      // RTP attempt 2: success — merchant cache still valid, no second registration call
       .mockResolvedValueOnce({
         status: 201,
         ok: true,

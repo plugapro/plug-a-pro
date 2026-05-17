@@ -13,15 +13,29 @@ type PayatWebhookPayload = {
   paymentId?: unknown
 }
 
-function requireWebhookSecret() {
+// Statuses that represent a completed payment and trigger wallet crediting.
+const PAYMENT_COMPLETE_STATUSES = new Set(['PAID', 'COMPLETED'])
+
+// These statuses mean the payment was cancelled or reversed — close the intent
+// so a stale PAID retry cannot double-credit after a reversal.
+const TERMINAL_NEGATIVE_STATUSES = new Set(['CANCELLED', 'REVERSED', 'REFUNDED'])
+
+// These reasons from creditProviderWalletFromPayatWebhook are expected under
+// normal operation (e.g. Pay@ retrying an already-credited webhook).
+const BENIGN_NOT_CREDITED_REASONS = new Set([
+  'already credited',
+  'already credited (concurrent call)',
+])
+
+function requireWebhookSecret(): string {
   // Webhook verification is fail-closed because this route credits paid wallet balance.
   const value = process.env.PAYAT_WEBHOOK_SECRET?.trim()
   if (!value) throw new Error('PAYAT_WEBHOOK_SECRET must be set')
   return value
 }
 
-function isValidSignature(rawBody: string, signature: string) {
-  const expected = createHmac('sha256', requireWebhookSecret()).update(rawBody).digest('hex')
+function isValidSignature(rawBody: string, signature: string, secret: string) {
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
   const received = signature.trim()
 
   if (!received) return false
@@ -38,10 +52,8 @@ function isValidSignature(rawBody: string, signature: string) {
 const MIN_PACKAGE_CENTS = 10_000
 
 function normalisePayload(payload: PayatWebhookPayload) {
-  // Pay@ notifications are treated as authoritative only after signature validation.
   // clientReferenceNumber is set to the PaymentIntent UUID in the RTP create call.
-  // reference / sourceReference are gateway-specific aliases and may carry a different
-  // value — they are used only as a fallback.
+  // reference / sourceReference are gateway-specific aliases — used as fallback.
   const reference =
     typeof payload.clientReferenceNumber === 'string' ? payload.clientReferenceNumber.trim() :
     typeof payload.reference === 'string' ? payload.reference.trim() :
@@ -71,10 +83,20 @@ function normalisePayload(payload: PayatWebhookPayload) {
 }
 
 export async function POST(request: NextRequest) {
+  // Validate configuration before reading the body — fail with a structured log
+  // rather than an unhandled exception that obscures the root cause.
+  let secret: string
+  try {
+    secret = requireWebhookSecret()
+  } catch {
+    console.error('[payat-webhook] misconfiguration: PAYAT_WEBHOOK_SECRET not set')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+  }
+
   const rawBody = await request.text()
   const signature = request.headers.get('x-payat-signature') ?? ''
 
-  if (!isValidSignature(rawBody, signature)) {
+  if (!isValidSignature(rawBody, signature, secret)) {
     console.warn('[payat-webhook] rejected notification with invalid signature')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
@@ -88,7 +110,30 @@ export async function POST(request: NextRequest) {
 
   const payload = normalisePayload(parsed)
 
-  if (payload.status !== 'PAID' && payload.status !== 'COMPLETED') {
+  // Handle terminal negative statuses — mark the intent FAILED so any future
+  // stale PAID retry (e.g. after a REVERSED) cannot credit the wallet.
+  if (TERMINAL_NEGATIVE_STATUSES.has(payload.status)) {
+    if (payload.reference) {
+      await db.paymentIntent.updateMany({
+        where: {
+          OR: [
+            { id: payload.reference },
+            { paymentReference: payload.reference, paymentMethod: 'PAYAT' },
+          ],
+          status: { notIn: ['CREDITED', 'FAILED'] },
+        },
+        data: {
+          status: 'FAILED',
+          itnReceivedAt: new Date(),
+          itnPaymentStatus: payload.status,
+          gatewayReference: payload.gatewayReference,
+        },
+      })
+    }
+    return NextResponse.json({ received: true })
+  }
+
+  if (!PAYMENT_COMPLETE_STATUSES.has(payload.status)) {
     return NextResponse.json({ received: true })
   }
 
@@ -98,21 +143,22 @@ export async function POST(request: NextRequest) {
     select: {
       id: true,
       amountCents: true,
+      providerId: true,
       status: true,
       creditedAt: true,
       paymentMethod: true,
     },
   })
 
-  // Secondary lookup: if Pay@ fell back to reference/sourceReference (which may
-  // carry the human-readable paymentReference e.g. "PAT-ABCDEF"), try matching
-  // by paymentReference instead.
+  // Secondary lookup: if Pay@ used reference/sourceReference (e.g. "PAT-ABCDEF"),
+  // match by the human-readable paymentReference field instead.
   if (!intent && !payload.usedClientRef && payload.reference) {
     intent = await db.paymentIntent.findFirst({
       where: { paymentReference: payload.reference, paymentMethod: 'PAYAT' },
       select: {
         id: true,
         amountCents: true,
+        providerId: true,
         status: true,
         creditedAt: true,
         paymentMethod: true,
@@ -141,9 +187,12 @@ export async function POST(request: NextRequest) {
 
   if (!Number.isFinite(payload.amount) || payload.amount !== intent.amountCents) {
     console.error('[payat-webhook] amount mismatch; marking intent failed', {
+      alert: true,
       intentId: intent.id,
-      expected: intent.amountCents,
-      received: payload.amount,
+      providerId: intent.providerId,
+      expectedCents: intent.amountCents,
+      receivedCents: payload.amount,
+      gatewayStatus: payload.status,
     })
     await db.paymentIntent.update({
       where: { id: intent.id },
@@ -173,17 +222,34 @@ export async function POST(request: NextRequest) {
   try {
     const result = await creditProviderWalletFromPayatWebhook(intent.id)
     if (!result.credited) {
-      console.warn('[payat-webhook] wallet was not credited', {
-        intentId: intent.id,
-        reason: result.reason,
-      })
+      const isNonBenign = !BENIGN_NOT_CREDITED_REASONS.has(result.reason)
+      if (isNonBenign) {
+        // Payment received but credits not issued — requires manual recovery.
+        console.error('[payat-webhook] wallet not credited after ITN — manual recovery required', {
+          alert: true,
+          intentId: intent.id,
+          providerId: intent.providerId,
+          amountCents: intent.amountCents,
+          reason: result.reason,
+        })
+      } else {
+        console.warn('[payat-webhook] wallet not credited (benign duplicate)', {
+          intentId: intent.id,
+          reason: result.reason,
+        })
+      }
     }
   } catch (error) {
-    console.error('[payat-webhook] wallet crediting failed', {
+    // Return 200 so Pay@ stops retrying — the intent is in ITN_RECEIVED with
+    // creditedAt=null. The recovery cron finds these and retries crediting.
+    console.error('[payat-webhook] wallet crediting threw — deferred to recovery cron', {
+      alert: true,
       intentId: intent.id,
+      providerId: intent.providerId,
+      amountCents: intent.amountCents,
       error,
     })
-    return NextResponse.json({ error: 'DB error' }, { status: 500 })
+    return NextResponse.json({ received: true, creditingDeferred: true })
   }
 
   return NextResponse.json({ received: true })

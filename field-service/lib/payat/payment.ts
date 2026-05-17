@@ -30,6 +30,7 @@ function getReturnUrls() {
   return {
     successReturnUrl: `${base}/provider/credits?topup=success`,
     failureReturnUrl: `${base}/provider/credits?topup=failed`,
+    cancelReturnUrl: `${base}/provider/credits?topup=cancelled`,
   }
 }
 
@@ -41,13 +42,21 @@ function generateClientAccountNumber() {
   return num.toString().padStart(14, '0')
 }
 
+// Cache the merchant registration result per instance to avoid a serial
+// HTTP round-trip before every RTP creation. Cold starts pay once; warm
+// instances skip the call entirely.
+let merchantRegisteredAt: number | null = null
+const MERCHANT_REGISTERED_TTL_MS = 60 * 60 * 1000 // 1 hour
+
 async function ensureMerchantIdentifier(token: string, apiBase: string) {
-  // generatecredentials is idempotent (409 = already registered).
-  // Always call it — module-level flags are unreliable in serverless runtimes
-  // where each cold start starts fresh and warm instances share nothing.
+  if (merchantRegisteredAt && Date.now() - merchantRegisteredAt < MERCHANT_REGISTERED_TTL_MS) {
+    return
+  }
+
   const merchantId = requirePayatConfig('PAYAT_MERCHANT_ID')
   const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
 
+  // generatecredentials is idempotent (409 = already registered).
   const res = await fetch(`${apiBase}/integrator/ecommerce/generatecredentials`, {
     method: 'POST',
     headers: {
@@ -61,6 +70,8 @@ async function ensureMerchantIdentifier(token: string, apiBase: string) {
   if (!res.ok && res.status !== 409) {
     console.warn(`[payat] generatecredentials returned ${res.status} — proceeding anyway`)
   }
+
+  merchantRegisteredAt = Date.now()
 }
 
 function mapPayatResponse(
@@ -91,7 +102,7 @@ async function sendPayatPaymentRequest(
 
   await ensureMerchantIdentifier(token, apiBase)
 
-  const { successReturnUrl, failureReturnUrl } = getReturnUrls()
+  const { successReturnUrl, failureReturnUrl, cancelReturnUrl } = getReturnUrls()
 
   const response = await fetch(
     `${apiBase}/integrator/ecommerce/rtp/create/single/${merchantIdentifier}`,
@@ -117,6 +128,7 @@ async function sendPayatPaymentRequest(
         merchantEcommerceStoreName: 'PLUGAPRO',
         successReturnUrl,
         failureReturnUrl,
+        cancelReturnUrl,
         lineItems: [{ description: params.description, amount: String(params.amountCents) }],
         multiPremium: 1,
       }),
@@ -130,7 +142,14 @@ async function sendPayatPaymentRequest(
   }
 
   if (!response.ok) {
-    throw new Error(`Pay@ RTP creation failed: ${response.status} ${await response.text()}`)
+    // Never log the response body — it may contain the provider phone or payment reference.
+    if (process.env.NODE_ENV !== 'production') {
+      const body = await response.text()
+      console.debug('[payat-payment] RTP creation failed body (dev only)', body)
+    } else {
+      await response.body?.cancel()
+    }
+    throw new Error(`Pay@ RTP creation failed: HTTP ${response.status}`)
   }
 
   return mapPayatResponse(

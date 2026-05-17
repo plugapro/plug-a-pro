@@ -41,31 +41,58 @@ function PaymentScreen({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    intervalRef.current = setInterval(async () => {
+    function stopPolling() {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+
+    async function poll() {
       try {
         const res = await fetch(`/api/provider/payment-intent/${result.intentId}/status`)
         if (!res.ok) return
         const data = (await res.json()) as { status: string }
         setPaymentStatus(data.status)
         if (TERMINAL_STATUSES.has(data.status)) {
-          clearInterval(intervalRef.current!)
+          stopPolling()
           clearTimeout(timeoutRef.current!)
           if (data.status === 'CREDITED') router.refresh()
         }
       } catch {
         // network hiccup — retry on next tick
       }
-    }, POLL_INTERVAL_MS)
+    }
+
+    function startPolling() {
+      if (intervalRef.current) return
+      intervalRef.current = setInterval(poll, POLL_INTERVAL_MS)
+    }
+
+    // M-1: Pause polling when the tab is hidden to avoid wasting bandwidth,
+    // then immediately re-poll and restart the interval when the tab is restored.
+    function handleVisibilityChange() {
+      if (document.hidden) {
+        stopPolling()
+      } else {
+        void poll()
+        startPolling()
+      }
+    }
+
+    startPolling()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     // Timeout is set once per mount — not reset on each poll cycle.
     timeoutRef.current = setTimeout(() => {
-      clearInterval(intervalRef.current!)
+      stopPolling()
       setTimedOut(true)
     }, POLL_TIMEOUT_MS)
 
     return () => {
-      clearInterval(intervalRef.current!)
+      stopPolling()
       clearTimeout(timeoutRef.current!)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [result.intentId, router])
 

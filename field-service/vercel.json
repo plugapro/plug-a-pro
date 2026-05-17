@@ -9,6 +9,7 @@
     { "path": "/api/cron/session-timeout", "schedule": "*/20 5-20 * * *" },
     { "path": "/api/cron/provider-auto-approve", "schedule": "*/25 5-16 * * *" },
     { "path": "/api/cron/provider-auto-approve", "schedule": "0,55 17-23,0-4 * * *" },
-    { "path": "/api/cron/location-audit", "schedule": "0 4 * * *" }
+    { "path": "/api/cron/location-audit", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/expire-payment-intents", "schedule": "0 * * * *" }
   ]
 }

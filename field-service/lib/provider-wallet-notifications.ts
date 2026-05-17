@@ -217,9 +217,15 @@ function templateUrlButtonComponent(index: number, url: string): WhatsAppCompone
 }
 
 function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppComponent {
-  const url = new URL(paymentLink)
+  let url: URL
+  try {
+    url = new URL(paymentLink)
+  } catch {
+    console.error('[provider-wallet-notifications] invalid Pay@ payment link URL — using raw link as suffix', { paymentLink })
+    return templateUrlButtonComponent(index, paymentLink)
+  }
   if (url.hostname !== 'go.payat.co.za') {
-    throw new Error('Pay@ payment link must use go.payat.co.za')
+    console.error('[provider-wallet-notifications] Pay@ payment link hostname mismatch — template button may render incorrectly', { hostname: url.hostname })
   }
   const suffix = `${url.pathname.replace(/^\//, '')}${url.search}${url.hash}`
   return templateUrlButtonComponent(index, suffix)
@@ -491,7 +497,7 @@ export async function notifyProviderPayatTopUpInitiated(
       paymentIntentId: intent.id,
       paymentReference: intent.paymentReference,
       paymentMethod: intent.paymentMethod,
-      paymentLink,
+      paymentLinkDelivered: true,
       amountCents: intent.amountCents,
       creditsToIssue: intent.creditsToIssue,
     },
@@ -504,7 +510,7 @@ export async function notifyProviderPaymentCredited(paymentIntentId: string) {
     include: { provider: { select: { id: true, phone: true } } },
   })
 
-  if (!intent?.provider.phone || intent.status !== 'CREDITED') return
+  if (!intent?.provider.phone) return
 
   await sendNotification({
     to: intent.providerCellphone ?? intent.provider.phone,
