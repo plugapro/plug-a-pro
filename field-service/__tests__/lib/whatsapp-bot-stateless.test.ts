@@ -283,7 +283,7 @@ describe('processInboundMessage stateless notification replies', () => {
       expect.stringContaining('You need 1 credit to continue with this job'),
       expect.arrayContaining([
         expect.objectContaining({ id: 'provider_top_up_credits', title: 'Top up credits' }),
-        expect.objectContaining({ id: 'match_inspect_lead-1', title: 'View lead' }),
+        expect.objectContaining({ id: 'accept:hold-1', title: 'View lead' }),
         expect.objectContaining({ id: 'back_home', title: 'Main Menu' }),
       ]),
     )
