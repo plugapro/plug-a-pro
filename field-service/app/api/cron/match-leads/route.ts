@@ -14,6 +14,7 @@ import { sendLeadReminders } from '@/lib/matching-engine'
 import { processPendingAssignmentWorkflows, reconcileStaleAssignmentState, sendQuickMatchProgressUpdates } from '@/lib/matching/service'
 import { orchestrateMatch } from '@/lib/matching/orchestrator'
 import { checkJobsForNewProviderAvailability, notifyExpiredJobParties } from '@/lib/matching/customer-recontact'
+import { sweepStaleProviderConfirmationRequests } from '@/lib/customer-shortlists'
 import { expireRfpInvitations } from '@/lib/review-first'
 import { reconcileProviderRecordsFromApplications } from '@/lib/provider-record'
 import { notifyProviderApplicationApprovedOnce } from '@/lib/provider-application-notifications'
@@ -68,6 +69,17 @@ export async function GET(request: Request) {
     results.rfpExpired = rfpResult.expiredCount
   } catch (err) {
     console.error(`[cron/match-leads:${reqId}] Error processing assignment workflows:`, err)
+    results.errors++
+  }
+
+  // 1a. Sweep stale PROVIDER_CONFIRMATION_PENDING requests where provider never responded
+  try {
+    const sweptCount = await sweepStaleProviderConfirmationRequests()
+    if (sweptCount > 0) {
+      console.info(`[cron/match-leads:${reqId}] swept ${sweptCount} stale provider confirmation requests`)
+    }
+  } catch (err) {
+    console.error(`[cron/match-leads:${reqId}] Error sweeping stale provider confirmations:`, err)
     results.errors++
   }
 
@@ -265,14 +277,19 @@ export async function GET(request: Request) {
   }
 
   // 2. Dispatch leads for OPEN requests with no active hold.
-  // take: 20 is safe at 5-min cadence (matches the max concurrent open requests we'd expect).
-  // If queue grows beyond this, add cursor-based pagination here.
+  // take: 50 increased from 20 to handle 30-min cron cadence; during off-hours,
+  // a job at position 21+ could wait up to 30 min for first dispatch otherwise.
   const openRequests = await db.jobRequest.findMany({
     where: { status: 'OPEN', assignmentMode: 'AUTO_ASSIGN' },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
-    take: 20,
+    take: 50,
   })
+
+  // Alert if queue is at max capacity: indicates jobs may be backed up
+  if (openRequests.length === 50) {
+    console.warn(`[cron/match-leads:${reqId}] job queue may be backed up: fetched max batch of 50 jobs`)
+  }
 
   for (const jr of openRequests) {
     // orchestrateMatch() guards against already-active holds internally;

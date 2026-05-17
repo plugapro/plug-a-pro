@@ -586,7 +586,7 @@ export async function selectShortlistedProviderForRequest(params: {
 
     await tx.lead.update({
       where: { id: item.leadInviteId },
-      data: { customerSelectedAt: selectedAt },
+      data: { customerSelectedAt: selectedAt, expiresAt: leadExpiryTs },
     })
 
     const selectedItem = await tx.providerShortlistItem.update({
@@ -820,6 +820,118 @@ export async function requestMoreShortlistOptions(params: {
  * has been deducted at this point because deduction only occurs on final
  * acceptance.
  */
+
+/**
+ * Sweep for requests stuck in PROVIDER_CONFIRMATION_PENDING where the provider
+ * never responded within the 24h confirmation window. Reset these to SHORTLIST_READY
+ * so the customer can choose another provider from their shortlist.
+ */
+export async function sweepStaleProviderConfirmationRequests() {
+  const now = new Date()
+  const staleRequests = await db.jobRequest.findMany({
+    where: {
+      status: 'PROVIDER_CONFIRMATION_PENDING',
+      selectedLeadInviteId: { not: null },
+      leads: {
+        some: {
+          id: { equals: '' }, // Will be overridden in the loop below
+          expiresAt: { lt: now },
+        },
+      },
+    },
+    select: {
+      id: true,
+      selectedLeadInviteId: true,
+      selectedProviderId: true,
+      customer: { select: { phone: true } },
+    },
+  })
+
+  // More precise query: find all PROVIDER_CONFIRMATION_PENDING requests where
+  // the associated lead has expired
+  const allPendingRequests = await db.jobRequest.findMany({
+    where: { status: 'PROVIDER_CONFIRMATION_PENDING' },
+    select: {
+      id: true,
+      selectedLeadInviteId: true,
+      selectedProviderId: true,
+      customer: { select: { phone: true } },
+    },
+  })
+
+  let count = 0
+  for (const request of allPendingRequests) {
+    if (!request.selectedLeadInviteId) continue
+
+    const lead = await db.lead.findUnique({
+      where: { id: request.selectedLeadInviteId },
+      select: { expiresAt: true, status: true },
+    })
+
+    if (!lead || !lead.expiresAt || lead.expiresAt > now) continue
+
+    // Lead has expired — reset the request and notify the customer
+    try {
+      await db.$transaction(async (tx) => {
+        await tx.lead.update({
+          where: { id: request.selectedLeadInviteId! },
+          data: { status: 'EXPIRED' },
+        })
+
+        await tx.jobRequest.updateMany({
+          where: {
+            id: request.id,
+            status: 'PROVIDER_CONFIRMATION_PENDING',
+          },
+          data: {
+            status: 'SHORTLIST_READY',
+            selectedProviderId: null,
+            selectedLeadInviteId: null,
+          },
+        })
+
+        await tx.auditLog
+          .create({
+            data: {
+              actorId: 'system',
+              actorRole: 'system',
+              action: 'shortlist.stale_confirmation_swept',
+              entityType: 'JobRequest',
+              entityId: request.id,
+              after: {
+                previousSelectedProviderId: request.selectedProviderId,
+              } as Prisma.InputJsonValue,
+            },
+          })
+          .catch(() => undefined)
+      })
+
+      if (request.customer?.phone) {
+        await sendText({
+          to: request.customer.phone,
+          text: 'The provider didn\'t respond in time. Go back to your shortlist to choose another provider.',
+          templateName: 'interactive:provider_confirmation_expired',
+          metadata: { requestId: request.id },
+        }).catch((err: unknown) => {
+          console.error('[shortlist-sweep] failed to notify customer of stale confirmation', {
+            requestId: request.id,
+            error: err instanceof Error ? err.message : 'unknown',
+          })
+        })
+      }
+
+      count++
+    } catch (error) {
+      console.error('[shortlist-sweep] error processing stale confirmation request', {
+        requestId: request.id,
+        error,
+      })
+    }
+  }
+
+  return count
+}
+
 export async function declineSelectedProviderJob(params: {
   leadId: string
   providerId: string
@@ -1088,6 +1200,51 @@ export async function declineSelectedProviderJob(params: {
         jobRequestId: lead.jobRequestId,
         err,
       })
+    })
+  }
+
+  // Check if all shortlist items are now exhausted
+  try {
+    const selectableLeads = await db.lead.findMany({
+      where: {
+        jobRequestId: lead.jobRequestId,
+        status: { notIn: ['DECLINED', 'EXPIRED', 'CANCELLED'] },
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    })
+
+    if (selectableLeads.length === 0) {
+      console.warn('[shortlist] all providers exhausted for jobRequestId=${lead.jobRequestId}, triggering rematch')
+
+      if (customerPhone) {
+        await sendText({
+          to: customerPhone,
+          text: 'Unfortunately all available providers from your shortlist are no longer available. We\'re searching for new providers and will notify you shortly.',
+          templateName: 'interactive:shortlist_exhausted',
+          metadata: { requestId: lead.jobRequestId },
+        }).catch((err: unknown) => {
+          console.error('[shortlist-exhaustion] failed to notify customer of exhaustion', {
+            requestId: lead.jobRequestId,
+            err,
+          })
+        })
+      }
+
+      // Trigger rematch by calling requestMoreShortlistOptions
+      await requestMoreShortlistOptions({
+        requestId: lead.jobRequestId,
+      }).catch((err: unknown) => {
+        console.error('[shortlist-exhaustion] rematch trigger failed', {
+          requestId: lead.jobRequestId,
+          err,
+        })
+      })
+    }
+  } catch (err) {
+    console.error('[shortlist-exhaustion] error checking for exhaustion', {
+      requestId: lead.jobRequestId,
+      err,
     })
   }
 
