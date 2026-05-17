@@ -24,6 +24,7 @@ import {
 } from '@/lib/arrival-availability'
 import {
   markAcceptedLeadAction,
+  markJobComplete,
   saveAcceptedLeadArrival,
   sendFreshAcceptedJobLink,
 } from '@/lib/accepted-job-actions'
@@ -388,6 +389,17 @@ async function markAcceptedActionWithToken(formData: FormData) {
   redirect(`/leads/access/${encodeURIComponent(token)}?updated=${action}`)
 }
 
+async function markJobDoneWithToken(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const leadId = String(formData.get('leadId') ?? '')
+  const result = await markJobComplete({ leadId, token })
+  if (!result.ok) {
+    redirect(`/leads/access/${encodeURIComponent(token)}?jobDoneError=1`)
+  }
+  redirect(`/leads/access/${encodeURIComponent(token)}?jobDone=1`)
+}
+
 async function requestFreshLinkWithToken(formData: FormData) {
   'use server'
   const token = String(formData.get('token') ?? '')
@@ -536,6 +548,8 @@ export default async function ProviderLeadAccessPage({
     traceId?: string
     savedAt?: string
     editArrival?: string
+    jobDone?: string
+    jobDoneError?: string
   }>
 }) {
   const { token } = await params
@@ -1244,58 +1258,33 @@ export default async function ProviderLeadAccessPage({
           </div>
         )}
 
-        {isAccepted && jr.match && (
+        {isAccepted && jr.match && !jr.match.providerCompletedAt && resolvedSearchParams.jobDone !== '1' && (
           <div className="rounded-lg border bg-card p-4 space-y-3">
             <div>
-              <h2 className="text-base font-semibold">Quick job updates</h2>
+              <h2 className="text-base font-semibold">Mark job done</h2>
               <p className="text-sm text-muted-foreground">
-                These updates notify the customer and are logged on the ticket.
+                Once you've finished the work, mark it done. The customer will be notified and invited to leave a review.
               </p>
             </div>
-            <div className="grid gap-2">
-              <form action={markAcceptedActionWithToken}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="leadId" value={lead.id} />
-                <input type="hidden" name="action" value="customer_contacted" />
-                <Button type="submit" variant="outline" className="w-full" disabled={Boolean(jr.match?.customerContactedAt) || actionDisabled}>
-                  Mark customer contacted
-                </Button>
-              </form>
-              <form action={markAcceptedActionWithToken}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="leadId" value={lead.id} />
-                <input type="hidden" name="action" value="on_the_way" />
-                <Button type="submit" className="w-full" disabled={Boolean(jr.match?.providerOnTheWayAt) || actionDisabled}>
-                  Mark on the way
-                </Button>
-              </form>
-              <form action={markAcceptedActionWithToken}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="leadId" value={lead.id} />
-                <input type="hidden" name="action" value="arrived" />
-                <Button type="submit" className="w-full" disabled={Boolean(jr.match?.providerArrivedAt) || actionDisabled}>
-                  Mark arrived
-                </Button>
-              </form>
-              <form action={markAcceptedActionWithToken}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="leadId" value={lead.id} />
-                <input type="hidden" name="action" value="started" />
-                <Button type="submit" variant="outline" className="w-full" disabled={Boolean(jr.match?.providerStartedAt) || actionDisabled}>
-                  Start job
-                </Button>
-              </form>
-              <form action={markAcceptedActionWithToken}>
-                <input type="hidden" name="token" value={token} />
-                <input type="hidden" name="leadId" value={lead.id} />
-                <input type="hidden" name="action" value="completed" />
-                <Button type="submit" variant="outline" className="w-full" disabled={actionDisabled}>
-                  Complete job
-                </Button>
-              </form>
-            </div>
+            <form action={markJobDoneWithToken}>
+              <input type="hidden" name="token" value={token} />
+              <input type="hidden" name="leadId" value={lead.id} />
+              <LeadActionSubmitButton className="w-full" pendingLabel="Marking done…">
+                Mark job done
+              </LeadActionSubmitButton>
+            </form>
+            {resolvedSearchParams.jobDoneError === '1' && (
+              <p className="text-xs text-destructive">Could not mark this job as done. Please try again or contact support.</p>
+            )}
           </div>
         )}
+
+        {(isAccepted && Boolean(jr.match?.providerCompletedAt)) || resolvedSearchParams.jobDone === '1' ? (
+          <div className="tone-success rounded-lg border px-4 py-3 text-sm">
+            <p className="font-semibold">Job marked done</p>
+            <p className="mt-1">The customer has been notified and invited to leave a review.</p>
+          </div>
+        ) : null}
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 px-4 py-4 backdrop-blur safe-bottom">

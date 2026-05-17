@@ -15,6 +15,8 @@ import {
   type ProviderLeadAccessScope,
 } from './provider-lead-access'
 import { ctaLabelFor } from './whatsapp-copy'
+import { transitionJob } from './jobs'
+import { getPublicAppUrl } from './provider-credit-copy'
 
 type AcceptedLeadAction = 'customer_contacted' | 'on_the_way' | 'arrived' | 'started' | 'completed'
 type SaveArrivalErrorCode =
@@ -522,4 +524,102 @@ export async function sendFreshAcceptedJobLink(params: { token: string }) {
   )
 
   return { ok: true as const }
+}
+
+// ─── Mark job complete ────────────────────────────────────────────────────────
+// Minimal flow: provider taps "Mark job done" → job COMPLETED → customer review
+// WhatsApp sent. Skips all intermediate milestones.
+
+async function loadAcceptedLeadWithBooking(leadId: string) {
+  const lead = await db.lead.findUnique({
+    where: { id: leadId },
+    include: {
+      provider: { select: { id: true, name: true, phone: true } },
+      jobRequest: {
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          match: {
+            include: {
+              booking: {
+                include: { job: { select: { id: true, status: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!lead || lead.status !== 'ACCEPTED' || !lead.jobRequest.match) return null
+  if (lead.jobRequest.match.providerId !== lead.providerId) return null
+  if (lead.jobRequest.match.status === 'CANCELLED') return null
+  if (lead.jobRequest.status === 'CANCELLED' || lead.jobRequest.status === 'EXPIRED') return null
+  return lead
+}
+
+export async function markJobComplete(params: {
+  leadId: string
+  token: string
+}): Promise<
+  | { ok: true; duplicate: boolean; bookingId: string | null }
+  | { ok: false; reason: 'UNAVAILABLE' | 'NO_JOB' }
+> {
+  if (!tokenAllowsAcceptedJobScope({ token: params.token, scope: 'complete_job' })) {
+    return { ok: false as const, reason: 'UNAVAILABLE' }
+  }
+
+  const lead = await loadAcceptedLeadWithBooking(params.leadId)
+  if (!lead) return { ok: false as const, reason: 'UNAVAILABLE' }
+
+  const match = lead.jobRequest.match!
+  const booking = match.booking
+  const job = booking?.job
+
+  if (match.providerCompletedAt) {
+    return { ok: true as const, duplicate: true, bookingId: booking?.id ?? null }
+  }
+
+  await db.match.update({
+    where: { id: match.id },
+    data: { providerCompletedAt: new Date() },
+  })
+
+  if (job) {
+    await transitionJob({
+      jobId: job.id,
+      toStatus: 'COMPLETED',
+      actorId: lead.providerId,
+      actorRole: 'provider',
+      notes: 'Provider marked job done via lead page',
+    })
+  }
+
+  const appUrl = getPublicAppUrl()
+  const reviewUrl = booking ? `${appUrl}/bookings/${booking.id}/rate` : null
+
+  const { notifyCustomerReviewRequested } = await import('./client-pwa-submission-notifications')
+  await notifyCustomerReviewRequested({
+    customerPhone: lead.jobRequest.customer.phone,
+    category: lead.jobRequest.category,
+    providerName: lead.provider.name,
+    requestId: lead.jobRequestId,
+    reviewUrl,
+  })
+
+  await recordAuditLog({
+    actorId: lead.providerId,
+    actorRole: 'provider',
+    action: 'match.job_marked_complete',
+    entityType: AUDIT_ENTITY.JOB_REQUEST,
+    entityId: lead.jobRequestId,
+    after: {
+      leadId: lead.id,
+      matchId: match.id,
+      bookingId: booking?.id ?? null,
+      jobId: job?.id ?? null,
+      at: new Date().toISOString(),
+    },
+  }).catch(() => {})
+
+  return { ok: true as const, duplicate: false, bookingId: booking?.id ?? null }
 }
