@@ -15,7 +15,7 @@
 
 import 'dotenv/config'
 import { db } from '../lib/db'
-import { creditPaidCreditsInTransaction } from '../lib/provider-wallet'
+import { creditPaidCreditsInTransaction, ProviderWalletError } from '../lib/provider-wallet'
 import { notifyProviderPaymentCredited } from '../lib/provider-wallet-notifications'
 
 const IS_APPLY = process.argv.includes('--apply')
@@ -109,6 +109,11 @@ async function main() {
   let failed = 0
 
   for (const intent of orphaned) {
+    if (!Number.isInteger(intent.creditsToIssue) || intent.creditsToIssue <= 0) {
+      console.error(`  ${intent.id} ... SKIPPED (invalid creditsToIssue=${intent.creditsToIssue}) — manual review required`)
+      failed++
+      continue
+    }
     process.stdout.write(`  ${intent.id} ... `)
     try {
       const result = await recoverIntent(intent)
@@ -125,7 +130,11 @@ async function main() {
         console.error(`  [notify] failed for ${intent.id}:`, err instanceof Error ? err.message : err)
       })
     } catch (err) {
-      console.error(`FAILED — ${err instanceof Error ? err.message : String(err)}`)
+      if (err instanceof ProviderWalletError && err.code === 'WALLET_NOT_ACTIVE') {
+        console.error(`FAILED (WALLET_NOT_ACTIVE) — reactivate wallet for provider ${intent.providerId} then re-run`)
+      } else {
+        console.error(`FAILED — ${err instanceof Error ? err.message : String(err)}`)
+      }
       failed++
     }
   }
