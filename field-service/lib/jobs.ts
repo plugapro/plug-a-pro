@@ -356,11 +356,25 @@ export async function resolveExtraWork(params: {
 
   // Resume job if approved
   if (params.approved) {
+    const job = await db.job.findUnique({
+      where: { id: extra.jobId },
+      select: {
+        booking: {
+          select: {
+            match: {
+              select: { jobRequest: { select: { customerId: true } } },
+            },
+          },
+        },
+      },
+    })
+    const customerId = job?.booking?.match?.jobRequest?.customerId ?? extra.jobId
+
     await transitionJob({
       jobId: extra.jobId,
       toStatus: 'STARTED',
-      actorId: 'customer',
-      actorRole: 'system',
+      actorId: customerId,
+      actorRole: 'customer',
       notes: `Extra work approved by customer`,
     })
   }

@@ -469,9 +469,11 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
   await db.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { bookingId: event.bookingId },
-      select: { status: true },
+      select: { status: true, booking: { select: { status: true } } },
     })
     if (payment?.status === 'REFUNDED' || payment?.status === 'PARTIALLY_REFUNDED') return
+
+    const fromStatus = payment?.booking?.status ?? null
 
     await tx.payment.update({
       where: { bookingId: event.bookingId },
@@ -485,6 +487,17 @@ export async function handlePaymentSuccess(event: PaymentEvent): Promise<void> {
     await tx.booking.update({
       where: { id: event.bookingId },
       data: { status: 'SCHEDULED' },
+    })
+
+    await tx.bookingStatusEvent.create({
+      data: {
+        bookingId: event.bookingId,
+        fromStatus: fromStatus ?? undefined,
+        toStatus: 'SCHEDULED',
+        actorId: event.pspReference,
+        actorRole: 'system',
+        notes: `Payment confirmed (${event.pspReference})`,
+      },
     })
   })
 }

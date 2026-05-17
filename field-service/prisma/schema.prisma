@@ -304,6 +304,7 @@ model Provider {
   @@index([isTestUser])
   @@index([status, createdAt])
   @@index([kycStatus, status])
+  @@index([completedJobsCount])
   @@map("providers")
 }
 
@@ -850,6 +851,7 @@ model JobStatusEvent {
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
+  @@index([jobId])
   @@map("job_status_events")
 }
 
