@@ -355,10 +355,22 @@ async function main() {
     console.log(`\nChecking approval status for ${walletTemplateNames.length} wallet templates...\n`)
 
     for (const name of walletTemplateNames) {
-      const url = `${BASE}/${WABA_ID}/message_templates?name=${name}&fields=name,status,category,language`
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })
-      const json = await res.json()
-      const templates = json.data ?? []
+      let templates
+      try {
+        const url = `${BASE}/${WABA_ID}/message_templates?name=${name}&fields=name,status,category,language`
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })
+        const json = await res.json()
+        if (!res.ok || json.error) {
+          console.log(`  ${name.padEnd(36)} ❌  API ERROR ${res.status}: ${json.error?.message ?? 'unknown'}`)
+          await sleep(150)
+          continue
+        }
+        templates = json.data ?? []
+      } catch (err) {
+        console.log(`  ${name.padEnd(36)} ❌  NETWORK ERROR: ${err instanceof Error ? err.message : String(err)}`)
+        await sleep(150)
+        continue
+      }
 
       if (templates.length === 0) {
         console.log(`  ${name.padEnd(36)} ⚠️  NOT FOUND on WABA`)
