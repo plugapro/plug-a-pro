@@ -40,6 +40,15 @@ vi.mock('@/lib/provider-lead-access', () => ({
   getProviderSignedJobHandoverUrlByLeadId: vi.fn().mockResolvedValue('https://app.plugapro.co.za/provider/jobs/job-request-1/handover?token=token'),
 }))
 
+vi.mock('@/lib/provider-credit-payment-intents', () => ({
+  createManualEftTopUpIntent: vi.fn(),
+}))
+
+vi.mock('@/lib/provider-wallet-notifications', () => ({
+  notifyProviderPaymentIntentCreated: vi.fn().mockResolvedValue(undefined),
+  notifyProviderPaymentCredited: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@/lib/provider-wallet', () => ({
   PROVIDER_CREDIT_PRICE_ZAR: 50,
   PROVIDER_CREDIT_PRICE_CENTS: 5_000,
@@ -58,6 +67,8 @@ import { db } from '@/lib/db'
 import * as wa from '@/lib/whatsapp-interactive'
 import { transitionJob } from '@/lib/jobs'
 import { recordAuditLog } from '@/lib/audit'
+import * as paymentIntents from '@/lib/provider-credit-payment-intents'
+import * as walletNotifications from '@/lib/provider-wallet-notifications'
 
 const mockCtx = (step: string, replyId?: string, replyText?: string, data: object = {}) => ({
   phone: '+27711111111',
@@ -93,6 +104,7 @@ describe('handleProviderJourneyFlow', () => {
         [expect.objectContaining({
           rows: [
             expect.objectContaining({ id: 'provider_check_status', title: 'View Credits' }),
+            expect.objectContaining({ id: 'provider_topup', title: 'Top Up Credits' }),
             expect.objectContaining({ id: 'provider_available_jobs', title: 'View Opportunities' }),
             expect.objectContaining({ id: 'provider_my_jobs', title: 'View Active Jobs' }),
             expect.objectContaining({ title: 'Update Availability' }),
@@ -791,6 +803,139 @@ describe('handleProviderJourneyFlow', () => {
         expect.arrayContaining([
           expect.objectContaining({ id: 'reg_start', title: 'Apply as provider' }),
         ]),
+      )
+    })
+  })
+
+  describe('pj_topup_select_amount step', () => {
+    const activeProvider = {
+      id: 'prov_1',
+      name: 'Sipho',
+      phone: '+27711111111',
+      availableNow: true,
+      technicianAvailability: null,
+      active: true,
+      status: 'ACTIVE',
+    }
+
+    beforeEach(() => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(activeProvider)
+    })
+
+    it('shows package list when entering the step from menu', async () => {
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'provider_topup'),
+      )
+      expect(wa.sendList).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Top Up Credits'),
+        [expect.objectContaining({
+          rows: expect.arrayContaining([
+            expect.objectContaining({ id: 'provider_topup_100', title: 'R100' }),
+            expect.objectContaining({ id: 'provider_topup_200', title: 'R200' }),
+            expect.objectContaining({ id: 'provider_topup_500', title: 'R500' }),
+          ]),
+        })],
+        expect.anything(),
+      )
+      expect(result.nextStep).toBe('pj_topup_select_amount')
+    })
+
+    it('shows package list again on unrecognised reply', async () => {
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'back_home'),
+      )
+      expect(wa.sendList).toHaveBeenCalled()
+      expect(result.nextStep).toBe('pj_topup_select_amount')
+    })
+
+    it('creates EFT intent and sends bank details when R100 is selected', async () => {
+      ;(paymentIntents.createManualEftTopUpIntent as ReturnType<typeof vi.fn>).mockResolvedValue({
+        intent: { id: 'intent-1', paymentMethod: 'MANUAL_EFT' },
+        instructions: {
+          amountFormatted: 'R100.00',
+          creditsToIssue: 2,
+          paymentReference: 'PAP-1234-ABCD',
+          expiresAt: new Date('2026-05-24T00:00:00Z'),
+          bankAccount: {
+            accountName: 'Plug A Pro',
+            bankName: 'Test Bank',
+            accountNumber: '123456789',
+            branchCode: '250655',
+            accountType: 'Business current',
+          },
+        },
+      })
+
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'provider_topup_100'),
+      )
+
+      expect(paymentIntents.createManualEftTopUpIntent).toHaveBeenCalledWith(
+        expect.objectContaining({ providerId: 'prov_1', amountCents: 10_000 }),
+      )
+      expect(wa.sendText).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('PAP-1234-ABCD'),
+      )
+      expect(wa.sendText).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('R100.00'),
+      )
+      expect(wa.sendText).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('123456789'),
+      )
+      expect(result.nextStep).toBe('pj_topup_eft_created')
+    })
+
+    it('sends error text and stays on amount step when intent creation fails', async () => {
+      ;(paymentIntents.createManualEftTopUpIntent as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Provider not found'),
+      )
+
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'provider_topup_100'),
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('Could not create your top-up'),
+      )
+      expect(result.nextStep).toBe('pj_topup_select_amount')
+    })
+
+    it('shows not-registered message when provider is not found', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+      const result = await handleProviderJourneyFlow(
+        mockCtx('pj_topup_select_amount', 'provider_topup'),
+      )
+
+      expect(wa.sendText).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('not registered'),
+      )
+      expect(result.nextStep).toBe('done')
+    })
+  })
+
+  describe('provider menu includes Top Up Credits option', () => {
+    it('pj_menu includes provider_topup row', async () => {
+      ;(db.provider.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'prov_1', name: 'Sipho', availableNow: true, technicianAvailability: null,
+        active: true, status: 'ACTIVE',
+      })
+      await handleProviderJourneyFlow(mockCtx('pj_menu'))
+      expect(wa.sendList).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.any(String),
+        [expect.objectContaining({
+          rows: expect.arrayContaining([
+            expect.objectContaining({ id: 'provider_topup', title: 'Top Up Credits' }),
+          ]),
+        })],
+        expect.anything(),
       )
     })
   })
