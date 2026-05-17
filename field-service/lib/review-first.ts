@@ -1473,11 +1473,23 @@ export async function sendRequestToShortlistedProviders(params: {
   }
 
   if (request.customer?.phone) {
+    const sentNames = activeTargets
+      .filter((l, i) => i < notifiedCount + pendingCount)
+      .map((l) => l.provider.name)
+    const nameList =
+      sentNames.length === 0
+        ? 'your selected providers'
+        : sentNames.length === 1
+          ? sentNames[0]
+          : sentNames.length === 2
+            ? `${sentNames[0]} and ${sentNames[1]}`
+            : `${sentNames.slice(0, -1).join(', ')}, and ${sentNames[sentNames.length - 1]}`
+
     const customerText = pendingCount > 0
-      ? `We're sending your request to your selected provider now.\n\nWe'll update you here once WhatsApp confirms the send.`
+      ? `We're sending your request to ${nameList}.\n\nThey'll each have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond once delivered. We'll update you when they confirm their availability.`
       : failedCount > 0
       ? `Your request was sent to ${notifiedCount} of ${activeTargets.length} selected provider${activeTargets.length === 1 ? '' : 's'}.\n\nWe couldn't notify ${failedCount} provider${failedCount === 1 ? '' : 's'}. Open your request to retry failed sends or choose another provider.`
-      : `Your request has been sent to ${notifiedCount} selected provider${notifiedCount === 1 ? '' : 's'}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you as responses come in.`
+      : `Your request has been sent to ${nameList}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you once they've all confirmed their availability.`
     await sendText(
       request.customer.phone,
       customerText,
@@ -1646,32 +1658,52 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
         },
       }).catch(() => null)
 
-      if (lead?.jobRequest.customer?.phone) {
-        const alreadySent = await hasSuccessfulMessageForRecipient({
+      // Send ONE consolidated "all delivered" message when the last pending lead is confirmed.
+      // Individual per-provider delivery notifications are suppressed to avoid spam.
+      const stillPending = await db.lead.count({
+        where: { jobRequestId: requestId, status: 'SEND_PENDING', assignmentHoldId: null },
+      }).catch(() => 1)
+
+      if (stillPending === 0 && lead?.jobRequest.customer?.phone) {
+        const alreadyConsolidated = await hasSuccessfulMessageForRecipient({
           to: lead.jobRequest.customer.phone,
           templateName: REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE,
-          metadataPath: ['leadId'],
-          metadataEquals: leadId,
+          metadataPath: ['requestId'],
+          metadataEquals: requestId,
         }).catch(() => false)
 
-        if (!alreadySent) {
+        if (!alreadyConsolidated) {
+          const allSent = await db.lead.findMany({
+            where: {
+              jobRequestId: requestId,
+              status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
+              assignmentHoldId: null,
+            },
+            select: { provider: { select: { name: true } } },
+            orderBy: { rankingPosition: 'asc' },
+          }).catch(() => [])
+
+          const names = allSent.map((l) => l.provider.name)
+          const nameList =
+            names.length === 0
+              ? 'your selected providers'
+              : names.length === 1
+                ? names[0]
+                : names.length === 2
+                  ? `${names[0]} and ${names[1]}`
+                  : `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
+
           await sendText(
             lead.jobRequest.customer.phone,
-            `Your request was sent to ${lead.provider.name}. They have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond.`,
+            `✅ Your request was sent to ${nameList}.\n\nThey each have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to confirm their availability. We'll let you know once they respond — then you can choose who you'd like to work with.`,
             {
               templateName: REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE,
-              metadata: {
-                requestId,
-                leadId,
-                providerId,
-                idempotencyKey: `${REVIEW_FIRST_PROVIDER_NOTIFICATION_ACCEPTED_TEMPLATE}:${leadId}`,
-              },
+              metadata: { requestId, leadId, providerId },
             },
           ).catch((error) => {
-            console.warn('[review-first.provider-notification] customer_success_notice_failed', {
+            console.warn('[review-first.provider-notification] consolidated_customer_notice_failed', {
               requestId,
               leadId,
-              providerId,
               error: error instanceof Error ? error.message : String(error),
             })
           })
