@@ -148,7 +148,7 @@ async function recordPostMatchSendFailure(params: {
 export async function notifyPostMatchAcceptance(params: {
   leadId: string
   providerId: string
-  matchId: string
+  matchId?: string | null
   creditTransactionId?: string | null
 }): Promise<{ providerNotified: boolean; customerNotified: boolean }> {
   const lead = await db.lead.findUnique({
@@ -226,7 +226,7 @@ export async function notifyPostMatchAcceptance(params: {
       metadata: {
         leadId: lead.id,
         jobRequestId: lead.jobRequestId,
-        matchId: params.matchId,
+        matchId: params.matchId ?? null,
         providerId: provider.id,
         customerId: customer.id,
         handoverUrlCreated: Boolean(customerHandoverUrl),
@@ -300,7 +300,7 @@ export async function notifyPostMatchAcceptance(params: {
       metadata: {
         leadId: lead.id,
         jobRequestId: lead.jobRequestId,
-        matchId: params.matchId,
+        matchId: params.matchId ?? null,
         providerId: provider.id,
         leadUnlockId: lead.unlock?.id,
         creditTransactionId: params.creditTransactionId ?? null,
@@ -365,7 +365,7 @@ export async function notifyPostMatchAcceptance(params: {
           metadata: {
             leadId: lead.id,
             jobRequestId: lead.jobRequestId,
-            matchId: params.matchId,
+            matchId: params.matchId ?? null,
             providerId: provider.id,
             leadUnlockId: lead.unlock?.id,
             creditTransactionId: params.creditTransactionId ?? null,
@@ -387,7 +387,7 @@ export async function notifyPostMatchAcceptance(params: {
   console.info('[post-match] accepted lead handover notifications processed', {
     lead_id: lead.id,
     job_request_id: lead.jobRequestId,
-    match_id: params.matchId,
+    match_id: params.matchId ?? null,
     provider_id: provider.id,
     customer_id: customer.id,
     credit_transaction_id: params.creditTransactionId ?? null,
@@ -398,7 +398,7 @@ export async function notifyPostMatchAcceptance(params: {
       provider_view_job: Boolean(leadUrl),
       customer_view_provider: Boolean(customerHandoverUrl),
     },
-    trace_id: `handover_${lead.id}_${params.matchId}`,
+    trace_id: `handover_${lead.id}_${params.matchId ?? 'shortlist'}`,
   })
 
   await recordAuditLog({
@@ -409,7 +409,7 @@ export async function notifyPostMatchAcceptance(params: {
     entityId: lead.jobRequestId,
     after: {
       leadId: lead.id,
-      matchId: params.matchId,
+      matchId: params.matchId ?? null,
       providerId: provider.id,
       customerContactReleased: true,
     },

@@ -5,6 +5,7 @@ import type { TemplateName } from './messaging-templates'
 import { sendTemplate, sendText as sendWhatsAppText } from './whatsapp'
 import { phoneLookupVariants } from './whatsapp-identity'
 import { sendPostMatchIntroductions } from './post-match-intro'
+import { notifyPostMatchAcceptance } from './post-match-communications'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
@@ -575,6 +576,17 @@ export async function notifyAcceptedLeadLocked(params: { leadId: string; provide
 
     // Fire intro messages (contact exchange) non-blocking — errors logged inside.
     void sendPostMatchIntroductions({ leadId: params.leadId, providerId: params.providerId })
+
+    // Fire rich acceptance messages with app deep links to both parties (non-blocking).
+    // Idempotency is handled inside notifyPostMatchAcceptance via hasSentPostMatchMessage.
+    void notifyPostMatchAcceptance({ leadId: params.leadId, providerId: params.providerId })
+      .catch((error) => {
+        console.error('[provider-accepted-lock-confirmation] post-match deep link notification failed (non-fatal)', {
+          leadId: params.leadId,
+          providerId: params.providerId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
 
     return !result.customer.failureReason && !result.provider.failureReason
   } catch (error) {
