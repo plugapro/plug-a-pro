@@ -76,10 +76,7 @@ export default async function ProviderJobsPage({
       where: {
         providerId: provider.id,
         status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
-        OR: [
-          { booking: { scheduledDate: { lt: tomorrow } } },
-          { booking: { scheduledDate: null } },
-        ],
+        booking: { scheduledDate: { lt: tomorrow } },
       },
       include: jobInclude,
       orderBy: { booking: { scheduledDate: 'asc' } },
