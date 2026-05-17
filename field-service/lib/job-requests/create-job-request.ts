@@ -5,7 +5,6 @@
 // Can either trigger matching immediately or defer matching until customer
 // chooses a post-submit matching mode.
 
-import { after } from 'next/server'
 import { db } from '../db'
 import { resolveCategoryRequirements } from '../category-config'
 import { geocodeAddress } from '../geocoding'
@@ -448,6 +447,7 @@ export async function createJobRequest(
 
   if (!params.deferMatchingModeSelection && initialAssignmentMode === 'AUTO_ASSIGN') {
     try {
+      const { after } = await import('next/server')
       after(runMatching)
     } catch {
       // after() is not available in this execution context (e.g. nested inside another after()
