@@ -10,6 +10,7 @@
 
 import { db } from './db'
 import { OPS_QUEUE_TYPES, claimOpsQueueItem } from './ops-queue'
+import { notifyCustomerPaymentFailed } from './client-pwa-submission-notifications'
 
 export type PaymentCollectionMode = 'bypass' | 'checkout'
 
@@ -501,6 +502,32 @@ export async function handlePaymentFailed(event: PaymentEvent): Promise<void> {
     bookingId: event.bookingId,
     pspReference: event.pspReference,
   })
+
+  const booking = await db.booking.findUnique({
+    where: { id: event.bookingId },
+    select: {
+      match: {
+        select: {
+          jobRequest: {
+            select: {
+              category: true,
+              customer: { select: { phone: true } },
+            },
+          },
+        },
+      },
+    },
+  }).catch(() => null)
+
+  if (booking?.match.jobRequest) {
+    const { category, customer } = booking.match.jobRequest
+    notifyCustomerPaymentFailed({
+      customerPhone: customer.phone,
+      category: category.replaceAll('_', ' '),
+      bookingRef: event.bookingId.slice(-8).toUpperCase(),
+    }).catch(() => {})
+  }
+
   await claimOpsQueueItem(db, {
     queueType: OPS_QUEUE_TYPES.PAYMENT_FOLLOW_UP,
     entityId: event.bookingId,

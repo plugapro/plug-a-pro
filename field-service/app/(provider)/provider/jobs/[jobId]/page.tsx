@@ -126,7 +126,7 @@ export default async function JobDetailPage({
     <div className="min-h-screen pb-32 screen-enter">
       {/* Page header */}
       <div className="px-[18px] pt-[60px] pb-4 flex items-center gap-3">
-        <Link href="/provider" aria-label="Back to jobs">
+        <Link href="/provider/jobs" aria-label="Back to jobs">
           <div
             className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
             style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}

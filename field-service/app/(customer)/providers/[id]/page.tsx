@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildMetadata } from '@/lib/metadata'
 import { isEnabled } from '@/lib/flags'
-import { ArrowLeft, Check, MapPin, MoreHorizontal, Star, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Check, MapPin, Star, ExternalLink } from 'lucide-react'
 import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
 
 const CATEGORY_LABELS = new Map(SERVICE_CATEGORY_OPTIONS.map(o => [o.tag, o.label]))
@@ -192,17 +192,6 @@ export default async function CustomerProviderProfilePage({
           >
             <ArrowLeft size={18} />
           </Link>
-          <button
-            aria-label="More options"
-            style={{
-              width: 38, height: 38, borderRadius: 12, border: 'none',
-              background: 'rgba(255,255,255,0.18)', color: '#fff',
-              backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <MoreHorizontal size={18} />
-          </button>
         </div>
       </div>
 

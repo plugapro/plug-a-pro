@@ -100,6 +100,33 @@ export async function notifyCustomerMatchingInProgress(params: {
  * Idempotency: callers should guard on a sent-flag (e.g. Job.reviewRequestSentAt)
  * before calling. This function is intentionally non-throwing.
  */
+export async function notifyCustomerPaymentFailed(params: {
+  customerPhone: string | null
+  category: string
+  bookingRef: string
+}): Promise<{ sent: boolean; reason?: string }> {
+  if (!params.customerPhone) return { sent: false, reason: 'no_customer_phone' }
+
+  try {
+    await sendText({
+      to: params.customerPhone,
+      text:
+        `Payment issue on your booking\n\n` +
+        `Your payment for the ${params.category} booking (Ref: ${params.bookingRef}) was not successful.\n\n` +
+        `Please try again or contact us on WhatsApp if you need help. Your booking slot is still held.`,
+      templateName: 'interactive:client_payment_failed',
+      metadata: { bookingRef: params.bookingRef },
+    })
+    return { sent: true }
+  } catch (err) {
+    console.error('[client-pwa-submission-notifications] notifyCustomerPaymentFailed failed (non-fatal)', {
+      bookingRef: params.bookingRef,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return { sent: false, reason: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 export async function notifyCustomerReviewRequested(params: {
   customerPhone: string | null
   category: string

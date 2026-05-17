@@ -143,13 +143,21 @@ export default async function ProviderCataloguePage({
             OR: [
               { name: { contains: normalizedQuery, mode: 'insensitive' } },
               { bio: { contains: normalizedQuery, mode: 'insensitive' } },
-              { skills: { has: normalizedQuery } },
+              {
+                providerCategories: {
+                  some: {
+                    categorySlug: { contains: normalizedQuery, mode: 'insensitive' },
+                    approvalStatus: 'APPROVED',
+                  },
+                },
+              },
               { serviceAreas: { has: normalizedQuery } },
             ],
           }
         : {}),
     },
     take: 100,
+    orderBy: { completedJobsCount: 'desc' },
     select: {
       id: true,
       name: true,
