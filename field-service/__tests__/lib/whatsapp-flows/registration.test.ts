@@ -819,13 +819,13 @@ describe('registration flow — numbered bulk skill selection', () => {
     await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, '', {
         name: 'Thabo Nkosi',
-        skills: ['Plumbing', 'Electrical'],
+        skills: ['Plumbing', 'Carpentry'],
       })
     )
 
     const body: string = (wa.sendText as any).mock.calls.at(-1)[1]
     expect(body).toContain('1. Plumbing (selected)')
-    expect(body).toContain('6. Electrical (selected)')
+    expect(body).toContain('8. Carpentry (selected)')
     expect(body).not.toMatch(/[□☐☑]/)
     expect(body).not.toContain('✅ 1.')
   })
@@ -935,7 +935,7 @@ describe('registration flow — numbered bulk skill selection', () => {
     expect(result.nextData?.skills).toContain('Plumbing')
   })
 
-  it('matches multi-word phrase "pest control" via full-phrase label fallback', async () => {
+  it('sends a restriction notice for "pest control" — not accepted in pilot', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, 'pest control', {
         name: 'Thabo Nkosi',
@@ -943,15 +943,13 @@ describe('registration flow — numbered bulk skill selection', () => {
       })
     )
 
-    expect(wa.sendButtons).toHaveBeenCalledWith(
-      phone,
-      expect.stringContaining('Pest Control'),
-      expect.any(Array),
-    )
-    expect(result.nextData?.skills).toContain('Pest Control')
+    const textCalls = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
+    expect(textCalls.some((t) => t.includes('not available on Plug A Pro'))).toBe(true)
+    expect(result.nextStep).toBe('reg_collect_skills_more')
+    expect(result.nextData?.skills).not.toContain('Pest Control')
   })
 
-  it('matches multiple tokens "plumbing electrical" when full phrase does not resolve', async () => {
+  it('sends restriction notice for "electrical" token but still adds "plumbing" from the same input', async () => {
     const result = await handleRegistrationFlow(
       makeCtx('reg_collect_skills_more', undefined, 'plumbing electrical', {
         name: 'Thabo Nkosi',
@@ -959,8 +957,10 @@ describe('registration flow — numbered bulk skill selection', () => {
       })
     )
 
+    const textCalls = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
+    expect(textCalls.some((t) => t.includes('not available on Plug A Pro'))).toBe(true)
     expect(result.nextData?.skills).toContain('Plumbing')
-    expect(result.nextData?.skills).toContain('Electrical')
+    expect(result.nextData?.skills).not.toContain('Electrical')
   })
 
   it('"done" without any selection re-shows numbered list with prompt to pick first', async () => {

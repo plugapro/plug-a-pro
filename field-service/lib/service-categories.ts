@@ -4,6 +4,59 @@ export type ServiceCategoryOption = {
   description: string
 }
 
+/**
+ * Skills available for provider selection during the current pilot.
+ * Regulated or high-compliance trades are excluded until the vetting
+ * pipeline is ready for them.
+ */
+export const PILOT_SKILL_TAGS = new Set([
+  'plumbing',
+  'painting',
+  'garden',
+  'handyman',
+  'diy',
+  'cleaning',
+  'tiling',
+  'carpentry',
+])
+
+/**
+ * WhatsApp warning messages sent when a provider tries to add a skill
+ * that is known but restricted from the current pilot.
+ */
+export const RESTRICTED_SKILL_NOTICE: Record<string, string> = {
+  electrical:
+    '⚡ *Electrical work is not available on Plug A Pro right now.*\n\n' +
+    'Electrical services in South Africa require a Certificate of Compliance (COC) issued by a registered electrician. ' +
+    'Verifying those credentials takes longer than our standard review — we are not accepting electrical providers during the current pilot.\n\n' +
+    'If you also do handyman, plumbing, tiling, carpentry, gardening, or cleaning work, please add those skills from the list.',
+  appliances:
+    '🔌 *Appliance repairs are not available on Plug A Pro right now.*\n\n' +
+    'We are not accepting appliance repair providers during the current pilot.\n\n' +
+    'If you do other work such as handyman, carpentry, or plumbing, please add those skills from the list.',
+  roofing:
+    '🏚️ *Roofing is not available on Plug A Pro right now.*\n\n' +
+    'Roofing is a higher-risk trade that requires additional vetting. We are not accepting roofing providers during the current pilot.\n\n' +
+    'If you do other work, please add those skills from the list.',
+  pest_control:
+    '🐛 *Pest Control is not available on Plug A Pro right now.*\n\n' +
+    'Pest control requires a registered PCO licence. We are not accepting pest control providers during the current pilot.\n\n' +
+    'If you do other work, please add those skills from the list.',
+  air_conditioning:
+    '❄️ *Air Conditioning services are not available on Plug A Pro right now.*\n\n' +
+    'HVAC work requires specialist certification. We are not accepting air conditioning providers during the current pilot.\n\n' +
+    'If you do other work, please add those skills from the list.',
+  waterproofing:
+    '💧 *Waterproofing is not available on Plug A Pro right now.*\n\n' +
+    'We are not accepting waterproofing providers during the current pilot.\n\n' +
+    'If you do other work, please add those skills from the list.',
+}
+
+/** Returns only the skill options available for selection in the current pilot. */
+export function getPilotServiceCategories(): ServiceCategoryOption[] {
+  return SERVICE_CATEGORY_OPTIONS.filter((o) => PILOT_SKILL_TAGS.has(o.tag))
+}
+
 export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
   {
     tag: 'plumbing',

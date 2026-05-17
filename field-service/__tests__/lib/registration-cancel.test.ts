@@ -71,6 +71,8 @@ vi.mock('@/lib/provider-onboarding-data', () => ({
 }))
 vi.mock('@/lib/service-categories', () => ({
   SERVICE_CATEGORY_OPTIONS: [{ tag: 'plumbing', label: 'Plumbing' }],
+  getPilotServiceCategories: vi.fn(() => [{ tag: 'plumbing', label: 'Plumbing' }]),
+  RESTRICTED_SKILL_NOTICE: {},
   resolveServiceCategoryTag: vi.fn((s: string) => (s === 'Plumbing' ? 'plumbing' : null)),
 }))
 vi.mock('@/lib/service-area-guard', () => ({

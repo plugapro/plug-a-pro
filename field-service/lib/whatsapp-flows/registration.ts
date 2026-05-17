@@ -28,7 +28,8 @@ import {
   getProviderTermsUrl,
 } from '../provider-credit-copy'
 import {
-  SERVICE_CATEGORY_OPTIONS,
+  getPilotServiceCategories,
+  RESTRICTED_SKILL_NOTICE,
   resolveServiceCategoryTag,
 } from '../service-categories'
 import {
@@ -61,9 +62,10 @@ export const REGISTRATION_TRIGGERS = [
   'ngifuna ukusebenza', // Zulu: "I want to work"
 ]
 
-// ─── Provider skill options (all categories except 'other', which is client-side) ─
-// 'other' lets clients describe unusual jobs, but providers select real skill tags.
-const PROVIDER_SKILL_OPTIONS = SERVICE_CATEGORY_OPTIONS.filter(o => o.tag !== 'other')
+// ─── Provider skill options — pilot scope only ────────────────────────────────
+// Restricted/regulated trades (electrical, roofing, pest control, etc.) are
+// excluded from the selectable list. Typing them triggers a notice message.
+const PROVIDER_SKILL_OPTIONS = getPilotServiceCategories()
 const MAX_EVIDENCE_FILES = 5
 
 type ProviderApplicationSubmitErrorCode =
@@ -866,20 +868,39 @@ async function handleCollectSkillsMore(ctx: FlowContext): Promise<FlowResult> {
   // 1. Try the full raw phrase first (handles "pest control", "air conditioning", etc.)
   // 2. If no full-phrase match, split into tokens (handles "plumbing electrical")
   let labelMatched: string[] = []
+  let restrictedNotice: string | null = null
   if (indices.length === 0 && raw.length > 0) {
     const fullTag = resolveServiceCategoryTag(raw)
     if (fullTag && fullTag !== 'other') {
-      const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === fullTag)
-      if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+      if (RESTRICTED_SKILL_NOTICE[fullTag]) {
+        restrictedNotice = RESTRICTED_SKILL_NOTICE[fullTag]
+      } else {
+        const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === fullTag)
+        if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+      }
     } else {
       const parts = raw.split(/[,;&\s]+/).filter(s => s.length > 1)
       for (const part of parts) {
         const tag = resolveServiceCategoryTag(part)
         if (!tag || tag === 'other') continue
-        const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === tag)
-        if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+        if (RESTRICTED_SKILL_NOTICE[tag] && !restrictedNotice) {
+          restrictedNotice = RESTRICTED_SKILL_NOTICE[tag]
+        } else if (!RESTRICTED_SKILL_NOTICE[tag]) {
+          const opt = PROVIDER_SKILL_OPTIONS.find(o => o.tag === tag)
+          if (opt && !existingSkills.includes(opt.label)) labelMatched.push(opt.label)
+        }
       }
     }
+  }
+
+  // A restricted skill was mentioned — send the pilot notice and re-prompt.
+  if (restrictedNotice) {
+    await sendText(ctx.phone, restrictedNotice)
+    if (labelMatched.length === 0) {
+      await sendText(ctx.phone, buildSkillPromptText('🔧 *Choose your skills:*', existingSkills))
+      return { nextStep: 'reg_collect_skills_more', nextData: { skills: existingSkills } }
+    }
+    // Valid pilot skills were also mentioned — fall through to add them.
   }
 
   if (indices.length === 0 && labelMatched.length === 0) {

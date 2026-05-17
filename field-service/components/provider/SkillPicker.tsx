@@ -1,7 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { SERVICE_CATEGORY_OPTIONS } from '@/lib/service-categories'
+import { getPilotServiceCategories } from '@/lib/service-categories'
+
+const PILOT_OPTIONS = getPilotServiceCategories()
 
 type Props = {
   initialSkillLabels: string[]
@@ -10,7 +12,7 @@ type Props = {
 export function SkillPicker({ initialSkillLabels }: Props) {
   const initialSelectedTags = useMemo(() => {
     const selected = new Set<string>()
-    for (const option of SERVICE_CATEGORY_OPTIONS) {
+    for (const option of PILOT_OPTIONS) {
       if (initialSkillLabels.includes(option.label)) {
         selected.add(option.tag)
       }
@@ -29,7 +31,7 @@ export function SkillPicker({ initialSkillLabels }: Props) {
     })
   }
 
-  const selected = SERVICE_CATEGORY_OPTIONS.filter((option) => selectedTags.has(option.tag))
+  const selected = PILOT_OPTIONS.filter((option) => selectedTags.has(option.tag))
 
   return (
     <div className="space-y-3">
@@ -55,7 +57,7 @@ export function SkillPicker({ initialSkillLabels }: Props) {
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        {SERVICE_CATEGORY_OPTIONS.map((option) => (
+        {PILOT_OPTIONS.map((option) => (
           <label
             key={option.tag}
             className="flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-sm"
