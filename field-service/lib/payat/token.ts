@@ -56,8 +56,10 @@ async function fetchToken(): Promise<string> {
 
   cache = {
     token: data.access_token,
-    // Subtract 60 seconds for clock skew so callers do not reuse near-expired tokens.
-    expiresAt: Date.now() + Math.max(expiresIn - 60, 0) * 1000,
+    // Subtract 60 s for clock skew. Floor at 10 s so sandbox tokens with very
+    // short expires_in (< 60 s) do not produce expiresAt = now, which would
+    // disable caching and cause a fetch on every request.
+    expiresAt: Date.now() + Math.max((expiresIn - 60) * 1000, 10_000),
   }
 
   return cache.token

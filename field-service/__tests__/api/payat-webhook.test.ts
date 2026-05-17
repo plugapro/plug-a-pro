@@ -8,6 +8,7 @@ const { mockDb, mockCreditProviderWalletFromPayatWebhook } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
   mockCreditProviderWalletFromPayatWebhook: vi.fn(),
@@ -48,6 +49,7 @@ describe('POST /api/payat/webhook', () => {
     })
     mockDb.paymentIntent.findFirst.mockResolvedValue(null)
     mockDb.paymentIntent.update.mockResolvedValue({})
+    mockDb.paymentIntent.updateMany.mockResolvedValue({ count: 1 })
     mockCreditProviderWalletFromPayatWebhook.mockResolvedValue({
       credited: true,
       ledgerEntryId: 'ledger-1',
@@ -67,8 +69,8 @@ describe('POST /api/payat/webhook', () => {
     const res = await POST(request({ reference: 'intent-payat-1', status: 'PAID', amount: 10_000 }))
 
     expect(res.status).toBe(200)
-    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith({
-      where: { id: 'intent-payat-1' },
+    expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
+      where: { id: 'intent-payat-1', status: 'PENDING_PAYMENT' },
       data: expect.objectContaining({
         status: 'ITN_RECEIVED',
         itnPaymentStatus: 'PAID',
@@ -127,8 +129,8 @@ describe('POST /api/payat/webhook', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith({
-      where: { id: 'intent-payat-1' },
+    expect(mockDb.paymentIntent.updateMany).toHaveBeenCalledWith({
+      where: { id: 'intent-payat-1', status: 'PENDING_PAYMENT' },
       data: expect.objectContaining({
         status: 'ITN_RECEIVED',
         itnAmountCents: 10_000,

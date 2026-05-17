@@ -216,13 +216,16 @@ function templateUrlButtonComponent(index: number, url: string): WhatsAppCompone
   }
 }
 
-function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppComponent {
+function payatUrlButtonComponent(index: number, paymentLink: string): WhatsAppComponent | null {
   let url: URL
   try {
     url = new URL(paymentLink)
   } catch {
-    console.error('[provider-wallet-notifications] invalid Pay@ payment link URL — using raw link as suffix', { paymentLink })
-    return templateUrlButtonComponent(index, paymentLink)
+    // H-5: Return null so the caller omits the button entirely rather than
+    // passing the raw unparseable string as a WhatsApp URL suffix (which would
+    // be appended to the template base URL and produce a broken link).
+    console.error('[provider-wallet-notifications] invalid Pay@ payment link URL — omitting button component', { paymentLink })
+    return null
   }
   if (url.hostname !== 'go.payat.co.za') {
     console.error('[provider-wallet-notifications] Pay@ payment link hostname mismatch — template button may render incorrectly', { hostname: url.hostname })
@@ -475,6 +478,9 @@ export async function notifyProviderPayatTopUpInitiated(
   const phone = intent.providerCellphone ?? intent.provider.phone
   if (!phone) return
   if (intent.paymentMethod !== 'PAYAT') return
+  // H-6: Only send "tap to pay" when the intent is still actionable. Sending
+  // this message for a FAILED or EXPIRED intent would deliver a dead payment link.
+  if (intent.status !== 'PENDING_PAYMENT') return
 
   const amountFormatted = formatZarFromCents(intent.amountCents)
 
@@ -483,10 +489,13 @@ export async function notifyProviderPayatTopUpInitiated(
     templateName: 'wallet:payat_topup_initiated',
     whatsappTemplate: 'wallet_payat_topup_initiated',
     templateParameters: [amountFormatted, String(intent.creditsToIssue)],
-    templateComponents: [
-      ...templateBodyComponents([amountFormatted, String(intent.creditsToIssue)]),
-      payatUrlButtonComponent(0, paymentLink),
-    ],
+    templateComponents: (() => {
+      const buttonComponent = payatUrlButtonComponent(0, paymentLink)
+      return [
+        ...templateBodyComponents([amountFormatted, String(intent.creditsToIssue)]),
+        ...(buttonComponent !== null ? [buttonComponent] : []),
+      ]
+    })(),
     body: buildPayatTopUpInitiatedMessage({
       amountFormatted,
       creditsToIssue: intent.creditsToIssue,
@@ -510,7 +519,11 @@ export async function notifyProviderPaymentCredited(paymentIntentId: string) {
     include: { provider: { select: { id: true, phone: true } } },
   })
 
-  if (!intent?.provider.phone) return
+  // M-2: Status guard provides a second layer against concurrent webhook
+  // delivery racing past the hasSentNotification idempotency check before
+  // either MessageEvent is written. The credit gateway commits CREDITED before
+  // calling this function, so the guard should always pass in normal operation.
+  if (!intent?.provider.phone || intent.status !== 'CREDITED') return
 
   await sendNotification({
     to: intent.providerCellphone ?? intent.provider.phone,

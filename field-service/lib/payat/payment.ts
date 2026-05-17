@@ -48,11 +48,11 @@ function generateClientAccountNumber() {
 let merchantRegisteredAt: number | null = null
 const MERCHANT_REGISTERED_TTL_MS = 60 * 60 * 1000 // 1 hour
 
-async function ensureMerchantIdentifier(token: string, apiBase: string) {
-  if (merchantRegisteredAt && Date.now() - merchantRegisteredAt < MERCHANT_REGISTERED_TTL_MS) {
-    return
-  }
+// In-flight coalescing — parallel cold-start requests share one registration
+// call instead of each independently calling generatecredentials.
+let merchantRegistrationInflight: Promise<void> | null = null
 
+async function doRegisterMerchant(token: string, apiBase: string): Promise<void> {
   const merchantId = requirePayatConfig('PAYAT_MERCHANT_ID')
   const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
 
@@ -72,6 +72,20 @@ async function ensureMerchantIdentifier(token: string, apiBase: string) {
   }
 
   merchantRegisteredAt = Date.now()
+}
+
+async function ensureMerchantIdentifier(token: string, apiBase: string) {
+  if (merchantRegisteredAt && Date.now() - merchantRegisteredAt < MERCHANT_REGISTERED_TTL_MS) {
+    return
+  }
+
+  if (merchantRegistrationInflight) return merchantRegistrationInflight
+
+  merchantRegistrationInflight = doRegisterMerchant(token, apiBase).finally(() => {
+    merchantRegistrationInflight = null
+  })
+
+  return merchantRegistrationInflight
 }
 
 function mapPayatResponse(
@@ -114,6 +128,9 @@ async function sendPayatPaymentRequest(
       },
       body: JSON.stringify({
         clientAccountNumber: generateClientAccountNumber(),
+        // Pay@ YAPI RTP create expects amounts in CENTS (confirmed via sandbox
+        // test receipts). The webhook normalisePayload converts differently
+        // because ITN amounts vary by gateway variant — do not align these.
         amount: String(params.amountCents),
         minimumAmount: String(params.amountCents),
         maximumAmount: String(params.amountCents),

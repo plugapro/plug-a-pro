@@ -15,6 +15,7 @@ const { mockDb, mockCreatePayatPaymentRequest, state } = vi.hoisted(() => {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
   }
 
@@ -43,6 +44,7 @@ describe('Pay@ provider credit payment intents', () => {
     mockDb.paymentIntent.findUnique.mockResolvedValue(null)
     // No active duplicate intents by default — allow creation to proceed.
     mockDb.paymentIntent.findFirst.mockResolvedValue(null)
+    mockDb.paymentIntent.update.mockResolvedValue(undefined)
     mockDb.paymentIntent.create.mockImplementation(async (args: any) => {
       state.createdIntent = {
         id: 'intent-payat-1',
@@ -94,6 +96,33 @@ describe('Pay@ provider credit payment intents', () => {
         paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
       },
     })
+  })
+
+  it('rejects DUPLICATE_INTENT when an active PENDING_PAYMENT Pay@ intent already exists', async () => {
+    mockDb.paymentIntent.findFirst.mockResolvedValue({ id: 'existing-intent' })
+    const { createPayatTopUpIntent } = await import('@/lib/provider-credit-payment-intents')
+
+    await expect(
+      createPayatTopUpIntent({ providerId: 'provider-1', amountCents: 10_000 }),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_INTENT' })
+
+    // No new intent should be created and Pay@ must not be contacted.
+    expect(mockDb.paymentIntent.create).not.toHaveBeenCalled()
+    expect(mockCreatePayatPaymentRequest).not.toHaveBeenCalled()
+  })
+
+  it('marks the intent FAILED and re-throws when the Pay@ API call fails', async () => {
+    mockCreatePayatPaymentRequest.mockRejectedValue(new Error('Pay@ API down'))
+    mockDb.paymentIntent.update = vi.fn().mockResolvedValue(undefined)
+    const { createPayatTopUpIntent } = await import('@/lib/provider-credit-payment-intents')
+
+    await expect(
+      createPayatTopUpIntent({ providerId: 'provider-1', amountCents: 10_000 }),
+    ).rejects.toThrow('Pay@ API down')
+
+    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
+    )
   })
 
   it('rejects unsupported Pay@ package amounts before creating an intent', async () => {

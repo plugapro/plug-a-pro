@@ -352,14 +352,26 @@ export async function createPayatTopUpIntent(
     return { intent, provider }
   })
 
-  const payat = await createPayatPaymentRequest({
-    topupId: intent.id,
-    amountCents: intent.amountCents,
-    description: `Plug A Pro wallet top-up R${Math.round(intent.amountCents / 100)}`,
-    providerName: provider.name ?? 'Provider',
-    providerPhone: provider.phone ?? input.providerCellphone ?? '',
-    providerEmail: provider.email ?? '',
-  })
+  // C-2: If the Pay@ API call fails the intent is already committed as
+  // PENDING_PAYMENT. Without cleanup, the DUPLICATE_INTENT guard would block
+  // retries for the full 3-day expiresAt window. Mark it FAILED before throwing.
+  let payat: PayatPaymentResponse
+  try {
+    payat = await createPayatPaymentRequest({
+      topupId: intent.id,
+      amountCents: intent.amountCents,
+      description: `Plug A Pro wallet top-up R${Math.round(intent.amountCents / 100)}`,
+      providerName: provider.name ?? 'Provider',
+      providerPhone: provider.phone ?? input.providerCellphone ?? '',
+      providerEmail: provider.email ?? '',
+    })
+  } catch (err) {
+    await db.paymentIntent.update({
+      where: { id: intent.id },
+      data: { status: 'FAILED' },
+    }).catch(() => {})
+    throw err
+  }
 
   const { notifyProviderPayatTopUpInitiated } = await import('./provider-wallet-notifications')
   notifyProviderPayatTopUpInitiated(intent.id, payat.paymentLink).catch((error: unknown) => {

@@ -947,8 +947,21 @@ async function processInboundMessageUnlocked(
             error,
           })
         })
-      } catch {
-        await sendText(phone, 'Could not create a Pay@ payment link. Please try again or visit the provider portal.')
+      } catch (err: unknown) {
+        // H-4: DUPLICATE_INTENT means an active Pay@ link already exists for this
+        // amount. Telling the provider to "try again" would loop — give them a
+        // specific message directing them to the link already sent.
+        const isDuplicate =
+          err !== null &&
+          typeof err === 'object' &&
+          'code' in err &&
+          (err as { code: unknown }).code === 'DUPLICATE_INTENT'
+        await sendText(
+          phone,
+          isDuplicate
+            ? `You already have an active Pay@ top-up link for R${Math.round(amountCents / 100)}. Check your earlier WhatsApp messages for the payment link, or visit the provider portal to start a new one after it expires.`
+            : 'Could not create a Pay@ payment link. Please try again or visit the provider portal.',
+        )
       }
       return
     }

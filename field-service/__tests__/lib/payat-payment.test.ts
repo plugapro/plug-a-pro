@@ -180,6 +180,9 @@ describe('Pay@ YAPI payment request service', () => {
 
     expect(mockInvalidatePayatToken).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ reference: 'intent-401' })
+    // registration (1) + RTP 401 (2) + RTP retry (3) — no second registration
+    // because the merchant cache TTL is still valid after invalidatePayatToken.
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it('rejects unsupported top-up amounts before any network call', async () => {

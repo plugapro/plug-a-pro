@@ -42,7 +42,15 @@ function isValidSignature(rawBody: string, signature: string, secret: string) {
 
   const expectedBuffer = Buffer.from(expected, 'hex')
   const receivedBuffer = Buffer.from(received, 'hex')
-  if (expectedBuffer.length !== receivedBuffer.length) return false
+  if (expectedBuffer.length !== receivedBuffer.length) {
+    // Length mismatch usually means the signature was base64-encoded rather than
+    // hex-encoded. Check Pay@ merchant portal → webhook settings if this fires.
+    console.warn('[payat-webhook] signature length mismatch — possible encoding difference', {
+      expectedLen: expectedBuffer.length,
+      receivedLen: receivedBuffer.length,
+    })
+    return false
+  }
 
   return timingSafeEqual(expectedBuffer, receivedBuffer)
 }
@@ -173,7 +181,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
-  if (intent.status === 'CREDITED' || intent.creditedAt) {
+  // Guard CREDITED, FAILED, and any creditedAt so a stale PAID webhook arriving
+  // after a REVERSED/CANCELLED closure cannot re-open and double-credit the intent.
+  if (intent.status === 'CREDITED' || intent.status === 'FAILED' || intent.creditedAt) {
     return NextResponse.json({ received: true })
   }
 
@@ -207,8 +217,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, rejected: 'amount_mismatch' })
   }
 
-  await db.paymentIntent.update({
-    where: { id: intent.id },
+  // H-1: Use updateMany with a status predicate so only the first concurrent
+  // webhook transitions to ITN_RECEIVED. Subsequent calls are no-ops and cannot
+  // overwrite itnReceivedAt/paidAt with a later timestamp.
+  await db.paymentIntent.updateMany({
+    where: { id: intent.id, status: 'PENDING_PAYMENT' },
     data: {
       status: 'ITN_RECEIVED',
       itnReceivedAt: new Date(),

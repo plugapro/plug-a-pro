@@ -39,8 +39,14 @@ function PaymentScreen({
   const [timedOut, setTimedOut] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // H-7: Guards against a stale in-flight poll response overwriting terminal
+  // state. Once we reach a terminal status, all subsequent setPaymentStatus
+  // calls from in-flight requests are dropped, regardless of their order.
+  const stoppedRef = useRef(false)
 
   useEffect(() => {
+    stoppedRef.current = false
+
     function stopPolling() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
@@ -49,12 +55,15 @@ function PaymentScreen({
     }
 
     async function poll() {
+      if (stoppedRef.current) return
       try {
         const res = await fetch(`/api/provider/payment-intent/${result.intentId}/status`)
         if (!res.ok) return
         const data = (await res.json()) as { status: string }
+        if (stoppedRef.current) return
         setPaymentStatus(data.status)
         if (TERMINAL_STATUSES.has(data.status)) {
+          stoppedRef.current = true
           stopPolling()
           clearTimeout(timeoutRef.current!)
           if (data.status === 'CREDITED') router.refresh()
@@ -85,6 +94,7 @@ function PaymentScreen({
 
     // Timeout is set once per mount — not reset on each poll cycle.
     timeoutRef.current = setTimeout(() => {
+      stoppedRef.current = true
       stopPolling()
       setTimedOut(true)
     }, POLL_TIMEOUT_MS)
