@@ -93,10 +93,10 @@ describe('post-match communications', () => {
     expect(sendText).not.toHaveBeenCalled()
     expect(sendCtaUrl).toHaveBeenCalledWith(
       '+27820000001',
-      expect.stringContaining('Provider contact:\n+27770000001'),
-      'View Provider',
-      'https://app.plugapro.co.za/customer/requests/jr-12345678/provider-handover?token=customer-token',
-      expect.any(Object),
+      expect.stringContaining('Jacob Hesser from Plug A Pro'),
+      'WhatsApp Provider',
+      'https://wa.me/27770000001',
+      expect.objectContaining({ footer: 'Chat directly with your provider.' }),
       expect.objectContaining({
         templateName: 'post_match_customer_provider_accepted',
         metadata: expect.objectContaining({ leadId: 'lead-1', matchId: 'match-1' }),

@@ -7,6 +7,7 @@ const {
   mockResolveCustomerForSession,
   mockProviderFindFirst,
   mockProviderFindMany,
+  mockProviderCount,
   mockJobRequestCount,
   mockJobCount,
 } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const {
   mockResolveCustomerForSession: vi.fn(),
   mockProviderFindFirst: vi.fn(),
   mockProviderFindMany: vi.fn(),
+  mockProviderCount: vi.fn(),
   mockJobRequestCount: vi.fn(),
   mockJobCount: vi.fn(),
 }))
@@ -35,6 +37,7 @@ vi.mock('@/lib/db', () => ({
     provider: {
       findFirst: mockProviderFindFirst,
       findMany: mockProviderFindMany,
+      count: mockProviderCount,
     },
     jobRequest: {
       count: mockJobRequestCount,
@@ -52,6 +55,7 @@ describe('customer mobile landing page', () => {
     mockResolveCustomerForSession.mockResolvedValue(null)
     mockProviderFindFirst.mockResolvedValue(null)
     mockProviderFindMany.mockResolvedValue([])
+    mockProviderCount.mockResolvedValue(0)
     mockJobRequestCount.mockResolvedValue(0)
     mockJobCount.mockResolvedValue(0)
   })

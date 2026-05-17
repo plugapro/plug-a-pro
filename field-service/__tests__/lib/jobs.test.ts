@@ -99,14 +99,14 @@ describe('transitionJob', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('rejects SCHEDULED → COMPLETED (invalid transition)', async () => {
+  it('rejects SCHEDULED → STARTED (invalid transition)', async () => {
     ;(db.job.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...mockJob,
       status: 'SCHEDULED',
     })
 
     await expect(
-      transitionJob({ jobId: 'job_1', toStatus: 'COMPLETED', actorId: 'provider_1', actorRole: 'provider' })
+      transitionJob({ jobId: 'job_1', toStatus: 'STARTED', actorId: 'provider_1', actorRole: 'provider' })
     ).rejects.toThrow(/Invalid job transition/)
   })
 

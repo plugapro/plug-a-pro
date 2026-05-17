@@ -300,11 +300,10 @@ describe('customer shortlists', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           response: 'INTERESTED',
-          callOutFee: { not: null },
-          estimatedArrivalAt: { not: null },
           leadInvite: expect.objectContaining({
             jobRequestId: 'request-1',
-            status: { in: ['SENT', 'VIEWED'] },
+            status: { in: ['SENT', 'VIEWED', 'INTERESTED'] },
+            expiresAt: expect.objectContaining({ gt: expect.any(Date) }),
           }),
           provider: expect.objectContaining({
             active: true,
@@ -312,6 +311,9 @@ describe('customer shortlists', () => {
             verified: true,
           }),
         }),
+        include: expect.objectContaining({ leadInvite: true, provider: true }),
+        orderBy: expect.any(Array),
+        take: expect.any(Number),
       }),
     )
     expect(state.tx.jobRequest.update).toHaveBeenCalledWith({
@@ -396,7 +398,7 @@ describe('customer shortlists', () => {
     })
     expect(state.tx.lead.update).toHaveBeenCalledWith({
       where: { id: 'lead-1' },
-      data: { customerSelectedAt: expect.any(Date) },
+      data: { customerSelectedAt: expect.any(Date), expiresAt: expect.any(Date) },
     })
     expect(sendButtons).toHaveBeenCalledWith(
       '+27111111111',
@@ -414,7 +416,7 @@ describe('customer shortlists', () => {
     expect(result.notification).toMatchObject({ sent: true })
     expect(state.tx.lead.update).toHaveBeenCalledWith({
       where: { id: 'lead-1' },
-      data: { customerSelectedAt: expect.any(Date) },
+      data: { customerSelectedAt: expect.any(Date), expiresAt: expect.any(Date) },
     })
     expect(state.tx.lead.update).toHaveBeenLastCalledWith({
       where: expect.objectContaining({

@@ -10,6 +10,7 @@ const {
   mockNotifyCustomerPwaRequestSubmitted,
   mockUploadJobRequestPhoto,
   mockProviderFindFirst,
+  mockJobRequestCount,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockCreateJobRequest: vi.fn(),
@@ -19,6 +20,7 @@ const {
   mockNotifyCustomerPwaRequestSubmitted: vi.fn(),
   mockUploadJobRequestPhoto: vi.fn(),
   mockProviderFindFirst: vi.fn(),
+  mockJobRequestCount: vi.fn().mockResolvedValue(0),
 }))
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
@@ -26,6 +28,9 @@ vi.mock('@/lib/db', () => ({
   db: {
     provider: {
       findFirst: mockProviderFindFirst,
+    },
+    jobRequest: {
+      count: mockJobRequestCount,
     },
   },
 }))
