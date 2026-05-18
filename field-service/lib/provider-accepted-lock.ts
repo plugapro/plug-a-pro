@@ -488,7 +488,16 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     where: {
       jobRequestId: lead.jobRequestId,
       id: { not: lead.id },
-      status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'SHORTLISTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
+      status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED'] },
+    },
+    data: { status: 'SUPERSEDED' },
+  })
+
+  await tx.lead.updateMany({
+    where: {
+      jobRequestId: lead.jobRequestId,
+      id: { not: lead.id },
+      status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
     },
     data: { status: 'EXPIRED', expiredAt: lockedAt, respondedAt: lockedAt },
   })
@@ -1037,7 +1046,8 @@ export async function sendAcceptedLockConfirmations(params: {
       providerId: true,
       status: true,
       jobRequestId: true,
-      provider: { select: { phone: true } },
+      provider: { select: { phone: true, name: true } },
+      shortlistItems: { select: { customerPreferenceRank: true }, take: 1 },
       jobRequest: {
         select: {
           id: true,
@@ -1068,8 +1078,13 @@ export async function sendAcceptedLockConfirmations(params: {
   const serviceRequestId = lead.jobRequestId
   const customerIdempotencyKey = `accepted_lock_confirmation:customer:${lead.id}:${params.providerId}`
   const providerIdempotencyKey = `accepted_lock_confirmation:provider:${lead.id}:${params.providerId}`
+  const prefRank = lead.shortlistItems?.[0]?.customerPreferenceRank
+  const { ordinal } = await import('./review-first')
+  const providerLabel = prefRank != null
+    ? `your ${ordinal(prefRank)} preferred provider, ${lead.provider.name},`
+    : `${lead.provider.name}`
   const customerBody =
-    'Good news. Your selected Plug A Pro provider has accepted your request. Your request is confirmed. We will keep you updated on the next step.'
+    `Good news. ${providerLabel} has accepted your request. Your request is confirmed. We will keep you updated on the next step.`
   const providerBody =
     'Job accepted. Your credit has been applied and the customer details are now available in your job view.'
 

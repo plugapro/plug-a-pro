@@ -884,6 +884,118 @@ describe('POST /api/auth/provider/send-code', () => {
     })
     expect(body.error.code).not.toBe('UNKNOWN_AUTH_ERROR')
   })
+
+  // ─── Send SMS Hook token mappings ───────────────────────────────────────────
+  // When Supabase's `signInWithOtp` invokes the `/api/auth/hooks/send-sms`
+  // route and that route returns a 503 with a machine-readable message token,
+  // Supabase wraps it in its own "Error sending sms message" envelope. We
+  // detect the token so operators get distinct response codes/HTTP statuses
+  // per cause instead of a single opaque OTP_PROVIDER_UNAVAILABLE.
+
+  it.each([
+    ['otp_whatsapp_disabled', 'AUTH_CONFIG_MISSING', 503],
+    ['template_not_approved', 'AUTH_CONFIG_MISSING', 503],
+    ['wa_auth_failed', 'OTP_PROVIDER_AUTH_FAILED', 401],
+    ['wa_transient', 'OTP_DELIVERY_FAILED', 502],
+  ])(
+    'maps Send-SMS-Hook token %s → %s (%i)',
+    async (token, expectedCode, expectedStatus) => {
+      const { db } = await import('@/lib/db')
+      const { createClient } = await import('@supabase/supabase-js')
+      ;(db.provider.findUnique as any).mockResolvedValue({
+        id: 'prov-1',
+        active: true,
+        verified: true,
+        status: 'ACTIVE',
+      })
+      ;(createClient as any).mockReturnValue({
+        auth: {
+          signInWithOtp: vi.fn().mockResolvedValue({
+            error: new Error(`Error sending sms message: ${token}`),
+          }),
+        },
+      })
+
+      const { POST } = await import('../../app/api/auth/provider/send-code/route')
+      const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+        method: 'POST',
+        body: JSON.stringify({ phone: '+27821234567' }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      const res = await POST(req)
+      const body = await res.json()
+
+      expect(res.status).toBe(expectedStatus)
+      expect(body.error).toMatchObject({
+        code: expectedCode,
+        providerId: 'prov-1',
+        step: 'Worker portal send-code',
+      })
+    },
+  )
+
+  it('falls back to OTP_DELIVERY_FAILED for generic Supabase "Error sending sms message"', async () => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(db.provider.findUnique as any).mockResolvedValue({
+      id: 'prov-1',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+    })
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({
+          error: new Error('Error sending sms message'),
+        }),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(502)
+    expect(body.error.code).toBe('OTP_DELIVERY_FAILED')
+  })
+
+  it('still returns OTP_PROVIDER_UNAVAILABLE for Supabase "Phone provider not enabled"', async () => {
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+    ;(db.provider.findUnique as any).mockResolvedValue({
+      id: 'prov-1',
+      active: true,
+      verified: true,
+      status: 'ACTIVE',
+    })
+    ;(createClient as any).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({
+          error: new Error('Phone provider not enabled'),
+        }),
+      },
+    })
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(body.error.code).toBe('OTP_PROVIDER_UNAVAILABLE')
+  })
 })
 
 // ─── /api/auth/provider/verify-code ───────────────────────────────────────────

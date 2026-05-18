@@ -2,11 +2,50 @@ import { Prisma } from '@prisma/client'
 import { db } from './db'
 import { getJobRequestAccessUrl } from './job-request-access'
 import { getProviderLeadAccessUrlByLeadId } from './provider-lead-access'
-import { getProviderWalletBalanceReadOnly } from './provider-wallet'
+// getProviderWalletBalanceReadOnly intentionally NOT imported here.
+// See getProviderWalletBalanceFromLedger below for the authoritative read path.
 import { orchestrateMatch } from './matching/orchestrator'
 import { sendText } from './whatsapp'
 import { sendButtons, sendCtaUrl } from './whatsapp-interactive'
 import { ctaLabelFor } from './whatsapp-copy'
+
+/**
+ * Returns the provider's current wallet balance by reading the snapshot fields
+ * (`balanceAfterPaidCredits`, `balanceAfterPromoCredits`) from the most recent
+ * WalletLedgerEntry for each credit type.
+ *
+ * This is preferred over reading the denormalized `ProviderWallet` row because
+ * the ledger snapshots are written atomically inside the same transaction as
+ * each debit/credit mutation. The wallet row is updated in the same transaction
+ * too, but a connection-pool race during concurrent deductions can cause the
+ * wallet read to return a stale cache hit while the ledger snapshot is already
+ * committed. Reading the latest ledger row per credit type sidesteps that race.
+ */
+async function getProviderWalletBalanceFromLedger(providerId: string): Promise<{
+  paidCreditBalance: number
+  promoCreditBalance: number
+  totalCreditBalance: number
+}> {
+  const [lastPaid, lastPromo] = await Promise.all([
+    db.walletLedgerEntry.findFirst({
+      where: { providerId, creditType: 'PAID' },
+      orderBy: { createdAt: 'desc' },
+      select: { balanceAfterPaidCredits: true },
+    }),
+    db.walletLedgerEntry.findFirst({
+      where: { providerId, creditType: 'PROMO' },
+      orderBy: { createdAt: 'desc' },
+      select: { balanceAfterPromoCredits: true },
+    }),
+  ])
+  const paidCreditBalance = lastPaid?.balanceAfterPaidCredits ?? 0
+  const promoCreditBalance = lastPromo?.balanceAfterPromoCredits ?? 0
+  return {
+    paidCreditBalance,
+    promoCreditBalance,
+    totalCreditBalance: paidCreditBalance + promoCreditBalance,
+  }
+}
 
 // How long the provider has to accept/decline after customer selection.
 const PROVIDER_CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -1188,7 +1227,26 @@ export async function declineSelectedProviderJob(params: {
   })
 
   const customerPhone = lead.jobRequest.customer?.phone
-  if (customerPhone) {
+  const { cascadeToNextShortlistedProvider } = await import('./review-first')
+  const cascadeResult = await cascadeToNextShortlistedProvider({
+    requestId: lead.jobRequestId,
+    declinedLeadId: lead.id,
+  }).catch((err: unknown) => {
+    console.warn('[provider-lead-action] cascade_failed', {
+      leadId: lead.id,
+      jobRequestId: lead.jobRequestId,
+      err,
+    })
+    return { cascaded: false as const }
+  })
+
+  // wasRfpLead is part of the new return type being introduced by a parallel change.
+  // Use optional access so this compiles against both the old and new type.
+  const wasRfpLead = (cascadeResult as { wasRfpLead?: boolean }).wasRfpLead ?? false
+  if (!cascadeResult.cascaded && !wasRfpLead && customerPhone) {
+    // Non-RFP lead: provider declined, no cascade — send the static message.
+    // When wasRfpLead is true (all shortlisted providers exhausted), the cascade
+    // function already sent the appropriate "all providers unavailable" message.
     sendText({
       to: customerPhone,
       text: `Unfortunately, the provider you selected is no longer available for this job.\n\nYou can go back and choose another provider from your shortlist.`,
@@ -1446,7 +1504,7 @@ export async function notifySelectedProvider(params: { leadId: string }): Promis
       }).catch(() => undefined)
 
     const [balance, leadUrl] = await Promise.all([
-      getProviderWalletBalanceReadOnly(lead.providerId),
+      getProviderWalletBalanceFromLedger(lead.providerId),
       getProviderLeadAccessUrlByLeadId(lead.id),
     ])
     const remainingCredits = Math.max(0, balance.totalCreditBalance - 1)

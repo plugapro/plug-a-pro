@@ -142,8 +142,30 @@ function errorPayload(params: {
   )
 }
 
+/**
+ * Tokens emitted by the Supabase Send SMS Hook (`/api/auth/hooks/send-sms`).
+ * Supabase Auth wraps these in its own "Error sending sms message" envelope,
+ * so the raw token shows up inside the `signInWithOtp` error message.
+ * Detecting them by token lets us map a single opaque OTP_PROVIDER_UNAVAILABLE
+ * 503 into a specific operational cause (flag off / template unapproved /
+ * WhatsApp creds invalid / transient delivery failure).
+ */
+function classifyHookToken(lower: string): DiagnosticCode | null {
+  if (lower.includes('otp_whatsapp_disabled')) return 'AUTH_CONFIG_MISSING'
+  if (lower.includes('template_not_approved')) return 'AUTH_CONFIG_MISSING'
+  if (lower.includes('wa_auth_failed')) return 'OTP_PROVIDER_AUTH_FAILED'
+  if (lower.includes('wa_transient')) return 'OTP_DELIVERY_FAILED'
+  if (lower.includes('invalid_signature')) return 'AUTH_CONFIG_MISSING'
+  if (lower.includes('unsupported_country')) return 'UNSUPPORTED_COUNTRY_CODE'
+  return null
+}
+
 function classifyOtpError(error: unknown): DiagnosticCode {
   const lower = safeErrorMessage(error).toLowerCase()
+
+  const fromHook = classifyHookToken(lower)
+  if (fromHook) return fromHook
+
   if (
     lower.includes('timeout') ||
     lower.includes('timed out') ||
@@ -155,7 +177,6 @@ function classifyOtpError(error: unknown): DiagnosticCode {
     return 'RATE_LIMITED'
   }
   if (
-    lower.includes('auth') ||
     lower.includes('unauthorized') ||
     lower.includes('forbidden') ||
     lower.includes('invalid api key') ||
@@ -179,13 +200,21 @@ function classifyOtpError(error: unknown): DiagnosticCode {
     lower.includes('network') ||
     lower.includes('fetch failed') ||
     lower.includes('econn') ||
-    lower.includes('unsupported') ||
     lower.includes('not enabled') ||
-    lower.includes('provider') ||
-    lower.includes('sms') ||
-    lower.includes('phone')
+    lower.includes('signups are disabled') ||
+    lower.includes('signups not allowed') ||
+    lower.includes('phone provider')
   ) {
     return 'OTP_PROVIDER_UNAVAILABLE'
+  }
+  // Generic Supabase "Error sending sms message" / "error sending phone otp"
+  // without any of the more specific markers above → treat as delivery failure
+  // (502, retry-able) rather than provider-down (503).
+  if (
+    (lower.includes('sms') || lower.includes('phone') || lower.includes('otp')) &&
+    (lower.includes('send') || lower.includes('deliver') || lower.includes('message'))
+  ) {
+    return 'OTP_DELIVERY_FAILED'
   }
   return 'OTP_DELIVERY_FAILED'
 }

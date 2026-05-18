@@ -75,7 +75,7 @@ async function sendReviewFirstOutcome(params: {
   }
 
   if (params.status === 'review_options_ready') {
-    const text = `Review Providers First is ready.\n\nWe found ${params.candidateCount} matching provider${params.candidateCount === 1 ? '' : 's'} for your request.\n\nOpen your request to view matching provider profiles, shortlist 1 to 3 providers, and send your request only to the providers you choose.`
+    const text = `Review Providers First is ready.\n\nWe found ${params.candidateCount} matching provider${params.candidateCount === 1 ? '' : 's'} for your request.\n\nOpen your request to view their profiles and rank up to 3 providers in your preferred order. We'll contact your 1st choice first — if they can't make it, we'll automatically try your 2nd and 3rd.`
     const url = await getJobRequestAccessUrl(params.requestId, 'matching_status').catch((error) => {
       console.warn('[request-matching-mode] review-first CTA URL generation failed', {
         requestId: params.requestId,

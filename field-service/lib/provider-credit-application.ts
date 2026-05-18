@@ -180,8 +180,8 @@ async function buildAlreadyAppliedResult(
     }),
     findExistingApplicationTransaction(tx, params),
   ])
-  const paidCreditBalance = wallet?.paidCreditBalance ?? ledgerEntry?.balanceAfterPaidCredits ?? 0
-  const promoCreditBalance = wallet?.promoCreditBalance ?? ledgerEntry?.balanceAfterPromoCredits ?? 0
+  const paidCreditBalance = ledgerEntry?.balanceAfterPaidCredits ?? wallet?.paidCreditBalance ?? 0
+  const promoCreditBalance = ledgerEntry?.balanceAfterPromoCredits ?? wallet?.promoCreditBalance ?? 0
 
   return {
     ok: true,
@@ -553,7 +553,7 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
     )
   }
 
-  const balance = balanceFromLedgerEntries(debitResult.ledgerEntries, wallet)
+  const balance = balanceFromLedgerEntries(debitResult.ledgerEntries, debitResult.wallet)
   const creditTransactionId = debitResult.ledgerEntries.at(-1)?.id ?? null
 
   await tx.auditLog.create({

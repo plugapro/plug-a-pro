@@ -272,30 +272,51 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
     }).catch(() => null)
 
     if (jobRequestIdForTrigger) {
-      const request = await db.jobRequest.findUnique({
-        where: { id: jobRequestIdForTrigger },
-        select: { customer: { select: { phone: true } } },
+      // RFP (review-first) leads have a shortlist item with customerPreferenceRank.
+      // For those, cascade to the next preferred provider instead of the generic message.
+      const shortlistItem = await db.providerShortlistItem.findFirst({
+        where: { leadInviteId: input.leadId },
+        select: { customerPreferenceRank: true },
       })
-      const customerPhone = request?.customer?.phone
-      if (customerPhone) {
-        const body = declined?.ok
-          ? declined.nextOfferedProviderId
-            ? `That provider is not available. We're checking with the next suitable provider.`
-            : `That provider is not available. We're continuing to check suitable providers for your request.`
-          : `That provider is not available. We're checking other suitable providers now.`
-        await sendText(
-          customerPhone,
-          body,
-          {
-            templateName: 'interactive:quick_match_provider_declined',
-            metadata: {
-              requestId: jobRequestIdForTrigger,
-              leadId: input.leadId,
+
+      if (shortlistItem?.customerPreferenceRank != null) {
+        const { cascadeToNextShortlistedProvider } = await import('./review-first')
+        await cascadeToNextShortlistedProvider({
+          requestId: jobRequestIdForTrigger,
+          declinedLeadId: input.leadId,
+        }).catch((error) => {
+          console.warn('[provider-opportunity-responses] rfp_cascade_failed', {
+            requestId: jobRequestIdForTrigger,
+            leadId: input.leadId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+      } else {
+        const request = await db.jobRequest.findUnique({
+          where: { id: jobRequestIdForTrigger },
+          select: { customer: { select: { phone: true } } },
+        })
+        const customerPhone = request?.customer?.phone
+        if (customerPhone) {
+          const body = declined?.ok
+            ? declined.nextOfferedProviderId
+              ? `That provider is not available. We're checking with the next suitable provider.`
+              : `That provider is not available. We're continuing to check suitable providers for your request.`
+            : `That provider is not available. We're checking other suitable providers now.`
+          await sendText(
+            customerPhone,
+            body,
+            {
+              templateName: 'interactive:quick_match_provider_declined',
+              metadata: {
+                requestId: jobRequestIdForTrigger,
+                leadId: input.leadId,
+              },
             },
-          },
-        ).catch(() => undefined)
+          ).catch(() => undefined)
+        }
+        await notifyCustomerRfpResponseSummary(jobRequestIdForTrigger).catch(() => undefined)
       }
-      await notifyCustomerRfpResponseSummary(jobRequestIdForTrigger).catch(() => undefined)
     }
   }
 

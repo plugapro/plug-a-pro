@@ -654,7 +654,7 @@ async function showRequestStatus(
         `📋 *Request ${requestReference(jr)}*\n\n` +
         `Review Providers First is ready.\n\n` +
         `We found ${reviewRankedCandidateCount} matching provider${reviewRankedCandidateCount === 1 ? '' : 's'}.\n\n` +
-        `Open your request to view matching provider profiles, shortlist 1 to 3 providers, and send your request only to the providers you choose.`
+        `Open your request to view their profiles and rank up to 3 providers in your preferred order. We'll contact your 1st choice first — if they can't make it, we'll automatically try your 2nd and 3rd.`
 
       if (trackingUrl) {
         try {

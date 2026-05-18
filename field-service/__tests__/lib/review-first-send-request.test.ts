@@ -177,7 +177,7 @@ describe('sendRequestToShortlistedProviders', () => {
     }))
     expect(mockSendText).toHaveBeenCalledWith(
       '+27820000000',
-      expect.stringContaining("We're sending your request to Lovemore Sibanda"),
+      expect.stringContaining('1st preferred provider, Lovemore Sibanda'),
       expect.objectContaining({
         templateName: 'interactive:rfp_sent_to_shortlist',
       }),

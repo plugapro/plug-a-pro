@@ -45,15 +45,27 @@ const state: { tx: any; shortlistItem: any; declineLead: any } = {
     auditLog: {
       create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
     },
+    walletLedgerEntry: {
+      // Default: provider has 3 paid credits, 0 promo credits.
+      // Tests that care about a specific balance can override with mockResolvedValueOnce.
+      findFirst: vi.fn().mockImplementation(({ where }: { where: { creditType: string } }) =>
+        Promise.resolve(
+          where.creditType === 'PAID'
+            ? { balanceAfterPaidCredits: 3 }
+            : { balanceAfterPromoCredits: 0 },
+        ),
+      ),
+    },
     $transaction: vi.fn(),
   }
   return { mockDb, state, mockOrchestrateMatch }
 })
 vi.mock('../../lib/db', () => ({ db: mockDb }))
 vi.mock('../../lib/provider-wallet', () => ({
-  getProviderWalletBalanceReadOnly: vi
-    .fn()
-    .mockResolvedValue({ totalCreditBalance: 3 }),
+  // getProviderWalletBalanceReadOnly is no longer called by customer-shortlists.ts.
+  // The module is still mocked so the import does not resolve the real file.
+  PROVIDER_CREDIT_PRICE_ZAR: 50,
+  PROVIDER_CREDIT_PRICE_CENTS: 5000,
 }))
 vi.mock('../../lib/provider-lead-access', () => ({
   getProviderLeadAccessUrlByLeadId: vi

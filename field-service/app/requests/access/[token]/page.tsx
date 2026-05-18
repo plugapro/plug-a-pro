@@ -24,6 +24,7 @@ import {
 import {
   sendRequestToShortlistedProviders,
   shortlistProviderForCustomerReview,
+  removeProviderFromShortlist,
 } from '@/lib/review-first'
 import {
   selectCustomerRequestMatchingMode,
@@ -166,6 +167,30 @@ async function shortlistReviewProviderFromToken(formData: FormData) {
   }
 
   redirect(`/requests/access/${encodeURIComponent(token)}?selection=shortlisted`)
+}
+
+async function removeReviewProviderFromToken(formData: FormData) {
+  'use server'
+  const token = String(formData.get('token') ?? '')
+  const requestId = String(formData.get('requestId') ?? '')
+  const providerId = String(formData.get('providerId') ?? '')
+  const resolved = await resolveJobRequestAccessToken(token)
+
+  if (resolved.status !== 'active' || resolved.jobRequest?.id !== requestId || !providerId) {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=invalid`)
+  }
+
+  try {
+    await removeProviderFromShortlist({
+      requestId,
+      customerId: resolved.jobRequest.customerId,
+      providerId,
+    })
+  } catch {
+    redirect(`/requests/access/${encodeURIComponent(token)}?selection=shortlist-failed`)
+  }
+
+  redirect(`/requests/access/${encodeURIComponent(token)}`)
 }
 
 function formatCurrency(amount: number | null) {
@@ -493,8 +518,8 @@ export default async function TicketAccessPage({
       {resolvedSearchParams.selection === 'sent-to-shortlist' && (
         <Card className="border-[var(--tone-success-border)] bg-[var(--tone-success-bg)]">
           <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-success-fg)]">
-            <p className="font-medium">Request sent to shortlisted providers</p>
-            <p>We notified your selected providers on WhatsApp. We&apos;ll keep updating your request status here.</p>
+            <p className="font-medium">Request sent to your preferred provider</p>
+            <p>We notified your preferred provider on WhatsApp. We&apos;ll keep updating your request status here.</p>
           </CardContent>
         </Card>
       )}
@@ -512,7 +537,7 @@ export default async function TicketAccessPage({
         <Card className="border-[var(--tone-success-border)] bg-[var(--tone-success-bg)]">
           <CardContent className="space-y-1 px-4 py-4 text-sm text-[var(--tone-success-fg)]">
             <p className="font-medium">Provider added to your shortlist</p>
-            <p>Add up to 3 providers, then send your request to your shortlist.</p>
+            <p>Rank up to 3 providers. We&apos;ll contact your 1st choice first and cascade automatically.</p>
           </CardContent>
         </Card>
       )}
@@ -583,12 +608,12 @@ export default async function TicketAccessPage({
           <CardContent className="space-y-3 text-sm">
             <p className="text-muted-foreground">
               {isReviewFirstSent
-                ? 'Your request has been sent to your shortlisted provider. They can open the signed lead link and respond from there.'
+                ? 'Your request has been sent to your preferred provider. They can open the lead link and respond from there.'
                 : hasReviewFirstSendFailure
                   ? "We couldn't notify one or more shortlisted providers. Retry sending or choose another provider."
                   : isReviewFirstSending
                     ? "We're sending your request to your selected provider now."
-                : 'View matching providers, shortlist 1 to 3, then send your request only to those providers.'}
+                : 'View matching providers and rank up to 3 in your preferred order. We\'ll contact your 1st choice first — if they can\'t make it, we\'ll automatically try your 2nd and 3rd.'}
             </p>
             {isReviewFirstSent ? (
               <p className="text-muted-foreground">
@@ -632,7 +657,7 @@ export default async function TicketAccessPage({
                           )}
                           {alreadyShortlisted ? (
                             <Button type="button" className="w-full" disabled>
-                              Shortlisted
+                              ✓ Added
                             </Button>
                           ) : (
                             <form action={shortlistReviewProviderFromToken}>
@@ -640,7 +665,7 @@ export default async function TicketAccessPage({
                               <input type="hidden" name="requestId" value={jobRequest.id} />
                               <input type="hidden" name="providerId" value={candidate.providerId} />
                               <Button type="submit" className="w-full">
-                                Shortlist
+                                Add #{reviewShortlistedProviderIds.size + 1}
                               </Button>
                             </form>
                           )}
@@ -664,43 +689,51 @@ export default async function TicketAccessPage({
                 <CardContent className="space-y-2 px-4 py-3 text-sm text-[var(--tone-warning-fg)]">
                   <p className="font-medium">Your shortlist</p>
                   {reviewShortlist.providers.length === 0 ? (
-                    <p>Please shortlist at least one provider first.</p>
+                    <p>Add up to 3 providers in preference order. We&apos;ll contact your 1st choice first.</p>
                   ) : (
                     <div className="space-y-1">
-                      {reviewShortlist.providers.map((provider, idx) => (
-                        <div key={provider.providerId} className="flex items-center justify-between gap-3">
-                          <div>
-                            <p>{idx + 1}. {provider.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {provider.status === 'SEND_PENDING'
-                                ? 'Sending'
-                                : provider.status === 'SEND_FAILED'
-                                  ? "Couldn't notify provider"
-                                  : provider.status === 'SENT'
-                                    ? 'Sent'
-                                    : provider.status === 'VIEWED'
-                                      ? 'Viewed'
-                                      : provider.status === 'INTERESTED'
-                                        ? 'Responded'
-                                        : provider.status === 'DECLINED'
-                                          ? 'Declined'
-                                          : provider.status === 'EXPIRED'
-                                            ? 'Expired'
-                                            : 'Not sent yet'}
-                            </p>
+                      {reviewShortlist.providers.map((provider, idx) => {
+                        const rank = provider.customerPreferenceRank ?? idx + 1
+                        const statusLabel =
+                          provider.status === 'SEND_PENDING' ? 'Sending…'
+                          : provider.status === 'SEND_FAILED' ? "Couldn't notify"
+                          : provider.status === 'SENT' ? 'Sent'
+                          : provider.status === 'VIEWED' ? 'Viewed'
+                          : provider.status === 'INTERESTED' ? 'Responded'
+                          : provider.status === 'DECLINED' ? 'Declined'
+                          : provider.status === 'EXPIRED' ? 'Expired'
+                          : 'Queued'
+                        const canRemove = provider.status === 'SHORTLISTED' || provider.status === 'SEND_FAILED'
+                        return (
+                          <div key={provider.providerId} className="flex items-center justify-between gap-3">
+                            <div>
+                              <p><span className="font-semibold">{rank}.</span> {provider.name}</p>
+                              <p className="text-xs text-muted-foreground">{statusLabel}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {provider.status === 'SEND_FAILED' && (
+                                <Badge variant="destructive">Failed</Badge>
+                              )}
+                              {provider.status === 'DECLINED' && (
+                                <Badge variant="secondary">Declined</Badge>
+                              )}
+                              {provider.profileUrl && (
+                                <Link href={provider.profileUrl} className="text-xs font-medium text-primary underline">
+                                  View
+                                </Link>
+                              )}
+                              {canRemove && (
+                                <form action={removeReviewProviderFromToken}>
+                                  <input type="hidden" name="token" value={token} />
+                                  <input type="hidden" name="requestId" value={jobRequest.id} />
+                                  <input type="hidden" name="providerId" value={provider.providerId} />
+                                  <button type="submit" className="text-xs text-destructive underline">Remove</button>
+                                </form>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            {provider.status === 'SEND_FAILED' && (
-                              <Badge variant="destructive">Send failed</Badge>
-                            )}
-                            {provider.profileUrl && (
-                              <Link href={provider.profileUrl} className="text-xs font-medium text-primary underline">
-                                View profile
-                              </Link>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-2 pt-1">

@@ -52,6 +52,7 @@ import {
 import { preferenceLabel } from './client-request-data'
 import { ctaLabelFor } from './whatsapp-copy'
 import { resolveJourneyRecovery, sendWhatsAppJourneyRecovery, type JourneyUserRole } from './journey-recovery'
+import { cascadeToNextShortlistedProvider, notifyCustomerRfpResponseSummary } from './review-first'
 import { resolveProviderWhatsappCommand } from './provider-whatsapp-command-model'
 import {
   completeProviderJobFromWhatsApp,
@@ -3322,7 +3323,6 @@ async function handleRfpLeadInterest(
   // Notify the customer that a provider responded so they can review and select
   const jobStatus = lead.jobRequest.status
   if (!['PROVIDER_CONFIRMATION_PENDING', 'MATCHED', 'CANCELLED', 'EXPIRED'].includes(jobStatus)) {
-    const { notifyCustomerRfpResponseSummary } = await import('./review-first')
     notifyCustomerRfpResponseSummary(lead.jobRequestId).catch((err) => {
       console.warn('[whatsapp-bot] rfp_interest: customer notification failed', {
         traceId, leadId, providerId,
@@ -3383,8 +3383,7 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
         traceId, leadId, providerId: provider.id, reason, prevStatus: lead.status,
       })
       if (updatedCount.count > 0) {
-        const reviewFirst = await import('./review-first')
-        await reviewFirst.cascadeToNextShortlistedProvider({
+        await cascadeToNextShortlistedProvider({
           requestId: lead.jobRequestId,
           declinedLeadId: leadId,
         }).catch((err: unknown) => {

@@ -26,6 +26,12 @@ export const MIN_SHORTLISTED_PROVIDERS = Math.max(
   1,
   Number.parseInt(process.env.MIN_SHORTLISTED_PROVIDERS ?? '1', 10) || 1,
 )
+export function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`
+}
+
 const PROVIDERS_PER_BATCH = 3
 const MVP1_MATCH_RESULT_LIMIT = Math.min(
   5,
@@ -65,7 +71,10 @@ export class ReviewFirstError extends Error {
       | 'SHORTLIST_LIMIT_REACHED'
       | 'SHORTLIST_EMPTY'
       | 'REQUEST_NOT_READY'
-      | 'INVALID_BATCH',
+      | 'INVALID_BATCH'
+      | 'NOT_FOUND'
+      | 'REQUEST_NOT_EDITABLE'
+      | 'PROVIDER_ALREADY_SHORTLISTED',
     message: string,
   ) {
     super(message)
@@ -1120,7 +1129,25 @@ export async function shortlistProviderForCustomerReview(params: {
       }
     }
 
-    await tx.providerShortlistItem.upsert({
+    // Lock the shortlist row to serialise concurrent rank assignments
+    await tx.providerShortlist.update({
+      where: { id: shortlist.id },
+      data: { updatedAt: new Date() },
+    })
+
+    const existingItemCount = await tx.providerShortlistItem.count({
+      where: { shortlistId: shortlist.id },
+    })
+
+    const duplicateItem = await tx.providerShortlistItem.findFirst({
+      where: { shortlistId: shortlist.id, providerId: params.providerId },
+      select: { id: true },
+    })
+    if (duplicateItem) {
+      throw new ReviewFirstError('PROVIDER_ALREADY_SHORTLISTED', 'This provider is already in your shortlist.')
+    }
+
+    const shortlistItem = await tx.providerShortlistItem.upsert({
       where: {
         shortlistId_leadInviteId: {
           shortlistId: shortlist.id,
@@ -1132,9 +1159,25 @@ export async function shortlistProviderForCustomerReview(params: {
         leadInviteId: lead.id,
         providerId: params.providerId,
         rank: rankedCandidate.rankedPosition ?? 999,
+        customerPreferenceRank: existingItemCount + 1,
         matchScore: rankedCandidate.score ?? null,
       },
       update: {},
+    })
+
+    await tx.auditLog.create({
+      data: {
+        actorId: params.customerId,
+        actorRole: 'customer',
+        action: 'review_first.provider_shortlisted',
+        entityType: 'ProviderShortlistItem',
+        entityId: shortlistItem.id,
+        after: {
+          providerId: params.providerId,
+          customerPreferenceRank: shortlistItem.customerPreferenceRank,
+          requestId: params.requestId,
+        },
+      },
     })
 
     return { lead }
@@ -1153,6 +1196,44 @@ export async function shortlistProviderForCustomerReview(params: {
   }
 }
 
+export async function removeProviderFromShortlist(params: {
+  requestId: string
+  customerId: string
+  providerId: string
+}) {
+  const request = await db.jobRequest.findUnique({
+    where: { id: params.requestId },
+    select: { id: true, customerId: true },
+  })
+  if (!request) throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
+  if (request.customerId !== params.customerId) throw new ReviewFirstError('FORBIDDEN', 'Not allowed for this request.')
+
+  const lead = await db.lead.findUnique({
+    where: { jobRequestId_providerId: { jobRequestId: params.requestId, providerId: params.providerId } },
+    select: { id: true, status: true },
+  })
+  if (!lead) throw new ReviewFirstError('NOT_FOUND', 'Provider not found in shortlist.')
+  if (!['SHORTLISTED', 'SEND_FAILED'].includes(lead.status)) {
+    throw new ReviewFirstError('REQUEST_NOT_EDITABLE', 'Cannot remove a provider that has already been contacted.')
+  }
+
+  await db.$transaction(async (tx) => {
+    const shortlist = await tx.providerShortlist.findFirst({
+      where: { requestId: params.requestId, status: 'DRAFT' },
+      select: { id: true },
+    })
+    if (shortlist) {
+      await tx.providerShortlistItem.deleteMany({
+        where: { shortlistId: shortlist.id, leadInviteId: lead.id },
+      })
+    }
+    await tx.lead.update({
+      where: { id: lead.id },
+      data: { status: 'CANCELLED' },
+    })
+  })
+}
+
 export async function getCustomerReviewShortlist(params: { requestId: string; customerId: string }) {
   const request = await db.jobRequest.findUnique({
     where: { id: params.requestId },
@@ -1165,7 +1246,7 @@ export async function getCustomerReviewShortlist(params: { requestId: string; cu
     where: {
       jobRequestId: params.requestId,
       status: {
-        in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED'],
+        in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED', 'DECLINED', 'EXPIRED'],
       },
     },
     orderBy: [{ rankingPosition: 'asc' }, { sentAt: 'asc' }],
@@ -1182,12 +1263,19 @@ export async function getCustomerReviewShortlist(params: { requestId: string; cu
         orderBy: { createdAt: 'desc' },
         take: 1,
       },
+      shortlistItems: { select: { customerPreferenceRank: true }, take: 1 },
     },
+  })
+
+  const sortedLeads = [...leads].sort((a, b) => {
+    const ra = a.shortlistItems[0]?.customerPreferenceRank ?? Infinity
+    const rb = b.shortlistItems[0]?.customerPreferenceRank ?? Infinity
+    return ra - rb
   })
 
   return {
     requestId: params.requestId,
-    providers: leads.map((lead) => {
+    providers: sortedLeads.map((lead) => {
       const response = lead.providerResponses[0] ?? null
       return {
         providerId: lead.providerId,
@@ -1195,6 +1283,7 @@ export async function getCustomerReviewShortlist(params: { requestId: string; cu
         name: lead.provider.name,
         verified: lead.provider.verified,
         status: lead.status,
+        customerPreferenceRank: lead.shortlistItems[0]?.customerPreferenceRank ?? null,
         profileUrl: getReviewProviderProfileUrl({
           requestId: params.requestId,
           providerId: lead.providerId,
@@ -1234,6 +1323,7 @@ export async function sendRequestToShortlistedProviders(params: {
         },
         include: {
           provider: { select: { id: true, phone: true, name: true } },
+          shortlistItems: { select: { customerPreferenceRank: true }, take: 1 },
         },
         orderBy: [{ rankingPosition: 'asc' }, { sentAt: 'asc' }],
       },
@@ -1242,11 +1332,20 @@ export async function sendRequestToShortlistedProviders(params: {
   if (!request) throw new ReviewFirstError('REQUEST_NOT_FOUND', 'Request not found.')
   if (request.customerId !== params.customerId) throw new ReviewFirstError('FORBIDDEN', 'Not allowed for this request.')
 
+  const sortByPreferenceRank = <T extends { shortlistItems: { customerPreferenceRank: number | null }[] }>(leads: T[]) =>
+    [...leads].sort((a, b) => {
+      const ra = a.shortlistItems[0]?.customerPreferenceRank ?? Infinity
+      const rb = b.shortlistItems[0]?.customerPreferenceRank ?? Infinity
+      return ra - rb
+    })
+
   const shortlisted = request.leads.filter((lead) => lead.status === 'SHORTLISTED')
   const failed = request.leads.filter((lead) => lead.status === 'SEND_FAILED')
   const pending = request.leads.filter((lead) => lead.status === 'SEND_PENDING')
   const alreadySent = request.leads.filter((lead) => lead.status === 'SENT' || lead.status === 'VIEWED' || lead.status === 'INTERESTED')
-  const activeTargets = shortlisted.length > 0 ? shortlisted : failed
+  // Only contact the highest-preference uncontacted provider; cascade handles the rest.
+  const candidatePool = shortlisted.length > 0 ? shortlisted : failed
+  const activeTargets = sortByPreferenceRank(candidatePool).slice(0, 1)
 
   if (activeTargets.length < MIN_SHORTLISTED_PROVIDERS) {
     if (pending.length > 0) {
@@ -1473,29 +1572,22 @@ export async function sendRequestToShortlistedProviders(params: {
   }
 
   if (request.customer?.phone) {
-    const sentNames = activeTargets
-      .filter((l, i) => i < notifiedCount + pendingCount)
-      .map((l) => l.provider.name)
-    const nameList =
-      sentNames.length === 0
-        ? 'your selected providers'
-        : sentNames.length === 1
-          ? sentNames[0]
-          : sentNames.length === 2
-            ? `${sentNames[0]} and ${sentNames[1]}`
-            : `${sentNames.slice(0, -1).join(', ')}, and ${sentNames[sentNames.length - 1]}`
+    const firstTarget = activeTargets[0]
+    const providerName = firstTarget?.provider.name ?? 'your selected provider'
+    const prefRank = firstTarget?.shortlistItems?.[0]?.customerPreferenceRank ?? 1
+    const ordinalLabel = ordinal(prefRank)
 
     const customerText = pendingCount > 0
-      ? `We're sending your request to ${nameList}.\n\nThey'll each have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond once delivered. We'll update you when they confirm their availability.`
+      ? `We're contacting your ${ordinalLabel} preferred provider, ${providerName}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond once delivered. We'll update you on their availability.`
       : failedCount > 0
-      ? `Your request was sent to ${notifiedCount} of ${activeTargets.length} selected provider${activeTargets.length === 1 ? '' : 's'}.\n\nWe couldn't notify ${failedCount} provider${failedCount === 1 ? '' : 's'}. Open your request to retry failed sends or choose another provider.`
-      : `Your request has been sent to ${nameList}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll update you once they've all confirmed their availability.`
+      ? `We couldn't reach ${providerName} right now.\n\nYour request is saved. Open your request to retry or adjust your preference order.`
+      : `Your request has been sent to ${providerName}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll keep you updated.`
     await sendText(
       request.customer.phone,
       customerText,
       {
         templateName: 'interactive:rfp_sent_to_shortlist',
-        metadata: { requestId: request.id, count: notifiedCount, pendingCount, failedCount },
+        metadata: { requestId: request.id, count: notifiedCount, pendingCount, failedCount, preferenceRank: prefRank },
       },
     ).catch(() => undefined)
   }
@@ -2015,6 +2107,26 @@ export async function expireRfpInvitations() {
     await notifyCustomerRfpResponseSummary(requestId).catch(() => undefined)
   }
 
+  // Cascade to next ranked provider for any expired RFP leads
+  for (const expiredLead of expired) {
+    const shortlistItem = await db.providerShortlistItem.findFirst({
+      where: { leadInviteId: expiredLead.id },
+      select: { customerPreferenceRank: true },
+    }).catch(() => null)
+    if (shortlistItem?.customerPreferenceRank != null) {
+      await cascadeToNextShortlistedProvider({
+        requestId: expiredLead.jobRequestId,
+        declinedLeadId: expiredLead.id,
+      }).catch((err) => {
+        console.warn('[review-first.expire] cascade_failed', {
+          leadId: expiredLead.id,
+          requestId: expiredLead.jobRequestId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+  }
+
   // Retry notification for CUSTOMER_SELECTED leads where the initial send failed
   const stuckSelected = await db.lead.findMany({
     where: {
@@ -2038,5 +2150,294 @@ export async function expireRfpInvitations() {
     })
   }
 
+  // Cascade SEND_FAILED RFP leads that have been stuck beyond the response window
+  const stuckSendFailed = await db.lead.findMany({
+    where: {
+      assignmentHoldId: null,
+      status: 'SEND_FAILED',
+      notificationAttemptedAt: {
+        lte: new Date(now.getTime() - RFP_PROVIDER_RESPONSE_MINUTES * 60_000),
+      },
+      jobRequest: {
+        status: 'MATCHING',
+        assignmentMode: 'OPS_REVIEW',
+      },
+    },
+    select: { id: true, jobRequestId: true },
+    take: 50,
+  })
+
+  for (const lead of stuckSendFailed) {
+    const shortlistItem = await db.providerShortlistItem.findFirst({
+      where: { leadInviteId: lead.id },
+      select: { customerPreferenceRank: true },
+    }).catch(() => null)
+    if (shortlistItem?.customerPreferenceRank != null) {
+      await db.lead.updateMany({
+        where: { id: lead.id, status: 'SEND_FAILED' },
+        data: { status: 'DECLINED', declinedAt: now },
+      })
+      await cascadeToNextShortlistedProvider({
+        requestId: lead.jobRequestId,
+        declinedLeadId: lead.id,
+      }).catch((err) => {
+        console.warn('[review-first.expire] send_failed_cascade_failed', {
+          leadId: lead.id,
+          requestId: lead.jobRequestId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+  }
+
   return { expiredCount: expired.length }
+}
+
+export async function cascadeToNextShortlistedProvider(params: {
+  requestId: string
+  declinedLeadId: string
+}): Promise<{ cascaded: boolean; nextLeadId?: string; preferenceRank?: number; wasRfpLead: boolean }> {
+  const shortlist = await db.providerShortlist.findFirst({
+    where: { requestId: params.requestId, status: 'DRAFT' },
+    select: {
+      id: true,
+      items: {
+        orderBy: { customerPreferenceRank: 'asc' },
+        select: {
+          id: true,
+          leadInviteId: true,
+          customerPreferenceRank: true,
+          leadInvite: {
+            select: {
+              id: true,
+              status: true,
+              provider: { select: { id: true, phone: true, name: true } },
+            },
+          },
+        },
+      },
+    },
+  })
+  if (!shortlist) return { cascaded: false, wasRfpLead: false }
+
+  const declinedItem = shortlist.items.find((item) => item.leadInviteId === params.declinedLeadId)
+  if (!declinedItem?.customerPreferenceRank) return { cascaded: false, wasRfpLead: false }
+
+  const nextItem = shortlist.items.find(
+    (item) =>
+      (item.customerPreferenceRank ?? Infinity) > declinedItem.customerPreferenceRank! &&
+      ['SHORTLISTED', 'SEND_FAILED'].includes(item.leadInvite.status),
+  )
+  if (!nextItem) {
+    console.info('[review-first.cascade] no_next_provider', {
+      requestId: params.requestId,
+      declinedLeadId: params.declinedLeadId,
+      declinedRank: declinedItem.customerPreferenceRank,
+    })
+    // Notify customer that all preferred providers are unavailable
+    const req = await db.jobRequest.findUnique({
+      where: { id: params.requestId },
+      select: { customer: { select: { phone: true } } },
+    }).catch(() => null)
+    if (req?.customer?.phone) {
+      await sendButtons(
+        req.customer.phone,
+        `We've contacted all your preferred providers and none are available right now.\n\nYour request has been reset. Choose what to do next:`,
+        [
+          { id: `status_mode_review_${params.requestId}`, title: 'Update my shortlist' },
+          { id: `status_mode_quick_${params.requestId}`, title: 'Quick Match' },
+        ],
+        undefined,
+        {
+          templateName: 'interactive:rfp_all_providers_exhausted',
+          metadata: { requestId: params.requestId, declinedRank: declinedItem.customerPreferenceRank },
+        },
+      ).catch(() => undefined)
+    }
+    await db.jobRequest.update({
+      where: { id: params.requestId },
+      data: { status: 'PENDING_VALIDATION' },
+    }).catch(() => undefined)
+    await db.auditLog.create({
+      data: {
+        actorId: 'system',
+        actorRole: 'system',
+        action: 'review_first.all_providers_exhausted',
+        entityType: 'JobRequest',
+        entityId: params.requestId,
+        after: {
+          resetToStatus: 'PENDING_VALIDATION',
+          declinedRank: declinedItem.customerPreferenceRank,
+        },
+      },
+    }).catch(() => undefined)
+    return { cascaded: false, wasRfpLead: true }
+  }
+
+  const request = await db.jobRequest.findUnique({
+    where: { id: params.requestId },
+    select: {
+      id: true,
+      category: true,
+      requestedWindowStart: true,
+      requestedArrivalLatest: true,
+      requestRef: true,
+      address: { select: { suburb: true, city: true } },
+      customer: { select: { phone: true } },
+    },
+  })
+  if (!request) return { cascaded: false, wasRfpLead: true }
+
+  const preferredTime = request.requestedWindowStart
+    ? request.requestedWindowStart.toLocaleString('en-ZA', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Africa/Johannesburg',
+      })
+    : request.requestedArrivalLatest
+      ? `Before ${request.requestedArrivalLatest.toLocaleString('en-ZA', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Africa/Johannesburg',
+        })}`
+      : 'Flexible'
+
+  const area = [request.address?.suburb, request.address?.city].filter(Boolean).join(', ')
+
+  const leadId = nextItem.leadInviteId
+  const provider = nextItem.leadInvite.provider
+  const nextRank = nextItem.customerPreferenceRank ?? 1
+
+  const leadUrl = await getProviderLeadAccessUrl({ leadId, providerId: provider.id })
+  if (!leadUrl) {
+    console.warn('[review-first.cascade] lead_url_missing', { requestId: params.requestId, leadId })
+    return { cascaded: false, wasRfpLead: true }
+  }
+
+  const notificationAttemptStartedAt = new Date()
+  const claimed = await db.lead.updateMany({
+    where: { id: leadId, status: { in: ['SHORTLISTED', 'SEND_FAILED'] } },
+    data: {
+      status: 'SEND_PENDING',
+      notificationAttemptedAt: notificationAttemptStartedAt,
+      expiresAt: null,
+      expiredAt: null,
+      respondedAt: null,
+      viewedAt: null,
+      notifiedAt: null,
+    },
+  })
+  if (claimed.count === 0) {
+    console.info('[review-first.cascade] race_lost', { requestId: params.requestId, leadId })
+    return { cascaded: false, wasRfpLead: true }
+  }
+
+  const sendResult = await attemptProviderRfpWhatsAppNotification({
+    providerPhone: provider.phone,
+    providerFirstName: provider.name.split(' ')[0] ?? provider.name,
+    serviceName: request.category,
+    area: area || 'your area',
+    scheduledWindow: preferredTime,
+    jobUrl: leadUrl,
+    metadata: {
+      requestId: request.id,
+      leadId,
+      providerId: provider.id,
+      source: REVIEW_FIRST_PROVIDER_NOTIFICATION_SOURCE,
+    },
+  })
+
+  if (sendResult.ok) {
+    await db.lead.update({
+      where: { id: leadId },
+      data: {
+        status: 'SEND_PENDING',
+        expiresAt: null,
+        respondedAt: null,
+        viewedAt: null,
+        notifiedAt: null,
+        notificationAttemptedAt: notificationAttemptStartedAt,
+      },
+    })
+
+    const providerPhone = normaliseWhatsAppPhone(provider.phone)
+    if (providerPhone) {
+      sendButtons(
+        providerPhone,
+        [
+          `📌 *${request.category}* in *${area || 'your area'}*`,
+          preferredTime ? `Preferred time: *${preferredTime}*` : null,
+          '',
+          "Tap *I'm Available* if you can take this job. Accepting uses 1 credit.",
+        ].filter(Boolean).join('\n'),
+        [
+          { id: `ops_accept:${leadId}`, title: "I'm Available" },
+          { id: `ops_decline:${leadId}`, title: 'Not Available' },
+        ],
+        undefined,
+        { templateName: 'rfp:job_lead_actions', metadata: { requestId: request.id, leadId, providerId: provider.id } },
+      ).catch(() => undefined)
+    }
+
+    if (request.customer?.phone) {
+      const declinedRank = declinedItem.customerPreferenceRank!
+      await sendText(
+        request.customer.phone,
+        `Your ${ordinal(declinedRank)} preferred provider was not available.\n\nWe're now contacting your ${ordinal(nextRank)} preferred provider, ${provider.name}.\n\nThey have ${RFP_PROVIDER_RESPONSE_MINUTES} minutes to respond. We'll keep you updated.`,
+        {
+          templateName: 'interactive:rfp_cascade_next_provider',
+          metadata: { requestId: request.id, declinedRank, nextRank, nextLeadId: leadId },
+        },
+      ).catch(() => undefined)
+    }
+
+    console.info('[review-first.cascade] sent_to_next_provider', {
+      requestId: params.requestId,
+      declinedLeadId: params.declinedLeadId,
+      declinedRank: declinedItem.customerPreferenceRank,
+      nextLeadId: leadId,
+      nextRank,
+      providerId: provider.id,
+    })
+
+    await db.auditLog.create({
+      data: {
+        actorId: 'system',
+        actorRole: 'system',
+        action: 'review_first.cascade_to_next_provider',
+        entityType: 'Lead',
+        entityId: params.declinedLeadId,
+        before: {
+          declinedRank: declinedItem.customerPreferenceRank,
+          declinedLeadId: params.declinedLeadId,
+        },
+        after: {
+          nextLeadId: leadId,
+          nextRank,
+          requestId: params.requestId,
+        },
+      },
+    }).catch(() => undefined)
+
+    return { cascaded: true, nextLeadId: leadId, preferenceRank: nextRank, wasRfpLead: true }
+  }
+
+  await db.lead.update({
+    where: { id: leadId },
+    data: { status: 'SEND_FAILED', notificationAttemptedAt: null },
+  }).catch(() => undefined)
+
+  console.warn('[review-first.cascade] cascade_send_failed', {
+    requestId: params.requestId,
+    nextLeadId: leadId,
+    nextRank,
+    errorCode: sendResult.errorCode,
+  })
+  return { cascaded: false, wasRfpLead: true }
 }

@@ -520,4 +520,111 @@ describe('provider credit application', () => {
     expect(state.unlock).toBeNull()
     expect(state.ledgerEntries).toHaveLength(0)
   })
+
+  it('reports correct balance after sequential same-provider two-job acceptances', async () => {
+    // Job 1: wallet starts at 3 paid, deducts 1 → ledger records balanceAfterPaidCredits = 2
+    state.wallet = makeWallet({ paidCreditBalance: 3, promoCreditBalance: 0 })
+
+    // makeLead() hardcodes selectedLeadInviteId: 'lead-1', so set the lead id to match.
+    // For job 1 we reuse the default lead-1 identity.
+    state.lead = makeLead()
+
+    // Override walletLedgerEntry.create to record the post-deduction balance snapshot.
+    // (The beforeEach mock does not populate balanceAfterPaidCredits from state.wallet,
+    // so we override it here to match what the real Prisma write would produce.)
+    mockDb.walletLedgerEntry.create.mockImplementation(async (args: any) => {
+      if (state.failLedgerCreate) throw new Error('ledger write failed')
+      const entry = {
+        id: `ledger-${state.ledgerEntries.length + 1}`,
+        createdAt: new Date(),
+        balanceAfterPaidCredits: state.wallet.paidCreditBalance,
+        balanceAfterPromoCredits: state.wallet.promoCreditBalance,
+        ...args.data,
+      }
+      state.ledgerEntries.push(entry)
+      return entry
+    })
+
+    const result1 = await applyProviderCreditForAcceptedLead({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+    })
+
+    // After Job 1: wallet deducted from 3 → 2; ledger captures balanceAfterPaidCredits = 2.
+    expect(result1.currentCreditBalance).toBe(2)
+    expect(result1.paidCreditBalance).toBe(2)
+    expect(result1.alreadyApplied).toBe(false)
+    expect(state.wallet.paidCreditBalance).toBe(2)
+
+    // Reset for Job 2: use a different lead id.
+    // The lead's jobRequest.selectedLeadInviteId must match the lead id for the
+    // PROVIDER_NOT_SELECTED guard to pass — so use makeLead with id: 'lead-2' and
+    // override selectedLeadInviteId to match.
+    state.unlock = null
+    state.lead = makeLead({
+      id: 'lead-2',
+      jobRequest: {
+        ...makeLead().jobRequest,
+        selectedLeadInviteId: 'lead-2',
+      },
+    })
+
+    const result2 = await applyProviderCreditForAcceptedLead({
+      leadId: 'lead-2',
+      providerId: 'provider-1',
+    })
+
+    // After Job 2: wallet deducted from 2 → 1; ledger captures balanceAfterPaidCredits = 1.
+    expect(result2.currentCreditBalance).toBe(1)
+    expect(result2.paidCreditBalance).toBe(1)
+    expect(result2.alreadyApplied).toBe(false)
+    expect(state.wallet.paidCreditBalance).toBe(1)
+    // Both results must reflect post-deduction ledger values, not pre-deduction wallet reads
+    expect(result1.currentCreditBalance).not.toBe(3)
+    expect(result2.currentCreditBalance).not.toBe(2)
+  })
+
+  it('idempotent replay uses ledger entry balance, not stale wallet row balance', async () => {
+    // Setup: lead already has an unlock — this is an idempotent replay scenario.
+    // The wallet row shows paidCreditBalance = 3 (stale — another deduction hasn't propagated),
+    // but the authoritative ledger entry recorded balanceAfterPaidCredits = 2 at deduction time.
+    state.unlock = {
+      id: 'unlock-stale',
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      creditsCharged: 1,
+      status: 'UNLOCKED',
+      creditTypeBreakdown: { paid: 1 },
+    }
+    state.lead = makeLead({ status: 'CREDIT_APPLIED' })
+    // Stale wallet: another deduction may have already consumed a credit after the first deduction
+    state.wallet = makeWallet({ paidCreditBalance: 3, promoCreditBalance: 0 })
+    state.ledgerEntries = [{
+      id: 'ledger-stale',
+      providerId: 'provider-1',
+      entryType: 'LEAD_UNLOCK_DEBIT',
+      creditType: 'PAID',
+      amountCredits: 1,
+      referenceType: 'selected_lead_credit_application',
+      referenceId: 'lead-1',
+      // Authoritative snapshot: balance was 2 immediately after this deduction
+      balanceAfterPaidCredits: 2,
+      balanceAfterPromoCredits: 0,
+      createdAt: new Date(),
+    }]
+
+    const result = await applyProviderCreditForAcceptedLead({ leadId: 'lead-1', providerId: 'provider-1' })
+
+    // Must use ledger entry snapshot (2), NOT the stale wallet row (3)
+    expect(result.currentCreditBalance).toBe(2)
+    expect(result.paidCreditBalance).toBe(2)
+    expect(result.alreadyApplied).toBe(true)
+    expect(result.creditTransactionId).toBe('ledger-stale')
+    // Confirms the wallet was not touched during the idempotent replay
+    expect(mockDb.providerWallet.updateMany).not.toHaveBeenCalled()
+    expect(mockDb.walletLedgerEntry.create).not.toHaveBeenCalled()
+    // Verify the stale wallet value was NOT returned
+    expect(result.currentCreditBalance).not.toBe(3)
+    expect(result.paidCreditBalance).not.toBe(3)
+  })
 })

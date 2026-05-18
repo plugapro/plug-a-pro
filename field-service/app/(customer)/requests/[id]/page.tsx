@@ -96,7 +96,7 @@ export default async function RequestDetailPage({
   const canRequestMoreOptions = jobRequest.status === 'SHORTLIST_READY'
   const canCancelRequest = jobRequest.status === 'SHORTLIST_READY'
   const isReviewFirstFlow =
-    jobRequest.status === 'PENDING_VALIDATION' &&
+    (jobRequest.status === 'PENDING_VALIDATION' || jobRequest.status === 'MATCHING') &&
     jobRequest.assignmentMode === 'OPS_REVIEW' &&
     Boolean(jobRequest.latestDispatchDecisionId)
   const isReviewFirstReady = isReviewFirstFlow && Boolean(jobRequest.latestDispatchDecisionId)
@@ -677,8 +677,7 @@ export default async function RequestDetailPage({
                   <div className="space-y-3 pt-1">
                     <p className="font-medium" style={{ color: 'var(--ink)' }}>Review Providers First</p>
                     <p style={{ color: 'var(--ink-mute)' }}>
-                      Shortlist 1 to 3 providers, then send your request only to
-                      those providers.
+                      Rank up to 3 providers in preference order. We&apos;ll contact your 1st choice first — if they can&apos;t make it, we&apos;ll automatically try your 2nd and 3rd.
                     </p>
                     {isReviewFirstPending ? (
                       <p style={{ color: 'var(--ink-mute)' }}>We&apos;re finding matching providers for your request.</p>
@@ -758,16 +757,29 @@ export default async function RequestDetailPage({
                           </p>
                           {reviewShortlist.providers.length === 0 ? (
                             <p style={{ color: 'var(--tone-warning-fg)' }}>
-                              Please shortlist at least one provider first.
+                              Add up to 3 providers in preference order. We&apos;ll contact your 1st choice first.
                             </p>
                           ) : (
                             <div className="space-y-1" style={{ color: 'var(--tone-warning-fg)' }}>
                               {reviewShortlist.providers.map(
-                                (provider, idx) => (
-                                  <p key={provider.providerId}>
-                                    {idx + 1}. {provider.name}
-                                  </p>
-                                ),
+                                (provider, idx) => {
+                                  const rank = provider.customerPreferenceRank ?? idx + 1
+                                  const statusLabel =
+                                    provider.status === 'SEND_PENDING' ? ' · Sending…'
+                                    : provider.status === 'SEND_FAILED' ? ' · Failed'
+                                    : provider.status === 'SENT' ? ' · Sent'
+                                    : provider.status === 'VIEWED' ? ' · Viewed'
+                                    : provider.status === 'INTERESTED' ? ' · Responded'
+                                    : provider.status === 'DECLINED' ? ' · Declined'
+                                    : provider.status === 'EXPIRED' ? ' · Expired'
+                                    : ''
+                                  return (
+                                    <p key={provider.providerId}>
+                                      <span className="font-semibold">{rank}.</span> {provider.name}
+                                      {statusLabel && <span className="text-xs opacity-70">{statusLabel}</span>}
+                                    </p>
+                                  )
+                                },
                               )}
                             </div>
                           )}

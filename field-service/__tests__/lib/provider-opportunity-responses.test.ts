@@ -16,6 +16,9 @@ const { mockDb, state } = vi.hoisted(() => {
       findUnique: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
     },
+    providerShortlistItem: {
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     jobRequest: {
       findUnique: vi.fn().mockResolvedValue({ id: 'request-1', status: 'MATCHING' }),
     },

@@ -31,6 +31,7 @@ vi.mock('@/lib/matching/orchestrator', () => ({ orchestrateMatch: mockOrchestrat
 describe('new provider rematch checks', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDb.jobRequest.findMany.mockResolvedValue([])
     mockDb.provider.findUnique.mockResolvedValue({
       id: 'provider-1',
       name: 'Sipho',

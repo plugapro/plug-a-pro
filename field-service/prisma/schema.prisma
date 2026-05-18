@@ -803,10 +803,20 @@ model ProviderLeadResponse {
   @@map("provider_lead_responses")
 }
 
+enum ProviderShortlistStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+  PUBLISHED
+  SUPERSEDED
+}
+
 model ProviderShortlist {
-  id          String   @id @default(cuid())
+  id          String                  @id @default(cuid())
   requestId   String
-  status      String   @default("DRAFT")
+  status      ProviderShortlistStatus @default(DRAFT)
   createdAt   DateTime @default(now())
   publishedAt DateTime?
   updatedAt   DateTime @updatedAt
@@ -824,6 +834,7 @@ model ProviderShortlistItem {
   leadInviteId          String
   providerId            String
   rank                  Int
+  customerPreferenceRank Int?
   matchScore            Float?
   displayCallOutFee     Decimal? @db.Decimal(10, 2)
   displayArrivalTime    DateTime?
