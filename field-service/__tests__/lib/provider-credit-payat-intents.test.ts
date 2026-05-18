@@ -89,12 +89,13 @@ describe('Pay@ provider credit payment intents', () => {
       providerPhone: '+27821234567',
       providerEmail: 'pro@example.com',
     })
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       intent: state.createdIntent,
       payat: {
         reference: 'intent-payat-1',
         paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
       },
+      payAtAmountCents: 10_000, // no fee passed → payAtAmountCents equals amountCents
     })
   })
 

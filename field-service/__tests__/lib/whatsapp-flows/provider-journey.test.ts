@@ -831,9 +831,9 @@ describe('handleProviderJourneyFlow', () => {
         expect.stringContaining('Top Up Credits'),
         [expect.objectContaining({
           rows: expect.arrayContaining([
-            expect.objectContaining({ id: 'provider_topup_100', title: 'R100' }),
-            expect.objectContaining({ id: 'provider_topup_200', title: 'R200' }),
-            expect.objectContaining({ id: 'provider_topup_500', title: 'R500' }),
+            expect.objectContaining({ id: 'provider_topup_100' }),
+            expect.objectContaining({ id: 'provider_topup_200' }),
+            expect.objectContaining({ id: 'provider_topup_500' }),
           ]),
         })],
         expect.anything(),
@@ -849,10 +849,11 @@ describe('handleProviderJourneyFlow', () => {
       expect(result.nextStep).toBe('pj_topup_select_amount')
     })
 
-    it('creates Pay@ intent and sends CTA when R100 is selected', async () => {
+    it('creates Pay@ intent and sends CTA with fee breakdown when R100 is selected', async () => {
       ;(paymentIntents.createPayatTopUpIntent as ReturnType<typeof vi.fn>).mockResolvedValue({
         intent: { id: 'intent-1', paymentMethod: 'PAYAT' },
         payat: { paymentLink: 'https://pay.at/link/abc123' },
+        payAtAmountCents: 10_700,
       })
 
       const result = await handleProviderJourneyFlow(
@@ -860,7 +861,19 @@ describe('handleProviderJourneyFlow', () => {
       )
 
       expect(paymentIntents.createPayatTopUpIntent).toHaveBeenCalledWith(
-        expect.objectContaining({ providerId: 'prov_1', amountCents: 10_000 }),
+        expect.objectContaining({ providerId: 'prov_1', amountCents: 10_000, feeAmountCents: 700 }),
+      )
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('R107'),
+        expect.any(String),
+        'https://pay.at/link/abc123',
+      )
+      expect(wa.sendCtaUrl).toHaveBeenCalledWith(
+        '+27711111111',
+        expect.stringContaining('R100'),
+        expect.any(String),
+        expect.any(String),
       )
       expect(result.nextStep).toBe('pj_topup_payat_created')
     })

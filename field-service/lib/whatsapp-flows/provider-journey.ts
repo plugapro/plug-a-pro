@@ -1694,6 +1694,13 @@ export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
 
 // ─── Top-Up (Pay@) ───────────────────────────────────────────────────────────
 
+function getPayatFeeAmountCents(): number {
+  const raw = process.env.PAYAT_MERCHANT_FEE_FIXED_CENTS
+  if (!raw) return 700 // R7 default — update via env var once Pay@ confirms exact fee
+  const parsed = parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 700
+}
+
 const TOPUP_PACKAGES = [
   { id: 'provider_topup_100', amountCents: 10_000, credits: 2 },
   { id: 'provider_topup_200', amountCents: 20_000, credits: 4 },
@@ -1714,16 +1721,18 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
   }
 
   // First entry or unrecognised reply — show the package list
+  const feeAmountCents = getPayatFeeAmountCents()
+  const feeR = Math.round(feeAmountCents / 100)
   const creditLine = await providerCreditBalanceLine(provider.id)
   await sendList(
     ctx.phone,
-    `💳 *Top Up Credits*\n\n${creditLine}\n\n1 credit = R50. Credits are used only when a customer selects you and you accept the job.\n\nPay at any Pick n Pay, Shoprite, or Checkers till — you'll receive a payment barcode to show at the cashier. Credits are added automatically once payment is confirmed.\n\nChoose how much to add:`,
+    `💳 *Top Up Credits*\n\n${creditLine}\n\n1 credit = R50. Credits are used only when a customer selects you and you accept the job.\n\nPay at any Pick n Pay, Shoprite, or Checkers till — you'll receive a payment barcode to show at the cashier. A R${feeR} counter service fee is added to the amount you pay. Credits are added automatically once payment is confirmed.\n\nChoose how much to add:`,
     [{
       title: 'Pay at Retailer (Pay@)',
       rows: [
-        { id: 'provider_topup_100', title: 'R100', description: '2 credits' },
-        { id: 'provider_topup_200', title: 'R200', description: '4 credits' },
-        { id: 'provider_topup_500', title: 'R500', description: '10 credits' },
+        { id: 'provider_topup_100', title: `R${Math.round((10_000 + feeAmountCents) / 100)} at till`, description: `2 credits (R${feeR} fee)` },
+        { id: 'provider_topup_200', title: `R${Math.round((20_000 + feeAmountCents) / 100)} at till`, description: `4 credits (R${feeR} fee)` },
+        { id: 'provider_topup_500', title: `R${Math.round((50_000 + feeAmountCents) / 100)} at till`, description: `10 credits (R${feeR} fee)` },
       ],
     }],
     { buttonLabel: 'Select Amount' },
@@ -1737,19 +1746,24 @@ async function handleTopUpPayatCreate(
   amountCents: number,
 ): Promise<FlowResult> {
   const { sendCtaUrl } = await import('../whatsapp-interactive')
+  const feeAmountCents = getPayatFeeAmountCents()
 
   try {
     const result = await createPayatTopUpIntent({
       providerId: provider.id,
       amountCents,
+      feeAmountCents,
       providerCellphone: ctx.phone,
       metadata: { source: 'whatsapp' },
     })
 
     const credits = amountCents / 5000 // PROVIDER_CREDIT_PRICE_CENTS = 5000
+    const totalR = Math.round(result.payAtAmountCents / 100)
+    const creditsR = Math.round(amountCents / 100)
+    const feeR = Math.round(feeAmountCents / 100)
     await sendCtaUrl(
       ctx.phone,
-      `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode. Show it at any Pick n Pay, Shoprite, or Checkers till to pay *R${Math.round(amountCents / 100)}*.\n\nYou will receive *${credits} credit${credits !== 1 ? 's' : ''}* once your payment is confirmed — usually within a few minutes.`,
+      `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till. Credits are added automatically once payment is confirmed — usually within a few minutes.`,
       'Pay now at retailer',
       result.payat.paymentLink,
     ).catch((err: unknown) => {

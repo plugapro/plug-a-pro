@@ -185,20 +185,24 @@ describe('Pay@ YAPI payment request service', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('rejects unsupported top-up amounts before any network call', async () => {
+  it('throws when PAYAT_API_BASE env var is missing', async () => {
+    // Amount validation lives in the intent layer; the payment layer only requires
+    // the env config to be present. Verify it rejects before any network call if
+    // a required env var is absent.
+    vi.stubEnv('PAYAT_API_BASE', '')
     vi.stubGlobal('fetch', vi.fn())
 
     const { createPayatPaymentRequest } = await import('@/lib/payat/payment')
     await expect(
       createPayatPaymentRequest({
-        topupId: 'intent-bad',
-        amountCents: 15_000,
-        description: 'R150',
+        topupId: 'intent-cfg-missing',
+        amountCents: 10_000,
+        description: 'R100',
         providerName: 'D',
         providerPhone: '+27821234567',
         providerEmail: 'd@d.com',
       }),
-    ).rejects.toThrow('Invalid top-up amount')
+    ).rejects.toThrow('PAYAT_API_BASE')
     expect(fetch).not.toHaveBeenCalled()
   })
 

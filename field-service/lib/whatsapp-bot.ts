@@ -913,13 +913,16 @@ async function processInboundMessageUnlocked(
     }
 
     if (reply.id === 'provider_top_up_credits') {
+      const feeRaw = process.env.PAYAT_MERCHANT_FEE_FIXED_CENTS
+      const feeCents = feeRaw && Number.isFinite(parseInt(feeRaw, 10)) ? parseInt(feeRaw, 10) : 700
+      const feeR = Math.round(feeCents / 100)
       await sendButtons(
         phone,
-        'Choose a top-up amount. Payment is collected at any Pick n Pay, Shoprite, or Checkers till. Credits are issued automatically once payment is confirmed.',
+        `Choose a top-up amount. A R${feeR} counter service fee is added to the amount you pay at the till. Credits are issued automatically once payment is confirmed.`,
         [
-          { id: 'topup_payat_10000', title: 'R100 — 2 credits' },
-          { id: 'topup_payat_20000', title: 'R200 — 4 credits' },
-          { id: 'topup_payat_50000', title: 'R500 — 10 credits' },
+          { id: 'topup_payat_10000', title: `R${Math.round((10_000 + feeCents) / 100)} — 2 credits` },
+          { id: 'topup_payat_20000', title: `R${Math.round((20_000 + feeCents) / 100)} — 4 credits` },
+          { id: 'topup_payat_50000', title: `R${Math.round((50_000 + feeCents) / 100)} — 10 credits` },
         ],
       )
       return
@@ -934,18 +937,25 @@ async function processInboundMessageUnlocked(
       }
       try {
         const { createPayatTopUpIntent } = await import('./provider-credit-payment-intents')
+        const feeRaw = process.env.PAYAT_MERCHANT_FEE_FIXED_CENTS
+        const feeAmountCents = feeRaw && Number.isFinite(parseInt(feeRaw, 10)) ? parseInt(feeRaw, 10) : 700
         const result = await createPayatTopUpIntent({
           providerId: provider.id,
           amountCents,
+          feeAmountCents,
           providerCellphone: phone,
           metadata: { source: 'whatsapp' },
         })
+        const totalR = Math.round(result.payAtAmountCents / 100)
+        const creditsR = Math.round(amountCents / 100)
+        const feeR = Math.round(feeAmountCents / 100)
+        const credits = amountCents / 5000
         // H-10: Send a direct CTA URL as a delivery guarantee — the template
         // notification from notifyProviderPayatTopUpInitiated may be delayed or
         // fail if the template is pending approval.
         await sendCtaUrl(
           phone,
-          `Tap below to complete your Pay@ top-up of R${Math.round(amountCents / 100)}.`,
+          `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode.\n\n*Total to pay at the till: R${totalR}*\n  • Credits: R${creditsR} (${credits} credit${credits !== 1 ? 's' : ''})\n  • Counter service fee: R${feeR}\n\nShow the barcode at any Pick n Pay, Shoprite, or Checkers till.`,
           'Pay now',
           result.payat.paymentLink,
         ).catch((error: unknown) => {

@@ -280,6 +280,8 @@ export type CreatePayfastTopUpIntentResult = {
 export type CreatePayatTopUpIntentInput = {
   providerId: string
   amountCents: number
+  /** Counter service fee to add on top of the credit amount for the Pay@ barcode. */
+  feeAmountCents?: number
   providerCellphone?: string | null
   metadata?: Record<string, unknown>
 }
@@ -287,6 +289,8 @@ export type CreatePayatTopUpIntentInput = {
 export type CreatePayatTopUpIntentResult = {
   intent: PaymentIntent
   payat: PayatPaymentResponse
+  /** Total amount the provider must pay at the counter (amountCents + feeAmountCents). */
+  payAtAmountCents: number
 }
 
 // ─── Pay@ payment request intent ─────────────────────────────────────────────
@@ -302,6 +306,9 @@ export async function createPayatTopUpIntent(
   }
 
   const creditsToIssue = creditsForAmount(input.amountCents)
+  // payAtAmountCents is what the provider pays at the counter — credit value plus
+  // any service fee that Plug A Pro passes through to cover gateway costs.
+  const payAtAmountCents = input.amountCents + (input.feeAmountCents ?? 0)
 
   const { intent, provider } = await db.$transaction(async (tx) => {
     const provider = await tx.provider.findUnique({
@@ -371,8 +378,8 @@ export async function createPayatTopUpIntent(
   try {
     payat = await createPayatPaymentRequest({
       topupId: intent.id,
-      amountCents: intent.amountCents,
-      description: `Plug A Pro wallet top-up R${Math.round(intent.amountCents / 100)}`,
+      amountCents: payAtAmountCents,
+      description: `Plug A Pro wallet top-up R${Math.round(payAtAmountCents / 100)}`,
       providerName: provider.name ?? 'Provider',
       providerPhone: provider.phone ?? input.providerCellphone ?? '',
       providerEmail: provider.email ?? '',
@@ -393,7 +400,7 @@ export async function createPayatTopUpIntent(
     })
   })
 
-  return { intent, payat }
+  return { intent, payat, payAtAmountCents }
 }
 
 /**

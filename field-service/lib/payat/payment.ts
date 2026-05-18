@@ -106,10 +106,9 @@ async function sendPayatPaymentRequest(
   params: PayatPaymentRequest,
   retryOnUnauthorized: boolean,
 ): Promise<PayatPaymentResponse> {
-  if (!PAYAT_ALLOWED_AMOUNTS_CENTS.has(params.amountCents)) {
-    throw new Error(`Invalid top-up amount: ${params.amountCents} cents`)
-  }
-
+  // Amount validation lives in the intent layer (createPayatTopUpIntent) which
+  // validates the credit amount before adding any service fee. The payment layer
+  // must not re-validate because the final amount includes the fee.
   const token = await getPayatToken()
   const apiBase = requirePayatConfig('PAYAT_API_BASE').replace(/\/$/, '')
   const merchantIdentifier = requirePayatConfig('PAYAT_MERCHANT_IDENTIFIER')
