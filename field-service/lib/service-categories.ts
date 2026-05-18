@@ -20,6 +20,7 @@ export const PILOT_SKILL_TAGS = new Set([
   'carpentry',
   'plastering',
   'rhinoliting',
+  'appliances',
 ])
 
 /**
@@ -32,10 +33,6 @@ export const RESTRICTED_SKILL_NOTICE: Record<string, string> = {
     'Electrical services in South Africa require a Certificate of Compliance (COC) issued by a registered electrician. ' +
     'Verifying those credentials takes longer than our standard review — we are not accepting electrical providers during the current pilot.\n\n' +
     'If you also do handyman, plumbing, tiling, carpentry, gardening, or cleaning work, please add those skills from the list.',
-  appliances:
-    '🔌 *Appliance repairs are not available on Plug A Pro right now.*\n\n' +
-    'We are not accepting appliance repair providers during the current pilot.\n\n' +
-    'If you do other work such as handyman, carpentry, or plumbing, please add those skills from the list.',
   roofing:
     '🏚️ *Roofing is not available on Plug A Pro right now.*\n\n' +
     'Roofing is a higher-risk trade that requires additional vetting. We are not accepting roofing providers during the current pilot.\n\n' +
