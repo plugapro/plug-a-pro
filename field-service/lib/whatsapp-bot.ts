@@ -3258,6 +3258,15 @@ async function handleRfpLeadInterest(
   // moved on, the customer has picked someone else. Tell them plainly rather
   // than silently transitioning their lead to INTERESTED or replying "already
   // noted" — both of which would be misleading.
+  //
+  // Note on `JobRequest.status === 'MATCHED'`: that's the OPS_REVIEW
+  // direct-dispatch terminal. It's intentionally excluded from `jobOpenForRfp`
+  // because if a JobRequest is MATCHED, a provider was directly matched and
+  // sibling RFP responses are no longer relevant. The selected provider's own
+  // lead.status will already be CUSTOMER_SELECTED / PROVIDER_ACCEPTED /
+  // ACCEPTED_LOCKED by then (see matching/service.ts and
+  // lockAcceptedLeadAfterCreditInTransaction), so they hit the
+  // `leadStatusIsTerminalForSibling` short-circuit and never fall through here.
   const jobOpenForRfp = ['MATCHING', 'SHORTLIST_READY'].includes(lead.jobRequest.status)
   const leadStatusIsTerminalForSibling =
     ['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'].includes(lead.status)

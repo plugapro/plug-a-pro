@@ -33,6 +33,21 @@ export async function materializeFulfilmentArtifacts(
   })
 
   if (existing) {
+    // Defensive: a Match for this JobRequest already exists. Refuse to attach
+    // a stub Quote (or to claim the existing match) unless it belongs to the
+    // same provider that just locked the lead. Without this check, the
+    // OPS_REVIEW direct-dispatch path in matching/service.ts could have
+    // matched a different provider on the same JobRequest, and a subsequent
+    // shortlist-acceptance call here would silently graft a stub Quote onto
+    // the wrong match. The thrown error is loud on purpose — surfacing this
+    // collision is preferable to a corrupt fulfilment chain.
+    if (existing.providerId !== params.providerId) {
+      throw new Error(
+        `materializeFulfilmentArtifacts: existing Match ${existing.id} for ` +
+          `jobRequest ${params.jobRequestId} belongs to provider ${existing.providerId}, ` +
+          `not ${params.providerId}`,
+      )
+    }
     if (existing.quotes.length > 0) {
       return {
         matchId: existing.id,
