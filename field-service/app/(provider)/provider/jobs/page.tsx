@@ -73,6 +73,7 @@ export default async function ProviderJobsPage({
     pendingConfirmationJobs,
     awaitingQuoteMatches,
     creditRequiredLeads,
+    customerSelectedLeads,
   ] = await Promise.all([
       db.job.findMany({
         where: {
@@ -141,6 +142,20 @@ export default async function ProviderJobsPage({
         },
         orderBy: { providerAcceptedAt: 'desc' },
       }),
+      // Leads where a customer selected this provider but the provider has not
+      // yet confirmed acceptance. They need to tap confirm_accept on WhatsApp.
+      // Surfacing these prevents a provider missing the confirmation message from
+      // silently losing their slot.
+      db.lead.findMany({
+        where: {
+          providerId: provider.id,
+          status: 'CUSTOMER_SELECTED',
+        },
+        include: {
+          jobRequest: { include: { customer: true, address: true } },
+        },
+        orderBy: { customerSelectedAt: 'desc' },
+      }),
   ]).catch((err: unknown) => {
     console.error('[provider-jobs] failed to load jobs', {
       providerId: provider.id,
@@ -184,7 +199,7 @@ export default async function ProviderJobsPage({
               <ListChecks size={13} />
             </div>
             <p className="text-[22px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none mb-1 tabular-nums">
-              {activeJobs.length + awaitingQuoteMatches.length + creditRequiredLeads.length}
+              {activeJobs.length + awaitingQuoteMatches.length + creditRequiredLeads.length + customerSelectedLeads.length}
             </p>
             <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Active</p>
           </div>
@@ -209,6 +224,52 @@ export default async function ProviderJobsPage({
             <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Completed</p>
           </div>
         </div>
+
+        {/* Customer chose you — waiting for your acceptance via WhatsApp */}
+        {customerSelectedLeads.length > 0 && (
+          <section>
+            <SectionLabel className="mb-3">
+              Confirm acceptance ({customerSelectedLeads.length})
+            </SectionLabel>
+            <div className="space-y-3">
+              {customerSelectedLeads.map((lead) => {
+                const customerName = lead.jobRequest.customer?.name ?? 'Customer'
+                const area = [lead.jobRequest.address?.suburb, lead.jobRequest.address?.city]
+                  .filter(Boolean)
+                  .join(', ')
+                return (
+                  <div
+                    key={lead.id}
+                    className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13.5px] font-semibold text-[var(--ink)] truncate">
+                          {lead.jobRequest.category}
+                        </p>
+                        <p className="text-[12px] text-[var(--ink-mute)] truncate">
+                          {customerName}{area ? ` · ${area}` : ''}
+                        </p>
+                      </div>
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                        style={{
+                          background: 'color-mix(in srgb, var(--brand-purple) 12%, transparent)',
+                          color: 'var(--brand-purple)',
+                        }}
+                      >
+                        Chosen!
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[var(--ink-mute)]">
+                      A customer selected you for this job. Reply on WhatsApp to confirm acceptance (1 credit).
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Top up required — accepted leads stalled at CREDIT_REQUIRED */}
         {creditRequiredLeads.length > 0 && (

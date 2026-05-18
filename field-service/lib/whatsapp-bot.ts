@@ -3354,49 +3354,76 @@ async function handleRfpLeadInterest(
 
   const idempotencyKey = `rfp_interest:${leadId}:${providerId}`
   let alreadyRegistered = false
+  let transactionError: unknown = null
 
-  try {
-    await db.$transaction(async (tx) => {
-      const leadUpdate = await tx.lead.updateMany({
-        where: {
-          id: leadId,
-          providerId,
-          status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED'] },
-        },
-        data: { status: 'INTERESTED', respondedAt: new Date() },
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await db.$transaction(async (tx) => {
+        const leadUpdate = await tx.lead.updateMany({
+          where: {
+            id: leadId,
+            providerId,
+            status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED'] },
+          },
+          data: { status: 'INTERESTED', respondedAt: new Date() },
+        })
+
+        if (leadUpdate.count === 0) {
+          alreadyRegistered = true
+          return
+        }
+
+        await tx.providerLeadResponse.create({
+          data: {
+            leadInviteId: leadId,
+            providerId,
+            response: 'INTERESTED',
+            callOutFee: providerRate?.callOutFee ?? null,
+            estimatedArrivalAt: null,
+            negotiable: providerRate?.rateNegotiable ?? true,
+            source: 'whatsapp_button',
+            idempotencyKey,
+          },
+        })
       })
-
-      if (leadUpdate.count === 0) {
+      transactionError = null
+      break
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') {
+        // Unique constraint on idempotencyKey — concurrent tap already handled
+        console.info('[whatsapp-bot] rfp_interest: concurrent_tap_deduped', { traceId, leadId, providerId })
         alreadyRegistered = true
-        return
+        transactionError = null
+        break
+      } else if ((err as { code?: string }).code === 'P2034' && attempt === 0) {
+        // Deadlock / write conflict — Prisma explicitly recommends retrying P2034.
+        // Wait briefly then let the loop retry once.
+        console.warn('[whatsapp-bot] rfp_interest: write_conflict_retry', { traceId, leadId, providerId })
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        transactionError = err
+      } else {
+        transactionError = err
+        break
       }
-
-      await tx.providerLeadResponse.create({
-        data: {
-          leadInviteId: leadId,
-          providerId,
-          response: 'INTERESTED',
-          callOutFee: providerRate?.callOutFee ?? null,
-          estimatedArrivalAt: null,
-          negotiable: providerRate?.rateNegotiable ?? true,
-          source: 'whatsapp_button',
-          idempotencyKey,
-        },
-      })
-    })
-  } catch (err) {
-    if ((err as { code?: string }).code === 'P2002') {
-      // Unique constraint on idempotencyKey — concurrent tap already handled
-      console.info('[whatsapp-bot] rfp_interest: concurrent_tap_deduped', { traceId, leadId, providerId })
-      alreadyRegistered = true
-    } else {
-      console.error('[whatsapp-bot] rfp_interest: transaction failed', {
-        traceId, leadId, providerId,
-        error: err instanceof Error ? err.message : String(err),
-      })
-      await sendText(phone, `We couldn't process your response right now.\n\n_Ref: ${traceId}_`)
-      return
     }
+  }
+
+  if (transactionError !== null) {
+    console.error('[whatsapp-bot] rfp_interest: transaction failed', {
+      traceId, leadId, providerId,
+      error: transactionError instanceof Error ? transactionError.message : String(transactionError),
+    })
+    // Re-send the lead buttons so the provider can retry immediately rather than
+    // hitting a dead-end error with a ref code they can't act on.
+    await sendButtons(
+      phone,
+      `⚠️ We couldn't register your availability right now — please try again.\n\n_Ref: ${traceId}_`,
+      [
+        { id: `ops_accept:${leadId}`, title: "I'm Available" },
+        { id: `ops_decline:${leadId}`, title: 'Not Available' },
+      ],
+    )
+    return
   }
 
   if (alreadyRegistered) {
