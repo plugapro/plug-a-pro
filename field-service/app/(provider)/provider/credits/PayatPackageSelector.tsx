@@ -226,11 +226,22 @@ export function PayatPackageSelector() {
     setSelectedAmount(amountCents)
     startTransition(async () => {
       try {
-        const payat = await createProviderPayatTopUpIntent(amountCents)
-        setResult(payat)
-      } catch {
+        const response = await createProviderPayatTopUpIntent(amountCents)
+        if (response.ok) {
+          setResult(response.data)
+          return
+        }
+        // Server action returned a structured failure — surface the specific
+        // user message instead of the generic "try again" copy.
+        console.error('[PayatPackageSelector] checkout_failed', { code: response.code })
         setSelectedAmount(null)
-        setError('Could not start Pay@ checkout. Please try again.')
+        setError(response.userMessage)
+      } catch (err) {
+        // Should be rare now (server action returns errors as values), but log
+        // the raw error in case Next.js stripped a thrown one in production.
+        console.error('[PayatPackageSelector] checkout_threw', err)
+        setSelectedAmount(null)
+        setError('Could not start Pay@ checkout. Please try again or use Payfast.')
       }
     })
   }

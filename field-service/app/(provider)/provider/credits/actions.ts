@@ -14,6 +14,7 @@ import {
   createManualEftTopUpIntent,
   createPayfastTopUpIntent,
   getManualEftBankAccountInstructions,
+  ProviderCreditPaymentIntentError,
   type PayfastTopUpMethod,
 } from '@/lib/provider-credit-payment-intents'
 
@@ -236,29 +237,117 @@ export type ProviderPayatTopUpResult = {
   paymentLink: string
 }
 
+// Server actions can't surface real error messages to the client in production
+// (Next.js redacts thrown errors). Return a discriminated union so the UI can
+// distinguish a duplicate-intent from a Pay@ API outage and show the right copy.
+export type PayatTopUpFailureCode =
+  | 'DUPLICATE_INTENT'
+  | 'TOO_MANY_PENDING'
+  | 'INVALID_AMOUNT'
+  | 'PROVIDER_NOT_FOUND'
+  | 'REFERENCE_GENERATION_FAILED'
+  | 'PAYAT_TOKEN_FAILED'
+  | 'PAYAT_API_FAILED'
+  | 'PAYAT_CONFIG_MISSING'
+  | 'UNKNOWN'
+
+export type ProviderPayatTopUpResponse =
+  | { ok: true; data: ProviderPayatTopUpResult }
+  | { ok: false; code: PayatTopUpFailureCode; userMessage: string }
+
 export async function createProviderPayatTopUpIntent(
   amountCents: number,
-): Promise<ProviderPayatTopUpResult> {
-  const provider = await getAuthenticatedProvider()
-  const activeIntentCount = await db.paymentIntent.count({
-    where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
-  })
-  if (activeIntentCount >= 3) {
-    throw new Error('Too many pending payment intents. Complete or cancel existing payments first.')
-  }
-  const result = await createPayatTopUpIntent({
-    providerId: provider.id,
-    amountCents,
-    providerCellphone: provider.phone,
-  })
+): Promise<ProviderPayatTopUpResponse> {
+  let providerId: string | null = null
+  try {
+    const provider = await getAuthenticatedProvider()
+    providerId = provider.id
+    const activeIntentCount = await db.paymentIntent.count({
+      where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
+    })
+    if (activeIntentCount >= 3) {
+      console.warn('[payat] checkout_blocked: too_many_pending', { providerId: provider.id, amountCents, activeIntentCount })
+      return {
+        ok: false,
+        code: 'TOO_MANY_PENDING',
+        userMessage: 'You already have 3 pending payments. Complete or cancel one before starting a new top-up.',
+      }
+    }
+    const result = await createPayatTopUpIntent({
+      providerId: provider.id,
+      amountCents,
+      providerCellphone: provider.phone,
+    })
 
-  revalidatePath('/provider/credits')
-  return {
-    intentId: result.intent.id,
-    amountCents: result.intent.amountCents,
-    creditsToIssue: result.intent.creditsToIssue,
-    reference: result.payat.reference,
-    paymentLink: result.payat.paymentLink,
+    revalidatePath('/provider/credits')
+    return {
+      ok: true,
+      data: {
+        intentId: result.intent.id,
+        amountCents: result.intent.amountCents,
+        creditsToIssue: result.intent.creditsToIssue,
+        reference: result.payat.reference,
+        paymentLink: result.payat.paymentLink,
+      },
+    }
+  } catch (err) {
+    if (err instanceof ProviderCreditPaymentIntentError) {
+      console.warn('[payat] checkout_blocked: payment_intent_error', { providerId, amountCents, code: err.code, message: err.message })
+      switch (err.code) {
+        case 'DUPLICATE_INTENT':
+          return {
+            ok: false,
+            code: 'DUPLICATE_INTENT',
+            userMessage: "You already have a pending Pay@ top-up for this amount. Open it from your active payments, or wait for it to expire.",
+          }
+        case 'INVALID_AMOUNT':
+          return {
+            ok: false,
+            code: 'INVALID_AMOUNT',
+            userMessage: 'That top-up amount is not available. Please pick R100, R200 or R500.',
+          }
+        case 'PROVIDER_NOT_FOUND':
+          return {
+            ok: false,
+            code: 'PROVIDER_NOT_FOUND',
+            userMessage: 'We could not load your provider profile. Sign in again and retry.',
+          }
+        case 'REFERENCE_GENERATION_FAILED':
+          return {
+            ok: false,
+            code: 'REFERENCE_GENERATION_FAILED',
+            userMessage: 'Could not generate a payment reference. Please try again.',
+          }
+      }
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[payat] checkout_failed', { providerId, amountCents, error: message })
+    if (message.startsWith('PAYAT_') && message.endsWith('must be set')) {
+      return {
+        ok: false,
+        code: 'PAYAT_CONFIG_MISSING',
+        userMessage: 'Pay@ is temporarily unavailable. Please use Payfast or Manual EFT, or contact support.',
+      }
+    }
+    if (message.includes('Pay@ token fetch failed')) {
+      return {
+        ok: false,
+        code: 'PAYAT_TOKEN_FAILED',
+        userMessage: 'Could not authenticate with Pay@. Please try again in a minute, or use Payfast.',
+      }
+    }
+    if (message.includes('Pay@ RTP creation failed') || message.includes('Pay@ RTP response')) {
+      return {
+        ok: false,
+        code: 'PAYAT_API_FAILED',
+        userMessage: 'Pay@ rejected the request. Please try Payfast or Manual EFT, or contact support.',
+      }
+    }
+    return {
+      ok: false,
+      code: 'UNKNOWN',
+      userMessage: 'Could not start Pay@ checkout. Please try again or use Payfast.',
+    }
   }
 }
 
