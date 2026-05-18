@@ -825,7 +825,7 @@ describe('registration flow — numbered bulk skill selection', () => {
 
     const body: string = (wa.sendText as any).mock.calls.at(-1)[1]
     expect(body).toContain('1. Plumbing (selected)')
-    expect(body).toContain('8. Carpentry (selected)')
+    expect(body).toContain('11. Carpentry (selected)')
     expect(body).not.toMatch(/[□☐☑]/)
     expect(body).not.toContain('✅ 1.')
   })

@@ -73,12 +73,13 @@ describe('customer mobile landing page', () => {
 
     expect(html).toContain('Plumbing')
     expect(html).toContain('Handyman')
-    expect(html).toContain('Electrical')
+    expect(html).toContain('Appliances')
     expect(html).toContain('Carpentry')
     expect(html).toContain('Cleaning')
     expect(html).toContain('Painting')
-    expect(html).toContain('Appliances')
-    expect(html).toContain('Geyser')
+    expect(html).toContain('Tiling')
+    expect(html).toContain('Plastering')
+    expect(html).toContain('Rhinoliting')
   })
 
   it('renders provider-home actions when a provider is signed in', async () => {
