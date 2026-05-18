@@ -3383,11 +3383,11 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
         traceId, leadId, providerId: provider.id, reason, prevStatus: lead.status,
       })
       if (updatedCount.count > 0) {
-        const { cascadeToNextShortlistedProvider } = await import('./review-first')
-        await cascadeToNextShortlistedProvider({
+        const reviewFirst = await import('./review-first')
+        await reviewFirst.cascadeToNextShortlistedProvider({
           requestId: lead.jobRequestId,
           declinedLeadId: leadId,
-        }).catch((err) => {
+        }).catch((err: unknown) => {
           console.warn('[whatsapp-bot] ops_decline: rfp_cascade_failed', {
             traceId, leadId, requestId: lead.jobRequestId, error: err instanceof Error ? err.message : String(err),
           })
