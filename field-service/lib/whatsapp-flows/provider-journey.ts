@@ -1785,6 +1785,7 @@ async function handleTopUpPayatCreate(
 
     console.error('[provider-journey] createPayatTopUpIntent failed', {
       phone: ctx.phone,
+      providerId: provider.id,
       amountCents,
       error: err instanceof Error ? err.message : String(err),
     })

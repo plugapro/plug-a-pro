@@ -72,62 +72,82 @@ export default async function ProviderJobsPage({
     totalCompleted,
     pendingConfirmationJobs,
     awaitingQuoteMatches,
+    creditRequiredLeads,
   ] = await Promise.all([
-    db.job.findMany({
-      where: {
-        providerId: provider.id,
-        status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
-        booking: { scheduledDate: { lt: tomorrow } },
-      },
-      include: jobInclude,
-      orderBy: { booking: { scheduledDate: 'asc' } },
-    }),
-    db.job.findMany({
-      where: {
-        providerId: provider.id,
-        status: 'SCHEDULED',
-        booking: { scheduledDate: { gte: tomorrow } },
-      },
-      include: jobInclude,
-      orderBy: { booking: { scheduledDate: 'asc' } },
-    }),
-    db.job.findMany({
-      where: {
-        providerId: provider.id,
-        status: 'COMPLETED',
-      },
-      include: jobInclude,
-      orderBy: { completedAt: 'desc' },
-      skip,
-      take: PAGE_SIZE,
-    }),
-    db.job.count({
-      where: { providerId: provider.id, status: 'COMPLETED' },
-    }),
-    db.job.findMany({
-      where: {
-        providerId: provider.id,
-        status: 'PENDING_COMPLETION_CONFIRMATION',
-      },
-      include: jobInclude,
-      orderBy: { updatedAt: 'desc' },
-    }),
-    // Locked leads that have a Match but no Booking yet — provider needs to
-    // submit a quote (or customer needs to approve a submitted one). Surfacing
-    // these gives Lovemore visibility on accepted-but-not-yet-scheduled work.
-    db.match.findMany({
-      where: {
-        providerId: provider.id,
-        status: 'MATCHED',
-        booking: null,
-      },
-      include: {
-        jobRequest: { include: { customer: true, address: true } },
-        quotes: { orderBy: { createdAt: 'desc' }, take: 1 },
-      },
-      orderBy: { createdAt: 'desc' },
-    }),
-  ])
+      db.job.findMany({
+        where: {
+          providerId: provider.id,
+          status: { in: ['SCHEDULED', 'EN_ROUTE', 'ARRIVED', 'STARTED', 'PAUSED', 'AWAITING_APPROVAL'] },
+          booking: { scheduledDate: { lt: tomorrow } },
+        },
+        include: jobInclude,
+        orderBy: { booking: { scheduledDate: 'asc' } },
+      }),
+      db.job.findMany({
+        where: {
+          providerId: provider.id,
+          status: 'SCHEDULED',
+          booking: { scheduledDate: { gte: tomorrow } },
+        },
+        include: jobInclude,
+        orderBy: { booking: { scheduledDate: 'asc' } },
+      }),
+      db.job.findMany({
+        where: {
+          providerId: provider.id,
+          status: 'COMPLETED',
+        },
+        include: jobInclude,
+        orderBy: { completedAt: 'desc' },
+        skip,
+        take: PAGE_SIZE,
+      }),
+      db.job.count({
+        where: { providerId: provider.id, status: 'COMPLETED' },
+      }),
+      db.job.findMany({
+        where: {
+          providerId: provider.id,
+          status: 'PENDING_COMPLETION_CONFIRMATION',
+        },
+        include: jobInclude,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      // Locked leads with a Match but no Booking yet — provider needs to
+      // submit a quote (or customer needs to approve a submitted one).
+      // Includes all pre-booking Match statuses, not just MATCHED.
+      db.match.findMany({
+        where: {
+          providerId: provider.id,
+          status: { in: ['MATCHED', 'INSPECTION_SCHEDULED', 'INSPECTION_COMPLETE', 'QUOTED', 'QUOTE_DECLINED'] },
+          booking: null,
+        },
+        include: {
+          jobRequest: { include: { customer: true, address: true } },
+          quotes: { orderBy: { createdAt: 'desc' }, take: 1 },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      // Leads where the provider accepted but has insufficient credits.
+      // No Match row exists yet — surfaced here so the provider knows they
+      // need to top up to confirm their slot.
+      db.lead.findMany({
+        where: {
+          providerId: provider.id,
+          status: { in: ['PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'] },
+        },
+        include: {
+          jobRequest: { include: { customer: true, address: true } },
+        },
+        orderBy: { providerAcceptedAt: 'desc' },
+      }),
+  ]).catch((err: unknown) => {
+    console.error('[provider-jobs] failed to load jobs', {
+      providerId: provider.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    throw err
+  })
 
   const totalPages = Math.max(1, Math.ceil(totalCompleted / PAGE_SIZE))
 
@@ -164,7 +184,7 @@ export default async function ProviderJobsPage({
               <ListChecks size={13} />
             </div>
             <p className="text-[22px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none mb-1 tabular-nums">
-              {activeJobs.length + awaitingQuoteMatches.length}
+              {activeJobs.length + awaitingQuoteMatches.length + creditRequiredLeads.length}
             </p>
             <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Active</p>
           </div>
@@ -189,6 +209,53 @@ export default async function ProviderJobsPage({
             <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Completed</p>
           </div>
         </div>
+
+        {/* Top up required — accepted leads stalled at CREDIT_REQUIRED */}
+        {creditRequiredLeads.length > 0 && (
+          <section>
+            <SectionLabel className="mb-3">
+              Top up required ({creditRequiredLeads.length})
+            </SectionLabel>
+            <div className="space-y-3">
+              {creditRequiredLeads.map((lead) => {
+                const customerName = lead.jobRequest.customer?.name ?? 'Customer'
+                const area = [lead.jobRequest.address?.suburb, lead.jobRequest.address?.city]
+                  .filter(Boolean)
+                  .join(', ')
+                return (
+                  <Link
+                    key={lead.id}
+                    href="/provider/credits"
+                    className="block bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-4 transition-shadow hover:shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13.5px] font-semibold text-[var(--ink)] truncate">
+                          {lead.jobRequest.category}
+                        </p>
+                        <p className="text-[12px] text-[var(--ink-mute)] truncate">
+                          {customerName}{area ? ` · ${area}` : ''}
+                        </p>
+                      </div>
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                        style={{
+                          background: 'color-mix(in srgb, var(--color-red, #ef4444) 12%, transparent)',
+                          color: 'var(--color-red, #ef4444)',
+                        }}
+                      >
+                        Top up
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[var(--ink-mute)]">
+                      You accepted this job but need more credits to confirm your slot. Tap to top up.
+                    </p>
+                  </Link>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Awaiting your quote (locked leads with no Booking yet) */}
         {awaitingQuoteMatches.length > 0 && (
