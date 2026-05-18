@@ -137,6 +137,26 @@ const TEMPLATES = [
     ],
   },
   {
+    // RFP/shortlist-phase invite — used when the customer has shortlisted this
+    // provider but has not yet picked them. Body intentionally does NOT say
+    // "selected you" (that copy belongs to provider_lead_offer which is sent
+    // post-selection). Once Meta approves this template, switch
+    // attemptProviderRfpWhatsAppNotification to use it instead of
+    // provider_lead_offer.
+    name: 'provider_rfp_lead_invite',
+    category: 'UTILITY',
+    body: 'Hi {{1}}, a customer is reviewing providers for a {{2}} job in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
+    examples: ['Lovemore', 'DIY & Assembly', 'Bromhof, Johannesburg', 'Flexible'],
+    buttons: [
+      {
+        type: 'URL',
+        text: 'View lead',
+        url: 'https://app.plugapro.co.za/leads/access/{{1}}',
+        example: ['demo-lead-access-token'],
+      },
+    ],
+  },
+  {
     name: 'technician_job_reminder',
     category: 'UTILITY',
     // {{1}} tech name, {{2}} service, {{3}} address, {{4}} time, {{5}} job URL

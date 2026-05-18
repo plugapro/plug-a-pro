@@ -3222,8 +3222,16 @@ async function handleRfpLeadInterest(
     await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.`)
     return
   }
-  if (['CUSTOMER_SELECTED', 'ACCEPTED_LOCKED', 'ACCEPTED', 'PROVIDER_ACCEPTED', 'CREDIT_APPLIED'].includes(lead.status)) {
-    await sendText(phone, `✅ You've been selected for Ref ${ref}. The customer will be in touch shortly.`)
+  // Customer has selected this provider but acceptance is not yet locked. Direct
+  // them to the View lead URL on the prior template message so they can confirm
+  // acceptance via the PWA (this is the path that actually deducts the credit).
+  if (['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'].includes(lead.status)) {
+    await sendText(phone, `🎉 The customer selected you for Ref ${ref}.\n\nTap *View lead* on the previous message to confirm and unlock the customer's contact details. Accepting uses 1 credit.`)
+    return
+  }
+  // Acceptance already finalised — provider just needs to act on the job.
+  if (['ACCEPTED_LOCKED', 'ACCEPTED', 'CREDIT_APPLIED'].includes(lead.status)) {
+    await sendText(phone, `✅ You've already accepted Ref ${ref}. Tap *View lead* on the previous message to see the customer's contact details and arrange the job.`)
     return
   }
   if (['DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'].includes(lead.status)) {
