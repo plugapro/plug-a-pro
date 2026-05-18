@@ -70,10 +70,23 @@ export async function POST(request: NextRequest) {
     return errorResponse(400, 'invalid_body')
   }
 
+  const phoneMasked = phone.length > 6
+    ? `${phone.slice(0, 3)}****${phone.slice(-3)}`
+    : '***'
+
   const flagOn = await isEnabled(FLAG_KEYS.AUTH_OTP_WHATSAPP, {
     userId: userId ?? undefined,
   })
   if (!flagOn) {
+    console.warn('[send-sms-hook] flag off — whatsapp OTP disabled', {
+      message: 'otp_whatsapp_disabled',
+      httpCode: 503,
+      step: 'send-sms-hook',
+      userId,
+      phoneMasked,
+      timestamp: new Date().toISOString(),
+      hookRequestId,
+    })
     return errorResponse(503, 'otp_whatsapp_disabled')
   }
 
@@ -85,6 +98,11 @@ export async function POST(request: NextRequest) {
   })
   if (!rateCheck.ok) {
     console.warn('[send-sms-hook] rate limited', {
+      message: 'rate_limited',
+      httpCode: 429,
+      step: 'send-sms-hook',
+      phoneMasked,
+      timestamp: new Date().toISOString(),
       hookRequestId,
       reason: rateCheck.code,
     })

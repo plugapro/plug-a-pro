@@ -14,6 +14,7 @@ const { mockDb, state } = vi.hoisted(() => {
     },
     providerLeadResponse: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
     },
     providerShortlistItem: {
@@ -76,6 +77,7 @@ describe('provider opportunity responses', () => {
     }
     mockDb.lead.findUnique.mockImplementation(async () => state.previewLead)
     mockDb.providerLeadResponse.findUnique.mockResolvedValue(null)
+    mockDb.providerLeadResponse.findFirst.mockResolvedValue(null)
     mockDb.lead.updateMany.mockResolvedValue({ count: 1 })
     state.tx = {
       providerLeadResponse: {
@@ -347,7 +349,7 @@ describe('provider opportunity responses', () => {
   })
 
   it('returns existing response for duplicate idempotency keys', async () => {
-    mockDb.providerLeadResponse.findUnique.mockResolvedValueOnce({
+    mockDb.providerLeadResponse.findFirst.mockResolvedValueOnce({
       id: 'response-existing',
       idempotencyKey: 'same-event',
     })

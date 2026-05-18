@@ -4,7 +4,7 @@
 
 import { sendText, sendButtons, sendList, sendCtaUrl } from '../whatsapp-interactive'
 import { sendCustomerRunningLateNotification, sendProviderInvoiceTemplate } from '../whatsapp'
-import { createManualEftTopUpIntent } from '../provider-credit-payment-intents'
+import { createPayatTopUpIntent } from '../provider-credit-payment-intents'
 import { notifyProviderPaymentIntentCreated } from '../provider-wallet-notifications'
 import { logOutboundMessage } from '../message-events'
 import { db } from '../db'
@@ -292,6 +292,7 @@ export async function handleProviderJourneyFlow(ctx: FlowContext): Promise<FlowR
       return handleInvoiceFlow(ctx.phone)
     case 'pj_topup_select_amount':
       return handleTopUpSelectAmount(ctx)
+    case 'pj_topup_payat_created':
     case 'pj_topup_eft_created':
       return handleProviderMenu(ctx)
     default:
@@ -325,7 +326,7 @@ async function handleProviderMenu(ctx: FlowContext): Promise<FlowResult> {
       title: 'Provider',
       rows: [
         { id: 'provider_check_status', title: 'View Credits', description: 'Check balance and provider status' },
-        { id: 'provider_topup', title: 'Top Up Credits', description: 'Add credits via bank transfer' },
+        { id: 'provider_topup', title: 'Top Up Credits', description: 'Pay at Pick n Pay, Shoprite or Checkers' },
         { id: 'provider_available_jobs', title: 'View Opportunities', description: 'Review safe job previews' },
         { id: 'provider_my_jobs', title: 'View Active Jobs', description: 'Manage accepted and scheduled work' },
         paused
@@ -1691,12 +1692,12 @@ export async function handleInvoiceFlow(phone: string): Promise<FlowResult> {
   return { nextStep: 'done' }
 }
 
-// ─── Top-Up (EFT) ────────────────────────────────────────────────────────────
+// ─── Top-Up (Pay@) ───────────────────────────────────────────────────────────
 
 const TOPUP_PACKAGES = [
-  { id: 'provider_topup_100', amountCents: 10_000, label: 'R100 — 2 credits' },
-  { id: 'provider_topup_200', amountCents: 20_000, label: 'R200 — 4 credits' },
-  { id: 'provider_topup_500', amountCents: 50_000, label: 'R500 — 10 credits' },
+  { id: 'provider_topup_100', amountCents: 10_000, credits: 2 },
+  { id: 'provider_topup_200', amountCents: 20_000, credits: 4 },
+  { id: 'provider_topup_500', amountCents: 50_000, credits: 10 },
 ] as const
 
 async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
@@ -1709,16 +1710,16 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
   // Process a package selection reply
   const selected = TOPUP_PACKAGES.find((pkg) => pkg.id === ctx.reply.id)
   if (selected) {
-    return handleTopUpEftCreate(ctx, provider, selected.amountCents)
+    return handleTopUpPayatCreate(ctx, provider, selected.amountCents)
   }
 
   // First entry or unrecognised reply — show the package list
   const creditLine = await providerCreditBalanceLine(provider.id)
   await sendList(
     ctx.phone,
-    `💳 *Top Up Credits*\n\n${creditLine}\n\n1 credit = R50. Credits are used only when a customer selects you and you accept the job.\n\nChoose how much to add:`,
+    `💳 *Top Up Credits*\n\n${creditLine}\n\n1 credit = R50. Credits are used only when a customer selects you and you accept the job.\n\nPay at any Pick n Pay, Shoprite, or Checkers till — you'll receive a payment barcode to show at the cashier. Credits are added automatically once payment is confirmed.\n\nChoose how much to add:`,
     [{
-      title: 'Bank Transfer (EFT)',
+      title: 'Pay at Retailer (Pay@)',
       rows: [
         { id: 'provider_topup_100', title: 'R100', description: '2 credits' },
         { id: 'provider_topup_200', title: 'R200', description: '4 credits' },
@@ -1730,58 +1731,52 @@ async function handleTopUpSelectAmount(ctx: FlowContext): Promise<FlowResult> {
   return { nextStep: 'pj_topup_select_amount' }
 }
 
-// provider param typed explicitly because findProviderForWhatsApp returns any (as any cast for Prisma include compatibility)
-async function handleTopUpEftCreate(
+async function handleTopUpPayatCreate(
   ctx: FlowContext,
   provider: { id: string; name: string | null; phone: string | null },
   amountCents: number,
 ): Promise<FlowResult> {
-  let intent: Awaited<ReturnType<typeof createManualEftTopUpIntent>>['intent']
-  let instructions: Awaited<ReturnType<typeof createManualEftTopUpIntent>>['instructions']
+  const { sendCtaUrl } = await import('../whatsapp-interactive')
 
   try {
-    const result = await createManualEftTopUpIntent({
+    const result = await createPayatTopUpIntent({
       providerId: provider.id,
       amountCents,
       providerCellphone: ctx.phone,
+      metadata: { source: 'whatsapp' },
     })
-    intent = result.intent
-    instructions = result.instructions
+
+    const credits = amountCents / 5000 // PROVIDER_CREDIT_PRICE_CENTS = 5000
+    await sendCtaUrl(
+      ctx.phone,
+      `✅ *Pay@ Top-Up Ready*\n\nTap *Pay now* to get your payment barcode. Show it at any Pick n Pay, Shoprite, or Checkers till to pay *R${Math.round(amountCents / 100)}*.\n\nYou will receive *${credits} credit${credits !== 1 ? 's' : ''}* once your payment is confirmed — usually within a few minutes.`,
+      'Pay now at retailer',
+      result.payat.paymentLink,
+    ).catch((err: unknown) => {
+      console.error('[provider-journey] Pay@ CTA URL send failed (non-fatal)', {
+        intentId: result.intent.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong. Please try again or open the Worker Portal.'
-    await sendText(ctx.phone, `⚠️ Could not create your top-up: ${message}`)
+    const isDuplicate =
+      err !== null &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: unknown }).code === 'DUPLICATE_INTENT'
+
+    const message = isDuplicate
+      ? `You already have an active Pay@ top-up link. Check your earlier messages for the payment barcode, or visit the provider portal to start a new one after it expires.`
+      : `⚠️ Could not create your top-up. Please try again or visit the provider portal.`
+
+    console.error('[provider-journey] createPayatTopUpIntent failed', {
+      phone: ctx.phone,
+      amountCents,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    await sendText(ctx.phone, message)
     return { nextStep: 'pj_topup_select_amount' }
   }
 
-  const expiryLine = instructions.expiresAt
-    ? `Expires: ${instructions.expiresAt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Johannesburg' })}`
-    : null
-
-  const message = [
-    `✅ *Top-Up Created: ${instructions.amountFormatted} (${instructions.creditsToIssue} credits)*`,
-    '',
-    '*Bank Transfer Details:*',
-    `Account name: *${instructions.bankAccount.accountName}*`,
-    `Bank: *${instructions.bankAccount.bankName}*`,
-    `Account number: *${instructions.bankAccount.accountNumber}*`,
-    `Branch code: *${instructions.bankAccount.branchCode}*`,
-    `Account type: *${instructions.bankAccount.accountType}*`,
-    '',
-    `*Use this exact reference:*`,
-    `*${instructions.paymentReference}*`,
-    '',
-    expiryLine,
-    'Credits will be added once Plug A Pro confirms your payment.',
-  ].filter((line): line is string => line !== null).join('\n')
-
-  await sendText(ctx.phone, message)
-
-  notifyProviderPaymentIntentCreated(intent.id).catch((err: unknown) => {
-    console.error('[provider-journey] notifyProviderPaymentIntentCreated failed (non-fatal)', {
-      intentId: intent.id,
-      error: err instanceof Error ? err.message : String(err),
-    })
-  })
-
-  return { nextStep: 'pj_topup_eft_created' }
+  return { nextStep: 'pj_topup_payat_created' }
 }

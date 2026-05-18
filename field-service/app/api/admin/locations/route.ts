@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { listLocationNodes, createLocationNode } from '@/lib/location-nodes'
+import { verifyRequestOrigin } from '@/lib/csrf'
+import { apiError } from '@/lib/api-response'
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,6 +26,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!verifyRequestOrigin(req, [])) {
+    return apiError('FORBIDDEN', 'Origin not allowed', 403)
+  }
+
   try {
     await requireAdmin()
   } catch {

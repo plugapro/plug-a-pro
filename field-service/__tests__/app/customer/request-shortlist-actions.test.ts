@@ -99,6 +99,7 @@ describe('authenticated request shortlist actions', () => {
       expect(mockSelectShortlistedProviderForRequest).toHaveBeenCalledWith({
         requestId: 'request-1',
         shortlistItemId: 'item-1',
+        customerId: 'customer-1',
       })
     })
 
@@ -158,7 +159,7 @@ describe('authenticated request shortlist actions', () => {
       await expect(
         requestMoreShortlistOptionsAction('request-1', new FormData()),
       ).resolves.toBeUndefined()
-      expect(mockRequestMoreShortlistOptions).toHaveBeenCalledWith({ requestId: 'request-1' })
+      expect(mockRequestMoreShortlistOptions).toHaveBeenCalledWith({ requestId: 'request-1', customerId: 'customer-1' })
     })
 
     it('throws when the session is missing', async () => {
@@ -263,7 +264,7 @@ describe('authenticated request shortlist actions', () => {
       await expect(
         cancelRequestFromShortlistAction('request-1', new FormData()),
       ).resolves.toBeUndefined()
-      expect(mockCancelRequestFromShortlist).toHaveBeenCalledWith({ requestId: 'request-1' })
+      expect(mockCancelRequestFromShortlist).toHaveBeenCalledWith({ requestId: 'request-1', customerId: 'customer-1' })
     })
 
     it('throws when the customer does not own the request', async () => {

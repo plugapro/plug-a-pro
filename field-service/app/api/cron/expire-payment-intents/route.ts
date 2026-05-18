@@ -18,17 +18,29 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const reqId = crypto.randomUUID().slice(0, 8)
-  const now = new Date()
+  const cronStart = Date.now()
+  const cronName = 'expire-payment-intents'
+  console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
 
-  const result = await db.paymentIntent.updateMany({
-    where: {
-      status: 'PENDING_PAYMENT',
-      expiresAt: { lt: now, not: null },
-    },
-    data: { status: 'EXPIRED' },
-  })
+  try {
+    const reqId = crypto.randomUUID().slice(0, 8)
+    const now = new Date()
 
-  console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}`)
-  return NextResponse.json({ expired: result.count })
+    const result = await db.paymentIntent.updateMany({
+      where: {
+        status: 'PENDING_PAYMENT',
+        expiresAt: { lt: now, not: null },
+      },
+      data: { status: 'EXPIRED' },
+    })
+
+    console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}`)
+    const duration = Date.now() - cronStart
+    console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+    return NextResponse.json({ expired: result.count, durationMs: duration })
+  } catch (err) {
+    const duration = Date.now() - cronStart
+    console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
+    throw err
+  }
 }

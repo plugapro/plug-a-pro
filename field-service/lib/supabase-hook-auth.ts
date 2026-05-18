@@ -47,10 +47,14 @@ export function verifyStandardWebhookSignature(params: {
     const trimmed = candidate.trim()
     if (!trimmed.startsWith('v1,')) continue
     const provided = trimmed.slice(3)
-    if (provided.length !== expected.length) continue
-    const a = Buffer.from(expected)
-    const b = Buffer.from(provided)
-    if (a.length === b.length && timingSafeEqual(a, b)) {
+    const bufA = Buffer.from(expected)
+    const bufB = Buffer.from(provided)
+    if (bufA.length !== bufB.length) {
+      // Lengths differ — fail but avoid early exit to prevent timing oracle
+      timingSafeEqual(bufA, Buffer.alloc(bufA.length))
+      continue
+    }
+    if (timingSafeEqual(bufA, bufB)) {
       return { ok: true }
     }
   }

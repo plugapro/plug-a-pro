@@ -370,6 +370,13 @@ export async function acceptSelectedProviderJob(params: {
       if (error.code === 'INSUFFICIENT_CREDITS') {
         return { ok: false, reason: 'INSUFFICIENT_CREDITS', currentCreditBalance: error.currentCreditBalance }
       }
+      if (error.code === 'CONCURRENT_DEDUCTION') {
+        // Wallet was debited concurrently by another request; safe to retry
+        throw new ProviderCreditApplicationError(
+          'CONCURRENT_DEDUCTION',
+          'Your wallet was updated by another request. Please try accepting again.',
+        )
+      }
       if (error.code === 'WALLET_MISSING' || error.code === 'WALLET_NOT_ACTIVE') {
         // Wallet disappeared or was suspended between credit check and application.
         // This is a data integrity issue — do not show "top up" message.

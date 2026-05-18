@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireAdmin, mockRequireRole, mockIsEnabled, mockFindMany } = vi.hoisted(() => ({
+const { mockRequireAdmin, mockRequireRole, mockRequireRoleApi, mockIsEnabled, mockFindMany } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
   mockRequireRole: vi.fn(),
+  mockRequireRoleApi: vi.fn(),
   mockIsEnabled: vi.fn(),
   mockFindMany: vi.fn(),
 }))
@@ -10,6 +11,7 @@ const { mockRequireAdmin, mockRequireRole, mockIsEnabled, mockFindMany } = vi.ho
 vi.mock('@/lib/auth', () => ({
   requireAdmin: mockRequireAdmin,
   requireRole: mockRequireRole,
+  requireRoleApi: mockRequireRoleApi,
 }))
 
 vi.mock('@/lib/flags', () => ({
@@ -32,6 +34,7 @@ describe('GET /api/admin/customers/export', () => {
     vi.clearAllMocks()
     mockRequireAdmin.mockResolvedValue({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'ADMIN' })
     mockRequireRole.mockResolvedValue({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'ADMIN' })
+    mockRequireRoleApi.mockResolvedValue({ id: 'supabase-admin-1', adminUserId: 'admin-1', adminRole: 'ADMIN' })
     mockIsEnabled.mockResolvedValue(true)
     mockFindMany.mockResolvedValue([])
   })

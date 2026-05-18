@@ -47,7 +47,7 @@ describe('GET /api/cron/expire-payment-intents', () => {
 
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toEqual({ expired: 3 })
+    expect(body).toMatchObject({ expired: 3 })
   })
 
   it('queries with the correct updateMany predicate targeting only lapsed PENDING_PAYMENT intents', async () => {
@@ -70,6 +70,6 @@ describe('GET /api/cron/expire-payment-intents', () => {
 
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toEqual({ expired: 0 })
+    expect(body).toMatchObject({ expired: 0 })
   })
 })

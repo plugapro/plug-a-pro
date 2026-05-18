@@ -8,6 +8,8 @@ import {
   createPayfastTopUpIntent,
   type PayfastTopUpMethod,
 } from '@/lib/provider-credit-payment-intents'
+import { verifyRequestOrigin } from '@/lib/csrf'
+import { apiError } from '@/lib/api-response'
 
 type CreateTopUpIntentBody = {
   amountCents?: unknown
@@ -34,6 +36,10 @@ function parseMetadata(body: CreateTopUpIntentBody) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!verifyRequestOrigin(request, [])) {
+    return apiError('FORBIDDEN', 'Origin not allowed', 403)
+  }
+
   const session = await getSession()
   if (!session || session.role !== 'provider') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

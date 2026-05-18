@@ -1,17 +1,14 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requireProvider } from '@/lib/auth'
+import { requireProviderApi } from '@/lib/auth'
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  let session: Awaited<ReturnType<typeof requireProvider>>
-  try {
-    session = await requireProvider()
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const sessionOrError = await requireProviderApi()
+  if (sessionOrError instanceof Response) return sessionOrError
+  const session = sessionOrError
 
   const { id } = await params
 

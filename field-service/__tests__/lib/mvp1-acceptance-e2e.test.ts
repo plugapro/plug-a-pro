@@ -171,6 +171,7 @@ function makeTx() {
     },
     walletLedgerEntry: {
       findFirst: vi.fn().mockImplementation(async () => state.ledgerEntries.at(-1) ?? null),
+      findMany: vi.fn().mockImplementation(async () => state.ledgerEntries),
       create: vi.fn().mockImplementation(async (args: any) => {
         const entry = {
           id: `ledger-e2e-${state.ledgerEntries.length + 1}`,
@@ -185,6 +186,20 @@ function makeTx() {
         state.auditLogs.push(args.data)
         return { id: `audit-e2e-${state.auditLogs.length}`, ...args.data }
       }),
+    },
+    match: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockImplementation(async (args: any) => ({
+        id: 'match-e2e-1',
+        ...args.data,
+        quotes: [],
+      })),
+    },
+    quote: {
+      create: vi.fn().mockImplementation(async (args: any) => ({
+        id: 'quote-e2e-1',
+        ...args.data,
+      })),
     },
   }
 }

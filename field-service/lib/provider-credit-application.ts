@@ -150,18 +150,18 @@ function mapWalletError(error: unknown, currentCreditBalance?: number): never {
   throw error
 }
 
-async function findExistingApplicationTransaction(
+async function findExistingApplicationTransactions(
   tx: CreditApplicationTx,
   params: { leadId: string; providerId: string },
 ) {
-  return tx.walletLedgerEntry.findFirst({
+  return tx.walletLedgerEntry.findMany({
     where: {
       providerId: params.providerId,
       entryType: 'LEAD_UNLOCK_DEBIT',
       referenceType: { in: [CREDIT_APPLICATION_REFERENCE_TYPE, TEST_CREDIT_APPLICATION_REFERENCE_TYPE] },
       referenceId: params.leadId,
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: 'asc' },
   })
 }
 
@@ -173,22 +173,27 @@ async function buildAlreadyAppliedResult(
     leadUnlock: LeadUnlock
   },
 ): Promise<ProviderCreditApplicationResult> {
-  const [wallet, ledgerEntry] = await Promise.all([
+  const [wallet, ledgerEntries] = await Promise.all([
     tx.providerWallet.findUnique({
       where: { providerId: params.providerId },
       select: { paidCreditBalance: true, promoCreditBalance: true },
     }),
-    findExistingApplicationTransaction(tx, params),
+    findExistingApplicationTransactions(tx, params),
   ])
-  if (!wallet && !ledgerEntry) {
+  const latestEntry = ledgerEntries.at(-1) ?? null
+  if (!wallet && ledgerEntries.length === 0) {
     throw new ProviderCreditApplicationError(
       'WALLET_MISSING',
       'Provider wallet not found during idempotent replay.',
       0,
     )
   }
-  const paidCreditBalance = ledgerEntry?.balanceAfterPaidCredits ?? wallet?.paidCreditBalance ?? 0
-  const promoCreditBalance = ledgerEntry?.balanceAfterPromoCredits ?? wallet?.promoCreditBalance ?? 0
+  const paidCreditBalance = latestEntry?.balanceAfterPaidCredits ?? wallet?.paidCreditBalance ?? 0
+  const promoCreditBalance = latestEntry?.balanceAfterPromoCredits ?? wallet?.promoCreditBalance ?? 0
+
+  // For mixed-split deductions the latest ledger entry holds the correct post-deduction
+  // balance snapshot. Use it as the authoritative creditTransactionId.
+  const creditTransactionId = latestEntry?.id ?? null
 
   return {
     ok: true,
@@ -199,7 +204,7 @@ async function buildAlreadyAppliedResult(
     currentCreditBalance: paidCreditBalance + promoCreditBalance,
     paidCreditBalance,
     promoCreditBalance,
-    creditTransactionId: ledgerEntry?.id ?? null,
+    creditTransactionId,
     leadUnlockId: params.leadUnlock.id,
     alreadyApplied: true,
     providerMessage: creditAppliedMessage({
@@ -226,17 +231,28 @@ async function createRecoveredUnlockForExistingTransaction(
         isTestUser: boolean
       }
     }
-    ledgerEntry: WalletLedgerEntry
+    ledgerEntries: WalletLedgerEntry[]
   },
 ) {
   const isTestApplication = params.lead.jobRequest.isTestRequest || params.lead.provider.isTestUser
+  // Reconstruct the full credit-type breakdown from all ledger entries so that
+  // mixed-split deductions (promo + paid in the same transaction) are reflected
+  // correctly rather than showing only the first entry's credit type.
+  const paidEntry = params.ledgerEntries.find((e) => e.creditType === 'PAID')
+  const promoEntry = params.ledgerEntries.find((e) => e.creditType === 'PROMO')
+  const fullBreakdown: Record<string, number> = {}
+  if (paidEntry) fullBreakdown.paid = paidEntry.amountCredits
+  if (promoEntry) fullBreakdown.promo = promoEntry.amountCredits
+
+  const latestEntry = params.ledgerEntries.at(-1)
+
   const unlock = await tx.leadUnlock.create({
     data: {
       leadId: params.lead.id,
       providerId: params.lead.providerId,
       matchId: null,
       creditsCharged: LEAD_UNLOCK_COST_CREDITS,
-      creditTypeBreakdown: toJson({ [params.ledgerEntry.creditType.toLowerCase()]: params.ledgerEntry.amountCredits }),
+      creditTypeBreakdown: toJson(fullBreakdown),
       isTestUnlock: isTestApplication,
       cohortName: params.lead.jobRequest.cohortName,
       status: 'UNLOCKED',
@@ -255,7 +271,7 @@ async function createRecoveredUnlockForExistingTransaction(
     throw new ProviderCreditApplicationError(
       'CONCURRENT_DEDUCTION',
       'Lead changed while replaying an existing provider credit transaction.',
-      Math.max(0, params.ledgerEntry.balanceAfterPaidCredits + params.ledgerEntry.balanceAfterPromoCredits),
+      Math.max(0, (latestEntry?.balanceAfterPaidCredits ?? 0) + (latestEntry?.balanceAfterPromoCredits ?? 0)),
     )
   }
 
@@ -419,15 +435,15 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
     throw new ProviderCreditApplicationError('LEAD_NOT_ACCEPTED', 'This lead is not ready for credit application.')
   }
 
-  const existingApplicationTransaction = await findExistingApplicationTransaction(tx, {
+  const existingApplicationTransactions = await findExistingApplicationTransactions(tx, {
     leadId: lead.id,
     providerId: params.providerId,
   })
 
-  if (existingApplicationTransaction) {
+  if (existingApplicationTransactions.length > 0) {
     const recoveredUnlock = await createRecoveredUnlockForExistingTransaction(tx, {
       lead,
-      ledgerEntry: existingApplicationTransaction,
+      ledgerEntries: existingApplicationTransactions,
     })
     const result = await buildAlreadyAppliedResult(tx, {
       leadId: lead.id,

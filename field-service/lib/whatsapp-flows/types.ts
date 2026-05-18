@@ -114,8 +114,9 @@ export type FlowStep =
   | 'pj_running_late'
   | 'pj_dispute_collect'
   | 'pj_invoice'
-  | 'pj_topup_select_amount'  // package list: R100 / R200 / R500
-  | 'pj_topup_eft_created'    // EFT details delivered, intent created
+  | 'pj_topup_select_amount'   // package list: R100 / R200 / R500
+  | 'pj_topup_eft_created'    // legacy — EFT details delivered (fallback only)
+  | 'pj_topup_payat_created'  // Pay@ link sent, awaiting retailer payment
   // Provider post-accept location prompt
   | 'post_accept_location_prompt'
   // Terminal

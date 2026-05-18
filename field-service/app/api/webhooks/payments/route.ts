@@ -11,6 +11,7 @@ import {
 } from '@/lib/payments'
 import { sendBookingConfirmation } from '@/lib/whatsapp'
 import { db } from '@/lib/db'
+import { getCorrelationId } from '@/lib/correlation'
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -21,6 +22,8 @@ export async function POST(request: NextRequest) {
     ''
 
   const reqId = crypto.randomUUID().slice(0, 8)
+  const correlationId = await getCorrelationId()
+  console.log(JSON.stringify({ timestamp: new Date().toISOString(), correlationId, event: 'webhook_received', path: request.url }))
 
   // Verify webhook authenticity
   if (!verifyWebhookSignature(rawBody, signature)) {

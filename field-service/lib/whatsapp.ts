@@ -1,3 +1,5 @@
+import 'server-only'
+
 // ─── Meta WhatsApp Cloud API client ──────────────────────────────────────────
 // Direct integration — no intermediary required.
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages
@@ -13,6 +15,14 @@ import { normaliseLocationDisplayName, normaliseLocationDisplayNames } from './l
 import { getPublicAppUrl } from './provider-credit-copy'
 import { maskPhone } from './support-diagnostics'
 import { assertNoRawUrlsInWhatsAppBody, ctaLabelFor } from './whatsapp-copy'
+
+if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'test') {
+  if (!process.env.WHATSAPP_APP_SECRET) {
+    throw new Error(
+      '[whatsapp] WHATSAPP_APP_SECRET is required but not set. Set it in your environment before starting the server.'
+    )
+  }
+}
 
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
@@ -1177,9 +1187,14 @@ export function verifyWebhookChallenge(
 ): string | null {
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN
   if (mode === 'subscribe' && token && verifyToken) {
-    const a = Buffer.from(token)
-    const b = Buffer.from(verifyToken)
-    if (a.length === b.length && timingSafeEqual(a, b)) return challenge
+    const bufA = Buffer.from(token)
+    const bufB = Buffer.from(verifyToken)
+    if (bufA.length !== bufB.length) {
+      // Lengths differ — fail but avoid early exit to prevent timing oracle
+      timingSafeEqual(bufA, Buffer.alloc(bufA.length))
+      return null
+    }
+    if (timingSafeEqual(bufA, bufB)) return challenge
   }
   return null
 }

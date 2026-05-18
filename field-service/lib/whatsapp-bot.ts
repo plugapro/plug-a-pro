@@ -236,6 +236,11 @@ function maskedPhone(phone: string) {
   return phone.length <= 4 ? '***' : `***${phone.slice(-4)}`
 }
 
+function truncateField(value: string | null | undefined, maxLen: number): string {
+  if (!value) return ''
+  return value.length > maxLen ? value.slice(0, maxLen - 1) + '…' : value
+}
+
 function hasActiveFlow(flow: FlowName, step: FlowStep) {
   return ACTIVE_FLOW_NAMES.includes(flow) && step !== 'welcome' && step !== 'done' && step !== 'cancelled'
 }
@@ -912,9 +917,9 @@ async function processInboundMessageUnlocked(
         phone,
         'Choose a top-up amount. Payment is collected at any Pick n Pay, Shoprite, or Checkers till. Credits are issued automatically once payment is confirmed.',
         [
-          { id: 'topup_payat_10000', title: 'R100 — 1 credit' },
-          { id: 'topup_payat_20000', title: 'R200 — 2 credits' },
-          { id: 'topup_payat_50000', title: 'R500 — 5 credits' },
+          { id: 'topup_payat_10000', title: 'R100 — 2 credits' },
+          { id: 'topup_payat_20000', title: 'R200 — 4 credits' },
+          { id: 'topup_payat_50000', title: 'R500 — 10 credits' },
         ],
       )
       return
@@ -2019,8 +2024,8 @@ export async function notifyProviderNewJob(params: {
       ].filter(Boolean).join(', ')
     : area
   const previewLines = [
-    `*${preview?.category ?? params.category}*${preview?.subcategory ? ` · ${preview.subcategory}` : ''}`,
-    `Area: ${previewArea}`,
+    `*${truncateField(preview?.category ?? params.category, 50)}*${preview?.subcategory ? ` · ${preview.subcategory}` : ''}`,
+    `Area: ${truncateField(previewArea, 60)}`,
     preview?.area?.region ? `Region: ${preview.area.region}` : null,
     preview?.urgency ? `Urgency: ${preview.urgency}` : null,
     (preview?.providerPreference ?? preview?.budgetPreference) ? `Matching preference: ${preferenceLabel(preview?.providerPreference ?? preview?.budgetPreference)}` : null,
@@ -2030,7 +2035,7 @@ export async function notifyProviderNewJob(params: {
         ? `Preferred time: before ${preview.requestedArrivalLatest.toLocaleString('en-ZA')}`
         : null,
     `Photos: ${preview?.attachments.length ?? 0} available`,
-    preview?.description ? `Issue: ${preview.description}` : null,
+    preview?.description ? `Issue: ${truncateField(preview.description, 200)}` : null,
   ].filter(Boolean).join('\n')
 
   await sendCtaUrl(
@@ -2154,7 +2159,7 @@ async function handleRescheduleFlow(
 
     await sendButtons(
       ctx.phone,
-      `🔄 *Reschedule Request*\n\n🔧 ${booking.match.jobRequest.category}\n\nWhy do you need to reschedule?`,
+      `🔄 *Reschedule Request*\n\n🔧 ${truncateField(booking.match.jobRequest.category, 50)}\n\nWhy do you need to reschedule?`,
       [
         { id: 'rs_personal', title: '👤 Personal reason' },
         { id: 'rs_work', title: '💼 Work conflict' },
@@ -2253,7 +2258,7 @@ async function handleCancelFlow(
   if (ctx.step === 'cancel_confirm') {
     await sendButtons(
       ctx.phone,
-      `❌ *Cancel Job Request*\n\n🔧 ${jobRequest.category}\n\nAre you sure you want to cancel this request?`,
+      `❌ *Cancel Job Request*\n\n🔧 ${truncateField(jobRequest.category, 50)}\n\nAre you sure you want to cancel this request?`,
       [
         { id: 'cancel_yes', title: '❌ Yes, Cancel' },
         { id: 'cancel_no', title: '← Keep Request' },
@@ -2269,7 +2274,7 @@ async function handleCancelFlow(
     })
     await sendText(
       ctx.phone,
-      `✅ Your ${jobRequest.category} job request has been cancelled.\n\nSend 'Hi' to submit a new request anytime. 👋`
+      `✅ Your ${truncateField(jobRequest.category, 50)} job request has been cancelled.\n\nSend 'Hi' to submit a new request anytime. 👋`
     )
     return { nextStep: 'done' }
   }
@@ -2491,7 +2496,7 @@ async function handleProviderJobFlow(
       const addr = req.address
       await sendButtons(
         ctx.phone,
-        `📋 *Your Active Job*\n\n${statusEmoji[j.status] ?? '📋'} ${req.category}\n📍 ${addr ? `${addr.street}, ${normaliseLocationDisplayName(addr.suburb)}` : 'See app'}\n${statusLabel[j.status] ?? j.status.replace(/_/g, ' ')}`,
+        `📋 *Your Active Job*\n\n${statusEmoji[j.status] ?? '📋'} ${truncateField(req.category, 50)}\n📍 ${addr ? `${addr.street}, ${truncateField(normaliseLocationDisplayName(addr.suburb), 60)}` : 'See app'}\n${statusLabel[j.status] ?? j.status.replace(/_/g, ' ')}`,
         [{ id: `view_job_${j.id}`, title: '📋 View Details' }]
       )
     } else {
@@ -2558,8 +2563,8 @@ async function handleProviderJobFlow(
 
   if (ctx.step === 'tech_job_view') {
     const addr = job.booking.match.jobRequest.address
-    const addrLabel = addr ? `${addr.street}, ${normaliseLocationDisplayName(addr.suburb)}` : 'Address in app'
-    const categoryLabel = job.booking.match.jobRequest.category
+    const addrLabel = addr ? `${addr.street}, ${truncateField(normaliseLocationDisplayName(addr.suburb), 60)}` : 'Address in app'
+    const categoryLabel = truncateField(job.booking.match.jobRequest.category, 50)
 
     await sendButtons(
       ctx.phone,
@@ -2678,7 +2683,7 @@ export async function sendQuoteToClient(params: {
   // buttons; the full quote URL is exposed via a sendCtaUrl follow-up below.
   await sendButtons(
     params.customerPhone,
-    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${params.description}_\n\nTap a button below to accept or decline, or open the full quote.`,
+    `💼 *Quote from ${params.providerName}*\n\n• Labour: R ${params.labourCost.toFixed(2)}${materialsLine}\n• *Total: R ${params.totalAmount.toFixed(2)}*${hoursLine}${validLine}\n\n📋 _${truncateField(params.description, 200)}_\n\nTap a button below to accept or decline, or open the full quote.`,
     [
       { id: `quote_accept_${params.quoteId}`, title: '✅ Accept Quote' },
       { id: `quote_decline_${params.quoteId}`, title: '❌ Decline' },
@@ -2729,7 +2734,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
     })
     await sendCtaUrl(
       result.provider.phone,
-      `✅ *Booking confirmed — ${result.category}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
+      `✅ *Booking confirmed — ${truncateField(result.category, 50)}*\n\nThe customer accepted your quote. The job is scheduled for *${dateStr}*.\n\nOpen the app to view full details and the customer's address.`,
       ctaLabelFor('view_job'),
       getPublicAppUrl('/technician')
     ).catch(() => {})
@@ -2745,7 +2750,7 @@ async function handleCustomerQuoteResponse(phone: string, buttonId: string): Pro
   } else {
     await sendText(
       result.provider.phone,
-      `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${result.category} quote. Your profile remains active and new leads will come through as they arise.`
+      `❌ *Quote not accepted*\n\nThe customer didn't proceed with your ${truncateField(result.category, 50)} quote. Your profile remains active and new leads will come through as they arise.`
     ).catch(() => {})
     await sendText(phone, `Got it — we've let the provider know. You're welcome to submit a new request whenever you're ready. Reply *Hi* to start.`)
   }
@@ -2783,7 +2788,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
   // Look up the lead via hold relationship
   const lead = await db.lead.findFirst({
     where: { assignmentHoldId: holdId },
-    select: { id: true, jobRequestId: true },
+    select: { id: true, jobRequestId: true, providerId: true },
   })
   if (!lead) {
     console.warn('[whatsapp-bot] accept: lead not found for hold', {
@@ -2850,6 +2855,20 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       console.warn('[whatsapp-bot] accept: provider not authorized for lead', {
         traceId, holdId, leadId: lead.id, providerId: provider.id, error_code: 'PROVIDER_NOT_AUTHORIZED_FOR_LEAD',
       })
+      await db.auditLog.create({
+        data: {
+          actorId: provider.id,
+          actorRole: 'PROVIDER',
+          action: 'CROSS_ACCOUNT_BUTTON_REPLAY',
+          entityType: 'Lead',
+          entityId: lead.id,
+          ipAddress: null,
+          userAgent: null,
+          before: null,
+          after: JSON.stringify({ claimingProviderId: provider.id, realOwnerId: lead.providerId }),
+          timestamp: new Date(),
+        },
+      }).catch((err) => console.error('[whatsapp-bot] security audit write failed:', err))
       await sendText(phone, "⚠️ This lead was not assigned to this provider number. Please use the WhatsApp number that received the lead.")
       return
     }
@@ -2958,7 +2977,7 @@ async function handleProviderLocationShare(
 
   const provider = await findProviderByWhatsAppPhone(phone, { id: true, name: true })
   if (!provider) {
-    console.warn('[whatsapp-bot] location-share: provider not found', { traceId, normalizedPhone: phone })
+    console.warn('[whatsapp-bot] location-share: provider not found', { traceId, normalizedPhone: maskedPhone(phone) })
     await sendText(phone, "We couldn't find your provider profile. Reply *Hi* to continue.")
     await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
     return
@@ -3206,6 +3225,22 @@ async function handleRfpLeadInterest(
   })
 
   if (!lead || lead.providerId !== providerId) {
+    if (lead && lead.providerId !== providerId) {
+      await db.auditLog.create({
+        data: {
+          actorId: providerId,
+          actorRole: 'PROVIDER',
+          action: 'CROSS_ACCOUNT_BUTTON_REPLAY',
+          entityType: 'Lead',
+          entityId: leadId,
+          ipAddress: null,
+          userAgent: null,
+          before: null,
+          after: JSON.stringify({ claimingProviderId: providerId, realOwnerId: lead.providerId }),
+          timestamp: new Date(),
+        },
+      }).catch((err) => console.error('[whatsapp-bot] security audit write failed:', err))
+    }
     await sendText(phone, '⚠️ This lead could not be found or is not assigned to your account.')
     return
   }
@@ -3802,6 +3837,12 @@ async function handleProviderOpportunityCapture(
       `Interest submitted.\n\nCall-out: ${data.providerOpportunityCallOutFeeText}\nArrival: ${data.providerOpportunityEstimatedArrivalAtIso ? new Date(data.providerOpportunityEstimatedArrivalAtIso).toLocaleString('en-ZA') : 'Saved'}\nRate: ${data.providerOpportunityNegotiable === false ? 'Fixed' : 'Negotiable'}${providerNote ? `\nNote: ${providerNote}` : ''}\n\nNo credits were used.\nWe'll notify you if the customer selects you.`,
     )
   } catch (err) {
+    const { ProviderOpportunityResponseError } = await import('./provider-opportunity-responses')
+    if (err instanceof ProviderOpportunityResponseError && err.code === 'INVALID_RESPONSE') {
+      await sendText(phone, 'This opportunity has already been actioned. No further response is needed.')
+      await saveConversation({ phone, flow: 'idle', step: 'welcome', data: {} })
+      return
+    }
     console.error('[whatsapp-bot] handleProviderOpportunityCapture failed', { leadId, providerId: provider.id, err })
     await sendText(phone, '⚠️ Something went wrong recording your interest. Please try again or reply *menu*.')
   }

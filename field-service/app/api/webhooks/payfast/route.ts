@@ -32,6 +32,7 @@ import {
 } from '@/lib/payfast'
 import { creditProviderWalletFromGatewayItn } from '@/lib/provider-credit-gateway-itn'
 import { createTraceId } from '@/lib/support-diagnostics'
+import { getCorrelationId } from '@/lib/correlation'
 
 // ─── Remote IP extraction ─────────────────────────────────────────────────────
 
@@ -182,6 +183,9 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  const correlationId = await getCorrelationId()
+  console.log(JSON.stringify({ timestamp: new Date().toISOString(), correlationId, event: 'webhook_received', path: request.url }))
+
   const remoteIp = getRemoteIp(request)
   const payload = await parseItnBody(request)
 

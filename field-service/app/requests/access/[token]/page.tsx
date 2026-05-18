@@ -45,7 +45,7 @@ async function selectShortlistProvider(formData: FormData) {
   }
 
   try {
-    await selectShortlistedProviderForRequest({ requestId, shortlistItemId })
+    await selectShortlistedProviderForRequest({ requestId, shortlistItemId, customerId: resolved.jobRequest.customerId })
   } catch {
     redirect(`/requests/access/${encodeURIComponent(token)}?selection=failed`)
   }
@@ -64,7 +64,7 @@ async function askForMoreShortlistOptions(formData: FormData) {
   }
 
   try {
-    await requestMoreShortlistOptions({ requestId })
+    await requestMoreShortlistOptions({ requestId, customerId: resolved.jobRequest.customerId })
   } catch {
     redirect(`/requests/access/${encodeURIComponent(token)}?selection=more-options-failed`)
   }
@@ -83,7 +83,7 @@ async function cancelRequestAction(formData: FormData) {
   }
 
   try {
-    await cancelRequestFromShortlist({ requestId })
+    await cancelRequestFromShortlist({ requestId, customerId: resolved.jobRequest.customerId })
   } catch {
     redirect(`/requests/access/${encodeURIComponent(token)}?selection=cancel-failed`)
   }

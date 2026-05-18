@@ -23,6 +23,11 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
+  const cronStart = Date.now()
+  const cronName = 'session-timeout'
+  console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
+
+  try {
   const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
   const LOCK_SENTINEL = new Date(0)
@@ -112,7 +117,14 @@ export async function GET(request: Request) {
   }
 
   console.log(`[cron/session-timeout:${reqId}]`, { found: expired.length, sent, skipped, errors })
-  return NextResponse.json({ found: expired.length, sent, skipped, errors })
+  const duration = Date.now() - cronStart
+  console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+  return NextResponse.json({ found: expired.length, sent, skipped, errors, durationMs: duration })
+  } catch (err) {
+    const duration = Date.now() - cronStart
+    console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
+    throw err
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

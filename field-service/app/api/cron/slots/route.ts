@@ -14,34 +14,47 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-  const staleJobs = await db.jobRequest.findMany({
-    where: {
-      status: 'OPEN',
-      createdAt: { lt: cutoff },
-    },
-    select: { id: true },
-  })
+  const cronStart = Date.now()
+  const cronName = 'slots'
+  console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
 
-  if (staleJobs.length === 0) {
-    console.log('[cron/slots] Expired 0 stale job requests')
-    return NextResponse.json({ expired: 0 })
-  }
+  try {
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    const staleJobs = await db.jobRequest.findMany({
+      where: {
+        status: 'OPEN',
+        createdAt: { lt: cutoff },
+      },
+      select: { id: true },
+    })
 
-  const result = await db.jobRequest.updateMany({
-    where: { id: { in: staleJobs.map((job) => job.id) } },
-    data: { status: 'EXPIRED' },
-  })
+    if (staleJobs.length === 0) {
+      console.log('[cron/slots] Expired 0 stale job requests')
+      const duration = Date.now() - cronStart
+      console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+      return NextResponse.json({ expired: 0, durationMs: duration })
+    }
 
-  await Promise.all(
-    staleJobs.map((job) =>
-      notifyExpiredJobParties({ jobRequestId: job.id }).catch((err) => {
-        console.error(`[cron/slots] Failed to notify parties for expired job ${job.id}:`, err)
-      })
+    const result = await db.jobRequest.updateMany({
+      where: { id: { in: staleJobs.map((job) => job.id) } },
+      data: { status: 'EXPIRED' },
+    })
+
+    await Promise.all(
+      staleJobs.map((job) =>
+        notifyExpiredJobParties({ jobRequestId: job.id }).catch((err) => {
+          console.error(`[cron/slots] Failed to notify parties for expired job ${job.id}:`, err)
+        })
+      )
     )
-  )
 
-  console.log(`[cron/slots] Expired ${result.count} stale job requests`)
-
-  return NextResponse.json({ expired: result.count })
+    console.log(`[cron/slots] Expired ${result.count} stale job requests`)
+    const duration = Date.now() - cronStart
+    console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+    return NextResponse.json({ expired: result.count, durationMs: duration })
+  } catch (err) {
+    const duration = Date.now() - cronStart
+    console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
+    throw err
+  }
 }

@@ -41,7 +41,7 @@ vi.mock('@/lib/provider-lead-access', () => ({
 }))
 
 vi.mock('@/lib/provider-credit-payment-intents', () => ({
-  createManualEftTopUpIntent: vi.fn(),
+  createPayatTopUpIntent: vi.fn(),
 }))
 
 vi.mock('@/lib/provider-wallet-notifications', () => ({
@@ -849,48 +849,24 @@ describe('handleProviderJourneyFlow', () => {
       expect(result.nextStep).toBe('pj_topup_select_amount')
     })
 
-    it('creates EFT intent and sends bank details when R100 is selected', async () => {
-      ;(paymentIntents.createManualEftTopUpIntent as ReturnType<typeof vi.fn>).mockResolvedValue({
-        intent: { id: 'intent-1', paymentMethod: 'MANUAL_EFT' },
-        instructions: {
-          amountFormatted: 'R100.00',
-          creditsToIssue: 2,
-          paymentReference: 'PAP-1234-ABCD',
-          expiresAt: new Date('2026-05-24T00:00:00Z'),
-          bankAccount: {
-            accountName: 'Plug A Pro',
-            bankName: 'Test Bank',
-            accountNumber: '123456789',
-            branchCode: '250655',
-            accountType: 'Business current',
-          },
-        },
+    it('creates Pay@ intent and sends CTA when R100 is selected', async () => {
+      ;(paymentIntents.createPayatTopUpIntent as ReturnType<typeof vi.fn>).mockResolvedValue({
+        intent: { id: 'intent-1', paymentMethod: 'PAYAT' },
+        payat: { paymentLink: 'https://pay.at/link/abc123' },
       })
 
       const result = await handleProviderJourneyFlow(
         mockCtx('pj_topup_select_amount', 'provider_topup_100'),
       )
 
-      expect(paymentIntents.createManualEftTopUpIntent).toHaveBeenCalledWith(
+      expect(paymentIntents.createPayatTopUpIntent).toHaveBeenCalledWith(
         expect.objectContaining({ providerId: 'prov_1', amountCents: 10_000 }),
       )
-      expect(wa.sendText).toHaveBeenCalledWith(
-        '+27711111111',
-        expect.stringContaining('PAP-1234-ABCD'),
-      )
-      expect(wa.sendText).toHaveBeenCalledWith(
-        '+27711111111',
-        expect.stringContaining('R100.00'),
-      )
-      expect(wa.sendText).toHaveBeenCalledWith(
-        '+27711111111',
-        expect.stringContaining('123456789'),
-      )
-      expect(result.nextStep).toBe('pj_topup_eft_created')
+      expect(result.nextStep).toBe('pj_topup_payat_created')
     })
 
-    it('sends error text and stays on amount step when intent creation fails', async () => {
-      ;(paymentIntents.createManualEftTopUpIntent as ReturnType<typeof vi.fn>).mockRejectedValue(
+    it('sends error text and stays on amount step when Pay@ intent creation fails', async () => {
+      ;(paymentIntents.createPayatTopUpIntent as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('Provider not found'),
       )
 

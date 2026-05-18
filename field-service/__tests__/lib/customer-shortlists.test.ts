@@ -294,6 +294,7 @@ describe('customer shortlists', () => {
         status: 'VIEWED',
         jobRequest: {
           id: 'request-1',
+          customerId: 'customer-1',
           category: 'plumbing',
           address: { suburb: 'Ruimsig' },
         },
@@ -398,6 +399,7 @@ describe('customer shortlists', () => {
     const result = await selectShortlistedProviderForRequest({
       requestId: 'request-1',
       shortlistItemId: 'item-1',
+      customerId: 'customer-1',
     })
 
     expect(result.selectedItem).toMatchObject({ id: 'item-1' })
@@ -469,6 +471,7 @@ describe('customer shortlists', () => {
       selectShortlistedProviderForRequest({
         requestId: 'request-1',
         shortlistItemId: 'item-1',
+        customerId: 'customer-1',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
   })
@@ -487,10 +490,12 @@ describe('customer shortlists', () => {
     await selectShortlistedProviderForRequest({
       requestId: 'request-1',
       shortlistItemId: 'item-1',
+      customerId: 'customer-1',
     })
     await selectShortlistedProviderForRequest({
       requestId: 'request-1',
       shortlistItemId: 'item-1',
+      customerId: 'customer-1',
     })
 
     expect(sendButtons).toHaveBeenCalledTimes(1)
@@ -513,6 +518,7 @@ describe('customer shortlists', () => {
     const result = await selectShortlistedProviderForRequest({
       requestId: 'request-1',
       shortlistItemId: 'item-1',
+      customerId: 'customer-1',
     })
 
     expect(result.notification).toMatchObject({ sent: false, reason: 'missing_provider_phone' })
@@ -550,6 +556,7 @@ describe('customer shortlists', () => {
     await selectShortlistedProviderForRequest({
       requestId: 'request-1',
       shortlistItemId: 'item-1',
+      customerId: 'customer-1',
     })
 
     const body =
@@ -573,6 +580,7 @@ describe('customer shortlists', () => {
       selectShortlistedProviderForRequest({
         requestId: 'request-1',
         shortlistItemId: 'item-1',
+        customerId: 'customer-1',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_SELECTION' })
     expect(sendButtons).not.toHaveBeenCalled()
@@ -850,6 +858,7 @@ describe('customer shortlists', () => {
       selectShortlistedProviderForRequest({
         requestId: 'request-1',
         shortlistItemId: 'item-1',
+        customerId: 'customer-1',
       }),
     ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
 
@@ -875,7 +884,7 @@ describe('customer shortlists', () => {
       async (fn: (tx: any) => Promise<unknown>) => fn(state.tx),
     )
 
-    const result = await cancelRequestFromShortlist({ requestId: 'request-1' })
+    const result = await cancelRequestFromShortlist({ requestId: 'request-1', customerId: 'customer-1' })
     expect(result).toEqual({ ok: true })
     expect(state.tx.providerShortlist.updateMany).toHaveBeenCalledWith({
       where: { requestId: 'request-1', status: 'PUBLISHED' },
@@ -905,13 +914,14 @@ describe('customer shortlists', () => {
   it('refuses cancellation once a provider is being confirmed', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValueOnce({
       id: 'request-1',
+      customerId: 'customer-1',
       status: 'PROVIDER_CONFIRMATION_PENDING',
       category: 'plumbing',
       customer: { phone: '+27222222222' },
       address: { suburb: 'Ruimsig', city: 'Johannesburg' },
     })
     await expect(
-      cancelRequestFromShortlist({ requestId: 'request-1' }),
+      cancelRequestFromShortlist({ requestId: 'request-1', customerId: 'customer-1' }),
     ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
   })
 
@@ -933,6 +943,7 @@ describe('customer shortlists', () => {
 
     const result = await requestMoreShortlistOptions({
       requestId: 'request-1',
+      customerId: 'customer-1',
     })
     expect(result).toEqual({ ok: true })
     expect(state.tx.providerShortlist.updateMany).toHaveBeenCalledWith({
@@ -951,13 +962,14 @@ describe('customer shortlists', () => {
   it('refuses ask-more when the request is not in SHORTLIST_READY', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValueOnce({
       id: 'request-1',
+      customerId: 'customer-1',
       status: 'MATCHING',
       category: 'plumbing',
       customer: { phone: '+27222222222' },
       address: { suburb: 'Ruimsig', city: 'Johannesburg' },
     })
     await expect(
-      requestMoreShortlistOptions({ requestId: 'request-1' }),
+      requestMoreShortlistOptions({ requestId: 'request-1', customerId: 'customer-1' }),
     ).rejects.toMatchObject({ code: 'REQUEST_NOT_AWAITING_SELECTION' })
   })
 
@@ -972,6 +984,7 @@ describe('customer shortlists', () => {
       jobRequest: {
         id: 'request-1',
         status: 'PROVIDER_CONFIRMATION_PENDING',
+        customerId: 'customer-1',
         expiresAt: new Date(Date.now() + 60_000),
         selectedProviderId: 'provider-1',
         selectedLeadInviteId: 'lead-1',
@@ -1834,6 +1847,7 @@ describe('customer shortlists', () => {
   it('cancels INTERESTED leads when request is cancelled from shortlist', async () => {
     mockDb.jobRequest.findUnique.mockResolvedValueOnce({
       id: 'request-1',
+      customerId: 'customer-1',
       status: 'SHORTLIST_READY',
     })
     state.tx = {
@@ -1844,7 +1858,7 @@ describe('customer shortlists', () => {
       auditLog: { ...state.tx.auditLog, create: vi.fn().mockResolvedValue({ id: 'audit-cancel' }) },
     }
 
-    await cancelRequestFromShortlist({ requestId: 'request-1' })
+    await cancelRequestFromShortlist({ requestId: 'request-1', customerId: 'customer-1' })
 
     const leadUpdateCall = state.tx.lead.updateMany.mock.calls[0]?.[0]
     expect(leadUpdateCall?.where?.status?.in).toContain('INTERESTED')

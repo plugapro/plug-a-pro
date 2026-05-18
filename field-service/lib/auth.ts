@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { cache } from 'react'
 import type { Role } from '@prisma/client'
 import { checkWorkerPortalAccess } from './worker-provider-auth'
+import { unauthorizedResponse, forbiddenResponse } from './api-auth'
 
 // ─── Role definitions ─────────────────────────────────────────────────────────
 
@@ -188,6 +189,45 @@ export async function requireRole(required: Role[]): Promise<AdminAuthUser> {
     forbidden()
   }
   return actor
+}
+
+/**
+ * Call in admin API route handlers that require a specific DB-backed AdminUser role.
+ * Returns a 401/403 Response on failure instead of redirecting.
+ */
+export async function requireRoleApi(required: Role[]): Promise<Response | AdminAuthUser> {
+  const actor = await getAdminActor()
+  if (!actor) return unauthorizedResponse()
+  if (!meetsRoleRequirement(actor.adminRole, required)) return forbiddenResponse()
+  return actor
+}
+
+/** Call in provider API route handlers — returns 401 JSON if not an active provider. */
+export async function requireProviderApi(): Promise<Response | AuthUser> {
+  const session = await getSession()
+  if (!session) return unauthorizedResponse()
+  if (session.role !== 'provider') return unauthorizedResponse()
+
+  const { db } = await import('./db')
+  const provider = await db.provider.findFirst({
+    where: {
+      OR: [
+        { userId: session.id },
+        ...(session.providerId ? [{ id: session.providerId }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      userId: true,
+      phone: true,
+      active: true,
+      verified: true,
+      status: true,
+    },
+  }).catch(() => null)
+
+  if (!checkWorkerPortalAccess(provider).ok) return forbiddenResponse()
+  return session
 }
 
 /** Call in provider route layouts — redirects to /provider-sign-in if not provider */

@@ -55,7 +55,7 @@ describe('GET /api/cron/slots', () => {
 
     const res = await GET(makeRequest())
 
-    await expect(res.json()).resolves.toEqual({ expired: 0 })
+    await expect(res.json()).resolves.toMatchObject({ expired: 0 })
     expect(mockUpdateMany).not.toHaveBeenCalled()
     expect(mockNotifyExpiredJobParties).not.toHaveBeenCalled()
   })
@@ -66,7 +66,7 @@ describe('GET /api/cron/slots', () => {
 
     const res = await GET(makeRequest())
 
-    await expect(res.json()).resolves.toEqual({ expired: 2 })
+    await expect(res.json()).resolves.toMatchObject({ expired: 2 })
     expect(mockUpdateMany).toHaveBeenCalledWith({
       where: { id: { in: ['job-1', 'job-2'] } },
       data: { status: 'EXPIRED' },

@@ -7,8 +7,14 @@ import {
   deleteLocationNode,
   LocationNodeInUseError,
 } from '@/lib/location-nodes'
+import { verifyRequestOrigin } from '@/lib/csrf'
+import { apiError } from '@/lib/api-response'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!verifyRequestOrigin(req, [])) {
+    return apiError('FORBIDDEN', 'Origin not allowed', 403)
+  }
+
   try {
     await requireAdmin()
   } catch {
@@ -36,6 +42,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!verifyRequestOrigin(req, [])) {
+    return apiError('FORBIDDEN', 'Origin not allowed', 403)
+  }
+
   try {
     await requireAdmin()
   } catch {

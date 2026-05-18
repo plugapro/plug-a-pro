@@ -1136,9 +1136,11 @@ export async function shortlistProviderForCustomerReview(params: {
       data: { updatedAt: new Date() },
     })
 
-    const existingItemCount = await tx.providerShortlistItem.count({
+    const maxRankResult = await tx.providerShortlistItem.aggregate({
       where: { shortlistId: shortlist.id },
+      _max: { customerPreferenceRank: true },
     })
+    const nextRank = (maxRankResult._max.customerPreferenceRank ?? 0) + 1
 
     const duplicateItem = await tx.providerShortlistItem.findFirst({
       where: { shortlistId: shortlist.id, providerId: params.providerId },
@@ -1162,7 +1164,7 @@ export async function shortlistProviderForCustomerReview(params: {
           leadInviteId: lead.id,
           providerId: params.providerId,
           rank: rankedCandidate.rankedPosition ?? 999,
-          customerPreferenceRank: existingItemCount + 1,
+          customerPreferenceRank: nextRank,
           matchScore: rankedCandidate.score ?? null,
         },
         update: {},
@@ -1510,7 +1512,7 @@ export async function sendRequestToShortlistedProviders(params: {
             notifiedAt: null,
             notificationAttemptedAt: new Date(),
           },
-        }).catch(() => undefined)
+        }).catch((err) => console.error('[review-first] audit write failed:', err))
         failedCount += 1
         console.error('[review-first.send] provider_whatsapp_failed', {
           requestId: request.id,
@@ -1537,7 +1539,7 @@ export async function sendRequestToShortlistedProviders(params: {
           notifiedAt: null,
           notificationAttemptedAt: new Date(),
         },
-      }).catch(() => undefined)
+      }).catch((err) => console.error('[review-first] audit write failed:', err))
       failedCount += 1
       console.error('[review-first.send] provider_lead_url_missing', {
         requestId: request.id,
@@ -1559,7 +1561,7 @@ export async function sendRequestToShortlistedProviders(params: {
           templateName: 'interactive:rfp_send_failed',
           metadata: { requestId: request.id, failedCount },
         },
-      ).catch(() => undefined)
+      ).catch(() => undefined) // notification send — silent failure is intentional; error is surfaced via thrown ReviewFirstError below
     }
     throw new ReviewFirstError(
       'PROVIDER_NOTIFICATION_FAILED',
@@ -1598,7 +1600,7 @@ export async function sendRequestToShortlistedProviders(params: {
         templateName: 'interactive:rfp_sent_to_shortlist',
         metadata: { requestId: request.id, count: notifiedCount, pendingCount, failedCount, preferenceRank: prefRank },
       },
-    ).catch(() => undefined)
+    ).catch(() => undefined) // notification send — best-effort customer status update; silent failure is intentional
   }
 
   return {
@@ -1750,7 +1752,7 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
           status: 'PENDING_VALIDATION',
         },
         data: { status: 'MATCHING' },
-      }).catch(() => undefined)
+      }).catch((err) => console.error('[review-first] audit write failed:', err))
 
       const lead = await db.lead.findUnique({
         where: { id: leadId },
@@ -2035,7 +2037,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
         templateName: 'interactive:rfp_none_responded',
         metadata: { requestId: request.id, total },
       },
-    ).catch(() => undefined)
+    ).catch(() => undefined) // notification send — best-effort customer summary; silent failure is intentional
     return
   }
 
@@ -2064,7 +2066,7 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
       templateName: 'interactive:rfp_response_summary',
       metadata: { requestId: request.id, responded, total, available: available.length },
     },
-  ).catch(() => undefined)
+  ).catch(() => undefined) // notification send — best-effort response summary; silent failure is intentional
 
   if (available.length > 0) {
     const url = await getJobRequestAccessUrl(requestId, 'shortlist').catch(() => null)
@@ -2079,13 +2081,32 @@ export async function notifyCustomerRfpResponseSummary(requestId: string) {
           templateName: 'interactive:rfp_response_summary_cta',
           metadata: { requestId: request.id, responded, total },
         },
-      ).catch(() => undefined)
+      ).catch(() => undefined) // notification send — best-effort CTA link; silent failure is intentional
     }
   }
 }
 
 export async function expireRfpInvitations() {
   const now = new Date()
+
+  // Fix 1: Watchdog — expire leads stuck in SEND_PENDING (crash between status write and WhatsApp API call)
+  const stuckSendPending = await db.lead.findMany({
+    where: {
+      status: 'SEND_PENDING',
+      notificationAttemptedAt: { lt: new Date(Date.now() - 15 * 60 * 1000) },
+    },
+    select: { id: true, jobRequestId: true },
+  })
+  for (const lead of stuckSendPending) {
+    const updated = await db.lead.updateMany({
+      where: { id: lead.id, status: 'SEND_PENDING' },
+      data: { status: 'SUPERSEDED' },
+    })
+    if (updated.count === 1) {
+      console.warn(`[review-first] SEND_PENDING watchdog: expired lead ${lead.id} for request ${lead.jobRequestId}`)
+    }
+  }
+
   const expired = await db.lead.findMany({
     where: {
       assignmentHoldId: null,
@@ -2118,7 +2139,7 @@ export async function expireRfpInvitations() {
 
   const requestIds = Array.from(new Set(expired.map((lead) => lead.jobRequestId)))
   for (const requestId of requestIds) {
-    await notifyCustomerRfpResponseSummary(requestId).catch(() => undefined)
+    await notifyCustomerRfpResponseSummary(requestId).catch(() => undefined) // notification send — best-effort expiry summary; silent failure is intentional
   }
 
   // Cascade to next ranked provider for any expired RFP leads
@@ -2128,6 +2149,18 @@ export async function expireRfpInvitations() {
       select: { customerPreferenceRank: true },
     }).catch(() => null)
     if (shortlistItem?.customerPreferenceRank != null) {
+      // Fix 3: Guard against concurrent cron double-cascade — only proceed if this run owns the EXPIRED transition
+      const owned = await db.lead.updateMany({
+        where: { id: expiredLead.id, status: 'EXPIRED' },
+        data: { status: 'EXPIRED' }, // no-op write to claim ownership via predicate
+      })
+      if (owned.count !== 1) {
+        console.warn('[review-first.expire] concurrent cascade guard: skipping double-cascade', {
+          leadId: expiredLead.id,
+          requestId: expiredLead.jobRequestId,
+        })
+        continue
+      }
       await cascadeToNextShortlistedProvider({
         requestId: expiredLead.jobRequestId,
         declinedLeadId: expiredLead.id,
@@ -2187,10 +2220,15 @@ export async function expireRfpInvitations() {
       select: { customerPreferenceRank: true },
     }).catch(() => null)
     if (shortlistItem?.customerPreferenceRank != null) {
-      await db.lead.updateMany({
+      // Fix 2: Atomic guard — only cascade if this run successfully claimed the DECLINED transition
+      const declined = await db.lead.updateMany({
         where: { id: lead.id, status: 'SEND_FAILED' },
         data: { status: 'DECLINED', declinedAt: now },
       })
+      if (declined.count !== 1) {
+        console.warn(`[review-first] stuckSendFailed: lead ${lead.id} already actioned concurrently`)
+        continue
+      }
       await cascadeToNextShortlistedProvider({
         requestId: lead.jobRequestId,
         declinedLeadId: lead.id,
@@ -2201,6 +2239,20 @@ export async function expireRfpInvitations() {
           error: err instanceof Error ? err.message : String(err),
         })
       })
+    }
+  }
+
+  // Fix 4: Watchdog — alert on leads stuck in CREDIT_APPLIED post-crash (credit deducted, no unlock record)
+  const stuckCreditApplied = await db.lead.findMany({
+    where: {
+      status: 'CREDIT_APPLIED',
+      updatedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) },
+    },
+    include: { unlock: true },
+  })
+  for (const lead of stuckCreditApplied) {
+    if (!lead.unlock) {
+      console.error(`[review-first] OPS_REVIEW: Lead ${lead.id} stuck in CREDIT_APPLIED with no LeadUnlock — manual review required`)
     }
   }
 
@@ -2266,7 +2318,7 @@ export async function cascadeToNextShortlistedProvider(params: {
           templateName: 'interactive:rfp_all_providers_exhausted',
           metadata: { requestId: params.requestId, declinedRank: declinedItem.customerPreferenceRank },
         },
-      ).catch(() => undefined)
+      ).catch(() => undefined) // notification send — best-effort exhaustion alert; silent failure is intentional
     }
     await db.jobRequest.update({
       where: { id: params.requestId },
@@ -2284,7 +2336,7 @@ export async function cascadeToNextShortlistedProvider(params: {
           declinedRank: declinedItem.customerPreferenceRank,
         },
       },
-    }).catch(() => undefined)
+    }).catch((err) => console.error('[review-first] audit write failed:', err))
     return { cascaded: false, wasRfpLead: true }
   }
 
@@ -2396,7 +2448,7 @@ export async function cascadeToNextShortlistedProvider(params: {
         ],
         undefined,
         { templateName: 'rfp:job_lead_actions', metadata: { requestId: request.id, leadId, providerId: provider.id } },
-      ).catch(() => undefined)
+      ).catch(() => undefined) // notification send — best-effort provider cascade invite; silent failure is intentional
     }
 
     if (request.customer?.phone) {
@@ -2408,7 +2460,7 @@ export async function cascadeToNextShortlistedProvider(params: {
           templateName: 'interactive:rfp_cascade_next_provider',
           metadata: { requestId: request.id, declinedRank, nextRank, nextLeadId: leadId },
         },
-      ).catch(() => undefined)
+      ).catch(() => undefined) // notification send — best-effort cascade status update to customer; silent failure is intentional
     }
 
     console.info('[review-first.cascade] sent_to_next_provider', {
@@ -2437,7 +2489,7 @@ export async function cascadeToNextShortlistedProvider(params: {
           requestId: params.requestId,
         },
       },
-    }).catch(() => undefined)
+    }).catch((err) => console.error('[review-first] audit write failed:', err))
 
     return { cascaded: true, nextLeadId: leadId, preferenceRank: nextRank, wasRfpLead: true }
   }
@@ -2445,7 +2497,7 @@ export async function cascadeToNextShortlistedProvider(params: {
   await db.lead.update({
     where: { id: leadId },
     data: { status: 'SEND_FAILED', notificationAttemptedAt: new Date() },
-  }).catch(() => undefined)
+  }).catch((err) => console.error('[review-first] audit write failed:', err))
 
   console.warn('[review-first.cascade] cascade_send_failed', {
     requestId: params.requestId,

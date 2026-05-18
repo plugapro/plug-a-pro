@@ -21,21 +21,31 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const reqId = Math.random().toString(36).slice(2, 10)
-
-  // Gate: disabled flag routes all applications to manual admin review only.
-  const autoApproveEnabled = await isEnabled('provider.onboarding.auto_approve')
-  if (!autoApproveEnabled) {
-    console.log(`[cron/provider-auto-approve:${reqId}] skipped — feature flag provider.onboarding.auto_approve is disabled; applications require manual admin review`)
-    return NextResponse.json({ ok: true, skipped: true, reason: 'FEATURE_FLAG_DISABLED' })
-  }
+  const cronStart = Date.now()
+  const cronName = 'provider-auto-approve'
+  console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
 
   try {
+    const reqId = Math.random().toString(36).slice(2, 10)
+
+    // Gate: disabled flag routes all applications to manual admin review only.
+    const autoApproveEnabled = await isEnabled('provider.onboarding.auto_approve')
+    if (!autoApproveEnabled) {
+      console.log(`[cron/provider-auto-approve:${reqId}] skipped — feature flag provider.onboarding.auto_approve is disabled; applications require manual admin review`)
+      const duration = Date.now() - cronStart
+      console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+      return NextResponse.json({ ok: true, skipped: true, reason: 'FEATURE_FLAG_DISABLED', durationMs: duration })
+    }
+
     const result = await autoApproveProviderApplications(db, { runId: reqId })
     console.log(`[cron/provider-auto-approve:${reqId}]`, result)
-    return NextResponse.json({ ok: true, ...result })
+    const duration = Date.now() - cronStart
+    console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+    return NextResponse.json({ ok: true, ...result, durationMs: duration })
   } catch (err) {
-    console.error(`[cron/provider-auto-approve:${reqId}] Fatal error:`, err)
+    const duration = Date.now() - cronStart
+    console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
+    console.error(`[cron/provider-auto-approve] Fatal error:`, err)
     return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 })
   }
 }

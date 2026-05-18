@@ -125,8 +125,8 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
   }
 
   if (input.idempotencyKey) {
-    const existingResponse = await db.providerLeadResponse.findUnique({
-      where: { idempotencyKey: input.idempotencyKey },
+    const existingResponse = await db.providerLeadResponse.findFirst({
+      where: { idempotencyKey: input.idempotencyKey, providerId: input.providerId },
     })
     if (existingResponse) {
       return { response: existingResponse, creditsDeducted: 0 }

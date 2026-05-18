@@ -10,10 +10,20 @@
 //   3. Default: false
 //
 // DB lookups are cached per process for 60 s to avoid per-request Prisma calls.
+//
+// All valid flag keys are defined in lib/feature-flags-registry.ts.
+// isEnabled() / isEnabledSync() accept FeatureFlagKey for compile-time validation.
 
 import { db } from './db'
+import type { FeatureFlagKey } from './feature-flags-registry'
+
+// Re-export so callers can import from one place.
+export type { FeatureFlagKey } from './feature-flags-registry'
+export { FEATURE_FLAGS_REGISTRY } from './feature-flags-registry'
 
 // ─── Flag keys ────────────────────────────────────────────────────────────────
+// Legacy constant map — kept for backward compatibility with existing call sites.
+// Prefer using string literals that match FeatureFlagKey going forward.
 
 export const FLAG_KEYS = {
   OPS_CLOSE_OUT:       'ops.v2.closeOut',
@@ -44,7 +54,7 @@ export const FLAG_KEYS = {
   // so the hook endpoint can refuse to deliver if the rollout needs an
   // immediate pause without a dashboard round-trip.
   AUTH_OTP_WHATSAPP: 'auth.otp.whatsapp',
-} as const
+} as const satisfies Record<string, FeatureFlagKey>
 
 export type FlagKey = typeof FLAG_KEYS[keyof typeof FLAG_KEYS]
 
@@ -156,7 +166,7 @@ export function _resetEnvFlagsWarnedForTests(): void {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function isEnabled(
-  key: string,
+  key: FeatureFlagKey,
   ctx?: { userId?: string }
 ): Promise<boolean> {
   // 1 — DB
@@ -177,7 +187,7 @@ export async function isEnabled(
 }
 
 /** Synchronous check — only reads env (no DB). Use in non-async contexts. */
-export function isEnabledSync(key: string): boolean {
+export function isEnabledSync(key: FeatureFlagKey): boolean {
   const envFlags = getEnvFlags()
   return key in envFlags ? Boolean(envFlags[key]) : false
 }

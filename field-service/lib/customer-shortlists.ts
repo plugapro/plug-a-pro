@@ -491,6 +491,7 @@ export async function getCustomerShortlistForRequest(requestId: string) {
 export async function selectShortlistedProviderForRequest(params: {
   requestId: string
   shortlistItemId: string
+  customerId: string
 }) {
   const requestId = params.requestId?.trim()
   const shortlistItemId = params.shortlistItemId?.trim()
@@ -530,6 +531,12 @@ export async function selectShortlistedProviderForRequest(params: {
     throw new CustomerShortlistError(
       'ITEM_NOT_FOUND',
       'Shortlist provider was not found.',
+    )
+  }
+  if (item.leadInvite.jobRequest.customerId !== params.customerId) {
+    throw new CustomerShortlistError(
+      'FORBIDDEN',
+      'Not allowed to select a provider for this request.',
     )
   }
   if (
@@ -679,15 +686,22 @@ export async function selectShortlistedProviderForRequest(params: {
  */
 export async function cancelRequestFromShortlist(params: {
   requestId: string
+  customerId: string
 }) {
   const request = await db.jobRequest.findUnique({
     where: { id: params.requestId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, customerId: true },
   })
   if (!request) {
     throw new CustomerShortlistError(
       'REQUEST_NOT_FOUND',
       'Job request not found.',
+    )
+  }
+  if (request.customerId !== params.customerId) {
+    throw new CustomerShortlistError(
+      'FORBIDDEN',
+      'Not allowed to cancel this request.',
     )
   }
   // Only allow cancellation while the request is awaiting customer action.
@@ -755,12 +769,14 @@ export async function cancelRequestFromShortlist(params: {
  */
 export async function requestMoreShortlistOptions(params: {
   requestId: string
+  customerId: string
 }) {
   const request = await db.jobRequest.findUnique({
     where: { id: params.requestId },
     select: {
       id: true,
       status: true,
+      customerId: true,
       customer: { select: { phone: true } },
     },
   })
@@ -768,6 +784,12 @@ export async function requestMoreShortlistOptions(params: {
     throw new CustomerShortlistError(
       'REQUEST_NOT_FOUND',
       'Job request not found.',
+    )
+  }
+  if (request.customerId !== params.customerId) {
+    throw new CustomerShortlistError(
+      'FORBIDDEN',
+      'Not allowed to modify this request.',
     )
   }
   if (request.status !== 'SHORTLIST_READY') {
@@ -1002,6 +1024,7 @@ export async function declineSelectedProviderJob(params: {
         select: {
           id: true,
           status: true,
+          customerId: true,
           expiresAt: true,
           selectedProviderId: true,
           selectedLeadInviteId: true,
@@ -1298,6 +1321,7 @@ export async function declineSelectedProviderJob(params: {
       // Trigger rematch by calling requestMoreShortlistOptions
       await requestMoreShortlistOptions({
         requestId: lead.jobRequestId,
+        customerId: lead.jobRequest.customerId,
       }).catch((err: unknown) => {
         console.error('[shortlist-exhaustion] rematch trigger failed', {
           requestId: lead.jobRequestId,

@@ -943,7 +943,7 @@ describe('registration flow — numbered bulk skill selection', () => {
       })
     )
 
-    const textCalls = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
+    const textCalls: string[] = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
     expect(textCalls.some((t) => t.includes('not available on Plug A Pro'))).toBe(true)
     expect(result.nextStep).toBe('reg_collect_skills_more')
     expect(result.nextData?.skills).not.toContain('Pest Control')
@@ -957,7 +957,7 @@ describe('registration flow — numbered bulk skill selection', () => {
       })
     )
 
-    const textCalls = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
+    const textCalls: string[] = (wa.sendText as any).mock.calls.map((c: any[]) => c[1] as string)
     expect(textCalls.some((t) => t.includes('not available on Plug A Pro'))).toBe(true)
     expect(result.nextData?.skills).toContain('Plumbing')
     expect(result.nextData?.skills).not.toContain('Electrical')

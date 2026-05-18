@@ -9,17 +9,31 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const audit = await auditLocationReferenceData(db)
-  if (!audit.ok) {
-    console.error('[cron/location-audit] reference data audit failed', audit)
-    await notifyOps(audit.failures).catch((error) => {
-      console.error('[cron/location-audit] ops notification failed', error)
-    })
-    return NextResponse.json(audit, { status: 500 })
-  }
+  const cronStart = Date.now()
+  const cronName = 'location-audit'
+  console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
 
-  console.log('[cron/location-audit] ok', audit.counts)
-  return NextResponse.json(audit)
+  try {
+    const audit = await auditLocationReferenceData(db)
+    if (!audit.ok) {
+      console.error('[cron/location-audit] reference data audit failed', audit)
+      await notifyOps(audit.failures).catch((error) => {
+        console.error('[cron/location-audit] ops notification failed', error)
+      })
+      const duration = Date.now() - cronStart
+      console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: 'audit_failed', timestamp: new Date().toISOString() }))
+      return NextResponse.json(audit, { status: 500 })
+    }
+
+    console.log('[cron/location-audit] ok', audit.counts)
+    const duration = Date.now() - cronStart
+    console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+    return NextResponse.json({ ...audit, durationMs: duration })
+  } catch (err) {
+    const duration = Date.now() - cronStart
+    console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
+    throw err
+  }
 }
 
 async function notifyOps(failures: string[]) {

@@ -100,6 +100,20 @@ test.describe('authenticated', () => {
   })
 })
 
+// ─── Mobile viewport smoke ────────────────────────────────────────────────────
+// Verifies the customer home page loads correctly on a mobile viewport.
+// This test runs in both the chromium and Mobile Chrome projects so that any
+// desktop-only layout regression is caught alongside the mobile-first baseline.
+
+test.describe('mobile viewport', () => {
+  test('customer home page loads on mobile viewport', async ({ page }) => {
+    const response = await page.goto('/')
+    expect(response?.status()).toBeLessThan(400)
+    await expect(page.locator('text=An unexpected error occurred')).toHaveCount(0)
+    await expect(page.locator('text=Something went wrong on this page')).toHaveCount(0)
+  })
+})
+
 // ─── Pay@ sprint — unauthenticated route checks ───────────────────────────────
 // These tests run without signing in to verify auth gates and route inventory.
 // They use the `request` fixture (no browser) for API checks and the `page`

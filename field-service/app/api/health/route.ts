@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isEnabled, FLAG_KEYS } from '@/lib/flags'
 
 const COMMIT_SHA = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT_SHA ?? null
 const COMMIT_REF = process.env.VERCEL_GIT_COMMIT_REF ?? process.env.GIT_COMMIT_REF ?? null
@@ -36,23 +37,33 @@ export async function GET() {
     builtAt: BUILT_AT,
   }
 
-  const [dbResult, whatsappResult] = await Promise.allSettled([
+  const [dbResult, whatsappResult, otpFlagResult] = await Promise.allSettled([
     db.$queryRaw`SELECT 1`,
     probeWhatsApp(),
+    isEnabled(FLAG_KEYS.AUTH_OTP_WHATSAPP),
   ])
 
   const dbOk = dbResult.status === 'fulfilled'
   const whatsapp = whatsappResult.status === 'fulfilled' ? whatsappResult.value : 'error'
   const payments: 'ok' | 'unknown' = HAS_PAYMENT_CREDENTIALS ? 'ok' : 'unknown'
 
+  const auth = {
+    otp_whatsapp_flag: otpFlagResult.status === 'fulfilled'
+      ? (otpFlagResult.value ? 'enabled' : 'disabled')
+      : 'unknown',
+    supabase_env_complete: Boolean(
+      process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    ),
+  }
+
   if (dbOk) {
     return NextResponse.json(
-      { status: 'ok', db: 'ok', whatsapp, payments, timestamp, build },
+      { status: 'ok', db: 'ok', whatsapp, payments, auth, timestamp, build },
       { status: 200 },
     )
   }
   return NextResponse.json(
-    { status: 'degraded', db: 'error', whatsapp, payments, timestamp, build },
+    { status: 'degraded', db: 'error', whatsapp, payments, auth, timestamp, build },
     { status: 503 },
   )
 }

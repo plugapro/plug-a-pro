@@ -1,3 +1,5 @@
+import 'server-only'
+
 // ─── WhatsApp interactive message builders ────────────────────────────────────
 // Meta Cloud API supports:
 //   - Button messages: up to 3 quick-reply buttons

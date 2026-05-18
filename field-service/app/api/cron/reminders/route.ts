@@ -14,6 +14,11 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
+  const cronStart = Date.now()
+  const cronName = 'reminders'
+  console.log(JSON.stringify({ event: 'cron_start', cron: cronName, timestamp: new Date().toISOString() }))
+
+  try {
   const reqId = crypto.randomUUID().slice(0, 8)
   const now = new Date()
   // "Tomorrow" window: 20h from now → 28h from now
@@ -63,5 +68,12 @@ export async function GET(request: Request) {
   }
 
   console.log(`[cron/reminders:${reqId}]`, { sent })
-  return NextResponse.json({ sent })
+  const duration = Date.now() - cronStart
+  console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
+  return NextResponse.json({ sent, durationMs: duration })
+  } catch (err) {
+    const duration = Date.now() - cronStart
+    console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
+    throw err
+  }
 }

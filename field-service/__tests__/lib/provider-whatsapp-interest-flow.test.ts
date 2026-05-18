@@ -111,8 +111,16 @@ vi.mock('@/lib/whatsapp-identity', () => ({
 
 // Mock provider-opportunity-responses so we can assert the call and control
 // what it returns, especially creditsDeducted: 0.
+class MockProviderOpportunityResponseError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message)
+    this.name = 'ProviderOpportunityResponseError'
+  }
+}
+
 vi.mock('@/lib/provider-opportunity-responses', () => ({
   respondToProviderOpportunity: mockRespondToProviderOpportunity,
+  ProviderOpportunityResponseError: MockProviderOpportunityResponseError,
 }))
 
 import { processInboundMessage } from '@/lib/whatsapp-bot'

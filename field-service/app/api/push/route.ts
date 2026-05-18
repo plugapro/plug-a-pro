@@ -5,8 +5,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { verifyRequestOrigin } from '@/lib/csrf'
+import { apiError } from '@/lib/api-response'
 
 export async function POST(req: NextRequest) {
+  if (!verifyRequestOrigin(req, [])) {
+    return apiError('FORBIDDEN', 'Origin not allowed', 403)
+  }
+
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -45,6 +51,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (!verifyRequestOrigin(req, [])) {
+    return apiError('FORBIDDEN', 'Origin not allowed', 403)
+  }
+
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

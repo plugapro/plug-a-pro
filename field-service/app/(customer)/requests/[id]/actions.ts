@@ -72,6 +72,7 @@ export async function selectShortlistProviderAction(
     await selectShortlistedProviderForRequest({
       requestId: normalizedRequestId,
       shortlistItemId: normalizedShortlistItemId,
+      customerId,
     })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
@@ -120,7 +121,7 @@ export async function requestMoreShortlistOptionsAction(
   if (!customerId) throw new Error('Not authenticated')
 
   try {
-    await requestMoreShortlistOptions({ requestId: normalizedRequestId })
+    await requestMoreShortlistOptions({ requestId: normalizedRequestId, customerId })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
     throw new Error('Could not request more options. Please try again.')
@@ -140,7 +141,7 @@ export async function cancelRequestFromShortlistAction(
   if (!customerId) throw new Error('Not authenticated')
 
   try {
-    await cancelRequestFromShortlist({ requestId: normalizedRequestId })
+    await cancelRequestFromShortlist({ requestId: normalizedRequestId, customerId })
   } catch (err) {
     if (err instanceof CustomerShortlistError) throw err
     throw new Error('Could not cancel the request. Please try again.')

@@ -12,6 +12,7 @@ import { verifyWebhookChallenge, verifyMetaSignature } from '@/lib/whatsapp'
 import { processInboundMessage } from '@/lib/whatsapp-bot'
 import { db } from '@/lib/db'
 import { handleReviewFirstProviderNotificationStatus } from '@/lib/review-first'
+import { getCorrelationId } from '@/lib/correlation'
 
 // GET — Meta webhook verification challenge
 export function GET(request: NextRequest) {
@@ -36,6 +37,8 @@ export async function POST(request: NextRequest) {
   const rawBody = await request.text()
 
   const reqId = crypto.randomUUID().slice(0, 8)
+  const correlationId = await getCorrelationId()
+  console.log(JSON.stringify({ timestamp: new Date().toISOString(), correlationId, event: 'webhook_received', path: request.url }))
 
   // Verify the request is genuinely from Meta before touching any data
   const signature = request.headers.get('x-hub-signature-256') ?? ''

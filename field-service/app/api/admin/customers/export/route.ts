@@ -1,5 +1,5 @@
 import { CustomerChannel } from '@prisma/client'
-import { requireRole } from '@/lib/auth'
+import { requireRoleApi } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { toCsv } from '@/lib/csv'
@@ -8,7 +8,9 @@ import { AUDIT_ENTITY } from '@/lib/audit-entities'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
-  const actor = await requireRole(['ADMIN', 'OWNER'])
+  const actorOrError = await requireRoleApi(['ADMIN', 'OWNER'])
+  if (actorOrError instanceof Response) return actorOrError
+  const actor = actorOrError
   const enabled = await isEnabled('admin.crud.customers', { userId: actor.id })
   if (!enabled) {
     return new Response('Feature flag disabled', { status: 403 })

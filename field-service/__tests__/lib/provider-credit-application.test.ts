@@ -34,7 +34,7 @@ const { mockDb, state } = vi.hoisted(() => {
       updateMany: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
-    walletLedgerEntry: { create: vi.fn(), findFirst: vi.fn() },
+    walletLedgerEntry: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     auditLog: { create: vi.fn() },
   }
 
@@ -200,6 +200,14 @@ describe('provider credit application', () => {
           args.where.referenceType.in.includes(entry.referenceType) &&
           entry.referenceId === args.where.referenceId,
         ) ?? null
+    ))
+    mockDb.walletLedgerEntry.findMany.mockImplementation(async (args: any) => (
+      state.ledgerEntries.filter((entry) =>
+        entry.providerId === args.where.providerId &&
+        entry.entryType === args.where.entryType &&
+        args.where.referenceType.in.includes(entry.referenceType) &&
+        entry.referenceId === args.where.referenceId,
+      )
     ))
 
     mockDb.lead.updateMany.mockImplementation(async (args: any) => {
