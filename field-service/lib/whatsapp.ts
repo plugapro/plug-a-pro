@@ -1,5 +1,3 @@
-import 'server-only'
-
 // ─── Meta WhatsApp Cloud API client ──────────────────────────────────────────
 // Direct integration — no intermediary required.
 // Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/messages

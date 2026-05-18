@@ -1,5 +1,3 @@
-import 'server-only'
-
 // ─── PSP abstraction layer ────────────────────────────────────────────────────
 // Swap the provider implementation without changing call sites.
 // Default: Peach Payments (South Africa)

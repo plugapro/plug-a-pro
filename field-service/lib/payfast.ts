@@ -1,5 +1,3 @@
-import 'server-only'
-
 /**
  * Payfast adapter — self-contained module for all Payfast-specific logic.
  *

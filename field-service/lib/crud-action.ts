@@ -135,7 +135,12 @@ export async function crudAction<TInput = unknown, TOutput = unknown>(
   // ── 3. Feature flag ───────────────────────────────────────────────────────────
   if (opts.requiredFlag) {
     const { isEnabled } = await import('./flags')
-    const on = await isEnabled(opts.requiredFlag, { userId: session.id })
+    // requiredFlag is declared as a free-form `string` for caller ergonomics,
+    // but isEnabled wants the strict FlagKey union. Callers either pass a
+    // literal that satisfies FlagKey or accept the runtime check that
+    // isEnabled performs against the DB / env. Cast through `as any` since
+    // FlagKey isn't re-exported here without widening the public surface.
+    const on = await isEnabled(opts.requiredFlag as Parameters<typeof isEnabled>[0], { userId: session.id })
     if (!on) {
       throw new CrudActionError(
         'FLAG_DISABLED',
