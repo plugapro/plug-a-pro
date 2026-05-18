@@ -93,10 +93,11 @@ function makeTx(state: { lead: any; wallet: any; ledger: any }) {
       create: vi.fn().mockResolvedValue({ id: 'audit-lock-1' }),
     },
     match: {
-      create: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'match-lock-1' }),
+      findUnique: vi.fn().mockResolvedValue(null),
     },
     quote: {
-      create: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'quote-lock-1' }),
     },
     booking: {
       create: vi.fn(),
@@ -182,8 +183,28 @@ describe('provider accepted lock', () => {
         entityId: 'lead-lock-1',
       }),
     })
-    expect(tx.match.create).not.toHaveBeenCalled()
-    expect(tx.quote.create).not.toHaveBeenCalled()
+    // Post-lock fulfilment artifacts: Match + stub Quote are now created
+    // inside the lock transaction so /provider/jobs can surface the work.
+    // Booking + Job remain deferred until the provider submits a real quote
+    // and the customer approves it (Phase 1b).
+    expect(tx.match.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          jobRequestId: 'request-lock-1',
+          providerId: 'provider-lock-1',
+          status: 'MATCHED',
+        }),
+      }),
+    )
+    expect(tx.quote.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          matchId: 'match-lock-1',
+          status: 'PENDING',
+          description: 'Awaiting provider quote',
+        }),
+      }),
+    )
     expect(tx.booking.create).not.toHaveBeenCalled()
     expect(tx.job.create).not.toHaveBeenCalled()
     expect(state.lead.status).toBe('ACCEPTED_LOCKED')

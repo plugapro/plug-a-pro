@@ -7,6 +7,7 @@ import { phoneLookupVariants } from './whatsapp-identity'
 import { sendPostMatchIntroductions } from './post-match-intro'
 import { notifyPostMatchAcceptance } from './post-match-communications'
 import { notifyLeadUnlocked } from './provider-wallet-notifications'
+import { materializeFulfilmentArtifacts } from './post-lock-fulfilment'
 
 const CREDIT_APPLICATION_REFERENCE_TYPES = [
   'selected_lead_credit_application',
@@ -46,6 +47,8 @@ export type AcceptedLeadLockResult = {
   serviceRequestStatus: 'ACCEPTED_LOCKED'
   creditTransactionId: string
   alreadyLocked: boolean
+  matchId: string
+  quoteId: string
   notificationPayload: AcceptedLeadLockNotificationPayload | null
 }
 
@@ -345,6 +348,14 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
         result: 'inconsistent_state',
       })
     }
+    // Backfill: leads locked before post-lock fulfilment was wired up may not
+    // have a Match row. Materialise it (and a stub Quote) here so the provider
+    // portal can surface the job. materializeFulfilmentArtifacts is idempotent
+    // — re-entering on an already-materialised lead is a no-op lookup.
+    const backfillArtifacts = await materializeFulfilmentArtifacts(tx, {
+      jobRequestId: lead.jobRequestId,
+      providerId: params.providerId,
+    })
     logAcceptedLock({
       leadId: lead.id,
       providerId: params.providerId,
@@ -362,6 +373,8 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
       serviceRequestStatus: 'ACCEPTED_LOCKED',
       creditTransactionId: creditTransaction.id,
       alreadyLocked: true,
+      matchId: backfillArtifacts.matchId,
+      quoteId: backfillArtifacts.quoteId,
       notificationPayload: null,
     }
   }
@@ -523,6 +536,15 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     },
   })
 
+  // Create the Match + stub Quote so the provider portal can surface the
+  // commitment immediately. The stub Quote (amount=0, status=PENDING) is the
+  // hand-off point to the provider's quote-submission UI; the customer-facing
+  // approval page must guard against showing zero-amount quotes.
+  const artifacts = await materializeFulfilmentArtifacts(tx, {
+    jobRequestId: lead.jobRequestId,
+    providerId: params.providerId,
+  })
+
   logAcceptedLock({
     leadId: lead.id,
     providerId: params.providerId,
@@ -541,6 +563,8 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     serviceRequestStatus: 'ACCEPTED_LOCKED',
     creditTransactionId: creditTransaction.id,
     alreadyLocked: false,
+    matchId: artifacts.matchId,
+    quoteId: artifacts.quoteId,
     notificationPayload: {
       leadId: lead.id,
       providerId: params.providerId,
@@ -1088,8 +1112,10 @@ export async function sendAcceptedLockConfirmations(params: {
   const providerBody =
     'Job accepted. Your credit has been applied and the customer details are now available in your job view.'
 
-  const [customer, provider] = await Promise.all([
-    sendAcceptedLockConfirmation({
+  let customer: AcceptedLockConfirmationDelivery
+  let provider: AcceptedLockConfirmationDelivery
+  try {
+    customer = await sendAcceptedLockConfirmation({
       to: lead.jobRequest.customer.phone,
       templateName: ACCEPTED_LOCK_CUSTOMER_TEMPLATE,
       body: customerBody,
@@ -1099,8 +1125,13 @@ export async function sendAcceptedLockConfirmations(params: {
       recipientRole: 'customer',
       idempotencyKey: customerIdempotencyKey,
       traceId: params.traceId,
-    }),
-    sendAcceptedLockConfirmation({
+    })
+  } catch (err) {
+    console.error('[provider-accepted-lock] customer notification failed — will not retry automatically:', err)
+    customer = { sent: false, failureReason: err instanceof Error ? err.message : String(err) }
+  }
+  try {
+    provider = await sendAcceptedLockConfirmation({
       to: lead.provider.phone,
       templateName: ACCEPTED_LOCK_PROVIDER_TEMPLATE,
       body: providerBody,
@@ -1110,8 +1141,11 @@ export async function sendAcceptedLockConfirmations(params: {
       recipientRole: 'provider',
       idempotencyKey: providerIdempotencyKey,
       traceId: params.traceId,
-    }),
-  ])
+    })
+  } catch (err) {
+    console.error('[provider-accepted-lock] provider notification failed — will not retry automatically:', err)
+    provider = { sent: false, failureReason: err instanceof Error ? err.message : String(err) }
+  }
 
   return {
     ok: true,

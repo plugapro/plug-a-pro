@@ -71,6 +71,7 @@ export default async function ProviderJobsPage({
     completedJobs,
     totalCompleted,
     pendingConfirmationJobs,
+    awaitingQuoteMatches,
   ] = await Promise.all([
     db.job.findMany({
       where: {
@@ -111,6 +112,21 @@ export default async function ProviderJobsPage({
       include: jobInclude,
       orderBy: { updatedAt: 'desc' },
     }),
+    // Locked leads that have a Match but no Booking yet — provider needs to
+    // submit a quote (or customer needs to approve a submitted one). Surfacing
+    // these gives Lovemore visibility on accepted-but-not-yet-scheduled work.
+    db.match.findMany({
+      where: {
+        providerId: provider.id,
+        status: 'MATCHED',
+        booking: null,
+      },
+      include: {
+        jobRequest: { include: { customer: true, address: true } },
+        quotes: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
   ])
 
   const totalPages = Math.max(1, Math.ceil(totalCompleted / PAGE_SIZE))
@@ -148,7 +164,7 @@ export default async function ProviderJobsPage({
               <ListChecks size={13} />
             </div>
             <p className="text-[22px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none mb-1 tabular-nums">
-              {activeJobs.length}
+              {activeJobs.length + awaitingQuoteMatches.length}
             </p>
             <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Active</p>
           </div>
@@ -173,6 +189,53 @@ export default async function ProviderJobsPage({
             <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Completed</p>
           </div>
         </div>
+
+        {/* Awaiting your quote (locked leads with no Booking yet) */}
+        {awaitingQuoteMatches.length > 0 && (
+          <section>
+            <SectionLabel className="mb-3">
+              Awaiting your quote ({awaitingQuoteMatches.length})
+            </SectionLabel>
+            <div className="space-y-3">
+              {awaitingQuoteMatches.map((match) => {
+                const customerName = match.jobRequest.customer?.name ?? 'Customer'
+                const area = [match.jobRequest.address?.suburb, match.jobRequest.address?.city]
+                  .filter(Boolean)
+                  .join(', ')
+                return (
+                  <Link
+                    key={match.id}
+                    href={`/provider/quotes/${match.id}`}
+                    className="block bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-4 transition-shadow hover:shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13.5px] font-semibold text-[var(--ink)] truncate">
+                          {match.jobRequest.category}
+                        </p>
+                        <p className="text-[12px] text-[var(--ink-mute)] truncate">
+                          {customerName}{area ? ` · ${area}` : ''}
+                        </p>
+                      </div>
+                      <span
+                        className="text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                        style={{
+                          background: 'color-mix(in srgb, var(--color-amber) 14%, transparent)',
+                          color: 'var(--color-amber)',
+                        }}
+                      >
+                        Quote needed
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[var(--ink-mute)]">
+                      Tap to send your quote and unlock the customer's contact details.
+                    </p>
+                  </Link>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Pending confirmation */}
         {pendingConfirmationJobs.length > 0 && (
