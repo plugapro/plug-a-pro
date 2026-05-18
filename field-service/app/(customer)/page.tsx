@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import {
   Droplets, Hammer, Zap, Paintbrush, Sparkles, Wrench,
-  Tv2, Grid3x3, Layers, PaintRoller, Bell, ShieldCheck, Search,
+  Tv2, Grid3x3, Layers, PaintRoller, Leaf, Drill,
+  Bell, ShieldCheck, Search,
   Check, Star, MapPin,
 } from 'lucide-react'
 import { getSession } from '@/lib/auth'
@@ -22,15 +23,17 @@ export const metadata = buildMetadata({
 
 // Tiles must stay in sync with PILOT_SKILL_TAGS in lib/service-categories.ts.
 const CATEGORIES = [
-  { label: 'Plumbing',     tag: 'plumbing',     icon: Droplets,    hue: '#2A78F0' },
-  { label: 'Appliances',   tag: 'appliances',   icon: Tv2,         hue: '#5B5B66' },
-  { label: 'Handyman',     tag: 'handyman',     icon: Hammer,      hue: '#8B3FE8' },
-  { label: 'Carpentry',    tag: 'carpentry',    icon: Wrench,      hue: '#C8854D' },
-  { label: 'Painting',     tag: 'painting',     icon: Paintbrush,  hue: '#FF1F8E' },
-  { label: 'Cleaning',     tag: 'cleaning',     icon: Sparkles,    hue: '#0FA28A' },
-  { label: 'Tiling',       tag: 'tiling',       icon: Grid3x3,     hue: '#4FB6E6' },
-  { label: 'Plastering',   tag: 'plastering',   icon: Layers,      hue: '#B0A99F' },
-  { label: 'Rhinoliting',  tag: 'rhinoliting',  icon: PaintRoller, hue: '#D9C29A' },
+  { label: 'Plumbing',           tag: 'plumbing',     icon: Droplets,    hue: '#2A78F0' },
+  { label: 'Appliances',         tag: 'appliances',   icon: Tv2,         hue: '#5B5B66' },
+  { label: 'Handyman',           tag: 'handyman',     icon: Hammer,      hue: '#8B3FE8' },
+  { label: 'Carpentry',          tag: 'carpentry',    icon: Wrench,      hue: '#C8854D' },
+  { label: 'Painting',           tag: 'painting',     icon: Paintbrush,  hue: '#FF1F8E' },
+  { label: 'Cleaning',           tag: 'cleaning',     icon: Sparkles,    hue: '#0FA28A' },
+  { label: 'Garden',             tag: 'garden',       icon: Leaf,        hue: '#3FA86C' },
+  { label: 'DIY & Assembly',     tag: 'diy',          icon: Drill,       hue: '#E58F23' },
+  { label: 'Tiling',             tag: 'tiling',       icon: Grid3x3,     hue: '#4FB6E6' },
+  { label: 'Plastering',         tag: 'plastering',   icon: Layers,      hue: '#B0A99F' },
+  { label: 'Rhinoliting',        tag: 'rhinoliting',  icon: PaintRoller, hue: '#D9C29A' },
 ] as const
 
 

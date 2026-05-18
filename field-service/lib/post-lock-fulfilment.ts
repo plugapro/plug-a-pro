@@ -42,6 +42,15 @@ export async function materializeFulfilmentArtifacts(
     // the wrong match. The thrown error is loud on purpose — surfacing this
     // collision is preferable to a corrupt fulfilment chain.
     if (existing.providerId !== params.providerId) {
+      // Loud log before throwing — the outer transaction has already written
+      // ACCEPTED_LOCKED + audit by the time we reach here, so on-call needs
+      // a structured line that names both providers.
+      console.error('[post-lock-fulfilment] provider_mismatch', {
+        jobRequestId: params.jobRequestId,
+        expectedProviderId: params.providerId,
+        existingMatchId: existing.id,
+        existingProviderId: existing.providerId,
+      })
       throw new Error(
         `materializeFulfilmentArtifacts: existing Match ${existing.id} for ` +
           `jobRequest ${params.jobRequestId} belongs to provider ${existing.providerId}, ` +

@@ -16,6 +16,8 @@ import {
   getManualEftBankAccountInstructions,
   ProviderCreditPaymentIntentError,
   type PayfastTopUpMethod,
+  type PayatTopUpFailureCode,
+  type ProviderPayatTopUpResponse,
 } from '@/lib/provider-credit-payment-intents'
 
 const ESTIMATED_CREDITS_PER_LEAD_UNLOCK = 1
@@ -213,6 +215,12 @@ export async function getProviderTopUpIntentInstructions(
 export async function createProviderTopUpIntent(
   amountCents: number,
 ): Promise<ProviderTopUpIntentInstructions> {
+  // The form-action wrapper at line 384 falls back to Number.NaN when the
+  // amountCents field is missing or non-numeric. Without this guard the call
+  // would reach Prisma and surface as a generic 500 in production.
+  if (!Number.isFinite(amountCents)) {
+    throw new Error('Top-up amount must be a number.')
+  }
   const provider = await getAuthenticatedProvider()
   const result = await createManualEftTopUpIntent({
     providerId: provider.id,
@@ -238,22 +246,11 @@ export type ProviderPayatTopUpResult = {
 }
 
 // Server actions can't surface real error messages to the client in production
-// (Next.js redacts thrown errors). Return a discriminated union so the UI can
-// distinguish a duplicate-intent from a Pay@ API outage and show the right copy.
-export type PayatTopUpFailureCode =
-  | 'DUPLICATE_INTENT'
-  | 'TOO_MANY_PENDING'
-  | 'INVALID_AMOUNT'
-  | 'PROVIDER_NOT_FOUND'
-  | 'REFERENCE_GENERATION_FAILED'
-  | 'PAYAT_TOKEN_FAILED'
-  | 'PAYAT_API_FAILED'
-  | 'PAYAT_CONFIG_MISSING'
-  | 'UNKNOWN'
+// (Next.js redacts thrown errors). The discriminated-union response type lives
+// in lib/provider-credit-payment-intents.ts so it's reusable by any caller.
 
-export type ProviderPayatTopUpResponse =
-  | { ok: true; data: ProviderPayatTopUpResult }
-  | { ok: false; code: PayatTopUpFailureCode; userMessage: string }
+// Re-exported for backward compat — earlier callers imported the types from here.
+export type { PayatTopUpFailureCode, ProviderPayatTopUpResponse } from '@/lib/provider-credit-payment-intents'
 
 export async function createProviderPayatTopUpIntent(
   amountCents: number,
@@ -368,6 +365,13 @@ export async function createProviderPayfastTopUpIntent(
     where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
   })
   if (activeIntentCount >= 3) {
+    // Mirror the Pay@ checkout_blocked log shape so log-based alerts can match
+    // a single prefix family across both PSPs.
+    console.warn('[payfast] checkout_blocked: too_many_pending', {
+      providerId: provider.id,
+      amountCents,
+      activeIntentCount,
+    })
     throw new Error('Too many pending payment intents. Complete or cancel existing payments first.')
   }
   const result = await createPayfastTopUpIntent({
