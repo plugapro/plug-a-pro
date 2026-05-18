@@ -338,7 +338,7 @@ async function declineLeadWithToken(formData: FormData) {
       creditDeducted: false,
     })
   }
-  if (result.alreadyClosed) {
+  if ('alreadyClosed' in result && result.alreadyClosed) {
     redirect(`/leads/access/${encodeURIComponent(token)}?declined=already&actionTraceId=${encodeURIComponent(traceId)}`)
   }
   redirect(`/leads/access/${encodeURIComponent(token)}?declined=1&actionTraceId=${encodeURIComponent(traceId)}`)

@@ -322,7 +322,6 @@ export async function POST(req: NextRequest) {
       suburb: resolvedAddress.suburb,
       city: resolvedAddress.city,
       ticketUrl: result.ticketUrl,
-      assignmentMode: autoAssign ? 'AUTO_ASSIGN' : 'OPS_REVIEW',
       requestId: result.jobRequestId,
     }).catch((error) => {
       console.warn('[bookings] request submitted notification failed', {

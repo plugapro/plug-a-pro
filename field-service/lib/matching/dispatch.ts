@@ -43,7 +43,10 @@ async function resolveProviderRecipientIsTest(provider: CandidatePoolEntry): Pro
 }
 
 export async function dispatchMatchLead(params: {
-  jobRequest: MatchingJobRequest & { address?: { suburb?: string | null } | null }
+  jobRequest: MatchingJobRequest & {
+    address?: { suburb?: string | null } | null
+    customer?: { id: string; name: string; phone: string } | null
+  }
   hold: AssignmentHold
   provider: CandidatePoolEntry
 }): Promise<void> {
@@ -286,10 +289,10 @@ export async function dispatchMatchLead(params: {
 
     if (!customerAlreadyNotified) {
       await sendText({
-        phone: jobRequest.customer.phone,
-        body: `We sent your request to a nearby provider. They have ${MATCHING_CONFIG.offerTtlMinutes} minutes to confirm. We'll notify you as soon as they respond.`,
+        to: jobRequest.customer.phone,
+        text: `We sent your request to a nearby provider. They have ${MATCHING_CONFIG.offerTtlMinutes} minutes to confirm. We'll notify you as soon as they respond.`,
+        templateName: 'dispatch:customer_offer_sent',
         metadata: {
-          templateName: 'dispatch:customer_offer_sent',
           leadId: lead.id,
           jobRequestId: jobRequest.id,
           providerId: provider.id,
