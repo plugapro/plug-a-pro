@@ -9,23 +9,24 @@ import {
 } from '../../lib/service-category-policy'
 
 describe('SERVICE_CATEGORY_OPTIONS', () => {
-  it('contains exactly 15 entries (14 real categories + Other)', () => {
-    expect(SERVICE_CATEGORY_OPTIONS).toHaveLength(15)
+  it('contains exactly 17 entries (16 real categories + Other)', () => {
+    expect(SERVICE_CATEGORY_OPTIONS).toHaveLength(17)
   })
 
-  it('contains all 14 original category tags', () => {
+  it('contains all 16 real category tags', () => {
     const tags = SERVICE_CATEGORY_OPTIONS.map((c) => c.tag)
     const expected = [
       'plumbing', 'painting', 'garden', 'handyman', 'appliances',
       'electrical', 'diy', 'roofing', 'cleaning', 'tiling',
       'pest_control', 'carpentry', 'waterproofing', 'air_conditioning',
+      'plastering', 'rhinoliting',
     ]
     for (const tag of expected) {
       expect(tags).toContain(tag)
     }
   })
 
-  it('includes "other" as the 15th entry', () => {
+  it('includes "other" as the final entry', () => {
     const other = SERVICE_CATEGORY_OPTIONS.find((c) => c.tag === 'other')
     expect(other).toBeDefined()
     expect(other?.label).toBe('Other')

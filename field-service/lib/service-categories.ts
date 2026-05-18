@@ -18,6 +18,8 @@ export const PILOT_SKILL_TAGS = new Set([
   'cleaning',
   'tiling',
   'carpentry',
+  'plastering',
+  'rhinoliting',
 ])
 
 /**
@@ -107,6 +109,16 @@ export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
     tag: 'tiling',
     label: 'Tiling',
     description: 'Floor and wall tiling, grouting, and waterproofing.',
+  },
+  {
+    tag: 'plastering',
+    label: 'Plastering',
+    description: 'Wall and ceiling plastering, skimming, and patching.',
+  },
+  {
+    tag: 'rhinoliting',
+    label: 'Rhinoliting',
+    description: 'Rhinolite skim coating for smooth interior wall and ceiling finishes.',
   },
   {
     tag: 'pest_control',
