@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import {
   Droplets, Hammer, Zap, Paintbrush, Sparkles, Wrench,
-  Flame, Tv2, Bell, ShieldCheck, Search,
+  Flame, Bell, ShieldCheck, Search,
   Check, Star, MapPin,
 } from 'lucide-react'
 import { getSession } from '@/lib/auth'
@@ -20,14 +20,14 @@ export const metadata = buildMetadata({
   description: 'Search providers, compare profiles, request service, and get WhatsApp updates.',
 })
 
+// Tiles must stay in sync with PILOT_SKILL_TAGS in lib/service-categories.ts.
+// Electrical/Appliances/Roofing are excluded from the pilot (see RESTRICTED_SKILL_NOTICE).
 const CATEGORIES = [
   { label: 'Plumbing',     tag: 'plumbing',   icon: Droplets,    hue: '#2A78F0' },
-  { label: 'Electrical',   tag: 'electrical',  icon: Zap,         hue: '#FFC22B' },
   { label: 'Handyman',     tag: 'handyman',    icon: Hammer,      hue: '#8B3FE8' },
   { label: 'Carpentry',    tag: 'carpentry',   icon: Wrench,      hue: '#C8854D' },
   { label: 'Painting',     tag: 'painting',    icon: Paintbrush,  hue: '#FF1F8E' },
   { label: 'Cleaning',     tag: 'cleaning',    icon: Sparkles,    hue: '#0FA28A' },
-  { label: 'Appliances',   tag: 'appliances',  icon: Tv2,         hue: '#5B5B66' },
   { label: 'Gas & Geyser', tag: 'plumbing',    icon: Flame,       hue: '#E5484D', q: 'geyser' },
 ] as const
 
