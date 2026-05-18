@@ -40,7 +40,9 @@ export function Footer() {
         </nav>
       </div>
       <div className="container mx-auto max-w-5xl px-4 mt-8 pt-6 border-t border-border/40 text-xs text-muted-foreground flex justify-between items-center">
-        <span>© {new Date().getFullYear()} {siteConfig.name}</span>
+        <span>
+          © {new Date().getFullYear()} {siteConfig.legalEntity} t/a {siteConfig.name} · Reg {siteConfig.legalEntityRegistration}
+        </span>
         <div className="flex items-center gap-4">
           <Link href={siteConfig.links.twitter} target="_blank" rel="noopener noreferrer" aria-label="X / Twitter" className="hover:text-foreground transition-colors">
             {/* X (Twitter) icon */}

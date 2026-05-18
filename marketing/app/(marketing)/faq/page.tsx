@@ -20,7 +20,7 @@ const CUSTOMER_FAQS = [
   },
   {
     q: "What types of jobs can I get help with?",
-    a: "Plumbing, painting, garden and lawn care, handyman and odd jobs, appliance repairs, minor electrical, DIY assistance, roofing (minor), and general home repairs. If it's a small home job, describe it and we'll try to match you.",
+    a: "Plumbing, painting, garden and lawn care, handyman and odd jobs, appliance repairs, DIY assistance, roofing (minor), and general home repairs. If it's a small home job, describe it and we'll try to match you.",
   },
   {
     q: "Do I need to download an app?",

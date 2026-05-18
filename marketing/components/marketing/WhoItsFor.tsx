@@ -3,7 +3,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Wrench,
-  Zap,
   Flower2,
   Home,
   Hammer,
@@ -22,7 +21,6 @@ const JOB_CATEGORIES: { icon: LucideIcon; name: string; description: string }[] 
   { icon: Flower2, name: "Garden & Lawn", description: "Mowing, clearing, trimming, and landscaping" },
   { icon: Home, name: "Handyman / Odd Jobs", description: "Shelves, fixtures, doors, tiling, and everyday repairs" },
   { icon: WashingMachine, name: "Appliances", description: "Fault-finding, inspection, and repair" },
-  { icon: Zap, name: "Electrical (minor)", description: "Light fittings, plugs, and small installations" },
   { icon: Hammer, name: "DIY Assistance", description: "Stuck on a project? Get help to finish it properly" },
   { icon: ShieldCheck, name: "General Repairs", description: "Drywall, plastering, grouting, and home upkeep" },
 ];
@@ -33,7 +31,6 @@ const WORKER_TYPES: string[] = [
   "Handymen and practical service providers",
   "Plumbers (small jobs)",
   "Appliance repair specialists",
-  "Electricians (minor work)",
   "General maintenance service providers",
   "Roofing helpers",
 ];

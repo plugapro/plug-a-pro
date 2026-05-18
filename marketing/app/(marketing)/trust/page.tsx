@@ -255,7 +255,7 @@ export default function TrustPage() {
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
-              Plug a Pro is designed for small, defined home jobs. We don&apos;t facilitate large construction projects or ongoing employment arrangements. Some services — such as certain electrical work — may require a Certificate of Compliance (COC) or a registered contractor under South African law. That obligation sits with the provider, not the platform.
+              Plug a Pro is designed for small, defined home jobs. We don&apos;t facilitate large construction projects or ongoing employment arrangements. Some services — such as certain plumbing or gas work — may require a Certificate of Compliance (COC) or a registered contractor under South African law. That obligation sits with the provider, not the platform.
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 size-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />

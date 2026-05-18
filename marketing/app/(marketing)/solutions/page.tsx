@@ -3,7 +3,6 @@ import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import {
   Wrench,
-  Zap,
   Flower2,
   Home,
   Hammer,
@@ -21,7 +20,7 @@ import { WhatsAppTextLink } from "@/components/marketing/WhatsAppTextLink";
 export const metadata: Metadata = buildMetadata({
   title: "Services",
   description:
-    "Plug A Pro matches you to nearby local service providers for small home jobs including plumbing, painting, gardening, handyman work, appliance fixes, electrical and DIY support.",
+    "Plug A Pro matches you to nearby local service providers for small home jobs including plumbing, painting, gardening, handyman work, appliance fixes, and DIY support.",
 });
 
 const SERVICES: {
@@ -90,18 +89,6 @@ const SERVICES: {
       "Oven and stove element replacements",
       "Tumble dryer belt and motor faults",
     ],
-  },
-  {
-    icon: Zap,
-    name: "Electrical (minor)",
-    headline: "Light fittings, plugs, and small installations",
-    examples: [
-      "Light fitting installation or replacement",
-      "Plug and socket faults",
-      "DB board trip investigation",
-      "Outdoor light and sensor fitting",
-    ],
-    caveat: "Note: work on distribution boards, new circuits, or wiring extensions may require a Certificate of Compliance (COC) under South African law. Confirm with your provider before work begins.",
   },
   {
     icon: Hammer,

@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 export const siteConfig = {
   venture: "plug-a-pro",
   name: "Plug A Pro",
+  legalEntity: "Kgolaentle Solutions (Pty) Ltd",
+  legalEntityRegistration: "2014/077326/07",
   tagline: "Reliable Local Services Made Simple",
   description:
     "Find trusted plumbers, handymen, repair and maintenance providers through Plug A Pro. One simple number handles requests, quotes and updates so you get help without the chase.",

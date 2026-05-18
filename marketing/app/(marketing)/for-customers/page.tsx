@@ -231,7 +231,7 @@ export default function ForCustomersPage() {
         <div className="max-w-3xl mx-auto rounded-2xl border border-border/40 p-8 bg-muted/30 text-center">
           <h2 className="text-xl font-bold mb-3">What jobs can I request?</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Plumbing, painting, garden work, general handyman, appliance repair, minor electrical, DIY assistance, and roofing. If it&apos;s a small job around the home, there&apos;s likely a provider near you who can do it.
+            Plumbing, painting, garden work, general handyman, appliance repair, DIY assistance, and roofing. If it&apos;s a small job around the home, there&apos;s likely a provider near you who can do it.
           </p>
           <Button
             nativeButton={false}
