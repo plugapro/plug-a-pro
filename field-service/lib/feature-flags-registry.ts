@@ -224,6 +224,13 @@ export const FEATURE_FLAGS_REGISTRY = {
     owner: 'ops',
     defaultValue: false,
   },
+  // ─── Matching engine ─────────────────────────────────────────────────────────
+  'matching.v2.candidate_pool': {
+    description: 'Use precomputed candidate pool in the matching orchestrator instead of a live DB scan. Speeds up dispatch and reduces query load.',
+    owner: 'eng',
+    defaultValue: false,
+  },
+
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',

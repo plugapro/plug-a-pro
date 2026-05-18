@@ -2243,10 +2243,12 @@ export async function expireRfpInvitations() {
   }
 
   // Fix 4: Watchdog — alert on leads stuck in CREDIT_APPLIED post-crash (credit deducted, no unlock record)
+  // Lead has no `updatedAt`; use `respondedAt` which is bumped on every status
+  // transition including the CREDIT_APPLIED write in provider-credit-application.
   const stuckCreditApplied = await db.lead.findMany({
     where: {
       status: 'CREDIT_APPLIED',
-      updatedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) },
+      respondedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) },
     },
     include: { unlock: true },
   })

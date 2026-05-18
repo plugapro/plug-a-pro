@@ -11,7 +11,7 @@
 //     → saveConversation()
 
 import { db } from './db'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { parseInbound, sendText, sendButtons, sendCtaUrl, type InboundMessage } from './whatsapp-interactive'
 import {
   handleJobRequestFlow,
@@ -2874,8 +2874,8 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
           entityId: lead.id,
           ipAddress: null,
           userAgent: null,
-          before: null,
-          after: JSON.stringify({ claimingProviderId: provider.id, realOwnerId: lead.providerId }),
+          before: Prisma.DbNull,
+          after: { claimingProviderId: provider.id, realOwnerId: lead.providerId } as Prisma.InputJsonValue,
           timestamp: new Date(),
         },
       }).catch((err) => console.error('[whatsapp-bot] security audit write failed:', err))
@@ -3245,8 +3245,8 @@ async function handleRfpLeadInterest(
           entityId: leadId,
           ipAddress: null,
           userAgent: null,
-          before: null,
-          after: JSON.stringify({ claimingProviderId: providerId, realOwnerId: lead.providerId }),
+          before: Prisma.DbNull,
+          after: { claimingProviderId: providerId, realOwnerId: lead.providerId } as Prisma.InputJsonValue,
           timestamp: new Date(),
         },
       }).catch((err) => console.error('[whatsapp-bot] security audit write failed:', err))
