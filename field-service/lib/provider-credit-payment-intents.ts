@@ -140,6 +140,18 @@ function getManualEftExpiresAt(now: Date) {
   return expiresAt
 }
 
+// Payfast hosted-checkout sessions are short-lived (~30min). Default to 2 hours
+// so a provider who paused mid-checkout still has time to return; after that,
+// the cron at /api/cron/expire-payment-intents flips the intent to EXPIRED and
+// the duplicate-intent guard stops blocking new attempts.
+function getPayfastExpiresAt(now: Date) {
+  const rawHours = process.env.PROVIDER_CREDIT_PAYFAST_INTENT_EXPIRY_HOURS ?? '2'
+  const expiryHours = Number.parseFloat(rawHours)
+  if (!Number.isFinite(expiryHours) || expiryHours <= 0) return null
+
+  return new Date(now.getTime() + expiryHours * 60 * 60 * 1000)
+}
+
 export function generateManualEftPaymentReference() {
   const numericPart = randomInt(1_000, 10_000)
   const suffix = randomBytes(2).toString('hex').toUpperCase()
@@ -442,12 +454,14 @@ export async function createPayfastTopUpIntent(
         status: 'PENDING_PAYMENT',
         providerCellphone: input.providerCellphone ?? provider.phone,
         metadata: toJson(input.metadata),
+        expiresAt: getPayfastExpiresAt(new Date()),
       },
     })
   })
 
   // Build the Payfast checkout payload outside the transaction — if this fails
-  // the intent stays in PENDING_PAYMENT and will expire naturally.
+  // the intent stays in PENDING_PAYMENT and will expire naturally via the
+  // /api/cron/expire-payment-intents hourly cron once expiresAt has passed.
   const providerProfile = {
     name: input.providerName ?? undefined,
     email: input.providerEmail ?? undefined,
