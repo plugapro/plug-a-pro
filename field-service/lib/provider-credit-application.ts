@@ -180,6 +180,13 @@ async function buildAlreadyAppliedResult(
     }),
     findExistingApplicationTransaction(tx, params),
   ])
+  if (!wallet && !ledgerEntry) {
+    throw new ProviderCreditApplicationError(
+      'WALLET_MISSING',
+      'Provider wallet not found during idempotent replay.',
+      0,
+    )
+  }
   const paidCreditBalance = ledgerEntry?.balanceAfterPaidCredits ?? wallet?.paidCreditBalance ?? 0
   const promoCreditBalance = ledgerEntry?.balanceAfterPromoCredits ?? wallet?.promoCreditBalance ?? 0
 
@@ -553,7 +560,11 @@ export async function applyProviderCreditForAcceptedLeadInTransaction(
     )
   }
 
-  const balance = balanceFromLedgerEntries(debitResult.ledgerEntries, debitResult.wallet)
+  const balance = {
+    paidCreditBalance: debitResult.wallet.paidCreditBalance,
+    promoCreditBalance: debitResult.wallet.promoCreditBalance,
+    currentCreditBalance: debitResult.wallet.paidCreditBalance + debitResult.wallet.promoCreditBalance,
+  }
   const creditTransactionId = debitResult.ledgerEntries.at(-1)?.id ?? null
 
   await tx.auditLog.create({

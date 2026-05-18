@@ -1,4 +1,5 @@
 import { db } from './db'
+import { Prisma } from '@prisma/client'
 import type { LeadStatus } from '@prisma/client'
 import { rankCandidatesForJobRequest } from './matching/service'
 import { getReviewProviderProfileUrl } from './review-provider-profile-access'
@@ -1147,23 +1148,31 @@ export async function shortlistProviderForCustomerReview(params: {
       throw new ReviewFirstError('PROVIDER_ALREADY_SHORTLISTED', 'This provider is already in your shortlist.')
     }
 
-    const shortlistItem = await tx.providerShortlistItem.upsert({
-      where: {
-        shortlistId_leadInviteId: {
+    let shortlistItem: Awaited<ReturnType<typeof tx.providerShortlistItem.upsert>>
+    try {
+      shortlistItem = await tx.providerShortlistItem.upsert({
+        where: {
+          shortlistId_leadInviteId: {
+            shortlistId: shortlist.id,
+            leadInviteId: lead.id,
+          },
+        },
+        create: {
           shortlistId: shortlist.id,
           leadInviteId: lead.id,
+          providerId: params.providerId,
+          rank: rankedCandidate.rankedPosition ?? 999,
+          customerPreferenceRank: existingItemCount + 1,
+          matchScore: rankedCandidate.score ?? null,
         },
-      },
-      create: {
-        shortlistId: shortlist.id,
-        leadInviteId: lead.id,
-        providerId: params.providerId,
-        rank: rankedCandidate.rankedPosition ?? 999,
-        customerPreferenceRank: existingItemCount + 1,
-        matchScore: rankedCandidate.score ?? null,
-      },
-      update: {},
-    })
+        update: {},
+      })
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ReviewFirstError('PROVIDER_ALREADY_SHORTLISTED', 'This provider is already in your shortlist.')
+      }
+      throw err
+    }
 
     await tx.auditLog.create({
       data: {
@@ -1499,7 +1508,7 @@ export async function sendRequestToShortlistedProviders(params: {
             respondedAt: null,
             viewedAt: null,
             notifiedAt: null,
-            notificationAttemptedAt: null,
+            notificationAttemptedAt: new Date(),
           },
         }).catch(() => undefined)
         failedCount += 1
@@ -1526,7 +1535,7 @@ export async function sendRequestToShortlistedProviders(params: {
           respondedAt: null,
           viewedAt: null,
           notifiedAt: null,
-          notificationAttemptedAt: null,
+          notificationAttemptedAt: new Date(),
         },
       }).catch(() => undefined)
       failedCount += 1
@@ -1854,7 +1863,7 @@ export async function handleReviewFirstProviderNotificationStatus(params: {
         respondedAt: null,
         viewedAt: null,
         notifiedAt: null,
-        notificationAttemptedAt: null,
+        notificationAttemptedAt: new Date(),
       },
     })
 
@@ -2226,7 +2235,7 @@ export async function cascadeToNextShortlistedProvider(params: {
   const nextItem = shortlist.items.find(
     (item) =>
       (item.customerPreferenceRank ?? Infinity) > declinedItem.customerPreferenceRank! &&
-      ['SHORTLISTED', 'SEND_FAILED'].includes(item.leadInvite.status),
+      item.leadInvite.status === 'SHORTLISTED',
   )
   if (!nextItem) {
     console.info('[review-first.cascade] no_next_provider', {
@@ -2257,7 +2266,7 @@ export async function cascadeToNextShortlistedProvider(params: {
     await db.jobRequest.update({
       where: { id: params.requestId },
       data: { status: 'PENDING_VALIDATION' },
-    }).catch(() => undefined)
+    })
     await db.auditLog.create({
       data: {
         actorId: 'system',
@@ -2430,7 +2439,7 @@ export async function cascadeToNextShortlistedProvider(params: {
 
   await db.lead.update({
     where: { id: leadId },
-    data: { status: 'SEND_FAILED', notificationAttemptedAt: null },
+    data: { status: 'SEND_FAILED', notificationAttemptedAt: new Date() },
   }).catch(() => undefined)
 
   console.warn('[review-first.cascade] cascade_send_failed', {

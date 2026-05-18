@@ -164,7 +164,7 @@ describe('provider accepted lock', () => {
       where: {
         jobRequestId: 'request-lock-1',
         id: { not: 'lead-lock-1' },
-        status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED'] },
+        status: { in: ['SEND_PENDING', 'SEND_FAILED'] },
       },
       data: { status: 'SUPERSEDED' },
     })
@@ -172,7 +172,7 @@ describe('provider accepted lock', () => {
       where: {
         jobRequestId: 'request-lock-1',
         id: { not: 'lead-lock-1' },
-        status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
+        status: { in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
       },
       data: expect.objectContaining({ status: 'EXPIRED' }),
     })

@@ -138,6 +138,7 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
     select: {
       id: true,
       providerId: true,
+      jobRequestId: true,
       status: true,
       expiresAt: true,
       unlock: { select: { id: true } },
@@ -223,14 +224,19 @@ export async function respondToProviderOpportunity(input: ProviderOpportunityRes
           },
         })
 
-    const updatedLead = await tx.lead.update({
-      where: { id: input.leadId },
+    const updatedLead = await tx.lead.updateMany({
+      where: {
+        id: input.leadId,
+        status: { in: ['SENT', 'VIEWED'] },
+      },
       data: input.response === 'NOT_INTERESTED'
         ? { status: 'DECLINED', respondedAt: now, declinedAt: now }
         : { status: 'INTERESTED', viewedAt: now, respondedAt: now },
-      select: { jobRequestId: true },
     })
-    jobRequestIdForTrigger = updatedLead.jobRequestId
+    if (updatedLead.count !== 1) {
+      throw new ProviderOpportunityResponseError('INVALID_RESPONSE', 'Lead status changed concurrently.')
+    }
+    jobRequestIdForTrigger = lead.jobRequestId
 
     await tx.auditLog.create({
       data: {

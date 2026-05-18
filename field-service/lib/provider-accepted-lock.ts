@@ -488,7 +488,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     where: {
       jobRequestId: lead.jobRequestId,
       id: { not: lead.id },
-      status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED'] },
+      status: { in: ['SEND_PENDING', 'SEND_FAILED'] },
     },
     data: { status: 'SUPERSEDED' },
   })
@@ -497,7 +497,7 @@ export async function lockAcceptedLeadAfterCreditInTransaction(
     where: {
       jobRequestId: lead.jobRequestId,
       id: { not: lead.id },
-      status: { in: ['SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
+      status: { in: ['SHORTLISTED', 'SENT', 'VIEWED', 'INTERESTED', 'CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED'] },
     },
     data: { status: 'EXPIRED', expiredAt: lockedAt, respondedAt: lockedAt },
   })

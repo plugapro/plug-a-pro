@@ -69,6 +69,7 @@ describe('provider opportunity responses', () => {
     state.lead = {
       id: 'lead-1',
       providerId: 'provider-1',
+      jobRequestId: 'request-1',
       status: 'SENT',
       expiresAt: new Date(Date.now() + 60_000),
       unlock: null,
@@ -83,7 +84,7 @@ describe('provider opportunity responses', () => {
         update: vi.fn().mockResolvedValue({ id: 'response-1', response: 'INTERESTED' }),
       },
       lead: {
-        update: vi.fn().mockResolvedValue({ id: 'lead-1', jobRequestId: 'request-1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       auditLog: {
         create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -151,8 +152,8 @@ describe('provider opportunity responses', () => {
         negotiable: false,
       }),
     })
-    expect(state.tx.lead.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'lead-1' },
+    expect(state.tx.lead.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'lead-1', status: { in: ['SENT', 'VIEWED'] } }),
       data: expect.objectContaining({
         status: 'INTERESTED',
         respondedAt: expect.any(Date),
@@ -188,8 +189,8 @@ describe('provider opportunity responses', () => {
     })
 
     expect(result).toMatchObject({ response: { id: 'response-2' }, creditsDeducted: 0 })
-    expect(state.tx.lead.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'lead-1' },
+    expect(state.tx.lead.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'lead-1', status: { in: ['SENT', 'VIEWED'] } }),
       data: expect.objectContaining({
         status: 'DECLINED',
         respondedAt: expect.any(Date),

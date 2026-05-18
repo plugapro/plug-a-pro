@@ -1,7 +1,13 @@
 // ─── Feature flag tests ───────────────────────────────────────────────────────
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { isEnabled, isEnabledSync, invalidateFlagCache } from '@/lib/flags'
+import {
+  isEnabled,
+  isEnabledSync,
+  invalidateFlagCache,
+  validateFeatureFlagsEnv,
+  _resetEnvFlagsWarnedForTests,
+} from '@/lib/flags'
 
 // Mock the DB — flags.ts imports db directly
 vi.mock('@/lib/db', () => ({
@@ -126,5 +132,127 @@ describe('isEnabledSync', () => {
   it('returns false for unknown keys', () => {
     process.env[ENV_KEY] = JSON.stringify({ 'ops.v2.closeOut': true })
     expect(isEnabledSync('ops.v2.unknown')).toBe(false)
+  })
+})
+
+describe('validateFeatureFlagsEnv', () => {
+  afterEach(() => {
+    delete process.env[ENV_KEY]
+  })
+
+  it('returns unset when env var is not set', () => {
+    delete process.env[ENV_KEY]
+    expect(validateFeatureFlagsEnv()).toEqual({ status: 'unset' })
+  })
+
+  it('returns valid with parsed keys when JSON object', () => {
+    process.env[ENV_KEY] = JSON.stringify({ 'ops.v2.closeOut': true, 'ops.v2.notes': false })
+    const result = validateFeatureFlagsEnv()
+    expect(result.status).toBe('valid')
+    if (result.status === 'valid') {
+      expect(result.keys.sort()).toEqual(['ops.v2.closeOut', 'ops.v2.notes'])
+    }
+  })
+
+  it('returns malformed with reason when JSON.parse throws', () => {
+    process.env[ENV_KEY] = '{not valid json'
+    const result = validateFeatureFlagsEnv()
+    expect(result.status).toBe('malformed')
+    if (result.status === 'malformed') {
+      expect(typeof result.reason).toBe('string')
+      expect(result.reason.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('returns wrong-shape when value is a JSON array', () => {
+    process.env[ENV_KEY] = JSON.stringify(['ops.v2.closeOut'])
+    const result = validateFeatureFlagsEnv()
+    expect(result.status).toBe('wrong-shape')
+    if (result.status === 'wrong-shape') {
+      expect(result.reason).toContain('array')
+    }
+  })
+
+  it('returns wrong-shape when value is a JSON number', () => {
+    process.env[ENV_KEY] = '42'
+    const result = validateFeatureFlagsEnv()
+    expect(result.status).toBe('wrong-shape')
+    if (result.status === 'wrong-shape') {
+      expect(result.reason).toContain('number')
+    }
+  })
+
+  it('returns wrong-shape when value is JSON null', () => {
+    process.env[ENV_KEY] = 'null'
+    const result = validateFeatureFlagsEnv()
+    expect(result.status).toBe('wrong-shape')
+  })
+
+  it('does not log (pure)', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env[ENV_KEY] = '{bad json'
+    validateFeatureFlagsEnv()
+    expect(errSpy).not.toHaveBeenCalled()
+    errSpy.mockRestore()
+  })
+})
+
+describe('getEnvFlags one-shot warning (via isEnabledSync)', () => {
+  beforeEach(() => {
+    invalidateFlagCache()
+    _resetEnvFlagsWarnedForTests()
+  })
+
+  afterEach(() => {
+    delete process.env[ENV_KEY]
+    _resetEnvFlagsWarnedForTests()
+  })
+
+  it('logs console.error exactly once across multiple calls when env var is malformed JSON', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env[ENV_KEY] = '{not valid json'
+
+    // Each call goes through getEnvFlags() internally.
+    isEnabledSync('ops.v2.closeOut')
+    isEnabledSync('ops.v2.closeOut')
+    isEnabledSync('ops.v2.notes')
+
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    expect(errSpy.mock.calls[0][0]).toContain('FEATURE_FLAGS env var is set but not valid JSON')
+    // Make sure we never log the raw value, only length metadata.
+    const metadata = errSpy.mock.calls[0][1] as { length: number }
+    expect(metadata).toEqual({ length: process.env[ENV_KEY]!.length })
+
+    errSpy.mockRestore()
+  })
+
+  it('still returns false (env overrides ignored) when env var is malformed', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env[ENV_KEY] = '{not valid json'
+    expect(isEnabledSync('ops.v2.closeOut')).toBe(false)
+    errSpy.mockRestore()
+  })
+
+  it('logs once when env var parses but is not a plain object (array)', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env[ENV_KEY] = JSON.stringify(['ops.v2.closeOut'])
+
+    isEnabledSync('ops.v2.closeOut')
+    isEnabledSync('ops.v2.closeOut')
+
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    expect(errSpy.mock.calls[0][0]).toContain('not a plain object')
+    expect(errSpy.mock.calls[0][1]).toEqual({ shape: 'array' })
+
+    errSpy.mockRestore()
+  })
+
+  it('does not log when env var is a valid object', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env[ENV_KEY] = JSON.stringify({ 'ops.v2.closeOut': true })
+    isEnabledSync('ops.v2.closeOut')
+    isEnabledSync('ops.v2.closeOut')
+    expect(errSpy).not.toHaveBeenCalled()
+    errSpy.mockRestore()
   })
 })

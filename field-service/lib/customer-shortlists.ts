@@ -29,12 +29,12 @@ async function getProviderWalletBalanceFromLedger(providerId: string): Promise<{
   const [lastPaid, lastPromo] = await Promise.all([
     db.walletLedgerEntry.findFirst({
       where: { providerId, creditType: 'PAID' },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { balanceAfterPaidCredits: true },
     }),
     db.walletLedgerEntry.findFirst({
       where: { providerId, creditType: 'PROMO' },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { balanceAfterPromoCredits: true },
     }),
   ])
@@ -432,7 +432,7 @@ export async function getCustomerShortlistForRequest(requestId: string) {
             include: {
               providerResponses: {
                 where: { response: 'INTERESTED' },
-                orderBy: { createdAt: 'desc' },
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
                 take: 1,
               },
             },

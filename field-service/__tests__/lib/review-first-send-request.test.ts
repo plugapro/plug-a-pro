@@ -210,7 +210,7 @@ describe('sendRequestToShortlistedProviders', () => {
         respondedAt: null,
         viewedAt: null,
         notifiedAt: null,
-        notificationAttemptedAt: null,
+        notificationAttemptedAt: expect.any(Date),
       },
     })
     expect(mockSendText).toHaveBeenCalledWith(
@@ -326,7 +326,7 @@ describe('sendRequestToShortlistedProviders', () => {
         respondedAt: null,
         viewedAt: null,
         notifiedAt: null,
-        notificationAttemptedAt: null,
+        notificationAttemptedAt: expect.any(Date),
       },
     })
     expect(mockJobRequest.updateMany).toHaveBeenCalledWith({

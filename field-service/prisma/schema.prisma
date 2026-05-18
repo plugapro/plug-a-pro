@@ -846,6 +846,7 @@ model ProviderShortlistItem {
   provider   Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([shortlistId, leadInviteId])
+  @@unique([shortlistId, providerId])
   @@index([providerId])
   @@map("provider_shortlist_items")
 }

@@ -81,14 +81,76 @@ async function getFlags(): Promise<Map<string, CachedFlag>> {
 
 // ─── Env override ─────────────────────────────────────────────────────────────
 
+// One-shot guard so a malformed FEATURE_FLAGS env var doesn't spam logs on
+// every request. Reset between tests via _resetEnvFlagsWarnedForTests().
+let _envFlagsWarned = false
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function getEnvFlags(): Record<string, boolean> {
   const raw = process.env.FEATURE_FLAGS
   if (!raw) return {}
+  let parsed: unknown
   try {
-    return JSON.parse(raw) as Record<string, boolean>
+    parsed = JSON.parse(raw)
   } catch {
+    if (!_envFlagsWarned) {
+      _envFlagsWarned = true
+      console.error(
+        '[flags] FEATURE_FLAGS env var is set but not valid JSON; env overrides ignored',
+        { length: raw.length },
+      )
+    }
     return {}
   }
+  if (!isPlainObject(parsed)) {
+    if (!_envFlagsWarned) {
+      _envFlagsWarned = true
+      console.error(
+        '[flags] FEATURE_FLAGS env var parsed but is not a plain object; env overrides ignored',
+        { shape: Array.isArray(parsed) ? 'array' : parsed === null ? 'null' : typeof parsed },
+      )
+    }
+    return {}
+  }
+  return parsed as Record<string, boolean>
+}
+
+/**
+ * Pure validator for the FEATURE_FLAGS env var. Used by health endpoints.
+ * Does not log — callers control verbosity.
+ */
+export function validateFeatureFlagsEnv():
+  | { status: 'unset' }
+  | { status: 'valid'; keys: string[] }
+  | { status: 'malformed'; reason: string }
+  | { status: 'wrong-shape'; reason: string } {
+  const raw = process.env.FEATURE_FLAGS
+  if (!raw) return { status: 'unset' }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    return {
+      status: 'malformed',
+      reason: err instanceof Error ? err.message : String(err),
+    }
+  }
+  if (!isPlainObject(parsed)) {
+    const shape = Array.isArray(parsed) ? 'array' : parsed === null ? 'null' : typeof parsed
+    return {
+      status: 'wrong-shape',
+      reason: `expected plain object, got ${shape}`,
+    }
+  }
+  return { status: 'valid', keys: Object.keys(parsed) }
+}
+
+/** Test-only: reset the one-shot warning flag for getEnvFlags(). */
+export function _resetEnvFlagsWarnedForTests(): void {
+  _envFlagsWarned = false
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
