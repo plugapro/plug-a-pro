@@ -260,6 +260,32 @@ export async function createManualEftTopUpIntent(
 
 // ─── Payfast checkout intent ───────────────────────────────────────────────────
 
+// Discriminated-union failure shape for the Pay@ checkout server action.
+// Co-located here so any future caller (e.g. WhatsApp top-up flow) can import
+// the same vocabulary instead of redeclaring it in app/(provider)/.../actions.ts.
+export type PayatTopUpFailureCode =
+  | 'DUPLICATE_INTENT'
+  | 'TOO_MANY_PENDING'
+  | 'INVALID_AMOUNT'
+  | 'PROVIDER_NOT_FOUND'
+  | 'REFERENCE_GENERATION_FAILED'
+  | 'PAYAT_TOKEN_FAILED'
+  | 'PAYAT_API_FAILED'
+  | 'PAYAT_CONFIG_MISSING'
+  | 'UNKNOWN'
+
+export type PayatTopUpResultData = {
+  intentId: string
+  amountCents: number
+  creditsToIssue: number
+  reference: string
+  paymentLink: string
+}
+
+export type ProviderPayatTopUpResponse =
+  | { ok: true; data: PayatTopUpResultData }
+  | { ok: false; code: PayatTopUpFailureCode; userMessage: string }
+
 export type PayfastTopUpMethod = 'PAYFAST_CARD' | 'PAYFAST_EFT' | 'PAYFAST_SCODE'
 
 export type CreatePayfastTopUpIntentInput = {
@@ -270,6 +296,8 @@ export type CreatePayfastTopUpIntentInput = {
   providerEmail?: string | null
   providerCellphone?: string | null
   metadata?: Record<string, unknown>
+  /** Injectable for deterministic tests. Defaults to `new Date()`. */
+  now?: Date
 }
 
 export type CreatePayfastTopUpIntentResult = {
@@ -385,6 +413,14 @@ export async function createPayatTopUpIntent(
       providerEmail: provider.email ?? '',
     })
   } catch (err) {
+    // Structured log lets ops correlate a provider complaint ("my Pay@ link
+    // never appeared") to the specific intent that was abandoned.
+    console.error('[provider-credit-payment-intents] payat_api_failed', {
+      intentId: intent.id,
+      providerId: provider.id,
+      amountCents: payAtAmountCents,
+      error: err instanceof Error ? err.message : String(err),
+    })
     await db.paymentIntent.update({
       where: { id: intent.id },
       data: { status: 'FAILED' },
@@ -461,7 +497,7 @@ export async function createPayfastTopUpIntent(
         status: 'PENDING_PAYMENT',
         providerCellphone: input.providerCellphone ?? provider.phone,
         metadata: toJson(input.metadata),
-        expiresAt: getPayfastExpiresAt(new Date()),
+        expiresAt: getPayfastExpiresAt(input.now ?? new Date()),
       },
     })
   })
