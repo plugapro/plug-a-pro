@@ -19,7 +19,6 @@ async function main() {
   const candidates = await db.lead.findMany({
     where: {
       status: 'ACCEPTED_LOCKED',
-      providerId: { not: null },
       jobRequest: { match: { is: null } },
     },
     select: {
@@ -39,7 +38,6 @@ async function main() {
   }
 
   for (const lead of candidates) {
-    if (!lead.providerId) continue
     const tag = `${lead.provider?.name ?? '<unknown>'} · ${lead.jobRequest.category} · ${lead.jobRequest.requestRef ?? lead.id.slice(-6)}`
     if (!apply) {
       console.log(`[backfill] DRY-RUN would materialise: ${tag} (leadId=${lead.id})`)
@@ -49,7 +47,7 @@ async function main() {
       const result = await db.$transaction(async (tx) =>
         materializeFulfilmentArtifacts(tx, {
           jobRequestId: lead.jobRequestId,
-          providerId: lead.providerId!,
+          providerId: lead.providerId,
         }),
       )
       console.log(
