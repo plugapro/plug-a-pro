@@ -227,6 +227,17 @@ export const TEMPLATES = {
       'Hi {{1}}, a new {{2}} lead is available in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
   },
 
+  provider_rfp_lead_invite: {
+    name: 'provider_rfp_lead_invite',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'RFP/shortlist invitation — sent before the customer selects a provider; copy does not claim "selected you"',
+    // {{1}} provider first name, {{2}} service, {{3}} area, {{4}} date/window;
+    // button (url, index 0): {{1}} signed lead access token suffix appended to /leads/access/
+    example:
+      'Hi {{1}}, a customer is reviewing providers for a {{2}} job in {{3}}. Preferred time: {{4}}. Tap the button below to view the lead and respond.',
+  },
+
   technician_job_reminder: {
     name: 'technician_job_reminder',
     language: 'en_ZA',

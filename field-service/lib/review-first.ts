@@ -1639,6 +1639,10 @@ async function attemptProviderRfpWhatsAppNotification(params: {
   scheduledWindow: string
   jobUrl: string
   metadata: Record<string, unknown>
+  // RFP/shortlist sends should pass 'provider_rfp_lead_invite' once Meta has
+  // approved that template. Default ('provider_lead_offer') is the legacy
+  // "a customer selected you" copy and remains in place until then.
+  templateName?: 'provider_lead_offer' | 'provider_rfp_lead_invite'
 }): Promise<ProviderRfpSendResult> {
   const normalizedPhone = normaliseWhatsAppPhone(params.providerPhone)
   if (!normalizedPhone) {
@@ -1659,6 +1663,7 @@ async function attemptProviderRfpWhatsAppNotification(params: {
       area: params.area,
       scheduledWindow: params.scheduledWindow,
       jobUrl: params.jobUrl,
+      templateName: params.templateName,
       metadata: params.metadata,
     })
     if (!messageId) {

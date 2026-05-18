@@ -3217,16 +3217,38 @@ async function handleRfpLeadInterest(
 
   const ref = leadId.slice(-8).toUpperCase()
 
-  // Idempotent: already interested or already selected
-  if (lead.status === 'INTERESTED') {
-    await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.`)
+  // Customer-selection short-circuit. If the JobRequest has advanced past the
+  // shortlist-review window (PROVIDER_CONFIRMATION_PENDING or beyond) AND the
+  // tap is coming from a sibling provider whose own lead.status hasn't already
+  // moved on, the customer has picked someone else. Tell them plainly rather
+  // than silently transitioning their lead to INTERESTED or replying "already
+  // noted" — both of which would be misleading.
+  const jobOpenForRfp = ['MATCHING', 'SHORTLIST_READY'].includes(lead.jobRequest.status)
+  const leadStatusIsTerminalForSibling =
+    ['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED', 'CREDIT_APPLIED', 'ACCEPTED_LOCKED', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'].includes(lead.status)
+  if (!jobOpenForRfp && !leadStatusIsTerminalForSibling) {
+    await sendText(phone, `This lead is no longer available — the customer has moved forward with another provider. New leads will come through as jobs arise.`)
     return
   }
-  // Customer has selected this provider but acceptance is not yet locked. Direct
-  // them to the View lead URL on the prior template message so they can confirm
-  // acceptance via the PWA (this is the path that actually deducts the credit).
+
+  // Idempotent: already interested or already selected
+  if (lead.status === 'INTERESTED') {
+    await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.\n\nReply *status* to check your active leads.`)
+    return
+  }
+  // Customer has selected this provider but acceptance is not yet locked. Offer
+  // the same confirm_accept / confirm_decline buttons that notifySelectedProvider
+  // sends, in case that message scrolled off or never landed — handleSelectedProviderConfirmation
+  // is idempotent for already-locked leads. Also surface the View lead URL fallback.
   if (['CUSTOMER_SELECTED', 'PROVIDER_ACCEPTED', 'CREDIT_REQUIRED'].includes(lead.status)) {
-    await sendText(phone, `🎉 The customer selected you for Ref ${ref}.\n\nTap *View lead* on the previous message to confirm and unlock the customer's contact details. Accepting uses 1 credit.`)
+    await sendButtons(
+      phone,
+      `🎉 The customer selected you for Ref ${ref}.\n\nAccepting deducts 1 credit and unlocks the customer's contact details.`,
+      [
+        { id: `confirm_accept:${leadId}`, title: 'Accept (1 credit)' },
+        { id: `confirm_decline:${leadId}`, title: 'Decline' },
+      ],
+    )
     return
   }
   // Acceptance already finalised — provider just needs to act on the job.
@@ -3246,7 +3268,7 @@ async function handleRfpLeadInterest(
       leadStatus: lead.status,
       jobRequestStatus: lead.jobRequest.status,
     })
-    await sendText(phone, `We couldn't process your response right now.\n\n_Ref: ${traceId}_`)
+    await sendText(phone, `We couldn't process your response right now. Reply *menu* to return to the main menu or *status* to check your active leads.\n\n_Ref: ${traceId}_`)
     return
   }
 
@@ -3317,7 +3339,7 @@ async function handleRfpLeadInterest(
   }
 
   if (alreadyRegistered) {
-    await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.`)
+    await sendText(phone, `✅ Your availability for Ref ${ref} is already noted. The customer will reach out if they select you.\n\nReply *status* to check your active leads.`)
     return
   }
 
@@ -3376,7 +3398,7 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
       return
     }
 
-    const rfpOpenStatuses = ['SHORTLISTED', 'SEND_PENDING', 'SENT', 'VIEWED', 'INTERESTED'] as const
+    const rfpOpenStatuses = ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED', 'INTERESTED'] as const
     if (
       rfpOpenStatuses.includes(lead.status as (typeof rfpOpenStatuses)[number]) &&
       !lead.assignmentHoldId
@@ -3412,7 +3434,7 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
     console.error('[whatsapp-bot] ops_decline: unexpected failure', {
       traceId, phone, leadId, reason, providerId: provider.id, error,
     })
-    await sendText(phone, `We couldn't process your response right now.\n\n_Ref: ${traceId}_`)
+    await sendText(phone, `We couldn't process your response right now. Reply *menu* to return to the main menu or *status* to check your active leads.\n\n_Ref: ${traceId}_`)
   }
 }
 

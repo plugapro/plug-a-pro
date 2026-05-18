@@ -811,7 +811,7 @@ export async function sendJobOffer(params: {
   area: string         // "Sandton, Johannesburg"
   scheduledWindow: string
   jobUrl: string
-  templateName?: 'provider_lead_offer' | 'quick_match_provider_lead_offer'
+  templateName?: 'provider_lead_offer' | 'quick_match_provider_lead_offer' | 'provider_rfp_lead_invite'
   bookingId?: string   // not yet available at lead-dispatch time — optional for logging
   metadata?: Record<string, unknown>
 }): Promise<string> {

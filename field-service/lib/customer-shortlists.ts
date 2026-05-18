@@ -628,6 +628,12 @@ export async function selectShortlistedProviderForRequest(params: {
       data: { customerSelectedAt: selectedAt, expiresAt: leadExpiryTs },
     })
 
+    // Sibling shortlist leads are intentionally left in their current status
+    // so cascadeToNextShortlistedProvider can resurface them if the selected
+    // provider declines. handleRfpLeadInterest guards against stale taps from
+    // siblings by checking JobRequest.status (PROVIDER_CONFIRMATION_PENDING or
+    // beyond means the customer has moved forward with someone else).
+
     const selectedItem = await tx.providerShortlistItem.update({
       where: { id: item.id },
       data: { customerSelectedAt: selectedAt },

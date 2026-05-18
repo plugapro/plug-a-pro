@@ -207,4 +207,53 @@ describe('POST /api/auth/hooks/send-sms', () => {
     const json = await res.json()
     expect(json.error.message).toBe('invalid_body')
   })
+
+  // ─── Observability: every non-2xx branch must self-diagnose from logs ──────
+  it('logs a warn entry with phoneMasked and message="otp_whatsapp_disabled" when the flag is off', async () => {
+    vi.mocked(isEnabled).mockResolvedValueOnce(false)
+    const req = buildSignedRequest({
+      body: { user: { id: 'u1' }, sms: { otp: TEST_OTP, phone: TEST_PHONE } },
+    })
+    await POST(req)
+
+    const flagOffCall = consoleSpies.warn.mock.calls.find(
+      (call) =>
+        typeof call[0] === 'string' &&
+        call[0].includes('[send-sms-hook]') &&
+        call[0].includes('flag off'),
+    )
+    expect(flagOffCall).toBeDefined()
+    const payload = flagOffCall![1] as Record<string, unknown>
+    expect(payload.message).toBe('otp_whatsapp_disabled')
+    expect(payload.httpCode).toBe(503)
+    expect(payload.step).toBe('send-sms-hook')
+    expect(payload.userId).toBe('u1')
+    expect(typeof payload.phoneMasked).toBe('string')
+    expect(payload.phoneMasked).not.toContain('1234567')
+    expect(payload.timestamp).toEqual(expect.any(String))
+  })
+
+  it('logs a warn entry with phoneMasked and message="rate_limited" when the rate limiter rejects', async () => {
+    vi.mocked(checkOtpSendLimit).mockResolvedValueOnce({
+      ok: false,
+      code: 'phone_limit',
+      retryAfterMs: 60_000,
+    })
+    const req = buildSignedRequest({
+      body: { user: { id: 'u1' }, sms: { otp: TEST_OTP, phone: TEST_PHONE } },
+    })
+    await POST(req)
+
+    const rateLimitedCall = consoleSpies.warn.mock.calls.find(
+      (call) =>
+        typeof call[0] === 'string' && call[0].includes('rate limited'),
+    )
+    expect(rateLimitedCall).toBeDefined()
+    const payload = rateLimitedCall![1] as Record<string, unknown>
+    expect(payload.message).toBe('rate_limited')
+    expect(payload.httpCode).toBe(429)
+    expect(payload.step).toBe('send-sms-hook')
+    expect(typeof payload.phoneMasked).toBe('string')
+    expect(payload.phoneMasked).not.toContain('1234567')
+  })
 })

@@ -247,6 +247,7 @@ describe('customer shortlists', () => {
       lead: {
         findUnique: vi.fn().mockResolvedValue({ status: 'SENT' }),
         update: vi.fn().mockResolvedValue({ id: 'lead-1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         upsert: vi.fn().mockResolvedValue({
           id: 'lead-1',
           status: 'VIEWED',
@@ -412,6 +413,11 @@ describe('customer shortlists', () => {
       where: { id: 'lead-1' },
       data: { customerSelectedAt: expect.any(Date), expiresAt: expect.any(Date) },
     })
+    // Sibling leads are NOT marked SUPERSEDED here — they stay in their current
+    // status so cascadeToNextShortlistedProvider can resurface them if the
+    // selected provider later declines. Stale RFP taps from siblings are
+    // guarded by the JobRequest.status check in handleRfpLeadInterest.
+    expect(state.tx.lead.updateMany).not.toHaveBeenCalled()
     expect(sendButtons).toHaveBeenCalledWith(
       '+27111111111',
       expect.stringContaining('Accepting this job uses 1 credit'),
