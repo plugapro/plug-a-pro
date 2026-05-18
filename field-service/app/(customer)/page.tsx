@@ -195,7 +195,7 @@ export default async function CustomerHomePage({
             return (
               <Link
                 key={cat.label}
-                href={categoryHref(cat.tag, area, 'q' in cat ? cat.q : undefined)}
+                href={categoryHref(cat.tag, area)}
                 className="flex flex-col items-center gap-2 pt-[14px] pb-[10px] px-1.5 rounded-[16px] transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 active:translate-y-px active:scale-[0.985]"
                 style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}
               >
