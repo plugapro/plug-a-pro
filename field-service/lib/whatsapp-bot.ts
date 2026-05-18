@@ -3229,7 +3229,14 @@ async function handleRfpLeadInterest(
     await sendText(phone, `This lead is no longer available. New leads will come through as jobs arise.`)
     return
   }
-  if (!['SHORTLISTED', 'SEND_PENDING', 'SENT', 'VIEWED'].includes(lead.status)) {
+  if (!['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED'].includes(lead.status)) {
+    console.warn('[whatsapp-bot] rfp_interest: unexpected_lead_status', {
+      traceId,
+      leadId,
+      providerId,
+      leadStatus: lead.status,
+      jobRequestStatus: lead.jobRequest.status,
+    })
     await sendText(phone, `We couldn't process your response right now.\n\n_Ref: ${traceId}_`)
     return
   }
@@ -3262,7 +3269,7 @@ async function handleRfpLeadInterest(
         where: {
           id: leadId,
           providerId,
-          status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SENT', 'VIEWED'] },
+          status: { in: ['SHORTLISTED', 'SEND_PENDING', 'SEND_FAILED', 'SENT', 'VIEWED'] },
         },
         data: { status: 'INTERESTED', respondedAt: new Date() },
       })
@@ -3353,7 +3360,7 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
     // Load the lead and handle pre-customer-selection RFP leads with a direct update.
     const lead = await db.lead.findUnique({
       where: { id: leadId },
-      select: { id: true, status: true, providerId: true, assignmentHoldId: true },
+      select: { id: true, status: true, providerId: true, assignmentHoldId: true, jobRequestId: true },
     })
 
     if (!lead || lead.providerId !== provider.id) {
@@ -3367,7 +3374,7 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
       !lead.assignmentHoldId
     ) {
       const now = new Date()
-      await db.lead.updateMany({
+      const updatedCount = await db.lead.updateMany({
         where: { id: leadId, providerId: provider.id, status: { in: [...rfpOpenStatuses] } },
         data: { status: 'DECLINED', respondedAt: now, declinedAt: now },
       })
@@ -3375,6 +3382,17 @@ async function handleOpsLeadDecline(phone: string, buttonId: string): Promise<vo
       console.info('[whatsapp-bot] ops_decline: rfp_lead_declined', {
         traceId, leadId, providerId: provider.id, reason, prevStatus: lead.status,
       })
+      if (updatedCount.count > 0) {
+        const { cascadeToNextShortlistedProvider } = await import('./review-first')
+        await cascadeToNextShortlistedProvider({
+          requestId: lead.jobRequestId,
+          declinedLeadId: leadId,
+        }).catch((err) => {
+          console.warn('[whatsapp-bot] ops_decline: rfp_cascade_failed', {
+            traceId, leadId, requestId: lead.jobRequestId, error: err instanceof Error ? err.message : String(err),
+          })
+        })
+      }
       return
     }
 
