@@ -1452,6 +1452,65 @@ export async function sendCustomerRunningLateNotification(params: {
  *
  * Idempotency: checks `Job.invoiceWhatsappSentAt` before sending.
  */
+// ─── Pilot — post-job completion check (PCC1) ────────────────────────────────
+
+export async function sendCompletionCheckMessage(params: {
+  customerPhone: string; customerName: string; providerName: string
+  serviceName: string; matchId: string; isTest?: boolean
+}): Promise<string> {
+  const customerFirstName = params.customerName.split(' ')[0]
+  const providerFirstName = params.providerName.split(' ')[0]
+  return sendTemplate({
+    to: params.customerPhone,
+    template: 'post_job_completion_check',
+    components: [
+      { type: 'body', parameters: [{ type: 'text', text: customerFirstName }, { type: 'text', text: providerFirstName }, { type: 'text', text: params.serviceName }] },
+      { type: 'button', sub_type: 'quick_reply', index: 0, parameters: [{ type: 'payload', payload: `completion_yes_${params.matchId}` }] },
+      { type: 'button', sub_type: 'quick_reply', index: 1, parameters: [{ type: 'payload', payload: `completion_no_${params.matchId}` }] },
+    ],
+    metadata: { matchId: params.matchId },
+    allowTestCohortOverride: params.isTest,
+  })
+}
+
+export async function sendCustomerReviewRequest(params: {
+  customerPhone: string; customerName: string; providerName: string
+  serviceName: string; reviewUrl: string; matchId: string; isTest?: boolean
+}): Promise<void> {
+  const { sendCtaUrl } = await import('./whatsapp-interactive')
+  const customerFirstName = params.customerName.split(' ')[0]
+  const providerFirstName = params.providerName.split(' ')[0]
+  const body = `Great! Thanks for confirming, ${customerFirstName}. Would you like to leave a quick review for ${providerFirstName}? Reviews help other customers and take less than a minute.`
+  await sendCtaUrl(params.customerPhone, body, 'Leave a review', params.reviewUrl, undefined, { templateName: 'review:customer_cta', metadata: { matchId: params.matchId } })
+}
+
+export async function sendProviderReviewNudge(params: {
+  providerPhone: string; providerName: string; customerName: string
+  serviceName: string; reviewUrl: string; matchId: string; isTest?: boolean
+}): Promise<string> {
+  const providerFirstName = params.providerName.split(' ')[0]
+  const customerFirstName = params.customerName.split(' ')[0]
+  let tokenSuffix: string
+  try {
+    const url = new URL(params.reviewUrl)
+    const parts = url.pathname.split('/').filter(Boolean)
+    tokenSuffix = parts[parts.length - 1]
+    if (!tokenSuffix) throw new Error('empty token')
+  } catch {
+    throw new Error(`Invalid review URL for WhatsApp template button: ${params.reviewUrl}`)
+  }
+  return sendTemplate({
+    to: params.providerPhone,
+    template: 'post_job_provider_review_nudge',
+    components: [
+      { type: 'body', parameters: [{ type: 'text', text: providerFirstName }, { type: 'text', text: customerFirstName }, { type: 'text', text: params.serviceName }] },
+      { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: tokenSuffix }] },
+    ],
+    metadata: { matchId: params.matchId },
+    allowTestCohortOverride: params.isTest,
+  })
+}
+
 export async function sendProviderInvoiceTemplate(params: {
   customerPhone: string
   customerFullName: string

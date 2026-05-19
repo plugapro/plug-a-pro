@@ -428,6 +428,19 @@ export async function createPayatTopUpIntent(
     throw err
   }
 
+  await db.paymentIntent.update({
+    where: { id: intent.id },
+    data: {
+      metadata: toJson({
+        ...(typeof intent.metadata === 'object' && intent.metadata && !Array.isArray(intent.metadata)
+          ? intent.metadata
+          : {}),
+        payatReference: payat.reference,
+        paymentLink: payat.paymentLink,
+      }),
+    },
+  })
+
   const { notifyProviderPayatTopUpInitiated } = await import('./provider-wallet-notifications')
   notifyProviderPayatTopUpInitiated(intent.id, payat.paymentLink).catch((error: unknown) => {
     console.error('[provider-credit-payment-intents] Pay@ topup initiated WhatsApp notification failed', {

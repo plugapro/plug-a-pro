@@ -32,6 +32,7 @@ const {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     providerWallet: {
       update: vi.fn(),
@@ -118,6 +119,11 @@ describe('provider credit payment intents', () => {
       state.intents.push(intent)
       state.existingReferences.add(intent.paymentReference)
       return intent
+    })
+    mockDb.paymentIntent.update.mockImplementation(async (args: any) => {
+      const intent = state.intents.find((item) => item.id === args.where.id)
+      if (intent) Object.assign(intent, args.data)
+      return intent ?? null
     })
   })
 

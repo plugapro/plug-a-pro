@@ -24,7 +24,9 @@ vi.mock('../../lib/db', () => ({
     },
     paymentIntent: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       count: vi.fn(),
+      update: vi.fn(),
     },
   },
 }))
@@ -44,6 +46,11 @@ vi.mock('../../lib/provider-credit-payment-intents', () => ({
       this.name = 'ProviderCreditPaymentIntentError'
     }
   },
+}))
+
+vi.mock('../../lib/provider-wallet-notifications', () => ({
+  notifyProviderPayatTopUpInitiated: vi.fn(),
+  notifyProviderPaymentIntentCreated: vi.fn(),
 }))
 
 vi.mock('../../lib/payat', () => ({
@@ -216,6 +223,13 @@ describe('provider credits server actions', () => {
       const result = await createProviderPayatTopUpIntent(10_000)
 
       expect(result).toMatchObject({ ok: false, code: 'TOO_MANY_PENDING' })
+      expect(db.paymentIntent.count).toHaveBeenCalledWith({
+        where: {
+          providerId: 'provider-1',
+          paymentMethod: 'PAYAT',
+          status: { in: ['PENDING_PAYMENT', 'ITN_RECEIVED'] },
+        },
+      })
       expect(result.ok === false && result.userMessage).toContain('3 pending')
     })
 
@@ -268,6 +282,53 @@ describe('provider credits server actions', () => {
       const result = await createProviderPayatTopUpIntent(10_000)
 
       expect(result).toMatchObject({ ok: false, code: 'UNKNOWN' })
+    })
+  })
+
+  it('returns pending Pay@ intents with payment links from metadata', async () => {
+    const { db } = await arrangeProvider()
+    ;(db.paymentIntent.findMany as any).mockResolvedValue([
+      {
+        id: 'intent-payat-1',
+        amountCents: 10_000,
+        creditsToIssue: 2,
+        paymentReference: 'PAT-ABCDEF',
+        status: 'PENDING_PAYMENT',
+        createdAt: new Date('2026-05-19T09:00:00.000Z'),
+        expiresAt: new Date('2026-05-22T09:00:00.000Z'),
+        metadata: { paymentLink: 'https://go.payat.co.za/pay/intent-payat-1' },
+      },
+    ])
+
+    const { getProviderPendingIntents } = await import('../../app/(provider)/provider/credits/actions')
+    await expect(getProviderPendingIntents()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'intent-payat-1',
+        paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
+      }),
+    ])
+  })
+
+  it('returns payment intent status with creditsIssued and stored payment link', async () => {
+    const { db } = await arrangeProvider()
+    ;(db.paymentIntent.findFirst as any).mockResolvedValue({
+      status: 'CREDITED',
+      paidAt: new Date('2026-05-19T09:01:00.000Z'),
+      creditedAt: new Date('2026-05-19T09:02:00.000Z'),
+      amountCents: 10_000,
+      paymentReference: 'PAT-ABCDEF',
+      creditsToIssue: 2,
+      expiresAt: new Date('2026-05-22T09:00:00.000Z'),
+      paymentMethod: 'PAYAT',
+      metadata: { paymentLink: 'https://go.payat.co.za/pay/intent-payat-1' },
+    })
+
+    const { getPaymentIntentStatus } = await import('../../app/(provider)/provider/credits/actions')
+    await expect(getPaymentIntentStatus('intent-payat-1')).resolves.toMatchObject({
+      ok: true,
+      status: 'CREDITED',
+      creditsIssued: 2,
+      paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
     })
   })
 

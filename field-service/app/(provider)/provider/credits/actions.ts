@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { randomUUID } from 'crypto'
 import { type WalletCreditType, type WalletLedgerEntryType } from '@prisma/client'
 import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
@@ -20,6 +21,9 @@ import {
   type ProviderPayatTopUpResponse,
 } from '@/lib/provider-credit-payment-intents'
 import { PayatConfigError, PayatApiError, PayatTokenError } from '@/lib/payat'
+import { notifyProviderPayatTopUpInitiated as notifyProviderPayatTopUpInitiatedCore } from '@/lib/provider-wallet-notifications'
+
+const ACTIVE_PAYAT_STATUSES = ['PENDING_PAYMENT', 'ITN_RECEIVED'] as const
 
 const ESTIMATED_CREDITS_PER_LEAD_UNLOCK = 1
 const LEDGER_LIMIT = 20
@@ -35,6 +39,61 @@ export type ProviderWalletSummary = {
   promoCredits: number
   estimatedLeadsUnlockable: number
 }
+
+export type ProviderWallet = {
+  credits: number
+  starter: number
+  pendingIntents: ProviderWalletPendingIntent[]
+  recentActivity: ProviderWalletRecentActivityItem[]
+}
+
+export type ProviderWalletPendingIntent = {
+  id: string
+  amountCents: number
+  creditsToIssue: number
+  paymentReference: string
+  status: string
+  createdAt: string
+  expiresAt: string | null
+  paymentLink: string | null
+}
+
+export type ProviderWalletRecentActivityItem = {
+  id: string
+  title: string
+  ref: string
+  when: string
+  delta: number
+}
+
+export type PaymentIntentStatusResult =
+  | {
+      ok: true
+      status: string
+      creditsIssued?: number
+      paidAt: string | null
+      creditedAt: string | null
+      expiresAt: string | null
+      reference: string
+      paymentLink: string | null
+      amountCents: number
+      creditsToIssue: number
+    }
+  | {
+      ok: false
+      code: 'NOT_FOUND' | 'FORBIDDEN' | 'UNSUPPORTED_INTENT'
+      message: string
+    }
+
+export type NotifyPayatTopUpResult =
+  | {
+      ok: true
+    }
+  | {
+      ok: false
+      code: 'NOT_FOUND' | 'INVALID_STATUS' | 'MISSING_LINK'
+      message: string
+    }
 
 export type ProviderWalletLedgerItem = {
   id: string
@@ -114,6 +173,88 @@ function isDebit(entryType: WalletLedgerEntryType) {
     entryType === 'PAYMENT_REVERSAL'
 }
 
+function asText(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
+function asDateString(value: unknown) {
+  return value instanceof Date ? value.toISOString() : typeof value === 'string' ? value : null
+}
+
+function readMetadataPaymentLink(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const candidate = asText((metadata as Record<string, unknown>).paymentLink)
+  return candidate && /^https?:\/\//.test(candidate) ? candidate : null
+}
+
+function mergePayatDisplayMetadata(
+  metadata: unknown,
+  payat: { reference: string; paymentLink: string },
+) {
+  const base = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {}
+
+  return {
+    ...base,
+    payatReference: payat.reference,
+    paymentLink: payat.paymentLink,
+  }
+}
+
+function summarizeActivityLabel(entryType: WalletLedgerEntryType) {
+  switch (entryType) {
+    case 'TOPUP_CREDIT':
+      return 'Credit top-up · Pay@'
+    case 'PAYMENT_REVERSAL':
+      return 'Payment reversal'
+    case 'LEAD_REFUND_CREDIT':
+      return 'Lead refund'
+    case 'PROMO_CREDIT':
+      return 'Starter credit'
+    case 'ADMIN_ADJUSTMENT':
+      return 'Wallet adjustment'
+    case 'PROMO_EXPIRY':
+      return 'Starter credit expiry'
+    case 'LEAD_UNLOCK_DEBIT':
+      return 'Lead unlock'
+    default:
+      return 'Wallet activity'
+  }
+}
+
+function summarizeActivityRef(referenceType: string, referenceId: string) {
+  const short = referenceId.trim().replace(/[^A-Za-z0-9-]/g, '').slice(-8).toUpperCase()
+  switch (referenceType) {
+    case 'lead':
+    case 'lead_refund':
+      return `JOB-${short}`
+    case 'payment_intent':
+      return `PAT-${short}`
+    case 'manual_eft':
+      return `PAP-${short}`
+    case 'promo_campaign':
+      return 'PROMO'
+    default:
+      return `REF-${short}`
+  }
+}
+
+function normalizeWhenString(iso: string) {
+  const now = new Date()
+  const then = new Date(iso)
+  const mins = Math.floor((now.getTime() - then.getTime()) / 60_000)
+  if (Number.isNaN(mins) || mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function traceId() {
+  return `provider-wallet-topup-${randomUUID()}`
+}
+
 function providerSafeDetail(referenceType: string, referenceId: string) {
   const ref = referenceId.slice(-8).toUpperCase()
   switch (referenceType) {
@@ -157,6 +298,236 @@ export async function getProviderWalletSummary(): Promise<ProviderWalletSummary>
     estimatedLeadsUnlockable: Math.floor(
       balance.totalCreditBalance / ESTIMATED_CREDITS_PER_LEAD_UNLOCK,
     ),
+  }
+}
+
+export async function getProviderWallet(): Promise<ProviderWallet> {
+  const provider = await getAuthenticatedProvider()
+
+  const [balance, pendingIntents, walletEntries] = await Promise.all([
+    getProviderWalletBalance(provider.id),
+    getProviderPendingIntents(),
+    getProviderWalletLedgerEntries(provider.id, { limit: LEDGER_LIMIT }),
+  ])
+
+  return {
+    credits: balance.totalCreditBalance,
+    starter: balance.promoCreditBalance,
+    pendingIntents,
+    recentActivity: walletEntries.map((entry) => {
+      const signedAmount = isDebit(entry.entryType) ? -entry.amountCredits : entry.amountCredits
+
+      return {
+        id: entry.id,
+        title: summarizeActivityLabel(entry.entryType),
+        ref: summarizeActivityRef(entry.referenceType, entry.referenceId),
+        when: normalizeWhenString(entry.createdAt.toISOString()),
+        delta: signedAmount,
+      }
+    }),
+  }
+}
+
+export async function getProviderPendingIntents(): Promise<ProviderWalletPendingIntent[]> {
+  const provider = await getAuthenticatedProvider()
+  const pendingIntents = await db.paymentIntent.findMany({
+    where: {
+      providerId: provider.id,
+      paymentMethod: 'PAYAT',
+      status: { in: [...ACTIVE_PAYAT_STATUSES] },
+    },
+    select: {
+      id: true,
+      amountCents: true,
+      creditsToIssue: true,
+      paymentReference: true,
+      status: true,
+      createdAt: true,
+      expiresAt: true,
+      metadata: true,
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  return pendingIntents.map((intent) => ({
+    id: intent.id,
+    amountCents: intent.amountCents,
+    creditsToIssue: intent.creditsToIssue,
+    paymentReference: intent.paymentReference,
+    status: intent.status,
+    createdAt: intent.createdAt.toISOString(),
+    expiresAt: intent.expiresAt?.toISOString() ?? null,
+    paymentLink: readMetadataPaymentLink(intent.metadata),
+  }))
+}
+
+export async function getPaymentIntentStatus(intentId: string): Promise<PaymentIntentStatusResult> {
+  const startedAt = Date.now()
+  const actor = await getAuthenticatedProvider().catch(() => null)
+  if (!actor) {
+    return {
+      ok: false,
+      code: 'FORBIDDEN',
+      message: 'You are not authorized to view this payment intent.',
+    }
+  }
+
+  const intent = await db.paymentIntent.findFirst({
+    where: {
+      id: intentId,
+      providerId: actor.id,
+    },
+    select: {
+      status: true,
+      paidAt: true,
+      creditedAt: true,
+      amountCents: true,
+      paymentReference: true,
+      creditsToIssue: true,
+      expiresAt: true,
+      paymentMethod: true,
+      metadata: true,
+    },
+  })
+
+  if (!intent) {
+    console.warn('[payat] intent_status_not_found', {
+      providerId: actor.id,
+      intentId,
+      elapsedMs: Date.now() - startedAt,
+    })
+    return {
+      ok: false,
+      code: 'NOT_FOUND',
+      message: 'Payment intent was not found.',
+    }
+  }
+
+  if (intent.paymentMethod !== 'PAYAT') {
+    console.warn('[payat] intent_status_unsupported', {
+      providerId: actor.id,
+      intentId,
+      paymentMethod: intent.paymentMethod,
+      elapsedMs: Date.now() - startedAt,
+    })
+    return {
+      ok: false,
+      code: 'UNSUPPORTED_INTENT',
+      message: 'The selected intent is not a Pay@ top-up intent.',
+    }
+  }
+
+  console.info('[payat] intent_status_read', {
+    providerId: actor.id,
+    intentId,
+    status: intent.status,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  return {
+    ok: true,
+    status: intent.status,
+    creditsIssued: intent.status === 'CREDITED' ? intent.creditsToIssue : undefined,
+      paidAt: asDateString(intent.paidAt),
+      creditedAt: asDateString(intent.creditedAt),
+      expiresAt: asDateString(intent.expiresAt),
+      reference: intent.paymentReference,
+      paymentLink: readMetadataPaymentLink(intent.metadata),
+      amountCents: intent.amountCents,
+      creditsToIssue: intent.creditsToIssue,
+    }
+}
+
+export async function notifyProviderPayatTopUpInitiated(
+  intentId: string,
+): Promise<NotifyPayatTopUpResult> {
+  const startedAt = Date.now()
+  const actor = await getAuthenticatedProvider().catch(() => null)
+  if (!actor) {
+    return {
+      ok: false,
+      code: 'INVALID_STATUS',
+      message: 'You are not authorized to notify this top-up intent.',
+    }
+  }
+
+  const intent = await db.paymentIntent.findFirst({
+    where: {
+      id: intentId,
+      providerId: actor.id,
+    },
+    select: {
+      id: true,
+      paymentMethod: true,
+      status: true,
+      metadata: true,
+      amountCents: true,
+    },
+  })
+
+  if (!intent) {
+    return {
+      ok: false,
+      code: 'NOT_FOUND',
+      message: 'Payment intent was not found.',
+    }
+  }
+
+  if (intent.paymentMethod !== 'PAYAT') {
+    return {
+      ok: false,
+      code: 'INVALID_STATUS',
+      message: 'WhatsApp notifications are only available for Pay@ top-up links.',
+    }
+  }
+
+  if (intent.status !== 'PENDING_PAYMENT') {
+    return {
+      ok: false,
+      code: 'INVALID_STATUS',
+      message: 'This top-up link is no longer in a pending state.',
+    }
+  }
+
+  const paymentLink = readMetadataPaymentLink(intent.metadata)
+  if (!paymentLink) {
+    return {
+      ok: false,
+      code: 'MISSING_LINK',
+      message: 'Payment link is not available yet for this intent.',
+    }
+  }
+
+  const requestId = traceId()
+  console.info('[payat] notify_intent_link_button', {
+    requestId,
+    providerId: actor.id,
+    intentId,
+    amountCents: intent.amountCents,
+  })
+
+  try {
+    await notifyProviderPayatTopUpInitiatedCore(intentId, paymentLink)
+    console.info('[payat] notify_intent_link_button_sent', {
+      requestId,
+      providerId: actor.id,
+      intentId,
+      elapsedMs: Date.now() - startedAt,
+    })
+    return { ok: true }
+  } catch (error) {
+    console.error('[payat] notify_intent_link_button_failed', {
+      requestId,
+      providerId: actor.id,
+      intentId,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return {
+      ok: false,
+      code: 'INVALID_STATUS',
+      message: 'Could not send WhatsApp link at the moment.',
+    }
   }
 }
 
@@ -255,16 +626,26 @@ export type { PayatTopUpFailureCode, ProviderPayatTopUpResponse } from '@/lib/pr
 export async function createProviderPayatTopUpIntent(
   amountCents: number,
 ): Promise<ProviderPayatTopUpResponse> {
+  const startedAt = Date.now()
   let providerId: string | null = null
   let intentId: string | undefined
   try {
     const provider = await getAuthenticatedProvider()
     providerId = provider.id
     const activeIntentCount = await db.paymentIntent.count({
-      where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
+      where: {
+        providerId: provider.id,
+        paymentMethod: 'PAYAT',
+        status: { in: [...ACTIVE_PAYAT_STATUSES] },
+      },
     })
     if (activeIntentCount >= 3) {
-      console.warn('[payat] checkout_blocked: too_many_pending', { providerId: provider.id, amountCents, activeIntentCount })
+      console.warn('[payat] checkout_blocked: too_many_pending', {
+        providerId: provider.id,
+        amountCents,
+        activeIntentCount,
+        elapsedMs: Date.now() - startedAt,
+      })
       return {
         ok: false,
         code: 'TOO_MANY_PENDING',
@@ -277,8 +658,21 @@ export async function createProviderPayatTopUpIntent(
       providerCellphone: provider.phone,
     })
     intentId = result.intent.id
+    await db.paymentIntent.update({
+      where: { id: result.intent.id },
+      data: {
+        metadata: mergePayatDisplayMetadata(result.intent.metadata, result.payat),
+      },
+    })
 
     revalidatePath('/provider/credits')
+    console.info('[payat] checkout_created', {
+      providerId: provider.id,
+      intentId,
+      amountCents,
+      creditsToIssue: result.intent.creditsToIssue,
+      elapsedMs: Date.now() - startedAt,
+    })
     return {
       ok: true,
       data: {
@@ -291,7 +685,13 @@ export async function createProviderPayatTopUpIntent(
     }
   } catch (err) {
     if (err instanceof ProviderCreditPaymentIntentError) {
-      console.warn('[payat] checkout_blocked: payment_intent_error', { providerId, amountCents, code: err.code, message: err.message })
+      console.warn('[payat] checkout_blocked: payment_intent_error', {
+        providerId,
+        amountCents,
+        code: err.code,
+        message: err.message,
+        elapsedMs: Date.now() - startedAt,
+      })
       switch (err.code) {
         case 'DUPLICATE_INTENT':
           return {
@@ -320,7 +720,13 @@ export async function createProviderPayatTopUpIntent(
       }
     }
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[payat] checkout_failed', { providerId, amountCents, intentId, error: message })
+    console.error('[payat] checkout_failed', {
+      providerId,
+      amountCents,
+      intentId,
+      elapsedMs: Date.now() - startedAt,
+      error: message,
+    })
     // Match on typed error classes instead of message strings — Pay@ may
     // reword the underlying HTTP error copy without notice. PayatTokenError
     // and PayatApiError carry a `stage` discriminator + HTTP status so future

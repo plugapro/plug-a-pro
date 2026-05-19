@@ -231,6 +231,14 @@ export const FEATURE_FLAGS_REGISTRY = {
     defaultValue: false,
   },
 
+
+  // ─── Pilot — post-job review flow ────────────────────────────────────────────
+  'pilot.completion-check': {
+    description: 'Enable cron-driven completion-check WhatsApp flow for AUTO_ASSIGN cash-pilot jobs. Sends completion check 2 days after job window; fires review nudges on Yes.',
+    owner: 'ops',
+    defaultValue: false,
+  },
+
   // ─── Campaign / marketing ────────────────────────────────────────────────────
   'feature.deadlineed.b2b_landing': {
     description: 'Enable B2B variant of landing page copy for the Deadlineed campaign.',

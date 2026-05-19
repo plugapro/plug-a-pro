@@ -1,15 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import QRCode from 'react-qr-code'
-import { CheckCircle2, ExternalLink, Loader2, MessageCircle, QrCode, XCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-wallet'
-import {
-  createProviderPayatTopUpIntent,
-  type ProviderPayatTopUpResult,
-} from './actions'
+import { createProviderPayatTopUpIntent } from './actions'
 
 const TOP_UP_AMOUNTS_CENTS = [10_000, 20_000, 50_000] as const
 const TOP_UP_OPTIONS = TOP_UP_AMOUNTS_CENTS.map((amountCents) => ({
@@ -18,205 +14,8 @@ const TOP_UP_OPTIONS = TOP_UP_AMOUNTS_CENTS.map((amountCents) => ({
   credits: amountCents / PROVIDER_CREDIT_PRICE_CENTS,
 }))
 
-const POLL_INTERVAL_MS = 5_000
-const POLL_TIMEOUT_MS = 10 * 60 * 1000
-const TERMINAL_STATUSES = new Set(['CREDITED', 'FAILED', 'EXPIRED'])
-
-function whatsAppShareUrl(paymentLink: string) {
-  const message = `Tap here to pay for your Plug A Pro wallet top-up: ${paymentLink}`
-  return `https://wa.me/?text=${encodeURIComponent(message)}`
-}
-
-function PaymentScreen({
-  result,
-  onReset,
-}: {
-  result: ProviderPayatTopUpResult
-  onReset: () => void
-}) {
-  const router = useRouter()
-  const [paymentStatus, setPaymentStatus] = useState<string>('PENDING_PAYMENT')
-  const [timedOut, setTimedOut] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // H-7: Guards against a stale in-flight poll response overwriting terminal
-  // state. Once we reach a terminal status, all subsequent setPaymentStatus
-  // calls from in-flight requests are dropped, regardless of their order.
-  const stoppedRef = useRef(false)
-
-  useEffect(() => {
-    stoppedRef.current = false
-
-    function stopPolling() {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-    }
-
-    async function poll() {
-      if (stoppedRef.current) return
-      try {
-        const res = await fetch(`/api/provider/payment-intent/${result.intentId}/status`)
-        if (!res.ok) return
-        const data = (await res.json()) as { status: string }
-        if (stoppedRef.current) return
-        setPaymentStatus(data.status)
-        if (TERMINAL_STATUSES.has(data.status)) {
-          stoppedRef.current = true
-          stopPolling()
-          clearTimeout(timeoutRef.current!)
-          if (data.status === 'CREDITED') router.refresh()
-        }
-      } catch {
-        // network hiccup — retry on next tick
-      }
-    }
-
-    function startPolling() {
-      if (intervalRef.current) return
-      intervalRef.current = setInterval(poll, POLL_INTERVAL_MS)
-    }
-
-    // M-1: Pause polling when the tab is hidden to avoid wasting bandwidth,
-    // then immediately re-poll and restart the interval when the tab is restored.
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        stopPolling()
-      } else {
-        void poll()
-        startPolling()
-      }
-    }
-
-    startPolling()
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    // Timeout is set once per mount — not reset on each poll cycle.
-    timeoutRef.current = setTimeout(() => {
-      stoppedRef.current = true
-      stopPolling()
-      setTimedOut(true)
-    }, POLL_TIMEOUT_MS)
-
-    return () => {
-      stopPolling()
-      clearTimeout(timeoutRef.current!)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [result.intentId, router])
-
-  if (paymentStatus === 'CREDITED') {
-    return (
-      <div className="flex flex-col items-center gap-4 rounded-lg border bg-background p-6 text-center">
-        <CheckCircle2 className="size-10 text-green-500" aria-hidden="true" />
-        <div>
-          <p className="font-semibold">Credits added to your wallet</p>
-          <p className="text-sm text-muted-foreground">
-            {result.creditsToIssue} credits · R{result.amountCents / 100}
-          </p>
-        </div>
-        <Button onClick={onReset} variant="outline" size="sm">
-          Top up again
-        </Button>
-      </div>
-    )
-  }
-
-  if (paymentStatus === 'FAILED') {
-    return (
-      <div className="flex flex-col items-center gap-4 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
-        <XCircle className="size-10 text-destructive" aria-hidden="true" />
-        <div>
-          <p className="font-semibold">Payment could not be confirmed</p>
-          <p className="text-sm text-muted-foreground">
-            Contact support if funds were deducted.
-          </p>
-        </div>
-        <Button onClick={onReset} variant="outline" size="sm">
-          Try again
-        </Button>
-      </div>
-    )
-  }
-
-  if (paymentStatus === 'EXPIRED') {
-    return (
-      <div className="flex flex-col items-center gap-4 rounded-lg border bg-background p-6 text-center">
-        <XCircle className="size-10 text-[var(--ink-mute,theme(colors.muted.foreground))]" aria-hidden="true" />
-        <div>
-          <p className="font-semibold">Payment link expired</p>
-          <p className="text-sm text-muted-foreground">
-            This Pay@ link is no longer valid. Start a new top-up.
-          </p>
-        </div>
-        <Button onClick={onReset} variant="outline" size="sm">
-          Start new payment
-        </Button>
-      </div>
-    )
-  }
-
-  if (timedOut) {
-    return (
-      <div className="space-y-4 rounded-lg border bg-background p-4 text-center">
-        <p className="text-sm text-muted-foreground">
-          Taking longer than expected. Check your WhatsApp or try again.
-        </p>
-        <Button onClick={onReset} variant="outline" size="sm">
-          Start new payment
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-3 rounded-lg border bg-background p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold">Pay@ payment ready</p>
-            <p className="text-xs text-muted-foreground">
-              Ref {result.reference.slice(-8).toUpperCase()} · {result.creditsToIssue} credits
-            </p>
-          </div>
-          <QrCode className="size-5 text-primary" aria-hidden="true" />
-        </div>
-
-        <div className="flex justify-center rounded-md border bg-white p-3">
-          <QRCode value={result.paymentLink} size={200} />
-        </div>
-
-        <p className="text-center text-xs text-muted-foreground">
-          Scan at Pick n Pay, Shoprite, or Checkers to pay cash
-        </p>
-
-        <div className="grid grid-cols-2 gap-2">
-          <Button asChild>
-            <a href={result.paymentLink} target="_blank" rel="noreferrer">
-              <ExternalLink className="size-4" aria-hidden="true" />
-              Pay now
-            </a>
-          </Button>
-          <Button asChild variant="outline">
-            <a href={whatsAppShareUrl(result.paymentLink)} target="_blank" rel="noreferrer">
-              <MessageCircle className="size-4" aria-hidden="true" />
-              WhatsApp
-            </a>
-          </Button>
-        </div>
-
-        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-          Waiting for payment confirmation…
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function PayatPackageSelector() {
-  const [result, setResult] = useState<ProviderPayatTopUpResult | null>(null)
+  const router = useRouter()
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -228,7 +27,11 @@ export function PayatPackageSelector() {
       try {
         const response = await createProviderPayatTopUpIntent(amountCents)
         if (response.ok) {
-          setResult(response.data)
+          router.push(`/provider/credits/intent/${response.data.intentId}`)
+          return
+        }
+        if (response.code === 'TOO_MANY_PENDING') {
+          router.push('/provider/credits/limit')
           return
         }
         // Server action returned a structured failure — surface the specific
@@ -236,26 +39,16 @@ export function PayatPackageSelector() {
         console.error('[PayatPackageSelector] checkout_failed', { code: response.code })
         setSelectedAmount(null)
         setError(response.userMessage)
+        toast.error(response.userMessage)
       } catch (err) {
         // Should be rare now (server action returns errors as values), but log
         // the raw error in case Next.js stripped a thrown one in production.
         console.error('[PayatPackageSelector] checkout_threw', err)
         setSelectedAmount(null)
         setError('Could not start Pay@ checkout. Please try again or use Payfast.')
+        toast.error('Could not start Pay@ checkout. Please try again or use Payfast.')
       }
     })
-  }
-
-  if (result) {
-    return (
-      <PaymentScreen
-        result={result}
-        onReset={() => {
-          setResult(null)
-          setSelectedAmount(null)
-        }}
-      />
-    )
   }
 
   return (
@@ -263,22 +56,40 @@ export function PayatPackageSelector() {
       <div className="grid gap-2">
         {TOP_UP_OPTIONS.map((option) => {
           const isLoading = isPending && selectedAmount === option.amountCents
+          // rows that are not loading get dimmed while another is pending
+          const isDisabledOther = isPending && !isLoading
           return (
             <button
               key={option.amountCents}
               type="button"
               onClick={() => handleSelect(option.amountCents)}
               disabled={isPending}
-              className="flex w-full items-center justify-between rounded-lg border bg-background p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-between rounded-[14px] px-4 py-3.5 text-left transition-opacity"
+              style={{
+                background: 'var(--card-alt)',
+                boxShadow: 'inset 0 0 0 1px var(--border)',
+                opacity: isDisabledOther ? 0.5 : 1,
+                cursor: isPending ? 'not-allowed' : 'pointer',
+              }}
             >
-              <span>
-                <span className="block font-semibold">{option.label}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {option.credits} Plug A Pro provider credits
+              <span className="flex flex-col gap-0.5">
+                {/* Amount label */}
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
+                  {option.label}
+                </span>
+                {/* Credit count */}
+                <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
+                  {option.credits} Plug A Pro credits
                 </span>
               </span>
-              <span className="flex items-center gap-2 text-sm font-medium">
-                {isLoading ? <Loader2 className="size-4 animate-spin" /> : 'Create Pay@ link'}
+              {/* Right action label or spinner */}
+              <span
+                className="flex items-center gap-2"
+                style={{ fontSize: 13, fontWeight: 600, color: '#8B3FE8' }}
+              >
+                {isLoading
+                  ? <Loader2 className="size-4 animate-spin" style={{ color: '#8B3FE8' }} />
+                  : 'Create Pay@ link'}
               </span>
             </button>
           )
@@ -286,7 +97,15 @@ export function PayatPackageSelector() {
       </div>
 
       {error ? (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <p
+          className="rounded-[12px] px-4 py-3"
+          style={{
+            fontSize: 12.5,
+            color: '#EF4444',
+            background: 'rgba(239,68,68,0.06)',
+            boxShadow: 'inset 0 0 0 1px rgba(239,68,68,0.2)',
+          }}
+        >
           {error}
         </p>
       ) : null}

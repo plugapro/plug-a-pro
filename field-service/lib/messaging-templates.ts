@@ -443,6 +443,31 @@ export const TEMPLATES = {
       'Hi {{1}}, {{2}} has submitted a quote for your {{3}} job. Amount: {{4}}. Estimated time: {{5}} hours. Valid until: {{6}}. Details: {{7}}. Please accept or decline below.',
   },
 
+  // ─── Pilot — post-job completion check & review nudge ────────────────────
+
+  post_job_completion_check: {
+    name: 'post_job_completion_check',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a customer ~2 days after the job window to confirm completion (cash pilot flow). Requires Meta approval with 2 Quick Reply buttons.',
+    // body: {{1}} customer first name, {{2}} provider first name, {{3}} service label
+    // button 0 (quick_reply): "Yes, all done" → payload completion_yes_<matchId>
+    // button 1 (quick_reply): "Not quite"     → payload completion_no_<matchId>
+    example:
+      'Hi {{1}}, did {{2}} complete your {{3}} job as expected?\n\nTap below to let us know — it takes 5 seconds.',
+  },
+
+  post_job_provider_review_nudge: {
+    name: 'post_job_provider_review_nudge',
+    language: 'en_ZA',
+    category: 'UTILITY',
+    description: 'Sent to a provider when their customer confirmed job completion. Nudges them to leave a review with a URL button. Requires Meta approval.',
+    // body: {{1}} provider first name, {{2}} customer first name, {{3}} service label
+    // button 0 (url): review link suffix (token) — base URL must be registered in Meta template
+    example:
+      'Hi {{1}}, {{2}} confirmed your {{3}} job is complete. \u2b50 Reviews on Plug A Pro boost your profile score and the leads you receive. Tap below to rate the job — it takes 30 seconds.',
+  },
+
   // ─── MVP1 pilot — accepted lock confirmations ────────────────────────────
 
   mvp1_accepted_lock_customer_confirmation: {

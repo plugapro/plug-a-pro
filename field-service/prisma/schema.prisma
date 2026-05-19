@@ -594,6 +594,13 @@ model Match {
   @@index([jobRequestId])
   @@index([providerId, status])
   @@index([status, createdAt])
+  reviews      Review[]
+
+  completionCheckSentAt   DateTime?
+  completionCheckStatus   CompletionCheckStatus?
+  completionCheckRetries  Int                   @default(0)
+  reviewRequestSentAt     DateTime?
+
   @@map("matches")
 }
 
@@ -1337,7 +1344,7 @@ model Invoice {
 
 model Review {
   id           String     @id @default(cuid())
-  jobId        String
+  jobId        String?
   reviewerType ReviewerType
   customerId   String?    // set when customer reviews provider
   providerId   String?    // set when provider rates customer
@@ -1583,6 +1590,15 @@ enum LeadUnlockDisputeStatus {
   OPEN
   APPROVED
   REJECTED
+}
+
+enum CompletionCheckStatus {
+  SENT
+  YES
+  NO_RESCHEDULED
+  NO_NOT_FINISHED
+  NO_DIDNT_SHOW
+  ADMIN_FLAGGED
 }
 
 enum MatchStatus {

@@ -306,6 +306,11 @@ function isStatelessNotificationReply(
     id.startsWith('rematch_no:') ||
     id.startsWith('quote_accept_') ||
     id.startsWith('quote_decline_') ||
+    id.startsWith('completion_yes_') ||
+    id.startsWith('completion_no_') ||
+    id.startsWith('completion_why_rescheduled_') ||
+    id.startsWith('completion_why_not_finished_') ||
+    id.startsWith('completion_why_didnt_show_') ||
     id.startsWith('post_match_contact:') ||
     id.startsWith('rebook_confirm:') ||
     id === 'rebook_cancel' ||
@@ -1208,6 +1213,46 @@ async function processInboundMessageUnlocked(
     if (reply.id?.startsWith('quote_accept_') || reply.id?.startsWith('quote_decline_')) {
       // ── Customer quote response buttons ─────────────────────────────────────
       await handleCustomerQuoteResponse(phone, reply.id)
+      return
+    }
+
+
+    if (reply.id?.startsWith('completion_yes_')) {
+      const matchId = reply.id.slice('completion_yes_'.length)
+      const { handleCompletionCheckYes } = await import('./completion-check')
+      await handleCompletionCheckYes({ matchId, customerPhone: phone })
+      return
+    }
+
+    if (reply.id?.startsWith('completion_no_')) {
+      const matchId = reply.id.slice('completion_no_'.length)
+      const { handleCompletionCheckNo } = await import('./completion-check')
+      const { db: _db } = await import('./db')
+      const _m = await _db.match.findUnique({ where: { id: matchId }, select: { provider: { select: { name: true } } } })
+      await handleCompletionCheckNo({ matchId, customerPhone: phone, providerFirstName: _m?.provider.name.split(' ')[0] ?? 'your provider' })
+      return
+    }
+
+    if (reply.id?.startsWith('completion_why_rescheduled_')) {
+      const matchId = reply.id.slice('completion_why_rescheduled_'.length)
+      const { handleCompletionCheckWhyRescheduled } = await import('./completion-check')
+      await handleCompletionCheckWhyRescheduled({ matchId, customerPhone: phone })
+      return
+    }
+
+    if (reply.id?.startsWith('completion_why_not_finished_')) {
+      const matchId = reply.id.slice('completion_why_not_finished_'.length)
+      const { handleCompletionCheckWhyNotFinished } = await import('./completion-check')
+      await handleCompletionCheckWhyNotFinished({ matchId, customerPhone: phone })
+      return
+    }
+
+    if (reply.id?.startsWith('completion_why_didnt_show_')) {
+      const matchId = reply.id.slice('completion_why_didnt_show_'.length)
+      const { handleCompletionCheckWhyDidntShow } = await import('./completion-check')
+      const { db: _db2 } = await import('./db')
+      const _m2 = await _db2.match.findUnique({ where: { id: matchId }, select: { provider: { select: { name: true } } } })
+      await handleCompletionCheckWhyDidntShow({ matchId, customerPhone: phone, providerName: _m2?.provider.name ?? 'the provider' })
       return
     }
 

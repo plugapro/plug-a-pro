@@ -145,6 +145,10 @@ const FLAGS: Array<{ key: string; description: string }> = [
     key: 'feature.customer.auto_assign_on_submit',
     description: 'When enabled, customer PWA job submissions use AUTO_ASSIGN mode for immediate matching. When disabled, submissions use OPS_REVIEW for manual approval.',
   },
+  {
+    key: 'pilot.completion-check',
+    description: 'Enable cron-driven completion-check WhatsApp flow for AUTO_ASSIGN cash-pilot jobs. Sends completion check 2 days after job window; fires review nudges on Yes.',
+  },
 ]
 
 async function main() {

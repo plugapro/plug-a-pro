@@ -97,6 +97,15 @@ describe('Pay@ provider credit payment intents', () => {
       },
       payAtAmountCents: 10_000, // no fee passed → payAtAmountCents equals amountCents
     })
+    expect(mockDb.paymentIntent.update).toHaveBeenCalledWith({
+      where: { id: 'intent-payat-1' },
+      data: {
+        metadata: {
+          payatReference: 'intent-payat-1',
+          paymentLink: 'https://go.payat.co.za/pay/intent-payat-1',
+        },
+      },
+    })
   })
 
   it('rejects DUPLICATE_INTENT when an active PENDING_PAYMENT Pay@ intent already exists', async () => {
