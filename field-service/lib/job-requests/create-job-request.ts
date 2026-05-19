@@ -17,6 +17,7 @@ import { createTestCohortContext, testRequestFields } from '../internal-test-coh
 import { phoneLookupVariants } from '../whatsapp-identity'
 import { normaliseLocationDisplayName } from '../location-format'
 import { buildRequestRef } from '../client-request-data'
+import { normalizeCustomerName } from '../customer-name'
 
 export interface CreateJobRequestParams {
   // Customer identity — supply one of the two sets:
@@ -117,6 +118,13 @@ function uniqueAttachmentIds(ids: string[] | undefined) {
   return Array.from(new Set((ids ?? []).map((id) => id.trim()).filter(Boolean)))
 }
 
+function maskPhone(phone?: string | null) {
+  if (!phone) return 'unknown'
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length <= 4) return '***'
+  return `***${digits.slice(-4)}`
+}
+
 export async function createJobRequest(
   params: CreateJobRequestParams,
 ): Promise<CreateJobRequestResult> {
@@ -188,6 +196,27 @@ export async function createJobRequest(
 
     // Resolve or create customer — support both userId-keyed (web) and
     // phone-keyed (WhatsApp) lookups so duplicate records never appear.
+    const incomingCustomerName = normalizeCustomerName(params.customerName)
+    const existingCustomerForPhone = await tx.customer.findUnique({
+      where: { phone: params.phone },
+      select: { id: true, userId: true, name: true, isTestUser: true, cohortName: true },
+    })
+    const existingCustomerName = normalizeCustomerName(existingCustomerForPhone?.name)
+    const resolvedCustomerName = incomingCustomerName ?? existingCustomerName
+    const resolvedCustomerNameSource = incomingCustomerName
+      ? 'incoming'
+      : existingCustomerName
+        ? 'existing'
+        : 'fallback'
+
+    console.info('[create-job-request] customer name resolution', {
+      category: params.category,
+      phone: maskPhone(params.phone),
+      customerNameSource: resolvedCustomerNameSource,
+      hasIncomingName: Boolean(incomingCustomerName),
+      hasExistingName: Boolean(existingCustomerName),
+    })
+
     let customer: { id: string; isTestUser: boolean; cohortName: string | null }
 
     if (params.userId) {
@@ -199,19 +228,15 @@ export async function createJobRequest(
       if (existingByUserId) {
         customer = existingByUserId
       } else {
-        const existingByPhone = await tx.customer.findUnique({
-          where: { phone: params.phone },
-          select: { id: true, userId: true, name: true, isTestUser: true, cohortName: true },
-        })
+        const existingByPhone = existingCustomerForPhone
 
         if (existingByPhone) {
+          const shouldPatchName = incomingCustomerName && !normalizeCustomerName(existingByPhone.name)
           customer = await tx.customer.update({
             where: { id: existingByPhone.id },
             data: {
               userId: params.userId,
-              ...(params.customerName && existingByPhone.name === 'WhatsApp Customer'
-                ? { name: params.customerName }
-                : {}),
+              ...(shouldPatchName ? { name: incomingCustomerName } : {}),
             },
             select: { id: true, isTestUser: true, cohortName: true },
           })
@@ -220,7 +245,7 @@ export async function createJobRequest(
             data: {
               userId: params.userId,
               phone: params.phone,
-              name: params.customerName ?? 'Customer',
+              name: incomingCustomerName ?? 'Customer',
               isTestUser: cohort.isTestUser,
               cohortName: cohort.cohortName,
             },
@@ -229,15 +254,24 @@ export async function createJobRequest(
         }
       }
     } else {
+      console.info('[create-job-request] applying phone-only customer upsert with resolved name', {
+        phone: maskPhone(params.phone),
+        customerNameSource: resolvedCustomerNameSource,
+      })
       customer = await tx.customer.upsert({
         where: { phone: params.phone },
         create: {
           phone: params.phone,
-          name: params.customerName ?? 'WhatsApp Customer',
+          name: resolvedCustomerName ?? 'WhatsApp Customer',
           isTestUser: cohort.isTestUser,
           cohortName: cohort.cohortName,
         },
-        update: cohort.isTestUser ? { isTestUser: true, cohortName: cohort.cohortName } : {},
+        update: {
+          ...(cohort.isTestUser ? { isTestUser: true, cohortName: cohort.cohortName } : {}),
+          ...(incomingCustomerName && !normalizeCustomerName(existingCustomerForPhone?.name)
+            ? { name: incomingCustomerName }
+            : {}),
+        },
         select: { id: true, isTestUser: true, cohortName: true },
       })
     }

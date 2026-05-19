@@ -47,6 +47,7 @@ import {
   preferenceLabel,
   providerPreferenceFromReply,
 } from '../client-request-data'
+import { normalizeCustomerName } from '../customer-name'
 import {
   DuplicateActiveRequestError,
   JobRequestPhotoLinkError,
@@ -77,6 +78,41 @@ const ADDR_STEP_TTL_MS = Math.max(Number(process.env.WHATSAPP_SESSION_TIMEOUT_MS
 const PAGE_SIZE = 8
 function firstName(name?: string | null) {
   return name?.trim().split(/\s+/)[0] || 'there'
+}
+
+type CustomerNameResolutionSource = 'state' | 'conversation' | 'missing' | 'lookup_failed'
+
+type CustomerNameResolution = {
+  value: string | null
+  source: CustomerNameResolutionSource
+}
+
+async function resolveCustomerNameForSubmission(
+  phone: string,
+  stateCustomerName?: string | null,
+): Promise<CustomerNameResolution> {
+  const directState = normalizeCustomerName(stateCustomerName)
+  if (directState) return { value: directState, source: 'state' }
+
+  try {
+    const conversation = await db.conversation.findUnique({
+      where: { phone },
+      select: { data: true },
+    })
+    const conversationCustomerName = normalizeCustomerName(
+      (conversation?.data as ConversationData | undefined)?.customerName ?? null,
+    )
+    if (conversationCustomerName) return { value: conversationCustomerName, source: 'conversation' }
+  } catch (error) {
+    console.warn('[job-request-flow] customer name lookup from conversation failed', {
+      phone: maskedPhone(phone),
+      source: 'conversation',
+      error: error instanceof Error ? error.message : 'unknown_error',
+    })
+    return { value: null, source: 'lookup_failed' }
+  }
+
+  return { value: null, source: 'missing' }
 }
 
 function applicationRef(id: string) {
@@ -1490,6 +1526,16 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
   try {
     const category = ctx.data.category ?? ctx.data.selectedCategory ?? ''
     const photoAttachmentIds = uniqueStrings(ctx.data.photoAttachmentIds ?? []).slice(0, MAX_CUSTOMER_PHOTOS)
+    const { value: resolvedCustomerName, source: customerNameSource } =
+      await resolveCustomerNameForSubmission(ctx.phone, ctx.data.customerName)
+    const customerName = resolvedCustomerName ?? undefined
+
+    console.info('[job-request-flow] customer name resolved for submission', {
+      requestCategory: category,
+      source: customerNameSource,
+      hasName: Boolean(customerName),
+      phone: maskedPhone(ctx.phone),
+    })
 
     // Dedup is now enforced inside createJobRequest.$transaction via
     // DuplicateActiveRequestError — handled in the catch block below.
@@ -1521,7 +1567,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
 
       result = await createJobRequest({
         phone: ctx.phone,
-        customerName: ctx.data.customerName ?? 'WhatsApp Customer',
+        customerName,
         category,
         source: 'whatsapp',
         assignmentMode: 'OPS_REVIEW',
@@ -1551,7 +1597,7 @@ async function handleJobRequestSubmitted(ctx: FlowContext): Promise<FlowResult> 
       const addrParts = (ctx.data.address ?? '').split(',').map((p: string) => p.trim())
       result = await createJobRequest({
         phone: ctx.phone,
-        customerName: ctx.data.customerName ?? 'WhatsApp Customer',
+        customerName,
         category,
         source: 'whatsapp',
         assignmentMode: 'OPS_REVIEW',
@@ -1771,11 +1817,12 @@ async function handleNotifyMe(ctx: FlowContext): Promise<FlowResult> {
   }
 
   if (ctx.reply.id === 'notify_me' || ctx.step === 'notify_me') {
+    const fallbackName = normalizeCustomerName(ctx.data.customerName)
     await db.customer.upsert({
       where: { phone: ctx.phone },
       create: {
         phone: ctx.phone,
-        name: ctx.data.customerName ?? 'WhatsApp Customer',
+        name: fallbackName ?? 'WhatsApp Customer',
       },
       update: {},
     })

@@ -164,6 +164,34 @@ describe('createJobRequest', () => {
     )
   })
 
+  it('reuses an existing customer name when caller omits a placeholder name', async () => {
+    const tx = makeTx()
+    tx.customer.findUnique.mockResolvedValueOnce({
+      id: 'cust-by-phone',
+      userId: null,
+      name: 'Sarah Sullivan',
+      isTestUser: false,
+      cohortName: null,
+    })
+    tx.customer.upsert.mockResolvedValue({ id: 'cust-by-phone' })
+    tx.address.create.mockResolvedValue({ id: 'addr-1' })
+    tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
+    mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+
+    await createJobRequest({
+      ...BASE_PARAMS,
+      customerName: 'WhatsApp Customer',
+    })
+
+    const upsertCall = (tx.customer.upsert as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(upsertCall).toMatchObject({
+      create: expect.objectContaining({
+        name: 'Sarah Sullivan',
+      }),
+      update: expect.not.objectContaining({ name: 'WhatsApp Customer' }),
+    })
+  })
+
   it('links pre-uploaded WhatsApp customer photos inside the intake transaction', async () => {
     const tx = makeTx()
     tx.customer.upsert.mockResolvedValue({ id: 'cust-1' })
@@ -211,7 +239,9 @@ describe('createJobRequest', () => {
 
   it('reuses an existing web customer by userId when present', async () => {
     const tx = makeTx()
-    tx.customer.findUnique.mockResolvedValueOnce({ id: 'cust-by-user' })
+    tx.customer.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'cust-by-user' })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })
     mockDb.$transaction.mockImplementation(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
@@ -230,8 +260,8 @@ describe('createJobRequest', () => {
   it('links an existing phone customer to the authenticated web user when userId lookup misses', async () => {
     const tx = makeTx()
     tx.customer.findUnique
-      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: 'cust-by-phone', userId: null, name: 'WhatsApp Customer', isTestUser: false, cohortName: null })
+      .mockResolvedValueOnce(null)
     tx.customer.update.mockResolvedValue({ id: 'cust-by-phone', isTestUser: false, cohortName: null })
     tx.address.create.mockResolvedValue({ id: 'addr-1' })
     tx.jobRequest.create.mockResolvedValue({ id: 'jr-1' })

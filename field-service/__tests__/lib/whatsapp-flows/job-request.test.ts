@@ -516,6 +516,42 @@ describe('WhatsApp job-request flow — structured address', () => {
       )
     })
 
+    it('uses conversation-stored customer name when submission context misses customerName', async () => {
+      ;(db.conversation.findUnique as any).mockResolvedValue({
+        data: { customerName: 'Sarah Sullivan' },
+      })
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          customerName: undefined,
+        }),
+      )
+
+      expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerName: 'Sarah Sullivan',
+        }),
+      )
+    })
+
+    it('does not fail request submission when conversation name lookup errors', async () => {
+      ;(db.conversation.findUnique as any).mockRejectedValueOnce(new Error('conversation DB read timeout'))
+
+      await handleJobRequestFlow(
+        makeCtx('job_request_submitted', 'confirm_yes', undefined, {
+          ...structuredData,
+          customerName: undefined,
+        }),
+      )
+
+      expect(createJobRequestModule.createJobRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerName: undefined,
+        }),
+      )
+    })
+
     it('falls back to re-entering address when resolveStructuredAddressCapture throws InvalidStructuredAddressError', async () => {
       ;(structuredAddress.resolveStructuredAddressCapture as any).mockRejectedValue(
         new (structuredAddress as any).InvalidStructuredAddressError('invalid node'),
