@@ -14,14 +14,6 @@ import { getPublicAppUrl } from './provider-credit-copy'
 import { maskPhone } from './support-diagnostics'
 import { assertNoRawUrlsInWhatsAppBody, ctaLabelFor } from './whatsapp-copy'
 
-if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'test') {
-  if (!process.env.WHATSAPP_APP_SECRET) {
-    throw new Error(
-      '[whatsapp] WHATSAPP_APP_SECRET is required but not set. Set it in your environment before starting the server.'
-    )
-  }
-}
-
 const API_VERSION = 'v21.0'
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`
 
@@ -1159,7 +1151,7 @@ export async function sendAdminNewApplication(params: {
  *  - The computed HMAC does not match
  */
 export function verifyMetaSignature(rawBody: string, signature: string): boolean {
-  const appSecret = process.env.WHATSAPP_APP_SECRET
+  const appSecret = process.env.WHATSAPP_APP_SECRET?.trim()
   if (!appSecret) {
     console.error('[whatsapp] WHATSAPP_APP_SECRET not configured — rejecting webhook')
     return false
