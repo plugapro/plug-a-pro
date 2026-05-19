@@ -1,24 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../lib/db', () => ({
-  db: {
-    match: {
-      findUnique: vi.fn(),
-    },
-  },
+const { mockDbMatchFindUnique, mockGetPublicAppUrl } = vi.hoisted(() => ({
+  mockDbMatchFindUnique: vi.fn(),
+  mockGetPublicAppUrl: vi.fn(() => 'https://app.plugapro.co.za'),
 }))
 
-// Mock provider-credit-copy so createReviewUrl doesn't throw on getPublicAppUrl
-vi.mock('../../../lib/provider-credit-copy', () => ({
-  getPublicAppUrl: vi.fn(() => 'https://app.plugapro.co.za'),
+vi.mock('../../lib/db', () => ({
+  db: { match: { findUnique: mockDbMatchFindUnique } },
 }))
 
-// Provide a stable secret for deterministic signing
+vi.mock('../../lib/provider-credit-copy', () => ({
+  getPublicAppUrl: mockGetPublicAppUrl,
+}))
+
+// Set a stable secret before importing the module
 process.env.REVIEW_ACCESS_SECRET = 'test-secret-32-chars-exactly-ok!!'
 
-const { createReviewAccessToken, verifyReviewAccessToken, createReviewUrl, resolveReviewAccessToken } =
-  await import('../../../lib/review-access')
-const { db } = await import('../../../lib/db')
+import { createReviewAccessToken, verifyReviewAccessToken, createReviewUrl, resolveReviewAccessToken } from '../../lib/review-access'
 
 describe('review-access', () => {
   const matchId = 'match-abc-123'
@@ -36,15 +34,13 @@ describe('review-access', () => {
     it('returns expired for a token past its TTL', () => {
       const past = new Date(Date.now() - 1000)
       const token = createReviewAccessToken({ matchId, reviewerType, expiresAt: past })
-      const result = verifyReviewAccessToken(token)
-      expect(result.status).toBe('expired')
+      expect(verifyReviewAccessToken(token).status).toBe('expired')
     })
 
     it('returns invalid for a tampered token', () => {
       const token = createReviewAccessToken({ matchId, reviewerType })
       const tampered = token.slice(0, -4) + 'XXXX'
-      const result = verifyReviewAccessToken(tampered)
-      expect(result.status).toBe('invalid')
+      expect(verifyReviewAccessToken(tampered).status).toBe('invalid')
     })
 
     it('returns invalid for garbage input', () => {
@@ -62,7 +58,7 @@ describe('review-access', () => {
   })
 
   describe('createReviewUrl', () => {
-    it('returns a url containing /review/ when getPublicAppUrl is mocked', () => {
+    it('returns a url containing /review/', () => {
       const url = createReviewUrl({ matchId, reviewerType })
       expect(url).not.toBeNull()
       expect(url).toContain('/review/')
@@ -70,9 +66,7 @@ describe('review-access', () => {
   })
 
   describe('resolveReviewAccessToken', () => {
-    beforeEach(() => {
-      vi.clearAllMocks()
-    })
+    beforeEach(() => { vi.clearAllMocks(); mockGetPublicAppUrl.mockReturnValue('https://app.plugapro.co.za') })
 
     it('returns invalid status when token is invalid', async () => {
       const result = await resolveReviewAccessToken('bad-token')
@@ -90,16 +84,11 @@ describe('review-access', () => {
 
     it('returns active with null existingReview when no prior review', async () => {
       const token = createReviewAccessToken({ matchId, reviewerType })
-      ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      mockDbMatchFindUnique.mockResolvedValue({
         id: matchId,
         status: 'MATCHED',
         completionCheckStatus: 'YES',
-        jobRequest: {
-          id: 'jr-1',
-          category: 'Plumbing',
-          title: 'Fix leaky tap',
-          customer: { id: 'c-1', name: 'Sarah', phone: '+27821111111' },
-        },
+        jobRequest: { id: 'jr-1', category: 'Plumbing', title: 'Fix leaky tap', customer: { id: 'c-1', name: 'Sarah', phone: '+27821111111' } },
         provider: { id: 'p-1', name: 'Lovemore', phone: '+27822222222', avatarUrl: null },
         reviews: [],
       })
@@ -112,10 +101,8 @@ describe('review-access', () => {
 
     it('returns active with existingReview when a prior review exists', async () => {
       const token = createReviewAccessToken({ matchId, reviewerType })
-      ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: matchId,
-        status: 'MATCHED',
-        completionCheckStatus: 'YES',
+      mockDbMatchFindUnique.mockResolvedValue({
+        id: matchId, status: 'MATCHED', completionCheckStatus: 'YES',
         jobRequest: { id: 'jr-1', category: 'Plumbing', title: 'Fix leaky tap', customer: { id: 'c-1', name: 'Sarah', phone: '+27821111111' } },
         provider: { id: 'p-1', name: 'Lovemore', phone: '+27822222222', avatarUrl: null },
         reviews: [{ id: 'r-1', score: 5, comment: 'Great!', createdAt: new Date() }],
@@ -127,10 +114,8 @@ describe('review-access', () => {
 
     it('returns invalid when match is CANCELLED', async () => {
       const token = createReviewAccessToken({ matchId, reviewerType })
-      ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: matchId,
-        status: 'CANCELLED',
-        completionCheckStatus: null,
+      mockDbMatchFindUnique.mockResolvedValue({
+        id: matchId, status: 'CANCELLED', completionCheckStatus: null,
         jobRequest: { id: 'jr-1', category: 'Plumbing', title: 'Fix', customer: { id: 'c-1', name: 'Sarah', phone: '+27821111111' } },
         provider: { id: 'p-1', name: 'Lovemore', phone: '+27822222222', avatarUrl: null },
         reviews: [],
@@ -141,7 +126,7 @@ describe('review-access', () => {
 
     it('returns invalid when match is not found', async () => {
       const token = createReviewAccessToken({ matchId: 'missing-match', reviewerType })
-      ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+      mockDbMatchFindUnique.mockResolvedValue(null)
       const result = await resolveReviewAccessToken(token)
       expect(result.status).toBe('invalid')
     })
