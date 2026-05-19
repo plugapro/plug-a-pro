@@ -4,11 +4,16 @@ const { mockDb } = vi.hoisted(() => ({
   mockDb: {
     paymentIntent: {
       updateMany: vi.fn(),
+      findMany: vi.fn(),
     },
   },
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+const mockCreditProviderWalletFromPayatWebhook = vi.fn()
+vi.mock('@/lib/provider-credit-gateway-itn', () => ({
+  creditProviderWalletFromPayatWebhook: mockCreditProviderWalletFromPayatWebhook,
+}))
 
 function cronRequest(authHeader?: string) {
   return new Request('http://localhost/api/cron/expire-payment-intents', {
@@ -23,6 +28,11 @@ describe('GET /api/cron/expire-payment-intents', () => {
     vi.clearAllMocks()
     vi.stubEnv('CRON_SECRET', 'cron-secret')
     mockDb.paymentIntent.updateMany.mockResolvedValue({ count: 3 })
+    mockDb.paymentIntent.findMany.mockResolvedValue([])
+    mockCreditProviderWalletFromPayatWebhook.mockResolvedValue({
+      credited: true,
+      ledgerEntryId: 'ledger-1',
+    })
   })
 
   it('rejects requests without an authorization header', async () => {
@@ -47,7 +57,12 @@ describe('GET /api/cron/expire-payment-intents', () => {
 
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toMatchObject({ expired: 3 })
+    expect(body).toMatchObject({
+      expired: 3,
+      payatItnRecovered: 0,
+      payatItnSkipped: 0,
+      payatItnFailed: 0,
+    })
   })
 
   it('queries with the correct updateMany predicate targeting only lapsed PENDING_PAYMENT intents', async () => {
@@ -71,5 +86,59 @@ describe('GET /api/cron/expire-payment-intents', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body).toMatchObject({ expired: 0 })
+  })
+
+  it('retries eligible PAYAT ITN_RECEIVED intents and counts recovery outcomes', async () => {
+    mockDb.paymentIntent.findMany.mockResolvedValue([
+      { id: 'payat-intent-1' },
+      { id: 'payat-intent-2' },
+    ])
+    mockCreditProviderWalletFromPayatWebhook
+      .mockResolvedValueOnce({ credited: true, ledgerEntryId: 'ledger-1' })
+      .mockResolvedValueOnce({ credited: false, reason: 'already credited (concurrent call)' })
+
+    const { GET } = await import('@/app/api/cron/expire-payment-intents/route')
+    const res = await GET(cronRequest('Bearer cron-secret'))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      expired: 3,
+      payatItnRecovered: 1,
+      payatItnSkipped: 1,
+      payatItnFailed: 0,
+    })
+    expect(mockDb.paymentIntent.findMany).toHaveBeenCalledWith({
+      where: {
+        paymentMethod: 'PAYAT',
+        status: 'ITN_RECEIVED',
+        creditedAt: null,
+        itnPaymentStatus: { in: ['PAID', 'COMPLETED'] },
+        itnReceivedAt: { not: null },
+      },
+      select: { id: true },
+      orderBy: { itnReceivedAt: 'asc' },
+      take: 25,
+    })
+    expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledTimes(2)
+    expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('payat-intent-1')
+    expect(mockCreditProviderWalletFromPayatWebhook).toHaveBeenCalledWith('payat-intent-2')
+  })
+
+  it('counts recovery failures when PAYAT ITN recovery throws', async () => {
+    mockDb.paymentIntent.findMany.mockResolvedValue([{ id: 'payat-intent-1' }])
+    mockCreditProviderWalletFromPayatWebhook.mockRejectedValue(new Error('temporary outage'))
+
+    const { GET } = await import('@/app/api/cron/expire-payment-intents/route')
+    const res = await GET(cronRequest('Bearer cron-secret'))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({
+      expired: 3,
+      payatItnRecovered: 0,
+      payatItnSkipped: 0,
+      payatItnFailed: 1,
+    })
   })
 })

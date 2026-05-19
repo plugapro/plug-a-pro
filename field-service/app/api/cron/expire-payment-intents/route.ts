@@ -11,6 +11,9 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { creditProviderWalletFromPayatWebhook } from '@/lib/provider-credit-gateway-itn'
+
+const PAYAT_ITN_RECOVERY_BATCH = 25
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -35,9 +38,58 @@ export async function GET(request: Request) {
     })
 
     console.log(`[cron/expire-payment-intents:${reqId}] expired=${result.count}`)
+
+    const itnIntents = await db.paymentIntent.findMany({
+      where: {
+        paymentMethod: 'PAYAT',
+        status: 'ITN_RECEIVED',
+        creditedAt: null,
+        itnPaymentStatus: { in: ['PAID', 'COMPLETED'] },
+        itnReceivedAt: { not: null },
+      },
+      select: { id: true },
+      orderBy: { itnReceivedAt: 'asc' },
+      take: PAYAT_ITN_RECOVERY_BATCH,
+    })
+
+    let recovered = 0
+    let skipped = 0
+    let failed = 0
+
+    for (const it of itnIntents) {
+      try {
+        const recoveryResult = await creditProviderWalletFromPayatWebhook(it.id)
+        if (recoveryResult.credited) {
+          recovered += 1
+          continue
+        }
+
+        skipped += 1
+        console.warn('[cron/expire-payment-intents] payat itn recovery skipped', {
+          reqId,
+          intentId: it.id,
+          reason: recoveryResult.reason,
+        })
+      } catch (error) {
+        failed += 1
+        console.error('[cron/expire-payment-intents] payat itn recovery failed', {
+          reqId,
+          intentId: it.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    console.log(`[cron/expire-payment-intents:${reqId}] payat-itn-recovered=${recovered}, skipped=${skipped}, failed=${failed}`)
     const duration = Date.now() - cronStart
     console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
-    return NextResponse.json({ expired: result.count, durationMs: duration })
+    return NextResponse.json({
+      expired: result.count,
+      payatItnRecovered: recovered,
+      payatItnSkipped: skipped,
+      payatItnFailed: failed,
+      durationMs: duration,
+    })
   } catch (err) {
     const duration = Date.now() - cronStart
     console.error(JSON.stringify({ event: 'cron_error', cron: cronName, durationMs: duration, error: String(err), timestamp: new Date().toISOString() }))
