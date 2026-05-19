@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/leads/route";
+import { checkMarketingLeadRateLimit } from "@/lib/rate-limit";
 
 const { marketingInsertMock, intakeInsertMock, fromMock } = vi.hoisted(() => ({
   marketingInsertMock: vi.fn().mockResolvedValue({ error: null }),
@@ -13,6 +14,10 @@ vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: fromMock,
   },
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  checkMarketingLeadRateLimit: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 function makeRequest(body: unknown, ip = "127.0.0.1"): Request {
@@ -31,6 +36,7 @@ describe("POST /api/leads", () => {
     vi.clearAllMocks();
     marketingInsertMock.mockResolvedValue({ error: null });
     intakeInsertMock.mockResolvedValue({ error: null });
+    vi.mocked(checkMarketingLeadRateLimit).mockResolvedValue({ ok: true });
   });
 
   it("returns 200 for valid waitlist submission", async () => {
@@ -122,5 +128,21 @@ describe("POST /api/leads", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+
+  it("returns 503 when durable rate limiting is unavailable", async () => {
+    vi.mocked(checkMarketingLeadRateLimit).mockResolvedValueOnce({
+      ok: false,
+      code: "limiter_unavailable",
+      retryAfterMs: 60_000,
+    });
+
+    const req = makeRequest({ type: "waitlist", email: "test@example.com" });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(json.error).toMatch(/temporarily unavailable/i);
   });
 });

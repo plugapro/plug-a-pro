@@ -13,6 +13,10 @@ vi.mock("@/lib/supabase", () => ({
   supabase: { from: fromMock },
 }));
 
+vi.mock("@/lib/rate-limit", () => ({
+  checkMarketingLeadRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+}));
+
 function makeRequest(body: unknown, ip = "127.0.0.1"): Request {
   return new Request("http://localhost/api/leads", {
     method: "POST",

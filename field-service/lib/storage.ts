@@ -10,8 +10,22 @@ const ALLOWED_MIME_TYPES = [
   'image/png',
   'image/webp',
   'image/heic',
+  'image/heif',
   'application/pdf',
-]
+] as const
+
+const ALLOWED_EXTENSIONS_BY_MIME: Record<(typeof ALLOWED_MIME_TYPES)[number], string[]> = {
+  'image/jpeg': ['jpg', 'jpeg'],
+  'image/png': ['png'],
+  'image/webp': ['webp'],
+  'image/heic': ['heic', 'heif'],
+  'image/heif': ['heif', 'heic'],
+  'application/pdf': ['pdf'],
+}
+
+function isAllowedMimeType(value: string): value is (typeof ALLOWED_MIME_TYPES)[number] {
+  return (ALLOWED_MIME_TYPES as readonly string[]).includes(value)
+}
 
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
@@ -22,9 +36,9 @@ export async function uploadJobPhoto(params: {
   caption?: string | null
   uploadedBy: string
 }): Promise<string> {
-  validateFile(params.file)
+  await validateFile(params.file)
 
-  const ext = params.file.name.split('.').pop() ?? 'jpg'
+  const ext = safeExtension(params.file)
   const key = `jobs/${params.jobId}/${Date.now()}-${params.label ?? 'photo'}.${ext}`
 
   const blob = await put(key, params.file, {
@@ -59,9 +73,9 @@ export async function uploadJobRequestPhoto(params: {
   uploadedBy: string
   safeForPreview?: boolean
 }): Promise<string> {
-  validateFile(params.file)
+  await validateFile(params.file)
 
-  const ext = params.file.name.split('.').pop() ?? 'jpg'
+  const ext = safeExtension(params.file)
   const key = `job-requests/${params.jobRequestId}/${Date.now()}-${params.label ?? 'evidence'}.${ext}`
 
   const blob = await put(key, params.file, {
@@ -94,9 +108,9 @@ export async function uploadQuoteAttachment(params: {
   file: File
   uploadedBy: string
 }): Promise<string> {
-  validateFile(params.file)
+  await validateFile(params.file)
 
-  const ext = params.file.name.split('.').pop() ?? 'jpg'
+  const ext = safeExtension(params.file)
   const key = `quotes/${params.quoteId}/${Date.now()}.${ext}`
 
   const blob = await put(key, params.file, {
@@ -123,9 +137,9 @@ export async function uploadProviderPaymentProof(params: {
   paymentIntentId: string
   file: File
 }): Promise<string> {
-  validateFile(params.file)
+  await validateFile(params.file)
 
-  const ext = params.file.name.split('.').pop() ?? 'bin'
+  const ext = safeExtension(params.file)
   const key = `provider-credit-payments/${params.paymentIntentId}/${Date.now()}-proof.${ext}`
 
   const blob = await put(key, params.file, {
@@ -167,11 +181,15 @@ export async function getUploadUrl(params: {
   contentType: string
   path: string // e.g. 'jobs/job_123'
 }): Promise<{ url: string; pathname: string }> {
-  if (!ALLOWED_MIME_TYPES.includes(params.contentType)) {
+  if (!isAllowedMimeType(params.contentType)) {
     throw new Error(`File type not allowed: ${params.contentType}`)
   }
 
-  const ext = params.filename.split('.').pop() ?? 'bin'
+  const ext = params.filename.split('.').pop()?.toLowerCase() ?? 'bin'
+  const allowedExtensions = ALLOWED_EXTENSIONS_BY_MIME[params.contentType]
+  if (!allowedExtensions?.includes(ext)) {
+    throw new Error(`File extension not allowed for ${params.contentType}`)
+  }
   const key = `${params.path}/${Date.now()}.${ext}`
 
   // For client uploads, use Vercel Blob client upload
@@ -181,15 +199,53 @@ export async function getUploadUrl(params: {
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
-function validateFile(file: File): void {
+function safeExtension(file: File): string {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (!isAllowedMimeType(file.type)) {
+    throw new Error(
+      `File type not allowed. Accepted: ${ALLOWED_MIME_TYPES.join(', ')}`
+    )
+  }
+  const allowedExtensions = ALLOWED_EXTENSIONS_BY_MIME[file.type]
+  if (!ext || !allowedExtensions?.includes(ext)) {
+    throw new Error(`File extension not allowed for ${file.type || 'unknown type'}`)
+  }
+  return ext
+}
+
+async function validateFile(file: File): Promise<void> {
   if (file.size > MAX_PHOTO_SIZE) {
     throw new Error(
       `File too large. Maximum size is ${MAX_PHOTO_SIZE / 1024 / 1024}MB.`
     )
   }
-  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-    throw new Error(
-      `File type not allowed. Accepted: ${ALLOWED_MIME_TYPES.join(', ')}`
-    )
+  safeExtension(file)
+  if (!(await fileSignatureMatches(file))) {
+    throw new Error(`File content does not match declared type: ${file.type}`)
   }
+}
+
+async function fileSignatureMatches(file: File): Promise<boolean> {
+  const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer())
+  if (file.type === 'image/jpeg') {
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  }
+  if (file.type === 'image/png') {
+    return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+  }
+  if (file.type === 'image/webp') {
+    return ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 4) === 'WEBP'
+  }
+  if (file.type === 'image/heic' || file.type === 'image/heif') {
+    const brand = ascii(bytes, 8, 4)
+    return ascii(bytes, 4, 4) === 'ftyp' && ['heic', 'heif', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)
+  }
+  if (file.type === 'application/pdf') {
+    return ascii(bytes, 0, 5) === '%PDF-'
+  }
+  return false
+}
+
+function ascii(bytes: Uint8Array, offset: number, length: number): string {
+  return String.fromCharCode(...bytes.slice(offset, offset + length))
 }
