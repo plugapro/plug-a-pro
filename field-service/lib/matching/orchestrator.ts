@@ -129,9 +129,24 @@ export async function orchestrateMatch(
   try {
     // 1. Fast candidate shortlist (precomputed pool or direct scan fallback)
     const useCandidatePool = await isEnabled('matching.v2.candidate_pool')
+    const matchingAddress = matchingJobRequest.address
+      ? {
+          suburb: matchingJobRequest.address.suburb || null,
+          city: matchingJobRequest.address.city || null,
+          lat: matchingJobRequest.address.lat,
+          lng: matchingJobRequest.address.lng,
+          locationNodeId: matchingJobRequest.address.locationNodeId,
+          provinceKey: matchingJobRequest.address.provinceKey,
+        }
+      : null
+
+    if (!matchingAddress) {
+      return { status: 'SKIP', reason: 'NO_ADDRESS' }
+    }
+
     const rawCandidates = await loadCandidatePool({
       category: matchingJobRequest.category,
-      address: matchingJobRequest.address,
+      address: matchingAddress,
       isTestRequest: matchingJobRequest.isTestRequest,
       limit: 30,
       usePool: useCandidatePool,

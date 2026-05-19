@@ -135,10 +135,24 @@ async function acceptLeadWithToken(formData: FormData) {
     })
   }
 
-  const { acceptLead } = await import('@/lib/matching-engine')
   let result
   try {
-    result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa', traceId })
+    if (lead.jobRequest.assignmentMode === 'AUTO_ASSIGN') {
+      const { acceptAssignmentOffer } = await import('@/lib/matching/service')
+      const offerResult = await acceptAssignmentOffer({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa' })
+      if (offerResult.ok) {
+        // acceptAssignmentOffer does not send notifications — fire-and-forget
+        import('@/lib/post-match-communications').then(({ notifyPostMatchAcceptance }) =>
+          notifyPostMatchAcceptance({ leadId: lead.id, providerId: lead.providerId, matchId: offerResult.matchId, creditTransactionId: offerResult.creditTransactionId })
+        ).catch(() => {})
+      }
+      result = offerResult.ok
+        ? { ok: true as const, currentCreditBalance: offerResult.currentCreditBalance, alreadyAccepted: offerResult.alreadyUnlocked ?? false, creditCheck: null }
+        : offerResult
+    } else {
+      const { acceptLead } = await import('@/lib/matching-engine')
+      result = await acceptLead({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa', traceId })
+    }
   } catch (error) {
     if (isRedirectError(error)) throw error
     console.error('[leads/access] accept lead action failed', {

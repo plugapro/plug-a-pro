@@ -293,6 +293,7 @@ export async function resolveProviderLeadAccessToken(
         select: {
           id: true,
           category: true,
+          assignmentMode: true,
           title: true,
           description: true,
           requestedWindowStart: true,

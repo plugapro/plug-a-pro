@@ -2818,10 +2818,10 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     return
   }
 
-  const { acceptLead } = await import('./matching-engine')
+  const { acceptAssignmentOffer } = await import('./matching/service')
   let result
   try {
-    result = await acceptLead({ leadId: lead.id, providerId: provider.id, source: 'whatsapp' })
+    result = await acceptAssignmentOffer({ leadId: lead.id, providerId: provider.id, source: 'whatsapp' })
   } catch (error) {
     await sendWhatsAppJourneyRecovery(phone, {
       userRole: 'provider',
@@ -2834,7 +2834,7 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
       error,
       traceId,
     })
-    console.error('[whatsapp-bot] accept: unhandled acceptLead exception', {
+    console.error('[whatsapp-bot] accept: unhandled acceptAssignmentOffer exception', {
       traceId,
       holdId,
       leadId: lead.id,
@@ -2950,13 +2950,27 @@ async function handleAssignmentHoldAcceptance(phone: string, buttonId: string): 
     return
   }
 
-  // Primary post-match notifications (customer + provider) are dispatched inside
-  // acceptLead via notifyPostMatchAcceptance. If that function failed to notify the
-  // provider (e.g. customer WhatsApp error, URL generation issue, transient API
-  // failure), send a reliable fallback so the provider is never left without a
-  // response after successfully accepting a lead.
-  if (!result.notificationSent) {
-    console.warn('[whatsapp-bot] accept: primary notification failed; sending fallback confirmation', {
+  // acceptAssignmentOffer does not send notifications — dispatch provider confirmation
+  // and customer notification here, then fall back to a simpler message if the
+  // provider notification fails (transient API error, URL generation failure, etc.).
+  const { notifyPostMatchAcceptance } = await import('./post-match-communications')
+  const notifyResult = await notifyPostMatchAcceptance({
+    leadId: lead.id,
+    providerId: provider.id,
+    matchId: result.matchId,
+    creditTransactionId: result.creditTransactionId,
+  }).catch((err: unknown) => {
+    console.error('[whatsapp-bot] accept: notifyPostMatchAcceptance failed (non-fatal)', {
+      traceId,
+      holdId,
+      leadId: lead.id,
+      providerId: provider.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return { providerNotified: false, customerNotified: false }
+  })
+  if (!notifyResult.providerNotified) {
+    console.warn('[whatsapp-bot] accept: primary provider notification failed; sending fallback confirmation', {
       traceId,
       holdId,
       leadId: lead.id,

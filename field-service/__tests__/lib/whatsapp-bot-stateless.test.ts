@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockDb,
   mockAcceptLead,
+  mockAcceptAssignmentOffer,
+  mockNotifyPostMatchAcceptance,
   mockAcceptSelectedProviderJob,
   mockDeclineSelectedProviderJob,
   mockProcessQuoteDecision,
@@ -29,6 +31,8 @@ const {
     },
   },
   mockAcceptLead: vi.fn(),
+  mockAcceptAssignmentOffer: vi.fn(),
+  mockNotifyPostMatchAcceptance: vi.fn(),
   mockAcceptSelectedProviderJob: vi.fn(),
   mockDeclineSelectedProviderJob: vi.fn(),
   mockProcessQuoteDecision: vi.fn(),
@@ -67,6 +71,7 @@ vi.mock('@/lib/whatsapp-flows/provider-journey', () => ({
   PROVIDER_JOURNEY_TRIGGERS: ['provider'],
 }))
 vi.mock('@/lib/matching-engine', () => ({ acceptLead: mockAcceptLead, declineLead: vi.fn() }))
+vi.mock('@/lib/matching/service', () => ({ acceptAssignmentOffer: mockAcceptAssignmentOffer }))
 vi.mock('@/lib/selected-provider-acceptance', () => ({
   acceptSelectedProviderJob: mockAcceptSelectedProviderJob,
 }))
@@ -85,6 +90,7 @@ vi.mock('@/lib/journey-recovery', async () => {
 })
 vi.mock('@/lib/post-match-communications', () => ({
   buildAcceptedLeadContactUrlForProvider: mockBuildAcceptedLeadContactUrlForProvider,
+  notifyPostMatchAcceptance: mockNotifyPostMatchAcceptance,
 }))
 vi.mock('@/lib/whatsapp-identity', () => ({
   resolveWhatsAppUserContext: vi.fn().mockResolvedValue({
@@ -248,13 +254,14 @@ describe('processInboundMessage stateless notification replies', () => {
 
   it('processes assignment accept buttons even when the previous conversation session expired mid-flow', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
-    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
-    mockAcceptLead.mockResolvedValue({ ok: true, matchId: 'match-1' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1', providerId: 'provider-1' })
+    mockAcceptAssignmentOffer.mockResolvedValue({ ok: true, matchId: 'match-1', creditTransactionId: null, currentCreditBalance: 2 })
+    mockNotifyPostMatchAcceptance.mockResolvedValue({ providerNotified: true, customerNotified: true })
     mockDb.jobRequest.findUnique.mockResolvedValue(null)
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
-    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+    expect(mockAcceptAssignmentOffer).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
     expect(mockSendButtons).not.toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('Your session timed out'),
@@ -264,8 +271,8 @@ describe('processInboundMessage stateless notification replies', () => {
 
   it('blocks WhatsApp assignment accept when the provider has zero credits', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
-    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
-    mockAcceptLead.mockResolvedValue({
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1', providerId: 'provider-1' })
+    mockAcceptAssignmentOffer.mockResolvedValue({
       ok: false,
       reason: 'INSUFFICIENT_CREDITS',
       currentCreditBalance: 0,
@@ -273,7 +280,7 @@ describe('processInboundMessage stateless notification replies', () => {
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
-    expect(mockAcceptLead).toHaveBeenCalledWith({
+    expect(mockAcceptAssignmentOffer).toHaveBeenCalledWith({
       leadId: 'lead-1',
       providerId: 'provider-1',
       source: 'whatsapp',
@@ -291,8 +298,8 @@ describe('processInboundMessage stateless notification replies', () => {
 
   it('returns a traceable technical message when WhatsApp assignment accept throws unexpectedly', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
-    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
-    mockAcceptLead.mockRejectedValue(new Error('database timeout'))
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1', providerId: 'provider-1' })
+    mockAcceptAssignmentOffer.mockRejectedValue(new Error('database timeout'))
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
@@ -810,43 +817,44 @@ describe('processInboundMessage stateless notification replies', () => {
     expect(resumeCall).toBeUndefined()
   })
 
-  it('sends an expired-lead message when acceptLead returns EXPIRED', async () => {
+  it('sends an expired-lead message when acceptAssignmentOffer returns EXPIRED', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
-    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
-    mockAcceptLead.mockResolvedValue({ ok: false, reason: 'EXPIRED' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1', providerId: 'provider-1' })
+    mockAcceptAssignmentOffer.mockResolvedValue({ ok: false, reason: 'EXPIRED' })
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
-    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+    expect(mockAcceptAssignmentOffer).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
     expect(mockSendText).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('⏰ This lead has expired'),
     )
   })
 
-  it('sends a taken message when acceptLead returns TAKEN', async () => {
+  it('sends a taken message when acceptAssignmentOffer returns TAKEN', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
-    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
-    mockAcceptLead.mockResolvedValue({ ok: false, reason: 'TAKEN' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1', providerId: 'provider-1' })
+    mockAcceptAssignmentOffer.mockResolvedValue({ ok: false, reason: 'TAKEN' })
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
-    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+    expect(mockAcceptAssignmentOffer).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
     expect(mockSendText).toHaveBeenCalledWith(
       PHONE,
       expect.stringContaining('⚡ This job was just assigned to another provider'),
     )
   })
 
-  it('does not send an error message on successful accept — delegates success notification to acceptLead', async () => {
+  it('calls notifyPostMatchAcceptance on successful accept and suppresses error messages', async () => {
     mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
-    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1' })
-    mockAcceptLead.mockResolvedValue({ ok: true, matchId: 'match-1' })
+    mockDb.lead.findFirst.mockResolvedValue({ id: 'lead-1', jobRequestId: 'jr-1', providerId: 'provider-1' })
+    mockAcceptAssignmentOffer.mockResolvedValue({ ok: true, matchId: 'match-1', creditTransactionId: null, currentCreditBalance: 2 })
+    mockNotifyPostMatchAcceptance.mockResolvedValue({ providerNotified: true, customerNotified: true })
 
     await processInboundMessage(buttonMessage('accept:hold-1'))
 
-    expect(mockAcceptLead).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
-    // Bot delegates success messaging (credit confirmation, job link) to acceptLead — no extra bot message
+    expect(mockAcceptAssignmentOffer).toHaveBeenCalledWith({ leadId: 'lead-1', providerId: 'provider-1', source: 'whatsapp' })
+    expect(mockNotifyPostMatchAcceptance).toHaveBeenCalledWith(expect.objectContaining({ leadId: 'lead-1', providerId: 'provider-1' }))
     expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('Something went wrong'))
     expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('expired'))
     expect(mockSendText).not.toHaveBeenCalledWith(PHONE, expect.stringContaining('insufficient'))
