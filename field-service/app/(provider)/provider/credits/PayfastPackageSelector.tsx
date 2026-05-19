@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import type { PayfastTopUpMethod } from '@/lib/provider-credit-payment-intents'
 import { PROVIDER_CREDIT_PRICE_CENTS } from '@/lib/provider-wallet'
 import { PayfastCheckoutForwarder } from '@/components/provider/PayfastCheckoutForwarder'
-import { createProviderPayfastTopUpIntent, type ProviderPayfastCheckoutResult } from './actions'
+import { createProviderPayfastTopUpIntent } from './actions'
 
 const TOP_UP_AMOUNTS_CENTS = [10_000, 20_000, 50_000] as const
 const TOP_UP_OPTIONS = TOP_UP_AMOUNTS_CENTS.map((amountCents) => ({
@@ -28,7 +28,7 @@ const METHOD_OPTIONS: {
 
 export function PayfastPackageSelector() {
   const [method, setMethod] = useState<PayfastTopUpMethod>('PAYFAST_CARD')
-  const [result, setResult] = useState<ProviderPayfastCheckoutResult | null>(null)
+  const [checkout, setCheckout] = useState<import('@/lib/payfast').PayfastCheckoutPayload | null>(null)
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -37,18 +37,18 @@ export function PayfastPackageSelector() {
     setError(null)
     setSelectedAmount(amountCents)
     startTransition(async () => {
-      try {
-        const checkout = await createProviderPayfastTopUpIntent(amountCents, method)
-        setResult(checkout)
-      } catch {
+      const result = await createProviderPayfastTopUpIntent(amountCents, method)
+      if (!result.ok) {
         setSelectedAmount(null)
-        setError('Could not start checkout. Please try again.')
+        setError(result.userMessage)
+        return
       }
+      setCheckout(result.checkout)
     })
   }
 
-  if (result) {
-    return <PayfastCheckoutForwarder checkout={result.checkout} />
+  if (checkout) {
+    return <PayfastCheckoutForwarder checkout={checkout} />
   }
 
   return (

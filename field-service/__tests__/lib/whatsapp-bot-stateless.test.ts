@@ -1226,3 +1226,203 @@ describe('processInboundMessage customer city selection routing', () => {
     expect(handleJobRequestFlow).not.toHaveBeenCalled()
   })
 })
+
+// ─── handleRfpLeadInterest (ops_accept button) ──────────────────────────────
+
+describe('handleRfpLeadInterest (ops_accept button)', () => {
+  function makeRfpLead(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'rfp-lead-1',
+      status: 'SENT',
+      providerId: 'provider-1',
+      jobRequestId: 'jr-1',
+      expiresAt: null,
+      jobRequest: { id: 'jr-1', category: 'Plumbing', status: 'SHORTLIST_READY' },
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useRealTimers()
+    mockSendText.mockResolvedValue('msg-text')
+    mockSendButtons.mockResolvedValue('msg-buttons')
+    mockSendCtaUrl.mockResolvedValue('msg-cta')
+    mockSendJourneyRecovery.mockResolvedValue(undefined)
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
+    mockDb.providerApplication.findUnique.mockResolvedValue(null)
+    mockDb.providerApplication.update.mockResolvedValue({})
+    expiredMidFlowConversation()
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDb.lead.findUnique.mockResolvedValue(makeRfpLead())
+    mockDb.lead.updateMany.mockResolvedValue({ count: 1 })
+    ;(mockDb as any).auditLog = { create: vi.fn().mockResolvedValue({}) }
+    ;(mockDb as any).providerRate = { findFirst: vi.fn().mockResolvedValue(null) }
+    ;(mockDb as any).providerLeadResponse = { create: vi.fn().mockResolvedValue({}) }
+    ;(mockDb as any).$transaction = vi.fn().mockImplementation(
+      async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb as any),
+    )
+  })
+
+    it('registers interest and sends availability-noted message on happy path', async () => {
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      expect(mockDb.lead.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'rfp-lead-1' }),
+          data: expect.objectContaining({ status: 'INTERESTED' }),
+        }),
+      )
+      expect(mockSendText).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining('Availability noted'),
+      )
+    })
+
+    it('sends "already noted" idempotent response when updateMany returns count=0', async () => {
+      mockDb.lead.updateMany.mockResolvedValue({ count: 0 })
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      const texts = mockSendText.mock.calls.map(([, body]) => body as string).join('\n')
+      expect(texts).toMatch(/already noted/i)
+    })
+
+    it('retries once on P2034 write conflict and sends success on second attempt', async () => {
+      let callCount = 0
+      ;(mockDb as any).$transaction = vi.fn().mockImplementation(
+        async (fn: (tx: typeof mockDb) => Promise<unknown>) => {
+          callCount++
+          if (callCount === 1) {
+            throw Object.assign(new Error('write conflict'), { code: 'P2034' })
+          }
+          return fn(mockDb as any)
+        },
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      expect((mockDb as any).$transaction).toHaveBeenCalledTimes(2)
+      expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('Availability noted'))
+    })
+
+    it('re-sends only the "I\'m Available" retry button (not "Not Available") when P2034 persists', async () => {
+      ;(mockDb as any).$transaction = vi.fn().mockRejectedValue(
+        Object.assign(new Error('write conflict'), { code: 'P2034' }),
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      expect(mockSendButtons).toHaveBeenCalledWith(
+        PHONE,
+        expect.stringContaining("couldn't register your availability"),
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'ops_accept:rfp-lead-1', title: "I'm Available" }),
+        ]),
+      )
+      const [, , buttons] = mockSendButtons.mock.calls.find(([p]) => p === PHONE) ?? []
+      const declineButton = (buttons as Array<{ id: string }> | undefined)?.find((b) =>
+        b.id.startsWith('ops_decline:'),
+      )
+      expect(declineButton).toBeUndefined()
+    })
+
+    it('treats P2002 unique constraint as concurrent dedup and sends "already noted"', async () => {
+      ;(mockDb as any).$transaction = vi.fn().mockRejectedValue(
+        Object.assign(new Error('unique constraint'), { code: 'P2002' }),
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      const texts = mockSendText.mock.calls.map(([, body]) => body as string).join('\n')
+      expect(texts).toMatch(/already noted/i)
+    })
+
+    it('sends graceful response and does not update DB when lead status is unexpected', async () => {
+      // MATCHED is not in the known-status list — triggers the unexpected_lead_status warn guard
+      mockDb.lead.findUnique.mockResolvedValue(
+        makeRfpLead({ status: 'MATCHED', jobRequest: { id: 'jr-1', category: 'Plumbing', status: 'SHORTLIST_READY' } }),
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+      expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining("couldn't process"))
+    })
+
+    it('sends expired message and does not update DB when lead.expiresAt is in the past', async () => {
+      mockDb.lead.findUnique.mockResolvedValue(
+        makeRfpLead({ expiresAt: new Date(Date.now() - 60_000) }),
+      )
+
+      await processInboundMessage(buttonMessage('ops_accept:rfp-lead-1'))
+
+      expect(mockDb.lead.updateMany).not.toHaveBeenCalled()
+      expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('expired'))
+    })
+  })
+
+// ─── handleSelectedProviderConfirmation — new failure branches ───────────────
+
+describe('handleSelectedProviderConfirmation — new failure branches', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useRealTimers()
+    mockSendText.mockResolvedValue('msg-text')
+    mockSendButtons.mockResolvedValue('msg-buttons')
+    mockSendCtaUrl.mockResolvedValue('msg-cta')
+    mockSendJourneyRecovery.mockResolvedValue(undefined)
+    mockDb.lead.findFirst.mockResolvedValue(null)
+    mockDb.providerApplication.findFirst.mockResolvedValue(null)
+    mockDb.providerApplication.findUnique.mockResolvedValue(null)
+    mockDb.providerApplication.update.mockResolvedValue({})
+    expiredMidFlowConversation()
+  })
+
+  it('sends support contact message when CREDIT_APPLICATION_FAILED on confirm_accept', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'CREDIT_APPLICATION_FAILED',
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-caf-1'))
+
+    const texts = mockSendText.mock.calls
+      .filter(([p]) => p === PHONE)
+      .map(([, body]) => body as string)
+      .join('\n')
+    expect(texts).toMatch(/couldn't complete the job assignment/i)
+    expect(texts).toMatch(/contact support/i)
+    expect(texts).toMatch(/Ref:/i)
+  })
+
+  it('sends credit-deducted warning with support contact when JOB_ASSIGNMENT_FAILED on confirm_accept', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockAcceptSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'JOB_ASSIGNMENT_FAILED',
+    })
+
+    await processInboundMessage(buttonMessage('confirm_accept:lead-jaf-1'))
+
+    const texts = mockSendText.mock.calls
+      .filter(([p]) => p === PHONE)
+      .map(([, body]) => body as string)
+      .join('\n')
+    expect(texts).toMatch(/credit was applied/i)
+    expect(texts).toMatch(/contact support/i)
+  })
+
+  it('sends job-not-found message when NOT_FOUND on confirm_decline', async () => {
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-1', name: 'Sipho Dlamini' })
+    mockDeclineSelectedProviderJob.mockResolvedValue({
+      ok: false,
+      reason: 'NOT_FOUND',
+    })
+
+    await processInboundMessage(buttonMessage('confirm_decline:lead-nf-1'))
+
+    expect(mockSendText).toHaveBeenCalledWith(PHONE, expect.stringContaining('could not be found'))
+  })
+})

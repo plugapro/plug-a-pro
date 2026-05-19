@@ -3328,6 +3328,7 @@ async function handleRfpLeadInterest(
       providerId,
       leadStatus: lead.status,
       jobRequestStatus: lead.jobRequest.status,
+      leadExpiresAt: lead.expiresAt,
     })
     await sendText(phone, `We couldn't process your response right now. Reply *menu* to return to the main menu or *status* to check your active leads.\n\n_Ref: ${traceId}_`)
     return
@@ -3387,6 +3388,11 @@ async function handleRfpLeadInterest(
         })
       })
       transactionError = null
+      if (!alreadyRegistered) {
+        console.info('[whatsapp-bot] rfp_interest: interest registered', {
+          traceId, leadId, providerId, prevLeadStatus: lead.status,
+        })
+      }
       break
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
@@ -3395,10 +3401,11 @@ async function handleRfpLeadInterest(
         alreadyRegistered = true
         transactionError = null
         break
-      } else if ((err as { code?: string }).code === 'P2034' && attempt === 0) {
-        // Deadlock / write conflict — Prisma explicitly recommends retrying P2034.
+      } else if (['P2034', 'P5010'].includes((err as { code?: string }).code ?? '') && attempt === 0) {
+        // P2034 = deadlock / write conflict; P5010 = connection pool timeout.
+        // Prisma explicitly recommends retrying P2034; P5010 warrants the same.
         // Wait briefly then let the loop retry once.
-        console.warn('[whatsapp-bot] rfp_interest: write_conflict_retry', { traceId, leadId, providerId })
+        console.warn('[whatsapp-bot] rfp_interest: write_conflict_retry', { traceId, leadId, providerId, code: (err as { code?: string }).code })
         await new Promise((resolve) => setTimeout(resolve, 150))
         transactionError = err
       } else {
@@ -3413,14 +3420,13 @@ async function handleRfpLeadInterest(
       traceId, leadId, providerId,
       error: transactionError instanceof Error ? transactionError.message : String(transactionError),
     })
-    // Re-send the lead buttons so the provider can retry immediately rather than
-    // hitting a dead-end error with a ref code they can't act on.
+    // Re-send only the retry button — omitting "Not Available" avoids an accidental
+    // decline if the provider taps reflexively after seeing an error.
     await sendButtons(
       phone,
       `⚠️ We couldn't register your availability right now — please try again.\n\n_Ref: ${traceId}_`,
       [
         { id: `ops_accept:${leadId}`, title: "I'm Available" },
-        { id: `ops_decline:${leadId}`, title: 'Not Available' },
       ],
     )
     return
@@ -3435,8 +3441,6 @@ async function handleRfpLeadInterest(
     phone,
     `✅ *Availability noted — Ref ${ref}*\n\nWe've let the customer know you're available for this job.\n\nYou'll receive a confirmation message here on WhatsApp if the customer selects you.`,
   )
-
-  console.info('[whatsapp-bot] rfp_interest: interest registered', { traceId, leadId, providerId })
 
   // Notify the customer that a provider responded so they can review and select
   const jobStatus = lead.jobRequest.status
@@ -3588,6 +3592,22 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         await sendText(phone, 'Your acceptance is already being processed. Please wait a moment.')
         return
       }
+      if (result.reason === 'CREDIT_APPLICATION_FAILED') {
+        const supportNum = process.env.SUPPORT_WHATSAPP_NUMBER ?? ''
+        await sendText(
+          phone,
+          `⚠️ We couldn't complete the job assignment. If a credit was deducted, please contact support — we'll investigate and refund any incorrectly deducted credit.\n\n_Ref: ${traceId}_\n\nSupport: wa.me/${supportNum.replace(/\D/g, '')}`,
+        )
+        return
+      }
+      if (result.reason === 'JOB_ASSIGNMENT_FAILED') {
+        const supportNum = process.env.SUPPORT_WHATSAPP_NUMBER ?? ''
+        await sendText(
+          phone,
+          `⚠️ Your credit was applied but we couldn't lock the job assignment. Please contact support — we'll check the job status and ensure you're not charged twice.\n\n_Ref: ${traceId}_\n\nSupport: wa.me/${supportNum.replace(/\D/g, '')}`,
+        )
+        return
+      }
       if (result.reason === 'INSUFFICIENT_CREDITS') {
         const creditUrl = getWorkerPortalUrl('/provider/credits')
         const body = buildInsufficientCreditsMessage({ availableCredits: result.currentCreditBalance ?? 0 })
@@ -3598,7 +3618,13 @@ async function handleSelectedProviderConfirmation(phone: string, buttonId: strin
         }
         return
       }
-      console.error('[whatsapp-bot] confirm_accept failed', { traceId, leadId, reason: result.reason })
+      console.error('[whatsapp-bot] confirm_accept failed', {
+        traceId,
+        leadId,
+        providerId: provider.id,
+        reason: result.reason,
+        currentCreditBalance: 'currentCreditBalance' in result ? result.currentCreditBalance : undefined,
+      })
       await sendWhatsAppJourneyRecovery(phone, {
         userRole: 'provider',
         channel: 'whatsapp',

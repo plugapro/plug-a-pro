@@ -371,11 +371,9 @@ export async function acceptSelectedProviderJob(params: {
         return { ok: false, reason: 'INSUFFICIENT_CREDITS', currentCreditBalance: error.currentCreditBalance }
       }
       if (error.code === 'CONCURRENT_DEDUCTION') {
-        // Wallet was debited concurrently by another request; safe to retry
-        throw new ProviderCreditApplicationError(
-          'CONCURRENT_DEDUCTION',
-          'Your wallet was updated by another request. Please try accepting again.',
-        )
+        // Concurrent debit resolved the race; surface as a soft duplicate-accept signal
+        // rather than propagating a throw that the caller cannot easily handle.
+        return { ok: false, reason: 'DUPLICATE_ACCEPT_IGNORED' as const }
       }
       if (error.code === 'WALLET_MISSING' || error.code === 'WALLET_NOT_ACTIVE') {
         // Wallet disappeared or was suspended between credit check and application.

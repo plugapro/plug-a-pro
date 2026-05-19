@@ -19,6 +19,7 @@ import {
   type PayatTopUpFailureCode,
   type ProviderPayatTopUpResponse,
 } from '@/lib/provider-credit-payment-intents'
+import { PayatConfigError } from '@/lib/payat'
 
 const ESTIMATED_CREDITS_PER_LEAD_UNLOCK = 1
 const LEDGER_LIMIT = 20
@@ -232,10 +233,9 @@ export async function createProviderTopUpIntent(
   return serializeTopUpInstructions(result)
 }
 
-export type ProviderPayfastCheckoutResult = {
-  intentId: string
-  checkout: import('@/lib/payfast').PayfastCheckoutPayload
-}
+export type ProviderPayfastCheckoutResult =
+  | { ok: true; intentId: string; checkout: import('@/lib/payfast').PayfastCheckoutPayload }
+  | { ok: false; code: string; userMessage: string }
 
 export type ProviderPayatTopUpResult = {
   intentId: string
@@ -256,6 +256,7 @@ export async function createProviderPayatTopUpIntent(
   amountCents: number,
 ): Promise<ProviderPayatTopUpResponse> {
   let providerId: string | null = null
+  let intentId: string | undefined
   try {
     const provider = await getAuthenticatedProvider()
     providerId = provider.id
@@ -275,6 +276,7 @@ export async function createProviderPayatTopUpIntent(
       amountCents,
       providerCellphone: provider.phone,
     })
+    intentId = result.intent.id
 
     revalidatePath('/provider/credits')
     return {
@@ -318,31 +320,31 @@ export async function createProviderPayatTopUpIntent(
       }
     }
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[payat] checkout_failed', { providerId, amountCents, error: message })
-    if (message.startsWith('PAYAT_') && message.endsWith('must be set')) {
+    console.error('[payat] checkout_failed', { providerId, amountCents, intentId, error: message })
+    if (err instanceof PayatConfigError) {
       return {
         ok: false,
-        code: 'PAYAT_CONFIG_MISSING',
+        code: 'PAYAT_CONFIG_MISSING' as const,
         userMessage: 'Pay@ is temporarily unavailable. Please use Payfast or Manual EFT, or contact support.',
       }
     }
     if (message.includes('Pay@ token fetch failed')) {
       return {
         ok: false,
-        code: 'PAYAT_TOKEN_FAILED',
+        code: 'PAYAT_TOKEN_FAILED' as const,
         userMessage: 'Could not authenticate with Pay@. Please try again in a minute, or use Payfast.',
       }
     }
     if (message.includes('Pay@ RTP creation failed') || message.includes('Pay@ RTP response')) {
       return {
         ok: false,
-        code: 'PAYAT_API_FAILED',
+        code: 'PAYAT_API_FAILED' as const,
         userMessage: 'Pay@ rejected the request. Please try Payfast or Manual EFT, or contact support.',
       }
     }
     return {
       ok: false,
-      code: 'UNKNOWN',
+      code: 'UNKNOWN' as const,
       userMessage: 'Could not start Pay@ checkout. Please try again or use Payfast.',
     }
   }
@@ -360,29 +362,65 @@ export async function createProviderPayfastTopUpIntent(
   amountCents: number,
   paymentMethod: PayfastTopUpMethod = 'PAYFAST_CARD',
 ): Promise<ProviderPayfastCheckoutResult> {
-  const provider = await getAuthenticatedProvider()
-  const activeIntentCount = await db.paymentIntent.count({
-    where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
-  })
-  if (activeIntentCount >= 3) {
-    // Mirror the Pay@ checkout_blocked log shape so log-based alerts can match
-    // a single prefix family across both PSPs.
-    console.warn('[payfast] checkout_blocked: too_many_pending', {
+  let providerId: string | null = null
+  let intentId: string | undefined
+  try {
+    const provider = await getAuthenticatedProvider()
+    providerId = provider.id
+    const activeIntentCount = await db.paymentIntent.count({
+      where: { providerId: provider.id, status: 'PENDING_PAYMENT' },
+    })
+    if (activeIntentCount >= 3) {
+      // Mirror the Pay@ checkout_blocked log shape so log-based alerts can match
+      // a single prefix family across both PSPs.
+      console.warn('[payfast] checkout_blocked: too_many_pending', {
+        providerId: provider.id,
+        amountCents,
+        activeIntentCount,
+      })
+      return {
+        ok: false,
+        code: 'TOO_MANY_PENDING',
+        userMessage: 'You already have 3 pending payments. Complete or cancel one before starting a new top-up.',
+      }
+    }
+    const result = await createPayfastTopUpIntent({
       providerId: provider.id,
       amountCents,
-      activeIntentCount,
+      paymentMethod,
+      providerCellphone: provider.phone,
     })
-    throw new Error('Too many pending payment intents. Complete or cancel existing payments first.')
-  }
-  const result = await createPayfastTopUpIntent({
-    providerId: provider.id,
-    amountCents,
-    paymentMethod,
-    providerCellphone: provider.phone,
-  })
+    intentId = result.intent.id
 
-  revalidatePath('/provider/credits')
-  return { intentId: result.intent.id, checkout: result.checkout }
+    revalidatePath('/provider/credits')
+    return { ok: true, intentId: result.intent.id, checkout: result.checkout }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[payfast] checkout_failed', { providerId, amountCents, intentId, error: message })
+    if (err instanceof ProviderCreditPaymentIntentError) {
+      switch (err.code) {
+        case 'INVALID_AMOUNT':
+          return {
+            ok: false,
+            code: 'INVALID_AMOUNT',
+            userMessage: 'That top-up amount is not available. Please pick R100, R200 or R500.',
+          }
+        case 'PROVIDER_NOT_FOUND':
+          return {
+            ok: false,
+            code: 'PROVIDER_NOT_FOUND',
+            userMessage: 'We could not load your provider profile. Sign in again and retry.',
+          }
+        default:
+          break
+      }
+    }
+    return {
+      ok: false,
+      code: 'UNKNOWN',
+      userMessage: 'Could not start Payfast checkout. Please try again.',
+    }
+  }
 }
 
 export async function createProviderTopUpIntentFormAction(formData: FormData) {

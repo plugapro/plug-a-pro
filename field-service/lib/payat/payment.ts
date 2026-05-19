@@ -17,9 +17,16 @@ export type PayatPaymentResponse = {
   paymentLink: string
 }
 
+export class PayatConfigError extends Error {
+  constructor(envVarName: string) {
+    super(`${envVarName} must be set`)
+    this.name = 'PayatConfigError'
+  }
+}
+
 function requirePayatConfig(name: string) {
   const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} must be set`)
+  if (!value) throw new PayatConfigError(name)
   return value
 }
 
