@@ -12,11 +12,6 @@ vi.mock('../../../lib/review-access', () => ({
   resolveReviewAccessToken: vi.fn(),
 }))
 
-// next/navigation mocks
-vi.mock('next/navigation', () => ({
-  redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }),
-}))
-
 const { submitReview } = await import('../../../app/review/[token]/actions')
 const { db } = await import('../../../lib/db')
 const { resolveReviewAccessToken } = await import('../../../lib/review-access')
@@ -38,21 +33,16 @@ beforeEach(() => {
 })
 
 describe('submitReview', () => {
-  it('creates a review on valid input', async () => {
+  it('creates a review and returns ok:true on valid input', async () => {
     ;(resolveReviewAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: 'active',
       payload: { matchId: 'match-1', reviewerType: 'CUSTOMER' },
       context: validContext,
     })
 
-    const formData = new FormData()
-    formData.set('score', '5')
-    formData.set('comment', 'Great work!')
-    formData.set('token', 'valid-token')
+    const result = await submitReview({ token: 'valid-token', score: 5, comment: 'Great work!' })
 
-    // submitReview redirects on success — catch the redirect
-    await expect(submitReview(formData)).rejects.toThrow('REDIRECT:/review/valid-token/thanks')
-
+    expect(result).toEqual({ ok: true })
     expect(db.review.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -65,64 +55,71 @@ describe('submitReview', () => {
     )
   })
 
-  it('throws on invalid score (< 1)', async () => {
-    ;(resolveReviewAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: 'active',
-      payload: { matchId: 'match-1', reviewerType: 'CUSTOMER' },
-      context: validContext,
-    })
-
-    const formData = new FormData()
-    formData.set('score', '0')
-    formData.set('token', 'valid-token')
-
-    await expect(submitReview(formData)).rejects.toThrow()
+  it('returns ok:false on invalid score (< 1)', async () => {
+    const result = await submitReview({ token: 'valid-token', score: 0 })
+    expect(result).toEqual({ ok: false, error: expect.any(String) })
     expect(db.review.create).not.toHaveBeenCalled()
   })
 
-  it('throws on invalid score (> 5)', async () => {
-    ;(resolveReviewAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: 'active',
-      payload: { matchId: 'match-1', reviewerType: 'CUSTOMER' },
-      context: validContext,
-    })
-
-    const formData = new FormData()
-    formData.set('score', '6')
-    formData.set('token', 'valid-token')
-
-    await expect(submitReview(formData)).rejects.toThrow()
+  it('returns ok:false on invalid score (> 5)', async () => {
+    const result = await submitReview({ token: 'valid-token', score: 6 })
+    expect(result).toEqual({ ok: false, error: expect.any(String) })
     expect(db.review.create).not.toHaveBeenCalled()
   })
 
-  it('throws when token resolves to invalid', async () => {
+  it('returns ok:false when token resolves to invalid', async () => {
     ;(resolveReviewAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: 'invalid',
       payload: null,
       context: null,
     })
 
-    const formData = new FormData()
-    formData.set('score', '4')
-    formData.set('token', 'bad-token')
-
-    await expect(submitReview(formData)).rejects.toThrow()
+    const result = await submitReview({ token: 'bad-token', score: 4 })
+    expect(result).toEqual({ ok: false, error: expect.any(String) })
     expect(db.review.create).not.toHaveBeenCalled()
   })
 
-  it('is idempotent — skips create when existingReview is present', async () => {
+  it('returns ok:false when token is expired', async () => {
     ;(resolveReviewAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: 'already_reviewed',
+      status: 'expired',
+      payload: null,
+      context: null,
+    })
+
+    const result = await submitReview({ token: 'expired-token', score: 4 })
+    expect(result).toEqual({ ok: false, error: expect.any(String) })
+    expect(db.review.create).not.toHaveBeenCalled()
+  })
+
+  it('is idempotent — returns ok:false when existingReview is present', async () => {
+    ;(resolveReviewAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: 'active',
       payload: { matchId: 'match-1', reviewerType: 'CUSTOMER' },
       context: { ...validContext, existingReview: { id: 'r-1', score: 5, comment: 'Great!', createdAt: new Date() } },
     })
 
-    const formData = new FormData()
-    formData.set('score', '3')
-    formData.set('token', 'valid-token')
-
-    // Should redirect to thanks without creating a duplicate review
-    await expect(submitReview(formData)).rejects.toThrow('REDIRECT:/review/valid-token/thanks')
+    const result = await submitReview({ token: 'valid-token', score: 3 })
+    expect(result).toEqual({ ok: false, error: expect.any(String) })
     expect(db.review.create).not.toHaveBeenCalled()
+  })
+
+  it('sets providerId when reviewerType is PROVIDER', async () => {
+    ;(resolveReviewAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: 'active',
+      payload: { matchId: 'match-1', reviewerType: 'PROVIDER' },
+      context: { ...validContext, reviewerType: 'PROVIDER' as const },
+    })
+
+    const result = await submitReview({ token: 'valid-token', score: 4 })
+    expect(result).toEqual({ ok: true })
+    expect(db.review.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          reviewerType: 'PROVIDER',
+          providerId: 'p-1',
+          customerId: null,
+        }),
+      })
+    )
   })
 })
