@@ -10,7 +10,7 @@ import {
   type DiagnosticCode,
 } from '@/lib/support-diagnostics'
 import { checkWorkerPortalAccess, findProviderForOtpLogin } from '@/lib/worker-provider-auth'
-import { checkOtpSendLimit } from '@/lib/rate-limit'
+import { checkOtpSendLimit, checkProviderLookupLimit } from '@/lib/rate-limit'
 
 const STEP = 'Worker portal send-code'
 const OTP_TIMEOUT_MS = 10_000
@@ -281,6 +281,34 @@ export async function POST(request: NextRequest) {
     phone = normalized.e164
     countryCode = normalized.countryCode
 
+    const forwardedFor = request.headers.get('x-forwarded-for')
+    const ip = forwardedFor?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')?.trim()
+      || null
+    const lookupRateCheck = await checkProviderLookupLimit({
+      phone,
+      ip,
+      context: { surface: 'provider_send_code_lookup', traceId },
+    })
+    if (!lookupRateCheck.ok) {
+      console.warn('[provider-send-code] lookup rate limited', {
+        trace_id: traceId,
+        normalizedPhone: phone,
+        countryCode,
+        rateLimitReason: lookupRateCheck.code,
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      const code = lookupRateCheck.code === 'limiter_unavailable' ? 'OTP_PROVIDER_UNAVAILABLE' : 'RATE_LIMITED'
+      return errorPayload({
+        code,
+        traceId,
+        phone,
+        countryCode,
+        status: statusFor(code),
+      })
+    }
+
     let provider: { id: string; userId: string | null; phone: string; active: boolean; verified: boolean; status: string } | null
     try {
       const lookupResult = await findProviderForOtpLogin(phone, rawPhone, db)
@@ -378,10 +406,6 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const forwardedFor = request.headers.get('x-forwarded-for')
-    const ip = forwardedFor?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')?.trim()
-      || null
     const rateCheck = await checkOtpSendLimit({
       phone,
       ip,

@@ -25,16 +25,16 @@ Required credentials:
 ### 2. Install and set up database
 
 ```bash
-npm install
-npx prisma generate
-npx prisma migrate dev --name init
-npx prisma db seed          # loads Plug A Pro demo data
+pnpm install
+pnpm exec prisma generate
+pnpm exec prisma migrate dev --name init
+pnpm exec prisma db seed          # loads Plug A Pro demo data
 ```
 
 ### 3. Run locally
 
 ```bash
-npm run dev
+pnpm dev
 # → http://localhost:3000
 ```
 
@@ -106,14 +106,14 @@ Every status change creates a `JobStatusEvent` (immutable audit trail).
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start dev server (Turbopack) |
-| `npm run build` | Generate Prisma client + Next.js build |
-| `npm run lint` | ESLint |
-| `npm run test` | Vitest |
-| `npm run db:migrate` | Run Prisma migrations (dev) |
-| `npm run db:migrate:prod` | Deploy migrations (production) |
-| `npm run db:seed` | Seed Plug A Pro demo data |
-| `npm run db:studio` | Open Prisma Studio |
+| `pnpm dev` | Start dev server (Turbopack) |
+| `pnpm build` | Generate Prisma client + Next.js build |
+| `pnpm lint` | ESLint |
+| `pnpm test` | Vitest |
+| `pnpm db:migrate` | Run Prisma migrations (dev) |
+| `pnpm db:migrate:prod` | Deploy migrations (production) |
+| `pnpm db:seed` | Seed Plug A Pro demo data |
+| `pnpm db:studio` | Open Prisma Studio |
 
 ---
 
@@ -132,7 +132,7 @@ See `docs/whatsapp-setup.md` for the complete step-by-step guide covering:
 Supabase Auth still owns OTP generation, storage, and verification. The Send SMS Hook routes delivery through `/api/auth/hooks/send-sms`, which posts the OTP to an approved WhatsApp Cloud API authentication template.
 
 1. **Approve the `otp_login` template** in Meta Business Manager (category: `AUTHENTICATION`). Body: `Your Plug A Pro verification code is {{1}}. It expires in 5 minutes. Do not share it.`
-2. **Provision Upstash Redis** via the Vercel Marketplace (Storage → Upstash). `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are auto-injected. The rate limiter fails open with a console warning when they're missing in local dev.
+2. **Provision Upstash Redis** via the Vercel Marketplace (Storage → Upstash). `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are auto-injected. The rate limiter fails closed in production when durable Redis is unavailable; local development may opt into the bounded in-memory fallback.
 3. **Generate the hook secret** and set it for the env:
    ```bash
    echo "v1,whsec_$(openssl rand -base64 32)"
@@ -141,7 +141,7 @@ Supabase Auth still owns OTP generation, storage, and verification. The Send SMS
 4. **Wire the hook** in Supabase dashboard → Authentication → Hooks → Send SMS hook. URL: `<deployment-url>/api/auth/hooks/send-sms`. Auth: paste the secret from step 3.
 5. **Enable the flag** once the template is approved and the hook is wired:
    ```bash
-   npx tsx scripts/seed-flags.ts --flag=auth.otp.whatsapp --enable
+   pnpm exec tsx scripts/seed-flags.ts --flag=auth.otp.whatsapp --enable
    ```
 
 The real kill switch is the dashboard hook URL — removing it reverts delivery to Supabase's built-in SMS. The `auth.otp.whatsapp` feature flag is a code-level safety gate the hook itself checks before sending, so you can pause without a dashboard round-trip.
@@ -159,7 +159,7 @@ vercel --prod      # Production deployment
 
 Database migrations in production:
 ```bash
-npm run db:migrate:prod
+pnpm db:migrate:prod
 ```
 
 ---

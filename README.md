@@ -16,11 +16,11 @@ WhatsApp-native field service platform for South Africa. Customers book home ser
 cd field-service
 cp .env.local.example .env.local
 # Fill in credentials — see comments in .env.local.example
-npm install
-npx prisma generate
-npx prisma migrate dev --name init
-npx prisma db seed
-npm run dev
+pnpm install
+pnpm exec prisma generate
+pnpm exec prisma migrate dev --name init
+pnpm exec prisma db seed
+pnpm dev
 # → http://localhost:3000
 
 # Marketing site
@@ -28,8 +28,8 @@ cd marketing
 cp .env.local.example .env.local
 # Fill in: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SITE_URL
 # Run: vercel link → enable AI Gateway → vercel env pull (provisions VERCEL_OIDC_TOKEN)
-npm install
-npm run dev
+pnpm install
+pnpm dev
 # → http://localhost:3001
 ```
 

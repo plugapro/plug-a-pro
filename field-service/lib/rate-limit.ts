@@ -4,7 +4,12 @@ import { recordAuditLog } from './audit'
 
 export type RateLimitContext = Record<string, unknown>
 
-type LimiterKey = 'sendByPhone' | 'sendByIp' | 'verifyByPhone'
+type LimiterKey =
+  | 'sendByPhone'
+  | 'sendByIp'
+  | 'verifyByPhone'
+  | 'providerLookupByPhone'
+  | 'providerLookupByIp'
 
 type RateLimitDecision =
   | { ok: true }
@@ -37,6 +42,16 @@ function configs(): Record<LimiterKey, LimitConfig> {
     verifyByPhone: {
       name: 'verifyByPhone',
       limit: envInt('OTP_VERIFY_LIMIT_PER_PHONE_HOUR', 10),
+      windowSec: HOUR,
+    },
+    providerLookupByPhone: {
+      name: 'providerLookupByPhone',
+      limit: envInt('PROVIDER_LOOKUP_LIMIT_PER_PHONE_HOUR', 12),
+      windowSec: HOUR,
+    },
+    providerLookupByIp: {
+      name: 'providerLookupByIp',
+      limit: envInt('PROVIDER_LOOKUP_LIMIT_PER_IP_HOUR', 60),
       windowSec: HOUR,
     },
   }
@@ -173,6 +188,39 @@ export async function checkOtpSendLimit(params: {
   const ip = params.ip?.trim()
   if (ip) {
     const ipDecision = await consume('sendByIp', `ip:${ip}`)
+    if (!ipDecision.ok) {
+      return {
+        ok: false,
+        code: ipDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
+        retryAfterMs: ipDecision.retryAfterMs,
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
+export type CheckProviderLookupLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'phone_limit' | 'ip_limit' | 'limiter_unavailable'; retryAfterMs: number }
+
+export async function checkProviderLookupLimit(params: {
+  phone: string
+  ip?: string | null
+  context?: RateLimitContext
+}): Promise<CheckProviderLookupLimitResult> {
+  const phoneDecision = await consume('providerLookupByPhone', `phone:${params.phone}`)
+  if (!phoneDecision.ok) {
+    return {
+      ok: false,
+      code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
+      retryAfterMs: phoneDecision.retryAfterMs,
+    }
+  }
+
+  const ip = params.ip?.trim()
+  if (ip) {
+    const ipDecision = await consume('providerLookupByIp', `ip:${ip}`)
     if (!ipDecision.ok) {
       return {
         ok: false,

@@ -32,3 +32,12 @@ A secret-remediation task can be closed only when:
 - A workspace check confirms no real secret-bearing env files remain under the synced project path.
 - Rotation status is recorded for every secret category that may have synced.
 - The app can build/start using the approved environment source.
+
+## CI Smoke Controls
+
+Field-service CI separates pure build verification from live runtime smoke:
+
+- `FIELD_SERVICE_LIVE_SMOKE=true` enables the live local start smoke against configured GitHub Actions secrets.
+- `FIELD_SERVICE_E2E_SMOKE=true` enables preview Playwright smoke against `E2E_BASE_URL`.
+- Preview Playwright smoke must prove `/api/health` reports `build.commitSha` equal to the current GitHub SHA before browser tests run.
+- Live smoke must fail if required DB, Supabase, WhatsApp, or payment secrets are missing; fork and dependency PRs should leave the live-smoke variables disabled.

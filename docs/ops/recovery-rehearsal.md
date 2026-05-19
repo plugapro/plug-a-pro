@@ -26,3 +26,18 @@ The recovery-readiness task can close only after a dated rehearsal note records:
 - Storage restore result or explicit gap.
 - Rollback command/result.
 - Follow-up owner for failed steps.
+
+## Rehearsal Evidence Log
+
+No production-like restore or rollback rehearsal has been executed from this checklist yet.
+
+| Date | Environment | Restore target | RTO observed | RPO observed | Smoke result | Rollback result | Evidence link |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-05-19 | Not executed | Pending isolated target | Pending | Pending | Pending | Pending | Pending OpenBrain rehearsal note |
+
+## Manual Evidence Required Before Closure
+
+1. Dated OpenBrain rehearsal note with no secret values.
+2. Screenshot or exported status from the isolated restore target.
+3. CI or command transcript showing `/api/health`, customer booking, provider sign-in, admin sign-in, and attachment proxy smoke results.
+4. Vercel rollback rehearsal result against a non-production or approved preview target.
