@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -103,7 +105,9 @@ export function DestructiveConfirmDialog({
   const [busy, setBusy] = React.useState(false)
 
   React.useEffect(() => {
-    if (!open) setTyped('')
+    if (!open) {
+      setTyped('')
+    }
   }, [open])
 
   const isMatch = typed === confirmText

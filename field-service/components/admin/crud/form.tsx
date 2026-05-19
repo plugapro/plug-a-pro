@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useForm, type DefaultValues, type FieldValues, type Path } from 'react-hook-form'
+import { useForm, useWatch, type DefaultValues, type FieldValues, type Path } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { z } from 'zod'
 import { Button } from '@/components/ui/button'
@@ -61,7 +61,7 @@ export function CRUDForm<T extends FieldValues>({
     defaultValues,
   })
 
-  const watchedValues = form.watch()
+  const watchedValues = useWatch({ control: form.control }) as Partial<T> | undefined
 
   const handleSubmit = form.handleSubmit(async (data) => {
     await onSubmit(data)

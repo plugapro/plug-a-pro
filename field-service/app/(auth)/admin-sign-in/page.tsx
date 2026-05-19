@@ -352,7 +352,7 @@ export default function AdminSignInPage() {
                 <span className="mt-0.5 flex shrink-0 text-[#FF8AA0]"><AlertIcon /></span>
                 <div>
                   <div className="font-semibold text-[#FFC8D0]" style={{ fontSize: '13.5px' }}>
-                    We couldn't sign you in.
+                    We couldn&apos;t sign you in.
                   </div>
                   <div
                     className="mt-0.5 tracking-wide text-[#FF8AA0]"

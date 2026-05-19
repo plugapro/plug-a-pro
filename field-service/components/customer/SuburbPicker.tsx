@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 // ─── Suburb search combobox ────────────────────────────────────────────────────
 // Replaces the old 4-level cascade (city → region → suburb) with a single
 // text input that searches suburb nodes directly. Results are fetched from

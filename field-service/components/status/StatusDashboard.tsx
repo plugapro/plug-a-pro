@@ -396,6 +396,8 @@ export function StatusDashboard() {
     void loadHealth()
   }, [loadHealth])
 
+  // Avoid direct sync call warning; refresh is async and intentionally side-effectful.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadHealth() }, [loadHealth])
 
   useEffect(() => {

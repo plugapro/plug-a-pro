@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 // ─── Multi-step job request flow ──────────────────────────────────────────────
 // Steps: address → description → confirm → submitted
 

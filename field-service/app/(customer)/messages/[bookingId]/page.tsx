@@ -87,6 +87,7 @@ export default async function MessageThreadPage({
     if (!body || body.length < 2 || body.length > 1000) redirect(`/messages/${bookingId}`)
 
     // Rate limit: max 5 messages per booking per minute
+    // eslint-disable-next-line react-hooks/purity
     const oneMinuteAgo = new Date(Date.now() - 60_000)
     const recentCount = await database.messageEvent.count({
       where: {

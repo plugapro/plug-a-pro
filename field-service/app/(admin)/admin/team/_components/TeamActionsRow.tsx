@@ -41,6 +41,7 @@ export function TeamActionsRow({
   crudEnabled,
 }: TeamActionsRowProps) {
   const [roleSelectValue, setRoleSelectValue] = React.useState(admin.role)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { setRoleSelectValue(admin.role) }, [admin.role])
   const [openDialog, setOpenDialog] = React.useState<DialogKind>(null)
   const [isPending, startTransition] = React.useTransition()

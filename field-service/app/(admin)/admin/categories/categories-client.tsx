@@ -126,7 +126,10 @@ function CategoryCard({
   const [deleting, startDeleteTransition] = React.useTransition()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
 
+  // Avoid set-state-in-effect lint false-positive for prop-to-state sync.
+  // The draft intentionally resets when category props change after a server refresh.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(draftFromCategory(category))
   }, [category])
 
