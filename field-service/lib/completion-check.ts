@@ -1,5 +1,5 @@
 import { db } from './db'
-import { sendCompletionCheckMessage, sendCustomerReviewRequest, sendProviderReviewNudge, sendAdminEscalation } from './whatsapp'
+import { sendCompletionCheckMessage, sendCustomerReviewRequest, sendProviderReviewNudge, sendAdminEscalation, sendText } from './whatsapp'
 import { sendButtons } from './whatsapp-interactive'
 import { createReviewUrl } from './review-access'
 import { isEnabled } from './flags'
@@ -72,17 +72,17 @@ export async function handleCompletionCheckNo(params: { matchId: string; custome
 export async function handleCompletionCheckWhyRescheduled(params: { matchId: string; customerPhone: string }) {
   const m = await db.match.findUnique({ where: { id: params.matchId }, select: { completionCheckRetries: true } })
   if (!m) return
-  if (m.completionCheckRetries >= MAX_RETRIES) { await flagMatchToAdmin(params.matchId); await sendButtons(params.customerPhone, 'Thanks for letting us know. Our team will follow up shortly.', [], undefined); return }
+  if (m.completionCheckRetries >= MAX_RETRIES) { await flagMatchToAdmin(params.matchId); await sendText({ to: params.customerPhone, text: 'Thanks for letting us know. Our team will follow up shortly.' }); return }
   await db.match.update({ where: { id: params.matchId }, data: { completionCheckStatus: 'NO_RESCHEDULED', completionCheckSentAt: new Date() } })
-  await sendButtons(params.customerPhone, "Got it — we'll check in again in a few days. Hope the rescheduled job goes well! 👍", [], undefined)
+  await sendText({ to: params.customerPhone, text: "Got it — we'll check in again in a few days. Hope the rescheduled job goes well! 👍" })
 }
 
 export async function handleCompletionCheckWhyNotFinished(params: { matchId: string; customerPhone: string }) {
   const m = await db.match.findUnique({ where: { id: params.matchId }, select: { completionCheckRetries: true } })
   if (!m) return
-  if (m.completionCheckRetries >= MAX_RETRIES) { await flagMatchToAdmin(params.matchId); await sendButtons(params.customerPhone, 'Thanks for letting us know. Our team will be in touch to help.', [], undefined); return }
+  if (m.completionCheckRetries >= MAX_RETRIES) { await flagMatchToAdmin(params.matchId); await sendText({ to: params.customerPhone, text: 'Thanks for letting us know. Our team will be in touch to help.' }); return }
   await db.match.update({ where: { id: params.matchId }, data: { completionCheckStatus: 'NO_NOT_FINISHED', completionCheckSentAt: new Date() } })
-  await sendButtons(params.customerPhone, "Noted — we'll follow up in a few days. Feel free to message us if anything changes.", [], undefined)
+  await sendText({ to: params.customerPhone, text: "Noted — we'll follow up in a few days. Feel free to message us if anything changes." })
 }
 
 export async function handleCompletionCheckWhyDidntShow(params: { matchId: string; customerPhone: string; providerName: string }) {
@@ -90,7 +90,7 @@ export async function handleCompletionCheckWhyDidntShow(params: { matchId: strin
   await Promise.all([
     flagMatchToAdmin(params.matchId),
     sendAdminEscalation({ reason: 'Provider no-show reported by customer', userPhone: params.customerPhone, context: `matchId=${params.matchId} provider=${params.providerName}` }),
-    sendButtons(params.customerPhone, `We're sorry to hear that. We've alerted our team and someone will follow up with you shortly regarding ${params.providerName}.`, [], undefined),
+    sendText({ to: params.customerPhone, text: `We're sorry to hear that. We've alerted our team and someone will follow up with you shortly regarding ${params.providerName}.` }),
   ])
 }
 
