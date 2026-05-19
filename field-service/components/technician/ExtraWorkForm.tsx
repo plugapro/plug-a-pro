@@ -120,11 +120,12 @@ export function ExtraWorkForm({ jobId, onSubmitted }: Props) {
 
           <Button
             type="submit"
-            disabled={isPending}
+            loading={isPending}
+            loadingLabel="Submitting…"
             className="w-full"
             size="lg"
           >
-            {isPending ? 'Submitting…' : 'Request approval'}
+            Request approval
           </Button>
         </form>
       </CardContent>

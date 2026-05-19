@@ -8,6 +8,7 @@ import { db } from '@/lib/db'
 import { isEnabled } from '@/lib/flags'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { AutoRefresh } from '@/components/customer/AutoRefresh'
 
 export const metadata = buildMetadata({ title: 'Message Thread' })
@@ -182,7 +183,7 @@ export default async function MessageThreadPage({
             placeholder="Type your message…"
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          <Button type="submit" className="w-full">Send message</Button>
+          <FormSubmitButton className="w-full" pendingLabel="Sending…">Send message</FormSubmitButton>
         </form>
       ) : (
         <p className="text-sm text-muted-foreground text-center">

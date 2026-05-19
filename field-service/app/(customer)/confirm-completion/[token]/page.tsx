@@ -11,6 +11,7 @@ import { transitionJob } from '@/lib/jobs'
 import { buildMetadata } from '@/lib/metadata'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 
 export const metadata = buildMetadata({
   title: 'Confirm Job Completion',
@@ -136,9 +137,9 @@ export default async function ConfirmCompletionPage({ params }: Props) {
             </p>
           </div>
           <form action={handleConfirm}>
-            <Button type="submit" className="w-full" size="lg">
+            <FormSubmitButton className="w-full" size="lg" pendingLabel="Confirming…">
               Confirm Completion
-            </Button>
+            </FormSubmitButton>
           </form>
         </CardContent>
       </Card>

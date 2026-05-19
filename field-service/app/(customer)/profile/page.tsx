@@ -24,6 +24,7 @@ import { SignOutButton } from '@/components/customer/SignOutButton'
 import { buildMetadata } from '@/lib/metadata'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SectionLabel } from '@/components/ui/section-label'
@@ -160,7 +161,7 @@ export default async function ProfilePage() {
               <p className="text-[13px] font-semibold text-[var(--ink)] mb-1 tracking-[-0.01em]">Phone</p>
               <p className="text-[14.5px] text-[var(--ink-mute)]">{phone ?? '—'}</p>
             </div>
-            <Button type="submit" fullWidth size="md">Save changes</Button>
+            <FormSubmitButton fullWidth size="md" pendingLabel="Saving…">Save changes</FormSubmitButton>
           </form>
         </div>
       </div>
