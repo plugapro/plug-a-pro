@@ -63,7 +63,7 @@ describe('Pay@ token service', () => {
     const { getPayatToken } = await import('@/lib/payat/token')
 
     await expect(getPayatToken()).rejects.toThrow(
-      'PAYAT_CLIENT_ID and PAYAT_CLIENT_SECRET must be set',
+      'PAYAT_CLIENT_SECRET must be set',
     )
     expect(fetch).not.toHaveBeenCalled()
   })

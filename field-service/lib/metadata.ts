@@ -14,7 +14,22 @@ export const siteConfig = {
   description: 'Book skilled technicians via WhatsApp. Track every job. Get paid reliably.',
 
   // Canonical URL — no trailing slash
-  url: process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.plugapro.co.za',
+  url: (() => {
+    const configuredUrl = (process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '')
+      .trim()
+      .replace(/\/+$/, '')
+
+    if (!configuredUrl) {
+      return 'https://app.plugapro.co.za'
+    }
+
+    try {
+      const url = new URL(configuredUrl)
+      return `${url.origin}`
+    } catch {
+      return 'https://app.plugapro.co.za'
+    }
+  })(),
 
   // Primary accent colour (single oklch token — used in Tailwind + meta theme-color)
   accent: '#2563eb',

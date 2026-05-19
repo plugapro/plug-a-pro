@@ -53,6 +53,18 @@ vi.mock('../../lib/payat', () => ({
       this.name = 'PayatConfigError'
     }
   },
+  PayatTokenError: class PayatTokenError extends Error {
+    constructor() {
+      super('token failure')
+      this.name = 'PayatTokenError'
+    }
+  },
+  PayatApiError: class PayatApiError extends Error {
+    constructor() {
+      super('api failure')
+      this.name = 'PayatApiError'
+    }
+  },
 }))
 
 describe('provider credits server actions', () => {
@@ -224,7 +236,8 @@ describe('provider credits server actions', () => {
       const { db } = await arrangeProvider()
       ;(db.paymentIntent.count as any).mockResolvedValue(0)
       const { createPayatTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
-      ;(createPayatTopUpIntent as any).mockRejectedValue(new Error('Pay@ token fetch failed: 401'))
+      const { PayatTokenError } = await import('../../lib/payat')
+      ;(createPayatTopUpIntent as any).mockRejectedValue(new PayatTokenError('fetch_failed', 401))
 
       const { createProviderPayatTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
       const result = await createProviderPayatTopUpIntent(10_000)
@@ -236,7 +249,8 @@ describe('provider credits server actions', () => {
       const { db } = await arrangeProvider()
       ;(db.paymentIntent.count as any).mockResolvedValue(0)
       const { createPayatTopUpIntent } = await import('../../lib/provider-credit-payment-intents')
-      ;(createPayatTopUpIntent as any).mockRejectedValue(new Error('Pay@ RTP creation failed: HTTP 422'))
+      const { PayatApiError } = await import('../../lib/payat')
+      ;(createPayatTopUpIntent as any).mockRejectedValue(new PayatApiError('rtp_create_failed', 422))
 
       const { createProviderPayatTopUpIntent } = await import('../../app/(provider)/provider/credits/actions')
       const result = await createProviderPayatTopUpIntent(10_000)
