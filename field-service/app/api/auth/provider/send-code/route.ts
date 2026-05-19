@@ -398,13 +398,14 @@ export async function POST(request: NextRequest) {
         timestamp: timestamp(),
         step: STEP,
       })
+      const code = rateCheck.code === 'limiter_unavailable' ? 'OTP_PROVIDER_UNAVAILABLE' : 'RATE_LIMITED'
       return errorPayload({
-        code: 'RATE_LIMITED',
+        code,
         traceId,
         phone,
         countryCode,
         providerId,
-        status: statusFor('RATE_LIMITED'),
+        status: statusFor(code),
       })
     }
 

@@ -25,6 +25,7 @@ describe('GET /api/health', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllGlobals()
     process.env = { ...originalEnv }
   })
 
@@ -73,6 +74,30 @@ describe('GET /api/health', () => {
 
     expect(body).toHaveProperty('whatsapp')
     expect(['ok', 'error', 'unknown']).toContain(body.whatsapp as string)
+  })
+
+  it('checks WhatsApp health with an Authorization header instead of a tokenized URL', async () => {
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-wa-token'
+    process.env.WHATSAPP_PHONE_NUMBER_ID = 'phone-id-1'
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { db } = await import('@/lib/db')
+    ;(db.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([{ '?column?': 1 }])
+
+    const { GET } = await import('../../app/api/health/route')
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.whatsapp).toBe('ok')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v21.0/phone-id-1?fields=display_phone_number',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer test-wa-token' },
+      }),
+    )
+    expect(fetchMock.mock.calls[0]?.[0]).not.toContain('access_token=')
   })
 
   it('includes payments field in response (unknown when credentials not set)', async () => {

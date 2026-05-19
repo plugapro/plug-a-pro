@@ -12,6 +12,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import { ADMIN_SMOKE_ROUTES, CLIENT_PUBLIC_SMOKE_ROUTES } from '../lib/admin-nav-routes'
 
+const hasAdminSmokeCredentials = Boolean(process.env.E2E_ADMIN_EMAIL && process.env.E2E_ADMIN_PASSWORD)
+
 // ─── Sign-in helper ───────────────────────────────────────────────────────────
 // The admin sign-in form is at /admin-sign-in and uses email/password inputs
 // with a submit button. After success, the browser is hard-navigated to /admin.
@@ -28,6 +30,8 @@ async function signIn(page: Page) {
 // ─── Authenticated smoke suite ────────────────────────────────────────────────
 
 test.describe('authenticated', () => {
+  test.skip(!hasAdminSmokeCredentials, 'E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD are required for authenticated smoke checks.')
+
   test.beforeEach(async ({ page }) => {
     await signIn(page)
   })

@@ -13,6 +13,7 @@ type HookErrorMessage =
   | 'invalid_body'
   | 'otp_whatsapp_disabled'
   | 'rate_limited'
+  | 'rate_limit_unavailable'
   | 'template_not_approved'
   | 'wa_auth_failed'
   | 'wa_transient'
@@ -106,7 +107,9 @@ export async function POST(request: NextRequest) {
       hookRequestId,
       reason: rateCheck.code,
     })
-    return errorResponse(429, 'rate_limited')
+    return rateCheck.code === 'limiter_unavailable'
+      ? errorResponse(503, 'rate_limit_unavailable')
+      : errorResponse(429, 'rate_limited')
   }
 
   try {

@@ -18,8 +18,11 @@ async function probeWhatsApp(): Promise<'ok' | 'error' | 'unknown'> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 3000)
     const res = await fetch(
-      `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID}?fields=display_phone_number&access_token=${WHATSAPP_TOKEN}`,
-      { signal: controller.signal },
+      `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID}?fields=display_phone_number`,
+      {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        signal: controller.signal,
+      },
     )
     clearTimeout(timeout)
     return res.ok ? 'ok' : 'error'

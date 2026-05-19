@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
         normalizedPhone: phone,
         authUserId: null,
         roleCheckResult: 'rate_limited',
-        code: 'RATE_LIMITED',
+        code: rateCheck.code === 'limiter_unavailable' ? 'OTP_PROVIDER_UNAVAILABLE' : 'RATE_LIMITED',
       })
       await recordAuditLog({
         actorId: 'system',
@@ -87,9 +87,14 @@ export async function POST(request: NextRequest) {
         action: 'auth.otp_verify_failed',
         entityType: 'phone',
         entityId: phone,
-        after: { code: 'RATE_LIMITED', traceId } as any,
+        after: {
+          code: rateCheck.code === 'limiter_unavailable' ? 'OTP_PROVIDER_UNAVAILABLE' : 'RATE_LIMITED',
+          traceId,
+        } as any,
       }).catch(() => undefined)
-      return jsonError({ code: 'RATE_LIMITED', traceId, status: 429 })
+      return rateCheck.code === 'limiter_unavailable'
+        ? jsonError({ code: 'OTP_PROVIDER_UNAVAILABLE', traceId, status: 503 })
+        : jsonError({ code: 'RATE_LIMITED', traceId, status: 429 })
     }
 
     const supabase = createClient(

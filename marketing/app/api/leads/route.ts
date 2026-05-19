@@ -46,6 +46,18 @@ const leadMagnetSchema = baseSchema.extend({
 
 const schema = z.discriminatedUnion("type", [contactSchema, onboardingSchema, leadMagnetSchema]);
 
+type MarketingLeadInsert = {
+  type: "waitlist" | "contact" | "chat" | "onboarding" | "lead_magnet";
+  email?: string;
+  phone?: string;
+  name?: string;
+  journey?: "customer" | "provider" | "both";
+  message?: string;
+  source?: string;
+  venture: typeof siteConfig.venture;
+  whatsapp_opt_in?: boolean;
+};
+
 // Best-effort in-memory rate limiter.
 // NOTE: Resets on Vercel cold starts — not reliable across serverless invocations.
 // TODO: Replace Map with Upstash Redis for production-grade rate limiting.
@@ -119,7 +131,7 @@ export async function POST(request: Request) {
       ? normalizePhone(result.data.phone)
       : undefined;
 
-  const insertPayload =
+  const insertPayload: MarketingLeadInsert =
     result.data.type === "onboarding"
       ? {
           type: result.data.type,
