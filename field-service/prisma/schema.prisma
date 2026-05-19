@@ -1345,6 +1345,7 @@ model Invoice {
 model Review {
   id           String     @id @default(cuid())
   jobId        String?
+  matchId      String?
   reviewerType ReviewerType
   customerId   String?    // set when customer reviews provider
   providerId   String?    // set when provider rates customer
@@ -1354,8 +1355,10 @@ model Review {
 
   customer Customer? @relation(fields: [customerId], references: [id])
   provider Provider? @relation(fields: [providerId], references: [id])
+  match    Match?    @relation(fields: [matchId], references: [id])
 
   @@unique([jobId, reviewerType])
+  @@unique([matchId, reviewerType])
   @@map("reviews")
 }
 

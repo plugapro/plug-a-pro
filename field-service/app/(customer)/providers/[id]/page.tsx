@@ -533,7 +533,7 @@ export default async function CustomerProviderProfilePage({
                       {review.comment}
                     </p>
                   )}
-                  {jobCategoryMap.get(review.jobId) && (
+                  {review.jobId && jobCategoryMap.get(review.jobId) && (
                     <p className="mt-2 text-[11.5px]" style={{ color: 'var(--ink-mute)' }}>
                       {labelForCategory(jobCategoryMap.get(review.jobId)!)}
                     </p>
