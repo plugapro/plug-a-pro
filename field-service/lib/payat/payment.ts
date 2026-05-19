@@ -24,6 +24,28 @@ export class PayatConfigError extends Error {
   }
 }
 
+/**
+ * Thrown when the Pay@ RTP endpoint rejects a request or returns a response
+ * we cannot parse. The `stage` discriminator lets the action layer give the
+ * provider a specific user-facing message without depending on the textual
+ * error content (which Pay@ may reword without notice).
+ */
+export class PayatApiError extends Error {
+  constructor(
+    public readonly stage: 'rtp_create_failed' | 'rtp_response_invalid',
+    public readonly status?: number,
+    detail?: string,
+  ) {
+    super(
+      detail ??
+        (stage === 'rtp_create_failed'
+          ? `Pay@ RTP creation failed: HTTP ${status ?? '?'}`
+          : 'Pay@ RTP response did not include paymentLink'),
+    )
+    this.name = 'PayatApiError'
+  }
+}
+
 function requirePayatConfig(name: string) {
   const value = process.env[name]?.trim()
   if (!value) throw new PayatConfigError(name)
@@ -32,7 +54,7 @@ function requirePayatConfig(name: string) {
 
 function getReturnUrls() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
-  if (!appUrl) throw new Error('NEXT_PUBLIC_APP_URL must be set')
+  if (!appUrl) throw new PayatConfigError('NEXT_PUBLIC_APP_URL')
   const base = appUrl.replace(/\/$/, '')
   return {
     successReturnUrl: `${base}/provider/credits?topup=success`,
@@ -103,7 +125,7 @@ function mapPayatResponse(
     data.paymentLink ?? data.payment_link ?? data.url ?? data.checkoutUrl
 
   if (typeof paymentLink !== 'string') {
-    throw new Error('Pay@ RTP response did not include paymentLink')
+    throw new PayatApiError('rtp_response_invalid')
   }
 
   return { reference: fallbackReference, paymentLink }
@@ -172,7 +194,7 @@ async function sendPayatPaymentRequest(
     } else {
       await response.body?.cancel()
     }
-    throw new Error(`Pay@ RTP creation failed: HTTP ${response.status}`)
+    throw new PayatApiError('rtp_create_failed', response.status)
   }
 
   return mapPayatResponse(

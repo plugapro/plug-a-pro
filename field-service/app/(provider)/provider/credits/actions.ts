@@ -19,7 +19,7 @@ import {
   type PayatTopUpFailureCode,
   type ProviderPayatTopUpResponse,
 } from '@/lib/provider-credit-payment-intents'
-import { PayatConfigError } from '@/lib/payat'
+import { PayatConfigError, PayatApiError, PayatTokenError } from '@/lib/payat'
 
 const ESTIMATED_CREDITS_PER_LEAD_UNLOCK = 1
 const LEDGER_LIMIT = 20
@@ -321,6 +321,10 @@ export async function createProviderPayatTopUpIntent(
     }
     const message = err instanceof Error ? err.message : String(err)
     console.error('[payat] checkout_failed', { providerId, amountCents, intentId, error: message })
+    // Match on typed error classes instead of message strings — Pay@ may
+    // reword the underlying HTTP error copy without notice. PayatTokenError
+    // and PayatApiError carry a `stage` discriminator + HTTP status so future
+    // observability work can split metrics per failure mode.
     if (err instanceof PayatConfigError) {
       return {
         ok: false,
@@ -328,14 +332,14 @@ export async function createProviderPayatTopUpIntent(
         userMessage: 'Pay@ is temporarily unavailable. Please use Payfast or Manual EFT, or contact support.',
       }
     }
-    if (message.includes('Pay@ token fetch failed')) {
+    if (err instanceof PayatTokenError) {
       return {
         ok: false,
         code: 'PAYAT_TOKEN_FAILED' as const,
         userMessage: 'Could not authenticate with Pay@. Please try again in a minute, or use Payfast.',
       }
     }
-    if (message.includes('Pay@ RTP creation failed') || message.includes('Pay@ RTP response')) {
+    if (err instanceof PayatApiError) {
       return {
         ok: false,
         code: 'PAYAT_API_FAILED' as const,

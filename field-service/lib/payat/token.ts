@@ -1,3 +1,5 @@
+import { PayatConfigError } from './payment'
+
 type TokenCache = {
   token: string
   expiresAt: number
@@ -8,17 +10,42 @@ let cache: TokenCache | null = null
 // independently calling the Pay@ token endpoint (thundering-herd).
 let inflight: Promise<string> | null = null
 
+/**
+ * Thrown when the Pay@ token endpoint rejects a request or returns a
+ * response we cannot parse. Same purpose as PayatApiError but for the
+ * auth endpoint — kept distinct so the action layer can show "could not
+ * authenticate with Pay@" vs "Pay@ rejected the request" without
+ * matching on free-text error strings.
+ */
+export class PayatTokenError extends Error {
+  constructor(
+    public readonly stage: 'fetch_failed' | 'invalid_response',
+    public readonly status?: number,
+  ) {
+    super(
+      stage === 'fetch_failed'
+        ? `Pay@ token fetch failed: HTTP ${status ?? '?'}`
+        : 'Pay@ token response did not include access_token and expires_in',
+    )
+    this.name = 'PayatTokenError'
+  }
+}
+
 function requirePayatEnv(name: string) {
+  // The previous implementation hard-coded the error message for any name,
+  // which meant a missing PAYAT_CLIENT_SECRET produced a log line blaming
+  // PAYAT_CLIENT_ID. Use the actual name with PayatConfigError so the log
+  // and action-layer error mapping point at the right env var.
   const value = process.env[name]?.trim()
   if (!value) {
-    throw new Error('PAYAT_CLIENT_ID and PAYAT_CLIENT_SECRET must be set')
+    throw new PayatConfigError(name)
   }
   return value
 }
 
 function getTokenUrl() {
   const value = process.env.PAYAT_TOKEN_URL?.trim()
-  if (!value) throw new Error('PAYAT_TOKEN_URL must be set')
+  if (!value) throw new PayatConfigError('PAYAT_TOKEN_URL')
   return value
 }
 
@@ -45,12 +72,12 @@ async function fetchToken(): Promise<string> {
     } else {
       await response.body?.cancel()
     }
-    throw new Error(`Pay@ token fetch failed: HTTP ${response.status}`)
+    throw new PayatTokenError('fetch_failed', response.status)
   }
 
   const data = await response.json() as { access_token?: string; expires_in?: number }
   if (!data.access_token || !Number.isFinite(data.expires_in)) {
-    throw new Error('Pay@ token response did not include access_token and expires_in')
+    throw new PayatTokenError('invalid_response')
   }
   const expiresIn = Number(data.expires_in)
 

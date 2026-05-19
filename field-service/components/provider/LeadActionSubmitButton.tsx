@@ -17,6 +17,11 @@ type LeadActionSubmitButtonProps = {
  * Backward-compatible wrapper kept so existing call sites don't need to be
  * touched. New code should use `<FormSubmitButton>` from
  * `@/components/ui/form-submit-button` directly.
+ *
+ * @deprecated Use FormSubmitButton from '@/components/ui/form-submit-button'
+ * directly. This wrapper is retained only for backward compatibility with
+ * call sites that imported it before the primitive moved into the ui/
+ * directory. New code should import FormSubmitButton.
  */
 export function LeadActionSubmitButton({
   children,
