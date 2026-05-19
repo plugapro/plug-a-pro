@@ -90,25 +90,37 @@ async function main() {
   })
   console.log('[redispatch] job request status reset to OPEN')
 
-  // ── 4. Create fresh AssignmentHold ───────────────────────────────────────────
-  const expiresAt = new Date(Date.now() + MATCHING_CONFIG.offerTtlMinutes * 60_000)
-
-  // Use raw SQL — the schema requires dispatchDecisionId and matchAttemptId to be
-  // non-null, so we reuse the original FK references from the first Lovemore round
-  // rather than creating new Decision/Attempt records for a manual remediation hold.
-  const holdId = randomUUID()
-  const now = new Date()
-  await db.$executeRaw`
-    INSERT INTO assignment_holds
-      (id, "jobRequestId", "providerId", "dispatchDecisionId", "matchAttemptId",
-       status, "offeredAt", "expiresAt", "createdAt", "updatedAt")
-    VALUES
-      (${holdId}, ${JOB_REQUEST_ID}, ${PROVIDER_ID}, ${DISPATCH_DECISION_ID}, ${MATCH_ATTEMPT_ID},
-       'ACTIVE', ${now}, ${expiresAt}, ${now}, ${now})
+  // ── 4. Find or create AssignmentHold ────────────────────────────────────────
+  type HoldRow = { id: string; expiresAt: Date }
+  const existingRows = await db.$queryRaw<HoldRow[]>`
+    SELECT id, "expiresAt" FROM assignment_holds
+    WHERE "jobRequestId" = ${JOB_REQUEST_ID}
+      AND "providerId" = ${PROVIDER_ID}
+      AND status = 'ACTIVE'
+    LIMIT 1
   `
-  const hold = { id: holdId, expiresAt, dispatchDecisionId: DISPATCH_DECISION_ID, matchAttemptId: MATCH_ATTEMPT_ID }
+  let hold: { id: string; expiresAt: Date }
 
-  console.log('[redispatch] created hold:', hold.id, 'expires:', expiresAt.toISOString())
+  if (existingRows.length > 0) {
+    hold = existingRows[0]
+    console.log('[redispatch] reusing existing hold:', hold.id, 'expires:', hold.expiresAt.toISOString())
+  } else {
+    const expiresAt = new Date(Date.now() + MATCHING_CONFIG.offerTtlMinutes * 60_000)
+    // Use raw SQL — the schema requires dispatchDecisionId and matchAttemptId to be
+    // non-null, so we reuse the original FK references from the first Lovemore round.
+    const holdId = randomUUID()
+    const now = new Date()
+    await db.$executeRaw`
+      INSERT INTO assignment_holds
+        (id, "jobRequestId", "providerId", "dispatchDecisionId", "matchAttemptId",
+         status, "offeredAt", "expiresAt", "createdAt", "updatedAt")
+      VALUES
+        (${holdId}, ${JOB_REQUEST_ID}, ${PROVIDER_ID}, ${DISPATCH_DECISION_ID}, ${MATCH_ATTEMPT_ID},
+         'ACTIVE', ${now}, ${expiresAt}, ${now}, ${now})
+    `
+    hold = { id: holdId, expiresAt }
+    console.log('[redispatch] created hold:', hold.id, 'expires:', hold.expiresAt.toISOString())
+  }
 
   // ── 5. Dispatch lead + send WhatsApp ─────────────────────────────────────────
   // dispatchMatchLead upserts the lead to SENT and sends the offer notification.
@@ -135,7 +147,7 @@ async function main() {
     },
   })
 
-  console.log('[redispatch] ✓ WhatsApp dispatched to', provider.name, '— lead upserted to SENT, expires at', expiresAt.toISOString())
+  console.log('[redispatch] ✓ WhatsApp dispatched to', provider.name, '— lead upserted to SENT, expires at', hold.expiresAt.toISOString())
   console.log('[redispatch] Lovemore has', MATCHING_CONFIG.offerTtlMinutes, 'minutes to accept.')
 
   await db.$disconnect()
