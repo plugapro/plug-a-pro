@@ -16,6 +16,7 @@ import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertCallout } from '@/components/shared/AlertCallout'
 import { buildClientPwaJobTrackingSteps } from '@/lib/client-pwa-job-tracking'
@@ -412,7 +413,7 @@ export default async function BookingDetailPage({
               Review the photos below. If the work is done, confirm here to close the job.
             </p>
             <form action={confirmCompletion}>
-              <Button type="submit" className="w-full">Confirm completion</Button>
+              <FormSubmitButton pendingLabel="Confirming…" className="w-full">Confirm completion</FormSubmitButton>
             </form>
           </div>
         </div>
@@ -614,9 +615,9 @@ export default async function BookingDetailPage({
                     color: 'var(--ink)',
                   }}
                 />
-                <Button type="submit" variant="outline" className="w-full">
+                <FormSubmitButton variant="outline" className="w-full" pendingLabel="Sending…">
                   Raise an issue with support
-                </Button>
+                </FormSubmitButton>
               </form>
             )}
           </div>
@@ -661,9 +662,9 @@ export default async function BookingDetailPage({
                   color: 'var(--ink)',
                 }}
               />
-              <Button variant="destructive" className="w-full" type="submit">
+              <FormSubmitButton variant="destructive" className="w-full" pendingLabel="Cancelling…">
                 Cancel booking
-              </Button>
+              </FormSubmitButton>
             </form>
           )}
         </div>

@@ -14,6 +14,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ProviderTrustNote } from '@/components/shared/provider-trust-note'
 import { ProviderTrustSignals } from '@/components/shared/provider-trust-signals'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { buildProviderTrustSignals } from '@/lib/provider-trust'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 import {
@@ -455,9 +456,9 @@ export default async function RequestDetailPage({
                             )
                           }}
                         >
-                          <Button type="submit" className="w-full">
+                          <FormSubmitButton className="w-full" pendingLabel="Selecting…">
                             Select provider
-                          </Button>
+                          </FormSubmitButton>
                         </form>
                       )
                     )}
@@ -478,9 +479,9 @@ export default async function RequestDetailPage({
                     )
                   }}
                 >
-                  <Button type="submit" variant="outline" className="w-full">
+                  <FormSubmitButton variant="outline" className="w-full" pendingLabel="Requesting…">
                     Ask for more options
-                  </Button>
+                  </FormSubmitButton>
                 </form>
               )}
               {canCancelRequest && (
@@ -493,13 +494,13 @@ export default async function RequestDetailPage({
                     )
                   }}
                 >
-                  <Button
-                    type="submit"
+                  <FormSubmitButton
                     variant="ghost"
                     className="w-full text-destructive"
+                    pendingLabel="Cancelling…"
                   >
                     Cancel request
-                  </Button>
+                  </FormSubmitButton>
                 </form>
               )}
             </div>
@@ -649,9 +650,9 @@ export default async function RequestDetailPage({
                           )
                         }}
                       >
-                        <Button type="submit" className="w-full">
+                        <FormSubmitButton className="w-full" pendingLabel="Starting…">
                           Quick Match
-                        </Button>
+                        </FormSubmitButton>
                       </form>
                       <form
                         action={async (formData) => {
@@ -663,13 +664,13 @@ export default async function RequestDetailPage({
                           )
                         }}
                       >
-                        <Button
-                          type="submit"
+                        <FormSubmitButton
                           variant="outline"
                           className="w-full"
+                          pendingLabel="Starting…"
                         >
                           Review Providers First
-                        </Button>
+                        </FormSubmitButton>
                       </form>
                     </div>
                   </>
@@ -735,9 +736,9 @@ export default async function RequestDetailPage({
                                     )
                                   }}
                                 >
-                                  <Button type="submit" className="w-full">
+                                  <FormSubmitButton className="w-full" pendingLabel="Adding…">
                                     Shortlist
-                                  </Button>
+                                  </FormSubmitButton>
                                 </form>
                               </div>
                             </div>
@@ -804,13 +805,13 @@ export default async function RequestDetailPage({
                                 )
                               }}
                             >
-                              <Button
-                                type="submit"
+                              <FormSubmitButton
                                 className="w-full"
                                 disabled={reviewShortlist.providers.length < 1}
+                                pendingLabel="Sending…"
                               >
                                 Send request
-                              </Button>
+                              </FormSubmitButton>
                             </form>
                           </div>
                         </div>

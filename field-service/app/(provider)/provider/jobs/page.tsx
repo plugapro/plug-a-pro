@@ -120,7 +120,7 @@ export default async function ProviderJobsPage({
       db.match.findMany({
         where: {
           providerId: provider.id,
-          status: { in: ['MATCHED', 'INSPECTION_SCHEDULED', 'INSPECTION_COMPLETE', 'QUOTED', 'QUOTE_DECLINED'] },
+          status: { in: ['MATCHED', 'INSPECTION_SCHEDULED', 'INSPECTION_COMPLETE', 'QUOTED', 'QUOTE_DECLINED', 'QUOTE_APPROVED'] },
           booking: null,
         },
         include: {
@@ -199,7 +199,7 @@ export default async function ProviderJobsPage({
               <ListChecks size={13} />
             </div>
             <p className="text-[22px] font-bold tracking-[-0.03em] text-[var(--ink)] leading-none mb-1 tabular-nums">
-              {activeJobs.length + awaitingQuoteMatches.length + creditRequiredLeads.length + customerSelectedLeads.length}
+              {activeJobs.length + awaitingQuoteMatches.length + creditRequiredLeads.length + customerSelectedLeads.length + pendingConfirmationJobs.length}
             </p>
             <p className="text-[11px] text-[var(--ink-mute)] leading-tight">Active</p>
           </div>
@@ -233,8 +233,8 @@ export default async function ProviderJobsPage({
             </SectionLabel>
             <div className="space-y-3">
               {customerSelectedLeads.map((lead) => {
-                const customerName = lead.jobRequest.customer?.name ?? 'Customer'
-                const area = [lead.jobRequest.address?.suburb, lead.jobRequest.address?.city]
+                const customerName = lead.jobRequest?.customer?.name ?? 'Customer'
+                const area = [lead.jobRequest?.address?.suburb, lead.jobRequest?.address?.city]
                   .filter(Boolean)
                   .join(', ')
                 return (
@@ -279,8 +279,8 @@ export default async function ProviderJobsPage({
             </SectionLabel>
             <div className="space-y-3">
               {creditRequiredLeads.map((lead) => {
-                const customerName = lead.jobRequest.customer?.name ?? 'Customer'
-                const area = [lead.jobRequest.address?.suburb, lead.jobRequest.address?.city]
+                const customerName = lead.jobRequest?.customer?.name ?? 'Customer'
+                const area = [lead.jobRequest?.address?.suburb, lead.jobRequest?.address?.city]
                   .filter(Boolean)
                   .join(', ')
                 return (

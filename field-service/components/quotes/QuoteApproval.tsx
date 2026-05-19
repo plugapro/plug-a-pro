@@ -38,6 +38,9 @@ interface Quote {
 
 export function QuoteApproval({ quote, token }: { quote: Quote; token: string }) {
   const [status, setStatus] = useState<'idle' | 'submitting' | 'done'>('idle')
+  // Tracks which button is currently in-flight so each can show its own
+  // spinner/label without the other looking idle while the request runs.
+  const [pendingAction, setPendingAction] = useState<'approve' | 'decline' | null>(null)
   const [result, setResult] = useState<'approved' | 'declined' | null>(null)
   const [scheduledDate, setScheduledDate] = useState<string | null>(
     quote.status === 'APPROVED' ? (quote.preferredDate ?? null) : null
@@ -103,6 +106,7 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
     }
 
     setStatus('submitting')
+    setPendingAction(action)
     setError('')
     try {
       const feedback =
@@ -129,6 +133,8 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setStatus('idle')
+    } finally {
+      setPendingAction(null)
     }
   }
 
@@ -217,6 +223,8 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         <Button
           variant="outline"
           className="flex-1"
+          loading={status === 'submitting' && pendingAction === 'decline'}
+          loadingLabel="Sending…"
           disabled={status === 'submitting'}
           onClick={() => respond('decline')}
         >
@@ -224,10 +232,12 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         </Button>
         <Button
           className="flex-1"
+          loading={status === 'submitting' && pendingAction === 'approve'}
+          loadingLabel="Processing…"
           disabled={status === 'submitting'}
           onClick={() => respond('approve')}
         >
-          {status === 'submitting' ? 'Processing…' : 'Accept Quote'}
+          Accept Quote
         </Button>
       </div>
     </div>

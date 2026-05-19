@@ -1,8 +1,8 @@
 'use client'
 
 import type React from 'react'
-import { useFormStatus } from 'react-dom'
-import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
+import type { Button } from '@/components/ui/button'
 
 type LeadActionSubmitButtonProps = {
   children: React.ReactNode
@@ -13,6 +13,11 @@ type LeadActionSubmitButtonProps = {
   disabled?: boolean
 }
 
+/**
+ * Backward-compatible wrapper kept so existing call sites don't need to be
+ * touched. New code should use `<FormSubmitButton>` from
+ * `@/components/ui/form-submit-button` directly.
+ */
 export function LeadActionSubmitButton({
   children,
   pendingLabel,
@@ -21,17 +26,15 @@ export function LeadActionSubmitButton({
   size,
   disabled,
 }: LeadActionSubmitButtonProps) {
-  const { pending } = useFormStatus()
-
   return (
-    <Button
-      type="submit"
+    <FormSubmitButton
+      pendingLabel={pendingLabel}
+      className={className}
       variant={variant}
       size={size}
-      className={className}
-      disabled={disabled || pending}
+      disabled={disabled}
     >
-      {pending ? pendingLabel : children}
-    </Button>
+      {children}
+    </FormSubmitButton>
   )
 }

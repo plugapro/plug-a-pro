@@ -19,14 +19,19 @@ interface Props {
 
 export function ExtraWorkForm({ jobId, onSubmitted }: Props) {
   const router = useRouter()
-  const [isPending, startTransition] = useTransition()
+  const [isRefreshPending, startTransition] = useTransition()
+  // Tracks the actual fetch — previously the button only disabled during
+  // router.refresh(), so a user could re-submit during the in-flight POST.
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isPending = isSubmitting || isRefreshPending
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (isPending) return
     setError(null)
 
     const amountRand = parseFloat(amount)
@@ -39,21 +44,26 @@ export function ExtraWorkForm({ jobId, onSubmitted }: Props) {
       return
     }
 
-    const res = await fetch(`/api/technician/jobs/${jobId}/extras`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description: description.trim(), amountRand }),
-    })
+    setIsSubmitting(true)
+    try {
+      const res = await fetch(`/api/technician/jobs/${jobId}/extras`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: description.trim(), amountRand }),
+      })
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      setError(data.error ?? 'Failed to submit. Please try again.')
-      return
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? 'Failed to submit. Please try again.')
+        return
+      }
+
+      setSubmitted(true)
+      onSubmitted()
+      startTransition(() => router.refresh())
+    } finally {
+      setIsSubmitting(false)
     }
-
-    setSubmitted(true)
-    onSubmitted()
-    startTransition(() => router.refresh())
   }
 
   if (submitted) {

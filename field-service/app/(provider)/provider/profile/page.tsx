@@ -13,6 +13,7 @@ import { PushSubscribeButton } from '@/components/technician/PushSubscribeButton
 import { ThemeToggle } from '@/components/shared/theme-toggle'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -443,7 +444,7 @@ export default async function ProviderProfilePage({
             </div>
           </div>
 
-          <Button type="submit" className="w-full">Save changes</Button>
+          <FormSubmitButton className="w-full" pendingLabel="Saving…">Save changes</FormSubmitButton>
         </form>
       </div>
 

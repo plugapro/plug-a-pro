@@ -9,6 +9,7 @@ import { QuoteHistoryTimeline } from '@/components/quotes/QuoteHistoryTimeline'
 import { buildMetadata } from '@/lib/metadata'
 import { QuoteForm } from '@/components/technician/QuoteForm'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { AlertCallout } from '@/components/shared/AlertCallout'
 import { ChevronLeft } from 'lucide-react'
@@ -184,7 +185,7 @@ export default async function QuotePage({
             <p>Mark the site visit complete before submitting the quote. This records the inspection step in the lifecycle.</p>
             <form action={markInspectionComplete} className="mt-3">
               <input type="hidden" name="matchId" value={matchId} />
-              <Button type="submit" className="w-full">Mark inspection complete</Button>
+              <FormSubmitButton className="w-full" pendingLabel="Marking…">Mark inspection complete</FormSubmitButton>
             </form>
           </AlertCallout>
         )}

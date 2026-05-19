@@ -9,6 +9,7 @@ import { db } from '@/lib/db'
 import { requireProvider } from '@/lib/auth'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { AttachmentThumbnail } from '@/components/shared/AttachmentThumbnail'
 import { AlertCallout } from '@/components/shared/AlertCallout'
 import { ActionBar } from '@/components/shared/ActionBar'
@@ -623,9 +624,9 @@ export default async function LeadDetailPage({
                   className="w-full rounded-xl border bg-background px-3 py-2 text-sm"
                   placeholder="Add details that help admin verify the issue."
                 />
-                <Button type="submit" variant="outline" className="w-full">
+                <FormSubmitButton variant="outline" className="w-full" pendingLabel="Submitting…">
                   Submit refund dispute
-                </Button>
+                </FormSubmitButton>
               </form>
             ) : null}
           </div>

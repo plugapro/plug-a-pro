@@ -1,5 +1,6 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
+import { Loader2 } from "lucide-react"
 import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -100,6 +101,14 @@ export interface ButtonProps
   extends React.ComponentProps<"button">,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  /**
+   * Renders a spinner and forces `disabled` while truthy. Swap the children
+   * for `loadingLabel` to give the user explicit feedback that the action is
+   * running. Designed for callers that wrap a server action / fetch / mutation
+   * — saves every consumer from importing Loader2 and wiring `disabled` by hand.
+   */
+  loading?: boolean
+  loadingLabel?: React.ReactNode
 }
 
 function Button({
@@ -108,16 +117,43 @@ function Button({
   size,
   fullWidth,
   asChild = false,
+  loading = false,
+  loadingLabel,
+  disabled,
+  children,
   ...props
 }: ButtonProps) {
+  // `asChild` defers rendering to a Slot — its child is responsible for its own
+  // disabled state. Loading visuals only apply to the native button render path
+  // (the only safe place to inject a sibling spinner without breaking Slot's
+  // single-child contract).
   const Comp = asChild ? Slot.Root : "button"
 
+  if (asChild) {
+    return (
+      <Comp
+        data-slot="button"
+        className={cn(buttonVariants({ variant, size, fullWidth, className }))}
+        {...props}
+      >
+        {children}
+      </Comp>
+    )
+  }
+
+  const content = loading && loadingLabel !== undefined ? loadingLabel : children
+
   return (
-    <Comp
+    <button
       data-slot="button"
       className={cn(buttonVariants({ variant, size, fullWidth, className }))}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
-    />
+    >
+      {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+      {content}
+    </button>
   )
 }
 

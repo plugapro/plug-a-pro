@@ -9,6 +9,7 @@ import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { buildMetadata } from '@/lib/metadata'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { StarRating } from '@/components/customer/StarRating'
@@ -126,9 +127,9 @@ export default async function RatePage({
             />
           </div>
 
-          <Button type="submit" className="w-full" size="lg">
+          <FormSubmitButton className="w-full" size="lg" pendingLabel="Submitting…">
             Submit rating
-          </Button>
+          </FormSubmitButton>
         </form>
 
         <Button asChild variant="ghost" className="w-full text-xs text-muted-foreground">

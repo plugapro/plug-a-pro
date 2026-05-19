@@ -8,6 +8,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { resolveCustomerForSession } from '@/lib/customer-session'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { buildMetadata } from '@/lib/metadata'
 
 export const metadata = buildMetadata({ title: 'Request Reschedule' })
@@ -122,9 +123,9 @@ export default async function BookingReschedulePage({
           />
         </div>
 
-        <Button type="submit" className="w-full">
+        <FormSubmitButton className="w-full" pendingLabel="Sending…">
           Send reschedule request
-        </Button>
+        </FormSubmitButton>
 
         <Link
           href={`/bookings/${id}`}

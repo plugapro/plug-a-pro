@@ -16,6 +16,7 @@ import { JobStatusControls } from '@/components/technician/StatusControls'
 import { EvidenceUploader } from '@/components/technician/EvidenceUploader'
 import { ExtraWorkForm } from '@/components/technician/ExtraWorkForm'
 import { Button } from '@/components/ui/button'
+import { FormSubmitButton } from '@/components/ui/form-submit-button'
 import { ChevronLeft } from 'lucide-react'
 import { normaliseLocationDisplayName } from '@/lib/location-format'
 
@@ -358,9 +359,9 @@ export default async function JobDetailPage({
                 placeholder="Describe the issue so support can review it."
                 className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
-              <Button type="submit" variant="outline" className="w-full">
+              <FormSubmitButton variant="outline" className="w-full" pendingLabel="Sending…">
                 Raise an issue with support
-              </Button>
+              </FormSubmitButton>
             </form>
           )}
         </div>
