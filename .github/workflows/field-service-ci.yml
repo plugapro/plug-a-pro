@@ -34,7 +34,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -45,15 +45,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit production dependencies
+        run: pnpm audit --prod
+
       # Several tests transitively import @/lib/db (Prisma client). Without
       # `prisma generate` the .prisma/client/default file is missing on a
       # fresh install and every Prisma-touching test errors out. The build
       # job already runs this step; lint-and-test must too.
       - name: Generate Prisma client
-        run: npx prisma generate
+        run: pnpm exec prisma generate
 
       - name: Lint
         run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Test
         run: pnpm test
@@ -62,16 +68,13 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Build check runs on every push when CI_BUILD_ENABLED repo variable is set to 'true'.
-    # Set it via: GitHub repo → Settings → Variables → Actions → New repository variable.
-    if: github.event_name == 'push' && vars.CI_BUILD_ENABLED == 'true'
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -84,39 +87,114 @@ jobs:
         working-directory: field-service
 
       - name: Generate Prisma client
-        run: npx prisma generate
+        run: pnpm exec prisma generate
         working-directory: field-service
         env:
           # prisma generate reads the schema only — no live DB connection needed
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
 
       - name: Build
-        run: pnpm build
+        run: pnpm build:ci
         working-directory: field-service
         env:
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          GIT_COMMIT_SHA: ${{ github.sha }}
+          GIT_COMMIT_REF: ${{ github.ref_name }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
 
-  smoke:
-    name: Smoke Tests
+  live-start-smoke:
+    name: Live Start Smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Run after every push when the E2E_SMOKE_ENABLED repo variable is set.
-    # GitHub forbids referencing `secrets.*` in a job-level `if:` — doing so
-    # invalidates the entire workflow file and prevents *all* jobs from
-    # running. Gate on a repo variable instead, and keep a defensive secret
-    # check inside the run step.
-    # Set it via: GitHub repo → Settings → Variables → Actions → E2E_SMOKE_ENABLED='true'.
-    if: github.event_name == 'push' && vars.E2E_SMOKE_ENABLED == 'true'
+    timeout-minutes: 15
+    needs: build
+    if: github.event_name == 'push' && vars.FIELD_SERVICE_LIVE_SMOKE == 'true'
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: field-service/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: field-service
+
+      - name: Verify live smoke secrets
+        run: |
+          test -n "$DATABASE_URL"
+          test -n "$NEXT_PUBLIC_SUPABASE_URL"
+          test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          test -n "$WHATSAPP_ACCESS_TOKEN"
+          test -n "$WHATSAPP_PHONE_NUMBER_ID"
+          test -n "$PEACH_ACCESS_TOKEN"
+          test -n "$PEACH_ENTITY_ID"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          PEACH_ACCESS_TOKEN: ${{ secrets.PEACH_ACCESS_TOKEN }}
+          PEACH_ENTITY_ID: ${{ secrets.PEACH_ENTITY_ID }}
+
+      - name: Build with live smoke metadata
+        run: pnpm build:ci
+        working-directory: field-service
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          GIT_COMMIT_SHA: ${{ github.sha }}
+          GIT_COMMIT_REF: ${{ github.ref_name }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+
+      - name: Start built app and probe health
+        run: |
+          PORT=3105 pnpm start:ci > /tmp/field-service-start.log 2>&1 &
+          echo "$!" > /tmp/field-service-start.pid
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3105/api/health >/tmp/field-service-health.json; then
+              break
+            fi
+            sleep 1
+          done
+          LOCAL_SMOKE_BASE_URL=http://127.0.0.1:3105 LOCAL_SMOKE_EXPECT_COMMIT_SHA="$GITHUB_SHA" LOCAL_SMOKE_REQUIRE_COMPONENTS=db,auth.supabase_env_complete,whatsapp,payments pnpm smoke:local
+        working-directory: field-service
+        env:
+          PORT: 3105
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          GIT_COMMIT_SHA: ${{ github.sha }}
+          GIT_COMMIT_REF: ${{ github.ref_name }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          PEACH_ACCESS_TOKEN: ${{ secrets.PEACH_ACCESS_TOKEN }}
+          PEACH_ENTITY_ID: ${{ secrets.PEACH_ENTITY_ID }}
+
+  smoke:
+    name: Preview E2E Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'push' && vars.FIELD_SERVICE_E2E_SMOKE == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -129,11 +207,22 @@ jobs:
         working-directory: field-service
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        run: pnpm exec playwright install chromium --with-deps
         working-directory: field-service
 
+      - name: Assert smoke target matches this commit
+        run: |
+          test -n "$E2E_BASE_URL"
+          node -e "const base=process.env.E2E_BASE_URL.replace(/\/$/, ''); fetch(base + '/api/health').then(async (res) => { const body = await res.json(); if (!res.ok) throw new Error('health returned ' + res.status); if (body?.build?.commitSha !== process.env.GITHUB_SHA) throw new Error('E2E target commit mismatch: expected ' + process.env.GITHUB_SHA + ' got ' + (body?.build?.commitSha ?? 'unknown')); }).catch((error) => { console.error(error.message); process.exit(1); })"
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+
       - name: Run smoke tests
-        run: npx playwright test
+        run: |
+          test -n "$E2E_BASE_URL"
+          test -n "$E2E_ADMIN_EMAIL"
+          test -n "$E2E_ADMIN_PASSWORD"
+          pnpm exec playwright test
         working-directory: field-service
         env:
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}

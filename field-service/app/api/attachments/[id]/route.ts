@@ -22,6 +22,19 @@ type ImageErrorCode =
   | 'IMAGE_STORAGE_PATH_MISSING'
   | 'IMAGE_SIGNED_URL_FAILED'
   | 'IMAGE_NOT_FOUND'
+  | 'IMAGE_STORAGE_HOST_BLOCKED'
+  | 'IMAGE_TOO_LARGE'
+
+const MAX_PROXY_BYTES = 15 * 1024 * 1024
+
+function isAllowedBlobHost(url: URL): boolean {
+  return url.protocol === 'https:' && url.hostname.endsWith('.vercel-storage.com')
+}
+
+function safeAttachmentFilename(blobKey: string | null | undefined): string {
+  const raw = blobKey?.split('/').pop() || 'file'
+  return raw.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'file'
+}
 
 function attachmentError({
   code,
@@ -261,8 +274,9 @@ export async function GET(
     console.warn(`[attachments:${reqId}] Metadata lookup fallback for ${id}:`, err)
   }
 
+  let parsedUpstreamUrl: URL
   try {
-    new URL(upstreamUrl)
+    parsedUpstreamUrl = new URL(upstreamUrl)
   } catch (err) {
     console.error(`[attachments:${reqId}] Invalid storage URL for ${id}:`, err)
     return attachmentError({
@@ -273,11 +287,21 @@ export async function GET(
       attachmentId: id,
     })
   }
+  if (!isAllowedBlobHost(parsedUpstreamUrl)) {
+    console.error(`[attachments:${reqId}] Blocked non-Blob storage host for ${id}: ${parsedUpstreamUrl.hostname}`)
+    return attachmentError({
+      code: 'IMAGE_STORAGE_HOST_BLOCKED',
+      message: 'Attachment storage host is not allowed',
+      status: 502,
+      reqId,
+      attachmentId: id,
+    })
+  }
 
   // Proxy the blob — fetch server-side and stream to client
   let upstream: Response
   try {
-    upstream = await fetch(upstreamUrl)
+    upstream = await fetch(upstreamUrl, { redirect: 'manual' })
   } catch (err) {
     console.error(`[attachments:${reqId}] Fetch error for ${id}:`, err)
     return attachmentError({
@@ -290,6 +314,16 @@ export async function GET(
   }
 
   if (!upstream.ok) {
+    if (upstream.status >= 300 && upstream.status < 400) {
+      console.error(`[attachments:${reqId}] Blob redirect rejected for ${id}: ${upstream.status}`)
+      return attachmentError({
+        code: 'IMAGE_SIGNED_URL_FAILED',
+        message: 'Attachment storage redirect was rejected',
+        status: 502,
+        reqId,
+        attachmentId: id,
+      })
+    }
     console.error(`[attachments:${reqId}] Blob not found for ${id}: ${upstream.status}`)
     return attachmentError({
       code: 'IMAGE_NOT_FOUND',
@@ -299,6 +333,32 @@ export async function GET(
       attachmentId: id,
     })
   }
+  const upstreamLength = Number.parseInt(upstream.headers.get('content-length') ?? '', 10)
+  if (Number.isFinite(upstreamLength) && upstreamLength > MAX_PROXY_BYTES) {
+    console.error(`[attachments:${reqId}] Blob too large for proxy ${id}: ${upstreamLength}`)
+    return attachmentError({
+      code: 'IMAGE_TOO_LARGE',
+      message: 'Attachment file is too large',
+      status: 413,
+      reqId,
+      attachmentId: id,
+    })
+  }
+  let proxiedBody: BodyInit | null = upstream.body
+  if (upstream.body) {
+    const bodyBuffer = await upstream.arrayBuffer()
+    if (bodyBuffer.byteLength > MAX_PROXY_BYTES) {
+      console.error(`[attachments:${reqId}] Blob too large for proxy ${id}: ${bodyBuffer.byteLength}`)
+      return attachmentError({
+        code: 'IMAGE_TOO_LARGE',
+        message: 'Attachment file is too large',
+        status: 413,
+        reqId,
+        attachmentId: id,
+      })
+    }
+    proxiedBody = bodyBuffer
+  }
 
   const servedTo = session?.id ??
     (leadTokenScope?.jobRequestId ? `lead-token:${leadTokenScope.leadId ?? 'unknown'}` : `ticket-token:${tokenScope?.jobRequestId ?? 'unknown'}`)
@@ -306,11 +366,12 @@ export async function GET(
 
   const headers = new Headers()
   headers.set('Content-Type', attachment.mimeType)
+  headers.set('X-Content-Type-Options', 'nosniff')
   headers.set('Cache-Control', 'private, max-age=300')
   headers.set('X-Trace-Id', reqId)
   const disposition = attachment.mimeType.startsWith('image/') ? 'inline' : 'attachment'
-  const filename = attachment.blobKey.split('/').pop() ?? 'file'
+  const filename = safeAttachmentFilename(attachment.blobKey)
   headers.set('Content-Disposition', `${disposition}; filename="${filename}"`)
 
-  return new Response(upstream.body, { status: 200, headers })
+  return new Response(proxiedBody, { status: 200, headers })
 }

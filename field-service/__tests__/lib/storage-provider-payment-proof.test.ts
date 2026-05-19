@@ -30,7 +30,7 @@ describe('provider payment proof storage', () => {
     await expect(
       uploadProviderPaymentProof({
         paymentIntentId: 'intent-1',
-        file: new File(['proof'], 'payment.pdf', { type: 'application/pdf' }),
+        file: new File(['%PDF- proof'], 'payment.pdf', { type: 'application/pdf' }),
       }),
     ).resolves.toBe('https://store.private.blob.vercel-storage.com/proof.pdf')
 
@@ -57,5 +57,41 @@ describe('provider payment proof storage', () => {
         useCache: false,
       },
     )
+  })
+
+  it('rejects files whose extension does not match the declared MIME type', async () => {
+    const { uploadProviderPaymentProof } = await import('../../lib/storage')
+
+    await expect(
+      uploadProviderPaymentProof({
+        paymentIntentId: 'intent-1',
+        file: new File(['%PDF- proof'], 'payment.jpg', { type: 'application/pdf' }),
+      }),
+    ).rejects.toThrow(/extension not allowed/i)
+  })
+
+  it('rejects files whose bytes do not match the declared MIME type', async () => {
+    const { uploadProviderPaymentProof } = await import('../../lib/storage')
+
+    await expect(
+      uploadProviderPaymentProof({
+        paymentIntentId: 'intent-1',
+        file: new File(['not a pdf'], 'payment.pdf', { type: 'application/pdf' }),
+      }),
+    ).rejects.toThrow(/content does not match/i)
+  })
+
+  it('allows HEIF upload URLs with matching HEIF extensions', async () => {
+    const { getUploadUrl } = await import('../../lib/storage')
+
+    await expect(
+      getUploadUrl({
+        filename: 'photo.heif',
+        contentType: 'image/heif',
+        path: 'jobs/job-1',
+      }),
+    ).resolves.toMatchObject({
+      pathname: expect.stringMatching(/^jobs\/job-1\/\d+\.heif$/),
+    })
   })
 })

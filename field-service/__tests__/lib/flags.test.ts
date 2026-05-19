@@ -131,7 +131,8 @@ describe('isEnabledSync', () => {
 
   it('returns false for unknown keys', () => {
     process.env[ENV_KEY] = JSON.stringify({ 'ops.v2.closeOut': true })
-    expect(isEnabledSync('ops.v2.unknown')).toBe(false)
+    const unknownKey = 'ops.v2.unknown' as Parameters<typeof isEnabledSync>[0]
+    expect(isEnabledSync(unknownKey)).toBe(false)
   })
 })
 

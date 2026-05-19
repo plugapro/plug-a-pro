@@ -4,11 +4,16 @@ import { recordAuditLog } from './audit'
 
 export type RateLimitContext = Record<string, unknown>
 
-type LimiterKey = 'sendByPhone' | 'sendByIp' | 'verifyByPhone'
+type LimiterKey =
+  | 'sendByPhone'
+  | 'sendByIp'
+  | 'verifyByPhone'
+  | 'providerLookupByPhone'
+  | 'providerLookupByIp'
 
 type RateLimitDecision =
   | { ok: true }
-  | { ok: false; retryAfterMs: number }
+  | { ok: false; retryAfterMs: number; reason: 'limited' | 'limiter_unavailable' }
 
 type LimitConfig = { name: LimiterKey; limit: number; windowSec: number }
 
@@ -39,6 +44,16 @@ function configs(): Record<LimiterKey, LimitConfig> {
       limit: envInt('OTP_VERIFY_LIMIT_PER_PHONE_HOUR', 10),
       windowSec: HOUR,
     },
+    providerLookupByPhone: {
+      name: 'providerLookupByPhone',
+      limit: envInt('PROVIDER_LOOKUP_LIMIT_PER_PHONE_HOUR', 12),
+      windowSec: HOUR,
+    },
+    providerLookupByIp: {
+      name: 'providerLookupByIp',
+      limit: envInt('PROVIDER_LOOKUP_LIMIT_PER_IP_HOUR', 60),
+      windowSec: HOUR,
+    },
   }
 }
 
@@ -57,10 +72,16 @@ function memoryConsume(key: string, limit: number, windowMs: number): RateLimitD
     return { ok: true }
   }
   if (entry.count >= limit) {
-    return { ok: false, retryAfterMs: windowMs - (now - entry.windowStart) }
+    return { ok: false, retryAfterMs: windowMs - (now - entry.windowStart), reason: 'limited' }
   }
   entry.count++
   return { ok: true }
+}
+
+function allowMemoryFallback(): boolean {
+  if (process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK === 'true') return true
+  if (process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK === 'false') return false
+  return process.env.NODE_ENV !== 'production' && process.env.VERCEL_ENV !== 'production'
 }
 
 function getRedis(): Redis | null {
@@ -80,7 +101,7 @@ function getRedis(): Redis | null {
     if (!_degradedNotice) {
       _degradedNotice = true
       console.warn(
-        '[rate-limit] Upstash Redis env vars missing; rate limiting fails open',
+        '[rate-limit] Upstash Redis env vars missing; durable rate limiting unavailable',
       )
       void emitDegradedAudit('upstash_env_missing').catch(() => undefined)
     }
@@ -125,6 +146,9 @@ async function consume(
 ): Promise<RateLimitDecision> {
   const limiter = getLimiter(key)
   if (!limiter) {
+    if (!allowMemoryFallback()) {
+      return { ok: false, retryAfterMs: 60_000, reason: 'limiter_unavailable' }
+    }
     const cfg = configs()[key]
     return memoryConsume(`${key}:${identifier}`, cfg.limit, cfg.windowSec * 1000)
   }
@@ -132,20 +156,20 @@ async function consume(
     const result = await limiter.limit(identifier)
     if (result.success) return { ok: true }
     const retryAfterMs = Math.max(0, result.reset - Date.now())
-    return { ok: false, retryAfterMs }
+    return { ok: false, retryAfterMs, reason: 'limited' }
   } catch (err) {
-    console.warn('[rate-limit] limiter error; failing open', {
+    console.warn('[rate-limit] limiter error; failing closed', {
       key,
       error: err instanceof Error ? err.message : String(err),
     })
     void emitDegradedAudit(`limiter_error:${key}`).catch(() => undefined)
-    return { ok: true }
+    return { ok: false, retryAfterMs: 60_000, reason: 'limiter_unavailable' }
   }
 }
 
 export type CheckOtpSendLimitResult =
   | { ok: true }
-  | { ok: false; code: 'phone_limit' | 'ip_limit'; retryAfterMs: number }
+  | { ok: false; code: 'phone_limit' | 'ip_limit' | 'limiter_unavailable'; retryAfterMs: number }
 
 export async function checkOtpSendLimit(params: {
   phone: string
@@ -156,7 +180,7 @@ export async function checkOtpSendLimit(params: {
   if (!phoneDecision.ok) {
     return {
       ok: false,
-      code: 'phone_limit',
+      code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
       retryAfterMs: phoneDecision.retryAfterMs,
     }
   }
@@ -167,7 +191,40 @@ export async function checkOtpSendLimit(params: {
     if (!ipDecision.ok) {
       return {
         ok: false,
-        code: 'ip_limit',
+        code: ipDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
+        retryAfterMs: ipDecision.retryAfterMs,
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
+export type CheckProviderLookupLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'phone_limit' | 'ip_limit' | 'limiter_unavailable'; retryAfterMs: number }
+
+export async function checkProviderLookupLimit(params: {
+  phone: string
+  ip?: string | null
+  context?: RateLimitContext
+}): Promise<CheckProviderLookupLimitResult> {
+  const phoneDecision = await consume('providerLookupByPhone', `phone:${params.phone}`)
+  if (!phoneDecision.ok) {
+    return {
+      ok: false,
+      code: phoneDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'phone_limit',
+      retryAfterMs: phoneDecision.retryAfterMs,
+    }
+  }
+
+  const ip = params.ip?.trim()
+  if (ip) {
+    const ipDecision = await consume('providerLookupByIp', `ip:${ip}`)
+    if (!ipDecision.ok) {
+      return {
+        ok: false,
+        code: ipDecision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_limit',
         retryAfterMs: ipDecision.retryAfterMs,
       }
     }
@@ -178,14 +235,20 @@ export async function checkOtpSendLimit(params: {
 
 export type CheckOtpVerifyLimitResult =
   | { ok: true }
-  | { ok: false; retryAfterMs: number }
+  | { ok: false; code: 'verify_limit' | 'limiter_unavailable'; retryAfterMs: number }
 
 export async function checkOtpVerifyLimit(params: {
   phone: string
   context?: RateLimitContext
 }): Promise<CheckOtpVerifyLimitResult> {
   const decision = await consume('verifyByPhone', `phone:${params.phone}`)
-  if (!decision.ok) return { ok: false, retryAfterMs: decision.retryAfterMs }
+  if (!decision.ok) {
+    return {
+      ok: false,
+      code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'verify_limit',
+      retryAfterMs: decision.retryAfterMs,
+    }
+  }
   return { ok: true }
 }
 

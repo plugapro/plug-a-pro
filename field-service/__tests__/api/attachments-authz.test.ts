@@ -58,7 +58,7 @@ const makeParams = () =>
 
 const ATTACHMENT_JOB_PROVIDER = {
   id: 'att-1',
-  url: 'https://blob.example.com/att-1',
+  url: 'https://store.public.blob.vercel-storage.com/att-1',
   mimeType: 'image/jpeg',
   blobKey: 'jobs/att-1.jpg',
   uploadedBy: 'some-other-user-id', // Uploaded by someone else
@@ -73,12 +73,13 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockHead.mockResolvedValue({
-      downloadUrl: 'https://blob.example.com/download/att-1',
+      downloadUrl: 'https://store.public.blob.vercel-storage.com/download/att-1',
     })
     mockFetch.mockResolvedValue({
       ok: true,
       body: null,
       status: 200,
+      headers: new Headers(),
     })
     mockResolveJobRequestAccessScope.mockResolvedValue({
       status: 'invalid',
@@ -100,7 +101,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     const res = await GET(makeRequest(), { params: makeParams() })
 
     expect(res.status).toBe(200)
-    expect(mockHead).toHaveBeenCalledWith('https://blob.example.com/att-1')
+    expect(mockHead).toHaveBeenCalledWith('https://store.public.blob.vercel-storage.com/att-1')
     // Must look up provider record by userId, not trust session.id directly
     expect(mockDb.provider.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'supabase-uid' } }),
@@ -264,7 +265,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
 
     expect(res.status).toBe(200)
     expect(mockResolveJobRequestAccessScope).toHaveBeenCalledWith('token-123')
-    expect(mockHead).toHaveBeenCalledWith('https://blob.example.com/att-1')
+    expect(mockHead).toHaveBeenCalledWith('https://store.public.blob.vercel-storage.com/att-1')
   })
 
   it('allows a valid ticket token to load a customer photo linked directly to that request', async () => {
@@ -286,8 +287,9 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     const res = await GET(makeTokenRequest('token-123'), { params: makeParams() })
 
     expect(res.status).toBe(200)
-    expect(mockFetch).toHaveBeenCalledWith('https://blob.example.com/download/att-1')
+    expect(mockFetch).toHaveBeenCalledWith('https://store.public.blob.vercel-storage.com/download/att-1', { redirect: 'manual' })
     expect(res.headers.get('Content-Type')).toBe('image/jpeg')
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff')
   })
 
   it('denies an unauthenticated request when the ticket token does not match the attachment job request', async () => {
@@ -364,7 +366,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
 
     expect(res.status).toBe(200)
     expect(mockResolveProviderLeadAttachmentScope).toHaveBeenCalledWith('lead-token-123')
-    expect(mockHead).toHaveBeenCalledWith('https://blob.example.com/att-1')
+    expect(mockHead).toHaveBeenCalledWith('https://store.public.blob.vercel-storage.com/att-1')
   })
 
   it('falls back to the stored attachment URL when blob metadata has no downloadUrl', async () => {
@@ -377,7 +379,7 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
     const res = await GET(makeRequest(), { params: makeParams() })
 
     expect(res.status).toBe(200)
-    expect(mockFetch).toHaveBeenCalledWith('https://blob.example.com/att-1')
+    expect(mockFetch).toHaveBeenCalledWith('https://store.public.blob.vercel-storage.com/att-1', { redirect: 'manual' })
   })
 
   it('returns 401 when an unauthenticated request has an expired or invalid lead token', async () => {
@@ -465,6 +467,81 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
       }),
     )
   })
+
+  it('blocks attachment proxy reads from non-Vercel Blob hosts', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.attachment.findUnique.mockResolvedValue({
+      ...ATTACHMENT_JOB_PROVIDER,
+      url: 'https://evil.example.test/att-1',
+    })
+    mockHead.mockResolvedValue({})
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+    const body = await res.json()
+
+    expect(res.status).toBe(502)
+    expect(body.code).toBe('IMAGE_STORAGE_HOST_BLOCKED')
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects upstream redirects instead of following them', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 302,
+      body: null,
+      headers: new Headers({ location: 'https://evil.example.test/file' }),
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+    const body = await res.json()
+
+    expect(res.status).toBe(502)
+    expect(body.code).toBe('IMAGE_SIGNED_URL_FAILED')
+  })
+
+  it('rejects oversized upstream responses before streaming', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: null,
+      headers: new Headers({ 'content-length': String(16 * 1024 * 1024) }),
+    })
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+    const body = await res.json()
+
+    expect(res.status).toBe(413)
+    expect(body.code).toBe('IMAGE_TOO_LARGE')
+  })
+
+  it('rejects oversized upstream responses even when content-length is missing', async () => {
+    mockGetSession.mockResolvedValue({ id: 'supabase-uid', role: 'provider' })
+    mockDb.provider.findUnique.mockResolvedValue({ id: 'provider-db-id' })
+    mockDb.attachment.findUnique.mockResolvedValue(ATTACHMENT_JOB_PROVIDER)
+    mockFetch.mockResolvedValue(
+      new Response(new Uint8Array(16 * 1024 * 1024), {
+        status: 200,
+        headers: new Headers(),
+      }),
+    )
+
+    const GET = await getHandler()
+    const res = await GET(makeRequest(), { params: makeParams() })
+    const body = await res.json()
+
+    expect(res.status).toBe(413)
+    expect(body.code).toBe('IMAGE_TOO_LARGE')
+  })
 })
 
 // ─── G1 regression: safeForPreview enforcement for ticket-token access ─────────
@@ -474,8 +551,8 @@ describe('GET /api/attachments/[id] — provider job ownership check', () => {
 describe('GET /api/attachments/[id] — safeForPreview enforcement with ticket tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockHead.mockResolvedValue({ downloadUrl: 'https://blob.example.com/download/att-1' })
-    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200 })
+    mockHead.mockResolvedValue({ downloadUrl: 'https://store.public.blob.vercel-storage.com/download/att-1' })
+    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200, headers: new Headers() })
     mockResolveJobRequestAccessScope.mockResolvedValue({ status: 'active', jobRequestId: 'jr-1' })
     mockResolveProviderLeadAttachmentScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
     mockDb.lead.findUnique.mockResolvedValue(null)
@@ -544,8 +621,8 @@ describe('GET /api/attachments/[id] — safeForPreview enforcement with ticket t
 describe('GET /api/attachments/[id] — safeForPreview enforcement with lead tokens (CODEX-15)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockHead.mockResolvedValue({ downloadUrl: 'https://blob.example.com/download/att-1' })
-    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200 })
+    mockHead.mockResolvedValue({ downloadUrl: 'https://store.public.blob.vercel-storage.com/download/att-1' })
+    mockFetch.mockResolvedValue({ ok: true, body: null, status: 200, headers: new Headers() })
     mockResolveJobRequestAccessScope.mockResolvedValue({ status: 'invalid', jobRequestId: null })
     mockDb.lead.findUnique.mockResolvedValue(null)
   })

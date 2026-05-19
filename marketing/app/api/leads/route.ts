@@ -4,6 +4,7 @@ import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { siteConfig } from "@/lib/metadata";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { checkMarketingLeadRateLimit } from "@/lib/rate-limit";
 
 const phoneRegex = /^\+?[1-9]\d{7,14}$/;
 
@@ -46,26 +47,17 @@ const leadMagnetSchema = baseSchema.extend({
 
 const schema = z.discriminatedUnion("type", [contactSchema, onboardingSchema, leadMagnetSchema]);
 
-// Best-effort in-memory rate limiter.
-// NOTE: Resets on Vercel cold starts — not reliable across serverless invocations.
-// TODO: Replace Map with Upstash Redis for production-grade rate limiting.
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const LIMIT = 3;
-const WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
-function isRateLimited(ip: string): boolean {
-  // Skip rate limiting in test environment — module state persists across tests.
-  if (process.env.NODE_ENV === "test") return false;
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + WINDOW_MS });
-    return false;
-  }
-  if (entry.count >= LIMIT) return true;
-  entry.count++;
-  return false;
-}
+type MarketingLeadInsert = {
+  type: "waitlist" | "contact" | "chat" | "onboarding" | "lead_magnet";
+  email?: string;
+  phone?: string;
+  name?: string;
+  journey?: "customer" | "provider" | "both";
+  message?: string;
+  source?: string;
+  venture: typeof siteConfig.venture;
+  whatsapp_opt_in?: boolean;
+};
 
 function normalizePhone(value: string) {
   const cleaned = value.replace(/[^\d+]/g, "");
@@ -96,8 +88,16 @@ const magnetPrefill: Record<string, string> = {
 export async function POST(request: Request) {
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  if (isRateLimited(ip)) {
-    return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+  const rateLimit = await checkMarketingLeadRateLimit(ip);
+  if (!rateLimit.ok) {
+    const status = rateLimit.code === "limiter_unavailable" ? 503 : 429;
+    return NextResponse.json(
+      { error: rateLimit.code === "limiter_unavailable" ? "Lead capture is temporarily unavailable." : "Too many requests." },
+      {
+        status,
+        headers: { "Retry-After": String(Math.ceil(rateLimit.retryAfterMs / 1000)) },
+      }
+    );
   }
 
   let body: unknown;
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       ? normalizePhone(result.data.phone)
       : undefined;
 
-  const insertPayload =
+  const insertPayload: MarketingLeadInsert =
     result.data.type === "onboarding"
       ? {
           type: result.data.type,

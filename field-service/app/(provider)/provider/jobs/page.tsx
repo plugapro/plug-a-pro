@@ -356,7 +356,7 @@ export default async function ProviderJobsPage({
                       </span>
                     </div>
                     <p className="text-[12px] text-[var(--ink-mute)]">
-                      Tap to send your quote and unlock the customer's contact details.
+                      Tap to send your quote and unlock the customer&apos;s contact details.
                     </p>
                   </Link>
                 )

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { resetRateLimitForTests } from '@/lib/rate-limit'
 
@@ -328,6 +328,8 @@ describe('POST /api/auth/phone-exists', () => {
 // ─── /api/auth/provider/send-code ─────────────────────────────────────────────
 
 describe('POST /api/auth/provider/send-code', () => {
+  const originalEnv = { ...process.env }
+
   beforeEach(async () => {
     vi.clearAllMocks()
     resetRateLimitForTests()
@@ -345,6 +347,10 @@ describe('POST /api/auth/provider/send-code', () => {
         signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
       },
     })
+  })
+
+  afterEach(() => {
+    process.env = { ...originalEnv }
   })
 
   it.each([
@@ -426,6 +432,73 @@ describe('POST /api/auth/provider/send-code', () => {
       code: 'UNSUPPORTED_COUNTRY_CODE',
       traceId: 'client_gb_1',
       countryCode: 'GB',
+    })
+    expect(db.provider.findUnique).not.toHaveBeenCalled()
+    expect(createClient).not.toHaveBeenCalled()
+  })
+
+  it('rate limits repeated provider lookup attempts before provider existence is revealed', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+    process.env.PROVIDER_LOOKUP_LIMIT_PER_PHONE_HOUR = '1'
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const firstReq = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567', traceId: 'lookup_limit_1' }),
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.42' },
+    })
+
+    const firstRes = await POST(firstReq)
+    expect(firstRes.status).toBe(404)
+    expect(db.provider.findUnique).toHaveBeenCalled()
+
+    vi.clearAllMocks()
+    const secondReq = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567', traceId: 'lookup_limit_2' }),
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.42' },
+    })
+
+    const secondRes = await POST(secondReq)
+    const body = await secondRes.json()
+
+    expect(secondRes.status).toBe(429)
+    expect(body.error).toMatchObject({
+      code: 'RATE_LIMITED',
+      step: 'Worker portal send-code',
+    })
+    expect(db.provider.findUnique).not.toHaveBeenCalled()
+    expect(createClient).not.toHaveBeenCalled()
+  })
+
+  it('fails closed before provider lookup when the pre-lookup limiter is unavailable', async () => {
+    process.env.VERCEL_ENV = 'production'
+    delete process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK
+    delete process.env.UPSTASH_REDIS_REST_URL
+    delete process.env.UPSTASH_REDIS_REST_TOKEN
+    delete process.env.UPSTASH_REDIS_KV_REST_API_URL
+    delete process.env.UPSTASH_REDIS_KV_REST_API_TOKEN
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const req = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234568', traceId: 'lookup_limiter_down' }),
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.43' },
+    })
+
+    const res = await POST(req)
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(body.error).toMatchObject({
+      code: 'OTP_PROVIDER_UNAVAILABLE',
+      step: 'Worker portal send-code',
     })
     expect(db.provider.findUnique).not.toHaveBeenCalled()
     expect(createClient).not.toHaveBeenCalled()
