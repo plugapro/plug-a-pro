@@ -10,7 +10,11 @@ import {
   type DiagnosticCode,
 } from '@/lib/support-diagnostics'
 import { checkWorkerPortalAccess, findProviderForOtpLogin } from '@/lib/worker-provider-auth'
-import { checkOtpSendLimit, checkProviderLookupLimit } from '@/lib/rate-limit'
+import {
+  checkOtpSendLimit,
+  checkProviderLookupLimit,
+  checkPublicProviderSendCodeLimit,
+} from '@/lib/rate-limit'
 
 const STEP = 'Worker portal send-code'
 const OTP_TIMEOUT_MS = 10_000
@@ -285,6 +289,30 @@ export async function POST(request: NextRequest) {
     const ip = forwardedFor?.split(',')[0]?.trim()
       || request.headers.get('x-real-ip')?.trim()
       || null
+    const publicRateCheck = await checkPublicProviderSendCodeLimit({
+      phone,
+      ip,
+      context: { surface: 'provider_send_code_public', traceId },
+    })
+    if (!publicRateCheck.ok) {
+      console.warn('[provider-send-code] public pre-lookup rate limited', {
+        trace_id: traceId,
+        normalizedPhone: phone,
+        countryCode,
+        rateLimitReason: publicRateCheck.code,
+        timestamp: timestamp(),
+        step: STEP,
+      })
+      const code = publicRateCheck.code === 'limiter_unavailable' ? 'OTP_PROVIDER_UNAVAILABLE' : 'RATE_LIMITED'
+      return errorPayload({
+        code,
+        traceId,
+        phone,
+        countryCode,
+        status: statusFor(code),
+      })
+    }
+
     const lookupRateCheck = await checkProviderLookupLimit({
       phone,
       ip,

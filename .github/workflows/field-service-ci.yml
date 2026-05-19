@@ -23,6 +23,10 @@ defaults:
 env:
   TZ: Africa/Johannesburg
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   lint-and-test:
     name: Lint and Test
@@ -150,8 +154,6 @@ jobs:
         run: pnpm build:ci
         working-directory: field-service
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
           GIT_COMMIT_SHA: ${{ github.sha }}
           GIT_COMMIT_REF: ${{ github.ref_name }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -160,14 +162,28 @@ jobs:
 
       - name: Start built app and probe health
         run: |
+          set -euo pipefail
           PORT=3105 pnpm start:ci > /tmp/field-service-start.log 2>&1 &
-          echo "$!" > /tmp/field-service-start.pid
+          app_pid=$!
+          cleanup() {
+            if kill -0 "$app_pid" >/dev/null 2>&1; then
+              kill "$app_pid" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+          healthy=false
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3105/api/health >/tmp/field-service-health.json; then
+              healthy=true
               break
             fi
             sleep 1
           done
+          if [ "$healthy" != "true" ]; then
+            echo 'field-service failed to become healthy in 30 attempts'
+            tail -n 60 /tmp/field-service-start.log || true
+            exit 1
+          fi
           LOCAL_SMOKE_BASE_URL=http://127.0.0.1:3105 LOCAL_SMOKE_EXPECT_COMMIT_SHA="$GITHUB_SHA" LOCAL_SMOKE_REQUIRE_COMPONENTS=db,auth.supabase_env_complete,whatsapp,payments pnpm smoke:local
         working-directory: field-service
         env:
@@ -213,19 +229,22 @@ jobs:
       - name: Assert smoke target matches this commit
         run: |
           test -n "$E2E_BASE_URL"
-          node -e "const base=process.env.E2E_BASE_URL.replace(/\/$/, ''); fetch(base + '/api/health').then(async (res) => { const body = await res.json(); if (!res.ok) throw new Error('health returned ' + res.status); if (body?.build?.commitSha !== process.env.GITHUB_SHA) throw new Error('E2E target commit mismatch: expected ' + process.env.GITHUB_SHA + ' got ' + (body?.build?.commitSha ?? 'unknown')); }).catch((error) => { console.error(error.message); process.exit(1); })"
+          LOCAL_SMOKE_BASE_URL="$E2E_BASE_URL" \
+          LOCAL_SMOKE_EXPECT_COMMIT_SHA="$GITHUB_SHA" \
+          LOCAL_SMOKE_REQUIRE_COMPONENTS='db,auth.supabase_env_complete,whatsapp,payments' \
+          pnpm smoke:local
         env:
-          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_BASE_URL: ${{ vars.FIELD_SERVICE_E2E_BASE_URL || secrets.E2E_BASE_URL }}
 
       - name: Run smoke tests
         run: |
           test -n "$E2E_BASE_URL"
           test -n "$E2E_ADMIN_EMAIL"
           test -n "$E2E_ADMIN_PASSWORD"
-          pnpm exec playwright test
+          pnpm exec playwright test e2e/smoke.spec.ts
         working-directory: field-service
         env:
-          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_BASE_URL: ${{ vars.FIELD_SERVICE_E2E_BASE_URL || secrets.E2E_BASE_URL }}
           E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
           E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 

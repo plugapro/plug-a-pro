@@ -8,6 +8,7 @@ type LimiterKey =
   | 'sendByPhone'
   | 'sendByIp'
   | 'verifyByPhone'
+  | 'providerSendCodePublicByIpPhone'
   | 'providerLookupByPhone'
   | 'providerLookupByIp'
 
@@ -42,6 +43,11 @@ function configs(): Record<LimiterKey, LimitConfig> {
     verifyByPhone: {
       name: 'verifyByPhone',
       limit: envInt('OTP_VERIFY_LIMIT_PER_PHONE_HOUR', 10),
+      windowSec: HOUR,
+    },
+    providerSendCodePublicByIpPhone: {
+      name: 'providerSendCodePublicByIpPhone',
+      limit: envInt('PROVIDER_SEND_CODE_PUBLIC_LIMIT_PER_IP_PHONE_HOUR', 6),
       windowSec: HOUR,
     },
     providerLookupByPhone: {
@@ -203,6 +209,33 @@ export async function checkOtpSendLimit(params: {
 export type CheckProviderLookupLimitResult =
   | { ok: true }
   | { ok: false; code: 'phone_limit' | 'ip_limit' | 'limiter_unavailable'; retryAfterMs: number }
+
+export type CheckPublicProviderSendCodeLimitResult =
+  | { ok: true }
+  | { ok: false; code: 'ip_phone_limit' | 'limiter_unavailable'; retryAfterMs: number }
+
+export async function checkPublicProviderSendCodeLimit(params: {
+  phone: string
+  ip?: string | null
+  context?: RateLimitContext
+}): Promise<CheckPublicProviderSendCodeLimitResult> {
+  // Keep the public pre-lookup limiter keyed to IP+phone so anonymous traffic
+  // cannot brute-force lookup attempts for the same number from one source.
+  const ip = params.ip?.trim() || 'unknown'
+  const decision = await consume(
+    'providerSendCodePublicByIpPhone',
+    `ip_phone:${ip}:${params.phone}`,
+  )
+  if (!decision.ok) {
+    return {
+      ok: false,
+      code: decision.reason === 'limiter_unavailable' ? 'limiter_unavailable' : 'ip_phone_limit',
+      retryAfterMs: decision.retryAfterMs,
+    }
+  }
+
+  return { ok: true }
+}
 
 export async function checkProviderLookupLimit(params: {
   phone: string

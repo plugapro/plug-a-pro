@@ -1,6 +1,10 @@
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const DEFAULT_REQUIRED_COMPONENTS = process.env.LOCAL_SMOKE_REQUIRE_EXTERNALS === 'true'
+  ? ['db', 'auth.supabase_env_complete', 'whatsapp', 'payments']
+  : ['db', 'auth.supabase_env_complete']
+
 function valueForComponent(body, component) {
   if (component === 'auth.supabase_env_complete') return body?.auth?.supabase_env_complete
   return body?.[component]
@@ -11,7 +15,7 @@ function expectedForComponent(component) {
 }
 
 export function evaluateHealth(body, options = {}) {
-  const requiredComponents = options.requiredComponents ?? ['db']
+  const requiredComponents = options.requiredComponents ?? DEFAULT_REQUIRED_COMPONENTS
   const failures = []
 
   if (body?.status !== 'ok') {
@@ -36,12 +40,21 @@ export function evaluateHealth(body, options = {}) {
   return { ok: failures.length === 0, failures }
 }
 
-function parseRequiredComponents() {
-  const raw = process.env.LOCAL_SMOKE_REQUIRE_COMPONENTS ?? 'db'
+function parseComponentCsv(raw) {
   return raw
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
+}
+
+function parseRequiredComponents() {
+  const base = process.env.LOCAL_SMOKE_REQUIRE_COMPONENTS
+    ? parseComponentCsv(process.env.LOCAL_SMOKE_REQUIRE_COMPONENTS)
+    : DEFAULT_REQUIRED_COMPONENTS
+
+  const exemptions = parseComponentCsv(process.env.LOCAL_SMOKE_EXEMPT_COMPONENTS ?? '')
+  const exemptionSet = new Set(exemptions)
+  return base.filter((component) => !exemptionSet.has(component))
 }
 
 async function main() {
@@ -53,10 +66,11 @@ async function main() {
   const timeout = setTimeout(() => controller.abort(), Number(process.env.LOCAL_SMOKE_TIMEOUT_MS ?? 10_000))
 
   try {
+    const requiredComponents = parseRequiredComponents()
     const response = await fetch(healthUrl, { signal: controller.signal })
     const body = await response.json().catch(() => null)
     const evaluation = evaluateHealth(body, {
-      requiredComponents: parseRequiredComponents(),
+      requiredComponents,
       expectedCommitSha: process.env.LOCAL_SMOKE_EXPECT_COMMIT_SHA || undefined,
     })
 
@@ -70,6 +84,7 @@ async function main() {
         payments: body?.payments ?? 'unknown',
         supabaseEnvComplete: body?.auth?.supabase_env_complete ?? 'unknown',
         commitSha: body?.build?.commitSha ?? 'unknown',
+        requiredComponents,
         failures: evaluation.failures,
       })
       process.exit(1)
@@ -84,6 +99,7 @@ async function main() {
       payments: body.payments,
       supabaseEnvComplete: body?.auth?.supabase_env_complete ?? 'unknown',
       commitSha: body?.build?.commitSha ?? 'unknown',
+      requiredComponents,
     })
   } catch (error) {
     console.error('[smoke-local-health] health probe error', {

@@ -473,6 +473,44 @@ describe('POST /api/auth/provider/send-code', () => {
     expect(createClient).not.toHaveBeenCalled()
   })
 
+  it('applies public pre-lookup limiter by IP + normalized phone before DB lookup', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+    process.env.PROVIDER_SEND_CODE_PUBLIC_LIMIT_PER_IP_PHONE_HOUR = '1'
+    process.env.PROVIDER_LOOKUP_LIMIT_PER_PHONE_HOUR = '99'
+    process.env.PROVIDER_LOOKUP_LIMIT_PER_IP_HOUR = '99'
+    const { db } = await import('@/lib/db')
+    const { createClient } = await import('@supabase/supabase-js')
+
+    const { POST } = await import('../../app/api/auth/provider/send-code/route')
+    const firstReq = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '0821234567', traceId: 'public_limit_1' }),
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.55' },
+    })
+
+    const firstRes = await POST(firstReq)
+    expect(firstRes.status).toBe(404)
+    expect(db.provider.findUnique).toHaveBeenCalled()
+
+    vi.clearAllMocks()
+    const secondReq = new NextRequest('http://localhost/api/auth/provider/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+27821234567', traceId: 'public_limit_2' }),
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.55' },
+    })
+
+    const secondRes = await POST(secondReq)
+    const body = await secondRes.json()
+
+    expect(secondRes.status).toBe(429)
+    expect(body.error).toMatchObject({
+      code: 'RATE_LIMITED',
+      step: 'Worker portal send-code',
+    })
+    expect(db.provider.findUnique).not.toHaveBeenCalled()
+    expect(createClient).not.toHaveBeenCalled()
+  })
+
   it('fails closed before provider lookup when the pre-lookup limiter is unavailable', async () => {
     process.env.VERCEL_ENV = 'production'
     delete process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK

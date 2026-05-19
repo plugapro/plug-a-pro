@@ -27,6 +27,13 @@ The recovery-readiness task can close only after a dated rehearsal note records:
 - Rollback command/result.
 - Follow-up owner for failed steps.
 
+**Required evidence fields**
+- Target deployment URL.
+- Restore environment identifier (name/ID).
+- Restore duration metrics (`restore_complete_at`, RTO, RPO).
+- Snapshot of successful smoke evidence (command log or screenshot).
+- Rollback confirmation (timestamp + target URL/version).
+
 ## Rehearsal Evidence Log
 
 No production-like restore or rollback rehearsal has been executed from this checklist yet.
@@ -41,3 +48,15 @@ No production-like restore or rollback rehearsal has been executed from this che
 2. Screenshot or exported status from the isolated restore target.
 3. CI or command transcript showing `/api/health`, customer booking, provider sign-in, admin sign-in, and attachment proxy smoke results.
 4. Vercel rollback rehearsal result against a non-production or approved preview target.
+
+## Operational Evidence Checklist
+
+- Capture dashboard/monitoring evidence for:
+  - Queue depth at restore start and end.
+  - Error rate during replay and catch-up period.
+  - Alert/noise impact from synthetic load.
+- Include RTO/RPO evidence in OpenBrain using this format:
+  - `restore_start`: timestamp
+  - `restore_complete`: timestamp
+  - `rollback_start`: timestamp
+  - `rollback_complete`: timestamp

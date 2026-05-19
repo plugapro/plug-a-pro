@@ -21,17 +21,17 @@
 
 ## Evidence Register
 
-Current status: production dashboards and alert links are not yet attached. Do not treat the SLOs above as proven until every row below has real evidence.
+Current status: dashboards/alerts are being stood up. Keep this table in "pending/observed" states until linked evidence exists in OpenBrain.
 
 | SLO | Metric query or source | Dashboard / alert reference | Current baseline | Last synthetic probe |
 | --- | --- | --- | --- | --- |
-| `/api/health` availability | Pending: external HTTP probe plus `/api/health` response log | Pending | Not collected | Not run |
-| Customer booking submission latency | Pending: API duration log grouped by booking submission route | Pending | Not collected | Not run |
-| WhatsApp outbound delivery creation | Pending: `message_events` created/failed counts by template and provider | Pending | Not collected | Not run |
-| Lead matching dispatch | Pending: request validation timestamp to first dispatch event | Pending | Not collected | Not run |
-| Provider credit payment application | Pending: payment callback timestamp to wallet ledger timestamp | Pending | Not collected | Not run |
-| Attachment proxy success | Pending: `/api/attachments/[id]` status-code and duration logs | Pending | Not collected | Not run |
-| Admin queue freshness | Pending: queue age by owner and SLA policy | Pending | Not collected | Not run |
+| `/api/health` availability | External synthetic against `/api/health` + internal build metadata (`db`, `whatsapp`, `payments`, `auth.supabase_env_complete`) | `TODO dashboard: ops-health-overview` ; `TODO alert: slo-health-unavailable` | Not measured | Not run |
+| Customer booking submission latency | Route duration logs for booking submission and create-booking queue handoff | `TODO dashboard: ops-booking-slo` ; `TODO alert: slo-booking-p95` | Not measured | Not run |
+| WhatsApp outbound delivery creation | `MessageEvent` success/error counts + `message_events` lag by template/provider | `TODO dashboard: ops-whatsapp-sla` ; `TODO alert: slo-whatsapp-delivery` | Not measured | Not run |
+| Lead matching dispatch | `created_at` on `JobRequest` and first `LeadDispatchEvent` timestamp | `TODO dashboard: ops-dispatch-latency` ; `TODO alert: slo-dispatch-delay` | Not measured | Not run |
+| Provider credit payment application | Callback receive timestamp vs wallet ledger apply timestamp | `TODO dashboard: ops-payment-credit` ; `TODO alert: slo-payment-credit-lag` | Not measured | Not run |
+| Attachment proxy success | `/api/attachments/[id]` status and duration distribution from structured logs | `TODO dashboard: ops-attachments` ; `TODO alert: slo-attachment-errors` | Not measured | Not run |
+| Admin queue freshness | Queue age by owner and ownership SLA (queue table + audit trail lag) | `TODO dashboard: ops-admin-queue` ; `TODO alert: slo-admin-queue-stale` | Not measured | Not run |
 
 ## CI And Preview Smoke Evidence
 
@@ -39,4 +39,10 @@ Current status: production dashboards and alert links are not yet attached. Do n
 | --- | --- | --- |
 | Pure build | `pnpm install --frozen-lockfile`, typecheck, build | Always-on field-service CI build job |
 | Live start smoke | Explicit repo variable opt-in and secret preflight | `FIELD_SERVICE_LIVE_SMOKE=true` required before live DB/payment/WhatsApp smoke runs |
-| Preview E2E smoke | Preview `/api/health` `build.commitSha` equals the GitHub SHA under test | `FIELD_SERVICE_E2E_SMOKE=true` required before Playwright runs |
+| Preview E2E smoke | Preview `/api/health` `build.commitSha` equals the GitHub SHA under test; health smoke script should include integration checks (`db`, `auth.supabase_env_complete`, optional external components) | `FIELD_SERVICE_E2E_SMOKE=true` required before Playwright runs |
+
+## Runbook Evidence
+
+- Add dashboard IDs and alert links in this document as they are provisioned.
+- Store each SLO breach response in an OpenBrain implementation note with:
+  - `owner`, `timestamp`, `root cause`, `mitigation`, `recovery metric`, `follow-up task`.

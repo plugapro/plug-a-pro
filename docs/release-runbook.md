@@ -9,10 +9,10 @@
 
 Before every production deployment, confirm:
 
-- [ ] All tests pass: `cd field-service && npm run test`
-- [ ] All tests pass: `cd marketing && npm run test`
-- [ ] Linting passes: `npm run lint` in both apps
-- [ ] Prisma migration status clean: `cd field-service && npx prisma migrate status`
+- [ ] All tests pass: `cd field-service && pnpm test`
+- [ ] All tests pass: `cd marketing && pnpm test`
+- [ ] Linting passes: `pnpm lint` in both apps
+- [ ] Prisma migration status clean: `cd field-service && pnpm exec prisma migrate status`
 - [ ] Required environment variables present (see Environment Variables section)
 - [ ] `vercel.json` cron schedules reviewed and confirmed with product
 
@@ -25,9 +25,9 @@ Before every production deployment, confirm:
 1. **Run database migrations first** (before deploying new app code)
    ```bash
    cd field-service
-   DATABASE_URL=<production-db-url> npx prisma migrate deploy
+   DATABASE_URL=<production-db-url> pnpm exec prisma migrate deploy
    ```
-   Verify: `npx prisma migrate status` shows all migrations applied.
+   Verify: `pnpm exec prisma migrate status` shows all migrations applied.
 
 2. **Deploy `field-service`**
    ```bash
@@ -54,21 +54,21 @@ P0-4 is closed. The production Supabase DB has:
 
 **Verify current migration state:**
 ```bash
-cd field-service
-npx prisma migrate status
+   cd field-service
+   pnpm exec prisma migrate status
 ```
 
 If `20260402141355_whatsapp_preferences` is shown as pending, apply it:
 ```bash
-cd field-service
-npx prisma migrate deploy
+   cd field-service
+   pnpm exec prisma migrate deploy
 ```
 
 ### Fresh environment (new blank DB)
 
 ```bash
 cd field-service
-DATABASE_URL=<new-db-url> DIRECT_URL=<new-direct-url> npx prisma migrate deploy
+   DATABASE_URL=<new-db-url> DIRECT_URL=<new-direct-url> pnpm exec prisma migrate deploy
 ```
 
 This applies both migrations in order: baseline → whatsapp_preferences.

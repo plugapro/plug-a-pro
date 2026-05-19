@@ -2,9 +2,13 @@ name: field-service CI
 
 on:
   push:
-    branches: ['**']
+    branches: [main, develop, migration/from-vdp]
   pull_request:
-    branches: ['**']
+    branches: [main, migration/from-vdp]
+
+permissions:
+  contents: read
+  checks: write
 
 defaults:
   run:
@@ -14,12 +18,13 @@ jobs:
   check:
     name: Lint, type-check, test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -34,7 +39,7 @@ jobs:
         run: pnpm lint
 
       - name: Type check
-        run: pnpm tsc --noEmit
+        run: pnpm typecheck
 
       - name: Unit tests
         run: pnpm test --run
@@ -47,7 +52,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -76,7 +81,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -103,12 +108,13 @@ jobs:
     name: Build (push only)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && vars.CI_BUILD_ENABLED == 'true'
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -120,7 +126,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm build
+        run: pnpm build:ci
         env:
           SKIP_ENV_VALIDATION: '1'
 
@@ -128,12 +134,13 @@ jobs:
     name: Smoke tests (push only)
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.32.1
 
       - uses: actions/setup-node@v4
         with:
@@ -147,9 +154,17 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Assert smoke target matches this deployment
+        run: |
+          test -n "$E2E_BASE_URL"
+          LOCAL_SMOKE_BASE_URL="$E2E_BASE_URL" \
+          LOCAL_SMOKE_EXPECT_COMMIT_SHA="$GITHUB_SHA" \
+          LOCAL_SMOKE_REQUIRE_COMPONENTS='db,auth.supabase_env_complete,whatsapp,payments' \
+          pnpm smoke:local
+
       - name: Run smoke suite
         run: pnpm exec playwright test e2e/smoke.spec.ts
         env:
-          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_BASE_URL: ${{ vars.FIELD_SERVICE_E2E_BASE_URL || secrets.E2E_BASE_URL }}
           E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
           E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}

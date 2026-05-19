@@ -48,7 +48,12 @@ describe('OTP rate limiting', () => {
     delete process.env.KV_REST_API_URL
     delete process.env.KV_REST_API_TOKEN
 
-    const { checkOtpSendLimit, checkOtpVerifyLimit, checkProviderLookupLimit } = await import('@/lib/rate-limit')
+    const {
+      checkOtpSendLimit,
+      checkOtpVerifyLimit,
+      checkProviderLookupLimit,
+      checkPublicProviderSendCodeLimit,
+    } = await import('@/lib/rate-limit')
 
     await expect(checkOtpSendLimit({ phone: '+27820000000', ip: '203.0.113.10' })).resolves.toEqual({
       ok: false,
@@ -61,6 +66,11 @@ describe('OTP rate limiting', () => {
       retryAfterMs: 60_000,
     })
     await expect(checkProviderLookupLimit({ phone: '+27820000000', ip: '203.0.113.10' })).resolves.toEqual({
+      ok: false,
+      code: 'limiter_unavailable',
+      retryAfterMs: 60_000,
+    })
+    await expect(checkPublicProviderSendCodeLimit({ phone: '+27820000000', ip: '203.0.113.10' })).resolves.toEqual({
       ok: false,
       code: 'limiter_unavailable',
       retryAfterMs: 60_000,
@@ -106,5 +116,19 @@ describe('OTP rate limiting', () => {
       code: 'phone_limit',
     })
     await expect(checkOtpSendLimit({ phone: '+27820000003', ip: '203.0.113.20' })).resolves.toEqual({ ok: true })
+  })
+
+  it('limits public pre-lookup attempts by IP + normalized phone', async () => {
+    process.env.RATE_LIMIT_ALLOW_MEMORY_FALLBACK = 'true'
+    process.env.PROVIDER_SEND_CODE_PUBLIC_LIMIT_PER_IP_PHONE_HOUR = '1'
+
+    const { checkPublicProviderSendCodeLimit } = await import('@/lib/rate-limit')
+
+    await expect(checkPublicProviderSendCodeLimit({ phone: '+27820000004', ip: '203.0.113.21' })).resolves.toEqual({ ok: true })
+    await expect(checkPublicProviderSendCodeLimit({ phone: '+27820000004', ip: '203.0.113.21' })).resolves.toMatchObject({
+      ok: false,
+      code: 'ip_phone_limit',
+    })
+    await expect(checkPublicProviderSendCodeLimit({ phone: '+27820000004', ip: '203.0.113.22' })).resolves.toEqual({ ok: true })
   })
 })
