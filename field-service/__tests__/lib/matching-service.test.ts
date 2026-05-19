@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   acceptAssignmentOffer,
+  getLeadNotificationSummaryForJobRequest,
   manualOverrideAssignment,
   rankCandidatesForJobRequest,
   rejectAssignmentOffer,
@@ -41,8 +42,15 @@ const {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
     },
-    lead: { upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+    lead: {
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+      update: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+    },
     leadUnlock: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    messageEvent: { findMany: vi.fn() },
     providerWallet: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -151,6 +159,8 @@ describe('matching service', () => {
     mockDb.booking.create.mockResolvedValue({ id: 'booking-1' })
     mockDb.job.create.mockResolvedValue({})
     mockDb.job.findMany.mockResolvedValue([])
+    mockDb.messageEvent.findMany.mockResolvedValue([])
+    mockDb.lead.findMany.mockResolvedValue([])
     mockDb.match.findMany.mockResolvedValue([])
     mockDb.match.update.mockResolvedValue({})
     mockDb.provider.findUniqueOrThrow.mockResolvedValue({
@@ -993,6 +1003,96 @@ describe('matching service', () => {
         overrideReason: 'Customer asked for repeat technician',
       }),
     })
+  })
+
+  it('returns provider notification status when offer template send succeeded', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      id: 'job-1',
+      status: 'MATCHING',
+      assignmentMode: 'AUTO_ASSIGN',
+    })
+    mockDb.lead.findMany.mockResolvedValue([
+      {
+        id: 'lead-1',
+        providerId: 'provider-1',
+        status: 'SENT',
+        sentAt: new Date('2026-05-01T08:00:00.000Z'),
+        notifiedAt: new Date('2026-05-01T08:02:00.000Z'),
+        notificationAttemptedAt: new Date('2026-05-01T08:01:00.000Z'),
+        provider: { id: 'provider-1', name: 'Sarah', phone: '+27110000000' },
+      },
+    ])
+    mockDb.messageEvent.findMany.mockResolvedValue([
+      {
+        id: 'msg-1',
+        templateName: 'quick_match_provider_lead_offer',
+        status: 'SENT',
+        sentAt: new Date('2026-05-01T08:01:00.000Z'),
+        failureReason: null,
+        createdAt: new Date('2026-05-01T08:01:05.000Z'),
+        to: '+27110000000',
+        metadata: {
+          jobRequestId: 'job-1',
+          leadId: 'lead-1',
+          providerId: 'provider-1',
+        },
+      },
+    ])
+
+    const result = await getLeadNotificationSummaryForJobRequest('job-1')
+
+    expect(result?.providers[0]).toMatchObject({
+      leadId: 'lead-1',
+      providerId: 'provider-1',
+      providerName: 'Sarah',
+      isNotified: true,
+      notNotifiedReason: null,
+      leadOfferTemplate: 'quick_match_provider_lead_offer',
+      actionTemplate: null,
+    })
+  })
+
+  it('returns failure reason when lead offer dispatch failed', async () => {
+    mockDb.jobRequest.findUnique.mockResolvedValue({
+      id: 'job-1',
+      status: 'MATCHING',
+      assignmentMode: 'AUTO_ASSIGN',
+    })
+    mockDb.lead.findMany.mockResolvedValue([
+      {
+        id: 'lead-1',
+        providerId: 'provider-1',
+        status: 'SENT',
+        sentAt: new Date('2026-05-01T08:00:00.000Z'),
+        notifiedAt: null,
+        notificationAttemptedAt: new Date('2026-05-01T08:01:00.000Z'),
+        provider: { id: 'provider-1', name: 'Sarah', phone: '+27110000000' },
+      },
+    ])
+    mockDb.messageEvent.findMany.mockResolvedValue([
+      {
+        id: 'msg-2',
+        templateName: 'provider_lead_offer',
+        status: 'FAILED',
+        sentAt: null,
+        failureReason: 'Provider phone not on file',
+        createdAt: new Date('2026-05-01T08:01:10.000Z'),
+        to: '+27110000000',
+        metadata: {
+          requestId: 'job-1',
+          leadId: 'lead-1',
+          providerId: 'provider-1',
+        },
+      },
+    ])
+
+    const result = await getLeadNotificationSummaryForJobRequest('job-1')
+    const summary = result?.providers[0]
+
+    expect(summary?.isNotified).toBe(false)
+    expect(summary?.notNotifiedReason).toContain('Lead offer send failed')
+    expect(summary?.leadOfferTemplate).toBe('provider_lead_offer')
+    expect(summary?.leadOfferFailureReason).toBe('Provider phone not on file')
   })
 })
 

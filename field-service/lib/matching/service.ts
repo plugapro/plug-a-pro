@@ -4,8 +4,11 @@ import type {
   BookingStatus,
   DispatchDecisionStatus,
   JobStatus,
+  JobRequestStatus,
+  LeadStatus,
   MatchAttemptStage,
   Prisma,
+  MessageStatus,
 } from '@prisma/client'
 import { db } from '../db'
 import { MATCHING_CONFIG, type MatchingWeights } from './config'
@@ -47,6 +50,10 @@ const OFFER_TIMEOUT_PAUSE_WINDOW_HOURS = 24
 const OFFER_TIMEOUT_TEMP_PAUSE_HOURS = 12
 const ACCEPT_ASSIGNMENT_TRANSACTION_TIMEOUT_MS = 20_000
 const ACCEPT_ASSIGNMENT_TRANSACTION_MAX_WAIT_MS = 10_000
+const LEAD_NOTIFICATION_TEMPLATES = ['quick_match_provider_lead_offer', 'provider_lead_offer', 'provider_rfp_lead_invite'] as const
+const LEAD_ACTION_TEMPLATES = ['dispatch:job_lead_actions', 'rfp:job_lead_actions'] as const
+const LEAD_MESSAGE_SUCCESS_STATES: MessageStatus[] = ['SENT', 'DELIVERED', 'READ']
+const LEAD_MESSAGE_TEMPLATES = [...LEAD_NOTIFICATION_TEMPLATES, ...LEAD_ACTION_TEMPLATES]
 
 type ExpiredAssignmentNotificationHold = {
   id: string
@@ -103,6 +110,340 @@ function formatLeadExpiryArea(address: { suburb?: string | null; city?: string |
   const city = normaliseLocationDisplayName(address?.city)
   if (suburb && city && suburb !== city) return `${suburb}, ${city}`
   return suburb || city || 'your area'
+}
+
+export type JobLeadNotificationTemplate = (typeof LEAD_MESSAGE_TEMPLATES)[number]
+export type JobLeadNotificationProviderAudit = {
+  leadId: string
+  providerId: string
+  providerName: string
+  providerPhone: string | null
+  leadStatus: LeadStatus
+  leadSentAt: Date | null
+  leadNotifiedAt: Date | null
+  leadNotificationAttemptedAt: Date | null
+  isNotified: boolean
+  notNotifiedReason: string | null
+  leadOfferTemplate: JobLeadNotificationTemplate | null
+  leadOfferStatus: MessageStatus | null
+  leadOfferFailureReason: string | null
+  actionTemplate: JobLeadNotificationTemplate | null
+  actionStatus: MessageStatus | null
+  actionFailureReason: string | null
+  latestMessageEventId: string | null
+}
+
+export type JobLeadNotificationSummary = {
+  jobRequestId: string
+  jobRequestStatus: JobRequestStatus
+  assignmentMode: AssignmentMode | null
+  providers: JobLeadNotificationProviderAudit[]
+}
+
+type MessageEventForLead = {
+  id: string
+  templateName: string
+  status: MessageStatus
+  sentAt: Date | null
+  failureReason: string | null
+  createdAt: Date
+  to: string
+  metadata: Prisma.JsonValue
+}
+
+function isSuccessfulMessageStatus(status: MessageStatus | null | undefined) {
+  return Boolean(status && LEAD_MESSAGE_SUCCESS_STATES.includes(status))
+}
+
+function getMessageFailureReason(event: MessageEventForLead | null | undefined): string | null {
+  return event?.failureReason ?? null
+}
+
+function metadataValue(metadata: unknown, key: string) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const value = (metadata as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : null
+}
+
+function latestByCreatedAt(events: MessageEventForLead[]) {
+  return events
+    .slice()
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
+}
+
+function summarizeLeadNotification(params: {
+  leadStatus: LeadStatus
+  leadNotificationAttemptedAt: Date | null
+  leadNotifiedAt: Date | null
+  leadOfferEvents: MessageEventForLead[]
+  actionEvents: MessageEventForLead[]
+  hasProviderPhone: boolean
+  isActiveLead: boolean
+}) {
+  const {
+    leadStatus,
+    leadNotificationAttemptedAt,
+    leadNotifiedAt,
+    leadOfferEvents,
+    actionEvents,
+    hasProviderPhone,
+    isActiveLead,
+  } = params
+
+  const successfulOffer = leadOfferEvents.find((event) => isSuccessfulMessageStatus(event.status))
+  const latestOffer = latestByCreatedAt(leadOfferEvents)
+  const latestAction = latestByCreatedAt(actionEvents)
+  const latestOfferFailure = leadOfferEvents
+    .filter((event) => !isSuccessfulMessageStatus(event.status))
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
+  const latestActionFailure = actionEvents
+    .filter((event) => !isSuccessfulMessageStatus(event.status))
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
+
+  if (successfulOffer) {
+    return {
+      isNotified: true as const,
+      notNotifiedReason: null,
+      leadOfferTemplate: successfulOffer.templateName as JobLeadNotificationTemplate,
+      leadOfferStatus: successfulOffer.status,
+      leadOfferFailureReason: null,
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: successfulOffer.id,
+    }
+  }
+
+  if (!isActiveLead) {
+    return {
+      isNotified: false as const,
+      notNotifiedReason: 'Lead is closed or declined for this provider.',
+      leadOfferTemplate: latestOffer?.templateName as JobLeadNotificationTemplate | null,
+      leadOfferStatus: latestOffer?.status ?? null,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestOffer?.id ?? latestAction?.id ?? null,
+    }
+  }
+
+  if (!hasProviderPhone) {
+    return {
+      isNotified: false as const,
+      notNotifiedReason: 'Provider phone is missing; notification could not be sent.',
+      leadOfferTemplate: latestOffer?.templateName as JobLeadNotificationTemplate | null,
+      leadOfferStatus: latestOffer?.status ?? null,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestOffer?.id ?? latestAction?.id ?? null,
+    }
+  }
+
+  if (leadStatus === 'SEND_PENDING') {
+    return {
+      isNotified: false as const,
+      notNotifiedReason: 'Notification is pending, awaiting WhatsApp delivery callback.',
+      leadOfferTemplate: latestOffer?.templateName as JobLeadNotificationTemplate | null,
+      leadOfferStatus: latestOffer?.status ?? null,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestOffer?.id ?? latestAction?.id ?? null,
+    }
+  }
+
+  if (latestOfferFailure) {
+    const latestOfferFailureReason = getMessageFailureReason(latestOfferFailure)
+
+    return {
+      isNotified: false as const,
+      notNotifiedReason: `Lead offer send failed: ${latestOfferFailureReason ?? 'No failure reason supplied'}`,
+      leadOfferTemplate: latestOfferFailure.templateName as JobLeadNotificationTemplate,
+      leadOfferStatus: latestOfferFailure.status,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestOfferFailure.id,
+    }
+  }
+
+  if (actionEvents.length > 0) {
+    return {
+      isNotified: false as const,
+      notNotifiedReason: 'Lead offer template has not been successfully sent.',
+      leadOfferTemplate: latestOffer?.templateName as JobLeadNotificationTemplate | null,
+      leadOfferStatus: latestOffer?.status ?? null,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestAction?.id ?? null,
+    }
+  }
+
+  if (leadNotifiedAt) {
+    return {
+      isNotified: false as const,
+      notNotifiedReason: 'Lead has notify timestamp but no matching offer event was recorded.',
+      leadOfferTemplate: latestOffer?.templateName as JobLeadNotificationTemplate | null,
+      leadOfferStatus: latestOffer?.status ?? null,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestOffer?.id ?? latestAction?.id ?? null,
+    }
+  }
+
+  if (leadNotificationAttemptedAt) {
+    return {
+      isNotified: false as const,
+      notNotifiedReason: 'Notification attempted but no outbound lead-offer event was successful.',
+      leadOfferTemplate: latestOffer?.templateName as JobLeadNotificationTemplate | null,
+      leadOfferStatus: latestOffer?.status ?? null,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestOffer?.id ?? latestAction?.id ?? null,
+    }
+  }
+
+  return {
+    isNotified: false as const,
+      notNotifiedReason: 'No lead-offer message was recorded.',
+      leadOfferTemplate: latestOffer?.templateName as JobLeadNotificationTemplate | null,
+      leadOfferStatus: latestOffer?.status ?? null,
+      leadOfferFailureReason: getMessageFailureReason(latestOfferFailure),
+      actionTemplate: (latestAction?.templateName ?? null) as JobLeadNotificationTemplate | null,
+      actionStatus: latestAction?.status ?? null,
+      actionFailureReason: getMessageFailureReason(latestActionFailure),
+      latestMessageEventId: latestOffer?.id ?? latestAction?.id ?? null,
+    }
+  }
+
+export async function getLeadNotificationSummaryForJobRequest(
+  jobRequestId: string,
+): Promise<JobLeadNotificationSummary | null> {
+  // Keep a narrow, deterministic query path for diagnostics: job status + lead rows + message events.
+  const request = await db.jobRequest.findUnique({
+    where: { id: jobRequestId },
+    select: {
+      id: true,
+      status: true,
+      assignmentMode: true,
+    },
+  })
+  if (!request) return null
+
+  const leads = await db.lead.findMany({
+    where: { jobRequestId },
+    include: {
+      provider: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+        },
+      },
+    },
+    orderBy: { sentAt: 'asc' },
+  })
+
+  const messageEvents = await db.messageEvent.findMany({
+    where: {
+      templateName: { in: LEAD_MESSAGE_TEMPLATES },
+      OR: [
+        { metadata: { path: ['jobRequestId'], equals: request.id } },
+        { metadata: { path: ['requestId'], equals: request.id } },
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      templateName: true,
+      status: true,
+      sentAt: true,
+      failureReason: true,
+      createdAt: true,
+      to: true,
+      metadata: true,
+    },
+  })
+
+  const byLeadId = new Map<string, MessageEventForLead[]>()
+  const byProviderId = new Map<string, MessageEventForLead[]>()
+  for (const messageEvent of messageEvents) {
+    if (!messageEvent.templateName) continue
+    const mapped = messageEvent as MessageEventForLead
+
+    const leadId = metadataValue(mapped.metadata, 'leadId')
+    const providerId = metadataValue(mapped.metadata, 'providerId')
+
+    if (leadId) {
+      const rows = byLeadId.get(leadId) ?? []
+      rows.push(mapped)
+      byLeadId.set(leadId, rows)
+    }
+    if (providerId) {
+      const rows = byProviderId.get(providerId) ?? []
+      rows.push(mapped)
+      byProviderId.set(providerId, rows)
+    }
+  }
+
+  const providers = leads.map((lead) => {
+    const byLead = byLeadId.get(lead.id) ?? []
+    const byProvider = lead.providerId ? byProviderId.get(lead.providerId) ?? [] : []
+    const eventByLeadAndProvider = byLead.concat(byProvider.filter((item) => !byLead.some((existing) => existing.id === item.id)))
+    const leadOfferEvents = eventByLeadAndProvider.filter((event) =>
+      LEAD_NOTIFICATION_TEMPLATES.includes(event.templateName as (typeof LEAD_NOTIFICATION_TEMPLATES)[number]),
+    )
+    const actionEvents = eventByLeadAndProvider.filter((event) =>
+      LEAD_ACTION_TEMPLATES.includes(event.templateName as (typeof LEAD_ACTION_TEMPLATES)[number]),
+    )
+    const summary = summarizeLeadNotification({
+      leadStatus: lead.status,
+      leadNotificationAttemptedAt: lead.notificationAttemptedAt ?? null,
+      leadNotifiedAt: lead.notifiedAt ?? null,
+      leadOfferEvents,
+      actionEvents,
+      hasProviderPhone: Boolean(lead.provider?.phone),
+      isActiveLead: lead.status !== 'DECLINED' && lead.status !== 'CANCELLED' && lead.status !== 'EXPIRED',
+    })
+
+    return {
+      leadId: lead.id,
+      providerId: lead.providerId,
+      providerName: lead.provider?.name ?? lead.provider?.phone ?? lead.providerId,
+      providerPhone: lead.provider?.phone ?? null,
+      leadStatus: lead.status,
+      leadSentAt: lead.sentAt,
+      leadNotifiedAt: lead.notifiedAt,
+      leadNotificationAttemptedAt: lead.notificationAttemptedAt ?? null,
+      isNotified: summary.isNotified,
+      notNotifiedReason: summary.notNotifiedReason,
+      leadOfferTemplate: summary.leadOfferTemplate,
+      leadOfferStatus: summary.leadOfferStatus,
+      leadOfferFailureReason: summary.leadOfferFailureReason,
+      actionTemplate: summary.actionTemplate,
+      actionStatus: summary.actionStatus,
+      actionFailureReason: summary.actionFailureReason,
+      latestMessageEventId: summary.latestMessageEventId,
+    }
+  })
+
+  return {
+    jobRequestId: request.id,
+    jobRequestStatus: request.status,
+    assignmentMode: request.assignmentMode,
+    providers,
+  }
 }
 
 async function notifyCustomerProviderRotation(params: {
