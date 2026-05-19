@@ -52,6 +52,8 @@ function makeJobRequest(overrides: Record<string, unknown> = {}) {
     status: 'OPEN',
     category: 'electrical',
     assignmentMode: 'AUTO_ASSIGN',
+    isTestRequest: false,
+    cohortName: null,
     address: { suburb: 'Sandton', regionKey: 'gauteng', provinceKey: 'GP' },
     ...overrides,
   }
@@ -421,9 +423,100 @@ describe('orchestrateMatch', () => {
     expect(mockDb.dispatchDecision.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          initiatedById: 'system',
+          initiatedByRole: 'system',
           idempotencyKey: expect.stringContaining('manual'),
         }),
       })
+    )
+  })
+
+  it('uses system actor metadata by default when initiatedBy is omitted', async () => {
+    const candidate = makeEligibleCandidate()
+    const hold = makeHold()
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
+    mockLoadCandidatePool.mockResolvedValue([candidate])
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [], nearMiss: [] })
+    mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-1', score: 0.9, rank: 1 }])
+    mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: candidate })
+
+    await orchestrateMatch('job-1', { triggeredBy: 'cron' })
+
+    expect(mockDb.dispatchDecision.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          initiatedById: 'system',
+          initiatedByRole: 'system',
+        }),
+      }),
+    )
+  })
+
+  it('persists provided actor metadata into dispatch decisions', async () => {
+    const candidate = makeEligibleCandidate()
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
+    mockLoadCandidatePool.mockResolvedValue([candidate])
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [], nearMiss: [] })
+    mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-1', score: 0.9, rank: 1 }])
+    mockReserveBestProviderAtomically.mockResolvedValue({
+      ok: false,
+      reason: 'PROVIDER_LOCKED',
+    })
+
+    await orchestrateMatch('job-1', {
+      triggeredBy: 'manual',
+      initiatedBy: { actorId: 'admin-user-id', actorRole: 'ADMIN' },
+    })
+
+    expect(mockDb.dispatchDecision.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          initiatedById: 'admin-user-id',
+          initiatedByRole: 'ADMIN',
+        }),
+      }),
+    )
+  })
+
+  // ── Cohort mode override for test/live matching ────────────────────────────
+
+  it('forces live matching when cohortMode is LIVE_ONLY', async () => {
+    const candidate = makeEligibleCandidate()
+    const hold = makeHold()
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest({ isTestRequest: true }))
+    mockLoadCandidatePool.mockResolvedValue([candidate])
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [], nearMiss: [] })
+    mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-1', score: 0.9, rank: 1 }])
+    mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: candidate })
+
+    await orchestrateMatch('job-1', { triggeredBy: 'manual', cohortMode: 'LIVE_ONLY' })
+
+    expect(mockLoadCandidatePool).toHaveBeenCalledWith(
+      expect.objectContaining({ isTestRequest: false })
+    )
+    expect(mockFilterEligibleProviders).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ isTestRequest: false })
+    )
+  })
+
+  it('forces test matching when cohortMode is TEST_ONLY', async () => {
+    const candidate = makeEligibleCandidate()
+    const hold = makeHold()
+    mockLoadMatchingJobRequest.mockResolvedValue(makeJobRequest())
+    mockLoadCandidatePool.mockResolvedValue([candidate])
+    mockFilterEligibleProviders.mockResolvedValue({ eligible: [candidate], filteredOut: [], nearMiss: [] })
+    mockScoreAndRankCandidates.mockReturnValue([{ providerId: 'provider-1', score: 0.9, rank: 1 }])
+    mockReserveBestProviderAtomically.mockResolvedValue({ ok: true, hold, provider: candidate })
+
+    await orchestrateMatch('job-1', { triggeredBy: 'manual', cohortMode: 'TEST_ONLY' })
+
+    expect(mockLoadCandidatePool).toHaveBeenCalledWith(
+      expect.objectContaining({ isTestRequest: true })
+    )
+    expect(mockFilterEligibleProviders).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ isTestRequest: true })
     )
   })
 })

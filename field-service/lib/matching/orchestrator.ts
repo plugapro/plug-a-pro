@@ -33,6 +33,19 @@ export type MatchOrchestrationResult =
   | { status: 'SKIP'; reason: string }
   | { status: 'ERROR'; error: string }
 
+export type MatchOrchestrationInitiator = {
+  actorId: string
+  actorRole: string
+}
+
+export type MatchCohortMode = 'AUTO' | 'LIVE_ONLY' | 'TEST_ONLY'
+
+export type MatchOrchestrationOptions = {
+  triggeredBy: 'job_creation' | 'cron' | 'manual' | 'rematch'
+  cohortMode?: MatchCohortMode
+  initiatedBy?: MatchOrchestrationInitiator
+}
+
 export type FilteredProvider = {
   providerId: string
   providerName?: string
@@ -41,7 +54,7 @@ export type FilteredProvider = {
 
 export async function orchestrateMatch(
   jobRequestId: string,
-  options: { triggeredBy: 'job_creation' | 'cron' | 'manual' | 'rematch' }
+  options: MatchOrchestrationOptions
 ): Promise<MatchOrchestrationResult> {
   const start = Date.now()
 
@@ -60,6 +73,28 @@ export async function orchestrateMatch(
   if (jobRequest.assignmentMode !== 'AUTO_ASSIGN') {
     return { status: 'SKIP', reason: `JOB_MODE_${jobRequest.assignmentMode}` }
   }
+
+  const resolvedCohortMode: MatchCohortMode = options.cohortMode ?? 'AUTO'
+  const resolvedIsTestRequest = resolveCohortMode(
+    resolvedCohortMode,
+    jobRequest.isTestRequest,
+  )
+  const initiatedBy = options.initiatedBy ?? { actorId: 'system', actorRole: 'system' }
+  const matchingJobRequest = {
+    ...jobRequest,
+    isTestRequest: resolvedIsTestRequest,
+    cohortName: resolvedIsTestRequest ? jobRequest.cohortName : null,
+  }
+
+  console.info('[orchestrator] match start', {
+    jobRequestId,
+    requestedCohortMode: resolvedCohortMode,
+    isTestRequestForMatching: matchingJobRequest.isTestRequest,
+    cohortNameForMatching: matchingJobRequest.cohortName,
+    triggeredBy: options.triggeredBy,
+    initiatedById: initiatedBy.actorId,
+    initiatedByRole: initiatedBy.actorRole,
+  })
 
   // Inline expiry guard: if the job has passed its expiresAt, transition it now
   // rather than dispatching. This covers the race between cron sweep ticks.
@@ -95,9 +130,9 @@ export async function orchestrateMatch(
     // 1. Fast candidate shortlist (precomputed pool or direct scan fallback)
     const useCandidatePool = await isEnabled('matching.v2.candidate_pool')
     const rawCandidates = await loadCandidatePool({
-      category: jobRequest.category,
-      address: jobRequest.address,
-      isTestRequest: jobRequest.isTestRequest,
+      category: matchingJobRequest.category,
+      address: matchingJobRequest.address,
+      isTestRequest: matchingJobRequest.isTestRequest,
       limit: 30,
       usePool: useCandidatePool,
     })
@@ -122,7 +157,7 @@ export async function orchestrateMatch(
     // 2. Filter: area coverage, skills, certs, equipment, live status, capacity
     const { eligible, filteredOut: eligibilityFilteredOut, nearMiss } = await filterEligibleProviders(
       candidatesForFiltering,
-      jobRequest as Parameters<typeof filterEligibleProviders>[1]
+      matchingJobRequest as Parameters<typeof filterEligibleProviders>[1]
     )
     const filteredOut: FilteredProvider[] = [...declinedFilteredOut, ...eligibilityFilteredOut]
 
@@ -141,6 +176,8 @@ export async function orchestrateMatch(
         rankingSummary: [],
         explanation: noMatchExplanation,
         triggeredBy: options.triggeredBy,
+        initiatedById: initiatedBy.actorId,
+        initiatedByRole: initiatedBy.actorRole,
       })
 
       emitMatchEvent({
@@ -156,7 +193,7 @@ export async function orchestrateMatch(
       // ── Phase 5: alternative-slot negotiation ────────────────────────────
       if (nearMiss.length > 0 && decisionId && options.triggeredBy !== 'rematch') {
         const altSlotResult = await tryAlternativeSlotNegotiation({
-          jobRequest,
+          jobRequest: matchingJobRequest,
           nearMiss,
           dispatchDecisionId: decisionId,
         })
@@ -167,7 +204,7 @@ export async function orchestrateMatch(
     }
 
     // 3. Score and rank (pure — no DB calls)
-    const ranked = scoreAndRankCandidates(eligible, jobRequest)
+    const ranked = scoreAndRankCandidates(eligible, matchingJobRequest)
     const initialRankedSummary = ranked.map((rc) => ({ ...rc }))
 
     const queuedRanked = ranked.slice(0, MATCHING_CONFIG.quickMatchMaxProviderOffers)
@@ -180,6 +217,8 @@ export async function orchestrateMatch(
       rankingSummary: initialRankedSummary,
       rankedCandidates: queuedRanked,
       triggeredBy: options.triggeredBy,
+      initiatedById: initiatedBy.actorId,
+      initiatedByRole: initiatedBy.actorRole,
     })
 
     // 4. Try top-10 candidates in rank order — stop on first successful reservation
@@ -192,7 +231,7 @@ export async function orchestrateMatch(
       const queuedAttempt = queueDecision.attemptsByProviderId.get(rankedCandidate.providerId)
       reserved = await reserveBestProviderAtomically({
         candidate,
-        jobRequest,
+        jobRequest: matchingJobRequest,
         dispatchDecisionId: queueDecision.id,
         matchAttemptId: queuedAttempt?.id,
         rankedPosition: queuedAttempt?.rankedPosition ?? queueIndex + 1,
@@ -263,7 +302,7 @@ export async function orchestrateMatch(
 
     // 5. Dispatch lead (WhatsApp) — failure here does not roll back the hold
     await dispatchMatchLead({
-      jobRequest,
+      jobRequest: matchingJobRequest,
       hold: reserved.hold,
       provider: reserved.provider,
     })
@@ -274,7 +313,7 @@ export async function orchestrateMatch(
     // Failure is non-fatal and must not crash the orchestrator.
     await notifyCustomerMatchingInProgress({
       customerPhone: jobRequest.customer?.phone ?? null,
-      category: jobRequest.category,
+      category: matchingJobRequest.category,
       requestId: jobRequest.id,
       isAlreadySent: Boolean(jobRequest.matchFoundWhatsappSentAt),
     }).catch((err) =>
@@ -290,7 +329,7 @@ export async function orchestrateMatch(
       await sendCustomerMatchFoundNotification({
         customerPhone: jobRequest.customer.phone,
         providerName: reserved.provider.name,
-        serviceName: jobRequest.category,
+        serviceName: matchingJobRequest.category,
         jobRequestId: jobRequest.id,
       }).catch((err) =>
         console.error('[orchestrator] customer match-found notification failed', {
@@ -405,6 +444,8 @@ async function persistQuickMatchQueueDecision(
       scoreBreakdown?: unknown
     }>
     triggeredBy: string
+    initiatedById: string
+    initiatedByRole: string
   },
 ): Promise<{
   id: string
@@ -432,8 +473,8 @@ async function persistQuickMatchQueueDecision(
         filterSummary: params.filteredOut as object[],
         rankingSummary: params.rankingSummary as object[],
         explanation: `Quick Match queue prepared for top ${params.rankedCandidates.length} provider(s)`,
-        initiatedById: 'system',
-        initiatedByRole: 'system',
+        initiatedById: params.initiatedById,
+        initiatedByRole: params.initiatedByRole,
         idempotencyKey,
       },
     })
@@ -470,6 +511,13 @@ async function persistQuickMatchQueueDecision(
   return { id: decisionId, attemptsByProviderId }
 }
 
+// ── Cohort resolution helper ───────────────────────────────────────────────
+function resolveCohortMode(requestedMode: MatchCohortMode, requestIsTest: boolean): boolean {
+  if (requestedMode === 'TEST_ONLY') return true
+  if (requestedMode === 'LIVE_ONLY') return false
+  return requestIsTest
+}
+
 // ── Internal helper — writes DispatchDecision row ─────────────────────────────
 async function recordDispatchDecision(
   client: typeof db,
@@ -484,6 +532,8 @@ async function recordDispatchDecision(
     rankingSummary: unknown[]
     explanation: string
     triggeredBy: string
+    initiatedById: string
+    initiatedByRole: string
     alternativeSlotOptions?: SlotOption[]
   }
 ): Promise<string | null> {
@@ -511,8 +561,8 @@ async function recordDispatchDecision(
         filterSummary: params.filteredOut as object[],
         rankingSummary: params.rankingSummary as object[],
         explanation: params.explanation,
-        initiatedById: 'system',
-        initiatedByRole: 'system',
+        initiatedById: params.initiatedById,
+        initiatedByRole: params.initiatedByRole,
         idempotencyKey,
       },
     })
