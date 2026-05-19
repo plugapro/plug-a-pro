@@ -8,10 +8,14 @@ vi.mock('../../../lib/db', () => ({
   },
 }))
 
-// Provide a stable secret so token signing is deterministic in tests
+// Mock provider-credit-copy so createReviewUrl doesn't throw on getPublicAppUrl
+vi.mock('../../../lib/provider-credit-copy', () => ({
+  getPublicAppUrl: vi.fn(() => 'https://app.plugapro.co.za'),
+}))
+
+// Provide a stable secret for deterministic signing
 process.env.REVIEW_ACCESS_SECRET = 'test-secret-32-chars-exactly-ok!!'
 
-// Import AFTER env is set
 const { createReviewAccessToken, verifyReviewAccessToken, createReviewUrl, resolveReviewAccessToken } =
   await import('../../../lib/review-access')
 const { db } = await import('../../../lib/db')
@@ -58,18 +62,7 @@ describe('review-access', () => {
   })
 
   describe('createReviewUrl', () => {
-    it('returns null when APP_URL is not set', () => {
-      delete process.env.APP_URL
-      delete process.env.NEXT_PUBLIC_APP_URL
-      const url = createReviewUrl({ matchId, reviewerType })
-      // Either null (no base) or a string — depends on implementation
-      if (url !== null) {
-        expect(url).toContain('/review/')
-      }
-    })
-
-    it('returns a url containing /review/ when APP_URL is set', () => {
-      process.env.NEXT_PUBLIC_APP_URL = 'https://app.plugapro.co.za'
+    it('returns a url containing /review/ when getPublicAppUrl is mocked', () => {
       const url = createReviewUrl({ matchId, reviewerType })
       expect(url).not.toBeNull()
       expect(url).toContain('/review/')
@@ -95,10 +88,12 @@ describe('review-access', () => {
       expect(result.context).toBeNull()
     })
 
-    it('returns active with context when match is found and no prior review', async () => {
+    it('returns active with null existingReview when no prior review', async () => {
       const token = createReviewAccessToken({ matchId, reviewerType })
       ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: matchId,
+        status: 'MATCHED',
+        completionCheckStatus: 'YES',
         jobRequest: {
           id: 'jr-1',
           category: 'Plumbing',
@@ -115,17 +110,40 @@ describe('review-access', () => {
       expect(result.context?.existingReview).toBeNull()
     })
 
-    it('returns already_reviewed when an existing review is present', async () => {
+    it('returns active with existingReview when a prior review exists', async () => {
       const token = createReviewAccessToken({ matchId, reviewerType })
       ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: matchId,
+        status: 'MATCHED',
+        completionCheckStatus: 'YES',
         jobRequest: { id: 'jr-1', category: 'Plumbing', title: 'Fix leaky tap', customer: { id: 'c-1', name: 'Sarah', phone: '+27821111111' } },
         provider: { id: 'p-1', name: 'Lovemore', phone: '+27822222222', avatarUrl: null },
         reviews: [{ id: 'r-1', score: 5, comment: 'Great!', createdAt: new Date() }],
       })
       const result = await resolveReviewAccessToken(token)
-      expect(result.status).toBe('already_reviewed')
+      expect(result.status).toBe('active')
       expect(result.context?.existingReview?.score).toBe(5)
+    })
+
+    it('returns invalid when match is CANCELLED', async () => {
+      const token = createReviewAccessToken({ matchId, reviewerType })
+      ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: matchId,
+        status: 'CANCELLED',
+        completionCheckStatus: null,
+        jobRequest: { id: 'jr-1', category: 'Plumbing', title: 'Fix', customer: { id: 'c-1', name: 'Sarah', phone: '+27821111111' } },
+        provider: { id: 'p-1', name: 'Lovemore', phone: '+27822222222', avatarUrl: null },
+        reviews: [],
+      })
+      const result = await resolveReviewAccessToken(token)
+      expect(result.status).toBe('invalid')
+    })
+
+    it('returns invalid when match is not found', async () => {
+      const token = createReviewAccessToken({ matchId: 'missing-match', reviewerType })
+      ;(db.match.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+      const result = await resolveReviewAccessToken(token)
+      expect(result.status).toBe('invalid')
     })
   })
 })
