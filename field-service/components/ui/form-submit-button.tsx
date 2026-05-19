@@ -22,8 +22,16 @@ type FormSubmitButtonProps = {
  * sees a spinner + label-swap while the action runs. Prevents double-clicks
  * on financial and other irreversible mutations.
  *
- * For non-form CTAs (onClick handlers calling startTransition), pass
- * `loading` directly to <Button> instead of using this wrapper.
+ * When to use this vs <Button loading={...}> directly:
+ *   - <form action={serverAction}> with React's built-in pending tracking
+ *     → use <FormSubmitButton pendingLabel="…">
+ *   - onClick handler calling startTransition / fetch / async work
+ *     → use <Button loading={isPending} loadingLabel="…">
+ *
+ * Rollback: this is a pure UI component with no backend coupling. If a
+ * regression is suspected, callers can revert to <Button type="submit">
+ * one-by-one; the pattern degrades to no-op pending state (still safe —
+ * backend mutations remain idempotent independently of UI state).
  */
 export function FormSubmitButton({
   children,
