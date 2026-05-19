@@ -6,12 +6,43 @@ import { requireAdmin } from '@/lib/auth'
 import { AppLogo } from '@/components/shared/app-logo'
 import { AppNavLink } from '@/components/shared/app-nav-link'
 import { ADMIN_NAV_ITEMS } from '@/lib/admin-nav-routes'
+import { headers } from 'next/headers'
+import { shouldRestrictAdminDomainToDesktop } from '@/lib/admin-desktop-policy'
+import { Button } from '@/components/ui/button'
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const requestHeaders = await headers()
+  const hostHeader = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host')
+  const userAgent = requestHeaders.get('user-agent')
+
+  if (shouldRestrictAdminDomainToDesktop(hostHeader, userAgent)) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center px-6 py-12">
+        <div className="w-full rounded-2xl border border-border/60 bg-card/85 p-8 text-center shadow-sm">
+          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Admin console
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+            Desktop required for admin access
+          </h1>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+            The admin console is restricted to desktop browsers only for secure management operations.
+            Open this page on a desktop device and sign in again.
+          </p>
+          <div className="mt-6 flex items-center justify-center gap-3">
+            <Button asChild variant="outline">
+              <a href="/admin-sign-in">Go to admin sign-in</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Auth guard — redirects if not admin or owner
   const user = await requireAdmin()
 
