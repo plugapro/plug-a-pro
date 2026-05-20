@@ -292,3 +292,57 @@ export async function writeOffPaymentFromFormAction(formData: FormData) {
     return { ok: false as const, error: 'Failed to write off payment' }
   }
 }
+
+// Returns ActionResult — use inside <ActionForm> for toast feedback.
+// The redirect-based issueRefundAction remains for legacy direct form POSTs.
+export async function issueRefundFromFormAction(formData: FormData) {
+  const { requireAdmin } = await import('@/lib/auth')
+  await requireAdmin()
+  const paymentId = formData.get('paymentId') as string
+  const amount = Number(formData.get('amount'))
+
+  const payment = await db.payment.findUnique({
+    where: { id: paymentId },
+    select: { amount: true, bookingId: true, status: true, refundedAmount: true },
+  })
+
+  const remaining = payment
+    ? Math.max(0, Number(payment.amount) - Number(payment.refundedAmount ?? 0))
+    : 0
+
+  if (
+    !payment ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    amount > remaining ||
+    !['PAID', 'PARTIALLY_REFUNDED'].includes(payment.status)
+  ) {
+    return { ok: false as const, error: 'Invalid refund amount or payment not refundable' }
+  }
+
+  try {
+    const { issueRefund } = await import('@/lib/payments')
+    const result = await crudAction({
+      entity: AUDIT_ENTITY.PAYMENT,
+      entityId: paymentId,
+      action: 'payment.refund',
+      requiredRole: [...REFUND_ROLES],
+      requiredFlag: FLAG,
+      schema: RefundSchema,
+      input: { paymentId, amount },
+      before: payment,
+      run: async () => {
+        await issueRefund({
+          bookingId: payment.bookingId,
+          amountCents: Math.round(amount * 100),
+        })
+        return { id: paymentId, requestedAmount: amount }
+      },
+    })
+    revalidatePath('/admin/payments')
+    return result
+  } catch (err) {
+    if (err instanceof CrudActionError) return { ok: false as const, error: err.message }
+    return { ok: false as const, error: 'Failed to issue refund' }
+  }
+}

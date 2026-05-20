@@ -13,8 +13,11 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ActionForm, SubmitButton } from '@/components/admin/ui'
+// Spec (CHANGES.md C-05) calls for a <Sheet> (slide-in panel). Sheet is not yet
+// installed in components/ui/. Using Dialog instead — install shadcn Sheet and
+// rename this component in a follow-up before Phase 2 ships.
 import {
-  issueRefundAction,
+  issueRefundFromFormAction,
   reconcilePaymentFromFormAction,
   writeOffPaymentFromFormAction,
 } from '../actions'
@@ -23,6 +26,7 @@ type ManagePaymentDialogProps = {
   paymentId: string
   amount: number
   status: string
+  adminRole: string
   disabled?: boolean
 }
 
@@ -30,6 +34,7 @@ export function ManagePaymentDialog({
   paymentId,
   amount,
   status,
+  adminRole,
   disabled = false,
 }: ManagePaymentDialogProps) {
   const amountLabel = `R ${amount.toFixed(2)}`
@@ -74,7 +79,12 @@ export function ManagePaymentDialog({
           </div>
 
           <div className="rounded-xl border bg-card px-3 py-3">
-            <form action={issueRefundAction} className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <ActionForm
+              action={issueRefundFromFormAction}
+              successMessage="Refund processed"
+              refreshOnSuccess
+              className="grid gap-3 md:grid-cols-[1fr_auto]"
+            >
               <div>
                 <p className="text-sm font-medium">Refund</p>
                 <p className="text-xs text-muted-foreground">Enter a full or partial refund amount.</p>
@@ -95,7 +105,7 @@ export function ManagePaymentDialog({
                   Open refund
                 </SubmitButton>
               </div>
-            </form>
+            </ActionForm>
           </div>
 
           <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-3">
@@ -110,6 +120,9 @@ export function ManagePaymentDialog({
                 <p className="text-xs text-muted-foreground">
                   Type a reason before marking {amountLabel} as a finance loss.
                 </p>
+                {adminRole !== 'OWNER' && (
+                  <p className="mt-1 text-xs text-muted-foreground">OWNER role recommended for write-offs.</p>
+                )}
                 <Textarea
                   name="reason"
                   placeholder="Write-off reason…"

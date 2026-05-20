@@ -302,6 +302,7 @@ export default async function PaymentsPage({
                         paymentId={p.id}
                         amount={Number(p.amount)}
                         status={p.status}
+                        adminRole={admin.adminRole}
                         disabled={!crudEnabled}
                       />
                     </div>

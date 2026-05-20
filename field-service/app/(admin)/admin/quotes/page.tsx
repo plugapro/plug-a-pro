@@ -121,6 +121,7 @@ export default async function AdminQuoteQueuePage() {
     quoteIds.length > 0
       ? db.messageEvent.findMany({
           where: {
+            // Must match the template name sent at actions.ts:308 (notifyQuoteReady — OOS-06).
             templateName: 'customer_quote_ready',
             OR: quoteIds.map((quoteId) => ({
               metadata: {

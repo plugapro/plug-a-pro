@@ -680,7 +680,9 @@ function QueueCard({
       <CardHeader className="gap-3">
         <div className="flex items-center justify-between gap-3">
           <Badge variant={laneBadgeClass(lane)}>{lane}</Badge>
-          <Badge variant={slaBadgeClass(tone)}>{detail}</Badge>
+          <Badge variant={slaBadgeClass(tone)} className={tone === 'danger' ? 'animate-pulse' : undefined}>
+            {detail}
+          </Badge>
         </div>
         <div className="space-y-1">
           <CardTitle className="text-base">{title}</CardTitle>
