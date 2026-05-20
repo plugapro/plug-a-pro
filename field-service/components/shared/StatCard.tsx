@@ -6,9 +6,9 @@ type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'brand'
 interface StatCardProps {
   label: React.ReactNode
   value: React.ReactNode
-  /** Optional secondary line — units, change, qualifier ("this month"). */
+  /** Optional secondary line - units, change, qualifier ("this month"). */
   hint?: React.ReactNode
-  /** Optional inline icon — pass a lucide icon at size-4. */
+  /** Optional inline icon - pass a lucide icon at size-4. */
   icon?: React.ReactNode
   /** Optional accent tone applied to icon chip + value tint. */
   tone?: Tone
@@ -25,7 +25,7 @@ const TONE_CHIP: Record<Tone, string> = {
 }
 
 /**
- * KPI tile used by dashboards — provider home (open jobs, leads, credits,
+ * KPI tile used by dashboards - provider home (open jobs, leads, credits,
  * earnings), customer profile (active requests). Compact, scannable,
  * mobile-grid friendly at grid-cols-2.
  */

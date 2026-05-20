@@ -1,4 +1,4 @@
-// ─── Customer: Request a service — category picker ────────────────────────────
+// ─── Customer: Request a service - category picker ────────────────────────────
 
 export const dynamic = 'force-dynamic'
 

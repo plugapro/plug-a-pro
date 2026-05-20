@@ -1,7 +1,7 @@
 // WhatsApp Cloud API webhook handler
 // Two roles:
-//   GET  — webhook verification (Meta sends this during webhook setup)
-//   POST — inbound events (delivery receipts, inbound messages)
+//   GET  - webhook verification (Meta sends this during webhook setup)
+//   POST - inbound events (delivery receipts, inbound messages)
 //
 // Security: GET uses verify_token; POST must be validated by checking Meta's IP range
 // or by verifying the payload signature (if using the optional app-level signature).
@@ -14,7 +14,7 @@ import { db } from '@/lib/db'
 import { handleReviewFirstProviderNotificationStatus } from '@/lib/review-first'
 import { getCorrelationId } from '@/lib/correlation'
 
-// GET — Meta webhook verification challenge
+// GET - Meta webhook verification challenge
 export function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const mode = searchParams.get('hub.mode')
@@ -24,16 +24,16 @@ export function GET(request: NextRequest) {
   const result = verifyWebhookChallenge(mode, token, challenge)
 
   if (result !== null) {
-    // Return challenge as plain text — Meta requires this exact format
+    // Return challenge as plain text - Meta requires this exact format
     return new Response(result, { status: 200 })
   }
 
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 }
 
-// POST — inbound events (delivery receipts, status updates, inbound messages)
+// POST - inbound events (delivery receipts, status updates, inbound messages)
 export async function POST(request: NextRequest) {
-  // Read raw body first — needed for signature verification
+  // Read raw body first - needed for signature verification
   const rawBody = await request.text()
 
   const reqId = crypto.randomUUID().slice(0, 8)
@@ -52,21 +52,21 @@ export async function POST(request: NextRequest) {
 
     // Validate it's from WhatsApp
     if (payload.object !== 'whatsapp_business_account') {
-      console.warn(`[webhook/whatsapp:${reqId}] Unexpected object type — ignoring`)
+      console.warn(`[webhook/whatsapp:${reqId}] Unexpected object type - ignoring`)
       return NextResponse.json({ status: 'ignored' })
     }
 
-    // Process async — acknowledge immediately to avoid Meta timeouts/retries
+    // Process async - acknowledge immediately to avoid Meta timeouts/retries
     for (const entry of payload.entry ?? []) {
       for (const change of entry.changes ?? []) {
         const value = change.value
 
         // Route inbound messages to conversation bot
-        // Conversation is now unique on phone only — no businessId
+        // Conversation is now unique on phone only - no businessId
         for (const message of value.messages ?? []) {
           after(
             (async () => {
-              // Atomic WAMID dedupe — unique constraint on inbound_whatsapp_messages.externalId
+              // Atomic WAMID dedupe - unique constraint on inbound_whatsapp_messages.externalId
               // prevents duplicate processing even under concurrent Meta retry deliveries
               try {
                 await db.inboundWhatsAppMessage.create({
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
                   (createErr as { code: string }).code === 'P2002'
 
                 if (isPrismaUnique) {
-                  // Duplicate WAMID — Meta retried a message we already logged
+                  // Duplicate WAMID - Meta retried a message we already logged
                   await db.inboundWhatsAppMessage
                     .update({
                       where: { externalId: message.id },
@@ -94,11 +94,11 @@ export async function POST(request: NextRequest) {
                     })
                     .catch(() => {})
                   console.warn(
-                    `[webhook/whatsapp:${reqId}] Duplicate WAMID ${message.id} — skipping`
+                    `[webhook/whatsapp:${reqId}] Duplicate WAMID ${message.id} - skipping`
                   )
                   return
                 }
-                // Non-unique DB error — log but still attempt processing
+                // Non-unique DB error - log but still attempt processing
                 console.error(`[webhook/whatsapp:${reqId}] WAMID log error (will still process):`, createErr)
               }
 

@@ -175,7 +175,7 @@ export default async function JobDetailPage({
           <Row label="Ref">{job.bookingId.slice(-8).toUpperCase()}</Row>
         </div>
 
-        {/* Completion note — shown once job is awaiting or completed */}
+        {/* Completion note - shown once job is awaiting or completed */}
         {(['PENDING_COMPLETION_CONFIRMATION', 'COMPLETED'] as const).includes(
           job.status as 'PENDING_COMPLETION_CONFIRMATION' | 'COMPLETED'
         ) && (job as any).completionNote && (
@@ -204,7 +204,7 @@ export default async function JobDetailPage({
           </div>
         )}
 
-        {/* Status controls — client component */}
+        {/* Status controls - client component */}
         <JobStatusControls jobId={job.id} currentStatus={job.status} />
 
         {/* Status history */}
@@ -261,14 +261,14 @@ export default async function JobDetailPage({
               </div>
             )}
 
-            {/* Upload controls — only when job is not yet completed */}
+            {/* Upload controls - only when job is not yet completed */}
             {!['COMPLETED', 'CANCELLED'].includes(job.status) && (
               <EvidenceUploader jobId={job.id} />
             )}
           </div>
         )}
 
-        {/* Extra work form — only while job is active */}
+        {/* Extra work form - only while job is active */}
         {job.status === 'STARTED' && (
           <div className="space-y-3">
             <h2

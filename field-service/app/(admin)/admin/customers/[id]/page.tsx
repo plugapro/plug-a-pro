@@ -510,7 +510,7 @@ export default async function CustomerDetailPage({
                     </Link>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {b.jobTitle ?? '—'}
+                    {b.jobTitle ?? '-'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {b.createdAt.toLocaleDateString('en-ZA', {
@@ -525,7 +525,7 @@ export default async function CustomerDetailPage({
                   <TableCell className="text-right font-medium">
                     {b.payment?.amount != null
                       ? formatCurrency(Number(b.payment.amount))
-                      : '—'}
+                      : '-'}
                   </TableCell>
                 </TableRow>
               ))}

@@ -5,9 +5,9 @@ import { cn } from '@/lib/utils'
 interface ErrorStateProps {
   title?: React.ReactNode
   description?: React.ReactNode
-  /** Optional retry control — typically a Button that re-runs the query. */
+  /** Optional retry control - typically a Button that re-runs the query. */
   retry?: React.ReactNode
-  /** Optional support link — e.g. "Contact support" WhatsAppButton. */
+  /** Optional support link - e.g. "Contact support" WhatsAppButton. */
   support?: React.ReactNode
   className?: string
 }
@@ -18,7 +18,7 @@ interface ErrorStateProps {
  */
 export function ErrorState({
   title = 'Something went wrong',
-  description = 'We couldn’t load this view. Please try again — your data is safe.',
+  description = 'We couldn’t load this view. Please try again - your data is safe.',
   retry,
   support,
   className,

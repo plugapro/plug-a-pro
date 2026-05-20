@@ -119,7 +119,7 @@ export default async function BookingDetailPage({
     : 'TBC'
   const formattedAmount = booking.quote?.amount
     ? `R${Number(booking.quote.amount).toFixed(0)}`
-    : '—'
+    : '-'
 
   const canCancel =
     booking.status === 'SCHEDULED' || booking.status === 'RESCHEDULED'
@@ -152,7 +152,7 @@ export default async function BookingDetailPage({
     // Build a human-readable reason from the form fields.
     const cancelReason = String(formData.get('cancelReason') ?? '').trim()
     const cancelNote = String(formData.get('cancelNote') ?? '').trim()
-    const reason = [cancelReason || 'Cancelled by customer', cancelNote].filter(Boolean).join(' — ')
+    const reason = [cancelReason || 'Cancelled by customer', cancelNote].filter(Boolean).join(' - ')
 
     await cancelBookingLifecycle({
       bookingId: id,
@@ -311,7 +311,7 @@ export default async function BookingDetailPage({
             {[
               { label: 'Date', value: formattedDate },
               { label: 'Quote', value: formattedAmount },
-              { label: 'Window', value: booking.scheduledWindow ?? '—' },
+              { label: 'Window', value: booking.scheduledWindow ?? '-' },
             ].map((s) => (
               <div key={s.label} className="py-3 px-2 text-center"
                    style={{ background: 'var(--card)' }}>
@@ -395,7 +395,7 @@ export default async function BookingDetailPage({
               </Button>
             }
           >
-            {booking.job.extras[0].description} —{' '}
+            {booking.job.extras[0].description} -{' '}
             <span className="font-semibold">R {Number(booking.job.extras[0].amount).toFixed(2)}</span>
           </AlertCallout>
         </div>

@@ -15,7 +15,7 @@ interface AlertCalloutProps {
   title?: React.ReactNode
   /** Optional override icon. Falls back to a tone-appropriate default. */
   icon?: React.ReactNode
-  /** Optional CTA slot — usually a Button. Rendered to the right. */
+  /** Optional CTA slot - usually a Button. Rendered to the right. */
   action?: React.ReactNode
   className?: string
   children?: React.ReactNode

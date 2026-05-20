@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   try {
     if (mode === 'suburb') {
-      // SUBURB-only search for the booking address combobox — includes structured
+      // SUBURB-only search for the booking address combobox - includes structured
       // parent labels (region, city, province) and postalCode for the Selection interface.
       const results = await searchSuburbNodes(q, provinceKey)
       return NextResponse.json(results)

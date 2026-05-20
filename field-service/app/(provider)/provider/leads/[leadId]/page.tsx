@@ -1,4 +1,4 @@
-// Provider: Lead detail — view job info + accept/decline
+// Provider: Lead detail - view job info + accept/decline
 export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'

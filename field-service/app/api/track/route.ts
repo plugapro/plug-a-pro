@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// Public — resolves an 8-char reference suffix to a customer access token or booking id
+// Public - resolves an 8-char reference suffix to a customer access token or booking id
 export async function GET(req: NextRequest) {
   const ref = req.nextUrl.searchParams.get('ref')?.trim().toUpperCase()
   if (!ref || ref.length < 6) {
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'not found' }, { status: 404 })
   }
 
-  // If token is expired, still redirect — the access page handles expiry gracefully
+  // If token is expired, still redirect - the access page handles expiry gracefully
   const bookingId = jobRequest.match?.booking?.id ?? null
 
   return NextResponse.json({

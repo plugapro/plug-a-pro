@@ -20,7 +20,7 @@ export default function Error({
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center px-6 text-center overflow-hidden">
-      {/* Radial halo — danger tint */}
+      {/* Radial halo - danger tint */}
       <div
         aria-hidden
         className="pointer-events-none absolute left-1/2 top-[30%] -translate-x-1/2 -translate-y-1/2 w-[360px] h-[360px] rounded-full opacity-15"
@@ -69,7 +69,7 @@ export default function Error({
           Something went wrong
         </h1>
         <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.55 }}>
-          An unexpected error occurred. This is usually temporary — try again.
+          An unexpected error occurred. This is usually temporary - try again.
         </p>
         {error.digest && (
           <p

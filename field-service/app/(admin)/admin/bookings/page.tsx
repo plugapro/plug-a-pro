@@ -132,20 +132,20 @@ export default async function BookingsPage({
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <p>{customer?.name ?? '—'}</p>
+                    <p>{customer?.name ?? '-'}</p>
                     <p className="text-xs text-muted-foreground">{customer?.phone ?? ''}</p>
                   </TableCell>
                   <TableCell>
-                    <p>{b.match?.jobRequest?.title ?? '—'}</p>
+                    <p>{b.match?.jobRequest?.title ?? '-'}</p>
                     <p className="text-xs text-muted-foreground">{b.match?.jobRequest?.category ?? ''}</p>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {address ? `${address.suburb}, ${address.city}` : '—'}
+                    {address ? `${address.suburb}, ${address.city}` : '-'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {b.scheduledDate
                       ? b.scheduledDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
-                      : '—'}
+                      : '-'}
                     {b.scheduledWindow && (
                       <p className="text-xs">{b.scheduledWindow}</p>
                     )}
@@ -161,7 +161,7 @@ export default async function BookingsPage({
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {b.match?.provider?.name ?? '—'}
+                    {b.match?.provider?.name ?? '-'}
                   </TableCell>
                   <TableCell className="font-medium">
                     R {Number(b.quote?.amount ?? 0).toFixed(2)}

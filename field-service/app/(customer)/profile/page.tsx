@@ -159,7 +159,7 @@ export default async function ProfilePage() {
             </div>
             <div>
               <p className="text-[13px] font-semibold text-[var(--ink)] mb-1 tracking-[-0.01em]">Phone</p>
-              <p className="text-[14.5px] text-[var(--ink-mute)]">{phone ?? '—'}</p>
+              <p className="text-[14.5px] text-[var(--ink-mute)]">{phone ?? '-'}</p>
             </div>
             <FormSubmitButton fullWidth size="md" pendingLabel="Saving…">Save changes</FormSubmitButton>
           </form>

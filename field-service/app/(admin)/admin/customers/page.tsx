@@ -260,7 +260,7 @@ export default async function CustomersPage({ searchParams }: CustomersPageProps
                           month: 'short',
                           year: 'numeric',
                         })
-                      : '—'}
+                      : '-'}
                   </TableCell>
                 </TableRow>
               )

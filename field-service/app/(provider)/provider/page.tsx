@@ -228,7 +228,7 @@ export default async function ProviderHomePage() {
   const lowOnCredits = walletBalance.totalCreditBalance <= 1
   const profileIncomplete = profileCompleteness.percentage < 80
   const firstName = provider.name?.split(' ')[0] ?? 'there'
-  const rating = provider.averageRating !== null ? Number(provider.averageRating).toFixed(1) : '—'
+  const rating = provider.averageRating !== null ? Number(provider.averageRating).toFixed(1) : '-'
 
   return (
     <div className="pb-6 screen-enter">
@@ -326,7 +326,7 @@ export default async function ProviderHomePage() {
           </div>
         </section>
 
-        {/* Stats row — 3 cards */}
+        {/* Stats row - 3 cards */}
         <section>
           <div className="grid grid-cols-3 gap-2.5">
             <div className="bg-card rounded-[20px] shadow-[inset_0_0_0_1px_var(--border)] p-3.5">
@@ -465,7 +465,7 @@ export default async function ProviderHomePage() {
               </div>
               <p className="text-[14px] font-semibold text-[var(--ink)] mb-1">No new leads right now</p>
               <p className="text-[12.5px] text-[var(--ink-mute)]">
-                Stay available — we&apos;ll WhatsApp you when a lead arrives.
+                Stay available - we&apos;ll WhatsApp you when a lead arrives.
               </p>
             </div>
           </section>

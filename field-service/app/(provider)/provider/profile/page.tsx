@@ -273,7 +273,7 @@ export default async function ProviderProfilePage({
             <div className="text-[16px] font-bold tracking-[-0.02em]" style={{ color: 'var(--ink)' }}>
               {provider.name ?? 'Provider'}
             </div>
-            <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>{provider.phone ?? '—'}</div>
+            <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--ink-mute)' }}>{provider.phone ?? '-'}</div>
             <div className="mt-1.5 inline-flex items-center h-5 px-2 rounded-full text-[10.5px] font-bold tracking-[0.04em] uppercase"
                  style={{
                    background: provider.verified ? 'rgba(15,162,138,0.12)' : 'rgba(255,194,43,0.15)',
@@ -326,7 +326,7 @@ export default async function ProviderProfilePage({
               </div>
               <div className="space-y-1 text-sm">
                 <span className="text-muted-foreground text-sm">Phone</span>
-                <p className="text-sm pt-1">{provider.phone ?? '—'}</p>
+                <p className="text-sm pt-1">{provider.phone ?? '-'}</p>
               </div>
             </div>
           </div>
@@ -459,7 +459,7 @@ export default async function ProviderProfilePage({
               <div className="rounded-[12px] px-3 py-3 text-center" style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
                 <p className="text-xs text-muted-foreground">Average</p>
                 <p className="mt-1 font-semibold">
-                  {averageRating ? `${averageRating.toFixed(1)} / 5` : '—'}
+                  {averageRating ? `${averageRating.toFixed(1)} / 5` : '-'}
                 </p>
               </div>
               <div className="rounded-[12px] px-3 py-3 text-center" style={{ background: 'var(--card-alt)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>

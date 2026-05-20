@@ -1,5 +1,5 @@
-// GET  /api/quotes/[token]  — fetch quote details for the approval page
-// PATCH /api/quotes/[token] — body: { action: 'approve' | 'decline' }
+// GET  /api/quotes/[token]  - fetch quote details for the approval page
+// PATCH /api/quotes/[token] - body: { action: 'approve' | 'decline' }
 //   approve: creates Booking + Job in a transaction, notifies both parties
 //   decline: marks quote declined, notifies provider
 
@@ -137,7 +137,7 @@ async function notifyAfterDecision(result: {
           })
         }
       } catch {
-        // Non-fatal — fall through to generic URL
+        // Non-fatal - fall through to generic URL
       }
     }
 

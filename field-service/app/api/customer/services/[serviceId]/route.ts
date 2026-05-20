@@ -1,5 +1,5 @@
 // ─── GET /api/customer/services/[serviceId] ────────────────────────────────────
-// Service model removed — returns static category info based on category slug.
+// Service model removed - returns static category info based on category slug.
 // No auth required.
 
 import { NextResponse } from 'next/server'

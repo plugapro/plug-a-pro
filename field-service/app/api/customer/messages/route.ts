@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const customer = await resolveCustomerForSession(db, session)
   if (!customer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Feature-flag gate — 404 to avoid leaking flag existence to callers
+  // Feature-flag gate - 404 to avoid leaking flag existence to callers
   const flagEnabled = await isEnabled('customer.messaging.v1', { userId: session.id })
   if (!flagEnabled) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })

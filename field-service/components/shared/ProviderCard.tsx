@@ -6,12 +6,12 @@ import { cn } from '@/lib/utils'
 export interface ProviderCardData {
   id: string
   name: string
-  /** Short business or trading name — kept for backward compat, not shown in new design. */
+  /** Short business or trading name - kept for backward compat, not shown in new design. */
   businessName?: string | null
   avatarUrl?: string | null
   /** Skills used for service chips. Prefer subServices over skills when both present. */
   skills?: string[]
-  /** Sub-services from providerCategories — shown as chips when present. */
+  /** Sub-services from providerCategories - shown as chips when present. */
   subServices?: string[]
   mainCategory?: string | null
   /** Experience label, e.g. "5 yrs" or "3–5 years". */
@@ -21,12 +21,12 @@ export interface ProviderCardData {
   completedJobsCount?: number | null
   /** True when KYC and trust checks have passed. */
   verified?: boolean
-  /** Optional response-time hint — kept for compat, not shown in new design. */
+  /** Optional response-time hint - kept for compat, not shown in new design. */
   responseTime?: string | null
   availableNow?: boolean
   /** Call-out fee in Rands (not cents). */
   callOutFee?: number | null
-  /** Hourly labour rate in cents — kept for backward compat, not shown in new design. */
+  /** Hourly labour rate in cents - kept for backward compat, not shown in new design. */
   labourRateCents?: number | null
   rateNegotiable?: boolean
   /** CSS color / gradient hint for avatar background, e.g. "#2A78F0". */
@@ -51,7 +51,7 @@ function initials(name: string): string {
 /**
  * Design-spec provider card. Surfaces avatar, name, verification, rating,
  * completed jobs, location, service chips, call-out fee, and availability.
- * All values are optional — only present data is rendered.
+ * All values are optional - only present data is rendered.
  */
 export function ProviderCard({
   provider,

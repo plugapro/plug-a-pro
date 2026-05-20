@@ -1,6 +1,6 @@
 // ─── Internal Match Trigger ───────────────────────────────────────────────────
 // Called fire-and-forget from job creation to trigger near real-time dispatch.
-// Secured by CRON_SECRET — never exposed publicly.
+// Secured by CRON_SECRET - never exposed publicly.
 //
 // Also handles manual rematch from admin and cron-based retry.
 

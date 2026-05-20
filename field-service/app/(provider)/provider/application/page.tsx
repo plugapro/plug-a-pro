@@ -2,7 +2,7 @@
 // Read-only view of the provider's most recent ProviderApplication row.
 // Supports WhatsApp handoff events: start_application, continue_application,
 // more_info_required, application_approved.
-// PWA is optional — WhatsApp is the primary application channel.
+// PWA is optional - WhatsApp is the primary application channel.
 
 export const dynamic = 'force-dynamic'
 
@@ -111,7 +111,7 @@ export default async function ProviderApplicationPage() {
             </AlertCallout>
           ) : (
             <AlertCallout tone="brand" title="Approval in progress">
-              We review all new providers before activating your account. We will WhatsApp you once approved — this usually takes up to 30 minutes for new applications.
+              We review all new providers before activating your account. We will WhatsApp you once approved - this usually takes up to 30 minutes for new applications.
             </AlertCallout>
           )}
         </CardContent>

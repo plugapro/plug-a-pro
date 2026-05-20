@@ -169,7 +169,7 @@ export default async function ReportsPage() {
       <div>
         <h1 className="text-xl font-semibold">Reports</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {now.toLocaleString('en-ZA', { month: 'long', year: 'numeric' })} — month to date
+          {now.toLocaleString('en-ZA', { month: 'long', year: 'numeric' })} - month to date
         </p>
       </div>
 
@@ -273,7 +273,7 @@ export default async function ReportsPage() {
                         <TableCell>{provider.name}</TableCell>
                         <TableCell className="text-right tabular-nums">{provider.jobs.length}</TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {avgRating ? `${avgRating} / 5` : '—'}
+                          {avgRating ? `${avgRating} / 5` : '-'}
                         </TableCell>
                       </TableRow>
                     )

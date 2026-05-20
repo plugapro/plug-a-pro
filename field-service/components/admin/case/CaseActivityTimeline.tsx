@@ -1,7 +1,7 @@
 'use client'
 // ─── CaseActivityTimeline ─────────────────────────────────────────────────────
 // Renders Case events chronologically, grouped by calendar day.
-// Append-only — no edit/delete UI.
+// Append-only - no edit/delete UI.
 
 import type { CaseEvent } from '@prisma/client'
 import { relativeTime } from '@/lib/utils'
@@ -22,9 +22,9 @@ function humanSummary(event: CaseEvent): string {
   const p = event.payload as Record<string, unknown>
   switch (event.type) {
     case 'STATE_CHANGE':
-      return `Status changed${p.from ? ` from ${p.from}` : ''} to ${p.to ?? '—'}${p.reasonCode ? ` · ${p.reasonCode}` : ''}`
+      return `Status changed${p.from ? ` from ${p.from}` : ''} to ${p.to ?? '-'}${p.reasonCode ? ` · ${p.reasonCode}` : ''}`
     case 'ASSIGNMENT_CHANGE':
-      if (p.released) return 'Released — back to unassigned'
+      if (p.released) return 'Released - back to unassigned'
       return p.to ? `Assigned to ${p.to}` : 'Assignment changed'
     case 'NOTE_ADDED':
       return `Note added${p.preview ? `: "${p.preview}…"` : ''}`

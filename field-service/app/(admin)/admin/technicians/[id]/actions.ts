@@ -1,7 +1,7 @@
 'use server'
 
 // Next.js 16 + Turbopack rejects `export { ... } from '../module'` inside a
-// 'use server' file — only async functions can be exported. Each delegate
+// 'use server' file - only async functions can be exported. Each delegate
 // below wraps the canonical action in `providers/actions.ts` (technicians
 // share the providers action surface via the route alias).
 
@@ -81,7 +81,7 @@ export async function toggleActiveFromFormAction(formData: FormData) {
     // crudAction always returns { ok: true, data } on success and throws a
     // CrudActionError on any failure (auth, role, flag, validation, DB). It
     // never silently returns { ok: false }, so no return-value check is needed
-    // here — the catch block below handles all error paths.
+    // here - the catch block below handles all error paths.
     await crudAction({
       entity: 'Provider',
       entityId: providerId,

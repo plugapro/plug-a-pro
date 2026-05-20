@@ -89,7 +89,7 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'http://localhost/admin-sign-in?callbackUrl=%2Fadmin%2Fteam&next=%2Fadmin%2Fteam'
+      'http://localhost/sign-in?callbackUrl=%2Fadmin%2Fteam&next=%2Fadmin%2Fteam'
     )
   })
 
@@ -115,7 +115,7 @@ describe('proxy admin access', () => {
 
     expect(res.status).toBe(307)
     expect(res.headers.get('location')).toBe(
-      'http://localhost/admin-sign-in?callbackUrl=%2Fadmin%2Fproviders&next=%2Fadmin%2Fproviders',
+      'http://localhost/sign-in?callbackUrl=%2Fadmin%2Fproviders&next=%2Fadmin%2Fproviders',
     )
   })
 
@@ -370,7 +370,7 @@ describe('proxy admin access', () => {
     )
   })
 
-  it('keeps /sign-in public on admin domain and rewrites to internal /admin-sign-in', async () => {
+  it('keeps /sign-in public on admin domain', async () => {
     const { proxy } = await import('../proxy')
 
     const res = await proxy(new NextRequest('https://admin.plugapro.co.za/sign-in'))

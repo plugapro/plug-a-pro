@@ -152,7 +152,7 @@ export function TeamActionsRow({
           </button>
         </div>
 
-        {/* Resend invite — pending invite only */}
+        {/* Resend invite - pending invite only */}
         {admin.active && admin.acceptedAt == null && (
           <ActionForm
             action={resendInviteFromFormAction}
@@ -171,7 +171,7 @@ export function TeamActionsRow({
           </ActionForm>
         )}
 
-        {/* Reactivate — inactive admins only */}
+        {/* Reactivate - inactive admins only */}
         {!admin.active && (
           <ActionForm action={reactivateAdminFromFormAction} successMessage={`${admin.name} reactivated`}>
             <input type="hidden" name="adminUserId" value={admin.id} />
@@ -187,7 +187,7 @@ export function TeamActionsRow({
           </ActionForm>
         )}
 
-        {/* Deactivate — active + accepted + not self */}
+        {/* Deactivate - active + accepted + not self */}
         {showDeactivate && (
           <button
             type="button"
@@ -199,7 +199,7 @@ export function TeamActionsRow({
           </button>
         )}
 
-        {/* Revoke — active + pending + not self */}
+        {/* Revoke - active + pending + not self */}
         {showRevoke && (
           <button
             type="button"

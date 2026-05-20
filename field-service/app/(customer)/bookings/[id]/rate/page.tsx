@@ -52,7 +52,7 @@ export default async function RatePage({
   const jobId = booking.job.id
   const jobProviderId = booking.job.providerId
 
-  // Already rated — redirect back
+  // Already rated - redirect back
   const existing = await db.review.findFirst({
     where: { jobId, reviewerType: 'CUSTOMER' },
   })

@@ -59,8 +59,7 @@ export function isDesktopAdminBypassPath(params: {
   const host = normalizeHost(params.host ?? '')
 
   if (host === 'admin.plugapro.co.za') return true
-  if (pathname === '/admin-sign-in') return true
-  if (pathname === '/admin' || pathname.startsWith('/admin/')) return true
+if (pathname === '/admin' || pathname.startsWith('/admin/')) return true
   return false
 }
 

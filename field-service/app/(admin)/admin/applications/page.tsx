@@ -219,7 +219,7 @@ async function approveApplication(formData: FormData) {
           throw new Error('Supabase user creation failed')
         }
 
-      // Phase 4 follow-up Task 5 — atomicity invariant:
+      // Phase 4 follow-up Task 5 - atomicity invariant:
       //   - syncProviderRecord(verified: true) flips Provider.status -> 'ACTIVE'
       //     (lib/provider-record.ts:199 maps `verified: true` to status ACTIVE).
       //   - The `tx.providerApplication.updateMany({ status: 'APPROVED' })` call
@@ -700,19 +700,19 @@ export default async function ApplicationsPage({
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
                     <span className="text-muted-foreground">Skills: </span>
-                    {app.skills.join(', ') || '—'}
+                    {app.skills.join(', ') || '-'}
                   </div>
                   <div>
                     <span className="text-muted-foreground">Area: </span>
-                    {app.serviceAreas.join(', ') || '—'}
+                    {app.serviceAreas.join(', ') || '-'}
                   </div>
                   <div>
                     <span className="text-muted-foreground">Experience: </span>
-                    {app.experience || '—'}
+                    {app.experience || '-'}
                   </div>
                   <div>
                     <span className="text-muted-foreground">Availability: </span>
-                    {app.availability || '—'}
+                    {app.availability || '-'}
                   </div>
                 </div>
 
@@ -956,14 +956,14 @@ export default async function ApplicationsPage({
                   <TableRow key={app.id}>
                   <TableCell>{app.name}</TableCell>
                   <TableCell className="text-muted-foreground">{app.phone}</TableCell>
-                  <TableCell className="text-muted-foreground">{app.skills.join(', ') || '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">{app.skills.join(', ') || '-'}</TableCell>
                     <TableCell>
                       <Badge variant={getStatusVariant(app.status)} className="rounded-full">
                         {app.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {app.reviewedAt?.toLocaleDateString('en-ZA') ?? '—'}
+                      {app.reviewedAt?.toLocaleDateString('en-ZA') ?? '-'}
                     </TableCell>
                   </TableRow>
                 ))}

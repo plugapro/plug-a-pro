@@ -9,7 +9,7 @@ interface PayfastCheckoutForwarderProps {
 
 /**
  * Submits a hidden POST form to the Payfast checkout URL immediately on mount.
- * The browser navigates away from the app — show a loading message while it happens.
+ * The browser navigates away from the app - show a loading message while it happens.
  */
 export function PayfastCheckoutForwarder({ checkout }: PayfastCheckoutForwarderProps) {
   const formRef = useRef<HTMLFormElement>(null)

@@ -5,7 +5,7 @@ interface PageHeaderProps {
   eyebrow?: React.ReactNode
   title: React.ReactNode
   description?: React.ReactNode
-  /** Right-aligned action slot — primary CTA, dropdown, etc. */
+  /** Right-aligned action slot - primary CTA, dropdown, etc. */
   action?: React.ReactNode
   className?: string
 }

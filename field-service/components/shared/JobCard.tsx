@@ -25,7 +25,7 @@ type JobWithContext = Job & {
 
 interface JobCardProps {
   job: JobWithContext
-  /** Route prefix — provider or legacy technician. */
+  /** Route prefix - provider or legacy technician. */
   basePath?: '/provider' | '/technician'
   /** Optional next-action label shown to the right of the status badge. */
   nextAction?: string
@@ -111,7 +111,7 @@ export function JobCard({
       {(priceLabel || nextAction) && (
         <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/70 pt-3">
           <span className="text-sm font-semibold tabular-nums text-foreground">
-            {priceLabel ?? '—'}
+            {priceLabel ?? '-'}
           </span>
           {nextAction ? (
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary">

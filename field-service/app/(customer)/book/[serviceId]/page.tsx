@@ -64,7 +64,7 @@ export default async function RequestJobPage({
       })
     : []
 
-  // Resolve template pre-fill — silently ignore invalid/missing ids.
+  // Resolve template pre-fill - silently ignore invalid/missing ids.
   let initialDraft: { title: string; description: string } | undefined
   if (templateId && customer) {
     const template = await db.jobRequest.findFirst({

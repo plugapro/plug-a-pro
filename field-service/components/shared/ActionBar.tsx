@@ -9,11 +9,11 @@ interface ActionBarProps {
   primary: React.ReactNode
   /**
    * Optional helper text or pricing summary shown to the left of the
-   * primary action — useful for "Subtotal R450" / "Step 2 of 4" copy.
+   * primary action - useful for "Subtotal R450" / "Step 2 of 4" copy.
    */
   helper?: React.ReactNode
   /**
-   * Optional secondary action — typically a quiet variant.
+   * Optional secondary action - typically a quiet variant.
    */
   secondary?: React.ReactNode
   className?: string
@@ -25,7 +25,7 @@ interface ActionBarProps {
  * with safe-area padding, blurred backdrop, and a hairline top border
  * so it reads as part of the system, not floating chrome.
  *
- * Use sparingly — only on flow screens where the user must commit to a
+ * Use sparingly - only on flow screens where the user must commit to a
  * decision. List screens should let the page scroll without occlusion.
  */
 export function ActionBar({

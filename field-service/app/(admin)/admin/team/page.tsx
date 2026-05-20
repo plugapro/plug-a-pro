@@ -191,7 +191,7 @@ export default async function TeamPage() {
                   {admin.invitedAt.toLocaleDateString('en-ZA')}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                  {admin.invitedBy?.name ?? '—'}
+                  {admin.invitedBy?.name ?? '-'}
                 </TableCell>
                 {crudEnabled && (
                   <TableCell className="text-right">

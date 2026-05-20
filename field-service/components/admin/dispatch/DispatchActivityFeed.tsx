@@ -113,7 +113,7 @@ function ItemRow({ item }: { item: RenderItem }) {
       <div className="space-y-0.5">
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{r.count} retries</span>
-          {' — no match each time'}
+          {' - no match each time'}
         </p>
         {summaries && (
           <p className="text-xs text-muted-foreground">{summaries}</p>

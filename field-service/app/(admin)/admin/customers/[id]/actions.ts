@@ -1,7 +1,7 @@
 'use server'
 
 // Next.js 16 + Turbopack rejects `export { ... } from '../module'` inside a
-// 'use server' file — only async functions can be exported. Each delegate
+// 'use server' file - only async functions can be exported. Each delegate
 // below wraps the canonical action in `customers/actions.ts` so the detail
 // page's CustomerActionsPanel can import everything from one module without
 // the parent actions file needing a separate detail-route entry point.

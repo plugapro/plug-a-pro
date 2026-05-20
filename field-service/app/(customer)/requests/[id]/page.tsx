@@ -225,7 +225,7 @@ export default async function RequestDetailPage({
         </div>
       )}
 
-      {/* Expired state banner — no suitable providers found within the match window */}
+      {/* Expired state banner - no suitable providers found within the match window */}
       {jobRequest.status === 'EXPIRED' && (
         <div className="rounded-[20px] p-5" style={{ background: 'var(--tone-warning-bg)', boxShadow: 'inset 0 0 0 1px var(--tone-warning-border)' }}>
           <div className="space-y-3 text-sm" style={{ color: 'var(--tone-warning-fg)' }}>
@@ -248,7 +248,7 @@ export default async function RequestDetailPage({
         </div>
       )}
 
-      {/* Provider confirmation banner — shown when a provider has been selected
+      {/* Provider confirmation banner - shown when a provider has been selected
           and their confirmation is pending. */}
       {jobRequest.status === 'PROVIDER_CONFIRMATION_PENDING' &&
         selectedShortlistItem && (
@@ -264,7 +264,7 @@ export default async function RequestDetailPage({
           </div>
         )}
 
-      {/* Provider declined banner — shown when the selected provider could not confirm */}
+      {/* Provider declined banner - shown when the selected provider could not confirm */}
       {resolvedSearchParams.selection === 'provider-declined' && (
         <div className="rounded-[20px] p-5" style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}>
           <div className="space-y-2 text-sm text-destructive">
@@ -282,7 +282,7 @@ export default async function RequestDetailPage({
         </div>
       )}
 
-      {/* Matching timed out — still in matching after extended wait */}
+      {/* Matching timed out - still in matching after extended wait */}
       {jobRequest.status === 'MATCHING' &&
         resolvedSearchParams.selection === 'matching-timeout' && (
           <div className="rounded-[20px] p-5" style={{ background: 'var(--tone-warning-bg)', boxShadow: 'inset 0 0 0 1px var(--tone-warning-border)' }}>
@@ -300,7 +300,7 @@ export default async function RequestDetailPage({
           </div>
         )}
 
-      {/* Shortlist — shown when SHORTLIST_READY or PROVIDER_CONFIRMATION_PENDING with no final match */}
+      {/* Shortlist - shown when SHORTLIST_READY or PROVIDER_CONFIRMATION_PENDING with no final match */}
       {shortlist && shortlist.items.length > 0 && !match && (
         <section className="space-y-3">
           <div>
@@ -678,7 +678,7 @@ export default async function RequestDetailPage({
                   <div className="space-y-3 pt-1">
                     <p className="font-medium" style={{ color: 'var(--ink)' }}>Review Providers First</p>
                     <p style={{ color: 'var(--ink-mute)' }}>
-                      Rank up to 3 providers in preference order. We&apos;ll contact your 1st choice first — if they can&apos;t make it, we&apos;ll automatically try your 2nd and 3rd.
+                      Rank up to 3 providers in preference order. We&apos;ll contact your 1st choice first - if they can&apos;t make it, we&apos;ll automatically try your 2nd and 3rd.
                     </p>
                     {isReviewFirstPending ? (
                       <p style={{ color: 'var(--ink-mute)' }}>We&apos;re finding matching providers for your request.</p>
@@ -906,9 +906,9 @@ export default async function RequestDetailPage({
 function getMatchEtaCopy(): string {
   const hour = new Date().getHours()
   if (hour >= 8 && hour < 18)
-    return "We're checking one suitable provider at a time — first response is typically within 5–10 minutes."
+    return "We're checking one suitable provider at a time - first response is typically within 5–10 minutes."
   if (hour >= 18 && hour < 22)
-    return "We're looking for a provider — typically within 30–60 minutes during off-peak hours."
+    return "We're looking for a provider - typically within 30–60 minutes during off-peak hours."
   return "We'll pick this up first thing in the morning and match you quickly."
 }
 

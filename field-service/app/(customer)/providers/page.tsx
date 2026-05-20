@@ -108,7 +108,7 @@ export default async function ProviderCataloguePage({
       status: 'ACTIVE',
       AND: [
         // Suspension check must live in AND so it cannot be clobbered by any
-        // dynamic OR spread below — prior bug allowed suspended providers to
+        // dynamic OR spread below - prior bug allowed suspended providers to
         // appear in results when category + query filters were both active.
         { OR: [{ suspendedUntil: null }, { suspendedUntil: { lt: now } }] },
         ...(normalizedCategory
@@ -237,7 +237,7 @@ export default async function ProviderCataloguePage({
         <p className="mt-1.5 text-[14px]" style={{ color: 'var(--ink-mute)' }}>
           {isSignedIn
             ? 'Search and compare reviewed providers near you.'
-            : 'Browse reviewed providers — sign in only when you request service.'}
+            : 'Browse reviewed providers - sign in only when you request service.'}
         </p>
       </div>
 

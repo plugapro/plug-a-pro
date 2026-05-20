@@ -91,5 +91,5 @@ export function JobStatusControls({ jobId, currentStatus }: Props) {
   )
 }
 
-// Legacy export — kept for backwards compatibility
+// Legacy export - kept for backwards compatibility
 export { JobStatusControls as StatusControls }

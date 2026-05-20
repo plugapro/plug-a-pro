@@ -70,7 +70,7 @@ export async function inviteAdminAction(input: InviteInput) {
         return updated
       }
 
-      // Create a placeholder AdminUser row — userId will be populated when
+      // Create a placeholder AdminUser row - userId will be populated when
       // the invited user first signs in via the Supabase magic link.
       // We use email as a stable identifier until they authenticate.
       const adminUser = await tx.adminUser.create({
@@ -88,7 +88,7 @@ export async function inviteAdminAction(input: InviteInput) {
     },
   })
 
-  // Send Supabase invite email outside the transaction (non-atomic by design —
+  // Send Supabase invite email outside the transaction (non-atomic by design -
   // the AdminUser row is the source of truth; email delivery is best-effort)
   let inviteEmailSent = true
   let inviteEmailError: string | undefined
@@ -290,7 +290,7 @@ export async function inviteAdminFromFormAction(formData: FormData) {
       return {
         ok: true as const,
         data: result.data,
-        warning: `Admin row created for ${result.data.email} but invite email failed — use "Resend invite" to retry.`,
+        warning: `Admin row created for ${result.data.email} but invite email failed - use "Resend invite" to retry.`,
       }
     }
     return { ok: true as const, data: result.data, message: `Invite sent to ${result.data.email}` }
@@ -368,7 +368,7 @@ export async function resendInviteFromFormAction(formData: FormData) {
     })
     if (inviteError) {
       console.error('[resendInvite] Supabase error:', inviteError)
-      return { ok: false as const, error: 'Failed to send invite email — please try again.' }
+      return { ok: false as const, error: 'Failed to send invite email - please try again.' }
     }
     revalidatePath('/admin/team')
     return { ok: true as const, message: `Invite re-sent to ${adminUser.email}` }

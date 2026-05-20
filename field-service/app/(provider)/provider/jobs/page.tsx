@@ -114,7 +114,7 @@ export default async function ProviderJobsPage({
         include: jobInclude,
         orderBy: { updatedAt: 'desc' },
       }),
-      // Locked leads with a Match but no Booking yet — provider needs to
+      // Locked leads with a Match but no Booking yet - provider needs to
       // submit a quote (or customer needs to approve a submitted one).
       // Includes all pre-booking Match statuses, not just MATCHED.
       db.match.findMany({
@@ -130,7 +130,7 @@ export default async function ProviderJobsPage({
         orderBy: { createdAt: 'desc' },
       }),
       // Leads where the provider accepted but has insufficient credits.
-      // No Match row exists yet — surfaced here so the provider knows they
+      // No Match row exists yet - surfaced here so the provider knows they
       // need to top up to confirm their slot.
       db.lead.findMany({
         where: {
@@ -225,7 +225,7 @@ export default async function ProviderJobsPage({
           </div>
         </div>
 
-        {/* Customer chose you — waiting for your acceptance via WhatsApp */}
+        {/* Customer chose you - waiting for your acceptance via WhatsApp */}
         {customerSelectedLeads.length > 0 && (
           <section>
             <SectionLabel className="mb-3">
@@ -271,7 +271,7 @@ export default async function ProviderJobsPage({
           </section>
         )}
 
-        {/* Top up required — accepted leads stalled at CREDIT_REQUIRED */}
+        {/* Top up required - accepted leads stalled at CREDIT_REQUIRED */}
         {creditRequiredLeads.length > 0 && (
           <section>
             <SectionLabel className="mb-3">
@@ -416,7 +416,7 @@ export default async function ProviderJobsPage({
           </section>
         )}
 
-        {/* Completed — paginated */}
+        {/* Completed - paginated */}
         <section>
           <SectionLabel className="mb-3">
             Completed history ({totalCompleted})

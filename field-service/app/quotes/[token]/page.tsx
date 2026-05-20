@@ -1,4 +1,4 @@
-// Client quote approval page — public, no auth required
+// Client quote approval page - public, no auth required
 export const dynamic = 'force-dynamic'
 
 import { notFound } from 'next/navigation'

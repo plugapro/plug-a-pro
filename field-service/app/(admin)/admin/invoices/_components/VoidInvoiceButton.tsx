@@ -24,7 +24,7 @@ export function VoidInvoiceButton({ invoiceId, invoiceNumber, disabled }: VoidIn
     startTransition(async () => {
       const formData = new FormData()
       formData.set('invoiceId', invoiceId)
-      // Static reason — intent is captured by the type-to-confirm dialog (invoice number).
+      // Static reason - intent is captured by the type-to-confirm dialog (invoice number).
       formData.set('reason', 'Voided by admin')
       const result = await voidInvoiceFromFormAction(formData)
       if (result && 'ok' in result && result.ok) {

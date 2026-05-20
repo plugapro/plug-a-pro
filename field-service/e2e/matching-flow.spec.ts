@@ -18,13 +18,22 @@
 import { test, expect, type Page } from '@playwright/test'
 
 // ─── Sign-in helper ───────────────────────────────────────────────────────────
+// Admin auth is handled outside the app (credentials shared separately with staff).
 
 async function signIn(page: Page) {
-  await page.goto('/admin-sign-in')
-  await page.fill('input[type="email"]', process.env.E2E_ADMIN_EMAIL ?? '')
-  await page.fill('input[type="password"]', process.env.E2E_ADMIN_PASSWORD ?? '')
-  await page.click('button[type="submit"]')
-  await page.waitForURL(/\/admin\/?$/, { timeout: 15_000 })
+  const sessionCookie = process.env.E2E_ADMIN_SESSION_COOKIE
+  if (sessionCookie) {
+    await page.context().addCookies([{ name: 'sb-access-token', value: sessionCookie, domain: new URL(process.env.E2E_BASE_URL ?? 'http://localhost').hostname, path: '/' }])
+    await page.goto('/admin')
+    await page.waitForURL(/\/admin\/?/, { timeout: 15_000 })
+    return
+  }
+  const res = await page.request.post('/api/auth/session', {
+    data: { email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD },
+  })
+  if (!res.ok()) throw new Error(`Admin session setup failed: ${res.status()}`)
+  await page.goto('/admin')
+  await page.waitForURL(/\/admin\/?/, { timeout: 15_000 })
 }
 
 // ─── Dashboard matching health card ──────────────────────────────────────────

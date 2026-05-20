@@ -20,7 +20,7 @@ import { checkWorkerPortalAccess, logWorkerPortalDecision } from '@/lib/worker-p
 //   Providers   → phone OTP    → /provider-sign-in → /provider-verify
 //                             (legacy /technician-sign-in and /technician-verify
 //                              now server-redirect to the canonical routes above)
-//   Admin/Owner → email+pass   → /admin-sign-in
+//   Admin/Owner → shared credentials (distributed separately)
 // Email is reserved for admin/owner. LSM users (customers, providers) use phone only.
 const PUBLIC_PATHS = [
   '/',
@@ -34,7 +34,6 @@ const PUBLIC_PATHS = [
   '/technician-verify',    // legacy — server-redirects to /provider-verify
   '/providers',
   '/providers/',
-  '/admin-sign-in',        // admin / owner email+password
   '/approve',              // extra work approval tokens are public (no login required)
   '/book',                 // booking steps 1-3 are public; submit endpoint enforces auth
   '/requests/access',      // signed single-ticket links are scoped to one request
@@ -66,11 +65,9 @@ const ADMIN_PATHS = ['/admin']
 
 // admin.plugapro.co.za uses clean paths — map them to internal /admin/* routes
 // /          → /admin
-// /sign-in   → /admin-sign-in
 // /dispatch  → /admin/dispatch  (and so on for all sub-pages)
 function toAdminInternalPath(pathname: string): string {
   if (pathname === '/') return '/admin'
-  if (pathname === '/sign-in') return '/admin-sign-in'
   if (
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next') ||
@@ -241,12 +238,9 @@ function redirectToSignIn(
   // Preserve route ownership on redirects:
   // customer routes always return to /sign-in,
   // provider routes always return to /provider-sign-in,
-  // admin routes always return to /admin-sign-in.
+  // admin routes always return to /sign-in.
   if (effectivePath.startsWith('/provider') || effectivePath.startsWith('/technician')) destination = '/provider-sign-in'
-  if (effectivePath.startsWith('/admin')) {
-    // On admin domain keep URLs clean; on regular domain use full path
-    destination = isAdminDomain ? '/sign-in' : '/admin-sign-in'
-  }
+  if (effectivePath.startsWith('/admin')) destination = '/sign-in'
 
   const callbackCandidate = request.nextUrl.pathname + request.nextUrl.search
   const adminDomainCallbackCandidate = effectivePath + request.nextUrl.search
@@ -254,10 +248,11 @@ function redirectToSignIn(
   let callbackPath = callbackCandidate
   if (destination === '/provider-sign-in') {
     callbackPath = getSafeProviderNextPath(callbackCandidate, '/provider/jobs')
-  } else if (destination === '/admin-sign-in') {
-    callbackPath = getSafeAdminNextPath(callbackCandidate, '/admin')
-  } else if (destination === '/sign-in' && isAdminDomain && effectivePath.startsWith('/admin')) {
-    callbackPath = getSafeAdminNextPath(adminDomainCallbackCandidate, '/admin')
+  } else if (destination === '/sign-in' && effectivePath.startsWith('/admin')) {
+    callbackPath = getSafeAdminNextPath(
+      isAdminDomain ? adminDomainCallbackCandidate : callbackCandidate,
+      '/admin',
+    )
   } else if (destination === '/sign-in') {
     callbackPath = getSafeCustomerNextPath(callbackCandidate, '/bookings')
   }

@@ -1,6 +1,6 @@
 // Admin console layout
 // Desktop-first, sidebar navigation, full data access
-// Auth enforced via proxy.ts — only admin/owner role can access
+// Auth enforced via proxy.ts - only admin/owner role can access
 
 import { requireAdmin } from '@/lib/auth'
 import { AppLogo } from '@/components/shared/app-logo'
@@ -33,17 +33,12 @@ export default async function AdminLayout({
             The admin console is restricted to desktop browsers only for secure management operations.
             Open this page on a desktop device and sign in again.
           </p>
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <Button asChild variant="outline">
-              <a href="/admin-sign-in">Go to admin sign-in</a>
-            </Button>
-          </div>
         </div>
       </div>
     )
   }
 
-  // Auth guard — redirects if not admin or owner
+  // Auth guard - redirects if not admin or owner
   const user = await requireAdmin()
 
   return (

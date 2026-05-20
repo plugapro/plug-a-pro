@@ -6,7 +6,7 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  // Base: layout + type + motion — no colour here
+  // Base: layout + type + motion - no colour here
   [
     "inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2",
     "rounded-[16px] text-[15px] font-semibold leading-none whitespace-nowrap",
@@ -20,7 +20,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        /* Primary: brand gradient — single primary CTA per screen */
+        /* Primary: brand gradient - single primary CTA per screen */
         gradient:
           "brand-gradient text-white " +
           "shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_8px_24px_#8B3FE833,0_2px_6px_#8B3FE822] " +
@@ -105,7 +105,7 @@ export interface ButtonProps
    * Renders a spinner and forces `disabled` while truthy. Swap the children
    * for `loadingLabel` to give the user explicit feedback that the action is
    * running. Designed for callers that wrap a server action / fetch / mutation
-   * — saves every consumer from importing Loader2 and wiring `disabled` by hand.
+   * - saves every consumer from importing Loader2 and wiring `disabled` by hand.
    */
   loading?: boolean
   loadingLabel?: React.ReactNode
@@ -123,7 +123,7 @@ function Button({
   children,
   ...props
 }: ButtonProps) {
-  // `asChild` defers rendering to a Slot — its child is responsible for its own
+  // `asChild` defers rendering to a Slot - its child is responsible for its own
   // disabled state. Loading visuals only apply to the native button render path
   // (the only safe place to inject a sibling spinner without breaking Slot's
   // single-child contract).

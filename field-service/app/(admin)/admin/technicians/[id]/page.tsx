@@ -291,12 +291,12 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               {completeness.canApprove ? (
                 completeness.canShowToCustomers ? (
-                  <span className="text-slate-700">📋 Profile completeness — recommended fields missing</span>
+                  <span className="text-slate-700">📋 Profile completeness - recommended fields missing</span>
                 ) : (
-                  <span className="text-amber-800">⚠️ Profile completeness — customer-display gaps</span>
+                  <span className="text-amber-800">⚠️ Profile completeness - customer-display gaps</span>
                 )
               ) : (
-                <span className="text-rose-800">⛔ Profile completeness — approval blockers</span>
+                <span className="text-rose-800">⛔ Profile completeness - approval blockers</span>
               )}
             </CardTitle>
           </CardHeader>
@@ -321,7 +321,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                   </Badge>
                   <div className="flex-1">
                     <span className="font-medium text-slate-900">{entry.field}</span>
-                    <span className="text-slate-600"> — {entry.reason}</span>
+                    <span className="text-slate-600"> - {entry.reason}</span>
                   </div>
                 </li>
               ))}
@@ -381,7 +381,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
               </div>
               <div>
                 <p className="text-muted-foreground">Experience</p>
-                <p className="font-medium">{provider.experience ?? '—'}</p>
+                <p className="font-medium">{provider.experience ?? '-'}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Approved for matching</p>
@@ -418,7 +418,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                     <div className="flex flex-wrap gap-1.5">
                       {highRiskRequirements.map((requirement) => (
                         <Badge key={requirement.serviceKey} variant="destructive" className="rounded-full text-xs">
-                          {requirement.label} — {requirement.riskLevel === 'regulated' ? 'Regulated' : 'High risk'}
+                          {requirement.label} - {requirement.riskLevel === 'regulated' ? 'Regulated' : 'High risk'}
                         </Badge>
                       ))}
                     </div>
@@ -461,7 +461,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                         variant={area.active ? 'default' : 'outline'}
                         className="rounded-full text-xs"
                       >
-                        {area.label} — {area.active ? 'Active pilot' : 'Coming soon'}
+                        {area.label} - {area.active ? 'Active pilot' : 'Coming soon'}
                       </Badge>
                     ))}
                   </div>
@@ -496,7 +496,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                         rel="noopener noreferrer"
                         className="block text-sm text-primary hover:underline"
                       >
-                        {att.mimeType.startsWith('image/') ? '🖼' : '📄'} File {i + 1} — {att.mimeType}
+                        {att.mimeType.startsWith('image/') ? '🖼' : '📄'} File {i + 1} - {att.mimeType}
                       </a>
                     ))}
                   </div>
@@ -518,7 +518,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                         rel="noopener noreferrer"
                         className="block text-sm text-primary hover:underline"
                       >
-                        {att.mimeType.startsWith('image/') ? '🖼' : '📄'} Certification proof {i + 1} — {att.mimeType}
+                        {att.mimeType.startsWith('image/') ? '🖼' : '📄'} Certification proof {i + 1} - {att.mimeType}
                       </a>
                     ))}
                   </div>
@@ -545,7 +545,7 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                           rel="noopener noreferrer"
                           className="block text-sm text-primary hover:underline"
                         >
-                          {att.mimeType.startsWith('image/') ? '🖼' : '📄'} {typeLabel} — {att.mimeType}
+                          {att.mimeType.startsWith('image/') ? '🖼' : '📄'} {typeLabel} - {att.mimeType}
                         </a>
                       )
                     })}
@@ -722,12 +722,12 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                       )}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                      {cert.issuingAuthority ?? '—'}
+                      {cert.issuingAuthority ?? '-'}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       {cert.expiresAt
                         ? format(new Date(cert.expiresAt), 'd MMM yyyy')
-                        : '—'}
+                        : '-'}
                     </TableCell>
                     <TableCell>
                       {cert.verifiedAt ? (
@@ -1035,10 +1035,10 @@ export default async function ProviderProfilePage({ params, searchParams }: Prop
                       {format(new Date(job.createdAt), 'd MMM yyyy')}
                     </TableCell>
                     <TableCell className="font-medium text-sm">
-                      {job.booking?.match?.jobRequest.title ?? '—'}
+                      {job.booking?.match?.jobRequest.title ?? '-'}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                      {job.booking?.match?.jobRequest.category ?? '—'}
+                      {job.booking?.match?.jobRequest.category ?? '-'}
                     </TableCell>
                     <TableCell>
                       <Badge

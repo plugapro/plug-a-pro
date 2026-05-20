@@ -42,7 +42,7 @@ export async function overrideAssignmentAction(formData: FormData) {
           actor: { actorId: activeAdmin.id, actorRole: 'admin' },
           overrideReason: rc,
         })
-        // Non-blocking case event — do not let a case-write failure block the override
+        // Non-blocking case event - do not let a case-write failure block the override
         getCaseByEntity('DISPATCH', 'JOB_REQUEST', jrId)
           .then((dispCase) => {
             if (dispCase == null) return
@@ -65,7 +65,7 @@ export async function overrideAssignmentAction(formData: FormData) {
     if (error instanceof CrudActionError) {
       redirect(`/admin/dispatch?request=${jobRequestId}&message=dispatch_override_failed`)
     }
-    // redirect() throws — re-throw so Next.js can handle it
+    // redirect() throws - re-throw so Next.js can handle it
     throw error
   }
 }
@@ -97,7 +97,7 @@ export async function redispatchFromFormAction(formData: FormData) {
     revalidatePath('/admin/dispatch')
     redirect(`/admin/dispatch?request=${jobRequestId}&message=redispatch_triggered`)
   } catch (error) {
-    // redirect() throws — re-throw so Next.js can handle it
+    // redirect() throws - re-throw so Next.js can handle it
     if (
       typeof error === 'object' &&
       error !== null &&
@@ -118,7 +118,7 @@ export async function escalateToSupplyFromFormAction(formData: FormData) {
   const activeAdmin = await requireAdmin()
   const jobRequestId = String(formData.get('jobRequestId') ?? '')
   const reason = String(
-    formData.get('reason') || 'No providers available — needs supply expansion',
+    formData.get('reason') || 'No providers available - needs supply expansion',
   )
 
   if (!jobRequestId) return
@@ -140,7 +140,7 @@ export async function escalateToSupplyFromFormAction(formData: FormData) {
     revalidatePath('/admin/dispatch')
     redirect(`/admin/dispatch?request=${jobRequestId}&message=escalation_recorded`)
   } catch (error) {
-    // redirect() throws — re-throw so Next.js can handle it
+    // redirect() throws - re-throw so Next.js can handle it
     if (
       typeof error === 'object' &&
       error !== null &&

@@ -1,4 +1,4 @@
-// Extra work approval — public, tokenized, no login required
+// Extra work approval - public, tokenized, no login required
 // Customer receives a WhatsApp link → taps → approves/declines extra work
 
 export const dynamic = 'force-dynamic'
@@ -47,7 +47,7 @@ export default async function ApprovalPage({ params, searchParams }: Props) {
 
   if (!extra) notFound()
 
-  // Token expired — show neutral message so customer can contact support
+  // Token expired - show neutral message so customer can contact support
   if (extra.expiresAt && extra.expiresAt < new Date() && extra.status === 'PENDING') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center px-4">

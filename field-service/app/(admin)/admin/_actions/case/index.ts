@@ -191,11 +191,11 @@ export async function reopenCaseAction(input: z.infer<typeof ReopenCaseSchema>) 
         select: { resolvedAt: true },
       })
       if (!existing?.resolvedAt) {
-        throw new CrudActionError('CONFLICT', 'Case is not resolved — cannot reopen.')
+        throw new CrudActionError('CONFLICT', 'Case is not resolved - cannot reopen.')
       }
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
       if (existing.resolvedAt < thirtyDaysAgo) {
-        throw new CrudActionError('CONFLICT', 'Case resolved more than 30 days ago — cannot reopen.')
+        throw new CrudActionError('CONFLICT', 'Case resolved more than 30 days ago - cannot reopen.')
       }
       await tx.case.update({
         where: { id: parsed.caseId },

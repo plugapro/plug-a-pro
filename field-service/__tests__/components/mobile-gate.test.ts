@@ -8,10 +8,9 @@ describe('isDesktopAdminBypassPath', () => {
     expect(isDesktopAdminBypassPath({ pathname: '/customers', host: 'admin.plugapro.co.za:443' })).toBe(true)
   })
 
-  it('allows desktop bypass for /admin and /admin-sign-in on app domain', () => {
+  it('allows desktop bypass for /admin routes on app domain', () => {
     expect(isDesktopAdminBypassPath({ pathname: '/admin', host: 'app.plugapro.co.za' })).toBe(true)
     expect(isDesktopAdminBypassPath({ pathname: '/admin/providers', host: 'app.plugapro.co.za' })).toBe(true)
-    expect(isDesktopAdminBypassPath({ pathname: '/admin-sign-in', host: 'app.plugapro.co.za' })).toBe(true)
   })
 
   it('blocks desktop bypass for customer/provider paths', () => {

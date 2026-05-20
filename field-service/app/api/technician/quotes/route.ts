@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   if (customerPhone) {
-    // Interactive message — works when customer is in an active 24h session
+    // Interactive message - works when customer is in an active 24h session
     sendQuoteToClient({
       customerPhone,
       providerName: provider.name,
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
       console.error('[quotes] Failed to send WhatsApp interactive quote notification:', err)
     })
 
-    // Template fallback — delivers even when customer is outside the 24h session window
+    // Template fallback - delivers even when customer is outside the 24h session window
     sendQuoteReady({
       bookingId: matchId,
       customerName,
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
       console.error('[quotes] Failed to send WhatsApp quote_ready template:', err)
     })
 
-    // CW3 — idempotent quote-ready notification (customer_quote_ready template)
+    // CW3 - idempotent quote-ready notification (customer_quote_ready template)
     sendCustomerQuoteReadyNotification({
       customerPhone,
       customerName,

@@ -98,7 +98,7 @@ function formatDate(value: string) {
   })
 }
 
-// Treat not_monitored as operational on the public page — don't expose monitoring gaps
+// Treat not_monitored as operational on the public page - don't expose monitoring gaps
 function publicStatus(status: HealthStatus): HealthStatus {
   return status === 'not_monitored' ? 'operational' : status
 }
@@ -267,7 +267,7 @@ function HeroBanner({
         {error && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)] px-3 py-2 text-xs">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[var(--tone-warning-fg)]" />
-            <span className="font-semibold text-[var(--tone-warning-fg)]">Could not refresh — showing last known status.</span>
+            <span className="font-semibold text-[var(--tone-warning-fg)]">Could not refresh - showing last known status.</span>
           </div>
         )}
       </div>
@@ -341,7 +341,7 @@ function JourneyGrid({ model }: { model: HealthDashboardModel }) {
 function StatusFooter({ asOf }: { asOf: string }) {
   return (
     <footer className="pb-2 pt-1 text-center text-[11px] text-muted-foreground/40">
-      <p>Public status only — no customer or provider data is shown.</p>
+      <p>Public status only - no customer or provider data is shown.</p>
       <p className="mt-0.5">Last checked: {formatDate(asOf)}</p>
     </footer>
   )

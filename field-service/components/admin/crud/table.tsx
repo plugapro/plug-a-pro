@@ -56,7 +56,7 @@ export interface CRUDTableProps<T extends { id: string }> {
   onSelectionChange?: (selected: T[]) => void
   /** Called when an inline-editable cell is saved */
   onSave?: (row: T, key: keyof T, value: string) => Promise<void>
-  /** Loading state — disables interactions */
+  /** Loading state - disables interactions */
   loading?: boolean
   emptyMessage?: string
 }
@@ -218,7 +218,7 @@ export function CRUDTable<T extends { id: string }>({
                         </div>
                       ) : (
                         <div className="flex items-center gap-1 group">
-                          <span>{col.render ? col.render(row) : String(row[col.key!] ?? '—')}</span>
+                          <span>{col.render ? col.render(row) : String(row[col.key!] ?? '-')}</span>
                           {col.inlineEdit && col.key && (
                             <Button
                               size="icon"

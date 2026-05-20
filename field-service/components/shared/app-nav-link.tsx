@@ -91,7 +91,7 @@ export function AppNavLink({
       )}
       aria-current={active ? 'page' : undefined}
     >
-      {/* Active indicator — visible cue beyond colour for accessibility. */}
+      {/* Active indicator - visible cue beyond colour for accessibility. */}
       {active ? (
         <span
           aria-hidden

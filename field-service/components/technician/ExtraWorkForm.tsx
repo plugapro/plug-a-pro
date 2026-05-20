@@ -20,7 +20,7 @@ interface Props {
 export function ExtraWorkForm({ jobId, onSubmitted }: Props) {
   const router = useRouter()
   const [isRefreshPending, startTransition] = useTransition()
-  // Tracks the actual fetch — previously the button only disabled during
+  // Tracks the actual fetch - previously the button only disabled during
   // router.refresh(), so a user could re-submit during the in-flight POST.
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [description, setDescription] = useState('')

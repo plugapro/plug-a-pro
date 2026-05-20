@@ -125,7 +125,7 @@ export async function GET(
     null
   // Ticket tokens (customer access links) may only serve request-level attachments
   // that are flagged safe for preview. Work-evidence photos (attached to a Job, not a
-  // JobRequest) are always accessible after acceptance — the job-attachment path is used
+  // JobRequest) are always accessible after acceptance - the job-attachment path is used
   // for those. This blocks a direct-fetch of a safeForPreview=false attachment even when
   // the caller holds a valid ticket token.
   const isJobAttachment = attachment?.job != null
@@ -298,7 +298,7 @@ export async function GET(
     })
   }
 
-  // Proxy the blob — fetch server-side and stream to client
+  // Proxy the blob - fetch server-side and stream to client
   let upstream: Response
   try {
     upstream = await fetch(upstreamUrl, { redirect: 'manual' })

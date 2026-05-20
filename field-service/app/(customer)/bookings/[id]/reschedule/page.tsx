@@ -52,7 +52,7 @@ export default async function BookingReschedulePage({
     const sess = await getSess()
     if (!sess) redirect(`/sign-in?next=${encodeURIComponent(`/bookings/${id}/reschedule`)}`)
 
-    // Re-verify ownership — render-time session cannot be trusted in a server action.
+    // Re-verify ownership - render-time session cannot be trusted in a server action.
     const { resolveCustomerForSession: resolveCust } = await import('@/lib/customer-session')
     const { db: database } = await import('@/lib/db')
     const cust = await resolveCust(database, sess)

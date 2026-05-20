@@ -217,7 +217,7 @@ export default async function LocationsPage() {
                             {node.cityKey && <div>city: {node.cityKey}</div>}
                             {node.regionKey && <div>region: {node.regionKey}</div>}
                             {!node.provinceKey && !node.cityKey && !node.regionKey && (
-                              <span className="text-muted-foreground">—</span>
+                              <span className="text-muted-foreground">-</span>
                             )}
                           </div>
                         </TableCell>
@@ -242,7 +242,7 @@ export default async function LocationsPage() {
                           {node._count.addresses > 0 && (
                             <span>{node._count.addresses} addr</span>
                           )}
-                          {refCount === 0 && <span>—</span>}
+                          {refCount === 0 && <span>-</span>}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">

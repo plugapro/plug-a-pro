@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   const windowStart = new Date(now.getTime() - 48 * 60 * 60 * 1000)
   const windowEnd   = new Date(now.getTime() - 12 * 60 * 60 * 1000)
   // TODO: add a 72-96h second reminder pass once a `follow_up_reminder` WhatsApp
-  // template has been approved by Meta — the current `follow_up` template cannot be
+  // template has been approved by Meta - the current `follow_up` template cannot be
   // reused (blocked by hasSuccessfulMessageForBooking dedup), and freeform messages
   // outside the 24h session window will fail to deliver.
 

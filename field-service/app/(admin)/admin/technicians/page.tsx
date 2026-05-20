@@ -241,7 +241,7 @@ export default async function ProvidersPage({ searchParams }: ProvidersPageProps
                       )}
                     </div>
                   ) : (
-                    <span className="text-muted-foreground text-xs">—</span>
+                    <span className="text-muted-foreground text-xs">-</span>
                   )}
                 </TableCell>
                 <TableCell>

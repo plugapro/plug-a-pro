@@ -200,7 +200,7 @@ export function AreaSelector({ currentArea }: AreaSelectorProps) {
                   className="w-full text-center text-[13px] font-semibold py-4 mt-2"
                   style={{ color: 'var(--brand-purple)' }}
                 >
-                  Clear — show all areas
+                  Clear - show all areas
                 </button>
               )}
             </div>

@@ -1,4 +1,4 @@
-// Completion confirmation — public, tokenized, no login required.
+// Completion confirmation - public, tokenized, no login required.
 // Provider marks job PENDING_COMPLETION_CONFIRMATION → customer receives a
 // WhatsApp link here → taps → confirms job is done → job transitions to COMPLETED.
 

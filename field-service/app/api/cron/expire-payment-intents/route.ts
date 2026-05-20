@@ -6,7 +6,7 @@
 // H-4 duplicate-intent guard incorrectly blocking a new top-up attempt
 // against an already-lapsed Pay@ link.
 //
-// Only touches intents with a non-null expiresAt — MANUAL_EFT intents without
+// Only touches intents with a non-null expiresAt - MANUAL_EFT intents without
 // an expiry date are left for admin reconciliation.
 
 import { NextResponse } from 'next/server'

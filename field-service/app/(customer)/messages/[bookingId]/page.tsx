@@ -142,7 +142,7 @@ export default async function MessageThreadPage({
           ← Messages
         </Link>
         <h1 className="text-xl font-semibold mt-1">
-          {booking.match.jobRequest.category} — {provider?.name ?? 'Provider'}
+          {booking.match.jobRequest.category} - {provider?.name ?? 'Provider'}
         </h1>
         <p className="text-xs text-muted-foreground font-mono">#{bookingId.slice(-8).toUpperCase()}</p>
       </div>

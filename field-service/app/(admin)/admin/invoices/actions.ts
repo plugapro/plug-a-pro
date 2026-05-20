@@ -38,7 +38,7 @@ export async function generateInvoiceAction(input: GenerateInput) {
     schema: GenerateInvoiceSchema,
     input,
     run: async (data, tx) => {
-      // generateInvoicePdf uses the global db client and Vercel Blob (not tx) —
+      // generateInvoicePdf uses the global db client and Vercel Blob (not tx) -
       // intentional: blob uploads cannot be rolled back anyway and the function is idempotent.
       const { generateInvoicePdf } = await import('@/lib/invoice/generate')
       const pdfUrl = await generateInvoicePdf(data.bookingId)
@@ -174,7 +174,7 @@ export async function sendInvoiceAction(input: SendInput) {
     },
   })
 
-  // Best-effort WhatsApp notification — send outside the DB transaction
+  // Best-effort WhatsApp notification - send outside the DB transaction
   if (whatsappParams) {
     const params = whatsappParams
     import('@/lib/whatsapp')

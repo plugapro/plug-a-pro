@@ -42,7 +42,7 @@ export default async function ProviderLeadsPage() {
         </h1>
         <p className="mt-1.5 text-[14px] text-[var(--ink-mute)]">
           {leads.length === 0
-            ? 'All caught up — we\'ll WhatsApp you when a new lead arrives.'
+            ? 'All caught up - we\'ll WhatsApp you when a new lead arrives.'
             : `${leads.length} ${leads.length === 1 ? 'lead' : 'leads'} waiting for your response.`}
         </p>
       </div>
@@ -55,7 +55,7 @@ export default async function ProviderLeadsPage() {
             </div>
             <p className="text-[15px] font-bold text-[var(--ink)] tracking-[-0.01em] mb-2">No new leads right now</p>
             <p className="text-[13.5px] text-[var(--ink-mute)] max-w-[260px] mx-auto leading-relaxed">
-              Stay available and keep credits topped up — leads land here as soon as customers raise jobs in your area.
+              Stay available and keep credits topped up - leads land here as soon as customers raise jobs in your area.
             </p>
           </div>
         ) : (

@@ -4,7 +4,7 @@ import { buildMetadata } from '@/lib/metadata'
 import { WA_ENABLED } from '@/lib/whatsapp-client'
 
 export const metadata = buildMetadata({
-  title: 'Provider Credits — Terms & Rules',
+  title: 'Provider Credits - Terms & Rules',
   description: 'How provider credits, top-ups, lead acceptance, and billing work on Plug A Pro.',
   path: '/credit-terms',
 })
@@ -37,11 +37,11 @@ const SECTIONS = [
   },
   {
     heading: 'Insufficient credits',
-    body: 'If your balance is zero, you cannot accept new leads until you top up. You can still view the lead summary, but the full customer details remain hidden. Leads expire after a set window regardless of your balance — top up before they arrive to stay competitive.',
+    body: 'If your balance is zero, you cannot accept new leads until you top up. You can still view the lead summary, but the full customer details remain hidden. Leads expire after a set window regardless of your balance - top up before they arrive to stay competitive.',
   },
   {
     heading: 'Top-ups',
-    body: 'Credits can be purchased via Pay@, PayFast, or manual EFT. Pay@ and PayFast top-ups reflect immediately. EFT top-ups are confirmed within 1–2 business days. Credits are sold in fixed bundles — partial bundles are not available.',
+    body: 'Credits can be purchased via Pay@, PayFast, or manual EFT. Pay@ and PayFast top-ups reflect immediately. EFT top-ups are confirmed within 1–2 business days. Credits are sold in fixed bundles - partial bundles are not available.',
   },
   {
     heading: 'Refunds and disputes',
@@ -49,7 +49,7 @@ const SECTIONS = [
   },
   {
     heading: 'Misuse and policy changes',
-    body: 'Plug A Pro may reverse credits, suspend wallet access, or block lead access where there is fraud, abuse, false information, or behaviour that harms customers or other providers. Policy changes are communicated with 14 days notice — continued use after the effective date constitutes acceptance.',
+    body: 'Plug A Pro may reverse credits, suspend wallet access, or block lead access where there is fraud, abuse, false information, or behaviour that harms customers or other providers. Policy changes are communicated with 14 days notice - continued use after the effective date constitutes acceptance.',
   },
 ]
 
@@ -77,7 +77,7 @@ export default function CreditTermsPage() {
             Plug A Pro · Provider docs
           </p>
           <h1 className="text-[26px] font-bold tracking-[-0.025em] leading-tight text-[var(--ink)]">
-            Provider credits — terms &amp; rules
+            Provider credits - terms &amp; rules
           </h1>
           <p className="mt-1.5 text-[13.5px] text-[var(--ink-mute)] leading-relaxed">
             Plain-language rules for provider prepaid credits, top-ups, lead acceptance, and credits use.
@@ -107,7 +107,7 @@ export default function CreditTermsPage() {
           </p>
         </div>
 
-        {/* Sections — one card with dividers */}
+        {/* Sections - one card with dividers */}
         <div
           className="rounded-[20px] overflow-hidden"
           style={{ background: 'var(--card)', boxShadow: 'inset 0 0 0 1px var(--border)' }}

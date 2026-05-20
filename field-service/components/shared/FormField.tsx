@@ -16,7 +16,7 @@ interface FormFieldProps {
   optional?: boolean
   /**
    * Render-prop receives the wiring (id, aria-describedby, aria-invalid)
-   * to apply to your control of choice — Input, Textarea, Select, custom.
+   * to apply to your control of choice - Input, Textarea, Select, custom.
    */
   children: (controlProps: {
     id: string

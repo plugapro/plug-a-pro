@@ -19,7 +19,7 @@ export default function ProviderHomeLoading() {
         {/* Credits hero card */}
         <Skeleton className="h-[148px] w-full rounded-[24px]" />
 
-        {/* Stats row — 3 cards */}
+        {/* Stats row - 3 cards */}
         <div className="grid grid-cols-3 gap-2.5">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-[86px] rounded-[20px]" />

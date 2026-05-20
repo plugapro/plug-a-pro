@@ -5,9 +5,9 @@ interface CompletionMeterProps {
   /** 0–100. Value is clamped. */
   value: number
   label?: React.ReactNode
-  /** Right-aligned numeric readout — defaults to "{value}% complete". */
+  /** Right-aligned numeric readout - defaults to "{value}% complete". */
   readout?: React.ReactNode
-  /** Optional hint copy below the bar — e.g. missing fields summary. */
+  /** Optional hint copy below the bar - e.g. missing fields summary. */
   hint?: React.ReactNode
   className?: string
 }

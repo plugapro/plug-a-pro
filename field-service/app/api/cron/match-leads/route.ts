@@ -1,7 +1,7 @@
 // ─── Cron: Auto-match OPEN job requests + expire stale leads + ops alerts ─────
 // Runs 24/7 via two Vercel Cron schedules (all times SAST = UTC+2):
-//   */5 5-16 * * *       — every 5 min during standard hours (07:00–18:59 SAST)
-//   */30 17-23,0-4 * * * — every 30 min during off-hours (19:00–06:59 SAST)
+//   */5 5-16 * * *       - every 5 min during standard hours (07:00–18:59 SAST)
+//   */30 17-23,0-4 * * * - every 30 min during off-hours (19:00–06:59 SAST)
 // 1. Expires leads past their expiresAt → frees job for re-dispatch
 // 2. Finds OPEN job requests with no active SENT lead → dispatches via orchestrateMatch
 // 3. Alerts admin if jobs remain unmatched after 1 hour
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
   const reqId = crypto.randomUUID().slice(0, 8)
   const results = { dispatched: 0, expired: 0, expiredRequests: 0, reoffered: 0, expiredQuotes: 0, noMatch: 0, reminders: 0, progressUpdates: 0, reconciledProviders: 0, reviewRoutedApplications: 0, flaggedApplications: 0, autoResumed: 0, errors: 0, reconciledCapacity: 0, rfpExpired: 0 }
 
-  // 0. Reconcile stale capacity counters (safety net — corrects counter drift)
+  // 0. Reconcile stale capacity counters (safety net - corrects counter drift)
   try {
     const reconcile = await reconcileStaleAssignmentState()
     results.reconciledCapacity = reconcile.corrected
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 
   // 1d. Route pending provider applications for Ops review and queue them for
   // the ops dashboard. Auto-approval runs on the dedicated
-  // /api/cron/provider-auto-approve schedule — not here.
+  // /api/cron/provider-auto-approve schedule - not here.
   try {
     const routed = await routeProviderApplicationsForOpsReview(db, { actorId: 'cron:match-leads' })
     results.reviewRoutedApplications = routed.routed
@@ -162,7 +162,7 @@ export async function GET(request: Request) {
         const { transitioned } = await expireOpenJobRequest(jr.id, 'max_age_exceeded')
         if (transitioned) {
           results.expiredRequests++
-          // Notify customer (fire-and-forget — failure should not block the sweep)
+          // Notify customer (fire-and-forget - failure should not block the sweep)
           notifyExpiredJobParties({ jobRequestId: jr.id }).catch((err: unknown) => {
             console.error(`[cron/match-leads:${reqId}] Failed to notify expired job parties ${jr.id}:`, err)
           })
@@ -179,7 +179,7 @@ export async function GET(request: Request) {
 
   // 1i. Catch-up sweep: EXPIRED jobs from the last 24h that never received a
   // no-match notification (e.g. if 1e fired but the notify call failed).
-  // notifyExpiredJobParties() is idempotent — it guards on customerNoMatchNotifiedAt.
+  // notifyExpiredJobParties() is idempotent - it guards on customerNoMatchNotifiedAt.
   try {
     const recentlyExpired = await db.jobRequest.findMany({
       where: {
@@ -201,7 +201,7 @@ export async function GET(request: Request) {
   }
 
   // 1j. Auto-resume providers whose temporary pause has expired (breakUntil <= now).
-  // Hard-paused providers (breakUntil=null) are excluded — they must re-enable manually via WhatsApp.
+  // Hard-paused providers (breakUntil=null) are excluded - they must re-enable manually via WhatsApp.
   try {
     const expiredPauses = await db.technicianAvailability.findMany({
       where: {
@@ -234,7 +234,7 @@ export async function GET(request: Request) {
     results.errors++
   }
 
-  // 1k. Recover MATCHING jobs with no active hold — these are stuck because the
+  // 1k. Recover MATCHING jobs with no active hold - these are stuck because the
   // ranked queue was exhausted but expireOpenJobRequest previously only handled
   // OPEN status. With that fix in place this sweep terminates lingering cases.
   // A job is considered stuck if it has been in MATCHING for >30 min with no
@@ -302,7 +302,7 @@ export async function GET(request: Request) {
         results.noMatch++
         console.warn(`[cron/match-leads:${reqId}] No providers for job ${jr.id}`)
       }
-      // SKIP is expected for jobs with active holds or non-OPEN status — not an error
+      // SKIP is expected for jobs with active holds or non-OPEN status - not an error
     } catch (err) {
       console.error(`[cron/match-leads:${reqId}] Error dispatching job ${jr.id}:`, err)
       results.errors++
@@ -338,7 +338,7 @@ export async function GET(request: Request) {
     if (unmatched1h > 0) {
       await sendText(
         ADMIN_PHONE,
-        `⚠️ *Ops Alert — Unmatched Jobs*\n\n${unmatched1h} job request(s) have been open for over 1 hour with no provider match.\n\nReview: ${process.env.NEXT_PUBLIC_APP_URL ?? ''}/admin/bookings`
+        `⚠️ *Ops Alert - Unmatched Jobs*\n\n${unmatched1h} job request(s) have been open for over 1 hour with no provider match.\n\nReview: ${process.env.NEXT_PUBLIC_APP_URL ?? ''}/admin/bookings`
       ).catch(() => {})
     }
   }
@@ -377,7 +377,7 @@ export async function GET(request: Request) {
 
       const link = `${getPublicAppUrl()}${getQueueHref(breach.queueKey)}`
       const message =
-        `⚠️ *Ops Alert — ${breach.label}*\n\n` +
+        `⚠️ *Ops Alert - ${breach.label}*\n\n` +
         `${breach.overdueCount} item${breach.overdueCount === 1 ? '' : 's'} overdue.\n` +
         `Oldest age: ${formatAge(breach.oldestAgeMinutes)}.\n\n` +
         `Review: ${link}`

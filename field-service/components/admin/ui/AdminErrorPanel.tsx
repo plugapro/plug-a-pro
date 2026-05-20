@@ -29,7 +29,7 @@ export function AdminErrorPanel({
       <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-8 text-sm">
         <p className="font-semibold text-destructive mb-1">{title}</p>
         <p className="text-muted-foreground mb-4">
-          The rest of the admin is still working — you can navigate away and retry later.
+          The rest of the admin is still working - you can navigate away and retry later.
         </p>
         {error.digest && (
           <p className="font-mono text-xs mb-4">

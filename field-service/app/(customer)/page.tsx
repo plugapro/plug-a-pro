@@ -130,12 +130,12 @@ export default async function CustomerHomePage({
           {isLoggedOut
             ? 'Find trusted help, near you.'
             : hasProviderRole && !hasCustomerRole
-              ? `Hi ${firstName || 'there'} —`
-              : `Hi ${firstName || 'there'} —`}
+              ? `Hi ${firstName || 'there'} -`
+              : `Hi ${firstName || 'there'} -`}
           {!isLoggedOut && <><br />what needs fixing?</>}
         </h1>
         <p className="mt-2 mb-4 text-[14.5px] leading-relaxed text-[var(--ink-mute)] [text-wrap:pretty] max-w-[320px]">
-          Handymen, plumbers, gardeners, tilers and more — rated, reviewed, and tracked end-to-end.
+          Handymen, plumbers, gardeners, tilers and more - rated, reviewed, and tracked end-to-end.
         </p>
 
         {/* Search bar */}
@@ -310,7 +310,7 @@ export default async function CustomerHomePage({
                 For service providers
               </div>
               <h2 className="text-[18px] font-bold tracking-[-0.025em] leading-[1.25] mb-1.5">
-                Win paying work — without the noise.
+                Win paying work - without the noise.
               </h2>
               <p className="text-[13px] leading-[1.5] mb-4" style={{ opacity: 0.75 }}>
                 Real leads, transparent fees, and end-to-end job tracking. Apply once, get matched daily.

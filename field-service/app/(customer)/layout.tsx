@@ -1,4 +1,4 @@
-// Customer PWA layout — mobile-first, bottom navigation, design system v2
+// Customer PWA layout - mobile-first, bottom navigation, design system v2
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +22,7 @@ import { InstallPrompt } from '@/components/shared/InstallPrompt'
 export const metadata: Metadata = {
   title: {
     default: siteConfig.name,
-    template: `%s — ${siteConfig.name}`,
+    template: `%s - ${siteConfig.name}`,
   },
 }
 

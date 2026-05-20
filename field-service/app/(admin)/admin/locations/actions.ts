@@ -123,7 +123,7 @@ export async function deleteLocationNodeAction(id: string) {
   } catch (err) {
     if (err instanceof CrudActionError) throw err
     if (err instanceof LocationNodeInUseError) {
-      // Node is referenced — soft-delete instead
+      // Node is referenced - soft-delete instead
       const result = await crudAction<{ id: string }, { id: string; softDeleted: boolean }>({
         entity: 'LocationNode',
         entityId: id,

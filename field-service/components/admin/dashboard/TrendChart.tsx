@@ -31,7 +31,7 @@ export function TrendChart({ series }: { series: TrendSeries[] }) {
 
   const dates = series[0].points.map((p) => p.date)
 
-  // Don't render a chart for a single data point — a number is clearer
+  // Don't render a chart for a single data point - a number is clearer
   if (dates.length <= 1) {
     return (
       <div className="flex items-center justify-center rounded-xl border border-dashed p-10 text-sm text-muted-foreground">

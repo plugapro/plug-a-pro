@@ -141,7 +141,7 @@ async function acceptLeadWithToken(formData: FormData) {
       const { acceptAssignmentOffer } = await import('@/lib/matching/service')
       const offerResult = await acceptAssignmentOffer({ leadId: lead.id, providerId: lead.providerId, inspectionNeeded, source: 'pwa' })
       if (offerResult.ok) {
-        // acceptAssignmentOffer does not send notifications — fire-and-forget
+        // acceptAssignmentOffer does not send notifications - fire-and-forget
         import('@/lib/post-match-communications').then(({ notifyPostMatchAcceptance }) =>
           notifyPostMatchAcceptance({ leadId: lead.id, providerId: lead.providerId, matchId: offerResult.matchId, creditTransactionId: offerResult.creditTransactionId })
         ).catch(() => {})
@@ -783,7 +783,7 @@ export default async function ProviderLeadAccessPage({
   const plannedWindow = hasAcceptedOperationalMatch ? formatWindow(jr.match?.plannedArrivalStart, jr.match?.plannedArrivalEnd) : null
   const actionDisabled = Boolean(jr.match?.providerCompletedAt)
   const hasPlannedArrival = hasAcceptedOperationalMatch && Boolean(jr.match?.plannedArrivalStart)
-  // Job has progressed past the arrival-scheduling stage — hide the form entirely.
+  // Job has progressed past the arrival-scheduling stage - hide the form entirely.
   const arrivalActionsDone = hasAcceptedOperationalMatch && Boolean(
     jr.match?.providerOnTheWayAt ||
     jr.match?.providerArrivedAt ||

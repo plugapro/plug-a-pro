@@ -21,7 +21,7 @@ export default async function AccountSitesPage() {
 
   const customer = await resolveCustomerForSession(db, session)
   if (!customer) {
-    // Authenticated but no Customer record yet — fresh PWA signup with no prior WA interaction
+    // Authenticated but no Customer record yet - fresh PWA signup with no prior WA interaction
     redirect('/sign-in?next=/account/sites')
   }
 

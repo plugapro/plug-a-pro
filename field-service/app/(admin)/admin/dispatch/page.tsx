@@ -755,8 +755,8 @@ function formatDispatchAge(date: Date) {
 function caseEventSummary(event: { type: string; payload: unknown }): string {
   const p = event.payload as Record<string, unknown>
   switch (event.type) {
-    case 'STATE_CHANGE':    return `Status changed${p.from ? ` from ${p.from}` : ''} to ${p.to ?? '—'}${p.reasonCode ? ` · ${p.reasonCode}` : ''}`
-    case 'ASSIGNMENT_CHANGE': return p.released ? 'Released — back to unassigned' : p.to ? `Assigned to ${p.to}` : 'Assignment changed'
+    case 'STATE_CHANGE':    return `Status changed${p.from ? ` from ${p.from}` : ''} to ${p.to ?? '-'}${p.reasonCode ? ` · ${p.reasonCode}` : ''}`
+    case 'ASSIGNMENT_CHANGE': return p.released ? 'Released - back to unassigned' : p.to ? `Assigned to ${p.to}` : 'Assignment changed'
     case 'NOTE_ADDED':      return `Note added${p.preview ? `: "${p.preview}…"` : ''}`
     case 'ESCALATION':      return `Escalated${p.reason ? `: ${p.reason}` : ''}`
     case 'OPS_ACTION':      return p.action ? String(p.action) : 'Ops action'

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
-import { ArrowRight, Wrench, Shield } from 'lucide-react'
+import { ArrowRight, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SaMobileNumberInput } from '@/components/shared/SaMobileNumberInput'
 import { AuthShell } from '@/components/shared/auth-shell'
@@ -177,12 +177,6 @@ export default function SignInPage() {
           <Link href="/provider-sign-in">
             <Wrench size={16} className="text-[var(--brand-purple)]" />
             I&apos;m a service provider
-          </Link>
-        </Button>
-        <Button variant="ghost" fullWidth size="md" asChild>
-          <Link href="/admin-sign-in">
-            <Shield size={16} className="text-[var(--ink-mute)]" />
-            Internal team sign in
           </Link>
         </Button>
       </div>

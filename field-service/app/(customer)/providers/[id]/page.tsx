@@ -145,12 +145,12 @@ export default async function CustomerProviderProfilePage({
       ? `${provider.providerCategories[0].yearsExperience} yrs`
       : provider.experience
       ? provider.experience.split(/\s+/).slice(0, 2).join(' ')
-      : '—'
+      : '-'
 
   const onTimeLabel =
     provider.onTimeRate != null
       ? `${Math.round(Number(provider.onTimeRate) * 100)}%`
-      : '—'
+      : '-'
 
   return (
     <div className="pb-28 screen-enter" style={{ background: 'var(--page)' }}>
@@ -319,7 +319,7 @@ export default async function CustomerProviderProfilePage({
         >
           {[
             { v: yearsExp,   l: 'Experience' },
-            { v: provider.completedJobsCount != null ? String(provider.completedJobsCount) : '—', l: 'Jobs done' },
+            { v: provider.completedJobsCount != null ? String(provider.completedJobsCount) : '-', l: 'Jobs done' },
             { v: onTimeLabel, l: 'On-time' },
           ].map((s, i) => (
             <div
@@ -455,7 +455,7 @@ export default async function CustomerProviderProfilePage({
                 {provider.evidenceNote}
               </p>
               <p className="text-[11px] mt-2" style={{ color: 'var(--ink-mute)' }}>
-                Provider-shared — not independently reviewed by Plug A Pro
+                Provider-shared - not independently reviewed by Plug A Pro
               </p>
             </div>
           </section>

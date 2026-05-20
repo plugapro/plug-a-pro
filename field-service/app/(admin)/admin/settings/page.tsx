@@ -1,5 +1,5 @@
 // ─── Admin: Settings ──────────────────────────────────────────────────────────
-// Platform configuration — static display, no Business model.
+// Platform configuration - static display, no Business model.
 
 export const revalidate = 60
 
@@ -27,7 +27,7 @@ export default async function SettingsPage() {
           <Row label="Mode">P2P Marketplace</Row>
           <Row label="Timezone">{process.env.PLATFORM_TIMEZONE ?? 'Africa/Johannesburg'}</Row>
           <Row label="Currency">{process.env.PLATFORM_CURRENCY ?? 'ZAR'}</Row>
-          <Row label="App URL">{process.env.NEXT_PUBLIC_APP_URL ?? '—'}</Row>
+          <Row label="App URL">{process.env.NEXT_PUBLIC_APP_URL ?? '-'}</Row>
         </div>
       </section>
 

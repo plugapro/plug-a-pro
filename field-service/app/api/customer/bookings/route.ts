@@ -1,6 +1,6 @@
 // ─── POST /api/customer/bookings ─────────────────────────────────────────────
 // Creates a JobRequest for the P2P marketplace model.
-// No slotId, no serviceId, no businessId — category-based, address-only.
+// No slotId, no serviceId, no businessId - category-based, address-only.
 // Requires auth.
 
 import { NextResponse } from 'next/server'
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
       locationNodeId,
     })
 
-    // Service area gate — capture out-of-area contacts on the waitlist
+    // Service area gate - capture out-of-area contacts on the waitlist
     if (!isInActiveServiceArea(resolvedAddress.city)) {
       await addToServiceAreaWaitlist({
         phone: session.phone!,

@@ -4,7 +4,7 @@
 // For every mid-flow conversation that has expired and not yet been notified:
 //   1. Atomically claim it via timeoutNotifiedAt (prevents duplicate sends)
 //   2. Send the customer a polite "session ended" WhatsApp message
-//   3. Leave flow/data intact — the bot's existing resume logic fires on next reply
+//   3. Leave flow/data intact - the bot's existing resume logic fires on next reply
 //
 // Only processes sessions where expiresAt is within the past 23 hours to ensure
 // we remain inside the WhatsApp 24-hour session window (sendText is valid).
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   const now = new Date()
   const LOCK_SENTINEL = new Date(0)
 
-  // Lower bound: 23 hours ago — sessions older than this are outside the WhatsApp
+  // Lower bound: 23 hours ago - sessions older than this are outside the WhatsApp
   // 24h session window; sendText would fail, so skip them
   const windowFloor = new Date(now.getTime() - 23 * 60 * 60 * 1000)
 
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
   for (const conv of expired) {
     try {
-      // ── Atomic claim — only one cron instance wins per conversation ────────
+      // ── Atomic claim - only one cron instance wins per conversation ────────
       const claimed = await db.conversation.updateMany({
         where: { id: conv.id, timeoutNotifiedAt: null },
         data:  { timeoutNotifiedAt: LOCK_SENTINEL },
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
       })
 
       if (customer && !customer.whatsappServiceOptIn) {
-        console.info(`[cron/session-timeout:${reqId}] service-opted-out phone=${maskPhone(conv.phone)} — skipping send`)
+        console.info(`[cron/session-timeout:${reqId}] service-opted-out phone=${maskPhone(conv.phone)} - skipping send`)
         await db.conversation.updateMany({
           where: { id: conv.id, timeoutNotifiedAt: LOCK_SENTINEL },
           data:  { timeoutNotifiedAt: now },
@@ -130,7 +130,7 @@ export async function GET(request: Request) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function resolveFirstName(phone: string, data: unknown): Promise<string> {
-  // 1. Accumulated session data (fastest — already in memory)
+  // 1. Accumulated session data (fastest - already in memory)
   const sessionData = data as Record<string, unknown> | null
   const sessionName =
     (sessionData?.customerName as string | undefined) ??

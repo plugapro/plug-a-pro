@@ -1,5 +1,5 @@
 // GET /api/technician/earnings/statement?month=2026-02
-// Returns an HTML document with print stylesheet — client calls window.print() to save as PDF.
+// Returns an HTML document with print stylesheet - client calls window.print() to save as PDF.
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Earnings Statement — ${esc(monthLabel)}</title>
+  <title>Earnings Statement - ${esc(monthLabel)}</title>
   <style>
     body { font-family: sans-serif; font-size: 13px; color: #111; padding: 32px; max-width: 800px; margin: 0 auto; }
     h1 { font-size: 20px; margin-bottom: 4px; }
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 </head>
 <body>
   <h1>Plug A Pro</h1>
-  <p class="subtitle">Earnings Statement — ${esc(monthLabel)} &middot; ${esc(provider.name)}</p>
+  <p class="subtitle">Earnings Statement - ${esc(monthLabel)} &middot; ${esc(provider.name)}</p>
   <table>
     <thead>
       <tr>

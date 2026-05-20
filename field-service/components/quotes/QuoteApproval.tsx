@@ -130,7 +130,7 @@ export function QuoteApproval({ quote, token }: { quote: Quote; token: string })
         setScheduledDate(data.scheduledDate)
       }
       setResult(action === 'approve' ? 'approved' : 'declined')
-      // Reset to idle on success too — otherwise both CTAs stay disabled
+      // Reset to idle on success too - otherwise both CTAs stay disabled
       // during the brief window before `result` flips the render to the
       // success view (visible on slow networks / mid re-render).
       setStatus('idle')

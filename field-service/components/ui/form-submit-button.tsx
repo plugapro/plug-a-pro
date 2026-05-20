@@ -30,7 +30,7 @@ type FormSubmitButtonProps = {
  *
  * Rollback: this is a pure UI component with no backend coupling. If a
  * regression is suspected, callers can revert to <Button type="submit">
- * one-by-one; the pattern degrades to no-op pending state (still safe —
+ * one-by-one; the pattern degrades to no-op pending state (still safe -
  * backend mutations remain idempotent independently of UI state).
  */
 export function FormSubmitButton({

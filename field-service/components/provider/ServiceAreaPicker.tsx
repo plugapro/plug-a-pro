@@ -137,7 +137,7 @@ export function ServiceAreaPicker({ initialCities, selectedNodeIds, selectedLabe
 
   return (
     <div className="space-y-4">
-      {/* Sentinel — always present so the server action knows the picker was rendered */}
+      {/* Sentinel - always present so the server action knows the picker was rendered */}
       <input type="hidden" name="serviceAreasPickerRendered" value="1" />
 
       {/* Hidden inputs for selected node IDs */}

@@ -8,7 +8,7 @@
 // /api/locations/search?mode=suburb, which returns only SUBURB-level nodes
 // with all parent labels so the Selection interface can be populated directly.
 //
-// Props interface is unchanged — callers (BookingFlow) need no modification.
+// Props interface is unchanged - callers (BookingFlow) need no modification.
 
 import { useState, useRef, useEffect } from 'react'
 import type { SuburbOption } from '@/lib/location-nodes'

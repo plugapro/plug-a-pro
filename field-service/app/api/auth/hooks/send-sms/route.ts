@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     userId: userId ?? undefined,
   })
   if (!flagOn) {
-    console.warn('[send-sms-hook] flag off — whatsapp OTP disabled', {
+    console.warn('[send-sms-hook] flag off - whatsapp OTP disabled', {
       message: 'otp_whatsapp_disabled',
       httpCode: 503,
       step: 'send-sms-hook',

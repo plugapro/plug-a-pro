@@ -18,7 +18,7 @@ export function WhatsappPreferencesCard() {
     fetch('/api/customer/preferences')
       .then((r) => (r.ok ? r.json() : null))
       .then((d: Prefs | null) => { if (d) setPrefs(d) })
-      .catch(() => {/* fail silently — non-critical */})
+      .catch(() => {/* fail silently - non-critical */})
   }, [])
 
   async function toggle() {

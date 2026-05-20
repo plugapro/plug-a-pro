@@ -256,7 +256,7 @@ export function BookingFlow({
 
   function validateAddressStep() {
     if (!locationNodeId) {
-      return 'Select your suburb before continuing — use "Use my location" or type in the search box.'
+      return 'Select your suburb before continuing - use "Use my location" or type in the search box.'
     }
 
     const suburb = normalizeValue(address.suburb)
@@ -432,7 +432,7 @@ export function BookingFlow({
     setStep('confirm')
   }
 
-  // ── Step 3: Confirm — create job request ───────────────────────────────────
+  // ── Step 3: Confirm - create job request ───────────────────────────────────
 
   async function handleConfirm() {
     if (loading) return
@@ -459,7 +459,7 @@ export function BookingFlow({
         category.slug === 'other' && closestCategory ? closestCategory : category.slug
       const effectiveDescription =
         category.slug === 'other'
-          ? `[Other — originally uncategorised]\nJob type: ${jobType}\n${description.trim()}`
+          ? `[Other - originally uncategorised]\nJob type: ${jobType}\n${description.trim()}`
           : `Job type: ${jobType}\n${description.trim()}`
       const timing = resolvePreferredTimingWindow({
         urgency,
@@ -504,7 +504,7 @@ export function BookingFlow({
 
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
-          // Draft is auto-saved to localStorage — redirect to sign-in and come back
+          // Draft is auto-saved to localStorage - redirect to sign-in and come back
           window.location.href = `/sign-in?next=${encodeURIComponent(`/book/${category.slug}`)}`
           return
         }
@@ -904,7 +904,7 @@ export function BookingFlow({
                   if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
                     errors.push(`"${file.name}" is not a supported image type (JPEG, PNG, WEBP, HEIC, GIF).`)
                   } else if (file.size > MAX_PHOTO_SIZE) {
-                    errors.push(`"${file.name}" is too large — photos must be 10 MB or smaller.`)
+                    errors.push(`"${file.name}" is too large - photos must be 10 MB or smaller.`)
                   } else {
                     valid.push(file)
                   }
@@ -963,7 +963,7 @@ export function BookingFlow({
             )}
           </div>
 
-          {/* Urgency — 3 coloured tiles */}
+          {/* Urgency - 3 coloured tiles */}
           <div>
             <div className="text-[12px] font-semibold mb-2" style={{ color: 'var(--ink)' }}>When do you need this done?</div>
             <div className="grid grid-cols-3 gap-2">

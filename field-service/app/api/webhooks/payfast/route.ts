@@ -2,7 +2,7 @@
  * Payfast ITN (Instant Transaction Notification) webhook handler.
  *
  * Payfast POSTs application/x-www-form-urlencoded to this endpoint after every
- * payment event. The handler must ALWAYS return HTTP 200 — non-200 responses
+ * payment event. The handler must ALWAYS return HTTP 200 - non-200 responses
  * cause Payfast to retry, creating duplicate-ITN storms that are harder to
  * reason about than idempotent processing.
  *
@@ -49,7 +49,7 @@ async function parseItnBody(request: NextRequest): Promise<PayfastItnPayload | n
   try {
     const text = await request.text()
     const params = new URLSearchParams(text)
-    // Preserve insertion order — Payfast signature depends on field order.
+    // Preserve insertion order - Payfast signature depends on field order.
     const payload: Record<string, string> = {}
     for (const [key, value] of params.entries()) {
       payload[key] = value
@@ -102,7 +102,7 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
     return
   }
 
-  // Step 6: idempotency — already credited intents are silently ignored.
+  // Step 6: idempotency - already credited intents are silently ignored.
   if (intent.status === 'CREDITED' || intent.creditedAt) {
     console.info('[payfast-itn] duplicate ITN received for already-credited intent, ignoring', {
       traceId,
@@ -112,7 +112,7 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
     return
   }
 
-  // Non-creditable terminal statuses — log and return.
+  // Non-creditable terminal statuses - log and return.
   if (intent.status === 'CANCELLED' || intent.status === 'FAILED' || intent.status === 'EXPIRED') {
     console.warn('[payfast-itn] ITN received for terminal intent status', {
       traceId,
@@ -126,7 +126,7 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
   // Step 7: amount validation.
   const itnAmountCents = parseItnAmountCents(payload.amount_gross)
   if (Number.isNaN(itnAmountCents) || itnAmountCents !== intent.amountCents) {
-    console.error('[payfast-itn] amount_gross mismatch — marking intent FAILED', {
+    console.error('[payfast-itn] amount_gross mismatch - marking intent FAILED', {
       traceId,
       intentId: intent.id,
       expected: intent.amountCents,
@@ -170,7 +170,7 @@ async function processItn(payload: PayfastItnPayload, remoteIp: string | null): 
       ledgerEntryId: result.ledgerEntryId,
     })
   } else {
-    // Crediting returned false without throwing — log for ops visibility.
+    // Crediting returned false without throwing - log for ops visibility.
     console.warn('[payfast-itn] wallet not credited', {
       traceId,
       intentId: intent.id,
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
   const payload = await parseItnBody(request)
 
   if (!payload) {
-    // Even a malformed body returns 200 — Payfast retries on non-200.
+    // Even a malformed body returns 200 - Payfast retries on non-200.
     console.warn('[payfast-itn] could not parse ITN body')
     return new NextResponse('OK', { status: 200 })
   }
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
     await processItn(payload, remoteIp)
   } catch (error) {
     // Any unhandled error must still return 200. Log the full error internally
-    // — the response body must not leak internal details.
+    // - the response body must not leak internal details.
     console.error('[payfast-itn] unhandled error during ITN processing', {
       error,
       m_payment_id: payload.m_payment_id,

@@ -1,4 +1,4 @@
-// Provider PWA layout — mobile-first, bottom navigation, design system v2
+// Provider PWA layout - mobile-first, bottom navigation, design system v2
 
 import { Home, Inbox, Briefcase, CircleUser, Coins } from 'lucide-react'
 import { requireProvider } from '@/lib/auth'

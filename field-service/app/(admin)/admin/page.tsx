@@ -219,7 +219,7 @@ export default async function AdminDashboardPage({
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div className="space-y-1">
-                <CardTitle className="text-base">Matching health — last 24 h</CardTitle>
+                <CardTitle className="text-base">Matching health - last 24 h</CardTitle>
                 <p className="text-sm text-muted-foreground">
                   Dispatch decisions, hold outcomes, and queue depth from the orchestrator.
                 </p>
@@ -595,7 +595,7 @@ export default async function AdminDashboardPage({
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1">
-                <CardTitle className="text-base">Operational trends — {snapshot.range.label}</CardTitle>
+                <CardTitle className="text-base">Operational trends - {snapshot.range.label}</CardTitle>
                 <p className="text-sm text-muted-foreground">
                   Daily demand, bookings, and completions over the selected window.
                 </p>
@@ -623,7 +623,7 @@ export default async function AdminDashboardPage({
               </>
             ) : (
               <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-                Trend data unavailable — {snapshot.trends.error?.message ?? 'unknown error'}
+                Trend data unavailable - {snapshot.trends.error?.message ?? 'unknown error'}
               </div>
             )}
           </CardContent>

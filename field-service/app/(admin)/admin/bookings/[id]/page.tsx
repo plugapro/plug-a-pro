@@ -104,8 +104,8 @@ export default async function BookingDetailPage({
 
   const customer        = booking.match?.jobRequest?.customer
   const address         = booking.match?.jobRequest?.address
-  const jobRequestTitle = booking.match?.jobRequest?.title ?? '—'
-  const jobRequestCategory = booking.match?.jobRequest?.category ?? '—'
+  const jobRequestTitle = booking.match?.jobRequest?.title ?? '-'
+  const jobRequestCategory = booking.match?.jobRequest?.category ?? '-'
 
   return (
     <div className="space-y-6">
@@ -149,7 +149,7 @@ export default async function BookingDetailPage({
               <div className="grid grid-cols-3 gap-2">
                 <span className="text-muted-foreground font-medium">Customer</span>
                 <div className="col-span-2">
-                  <p className="font-medium">{customer?.name ?? '—'}</p>
+                  <p className="font-medium">{customer?.name ?? '-'}</p>
                   <p className="text-muted-foreground">{customer?.phone ?? ''}</p>
                   {customer?.email && (
                     <p className="text-muted-foreground">{customer.email}</p>
@@ -315,7 +315,7 @@ export default async function BookingDetailPage({
                   }))}
                 />
               ) : (
-                <p className="text-sm text-muted-foreground">No match record — quote history unavailable.</p>
+                <p className="text-sm text-muted-foreground">No match record - quote history unavailable.</p>
               )}
             </CardContent>
           </Card>

@@ -74,7 +74,7 @@ export default async function BreachedCasesPage() {
                 <div key={c.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
                   <div>
                     <p className="text-sm font-medium">
-                      {c.queueType.replace(/_/g, ' ')} — {c.entityType} {c.entityId.slice(0, 8)}…
+                      {c.queueType.replace(/_/g, ' ')} - {c.entityType} {c.entityId.slice(0, 8)}…
                     </p>
                     {c.ownerUserId ? (
                       <p className="text-xs text-muted-foreground">Assigned to {c.ownerUserId}</p>

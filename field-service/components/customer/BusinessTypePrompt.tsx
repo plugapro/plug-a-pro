@@ -78,7 +78,7 @@ export function BusinessTypePrompt() {
             <DialogHeader>
               <DialogTitle>Business name</DialogTitle>
               <DialogDescription>
-                Optionally add your business name — you can update this later in your profile.
+                Optionally add your business name - you can update this later in your profile.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-4 pt-2">

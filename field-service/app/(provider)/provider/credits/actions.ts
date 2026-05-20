@@ -620,7 +620,7 @@ export type ProviderPayatTopUpResult = {
 // (Next.js redacts thrown errors). The discriminated-union response type lives
 // in lib/provider-credit-payment-intents.ts so it's reusable by any caller.
 
-// Re-exported for backward compat — earlier callers imported the types from here.
+// Re-exported for backward compat - earlier callers imported the types from here.
 export type { PayatTopUpFailureCode, ProviderPayatTopUpResponse } from '@/lib/provider-credit-payment-intents'
 
 export async function createProviderPayatTopUpIntent(
@@ -727,7 +727,7 @@ export async function createProviderPayatTopUpIntent(
       elapsedMs: Date.now() - startedAt,
       error: message,
     })
-    // Match on typed error classes instead of message strings — Pay@ may
+    // Match on typed error classes instead of message strings - Pay@ may
     // reword the underlying HTTP error copy without notice. PayatTokenError
     // and PayatApiError carry a `stage` discriminator + HTTP status so future
     // observability work can split metrics per failure mode.
@@ -765,7 +765,7 @@ export async function createProviderPayatTopUpIntent(
  * The caller must POST the provider's browser to `result.checkout.action`
  * with `result.checkout.fields`.
  *
- * IMPORTANT: the Payfast return URL is UI-only — wallet crediting only
+ * IMPORTANT: the Payfast return URL is UI-only - wallet crediting only
  * happens after Payfast sends a verified ITN to /api/webhooks/payfast.
  */
 export async function createProviderPayfastTopUpIntent(

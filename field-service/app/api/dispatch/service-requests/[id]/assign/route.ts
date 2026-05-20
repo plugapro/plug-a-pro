@@ -17,7 +17,7 @@ export async function POST(
 
   try {
     if (mode === 'AUTO_ASSIGN') {
-      // Atomic orchestrator path — same reservation logic used by job creation and cron
+      // Atomic orchestrator path - same reservation logic used by job creation and cron
       const result = await orchestrateMatch(id, { triggeredBy: 'manual' })
       return NextResponse.json(result)
     }

@@ -1,6 +1,6 @@
 'use client'
 // ─── ResolveCaseForm ──────────────────────────────────────────────────────────
-// Resolve/reopen a case inline (no dialog — keeps the page server-first).
+// Resolve/reopen a case inline (no dialog - keeps the page server-first).
 // Shows reason code select populated from the queue's registry.
 // Note textarea appears for all codes; required when noteRequired=true.
 

@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   try {
     if (event.type === 'payment.success') {
       // Idempotency guard: check payment status BEFORE applying the handler.
-      // If already PAID, the confirmation was sent on a prior delivery — skip.
+      // If already PAID, the confirmation was sent on a prior delivery - skip.
       const existingPayment = await db.payment.findUnique({
         where: { bookingId: event.bookingId },
         select: { status: true },
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       // Early-return BEFORE handlePaymentSuccess to prevent any duplicate DB writes.
       if (existingPayment?.status === 'PAID') {
         console.info(
-          `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} — already processed`,
+          `[webhook/payments:${reqId}] Duplicate delivery for ${event.bookingId} - already processed`,
         )
         return NextResponse.json({ status: 'ok' })
       }

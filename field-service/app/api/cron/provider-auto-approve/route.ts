@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     // Gate: disabled flag routes all applications to manual admin review only.
     const autoApproveEnabled = await isEnabled('provider.onboarding.auto_approve')
     if (!autoApproveEnabled) {
-      console.log(`[cron/provider-auto-approve:${reqId}] skipped — feature flag provider.onboarding.auto_approve is disabled; applications require manual admin review`)
+      console.log(`[cron/provider-auto-approve:${reqId}] skipped - feature flag provider.onboarding.auto_approve is disabled; applications require manual admin review`)
       const duration = Date.now() - cronStart
       console.log(JSON.stringify({ event: 'cron_complete', cron: cronName, durationMs: duration, timestamp: new Date().toISOString() }))
       return NextResponse.json({ ok: true, skipped: true, reason: 'FEATURE_FLAG_DISABLED', durationMs: duration })

@@ -403,7 +403,7 @@ export default async function CustomerBookingsPage({
                             </div>
                           ) : null}
                           <span className="text-[13px] text-[var(--ink-mute)] truncate">
-                            {providerName ?? '—'}
+                            {providerName ?? '-'}
                           </span>
                         </div>
                         <span className="h-8 px-4 rounded-[10px] bg-[var(--ink)] text-[var(--card)] text-[13px] font-semibold flex items-center shrink-0">

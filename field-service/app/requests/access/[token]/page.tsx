@@ -613,7 +613,7 @@ export default async function TicketAccessPage({
                   ? "We couldn't notify one or more shortlisted providers. Retry sending or choose another provider."
                   : isReviewFirstSending
                     ? "We're sending your request to your selected provider now."
-                : 'View matching providers and rank up to 3 in your preferred order. We\'ll contact your 1st choice first — if they can\'t make it, we\'ll automatically try your 2nd and 3rd.'}
+                : 'View matching providers and rank up to 3 in your preferred order. We\'ll contact your 1st choice first - if they can\'t make it, we\'ll automatically try your 2nd and 3rd.'}
             </p>
             {isReviewFirstSent ? (
               <p className="text-muted-foreground">
