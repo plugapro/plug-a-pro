@@ -1,10 +1,13 @@
 import { redirect } from 'next/navigation'
-import { getJobForClient } from '@/lib/server/client'
+import { getAuthenticatedCustomerContext, getJobForClient } from '@/lib/server/client'
 import { JobLiveScreen } from '@/components/client/job-live-screen'
 
 export default async function ClientJobStatusPage({ params }: { params: Promise<{ jobId: string }> }) {
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth) redirect('/sign-in?next=/client')
+
   const { jobId } = await params
-  const job = await getJobForClient(jobId)
+  const job = await getJobForClient(jobId, auth.customer.id)
   if (!job) redirect('/client')
   return (
     <JobLiveScreen
@@ -22,4 +25,3 @@ export default async function ClientJobStatusPage({ params }: { params: Promise<
     />
   )
 }
-

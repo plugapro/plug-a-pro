@@ -1,16 +1,14 @@
-import { getSession } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { resolveCustomerForSession } from '@/lib/customer-session'
+import { getAuthenticatedCustomerContext } from '@/lib/server/client'
 import { redirect } from 'next/navigation'
 import { ClientHomeScreen } from '@/components/client/home-screen'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ClientHomePage() {
-  const session = await getSession()
-  if (!session || session.role !== 'customer') redirect('/sign-in?next=/client')
-  const customer = await resolveCustomerForSession(db, session)
-  if (!customer) redirect('/sign-in?next=/client')
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth) redirect('/sign-in?next=/client')
+  const customer = auth.customer
 
   const [requests, jobs] = await Promise.all([
     db.jobRequest.findMany({
@@ -42,4 +40,3 @@ export default async function ClientHomePage() {
     />
   )
 }
-

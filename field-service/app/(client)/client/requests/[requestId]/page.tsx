@@ -1,10 +1,14 @@
 import { redirect } from 'next/navigation'
 import { getRequestForClient } from '@/lib/server/client'
 import { QuoteReviewScreen } from '@/components/client/quote-review-screen'
+import { getAuthenticatedCustomerContext } from '@/lib/server/client'
 
 export default async function ClientRequestPage({ params }: { params: Promise<{ requestId: string }> }) {
+  const auth = await getAuthenticatedCustomerContext()
   const { requestId } = await params
-  const request = await getRequestForClient(requestId)
+  if (!auth) redirect('/sign-in?next=/client')
+
+  const request = await getRequestForClient(requestId, auth.customer.id)
   if (!request) redirect('/client')
 
   if (request.status === 'SHORTLIST_READY') redirect(`/client/requests/${request.id}/shortlist`)
@@ -21,4 +25,3 @@ export default async function ClientRequestPage({ params }: { params: Promise<{ 
     />
   )
 }
-

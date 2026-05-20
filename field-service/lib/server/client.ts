@@ -11,6 +11,71 @@ import {
 import { resolveClientPwaDestination as resolveClientPwaDestinationFromLib } from '@/lib/client-pwa-destination'
 import { resolveExtraWork } from '@/lib/jobs'
 
+export type AuthenticatedCustomerContext = {
+  session: {
+    id: string
+    phone: string | null
+    role: 'customer'
+  }
+  customer: {
+    id: string
+    userId: string | null
+    phone: string
+    name: string
+    email: string | null
+  }
+}
+
+export async function getAuthenticatedCustomerContext(): Promise<AuthenticatedCustomerContext | null> {
+  const session = await getSession()
+  if (!session || session.role !== 'customer') return null
+
+  const customer = await resolveCustomerForSession(db, session)
+  if (!customer) return null
+
+  return {
+    session: {
+      id: session.id,
+      phone: session.phone,
+      role: 'customer',
+    },
+    customer,
+  }
+}
+
+function requestWithCustomerWhere(requestId: string, customerId?: string | null) {
+  return customerId ? { id: requestId, customerId } : { id: requestId }
+}
+
+function jobWithCustomerWhere(jobId: string, customerId?: string | null) {
+  return customerId
+    ? {
+        id: jobId,
+        booking: {
+          match: {
+            jobRequest: { customerId },
+          },
+        },
+      }
+    : { id: jobId }
+}
+
+async function ensureCustomerOwnsRequest(requestId: string, customerId: string): Promise<boolean> {
+  const request = await db.jobRequest.findFirst({
+    where: requestWithCustomerWhere(requestId, customerId),
+    select: { id: true },
+  })
+  return Boolean(request)
+}
+
+async function ensureCustomerOwnsJob(jobId: string, customerId: string): Promise<boolean> {
+  const job = await db.job.findFirst({
+    where: jobWithCustomerWhere(jobId, customerId),
+    select: { id: true },
+  })
+  return Boolean(job)
+}
+
 export type ClientDraftInput = {
   category: string
   title: string
@@ -68,6 +133,11 @@ export async function saveDraftRequest(
   id: string,
   patch: Partial<ClientDraftInput>,
 ): Promise<{ id: string; status: string; category: string; title: string; description: string | null }> {
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth || !(await ensureCustomerOwnsRequest(id, auth.customer.id))) {
+    throw new Error('Unauthorized')
+  }
+
   const data: Prisma.JobRequestUpdateInput = {}
   if (patch.category) data.category = patch.category
   if (patch.title) data.title = patch.title
@@ -83,6 +153,11 @@ export async function saveDraftRequest(
 }
 
 export async function submitRequest(id: string): Promise<{ requestId: string; status: 'submitted' | 'matching' }> {
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth || !(await ensureCustomerOwnsRequest(id, auth.customer.id))) {
+    throw new Error('Unauthorized')
+  }
+
   const request = await db.jobRequest.update({
     where: { id },
     data: {
@@ -94,9 +169,9 @@ export async function submitRequest(id: string): Promise<{ requestId: string; st
   return { requestId: request.id, status: 'matching' }
 }
 
-export async function getRequestForClient(id: string) {
-  return db.jobRequest.findUnique({
-    where: { id },
+export async function getRequestForClient(id: string, customerId?: string | null) {
+  return db.jobRequest.findFirst({
+    where: requestWithCustomerWhere(id, customerId),
     include: {
       customer: true,
       match: {
@@ -110,24 +185,26 @@ export async function getRequestForClient(id: string) {
   })
 }
 
-export async function getShortlistForRequest(id: string) {
+export async function getShortlistForRequest(id: string, customerId?: string | null) {
+  if (customerId && !(await ensureCustomerOwnsRequest(id, customerId))) return null
   return getCustomerShortlistForRequest(id)
 }
 
 export async function selectProvider(requestId: string, providerId: string): Promise<{ status: 'provider_confirmation_pending' }> {
-  const session = await getSession()
-  if (!session || session.role !== 'customer') throw new Error('Unauthorized')
-  const customer = await resolveCustomerForSession(db, session)
-  if (!customer) throw new Error('Customer not found')
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth || !(await ensureCustomerOwnsRequest(requestId, auth.customer.id))) {
+    throw new Error('Unauthorized')
+  }
+  const customer = auth.customer
   await selectProviderForCustomerRequest({ requestId, providerId, customerId: customer.id })
   return { status: 'provider_confirmation_pending' }
 }
 
 export async function approveQuote(quoteId: string): Promise<{ jobId: string; status: 'scheduled' }> {
-  const session = await getSession()
-  if (!session || session.role !== 'customer' || !session.phone) throw new Error('Unauthorized')
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth || !auth.session.phone) throw new Error('Unauthorized')
   const result = await processQuoteDecision(quoteId, 'approve', {
-    verifyCustomerPhone: session.phone,
+    verifyCustomerPhone: auth.session.phone,
   })
   if ('error' in result || result.action !== 'approved') throw new Error('Quote not approved')
   const booking = await db.booking.findUnique({
@@ -139,18 +216,18 @@ export async function approveQuote(quoteId: string): Promise<{ jobId: string; st
 }
 
 export async function declineQuote(quoteId: string): Promise<{ status: 'declined' }> {
-  const session = await getSession()
-  if (!session || session.role !== 'customer' || !session.phone) throw new Error('Unauthorized')
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth || !auth.session.phone) throw new Error('Unauthorized')
   const result = await processQuoteDecision(quoteId, 'decline', {
-    verifyCustomerPhone: session.phone,
+    verifyCustomerPhone: auth.session.phone,
   })
   if ('error' in result) throw new Error('Quote not declined')
   return { status: 'declined' }
 }
 
-export async function getJobForClient(id: string) {
-  return db.job.findUnique({
-    where: { id },
+export async function getJobForClient(id: string, customerId?: string | null) {
+  return db.job.findFirst({
+    where: jobWithCustomerWhere(id, customerId),
     include: {
       provider: true,
       booking: {
@@ -167,14 +244,26 @@ export async function getJobForClient(id: string) {
 }
 
 export async function approveExtraWork(_jobId: string, extraWorkId: string): Promise<void> {
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth) throw new Error('Unauthorized')
+
   const extra = await db.extraWork.findUnique({ where: { id: extraWorkId } })
   if (!extra) throw new Error('Extra work not found')
+  if (!(await ensureCustomerOwnsJob(extra.jobId, auth.customer.id))) {
+    throw new Error('Unauthorized')
+  }
   await resolveExtraWork({ approvalToken: extra.approvalToken, approved: true })
 }
 
 export async function declineExtraWork(_jobId: string, extraWorkId: string): Promise<void> {
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth) throw new Error('Unauthorized')
+
   const extra = await db.extraWork.findUnique({ where: { id: extraWorkId } })
   if (!extra) throw new Error('Extra work not found')
+  if (!(await ensureCustomerOwnsJob(extra.jobId, auth.customer.id))) {
+    throw new Error('Unauthorized')
+  }
   await resolveExtraWork({ approvalToken: extra.approvalToken, approved: false })
 }
 
@@ -182,10 +271,12 @@ export async function submitJobReview(
   jobId: string,
   input: { rating: number; tags?: string[]; text?: string },
 ): Promise<void> {
-  const session = await getSession()
-  if (!session || session.role !== 'customer') throw new Error('Unauthorized')
-  const customer = await resolveCustomerForSession(db, session)
-  if (!customer) throw new Error('Customer not found')
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth) throw new Error('Unauthorized')
+  const customer = auth.customer
+  if (!(await ensureCustomerOwnsJob(jobId, auth.customer.id))) {
+    throw new Error('Unauthorized')
+  }
   const job = await db.job.findUnique({
     where: { id: jobId },
     include: { booking: { include: { match: true } } },
@@ -221,11 +312,45 @@ export async function resolveClientPwaDestination(token: string): Promise<string
   if (destination.screen === 'invalid_link' || destination.accessLevel === 'invalid') {
     throw new Error('TOKEN_INVALID')
   }
-  return destination.route
+
+  const requestId = destination.request?.id
+  const jobId = destination.job?.id
+
+  switch (destination.screen) {
+    case 'client_home':
+      return '/client'
+    case 'request_form':
+      return requestId ? `/client/new-request?resume=${encodeURIComponent(requestId)}` : '/client/new-request'
+    case 'request_submitted':
+    case 'matching_progress':
+    case 'providers_reviewing':
+      return requestId ? `/client/requests/${requestId}/matching` : '/client'
+    case 'shortlist':
+      return requestId ? `/client/requests/${requestId}/shortlist` : '/client'
+    case 'provider_confirmation':
+      return requestId ? `/client/requests/${requestId}/selected` : '/client'
+    case 'job_tracking':
+    case 'active_job':
+      return jobId ? `/client/jobs/${jobId}/status` : requestId ? `/client/requests/${requestId}` : '/client'
+    case 'completion_review':
+      return jobId ? `/client/jobs/${jobId}` : '/client'
+    case 'cancelled':
+      return requestId ? `/client/requests/${requestId}` : '/client'
+    default:
+      break
+  }
+
+  if (destination.route.startsWith('/client') || destination.route.startsWith('/ticket') || destination.route.startsWith('/r/')) {
+    return destination.route
+  }
+
+  return '/client'
 }
 
 export async function getInvoiceByToken(token: string) {
   const destination = await resolveClientPwaDestinationFromLib({ token })
+  if (destination.accessLevel === 'invalid') throw new Error('TOKEN_INVALID')
+  if (destination.accessLevel === 'expired') throw new Error('TOKEN_EXPIRED')
   if (!destination.request?.match?.booking?.id) return null
   const bookingId = destination.request.match.booking.id
   return db.invoice.findUnique({

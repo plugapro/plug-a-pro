@@ -5,8 +5,25 @@ export const dynamic = 'force-dynamic'
 
 export default async function TicketTokenPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
-  const invoice = await getInvoiceByToken(token)
-  if (!invoice) return <LinkExpiredScreen />
+  let errorKind: 'invalid' | 'expired' | null = null
+  let invoice: Awaited<ReturnType<typeof getInvoiceByToken>> | null = null
+
+  try {
+    invoice = await getInvoiceByToken(token)
+  } catch (error) {
+    if (error instanceof Error && error.message === 'TOKEN_INVALID') {
+      errorKind = 'invalid'
+    } else {
+      errorKind = 'expired'
+    }
+  }
+
+  if (errorKind) {
+    return <LinkExpiredScreen kind={errorKind} />
+  }
+  if (!invoice) {
+    return <LinkExpiredScreen kind="not_found" />
+  }
 
   return (
     <div className="mx-auto max-w-md px-5 py-8">
@@ -19,4 +36,3 @@ export default async function TicketTokenPage({ params }: { params: Promise<{ to
     </div>
   )
 }
-

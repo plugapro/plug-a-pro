@@ -1,10 +1,13 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getJobForClient } from '@/lib/server/client'
+import { getAuthenticatedCustomerContext, getJobForClient } from '@/lib/server/client'
 
 export default async function ClientJobPage({ params }: { params: Promise<{ jobId: string }> }) {
+  const auth = await getAuthenticatedCustomerContext()
+  if (!auth) redirect('/sign-in?next=/client')
+
   const { jobId } = await params
-  const job = await getJobForClient(jobId)
+  const job = await getJobForClient(jobId, auth.customer.id)
   if (!job) redirect('/client')
   if (job.status === 'EN_ROUTE' || job.status === 'STARTED') {
     redirect(`/client/jobs/${job.id}/status`)
@@ -38,4 +41,3 @@ export default async function ClientJobPage({ params }: { params: Promise<{ jobI
     </div>
   )
 }
-
